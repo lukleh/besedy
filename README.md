@@ -1,30 +1,57 @@
-# Besedy - Speech-to-Text Transcript Extraction Tool
+# Besedy
 
-A Python-based toolkit for coordinating local and self-hosted multilingual speech
-transcription workflows, with Czech-focused deployment presets.
+**Turn recordings into an archive you can listen to, read, and search.**
 
-## Components
+Besedy takes care of the work between raw audio and something people can
+actually use. It catalogs recordings, prepares the audio, creates multilingual
+transcripts, identifies speakers, and indexes spoken content for search. The
+companion web app lets people listen, read along, and find moments across the
+archive.
 
-Besedy has two parts:
+Besedy is self-hosted and was built with Czech spoken-word collections in mind.
+Languages and transcription backends are configurable, so the same workflow can
+support multilingual archives.
 
-- **CLI toolkit** (`besedy/`) — the Python speech-to-text pipeline this README
-  covers: catalog, stage, transcribe (NeMo Canary / faster-whisper / WhisperX /
-  Qwen3-ASR), diarize, and index transcripts for retrieval.
-- **Web app** (`web/`) — a Next.js listening and search interface for the
-  resulting catalog: event/recording browsing, audio streaming, and ColBERT
-  deep-search. Deployed at [besedy.org](https://besedy.org); see
+[Visit besedy.org](https://besedy.org) · [Get started](#get-started) ·
+[Read the documentation](docs/README.md)
+
+## What you can do with Besedy
+
+- Bring a folder of recordings into a content-addressed catalog that detects
+  duplicates and keeps track of processing state.
+- Prepare and normalize audio before sending it to one or more transcription
+  backends.
+- Transcribe Czech and other languages with faster-whisper, WhisperX, NeMo
+  Canary, or Qwen3-ASR.
+- Separate speakers with pyannote and build a search index across transcripts.
+- Browse recordings, stream audio, read transcripts, and search spoken content
+  from the web app.
+
+You can use the processing toolkit on its own or run it together with the web
+app.
+
+## How it fits together
+
+This repository contains two parts:
+
+- **Processing toolkit** (`besedy/`) — a Python CLI for cataloging, preparing,
+  transcribing, diarizing, and indexing recordings.
+- **Web app** (`web/`) — a Next.js interface for browsing the resulting archive,
+  listening to recordings, and searching transcripts. See
   [web/README.md](web/README.md) for setup.
 
-Data flow is one-way: audio → CLI (catalog → stage → transcribe/diarize → index) →
-transcript catalog + ColBERT index → web app for browsing, streaming, and
-search.
+```text
+recordings → catalog and prepare → transcribe and identify speakers
+           → index transcripts → browse, listen, and search
+```
 
-## Quick Start
+## Get started
 
 ### Prerequisites
 
 - Python >=3.12 (3.13 recommended)
 - [uv](https://github.com/astral-sh/uv) package manager
+- [just](https://github.com/casey/just) command runner
 - ffmpeg/ffprobe (required for audio processing)
 
 The above covers the core CLI. Transcription and diarization have extra
@@ -35,17 +62,15 @@ requirements (GPU, Docker, a Hugging Face token) — see
 
 ```bash
 just setup
-just setup-ml    # optional host-side ML/RAG/speaker helpers
-just setup-jobs  # optional Prefect jobs tooling
-just ruff
-just ty
 ```
 
 `just setup` installs the lean core CLI plus dev tooling. Transcription and
 diarization backends run through Docker, so their heavy
 runtime dependencies are no longer part of the default host environment. Use
-`just setup-all` when you explicitly want every optional extra in one venv.
-`just test` pulls in the optional extras it needs when running the full suite.
+`just setup-ml` for host-side ML, retrieval, and speaker helpers;
+`just setup-jobs` for Prefect jobs tooling; or `just setup-all` when you
+explicitly want every optional extra in one environment. `just test` pulls in
+the optional extras it needs when running the full suite.
 
 ### Configuration
 
@@ -68,7 +93,7 @@ export BESEDY_CONFIG=/path/to/besedy.toml
 See [`besedy.toml.example`](besedy.toml.example) for the full key reference and
 the environment overrides.
 
-### Basic Workflow
+### Basic workflow
 
 ```bash
 # One-time bootstrap for a new catalog
@@ -99,16 +124,6 @@ keep working; automatic detection is always an explicit opt-in. When WhisperX
 uses automatic detection, omit `align_model` so WhisperX can select an
 alignment model for the detected language. See
 [`besedy.toml.example`](besedy.toml.example) for complete examples.
-
-## Features
-
-- **Configurable Language**: Per-workflow language selection with automatic detection where supported
-- **Czech Language Support**: Explicit Canary defaults and optional Czech-tuned models
-- **Batch Processing**: Stage and process multiple files at once
-- **Content-Addressed Storage**: SHA-256 hash-based file identification and deduplication
-- **Backend Flexibility**: Switch between NeMo VAD Canary, faster-whisper, WhisperX, and Qwen3-ASR
-- **Audio Normalization**: Automatic loudness normalization (EBU R128, -16 LUFS target)
-- **Speaker Diarization**: Identify speakers using pyannote
 
 ## Commands Overview
 
