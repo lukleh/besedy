@@ -20,11 +20,11 @@ updates:
           - "minor"
           - "patch"
     ignore:
-      # TypeScript 7 is not yet supported by the stable typescript-eslint
-      # parser used by eslint-config-next.
+      # Revisit when an eslint-config-next update brings a typescript-eslint
+      # parser whose peer range includes TypeScript 6.1 or newer.
       - dependency-name: "typescript"
-        update-types:
-          - "version-update:semver-major"
+        versions:
+          - ">=6.1.0"
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
