@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token; no job needs write access.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python lint + types + extras-free tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: uv sync --locked
+      - run: just ruff
+      - run: just ty
+      # Run every test that does not declare a heavyweight optional runtime or
+      # external integration requirement. Marker selection is intentional: a
+      # file allowlist would silently miss newly added unit tests. Pytest imports
+      # modules before marker filtering, so optional modules must use importorskip
+      # before importing packages supplied by an extra.
+      - run: >-
+          uv run pytest
+          -m "not integration and not external and not gpu and not slow and not e2e and not optional_dependency"
+          -q
+      - name: Audit locked Python dependencies
+        run: |
+          uv export --locked --quiet --all-extras --no-hashes --no-emit-project --output-file /tmp/requirements.txt
+          # DSPy uses DiskCache only in a worker-owned cache. Production sets
+          # DSPY_CACHEDIR on an ephemeral, non-root /tmp filesystem, so an
+          # attacker able to replace its pickle files already controls the
+          # worker UID. Remove this exception when DiskCache publishes a fix.
+          uvx pip-audit==2.10.1 \
+            --no-deps \
+            --disable-pip \
+            --ignore-vuln PYSEC-2026-2447 \
+            -r /tmp/requirements.txt
+
+  python-jobs:
+    name: Python jobs integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra jobs
+      - run: >-
+          uv run pytest
+          tests/test_prefect_jobs.py
+          tests/test_jobs_production_hardening.py
+          tests/test_rlm_integration.py
+          -q
+
+  web:
+    name: Web type-check + lint + unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npx prisma generate
+      - run: npm run type-check
+      - run: npm run lint
+      - run: npm run test
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Scan checked-out source with Gitleaks
+        uses: docker://ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f # v8.30.1
+        with:
+          args: dir --redact --verbose /github/workspace

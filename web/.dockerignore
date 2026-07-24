@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+*.md
+tests
+test-output
+coverage
+qa-results
+.playwright
+playwright-report
+# Generated inside the image by the npm predev/prebuild hooks.
+/src/generated/prisma
+.env*
+!.env.example
+backups

@@ -1,0 +1,182 @@
+[
+  {
+    "id": "public_01_nastaveni_mikrofonu",
+    "question": "jak umistit mikrofon pro malou verejnou prednasku",
+    "targets": [
+      {
+        "audio_hash": "06aaa04419ca17a1700201785eefee1114086bbe843e7720f34d10b834fb3e12"
+      }
+    ]
+  },
+  {
+    "id": "public_02_ozvena_v_mistnosti",
+    "question": "jak omezit ozvenu v mistnosti s tvrdymi stenami",
+    "targets": [
+      {
+        "audio_hash": "73eaa872f6a45f9b1b74381e5585512378dcc5fdc7dfb1ce17af6eef792fe96a"
+      }
+    ]
+  },
+  {
+    "id": "public_03_brzdy_na_kole",
+    "question": "zakladni kontrola brzd na kole pred vyjezdem",
+    "targets": [
+      {
+        "audio_hash": "c4a521f62268c54d6d3f0e13c8439dcca8fac8fca3a37f94f8916adcdc1d20db"
+      }
+    ]
+  },
+  {
+    "id": "public_04_komunitni_zahrada",
+    "question": "planovani sluzeb pro zalevani komunitni zahrady",
+    "targets": [
+      {
+        "audio_hash": "ef6f28fd7b1f47b3d791c2cdf26b41bec36c44bb789411af2eb582eeeeab7c6e"
+      }
+    ]
+  },
+  {
+    "id": "public_05_kynuti_testa",
+    "question": "proc testo na chleba potrebuje cas na kynuti",
+    "targets": [
+      {
+        "audio_hash": "ce4b06edf45fcb246e9ce2b08fcfe42cb5adc65d9388a9739e597124daf98371"
+      }
+    ]
+  },
+  {
+    "id": "public_06_polarka",
+    "question": "jak najit polarku pri vecerni prochazce",
+    "targets": [
+      {
+        "audio_hash": "13aa437a490155d5459ab4aca9343e54e0ee387f80b4d8b2a204cfab170b7e32"
+      }
+    ]
+  },
+  {
+    "id": "public_07_knihovni_katalog",
+    "question": "jak predmetova hesla zlepsuji hledani v knihovnim katalogu",
+    "targets": [
+      {
+        "audio_hash": "6e37603c379f18b50727b1afc58e5f2f8747faf461b5d3bca0c5b6cf175629e0"
+      }
+    ]
+  },
+  {
+    "id": "public_08_stromy_v_meste",
+    "question": "vyhody vysadby stromu se stinem v mestskych ulicich",
+    "targets": [
+      {
+        "audio_hash": "55d4b808cde63c1bbe9750dbdb84c2ddb9cafb62713a9f119beb46890467194b"
+      }
+    ]
+  },
+  {
+    "id": "public_09_lekarnicka",
+    "question": "co patri do zakladni lekarnicky na vylet",
+    "targets": [
+      {
+        "audio_hash": "d933609e9377907e89ab842b0ad0e2752b59ba1b964f72f87a0af142c90346c7"
+      }
+    ]
+  },
+  {
+    "id": "public_10_mleti_kavy",
+    "question": "jak hrubost mleti meni chut filtrovane kavy",
+    "targets": [
+      {
+        "audio_hash": "16698dc84750a65bdf934c96a1e910440b3bc70dfb3730ed35be122b4f7b8513"
+      }
+    ]
+  },
+  {
+    "id": "public_11_otevrena_data",
+    "question": "zverejnovani mestskych dat v pouzitelnych formatech",
+    "targets": [
+      {
+        "audio_hash": "9fa791905d31e43baa3efdede08d8a6c558fb133244adeafc2fbe4ccdfb18493"
+      }
+    ]
+  },
+  {
+    "id": "public_12_skladovani_semen",
+    "question": "jak udrzet semena zeleniny pres zimu v suchu",
+    "targets": [
+      {
+        "audio_hash": "052ddf4f4f2ca6d72288599f57c4e4e46c8d274e339d14ed46fce8618b37709d"
+      }
+    ]
+  },
+  {
+    "id": "public_13_mapove_znacky",
+    "question": "jak cist vrstevnice a turisticke znacky na mape",
+    "targets": [
+      {
+        "audio_hash": "bd1cc97611b82314c785e7e80ff6e75fb1fef66bf89b845ad086ca820df1581c"
+      }
+    ]
+  },
+  {
+    "id": "public_14_uprava_nahravky",
+    "question": "odstraneni dlouhych pauz pri zachovani prirozene reci",
+    "targets": [
+      {
+        "audio_hash": "15640291bb3f2a24d44138697a27721211700aa0361355e649b819bf00259016"
+      }
+    ]
+  },
+  {
+    "id": "public_15_destova_voda",
+    "question": "bezpecny sber destove vody pro zahradni rostliny",
+    "targets": [
+      {
+        "audio_hash": "b63fc0cf4848a4bf9f0bfdecb25e30fbbb51d88f09febed234d7899fe20fc25c"
+      }
+    ]
+  },
+  {
+    "id": "public_16_rozhovor_s_pametnikem",
+    "question": "nahravani rozhovoru s pametnikem s jasnym souhlasem",
+    "targets": [
+      {
+        "audio_hash": "e42b261b51ee39d5740cb48272821ea61e51bd064ce735982932194180a8139a"
+      }
+    ]
+  },
+  {
+    "id": "public_17_rozlozeni_klavesnice",
+    "question": "prepinani rozlozeni klavesnice pro znaky s diakritikou",
+    "targets": [
+      {
+        "audio_hash": "68edee53408da68fc1303bc5f703a8073cb1eb44398460c903df3b5aab5cbd4c"
+      }
+    ]
+  },
+  {
+    "id": "public_18_bylinky_v_okne",
+    "question": "vyber bylinek pro slunne okno v byte",
+    "targets": [
+      {
+        "audio_hash": "ff0d979a4c2e7c2ba4da2d7e47d9b58ce534b68f09e937748ababe6f403ca06d"
+      }
+    ]
+  },
+  {
+    "id": "public_19_vlakovy_prestup",
+    "question": "jak pocitat cas na prestup ve vlakovem jizdnim radu",
+    "targets": [
+      {
+        "audio_hash": "972026ba50d24ef01aa3afc4ec24652e043528548d1b53b7cef0aeae7ae18ecb"
+      }
+    ]
+  },
+  {
+    "id": "public_20_archivni_audio",
+    "question": "vyber archivniho formatu pro nahravky mluveneho slova",
+    "targets": [
+      {
+        "audio_hash": "6f87a000609d6ec02dfc6b7be223253bc72b18b8cef5fbb4ded1c2d83a66ee88"
+      }
+    ]
+  }
+]

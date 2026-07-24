@@ -1,0 +1,41 @@
+# Example Besedy configuration for the Docker container (production).
+# Copy to besedy.container.toml (gitignored) and set superadmin_email.
+# Container paths - mounted via docker-compose.yml
+
+[paths]
+# Text data mounted at /data/text (catalogs/, transcripts/)
+text_data_dir = "/data/text"
+# Posters stored separately (writable volume)
+posters_dir = "/data/posters"
+# Recording sources stored separately (writable volume)
+sources_dir = "/data/sources"
+# Audio artifacts mounted at /data/audio
+audio_artifacts_dir = "/data/audio"
+# Subdirectories (relative to text_data_dir)
+transcripts_dir = "transcripts"
+speaker_clusters_dir = "speaker_clusters"
+
+[web]
+# Email that will be auto-created as superadmin on first OAuth login.
+superadmin_email = ""
+# Default text shown in the Deep Search Instructions field for new jobs.
+deep_search_default_instructions = """
+Odpověz česky a vytvoř ucelený, srozumitelný a dobře strukturovaný výklad k uživatelovu dotazu. Cílem není jen krátká odpověď, ale materiál, který čtenáři pomůže dané téma pochopit v kontextu besed.
+
+Pracuj průzkumně. Neomezuj se na první nalezené pasáže. Používej další vyhledávání, podobné formulace, související pojmy a následné dotazy, dokud nezískáš dostatek relevantního materiálu. U důležitých tvrzení ověřuj, zda se opírají o více míst v datech, nebo jen o jednu nejasnou pasáž. Když najdeš rozpor, nejasnost nebo různé úhly pohledu, výslovně je popiš.
+
+Počítej s tím, že přepisy jsou přirozené rozhovory: otázky a odpovědi nemusí mít jasné hranice, mluví více lidí, téma může odbíhat a vracet se, některé pasáže mohou obsahovat chyby automatického přepisu. Proto vždy zkoumej okolní kontext nalezených úryvků a odlišuj hlavní myšlenku od odboček, žertů, příkladů a nepřesných formulací.
+
+Počítej také s tím, že některé přepisy mohou být velmi podobné, protože jedna událost mohla být nahrána více rekordéry nebo zpracována více přepisovacími modely. Nedělej z takových duplicit falešně nezávislé důkazy. Pokud se pasáže překrývají, sluč je jako jeden zdrojový okruh.
+
+Výstup napiš ve formátu Markdown a strukturuj ho logicky:
+1. Krátká přímá odpověď na dotaz.
+2. Kontext: jak se téma v besedách objevuje a v jakých souvislostech.
+3. Hlavní zjištění: několik jasně oddělených bodů s vysvětlením.
+4. Syntéza: jak jednotlivé části zapadají dohromady a co z nich plyne.
+5. Nejasnosti a limity: co z dat nelze jistě uzavřít, kde může hrát roli chyba přepisu nebo nedostatek kontextu.
+6. Doporučené další směry hledání, pokud by bylo potřeba téma prohloubit.
+7. Reference: na samém konci dokumentu uveď samostatnou sekci s konkrétní oporou v nalezených pasážích. Tam soustřeď použité chunk ID, audio hashe, časy a další dostupné identifikátory, podobně jako se běžně uvádějí reference.
+
+Nepřidávej tvrzení, která nejsou podložená nalezenými přepisy. Když je evidence slabá, řekni to otevřeně. Piš přirozenou češtinou, věcně a přehledně, bez zbytečného akademického stylu.
+"""

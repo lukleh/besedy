@@ -1,0 +1,38 @@
+name: besedy-backends
+
+services:
+  faster-whisper:
+    image: "${BESEDY_FASTER_WHISPER_IMAGE:-besedy/faster-whisper:local}"
+    build:
+      context: ..
+      dockerfile: backends/faster-whisper/Dockerfile
+    init: true
+    gpus: all
+  nemo:
+    image: "${BESEDY_NEMO_IMAGE:-besedy/nemo:local}"
+    build:
+      context: ..
+      dockerfile: backends/nemo/Dockerfile
+    init: true
+    gpus: all
+  qwen3-asr:
+    image: "${BESEDY_QWEN3_ASR_IMAGE:-besedy/qwen3-asr:local}"
+    build:
+      context: ..
+      dockerfile: backends/qwen3-asr/Dockerfile
+    init: true
+    gpus: all
+  whisperx:
+    image: "${BESEDY_WHISPERX_IMAGE:-besedy/whisperx:local}"
+    build:
+      context: ..
+      dockerfile: backends/whisperx/Dockerfile
+    init: true
+    gpus: all
+  pyannote:
+    image: "${BESEDY_PYANNOTE_IMAGE:-besedy/pyannote:local}"
+    build:
+      context: ..
+      dockerfile: backends/pyannote/Dockerfile
+    init: true
+    gpus: all

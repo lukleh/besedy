@@ -1,0 +1,83 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.DS_Store
+
+# Testing and coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.playwright-mcp/
+
+# Tool caches & generated artifacts
+.ruff_cache/
+.ragatouille/
+.rlm_workspace/
+mlflow.db
+
+# Virtual environments
+.venv
+.uv-cache
+.env
+jobs-service/.env.*
+transcripts
+transcripts_*/
+transcripts_parquet
+transcripts_parquet_*/
+transcripts_txt
+transcripts_txt_*/
+transcripts_merged
+transcripts_merged_*/
+speaker_clusters
+speaker_clusters_*/
+audio_enhanced_*
+audio_listen_*
+audio_asr_*
+audio_archived
+audio_staged
+mlx_models
+node_modules/
+worksheet*.md
+*.csv
+*.bak
+models*
+!besedy/lib/prefect_jobs/models.py
+# Claude Code - allow shared settings, ignore local overrides
+.claude/settings.local.json
+.claude/*.local.*
+test_commands.sh
+external/
+scratch
+tmp
+._.*
+._*
+.~*
+logs
+*.log
+*.err
+outputs
+diagnostics/
+screenshots/
+# Root-level PNG screenshots
+/*.png
+pretrained_models/
+worktrees/
+backups/
+besedy.toml
+
+# Local experiment artifacts
+experiments/rlm_bench/reports/
+experiments/rlm_greenfield/logs/
+experiments/rlm_greenfield/reports/
+mlruns/
+
+# Corpus-linked RAG evaluation inputs
+tests/fixtures/rag/local/
+
+# clawpatch tool artifacts
+.clawpatch/
+clawpatch_findings.md

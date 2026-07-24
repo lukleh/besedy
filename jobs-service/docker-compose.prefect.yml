@@ -1,0 +1,106 @@
+name: besedy-prefect
+
+services:
+  prefect-postgres:
+    image: postgres:${POSTGRES_VERSION:-17}-alpine
+    container_name: besedy-prefect-postgres
+    environment:
+      POSTGRES_USER: ${PREFECT_POSTGRES_USER:-prefect}
+      POSTGRES_PASSWORD: ${PREFECT_POSTGRES_PASSWORD:-prefect}
+      POSTGRES_DB: ${PREFECT_POSTGRES_DB:-prefect}
+    ports:
+      - "${PREFECT_DB_HOST_BIND:-127.0.0.1}:${PREFECT_DB_PORT:-5435}:5432"
+    volumes:
+      - prefect_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${PREFECT_POSTGRES_USER:-prefect} -d ${PREFECT_POSTGRES_DB:-prefect}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - prefect
+    restart: unless-stopped
+
+  prefect-db-upgrade:
+    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.7.8-python3.13}
+    container_name: besedy-prefect-db-upgrade
+    depends_on:
+      prefect-postgres:
+        condition: service_healthy
+    command:
+      - prefect
+      - server
+      - database
+      - upgrade
+      - --yes
+    environment:
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect}
+    networks:
+      - prefect
+
+  prefect-server:
+    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.7.8-python3.13}
+    container_name: besedy-prefect-server
+    depends_on:
+      prefect-db-upgrade:
+        condition: service_completed_successfully
+    command:
+      - prefect
+      - server
+      - start
+      - --host
+      - 0.0.0.0
+      - --port
+      - "4200"
+      - --no-services
+    environment:
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect}
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_SERVER_API_PORT: 4200
+      PREFECT_UI_API_URL: ${PREFECT_UI_API_URL:-http://localhost:4200/api}
+    ports:
+      - "${PREFECT_HOST_BIND:-127.0.0.1}:${PREFECT_PORT:-4200}:4200"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:4200/api/health', timeout=2).read().decode().strip() == 'true' else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - prefect
+    restart: unless-stopped
+
+  prefect-services:
+    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.7.8-python3.13}
+    container_name: besedy-prefect-services
+    depends_on:
+      prefect-db-upgrade:
+        condition: service_completed_successfully
+      prefect-server:
+        condition: service_healthy
+    command:
+      - prefect
+      - server
+      - services
+      - start
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect}
+    networks:
+      - prefect
+    restart: unless-stopped
+
+volumes:
+  prefect_postgres_data:
+    name: ${BESEDY_PREFECT_POSTGRES_VOLUME:-besedy_prefect_postgres}
+    external: true
+
+networks:
+  prefect:
+    name: ${BESEDY_PREFECT_NETWORK:-besedy-prefect}
+    external: true

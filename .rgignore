@@ -1,0 +1,38 @@
+# Generated code and build outputs
+web/src/generated/
+web/.next/
+web/coverage/
+web/playwright-report/
+web/test-results/
+web/test-output/
+web/qa-results/
+
+# Local dependency caches
+.venv/
+.uv-cache/
+node_modules/
+external/
+
+# Common pipeline outputs and local artifacts
+transcripts/
+transcripts_*/
+transcripts_parquet/
+transcripts_parquet_*/
+transcripts_txt/
+transcripts_txt_*/
+transcripts_merged/
+transcripts_merged_*/
+speaker_clusters/
+speaker_clusters_*/
+audio_enhanced_*
+audio_listen_*
+audio_asr_*
+audio_archived/
+audio_staged/
+logs/
+tmp/
+outputs/
+diagnostics/
+screenshots/
+mlruns/
+web/tests/e2e/fixtures/

@@ -1,0 +1,111 @@
+name: besedy-jobs-test
+
+services:
+  jobs-api:
+    container_name: besedy-test-jobs-api
+    build:
+      context: ..
+      dockerfile: jobs-service/Dockerfile
+    working_dir: /workspace/besedy
+    command:
+      - python
+      - -m
+      - besedy.lib.prefect_jobs.server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${JOBS_SERVICE_PORT:-8390}"
+    environment:
+      PREFECT_API_URL: ${PREFECT_API_URL:-http://besedy-prefect-server:4200/api}
+      PREFECT_UI_URL: ${PREFECT_UI_URL:-http://localhost:4200}
+      JOBS_SERVICE_HOST: 0.0.0.0
+      JOBS_SERVICE_PORT: ${JOBS_SERVICE_PORT:-8390}
+      PREFECT_DEEP_SEARCH_WORK_POOL: ${PREFECT_DEEP_SEARCH_WORK_POOL:-besedy-deep-search-test}
+      PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME: ${PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME:-deep-search-test}
+      PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME: ${PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME:-deep_search_flow/deep-search-test}
+      PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT: ${PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT:-10}
+      DEEP_SEARCH_OUTPUT_ENV: ${DEEP_SEARCH_OUTPUT_ENV:-test}
+      DEEP_SEARCH_OUTPUT_DIR: ${DEEP_SEARCH_OUTPUT_DIR:-/state/lukleh/besedy/deep-search/${DEEP_SEARCH_OUTPUT_ENV:-test}}
+      BESEDY_CONFIG: ${BESEDY_CONFIG_CONTAINER:-/run/besedy/config/besedy.toml}
+      BESEDY_OUTPUT_CHOWN_UID: ${BESEDY_OUTPUT_CHOWN_UID:-}
+      BESEDY_OUTPUT_CHOWN_GID: ${BESEDY_OUTPUT_CHOWN_GID:-}
+      BESEDY_JOB_SERVICE_SECRET: ${BESEDY_JOB_SERVICE_SECRET:-}
+    volumes:
+      - ..:/workspace/besedy:rw
+      - ${BESEDY_CONFIG_FILE:-${HOME}/.config/lukleh/besedy/besedy.toml}:${BESEDY_CONFIG_CONTAINER:-/run/besedy/config/besedy.toml}:ro
+      - ${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/deep-search:/state/lukleh/besedy/deep-search:rw
+    ports:
+      - "${JOBS_SERVICE_HOST_BIND:-127.0.0.1}:${JOBS_SERVICE_HOST_PORT:-8392}:${JOBS_SERVICE_PORT:-8390}"
+    networks:
+      - default
+      - besedy_internal
+      - besedy_prefect
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:${JOBS_SERVICE_PORT:-8390}/health', timeout=2).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prefect-worker:
+    container_name: besedy-test-prefect-worker
+    build:
+      context: ..
+      dockerfile: jobs-service/Dockerfile
+    working_dir: /workspace/besedy
+    command:
+      - prefect
+      - worker
+      - start
+      - --pool
+      - "${PREFECT_DEEP_SEARCH_WORK_POOL:-besedy-deep-search-test}"
+      - --type
+      - process
+      - --limit
+      - "${PREFECT_WORKER_LIMIT:-10}"
+      - --install-policy
+      - never
+    environment:
+      PREFECT_API_URL: ${PREFECT_API_URL:-http://besedy-prefect-server:4200/api}
+      PREFECT_DEEP_SEARCH_WORK_POOL: ${PREFECT_DEEP_SEARCH_WORK_POOL:-besedy-deep-search-test}
+      DEEP_SEARCH_OUTPUT_ENV: ${DEEP_SEARCH_OUTPUT_ENV:-test}
+      DEEP_SEARCH_OUTPUT_DIR: ${DEEP_SEARCH_OUTPUT_DIR:-/state/lukleh/besedy/deep-search/${DEEP_SEARCH_OUTPUT_ENV:-test}}
+      BESEDY_CONFIG: ${BESEDY_CONFIG_CONTAINER:-/run/besedy/config/besedy.toml}
+      BESEDY_OUTPUT_CHOWN_UID: ${BESEDY_OUTPUT_CHOWN_UID:-}
+      BESEDY_OUTPUT_CHOWN_GID: ${BESEDY_OUTPUT_CHOWN_GID:-}
+      DEEP_SEARCH_EXECUTION_MODE: ${DEEP_SEARCH_EXECUTION_MODE:-rlm}
+      BESEDY_INTERNAL_BASE_URL: ${BESEDY_INTERNAL_BASE_URL:-http://besedy-test-web:3000}
+      BESEDY_JOB_SERVICE_SECRET: ${BESEDY_JOB_SERVICE_SECRET:-}
+      BESEDY_INTERNAL_TIMEOUT_MS: ${BESEDY_INTERNAL_TIMEOUT_MS:-15000}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      CODEX_HOME: ${CODEX_HOME:-/run/codex}
+      RLMBENCHY_LM_PROFILE: ${RLMBENCHY_LM_PROFILE:-}
+      RLMBENCHY_SUB_LM_PROFILE: ${RLMBENCHY_SUB_LM_PROFILE:-}
+      RLMBENCHY_ADAPTER_MODE: ${RLMBENCHY_ADAPTER_MODE:-auto}
+      RLMBENCHY_SEED: ${RLMBENCHY_SEED:-1}
+      RLMBENCHY_REPL_BACKEND: ${RLMBENCHY_REPL_BACKEND:-local}
+    volumes:
+      - ..:/workspace/besedy:rw
+      - ${BESEDY_CONFIG_FILE:-${HOME}/.config/lukleh/besedy/besedy.toml}:${BESEDY_CONFIG_CONTAINER:-/run/besedy/config/besedy.toml}:ro
+      - ${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/deep-search:/state/lukleh/besedy/deep-search:rw
+      - ${CODEX_HOST_AUTH_DIR:-${HOME}/.codex}:${CODEX_HOME:-/run/codex}:rw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - besedy_internal
+      - besedy_prefect
+    restart: unless-stopped
+
+networks:
+  besedy_internal:
+    name: ${BESEDY_INTERNAL_NETWORK:-besedy-internal}
+    external: true
+  besedy_prefect:
+    name: ${BESEDY_PREFECT_NETWORK:-besedy-prefect}
+    external: true

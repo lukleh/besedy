@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://besedy.local/schemas/transcript.schema.json",
+  "title": "Besedy Canonical Transcript",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["meta", "segments"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["model", "backend", "audio_filepath", "duration", "generation_params"],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": ["canary-nemo", "canary-nemo-beam", "faster-whisper", "whisperx", "qwen3-asr"]
+        },
+        "model": { "type": "string" },
+        "audio_filepath": { "type": "string" },
+        "duration": { "type": "number", "minimum": 0 },
+        "generation_params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "num_segments": { "type": "integer", "minimum": 0 },
+        "num_words": { "type": "integer", "minimum": 0 },
+        "transcript_text": { "type": "string" }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/segment" }
+    },
+    "vad_segments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/time_range" }
+    }
+  },
+  "$defs": {
+    "time_range": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "number" },
+        "end": { "type": "number" }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["start", "end", "text", "confidence", "words"],
+      "properties": {
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "text": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "words": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/word" }
+        }
+      }
+    },
+    "word": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["start", "end", "word", "confidence"],
+      "properties": {
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "word": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+# Security hardening overlay for test and production
+# Usage: docker compose -f docker-compose.yml -f docker-compose.secure.yml ...
+
+services:
+  web:
+    environment:
+      # Override Docker's HOSTNAME (container ID) so Next.js binds to all interfaces
+      HOSTNAME: "0.0.0.0"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      # Use 127.0.0.1 instead of localhost (Alpine resolves localhost to IPv6 first)
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  backup:
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

@@ -1,0 +1,885 @@
+// Besedy Web Frontend - Prisma Schema
+// See: docs/web/data-and-database.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Authentication (Better Auth)
+// ============================================================================
+
+enum UserStatus {
+  PENDING // Invited, hasn't logged in yet
+  ACTIVE // Full access based on roles
+  BLOCKED // Cannot access (replaces SUSPENDED + DEACTIVATED)
+}
+
+/// Access level for catalog access (hierarchical: LISTENER < VIEWER < MEMBER < EDITOR < OWNER)
+enum AccessLevel {
+  LISTENER // Browse catalog, stream audio, view metadata (no transcripts)
+  VIEWER // + view transcripts
+  MEMBER // + download
+  EDITOR // + edit metadata
+  OWNER // + manage access, manage pending access (can grant up to EDITOR; Admin required for OWNER)
+}
+
+/// Access status for catalog access (soft-delete support)
+enum AccessStatus {
+  ACTIVE // User has active access
+  REVOKED // Access was revoked (soft-delete)
+}
+
+enum PortalAdmissionStatus {
+  PENDING
+  CLAIMED
+  REVOKED
+}
+
+enum PortalAdmissionSource {
+  STANDALONE
+  PENDING_GRANT
+}
+
+enum PortalAdmissionRevocationReason {
+  ADMIN_DENIED
+  LAST_SPONSOR_REMOVED
+}
+
+enum PendingCatalogGrantStatus {
+  PENDING
+  CONSUMED
+  REVOKED
+}
+
+/// Catalog sync status for CSV -> DB ingestion
+enum CatalogSyncStatus {
+  SUCCESS
+  ERROR
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String?    @unique
+  emailVerified Boolean    @default(false) @map("email_verified")
+  image         String?
+  status        UserStatus @default(PENDING)
+  isSuperadmin  Boolean    @default(false) @map("is_superadmin")
+  isAdmin       Boolean    @default(false) @map("is_admin")
+  invitedById   String?    @map("invited_by_id")
+  invitedAt     DateTime?  @map("invited_at")
+  activatedAt   DateTime?  @map("activated_at")
+  lastLoginAt   DateTime?  @map("last_login_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  accounts                     Account[]
+  sessions                     Session[]
+  invitedBy                    User?                   @relation("UserInvitations", fields: [invitedById], references: [id])
+  invitedUsers                 User[]                  @relation("UserInvitations")
+  catalogAccess                CatalogAccess[]
+  accessGranted                CatalogAccess[]         @relation("AccessGrantedBy")
+  accessRevoked                CatalogAccess[]         @relation("AccessRevokedBy")
+  auditLogs                    AuditLog[]
+  clientErrorReports           ClientErrorReport[]
+  /// Portal admissions this user created or explicitly reviewed
+  portalAdmissionsAdmitted     PortalAdmission[]       @relation("PortalAdmissionAdmittedBy")
+  portalAdmissionsClaimed      PortalAdmission[]       @relation("PortalAdmissionClaimedBy")
+  portalAdmissionsRevoked      PortalAdmission[]       @relation("PortalAdmissionRevokedBy")
+  /// Pending catalog grants this user created or lifecycle-touched
+  pendingCatalogGrantsGranted  PendingCatalogGrant[]   @relation("PendingCatalogGrantGrantedBy")
+  pendingCatalogGrantsConsumed PendingCatalogGrant[]   @relation("PendingCatalogGrantConsumedBy")
+  pendingCatalogGrantsRevoked  PendingCatalogGrant[]   @relation("PendingCatalogGrantRevokedBy")
+  /// Push notification subscriptions for this user's browsers
+  pushSubscriptions            PushSubscription[]
+  /// Recording notifications for this user
+  recordingNotifications       RecordingNotification[]
+  /// Event publish notifications for this user
+  eventNotifications           EventNotification[]
+  /// Events created by this user
+  catalogEventsCreated         CatalogEvent[]          @relation("CatalogEventCreatedBy")
+  /// Events last updated by this user
+  catalogEventsUpdated         CatalogEvent[]          @relation("CatalogEventUpdatedBy")
+  /// Deep-search jobs owned by this user and shared with others
+  deepSearchSharesOwned        DeepSearchJobShare[]    @relation("DeepSearchJobShareOwner")
+  /// Deep-search jobs shared with this user
+  deepSearchSharesReceived     DeepSearchJobShare[]    @relation("DeepSearchJobShareRecipient")
+  /// Deep-search shares created by this user
+  deepSearchSharesCreated      DeepSearchJobShare[]    @relation("DeepSearchJobShareCreator")
+
+  @@map("users")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// ============================================================================
+// Catalog Access (Direct User-to-Catalog)
+// ============================================================================
+
+/// Direct access control linking users to workflow groups (catalogs)
+model CatalogAccess {
+  id          String       @id @default(cuid())
+  /// User who has access
+  userId      String       @map("user_id")
+  /// Workflow group (catalog) being accessed
+  catalogId   String       @map("catalog_id") @db.VarChar(15)
+  /// Access level: LISTENER < VIEWER < MEMBER < EDITOR < OWNER
+  accessLevel AccessLevel  @default(LISTENER) @map("access_level")
+  /// Access status: ACTIVE or REVOKED (soft-delete)
+  status      AccessStatus @default(ACTIVE)
+  /// Who granted this access
+  grantedById String?      @map("granted_by_id")
+  /// Who revoked this access (for soft-delete)
+  revokedById String?      @map("revoked_by_id")
+  /// When access was revoked
+  revokedAt   DateTime?    @map("revoked_at")
+  /// Grant reason/notes
+  notes       String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  catalog   WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  grantedBy User?         @relation("AccessGrantedBy", fields: [grantedById], references: [id])
+  revokedBy User?         @relation("AccessRevokedBy", fields: [revokedById], references: [id])
+
+  @@unique([userId, catalogId])
+  @@index([catalogId])
+  @@index([status])
+  @@map("catalog_access")
+}
+
+// ============================================================================
+// Portal Admission And Pending Catalog Grants
+// ============================================================================
+
+/// Canonical per-email admission state for first portal claim
+model PortalAdmission {
+  id               String                           @id @default(cuid())
+  /// Canonical email address (one admission lifecycle row per email)
+  email            String                           @unique
+  /// Whether admission is standalone or derives from pending catalog sponsorship
+  source           PortalAdmissionSource
+  /// First-login admission lifecycle
+  status           PortalAdmissionStatus
+  /// Why the admission was revoked, if applicable
+  revocationReason PortalAdmissionRevocationReason? @map("revocation_reason")
+  /// User who admitted or reset this email
+  admittedById     String?                          @map("admitted_by_id")
+  /// When admission was created or reset
+  admittedAt       DateTime                         @default(now()) @map("admitted_at")
+  /// User created when this email first claimed the portal
+  claimedById      String?                          @map("claimed_by_id")
+  /// When first claim completed
+  claimedAt        DateTime?                        @map("claimed_at")
+  /// User who explicitly revoked admission
+  revokedById      String?                          @map("revoked_by_id")
+  /// When admission was revoked
+  revokedAt        DateTime?                        @map("revoked_at")
+  /// Optional operator notes
+  notes            String?
+  createdAt        DateTime                         @default(now()) @map("created_at")
+  updatedAt        DateTime                         @updatedAt @map("updated_at")
+
+  admittedBy User? @relation("PortalAdmissionAdmittedBy", fields: [admittedById], references: [id], onDelete: SetNull)
+  claimedBy  User? @relation("PortalAdmissionClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  revokedBy  User? @relation("PortalAdmissionRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([claimedById])
+  @@map("portal_admission")
+}
+
+/// Pending per-catalog grant for an email that does not yet have a claimed user
+model PendingCatalogGrant {
+  id           String                    @id @default(cuid())
+  /// Canonical email address used for first-claim matching
+  email        String
+  /// Target catalog for the future grant
+  catalogId    String                    @map("catalog_id") @db.VarChar(15)
+  /// Access level to grant when consumed
+  accessLevel  AccessLevel               @map("access_level")
+  /// Pending-grant lifecycle
+  status       PendingCatalogGrantStatus
+  /// User who created or last reset this pending grant
+  grantedById  String?                   @map("granted_by_id")
+  /// When the grant was created or reset
+  grantedAt    DateTime                  @default(now()) @map("granted_at")
+  /// User who consumed this pending grant on first claim
+  consumedById String?                   @map("consumed_by_id")
+  /// When the grant was consumed
+  consumedAt   DateTime?                 @map("consumed_at")
+  /// User who revoked this pending grant
+  revokedById  String?                   @map("revoked_by_id")
+  /// When the grant was revoked
+  revokedAt    DateTime?                 @map("revoked_at")
+  /// Optional operator notes
+  notes        String?
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+
+  catalog    WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Restrict)
+  grantedBy  User?         @relation("PendingCatalogGrantGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  consumedBy User?         @relation("PendingCatalogGrantConsumedBy", fields: [consumedById], references: [id], onDelete: SetNull)
+  revokedBy  User?         @relation("PendingCatalogGrantRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@unique([email, catalogId])
+  @@index([status])
+  @@index([catalogId])
+  @@index([email])
+  @@index([consumedById])
+  @@map("pending_catalog_grant")
+}
+
+// ============================================================================
+// Workflow Management
+// ============================================================================
+
+/// A timestamped workflow group binding related artifacts
+model WorkflowGroup {
+  /// Timestamp ID e.g. "20251201_143022"
+  id                    String   @id @db.VarChar(15)
+  /// User-friendly name
+  label                 String?
+  /// Path to audio_catalog_<id>_archived.csv (webm/opus paths)
+  archivedCatalogPath   String   @map("archived_catalog_path")
+  /// Path to audio_catalog_<id>.csv (rich metadata)
+  metadataCatalogPath   String   @map("metadata_catalog_path")
+  /// Path to audio_catalog_<id>_duplicates.csv (duplicate files)
+  duplicatesCatalogPath String?  @map("duplicates_catalog_path")
+  /// Transcripts directory
+  transcriptsPath       String?  @map("transcripts_path")
+  /// Soft-delete flag
+  isActive              Boolean  @default(true) @map("is_active")
+  /// Default for new users
+  isDefault             Boolean  @default(false) @map("is_default")
+  createdAt             DateTime @default(now()) @map("created_at")
+  /// Last modification time (metadata changes, catalog updates)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
+
+  metadata                AudioMetadata[]
+  preferences             UserPreferences[]
+  catalogAccess           CatalogAccess[]
+  pendingCatalogGrants    PendingCatalogGrant[]
+  variants                WorkflowVariant[]
+  /// Scan state for detecting new ready recordings
+  readyScanState          ReadyScanState?
+  /// Notifications for recordings in this catalog
+  recordingNotifications  RecordingNotification[]
+  /// Event publish notifications in this catalog
+  eventNotifications      EventNotification[]
+  /// DB-backed serving entries derived from CSV catalogs
+  catalogEntries          CatalogEntry[]
+  /// Duplicate rows derived from duplicates CSV
+  catalogDuplicates       CatalogDuplicate[]
+  /// Listening availability rows per variant
+  catalogListeningEntries CatalogListeningEntry[]
+  /// Per-source sync state and fingerprints
+  catalogSyncStates       CatalogSyncState[]
+  /// Event catalog rows
+  catalogEvents           CatalogEvent[]
+  /// Event-to-recording assignments
+  catalogEventRecordings  CatalogEventRecording[]
+  /// Deep-search job shares scoped to this catalog
+  deepSearchJobShares     DeepSearchJobShare[]
+
+  @@map("workflow_group")
+}
+
+// ============================================================================
+// Deep Search Job Sharing
+// ============================================================================
+
+/// Web-side read-only sharing grants for Prefect-backed deep-search jobs.
+model DeepSearchJobShare {
+  id               String   @id @default(cuid())
+  jobId            String   @map("job_id") @db.Uuid
+  catalogId        String   @map("catalog_id") @db.VarChar(15)
+  ownerUserId      String   @map("owner_user_id")
+  sharedWithUserId String   @map("shared_with_user_id")
+  sharedByUserId   String?  @map("shared_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  catalog        WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  ownerUser      User          @relation("DeepSearchJobShareOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  sharedWithUser User          @relation("DeepSearchJobShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedByUser   User?         @relation("DeepSearchJobShareCreator", fields: [sharedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([jobId, sharedWithUserId])
+  @@index([catalogId, sharedWithUserId])
+  @@index([ownerUserId])
+  @@index([sharedByUserId])
+  @@map("deep_search_job_shares")
+}
+
+/// Workflow variant for different processing configurations
+model WorkflowVariant {
+  id                           Int      @id @default(autoincrement())
+  workflowGroupId              String   @map("workflow_group_id") @db.VarChar(15)
+  /// Variant identifier (e.g., "default", "enhanced")
+  variant                      String   @db.VarChar(50)
+  /// User-friendly label
+  label                        String?
+  /// Whether this is the default variant
+  isDefault                    Boolean  @default(false) @map("is_default")
+  /// Path to listening audio catalog (enhanced audio for playback)
+  listeningArchivedCatalogPath String?  @map("listening_archived_catalog_path")
+  createdAt                    DateTime @default(now()) @map("created_at")
+
+  workflowGroup           WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  catalogListeningEntries CatalogListeningEntry[]
+
+  @@unique([workflowGroupId, variant])
+  @@map("workflow_variant")
+}
+
+// ============================================================================
+// Catalog Serving Tables (CSV ingest -> DB serving)
+// ============================================================================
+
+/// DB-backed joined catalog serving row (archived + metadata full-outer join)
+model CatalogEntry {
+  workflowGroupId       String   @map("workflow_group_id") @db.VarChar(15)
+  audioHash             String   @map("audio_hash") @db.VarChar(64)
+  compressedPath        String?  @map("compressed_path")
+  originalPath          String?  @map("original_path")
+  filename              String?
+  scanRoot              String?  @map("scan_root")
+  durationHms           String?  @map("duration_hms") @db.VarChar(8)
+  sourceTitle           String?  @map("source_title")
+  sourceArtist          String?  @map("source_artist")
+  sourceAlbum           String?  @map("source_album")
+  sourceDate            String?  @map("source_date")
+  sourceMetadataPayload Json?    @map("source_metadata_payload")
+  sourceArchivedPayload Json?    @map("source_archived_payload")
+  detailsPayloadVersion Int      @default(1) @map("details_payload_version")
+  hasArchived           Boolean  @map("has_archived")
+  hasMetadata           Boolean  @map("has_metadata")
+  isActionable          Boolean  @map("is_actionable")
+  isPublished           Boolean  @default(false) @map("is_published")
+  duplicateCount        Int      @default(0) @map("duplicate_count")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+
+  @@id([workflowGroupId, audioHash])
+  @@index([workflowGroupId, isActionable])
+  @@index([workflowGroupId, isPublished])
+  @@index([workflowGroupId, sourceArtist])
+  @@index([workflowGroupId, sourceDate])
+  @@index([workflowGroupId, duplicateCount])
+  @@map("catalog_entry")
+}
+
+/// Duplicate file rows derived from duplicates CSV
+model CatalogDuplicate {
+  workflowGroupId         String   @map("workflow_group_id") @db.VarChar(15)
+  audioHash               String   @map("audio_hash") @db.VarChar(64)
+  originalPath            String   @map("original_path")
+  duplicatePath           String   @map("duplicate_path")
+  duplicatePayload        Json?    @map("duplicate_payload")
+  duplicatePayloadVersion Int      @default(1) @map("duplicate_payload_version")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+
+  @@id([workflowGroupId, audioHash, duplicatePath])
+  @@index([workflowGroupId, audioHash])
+  @@map("catalog_duplicate")
+}
+
+/// Hash availability in each listening variant catalog
+model CatalogListeningEntry {
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  variant         String   @db.VarChar(50)
+  audioHash       String   @map("audio_hash") @db.VarChar(64)
+  compressedPath  String   @map("compressed_path")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  workflowGroup   WorkflowGroup   @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  workflowVariant WorkflowVariant @relation(fields: [workflowGroupId, variant], references: [workflowGroupId, variant], onDelete: Cascade)
+
+  @@id([workflowGroupId, variant, audioHash])
+  @@index([workflowGroupId, audioHash])
+  @@map("catalog_listening_entry")
+}
+
+/// Per-source sync fingerprint and status
+model CatalogSyncState {
+  workflowGroupId String            @map("workflow_group_id") @db.VarChar(15)
+  sourceKey       String            @map("source_key")
+  filePath        String            @map("file_path")
+  fingerprint     String
+  rowCount        Int               @default(0) @map("row_count")
+  syncedAt        DateTime          @map("synced_at")
+  status          CatalogSyncStatus
+  lastError       String?           @map("last_error")
+
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+
+  @@id([workflowGroupId, sourceKey])
+  @@map("catalog_sync_state")
+}
+
+/// Event-level grouping of catalog recordings by location + date
+model CatalogEvent {
+  id                  Int       @id @default(autoincrement())
+  workflowGroupId     String    @map("workflow_group_id") @db.VarChar(15)
+  title               String?
+  locationId          Int       @map("location_id")
+  dateYear            Int       @map("date_year")
+  dateMonth           Int?      @map("date_month")
+  dateDay             Int?      @map("date_day")
+  /// 1-based program/session order for multiple distinct events at the same place and date
+  sessionIndex        Int       @default(1) @map("session_index")
+  description         String?
+  released            Boolean   @default(false)
+  /// First time publish notifications were created for this event
+  publishedNotifiedAt DateTime? @map("published_notified_at")
+  sortOrder           Int       @default(0) @map("sort_order")
+  createdById         String    @map("created_by")
+  updatedById         String    @map("updated_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  workflowGroup       WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  location            Location                @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy           User                    @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
+  updatedBy           User                    @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
+  recordings          CatalogEventRecording[]
+  eventNotifications  EventNotification[]
+
+  @@unique([id, workflowGroupId])
+  @@index([workflowGroupId, released])
+  @@map("catalog_event")
+}
+
+/// Recording assignments for each event
+model CatalogEventRecording {
+  eventId         Int      @map("event_id")
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  audioHash       String   @map("audio_hash") @db.VarChar(64)
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  event         CatalogEvent  @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+
+  @@id([workflowGroupId, audioHash])
+  @@map("catalog_event_recording")
+}
+
+// ============================================================================
+// Curated Metadata
+// ============================================================================
+
+/// Curated/edited metadata for audio recordings
+model AudioMetadata {
+  id              Int       @id @default(autoincrement())
+  workflowGroupId String    @map("workflow_group_id") @db.VarChar(15)
+  /// Audio content hash (SHA256 of decoded PCM at 16kHz mono) linking to catalog
+  audioHash       String    @map("audio_hash") @db.VarChar(64)
+  title           String?
+  artist          String?
+  /// FK to Album
+  albumId         Int?      @map("album_id")
+  /// Year e.g. 2013
+  dateYear        Int?      @map("date_year")
+  /// Month 1-12
+  dateMonth       Int?      @map("date_month")
+  /// Day 1-31
+  dateDay         Int?      @map("date_day")
+  notes           String?
+  /// Array of tags
+  tags            String[]  @default([])
+  verified        Boolean   @default(false)
+  verifiedAt      DateTime? @map("verified_at")
+  /// User who verified (future: user ID)
+  verifiedBy      String?   @map("verified_by") @db.VarChar(255)
+  /// FK to Recorder (zvukař - person who made the recording)
+  recorderId      Int?      @map("recorder_id")
+  /// FK to Location (where the recording took place)
+  locationId      Int?      @map("location_id")
+  /// Part number for multi-part recordings (1, 2, 3...)
+  part            Int?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id])
+  recorder      Recorder?     @relation(fields: [recorderId], references: [id], onDelete: Restrict)
+  location      Location?     @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  album         Album?        @relation(fields: [albumId], references: [id], onDelete: Restrict)
+
+  @@unique([workflowGroupId, audioHash])
+  @@index([recorderId])
+  @@index([locationId])
+  @@index([albumId])
+  @@map("audio_metadata")
+}
+
+// ============================================================================
+// User Preferences
+// ============================================================================
+
+/// User preferences including active group and UI settings
+model UserPreferences {
+  /// User ID (Phase 1a: "local" for single-user mode)
+  userId         String   @id @map("user_id") @db.VarChar(255)
+  activeGroupId  String?  @map("active_group") @db.VarChar(15)
+  /// Theme: 'light', 'dark', 'system'
+  theme          String   @default("system") @db.VarChar(10)
+  /// Visible catalog columns
+  catalogColumns String[] @default([]) @map("catalog_columns")
+  /// Additional settings as JSON
+  settings       Json     @default("{}")
+
+  activeGroup WorkflowGroup? @relation(fields: [activeGroupId], references: [id])
+
+  @@map("user_preferences")
+}
+
+/// Admin-configured ordering for transcript backends
+model TranscriptBackendPriority {
+  id        Int      @id @default(autoincrement())
+  backend   String   @unique @db.VarChar(255)
+  priority  Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("transcript_backend_priority")
+}
+
+// ============================================================================
+// Audit Logging
+// ============================================================================
+
+enum AuditAction {
+  // Authentication
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  // Portal admission and pending catalog grants
+  PORTAL_ADMISSION_CREATED
+  PORTAL_ADMISSION_UPDATED
+  PORTAL_ADMISSION_CLAIMED
+  PORTAL_ADMISSION_REVOKED
+  PORTAL_ADMISSION_RESET
+  PENDING_CATALOG_GRANT_CREATED
+  PENDING_CATALOG_GRANT_UPDATED
+  PENDING_CATALOG_GRANT_REVOKED
+  PENDING_CATALOG_GRANT_CONSUMED
+  // User management
+  USER_ADDED
+  USER_ACTIVATED
+  USER_BLOCKED
+  USER_UNBLOCKED
+  USER_DELETED
+  // Admin role management
+  ADMIN_ROLE_GRANTED
+  ADMIN_ROLE_REVOKED
+  // Catalog access management
+  CATALOG_ACCESS_GRANTED
+  CATALOG_ACCESS_UPDATED
+  CATALOG_ACCESS_REVOKED
+  // Catalog management
+  CATALOG_CREATED
+  CATALOG_UPDATED
+  CATALOG_DEACTIVATED
+  // Data access
+  CATALOG_VIEWED
+  AUDIO_STREAMED
+  AUDIO_DOWNLOADED
+  TRANSCRIPT_VIEWED
+  TRANSCRIPT_DOWNLOADED
+  // Content changes
+  METADATA_UPDATED
+  METADATA_VERIFIED
+  METADATA_DELETED
+  // Security events
+  ACCESS_DENIED
+  SUPERADMIN_ACCESS
+}
+
+/// Audit log entry for tracking security-relevant events
+model AuditLog {
+  id         String      @id @default(cuid())
+  /// User who performed the action (null for system/anonymous)
+  userId     String?     @map("user_id")
+  /// Type of action performed
+  action     AuditAction
+  /// Canonical audit domain for faceted filtering
+  domain     String?     @db.VarChar(50)
+  /// Canonical subject type for faceted filtering
+  subjectType String?    @map("subject_type") @db.VarChar(50)
+  /// Canonical subject identifier for faceted filtering
+  subjectId  String?     @map("subject_id") @db.VarChar(191)
+  /// Associated catalog/workflow group when relevant
+  catalogId  String?     @map("catalog_id") @db.VarChar(191)
+  /// Canonical outcome/severity label
+  outcome    String?     @db.VarChar(20)
+  /// Canonical payload schema version
+  payloadVersion Int?    @map("payload_version")
+  /// Resource type (e.g., "user", "catalog", "audio", "group")
+  resource   String      @db.VarChar(50)
+  /// Resource identifier (e.g., user ID, audio hash)
+  resourceId String?     @map("resource_id") @db.VarChar(64)
+  /// Additional context as JSON (changed fields, old/new values, etc.)
+  details    Json?
+  /// Client IP address
+  ipAddress  String?     @map("ip_address") @db.VarChar(45)
+  /// User agent string
+  userAgent  String?     @map("user_agent")
+  /// Timestamp of the event
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([domain, createdAt])
+  @@index([subjectType, createdAt])
+  @@index([subjectId, createdAt])
+  @@index([catalogId, createdAt])
+  @@index([outcome, createdAt])
+  @@index([payloadVersion, createdAt])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+/// Client-side error report captured from the browser
+model ClientErrorReport {
+  id        String   @id @default(cuid())
+  /// User associated with the session (null for anonymous)
+  userId    String?  @map("user_id")
+  /// Error message (required)
+  message   String   @db.Text
+  /// Stack trace (if available)
+  stack     String?  @db.Text
+  /// Next.js error digest (if available)
+  digest    String?  @db.VarChar(64)
+  /// Error source (error-boundary, window.onerror, etc.)
+  source    String?  @db.VarChar(50)
+  /// Page URL where the error occurred
+  url       String?  @db.Text
+  /// User agent string
+  userAgent String?  @map("user_agent")
+  /// Client IP address
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  /// Additional context for debugging
+  context   Json?
+  /// Timestamp of the report
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([source])
+  @@index([digest])
+  @@index([createdAt])
+  @@map("client_error_report")
+}
+
+// ============================================================================
+// Global Enums (Cross-Catalog Lookup Tables)
+// ============================================================================
+
+/// Recorder (zvukař) - person who made the recording
+model Recorder {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  audioMetadata AudioMetadata[]
+
+  @@map("recorders")
+}
+
+/// Location - where the recording took place
+model Location {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  audioMetadata AudioMetadata[]
+  catalogEvents CatalogEvent[]
+
+  @@map("locations")
+}
+
+/// Album - collection of recordings
+model Album {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  audioMetadata AudioMetadata[]
+
+  @@map("albums")
+}
+
+// ============================================================================
+// Push Notifications
+// ============================================================================
+
+/// Tracks known ready hashes per catalog for change detection
+model ReadyScanState {
+  id               Int      @id @default(autoincrement())
+  /// Workflow group (catalog) ID
+  catalogId        String   @unique @map("catalog_id") @db.VarChar(15)
+  /// JSON array of all known ready hashes
+  knownReadyHashes Json     @default("[]") @map("known_ready_hashes")
+  /// SHA-256 of sorted hashes for quick comparison
+  stateHash        String   @map("state_hash") @db.VarChar(64)
+  /// Last successful scan timestamp
+  lastScanAt       DateTime @map("last_scan_at")
+  /// Total ready count at last scan
+  readyCount       Int      @default(0) @map("ready_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  catalog WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+
+  @@map("ready_scan_state")
+}
+
+/// Per-user per-recording notification for direct links
+model RecordingNotification {
+  id        String    @id @default(cuid())
+  /// User to notify
+  userId    String    @map("user_id")
+  /// Catalog where recording became ready
+  catalogId String    @map("catalog_id") @db.VarChar(15)
+  /// Audio hash of the ready recording
+  audioHash String    @map("audio_hash") @db.VarChar(64)
+  /// Recording title for display (denormalized for performance)
+  title     String?
+  /// Batch ID to group notifications created at same time
+  batchId   String    @map("batch_id") @db.VarChar(36)
+  /// Whether user has seen/dismissed this notification
+  isRead    Boolean   @default(false) @map("is_read")
+  /// When the notification was read
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  catalog WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, catalogId, audioHash])
+  @@index([userId, isRead])
+  @@index([batchId])
+  @@map("recording_notifications")
+}
+
+/// Per-user per-event notification for newly published events
+model EventNotification {
+  id        String    @id @default(cuid())
+  /// User to notify
+  userId    String    @map("user_id")
+  /// Catalog containing the event
+  catalogId String    @map("catalog_id") @db.VarChar(15)
+  /// Event that was published
+  eventId   Int       @map("event_id")
+  /// Event title for display (denormalized for performance)
+  title     String?
+  /// Whether user has seen/dismissed this notification
+  isRead    Boolean   @default(false) @map("is_read")
+  /// When the notification was read
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  catalog WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  event   CatalogEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, catalogId, eventId])
+  @@index([userId, isRead])
+  @@index([catalogId, eventId])
+  @@map("event_notifications")
+}
+
+/// Push subscription for browser notifications
+model PushSubscription {
+  id         String    @id @default(cuid())
+  /// User who owns this subscription
+  userId     String    @map("user_id")
+  /// Push service endpoint URL (unique per browser)
+  endpoint   String    @unique @db.Text
+  /// P256DH key for encryption (URL-safe Base64)
+  p256dh     String    @db.VarChar(255)
+  /// Auth secret for encryption (URL-safe Base64)
+  auth       String    @db.VarChar(64)
+  /// User agent for debugging (optional)
+  userAgent  String?   @map("user_agent")
+  /// When subscription was created
+  createdAt  DateTime  @default(now()) @map("created_at")
+  /// Last successful push (for cleanup)
+  lastUsedAt DateTime? @map("last_used_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}

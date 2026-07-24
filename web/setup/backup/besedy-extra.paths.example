@@ -1,0 +1,7 @@
+# source|label
+# Copy to besedy-extra.paths (gitignored) and set the real source paths.
+/path/to/besedy_audio|audio/besedy_audio
+/path/to/original-media|audio/original
+/path/to/state/besedy/web/backups|state/db_dumps
+/path/to/config/lukleh/besedy|config/lukleh_besedy
+/path/to/state/besedy/web/logs/prod|state/web_logs
