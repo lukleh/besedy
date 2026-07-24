@@ -863,7 +863,9 @@ class TestPipelineRagIndexing:
             lambda _args: default_pipeline_rag_backend_key(),
         )
 
-        assert handle_run_pipeline(_pipeline_args()) == 0
+        assert (
+            handle_run_pipeline(_pipeline_args(rag_colbert_runtime="docker-indexer")) == 0
+        )
         assert len(colbert_calls) == 1
         assert colbert_calls[0].runtime == "docker-indexer"
 
