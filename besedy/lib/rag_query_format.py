@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Literal
 
 EMBEDDING_QUERY_FORMATS = ("raw", "qwen-instruct")
 DEFAULT_QWEN_EMBEDDING_QUERY_INSTRUCTION = (
@@ -17,7 +17,7 @@ def normalize_embedding_query_format(value: str) -> EmbeddingQueryFormat:
 
     normalized = value.strip().lower()
     if normalized in EMBEDDING_QUERY_FORMATS:
-        return cast(EmbeddingQueryFormat, normalized)
+        return normalized
     supported = ", ".join(EMBEDDING_QUERY_FORMATS)
     raise ValueError(f"Invalid embedding query format: {value!r}. Expected one of: {supported}")
 
