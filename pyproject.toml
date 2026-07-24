@@ -23,34 +23,34 @@ dependencies = [
 
 [project.optional-dependencies]
 jobs = [
-    "prefect==3.7.8",
+    "prefect==3.8.0",
     "rlmbenchy @ git+https://github.com/lukleh/rlmbenchy.git@99ac7864c52f15d298d39fac80dd0c72a2d2ab27",
 ]
 ml = [
     # Optional host-side helpers for RAG, speaker tooling, and workflow scripts.
     # Core catalog/analyze commands stay lightweight; Docker backend images own
     # their runtime-specific dependency stacks.
-    "huggingface-hub>=1.0.0",
-    "numpy>=2.0.0",
-    "omegaconf>=2.3.0",
+    "huggingface-hub>=1.24.0",
+    "numpy>=2.5.1",
+    "omegaconf>=2.3.1",
     "pyyaml>=6.0.2",
-    "scipy>=1.15.0",
-    "silero-vad>=6.0.0",
+    "scipy>=1.18.0",
+    "silero-vad>=6.2.1",
     "soundfile>=0.14.0",
     "torch>=2.9.0",
     "torchaudio>=2.9.0",
     "torchcodec>=0.15.0",
-    "transformers>=5.5.0",
+    "transformers>=5.14.1",
 ]
 
 [dependency-groups]
 dev = [
-    "numpy>=2.0.0",
+    "numpy>=2.5.1",
     "pytest>=9.0.2",
     "pyyaml>=6.0.2",
     "ruff>=0.16.0",
     "tqdm>=4.69.1",
-    "ty>=0.0.28",
+    "ty>=0.0.63",
     "vulture>=2.16",
 ]
 
