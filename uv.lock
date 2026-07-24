@@ -304,7 +304,7 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'ml'", specifier = ">=0.13.0" },
     { name = "torch", marker = "extra == 'ml'", specifier = ">=2.9.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "torchaudio", marker = "extra == 'ml'", specifier = ">=2.9.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "torchcodec", marker = "extra == 'ml'", specifier = ">=0.9.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torchcodec", marker = "extra == 'ml'", specifier = ">=0.15.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "transformers", marker = "extra == 'ml'", specifier = ">=5.5.0" },
 ]
 provides-extras = ["jobs", "ml"]
@@ -2893,17 +2893,15 @@ wheels = [
 
 [[package]]
 name = "torchcodec"
-version = "0.14.0+cu130"
+version = "0.15.0+cu130"
 source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:e3debff1c1932f0b835a250247fd04cf3a1caf5ee76977e3b2a90fece0bdb90b", upload-time = "2026-06-03T12:39:04Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:d40b91faf022d309a878a9cd5685f20279788ca2442cd1cc06c9fef687f8f34e", upload-time = "2026-06-03T12:39:04Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp312-cp312-win_amd64.whl", hash = "sha256:9ee5e1575078d220632ad33d854a928c6546324cb3942bf67e1438487c62d612", upload-time = "2026-06-03T12:39:05Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:7e8bc23f4b20e863788815a48fae54fe13647ec5e9e03921facdfee46f95fd37", upload-time = "2026-06-03T12:39:05Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:e617a1fa40d71541b9677239ec7b7937b3910022b54fe4e98af83ce12295a0da", upload-time = "2026-06-03T12:39:05Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp313-cp313-win_amd64.whl", hash = "sha256:b192bac82652fcc0fcb68cf0ebf291f7eed8b844f279966c4b502d8b9cabee32", upload-time = "2026-06-03T12:39:05Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:e249197b336b097e784d14f160913129064dff3a6e30cf0253b0f9d18baf7d3a", upload-time = "2026-06-03T12:39:05Z" },
-    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:0067feed9b4456e205a71fa4faf4c9c776f2ebd02226f639f7015aae27263c0f", upload-time = "2026-06-03T12:39:05Z" },
+    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.15.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:95a18a56fa12343e9c2e288307b7c625e81be6d5d3a7d639f39b61470c95a120", upload-time = "2026-07-15T10:08:11Z" },
+    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.15.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:54e9c069270f7cbe84123d53b87678acd834a62f14acaa45bf8558cd21669bb0", upload-time = "2026-07-15T10:08:12Z" },
+    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.15.0%2Bcu130-cp312-cp312-win_amd64.whl", hash = "sha256:0d7504dfe400741708dbc41b880757cc6f8a55c618aeaeb22d9c590f629e6726", upload-time = "2026-07-15T10:08:12Z" },
+    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.15.0%2Bcu130-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:917569af78f93b87ed98e4deec658598aefa39555d8d82f9978e14510554c28e", upload-time = "2026-07-15T10:08:12Z" },
+    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.15.0%2Bcu130-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:fd307ee346fd5f4baed89e02357285e6e46b02dad9c9c9687c41ce42810ca082", upload-time = "2026-07-15T10:08:12Z" },
+    { url = "https://download.pytorch.org/whl/cu130/torchcodec-0.15.0%2Bcu130-cp313-cp313-win_amd64.whl", hash = "sha256:41247066f833e156c432cb121ba1deff8d632ec1d551ebfc0b628e131e32d2c2", upload-time = "2026-07-15T10:08:12Z" },
 ]
 
 [[package]]

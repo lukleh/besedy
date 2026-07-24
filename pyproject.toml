@@ -39,7 +39,7 @@ ml = [
     "soundfile>=0.13.0",
     "torch>=2.9.0",
     "torchaudio>=2.9.0",
-    "torchcodec>=0.9.0",
+    "torchcodec>=0.15.0",
     "transformers>=5.5.0",
 ]
 
