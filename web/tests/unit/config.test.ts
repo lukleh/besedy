@@ -1,8 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs";
-
-// Store original env
-const originalEnv = process.env;
 
 // Mock fs module
 vi.mock("fs", async (importOriginal) => {
@@ -22,18 +19,12 @@ vi.mock("fs", async (importOriginal) => {
 describe("getSuperadminEmail", () => {
   beforeEach(() => {
     vi.resetModules();
-    // Reset env for each test
-    process.env = { ...originalEnv };
     vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
   });
 
   it("should return null when web section is not configured", async () => {
     // Set env so config can be found
-    process.env.BESEDY_CONFIG = "/mock/besedy.toml";
+    vi.stubEnv("BESEDY_CONFIG", "/mock/besedy.toml");
 
     // Mock fs
     vi.mocked(fs.existsSync).mockReturnValue(true);
@@ -51,7 +42,7 @@ describe("getSuperadminEmail", () => {
   });
 
   it("should return null when superadmin_email is empty string", async () => {
-    process.env.BESEDY_CONFIG = "/mock/besedy.toml";
+    vi.stubEnv("BESEDY_CONFIG", "/mock/besedy.toml");
 
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(`
@@ -73,7 +64,7 @@ superadmin_email = ""
   });
 
   it("should return lowercase trimmed email when configured", async () => {
-    process.env.BESEDY_CONFIG = "/mock/besedy.toml";
+    vi.stubEnv("BESEDY_CONFIG", "/mock/besedy.toml");
 
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(`
@@ -95,7 +86,7 @@ superadmin_email = " Admin@Example.COM "
   });
 
   it("should return email as-is when already lowercase", async () => {
-    process.env.BESEDY_CONFIG = "/mock/besedy.toml";
+    vi.stubEnv("BESEDY_CONFIG", "/mock/besedy.toml");
 
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(`
@@ -117,8 +108,9 @@ superadmin_email = "user@example.org"
   });
 
   it("should fall back to the preferred home config path", async () => {
-    delete process.env.BESEDY_CONFIG;
-    process.env.HOME = "/mock/home";
+    vi.stubEnv("BESEDY_CONFIG", undefined);
+    vi.stubEnv("HOME", "/mock/home");
+    vi.stubEnv("XDG_CONFIG_HOME", undefined);
 
     vi.mocked(fs.existsSync).mockImplementation(
       (candidate) => candidate === "/mock/home/.config/lukleh/besedy/besedy.toml"
@@ -142,8 +134,8 @@ superadmin_email = "home@example.org"
   });
 
   it("should honor XDG_CONFIG_HOME for home config discovery", async () => {
-    delete process.env.BESEDY_CONFIG;
-    process.env.XDG_CONFIG_HOME = "/mock/config-home";
+    vi.stubEnv("BESEDY_CONFIG", undefined);
+    vi.stubEnv("XDG_CONFIG_HOME", "/mock/config-home");
 
     vi.mocked(fs.existsSync).mockImplementation(
       (candidate) =>
@@ -171,13 +163,9 @@ superadmin_email = "override@example.org"
 describe("getDeepSearchDefaultInstructions", () => {
   beforeEach(() => {
     vi.resetModules();
-    process.env = { ...originalEnv, BESEDY_CONFIG: "/mock/besedy.toml" };
+    vi.stubEnv("BESEDY_CONFIG", "/mock/besedy.toml");
     vi.clearAllMocks();
     vi.mocked(fs.existsSync).mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
   });
 
   it("returns the configured deep-search instructions", async () => {

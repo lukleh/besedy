@@ -186,11 +186,13 @@ export async function listPendingAdminAdmissions(
       };
     });
     const catalogNames = pendingGrants.map((grant) => grant.catalogLabel);
-    const invitedBy =
-      (admission.admittedById ? actorById.get(admission.admittedById) ?? null : null) ??
-      (newestPendingGrant?.grantedById
-        ? actorById.get(newestPendingGrant.grantedById) ?? null
-        : null);
+    let invitedBy: PendingAdminAdmissionItem["invitedBy"] = null;
+    if (admission.admittedById) {
+      invitedBy = actorById.get(admission.admittedById) ?? null;
+    }
+    if (!invitedBy && newestPendingGrant?.grantedById) {
+      invitedBy = actorById.get(newestPendingGrant.grantedById) ?? null;
+    }
     const catalog = singleCatalogGrant
       ? catalogById.get(singleCatalogGrant.catalogId)
       : null;
