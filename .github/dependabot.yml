@@ -20,6 +20,10 @@ updates:
           - "minor"
           - "patch"
     ignore:
+      # Revisit when eslint-config-next's React plugin supports ESLint 10.
+      - dependency-name: "eslint"
+        versions:
+          - ">=10.0.0"
       # Revisit when an eslint-config-next update brings a typescript-eslint
       # parser whose peer range includes TypeScript 6.1 or newer.
       - dependency-name: "typescript"

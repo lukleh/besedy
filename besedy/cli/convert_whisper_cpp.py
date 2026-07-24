@@ -58,6 +58,13 @@ class TokenDict(TypedDict, total=False):
     p: float | None
 
 
+class TokenByteMapEntry(TypedDict):
+    token: TokenDict
+    byte_start: int
+    byte_end: int
+    bytes: bytes
+
+
 class SegmentDict(TypedDict, total=False):
     offsets: dict[str, int | None]
     text: str
@@ -152,7 +159,7 @@ def _merge_broken_utf8_tokens(
             print(f"  ... and {len(char_byte_map) - 10} more")
 
     # Phase 3: map tokens to byte ranges (skip specials)
-    token_byte_map = []
+    token_byte_map: list[TokenByteMapEntry] = []
     byte_pos = 0
     for idx, token in enumerate(tokens):
         token_text = token.get("text", "")
@@ -167,7 +174,6 @@ def _merge_broken_utf8_tokens(
         token_byte_map.append(
             {
                 "token": token,
-                "token_idx": idx,
                 "byte_start": byte_pos,
                 "byte_end": byte_pos + len(token_bytes),
                 "bytes": token_bytes,
@@ -204,7 +210,7 @@ def _merge_broken_utf8_tokens(
         char_info = char_byte_map[char_idx]
         char_start = char_info["byte_start"]
         char_end = char_info["byte_end"]
-        tokens_for_char = []
+        tokens_for_char: list[TokenByteMapEntry] = []
         scan_idx = token_idx
         while scan_idx < len(token_byte_map):
             token_info = token_byte_map[scan_idx]
@@ -231,7 +237,7 @@ def _merge_broken_utf8_tokens(
         first_offsets = first_token.get("offsets", {})
         last_offsets = last_token.get("offsets", {})
         confidences = [
-            t["token"].get("p") for t in tokens_for_char if t["token"].get("p") is not None
+            confidence for t in tokens_for_char if (confidence := t["token"].get("p")) is not None
         ]
         avg_confidence = sum(confidences) / len(confidences) if confidences else None
         merged_tokens.append(
@@ -439,14 +445,12 @@ def _build_words_from_tokens(
         return []
 
     token_froms = [
-        t.get("offsets", {}).get("from")
+        token_from
         for t in merged_tokens
-        if t.get("offsets", {}).get("from") is not None
+        if (token_from := t.get("offsets", {}).get("from")) is not None
     ]
     token_tos = [
-        t.get("offsets", {}).get("to")
-        for t in merged_tokens
-        if t.get("offsets", {}).get("to") is not None
+        token_to for t in merged_tokens if (token_to := t.get("offsets", {}).get("to")) is not None
     ]
     segment_token_start = min(token_froms) if token_froms else None
     segment_token_end = max(token_tos) if token_tos else None

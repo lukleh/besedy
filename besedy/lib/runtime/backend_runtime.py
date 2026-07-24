@@ -7,7 +7,7 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from besedy.config.settings import resolve_config_path
 from besedy.core.paths import PROJECT_ROOT
@@ -97,7 +97,7 @@ def normalize_backend_runtime(
     normalized = raw_value.strip().lower()
     choices = _supported_backend_runtime_choices(backend_id)
     if normalized in choices:
-        return cast(BackendRuntime, normalized)
+        return normalized
     choices_label = ", ".join(repr(choice) for choice in choices)
     if backend_id in DOCKER_ONLY_BACKENDS:
         raise RuntimeError(

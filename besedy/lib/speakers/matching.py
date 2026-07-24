@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 from scipy.cluster.hierarchy import fcluster, linkage
@@ -18,6 +18,17 @@ from scipy.spatial.distance import cdist, squareform
 # Type aliases
 SpeakerId = tuple[str, str]  # (audio_file_identifier, speaker_label)
 EmbeddingMap = dict[SpeakerId, np.ndarray]
+
+
+class SpeakerPair(TypedDict):
+    idx1: int
+    idx2: int
+    file_id1: str
+    speaker1: str
+    file_id2: str
+    speaker2: str
+    distance: float
+    similarity: float
 
 
 def find_speaker_matches(
@@ -98,7 +109,7 @@ def find_speaker_matches(
     print("All cross-file speaker similarities (sorted by similarity)")
     print("=" * 60)
 
-    pairs = []
+    pairs: list[SpeakerPair] = []
     for i in range(len(speaker_ids)):
         for j in range(i + 1, len(speaker_ids)):
             file_id1, speaker1 = speaker_ids[i]
@@ -108,7 +119,7 @@ def find_speaker_matches(
             if file_id1 == file_id2:
                 continue
 
-            distance = distance_matrix[i, j]
+            distance = float(distance_matrix[i, j])
             similarity = 1.0 - distance
             pairs.append(
                 {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from typing import Any
+from typing import Any, TypedDict
 
 from rich.console import Console
 from rich.progress import (
@@ -19,6 +19,16 @@ from rich.progress import (
 from besedy.lib.analysis.repetition import RepeatFinding, detect_all_repetitions
 
 from .common import TranscriptRecord, coerce_float, load_transcript_records, transcript_duration
+
+
+class OverlapEvent(TypedDict):
+    start: float
+    end: float
+    models: set[str]
+
+
+class OverlapCluster(OverlapEvent):
+    pair_matches: int
 
 
 def _finding_payload(finding: RepeatFinding) -> dict[str, Any]:
@@ -215,9 +225,9 @@ def _pairwise_overlap_events(
     model_spans: dict[str, list[tuple[float, float]]],
     *,
     tolerance_seconds: float,
-) -> list[dict[str, Any]]:
+) -> list[OverlapEvent]:
     """Return pairwise overlap/near-overlap events between models."""
-    events: list[dict[str, Any]] = []
+    events: list[OverlapEvent] = []
     model_keys = sorted(model_spans)
 
     for idx, model_a in enumerate(model_keys):
@@ -273,7 +283,7 @@ def _pairwise_overlap_events(
 
 
 def _merge_overlap_events(
-    events: list[dict[str, Any]],
+    events: list[OverlapEvent],
     *,
     tolerance_seconds: float,
     min_models: int,
@@ -283,9 +293,9 @@ def _merge_overlap_events(
         return []
 
     sorted_events = sorted(events, key=lambda row: (row["start"], row["end"]))
-    merged: list[dict[str, Any]] = []
+    merged: list[OverlapCluster] = []
 
-    current = {
+    current: OverlapCluster = {
         "start": float(sorted_events[0]["start"]),
         "end": float(sorted_events[0]["end"]),
         "models": set(sorted_events[0]["models"]),
