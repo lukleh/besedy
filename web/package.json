@@ -117,7 +117,7 @@
     "@types/web-push": "^3.6.4",
     "@types/yazl": "^3.3.0",
     "@vitejs/plugin-react": "^5.1.2",
-    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/coverage-v8": "^4.1.10",
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "^16.1.1",
