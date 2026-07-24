@@ -1,0 +1,252 @@
+[
+  {
+    "id": "public_keyword_kompost",
+    "category": "keyword",
+    "question": "kompost poměr zeleného a hnědého materiálu",
+    "targets": [
+      {
+        "audio_hash": "863df5d041432d96b9547c355012c8db1fdb943c09d8733a443be3a1aee982b0"
+      }
+    ]
+  },
+  {
+    "id": "public_keyword_metadata",
+    "category": "keyword",
+    "question": "metadata Dublin Core pro komunitní archiv",
+    "targets": [
+      {
+        "audio_hash": "2a71565bb7409966392bddb5980913ffe059382f2a559a96625717d980668f41"
+      }
+    ]
+  },
+  {
+    "id": "public_semantic_ozvena",
+    "category": "semantic",
+    "question": "měkké materiály omezí dutý zvuk nahrávané místnosti",
+    "targets": [
+      {
+        "audio_hash": "6c0410bdf3618d2a1f4f1f7d59140c85f4632c1abb1a32074a9dd3e28d31bf4c"
+      }
+    ]
+  },
+  {
+    "id": "public_semantic_katalog",
+    "category": "semantic",
+    "question": "jednotná hesla pomáhají najít související položky v knihovně",
+    "targets": [
+      {
+        "audio_hash": "3266d8a5d1cadafa66e27444e3dfd490cc61848ad70cb8d447e7c6b427d15519"
+      }
+    ]
+  },
+  {
+    "id": "public_diacritics_caj",
+    "category": "diacritics",
+    "question": "priprava sypaneho caje spravna teplota vody",
+    "targets": [
+      {
+        "audio_hash": "867b137cba0da7ebfe3a7cc8995d7b25d1cb2e2cadc8936418907f250ab47015"
+      }
+    ]
+  },
+  {
+    "id": "public_diacritics_nadrazi",
+    "category": "diacritics",
+    "question": "prestup na nadrazi mezi nastupisti",
+    "targets": [
+      {
+        "audio_hash": "95e09cf8541d04c32db51befe4c860839a21d1155f0ffd12344dff0f2ba390c9"
+      }
+    ]
+  },
+  {
+    "id": "public_metaphor_most",
+    "category": "metaphor",
+    "question": "metadata tvoří most mezi archivem a jeho návštěvníky",
+    "targets": [
+      {
+        "audio_hash": "439240c522a2d65d94250a56cc2973a6a6f9cd1016765098d5f1b61eb1d4934a"
+      }
+    ]
+  },
+  {
+    "id": "public_metaphor_houba",
+    "category": "metaphor",
+    "question": "závěsy pohlcují odrazy zvuku v místnosti jako houba",
+    "targets": [
+      {
+        "audio_hash": "89207aa01a6f155b2a42a6743e2cdfb5354959b6e64c6b0b739472abbc43b33a"
+      }
+    ]
+  },
+  {
+    "id": "public_multi_rozhovor_souhlas",
+    "category": "multi-concept",
+    "question": "souhlas pamětníka formát nahrávky a dlouhodobé uložení",
+    "targets": [
+      {
+        "audio_hash": "12162b216ab469a9de50330ec804775c38d81d2f6918c3dd408da4b52e709370"
+      }
+    ]
+  },
+  {
+    "id": "public_multi_zahradni_plan",
+    "category": "multi-concept",
+    "question": "služby na zalévání zahrady sběr dešťové vody a letní stín",
+    "targets": [
+      {
+        "audio_hash": "3dbce50670923a7e673ad62cceb82fb03f1f63e38080431788c73d473f45a609"
+      }
+    ]
+  },
+  {
+    "id": "public_keyword_zvukova_vlna",
+    "category": "keyword",
+    "question": "zvuková vlna přebuzení zisk a rezerva nahrávky",
+    "targets": [
+      {
+        "audio_hash": "de784e459b5411366878e71722d58f9f00dcd68cfdc25318bb25bb85f385d9a3"
+      }
+    ]
+  },
+  {
+    "id": "public_keyword_opylovaci",
+    "category": "keyword",
+    "question": "původní květiny pro včely a další opylovače",
+    "targets": [
+      {
+        "audio_hash": "7765fc642ccbe48175fee7826503383bfde2afc47f908cd4668f40440ed62fe0"
+      }
+    ]
+  },
+  {
+    "id": "public_keyword_kontrolni_soucet",
+    "category": "keyword",
+    "question": "kontrolní součet SHA-256 pro ověření archivní kopie",
+    "targets": [
+      {
+        "audio_hash": "55e8ff1247c3b619aa228b9765f678426c151e62f7ccd82ab60eab4e5656cc08"
+      }
+    ]
+  },
+  {
+    "id": "public_semantic_kolo",
+    "category": "semantic",
+    "question": "před jízdou na dvou kolech zkontrolovat systém pro zastavení",
+    "targets": [
+      {
+        "audio_hash": "7e8ed8628b7f8b1735b17a80622269b2bb39edc05ce73677a4d3b7c03142b4bb"
+      }
+    ]
+  },
+  {
+    "id": "public_semantic_semena",
+    "category": "semantic",
+    "question": "nízká vlhkost pomáhá uchovat osivo pro rostliny na příští rok",
+    "targets": [
+      {
+        "audio_hash": "e0a57796e574363d7dcc3f05e83d678d809ffe8fdaa072b780be47f198d52afe"
+      }
+    ]
+  },
+  {
+    "id": "public_semantic_prestup",
+    "category": "semantic",
+    "question": "nechat si dost minut na přesun mezi nástupišti",
+    "targets": [
+      {
+        "audio_hash": "8a5ef1a0cbe227845e6425641881dc2036664a8ba72e81329bd119702c9401e1"
+      }
+    ]
+  },
+  {
+    "id": "public_diacritics_hvezdy",
+    "category": "diacritics",
+    "question": "pozorovani hvezd mimo svetla mesta",
+    "targets": [
+      {
+        "audio_hash": "f982772c0d396b649516022323b1ddc9a6fdd579e48ca783e1cca418d05b04ee"
+      }
+    ]
+  },
+  {
+    "id": "public_diacritics_zalivani",
+    "category": "diacritics",
+    "question": "ranni zalevani zeleniny behem horkeho leta",
+    "targets": [
+      {
+        "audio_hash": "7dd4df71c5dd47d7a7f92cd56198e9def35fe076ea153e4a1471e123944250dc"
+      }
+    ]
+  },
+  {
+    "id": "public_diacritics_rozhovor",
+    "category": "diacritics",
+    "question": "souhlas s nahravanim pametnickeho rozhovoru",
+    "targets": [
+      {
+        "audio_hash": "fdffc2438449322aeeac26e193eac6b7ab31d670ceeaefbb6345e06716554504"
+      }
+    ]
+  },
+  {
+    "id": "public_metaphor_kompas",
+    "category": "metaphor",
+    "question": "katalogové heslo je kompas při hledání souvisejících materiálů",
+    "targets": [
+      {
+        "audio_hash": "b6aa258284ede64b05edc7d42bbe3e2cf2d4a5efb382e8e2e842840053a24a17"
+      }
+    ]
+  },
+  {
+    "id": "public_metaphor_prikryvka",
+    "category": "metaphor",
+    "question": "mraky zahalují noční oblohu jako přikrývka",
+    "targets": [
+      {
+        "audio_hash": "90beed37cf43665d66dc4f29adcab438300e4bc78f8cdc0479649b29e7876980"
+      }
+    ]
+  },
+  {
+    "id": "public_metaphor_recept",
+    "category": "metaphor",
+    "question": "archivační plán je receptem pro budoucí přístup",
+    "targets": [
+      {
+        "audio_hash": "f7b4d767e5c3e5ddb16c0bcacdb2512e07f261dd0d74badccc9a36e8be9402e8"
+      }
+    ]
+  },
+  {
+    "id": "public_multi_knihovni_data",
+    "category": "multi-concept",
+    "question": "knihovní katalog otevřená data licence a znovupoužitelné formáty",
+    "targets": [
+      {
+        "audio_hash": "5f484efe390f42a6c3aa338e6caddee2effc020655ffafe19ca4f000193e286d"
+      }
+    ]
+  },
+  {
+    "id": "public_multi_turisticka_mapa",
+    "category": "multi-concept",
+    "question": "turistická mapa předpověď počasí a nouzové vybavení",
+    "targets": [
+      {
+        "audio_hash": "4c9490dabd2c5092d153412857b954c20227f14dbc2d75f529eed75c9b320557"
+      }
+    ]
+  },
+  {
+    "id": "public_multi_archivace_podcastu",
+    "category": "multi-concept",
+    "question": "úprava podcastu přepis metadata a archivní kopie",
+    "targets": [
+      {
+        "audio_hash": "ffddba3e724a3e9149371fca595bb4d8738e1133fe52a41e08a0f043aa17e444"
+      }
+    ]
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "public_diacritics_knihovna",
+    "category": "diacritics",
+    "question": "mestska knihovna pujcovani knih",
+    "targets": [
+      {
+        "audio_hash": "c64c17a70e00e5b5cc0acb1770a4b4cf3121cb56184819193fb33743cc2214ba"
+      }
+    ]
+  },
+  {
+    "id": "public_diacritics_pocasi",
+    "category": "diacritics",
+    "question": "predpoved pocasi na vikend",
+    "targets": [
+      {
+        "audio_hash": "fe05e6fcde2ca8ad6708fcd6299bd5cd6e68c8dc6f59c144817b2ba141ca94a5"
+      }
+    ]
+  },
+  {
+    "id": "public_shorthand_kolo",
+    "category": "shorthand",
+    "question": "jak spravit pichly kolo cestou domu",
+    "targets": [
+      {
+        "audio_hash": "b93abd9bef412f87587c1436b81b22ae39ae29002d7263fc1a4836c60174db05"
+      }
+    ]
+  },
+  {
+    "id": "public_shorthand_zahrada",
+    "category": "shorthand",
+    "question": "kdy zalejvat rajcata kdyz je vedro",
+    "targets": [
+      {
+        "audio_hash": "02b22d8d5c710a3359cbc884d6d98c72245e079f9f48e10d8e49b249b7a5048b"
+      }
+    ]
+  },
+  {
+    "id": "public_morphology_nahravka",
+    "category": "morphology",
+    "question": "čištění starých zvukových nahrávek",
+    "targets": [
+      {
+        "audio_hash": "138bc9180c28d2d51c955268fe704af76fc864a472d400d98c3ae72e6640b155"
+      }
+    ]
+  },
+  {
+    "id": "public_morphology_semena",
+    "category": "morphology",
+    "question": "skladování semínek přes zimu",
+    "targets": [
+      {
+        "audio_hash": "ab27bd5d45f0a554e4b064a3ed63f07c7247a742020103479df2964b68a20503"
+      }
+    ]
+  }
+]

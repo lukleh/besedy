@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Background fills entire icon -->
+  <rect width="512" height="512" fill="#3b82f6"/>
+  <!-- Content in safe zone (center 80% = 409.6px, offset by 10% = 51.2px) -->
+  <text x="256" y="320" font-family="system-ui, sans-serif" font-size="260" font-weight="bold" text-anchor="middle" fill="white">B</text>
+</svg>

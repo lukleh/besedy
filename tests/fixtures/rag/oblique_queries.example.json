@@ -1,0 +1,44 @@
+[
+  {
+    "id": "oblique_implicit_acceptance_001",
+    "query": "najdi misto, kde recnik rozlisuje prijeti situace od souhlasu s nasilim",
+    "category": "implicit_theme",
+    "targets": [
+      {
+        "audio_hash": "a9698d3c25075087b7f7f98d522ecc3f611894cf5dcfc67e344caa40d26b2916",
+        "start_seconds": 0.0,
+        "end_seconds": 1.0
+      }
+    ],
+    "rationale": "Replace the placeholder target with the chunk/time window where the transcript supports this implicit distinction.",
+    "notes": "Example only. Do not use this fixture for scoring until targets are replaced."
+  },
+  {
+    "id": "oblique_metaphor_household_001",
+    "query": "najdi pasaz, kde se abstraktni duchovni pojem vysvetluje pres beznou vec z domacnosti",
+    "category": "metaphor_or_analogy",
+    "targets": [
+      {
+        "audio_hash": "f4cd31f400e3f39ed292aeae10ab4a15f0da57543e537987063bf07b4c6590b5",
+        "start_seconds": 0.0,
+        "end_seconds": 1.0
+      }
+    ],
+    "rationale": "The desired hit may not repeat words from the query; it should be grounded by the target time range.",
+    "notes": "Example only. Do not use this fixture for scoring until targets are replaced."
+  },
+  {
+    "id": "oblique_behavioral_moment_001",
+    "query": "najdi chvili, kdy nekdo polozi praktickou namitku a odpoved ji prevede na praci s pozornosti",
+    "category": "behavioral_moment",
+    "targets": [
+      {
+        "audio_hash": "d74f578de09279fc3029e6f450ff1b161220933b4dea595a123744efe01be9cf",
+        "start_seconds": 0.0,
+        "end_seconds": 1.0
+      }
+    ],
+    "rationale": "This is a latent event query: success means retrieving the right exchange, not just the right recording.",
+    "notes": "Example only. Do not use this fixture for scoring until targets are replaced."
+  }
+]

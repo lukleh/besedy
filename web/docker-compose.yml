@@ -1,0 +1,182 @@
+# Unified Docker Compose for Besedy web app
+# Usage:
+#   Dev:  docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" --profile mock-oauth up -d
+#   Test: docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh test)" --profile mock-oauth up -d
+#   Prod: docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" --profile backup up -d
+
+name: besedy-${APP_ENV:-dev}
+
+services:
+  oauth-mock:
+    profiles: [mock-oauth]
+    image: node:22-alpine
+    container_name: besedy-${APP_ENV:-dev}-oauth
+    working_dir: /app
+    command:
+      ['sh', '-c', 'cp -r /src/* . && npm install --silent && node server.js']
+    environment:
+      OAUTH_MOCK_PORT: '8090'
+      OAUTH_MOCK_BASE_PATH: ${OAUTH_MOCK_BASE_PATH:-/mock-oauth}
+    volumes:
+      - ./tests/e2e/oauth-mock:/src:ro
+    restart: unless-stopped
+
+  db:
+    image: pgvector/pgvector:pg${POSTGRES_VERSION:-18}
+    container_name: besedy-${APP_ENV:-dev}-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-besedy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-besedy}
+      POSTGRES_DB: ${POSTGRES_DB:-besedy}
+      # Prod only: for init-db-users.sh to create separate migrator/app users
+      MIGRATE_PASSWORD: ${MIGRATE_PASSWORD:-}
+      APP_PASSWORD: ${APP_PASSWORD:-}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Prod only: init script for separate DB users (empty file in dev/test)
+      - ${DB_INIT_SCRIPT:-/dev/null}:/docker-entrypoint-initdb.d/init-users.sh:ro
+    ports:
+      # Keep the safe default host-local. Environment files may still select a
+      # different bind explicitly (for example DB_PORT=0.0.0.0:5433 in dev).
+      - '${DB_PORT:-127.0.0.1:5433}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-besedy}']
+      interval: ${DB_HEALTHCHECK_INTERVAL:-5s}
+      timeout: 5s
+      retries: ${DB_HEALTHCHECK_RETRIES:-5}
+    restart: unless-stopped
+
+  web:
+    container_name: besedy-${APP_ENV:-dev}-web
+    build:
+      context: .
+      target: ${BUILD_TARGET:-development}
+      args:
+        NEXT_PUBLIC_APP_ENV: ${APP_ENV:-development}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-}
+        NEXT_PUBLIC_SUPPORT_EMAIL_B64: ${NEXT_PUBLIC_SUPPORT_EMAIL_B64:-}
+        OAUTH_MOCK_URL: ${OAUTH_MOCK_URL:-}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      NEXT_PUBLIC_APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-}
+      AUTH_SECRET: ${AUTH_SECRET?AUTH_SECRET is required}
+      AUTH_TRUST_HOST: 'true'
+      AUTH_URL: ${AUTH_URL:-http://localhost:3001}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+      AUTH_DEV_TRUSTED_ORIGINS: ${AUTH_DEV_TRUSTED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002}
+      AUTH_EXTRA_ORIGINS: ${AUTH_EXTRA_ORIGINS:-}
+      # OAuth providers (Google required in production)
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      # Mock OAuth (dev/test only) - browser access is proxied via /mock-oauth/*
+      OAUTH_MOCK_URL: ${OAUTH_MOCK_URL:-}
+      # Config and path validation
+      BESEDY_CONFIG: ${BESEDY_CONFIG:-}
+      BESEDY_BASE_DIR: /data
+      BESEDY_ALLOWED_PATHS: ${BESEDY_ALLOWED_PATHS:-}
+      BESEDY_PATH_MAPPINGS: ${BESEDY_PATH_MAPPINGS:-}
+      CATALOG_SYNC_STARTUP_ENABLED: ${CATALOG_SYNC_STARTUP_ENABLED:-}
+      CATALOG_SYNC_REQUIRED_FOR_READINESS: ${CATALOG_SYNC_REQUIRED_FOR_READINESS:-false}
+      # Push notifications (VAPID keys)
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:dev@besedy.test}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-}
+      NEXT_PUBLIC_SUPPORT_EMAIL_B64: ${NEXT_PUBLIC_SUPPORT_EMAIL_B64:-}
+      # Internal jobs-service authentication
+      BESEDY_JOB_SERVICE_SECRET: ${BESEDY_JOB_SERVICE_SECRET:-}
+      JOBS_API_BASE_URL: ${JOBS_API_BASE_URL:-http://jobs-api:8390}
+      # RAG search (ColBERT sidecar + optional reranker)
+      RAG_BACKEND_KEY: ${RAG_BACKEND_KEY:-faster-whisper/large-v3@silero_vad_v6@lang-auto}
+      RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}
+      RAG_TEI_RERANK_URL: ${RAG_TEI_RERANK_URL:-http://host.docker.internal:8191/rerank}
+      RAG_COLBERT_RERANK_ENABLED: ${RAG_COLBERT_RERANK_ENABLED:-false}
+      RAG_TEI_TIMEOUT_MS: ${RAG_TEI_TIMEOUT_MS:-8000}
+      RAG_COLBERT_URL: ${RAG_COLBERT_URL:-http://host.docker.internal:8192/query}
+      RAG_COLBERT_TOP_K: ${RAG_COLBERT_TOP_K:-200}
+      RAG_COLBERT_MODEL: ${RAG_COLBERT_MODEL:-jinaai/jina-colbert-v2}
+      RAG_COLBERT_ROOT_DIR: ${RAG_COLBERT_ROOT_DIR:-/data/state/rag_colbert}
+      RAG_COLBERT_INDEX_DIR: ${RAG_COLBERT_INDEX_DIR:-}
+      RAG_RERANK_TOP_N: ${RAG_RERANK_TOP_N:-50}
+      RAG_RESULT_LIMIT: ${RAG_RESULT_LIMIT:-50}
+      RAG_RELATIVE_SCORE_CUTOFF: ${RAG_RELATIVE_SCORE_CUTOFF:-0}
+    volumes:
+      # Config file (path varies by environment)
+      - ${CONFIG_FILE:-./besedy.docker.toml}:${CONFIG_MOUNT:-/data/config/besedy.docker.toml}:ro
+      # Web application logs (host bind mount, persisted across container recreation)
+      - ${WEB_LOGS_DIR:-${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/web/logs/dev}:/var/log/besedy:rw
+      # Text data: catalogs and transcripts
+      - ${TEXT_DATA_DIR:-./tests/e2e/fixtures}:/data/text:ro
+      # Posters (writable)
+      - ${POSTERS_DIR:-./tests/e2e/fixtures/posters}:/data/posters:rw
+      # Recording sources (writable)
+      - ${SOURCES_DIR:-./tests/e2e/fixtures/sources}:/data/sources:rw
+      # Audio files
+      - ${AUDIO_DIR:-./tests/e2e/fixtures/audio}:/data/audio:ro
+      # Original audio files for download
+      - ${ORIGINAL_AUDIO_DIR:-./tests/e2e/fixtures/original}:/data/original:ro
+    ports:
+      - '${WEB_PORT:-3001}:3000'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - default
+      - besedy_internal
+    restart: unless-stopped
+
+  pgadmin:
+    profiles: [tools]
+    image: dpage/pgadmin4:latest
+    container_name: besedy-${APP_ENV:-dev}-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    depends_on:
+      - db
+
+  backup:
+    profiles: [backup]
+    image: postgres:${POSTGRES_VERSION:-18}-alpine
+    container_name: besedy-${APP_ENV:-dev}-backup
+    # Match host ownership for BACKUP_DIR writes when hardening drops CAP_DAC_OVERRIDE.
+    user: '${BACKUP_UID:-1000}:${BACKUP_GID:-1000}'
+    depends_on:
+      - db
+    environment:
+      PGUSER: ${POSTGRES_USER:-besedy}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-besedy}
+    volumes:
+      - ${BACKUP_DIR:-${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/web/backups}:/backups
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        while true; do
+          FILENAME="/backups/besedy_$$(date +%Y%m%d_%H%M%S).sql.gz"
+          echo "Creating backup: $$FILENAME"
+          pg_dump | gzip > "$$FILENAME"
+          ls -t /backups/*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
+          sleep 86400
+        done
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: besedy_${APP_ENV:-dev}_postgres
+
+networks:
+  besedy_internal:
+    name: ${BESEDY_INTERNAL_NETWORK:-besedy-internal}
+    external: true

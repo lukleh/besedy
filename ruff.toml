@@ -1,0 +1,36 @@
+# Ruff configuration (lint + format).
+#
+# Goal: keep the repo pleasant for humans and coding agents without creating
+# noisy, repo-wide churn. Start conservative and tighten over time.
+
+target-version = "py313"
+line-length = 100
+
+extend-exclude = [
+  ".venv",
+  ".uv-cache",
+  "external",
+  "worktrees",
+  "tmp",
+  "logs",
+  "diagnostics",
+  "pretrained_models",
+  # Generated artifacts (usually gitignored, but exclude defensively)
+  "transcripts",
+  "transcripts_*",
+  "transcripts_parquet",
+  "transcripts_parquet_*",
+  "transcripts_txt",
+  "transcripts_txt_*",
+  "transcripts_merged",
+  "transcripts_merged_*",
+  "speaker_clusters",
+  "speaker_clusters_*",
+]
+
+[lint]
+select = ["E", "F", "I"]
+ignore = [
+  # Let the formatter handle wrapping decisions; avoid noisy long-line churn.
+  "E501",
+]

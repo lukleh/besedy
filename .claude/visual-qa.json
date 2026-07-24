@@ -1,0 +1,24 @@
+{
+  "baseUrl": "http://localhost:3001",
+  "outputDir": "web/qa-results",
+
+  "viewports": [
+    {"name": "desktop", "width": 1280, "height": 800},
+    {"name": "tablet", "width": 768, "height": 1024},
+    {"name": "mobile", "width": 390, "height": 844}
+  ],
+
+  "users": [
+    {"email": "viewer@besedy.test", "name": "viewer"},
+    {"email": "editor@besedy.test", "name": "editor"},
+    {"email": "admin@besedy.test", "name": "admin"}
+  ],
+
+  "pages": [
+    {"path": "/catalog", "name": "Catalog List", "auth": true},
+    {"path": "/catalog/[catalogId]/recording/[hash]", "name": "Recording Detail", "auth": true},
+    {"path": "/settings", "name": "Settings", "auth": true},
+    {"path": "/admin", "name": "Admin Dashboard", "auth": true, "roles": ["admin"]},
+    {"path": "/auth/signin", "name": "Sign In", "auth": false}
+  ]
+}

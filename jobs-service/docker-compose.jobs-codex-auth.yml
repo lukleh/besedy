@@ -1,0 +1,14 @@
+# Optional production overlay for model-chatgpt-* profiles. Do not include this
+# overlay for OpenRouter/NVIDIA-only workers: they do not need Codex credentials.
+
+services:
+  prefect-worker:
+    volumes:
+      # Keep the rest of the host Codex home outside the container while
+      # exposing the current read-only token to rlmbenchy.
+      - type: bind
+        source: ${CODEX_HOST_AUTH_FILE:?must point to an existing Codex auth.json}
+        target: ${CODEX_CONTAINER_HOME:-/run/codex}/auth.json
+        read_only: true
+        bind:
+          create_host_path: false

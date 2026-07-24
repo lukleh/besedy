@@ -1,0 +1,192 @@
+# Besedy configuration
+# Copy this file to besedy.toml and customize for your environment.
+#
+# Config file search order:
+#   1. BESEDY_CONFIG environment variable (path to a config file)
+#   2. ~/.config/lukleh/besedy/besedy.toml
+#
+# ("lukleh" is the maintainer's namespace; point elsewhere via BESEDY_CONFIG or
+#  the BESEDY_*_HOME overrides below if you prefer your own.)
+#
+# Environment variable overrides (not TOML keys; often set in .env). These
+# override the corresponding computed defaults at runtime:
+#   BESEDY_CONFIG              Path to the TOML config file (see search order above).
+#   BESEDY_SHARE_HOME          Preferred share root (default ~/.local/share/lukleh/besedy).
+#   BESEDY_STATE_HOME          Preferred state root (default ~/.local/state/lukleh/besedy).
+#   BESEDY_CACHE_HOME          Preferred cache root (default ~/.cache/lukleh/besedy).
+#   BESEDY_AUDIO_ARTIFACTS_ROOT  Derived-audio base dir (normally [paths].audio_artifacts_dir).
+#   BESEDY_TEXT_DATA_ROOT      Text-data base dir (normally [paths].text_data_dir).
+#   BESEDY_WEB_ENV_DEV/PROD/TEST Selected web env file for Docker and E2E helpers.
+
+[paths]
+# Base directory for staged and archived audio artifacts. Leave empty to use the repo root.
+# Example: "/mnt/data/besedy_audio"
+audio_artifacts_dir = ""
+# Directory for joined audio files from `catalog join`.
+# Relative path: resolved under audio_artifacts_dir (e.g., "joined_audio" -> audio_artifacts_dir/joined_audio/)
+# Absolute path: used directly (e.g., "/mnt/data/joined" -> /mnt/data/joined/)
+joined_audio_dir = "joined_audio"
+# Directory for backing up original source audio after `catalog join`.
+# Leave empty to keep originals in place.
+# Relative path: resolved under audio_artifacts_dir; absolute path used directly.
+original_audio_dir = ""
+# Base directory for text artifacts (catalog CSVs, transcripts, parquet exports).
+# Creates catalogs/, transcripts/, and transcripts_parquet/ subdirectories.
+# Required: an empty value fails with "Text data root is required" unless
+# BESEDY_TEXT_DATA_ROOT is set in the environment.
+# Example: "/mnt/data/besedy_text"
+text_data_dir = ""
+# Directory for recording sources (URLs/files) managed by the web app.
+# Required for the Sources feature in the web app.
+sources_dir = "/path/to/sources"
+# Output directory name for transcript JSON files
+# (organized by workflow/output-component/full-audio-hash/)
+transcripts_dir = "transcripts"
+# Directory name for speaker clustering results
+speaker_clusters_dir = "speaker_clusters"
+
+[audio]
+# Target sample rate (Hz). MUST be 16000 - all workflows expect 16kHz mono WAV.
+# Changing this requires re-staging all audio files.
+sample_rate = 16000
+
+# `language` is an ISO 639 code configured per workflow; entries that omit it
+# default to "cs" (the historical behavior). Explicit or defaulted "cs" retains
+# historical output paths; "auto" and other language values add `@lang-auto` or
+# `@lang-<code>` to the workflow output component so incompatible transcripts
+# are never silently reused.
+[[transcription_workflows]]
+workflow_id = "canary-nemo"
+workflow_label = "canary-nemo"
+model = "nvidia/canary-1b-v2"
+vad_model = "nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0"
+strategy = "greedy"
+# Canary prompts require an explicit ISO 639-1 source/target language.
+language = "cs"
+
+# Optional Canary beam + WhisperX alignment experiment. It is available for
+# explicit runs, but excluded from the normal pipeline and expected-output set.
+[[transcription_workflows]]
+workflow_id = "canary-nemo-beam"
+workflow_label = "canary-nemo"
+model = "nvidia/canary-1b-v2"
+vad_model = "nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0"
+strategy = "beam"
+language = "cs"
+align_model = "comodoro/wav2vec2-xls-r-300m-cs-250"
+pipeline_default = false
+expected_default = false
+
+[[transcription_workflows]]
+workflow_id = "faster-whisper"
+workflow_label = "faster-whisper"
+model = "large-v3"
+vad_model = "silero_vad_v6"
+language = "auto"
+
+# Optional local Czech-tuned model example. Replace the placeholder before an
+# explicit run; it is deliberately excluded from the default pipeline.
+[[transcription_workflows]]
+workflow_id = "faster-whisper"
+workflow_label = "faster-whisper"
+# Example local model (CTranslate2): update to your path if available.
+# Create it with:
+# ./backends/faster-whisper/convert_model.sh \
+#   --model mikr/whisper-large-v3-czech-cv13 \
+#   --output-dir /path/to/whisper_models/whisper-large-v3-czech-cv13-ct2
+model = "/path/to/whisper_models/whisper-large-v3-czech-cv13-ct2"
+vad_model = "silero_vad_v6"
+language = "cs"
+pipeline_default = false
+expected_default = false
+
+[[transcription_workflows]]
+workflow_id = "whisperx"
+workflow_label = "whisperx"
+model = "large-v3"
+vad_model = "silero"
+language = "auto"
+
+# Optional local Czech-tuned model example. Replace the placeholder before an
+# explicit run; it is deliberately excluded from the default pipeline.
+[[transcription_workflows]]
+workflow_id = "whisperx"
+workflow_label = "whisperx"
+# Example local model: update to your path if available.
+# You can reuse the same converted CTranslate2 directory from the faster-whisper setup script.
+model = "/path/to/whisper_models/whisper-large-v3-czech-cv13-ct2"
+vad_model = "silero"
+align_model = "comodoro/wav2vec2-xls-r-300m-cs-250"
+language = "cs"
+pipeline_default = false
+expected_default = false
+
+# Optional: Qwen3-ASR backend (external Silero VAD in Besedy)
+# [[transcription_workflows]]
+# workflow_id = "qwen3-asr"
+# workflow_label = "qwen3-asr"
+# model = "Qwen/Qwen3-ASR-1.7B"
+# vad_model = "silero_vad_v6"
+# align_model = "Qwen/Qwen3-ForcedAligner-0.6B"
+# language = "auto"
+# pipeline_default = false
+# expected_default = false
+
+[vad]
+# Minimum silence duration (ms) between speech segments for VAD splitting.
+# Lower = more segments, higher = fewer, longer segments. Range: 100-2000.
+# Optional: omit to use backend defaults.
+# min_silence_ms = 500
+# Enable VAD-based filtering of non-speech segments
+filter_enabled = true
+# Request word-level timestamps from ASR models
+word_timestamps = true
+
+[diarization]
+# Expected speaker count range for pyannote diarization
+min_speakers = 2
+max_speakers = 10
+# Spectral clustering p-value for speaker separation.
+# Lower = more aggressive separation (more speakers), higher = more conservative.
+# Typical range: 0.1-0.5. Default 0.22 works well for 2-4 speakers.
+spectral_p_value = 0.22
+
+[analysis]
+# Maximum cross-model comparisons per analysis run (limits memory usage)
+cross_model_limit = 10
+# Number of files to sample for aggregate statistics
+sample_files = 100
+# Number of audio hashes to sample for detailed analysis
+sample_hashes = 10
+# Maximum words per file for word-level analysis (truncates long transcripts)
+max_words_per_file = 500
+
+[nemo]
+# Minimum silence duration (seconds) for NeMo's internal VAD.
+# Affects segment boundary detection. Range: 0.05-0.5.
+min_silence_duration = 0.1
+# Decimal precision for timestamp rounding in NeMo output
+precision = 3
+
+[web]
+# Email that will be auto-created as superadmin on first OAuth login.
+# This user can log in without invitation. Leave empty to disable.
+superadmin_email = ""
+# System instructions given to deep-search jobs. Required by the jobs API;
+# tailor the language and style to your deployment's audience.
+deep_search_default_instructions = """
+Answer the user's question with a well-structured, source-grounded synthesis
+of the transcribed conversations. Search iteratively with varied phrasings,
+verify important claims against multiple passages, and describe conflicts or
+ambiguities explicitly. Transcripts are natural conversations produced by
+automatic speech recognition, so inspect surrounding context and separate the
+main point from tangents and transcription errors.
+"""
+
+[rag]
+# ColBERT retrieval model. Leave empty to use the built-in default
+# (jinaai/jina-colbert-v2). NOTE: that default is CC-BY-NC-4.0 (non-commercial);
+# for commercial use set a permissively-licensed ColBERT model here (e.g.
+# colbert-ir/colbertv2.0). Precedence: RAG_COLBERT_MODEL env var and
+# --rag-colbert-model/--model override this.
+colbert_model = ""

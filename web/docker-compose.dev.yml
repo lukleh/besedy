@@ -1,0 +1,19 @@
+# Development overlay - mounts source for hot reloading
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file "$(../scripts/resolve_web_env_file.sh development)" up -d
+
+services:
+  web:
+    # Force webpack in the Docker dev container. Turbopack currently externalizes
+    # the Prisma 7 runtime into a hashed package name that does not resolve here.
+    command: ["npm", "run", "dev", "--", "--webpack", "--hostname", "0.0.0.0"]
+    environment:
+      NEXT_DIST_DIR: .cache-next
+      DEV_EXTRA_ORIGINS: ${DEV_EXTRA_ORIGINS:-}
+    volumes:
+      # Mount source code for hot reloading
+      - .:/app
+      # Preserve container's node_modules (don't overlay with host)
+      - /app/node_modules
+      # Keep the Next.js build cache outside the repo checkout while preserving
+      # an in-app realpath so Node can still resolve /app/node_modules.
+      - ${WEB_NEXT_DIR:-${BESEDY_CACHE_HOME:-${HOME}/.cache/lukleh/besedy}/web/.next}:/app/.cache-next

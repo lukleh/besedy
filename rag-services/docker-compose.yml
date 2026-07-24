@@ -1,0 +1,184 @@
+# Model serving for ColBERT sidecar retrieval plus legacy TEI services.
+# Shared across dev/test/prod — independent of the web stack.
+#
+# Usage:
+#   docker compose -f rag-services/docker-compose.yml up -d
+#   docker compose -f rag-services/docker-compose.yml --profile legacy-tei up -d
+#   docker compose -f rag-services/docker-compose.yml --profile colbert-indexer run --rm --no-deps colbert-indexer build-index
+#
+# Endpoints:
+#   ColBERT:    http://127.0.0.1:8192 (default startup, internal warm-query service)
+#   Embeddings: http://127.0.0.1:8190  (legacy TEI profile only)
+#   Reranker:   http://127.0.0.1:8191  (legacy TEI profile only)
+#
+# NOTE:
+#   Keep the reranker batch and concurrency settings aligned with the web rerank
+#   candidate count (default RAG_RESULT_LIMIT=50).
+#
+# Canonical runtime:
+#   ColBERT runs by default.
+#   TEI embeddings/reranking are kept behind the optional "legacy-tei" profile.
+#   Keep Qwen embedding batches small by default and scale up only after
+#   measuring on the target hardware.
+#
+# Models are cached in a named volume so they survive container restarts.
+
+name: besedy-rag-services
+
+x-tei-gpu-image: &tei-gpu-image
+  image: "${TEI_IMAGE:-besedy/tei-blackwell:local}"
+  build:
+    context: "${TEI_BUILD_CONTEXT:-https://github.com/huggingface/text-embeddings-inference.git#main}"
+    dockerfile: "${TEI_DOCKERFILE:-Dockerfile-cuda-blackwell}"
+    args:
+      CUDA_COMPUTE_CAP: "${TEI_CUDA_COMPUTE_CAP:-120}"
+  labels:
+    besedy.tei.build_context: "${TEI_BUILD_CONTEXT:-https://github.com/huggingface/text-embeddings-inference.git#main}"
+    besedy.tei.dockerfile: "${TEI_DOCKERFILE:-Dockerfile-cuda-blackwell}"
+
+services:
+  embeddings:
+    <<: *tei-gpu-image
+    container_name: besedy-tei-embeddings
+    profiles: ["legacy-tei"]
+    gpus: all
+    ports:
+      - "${TEI_HOST_BIND:-0.0.0.0}:${TEI_EMBED_PORT:-8190}:80"
+    volumes:
+      - model_cache:/data
+    command:
+      - --model-id
+      - Qwen/Qwen3-Embedding-0.6B
+      - --dtype
+      - "${TEI_EMBED_DTYPE:-float16}"
+      - --max-concurrent-requests
+      - "${TEI_EMBED_MAX_CONCURRENT_REQUESTS:-1}"
+      - --max-client-batch-size
+      - "${TEI_EMBED_MAX_CLIENT_BATCH_SIZE:-1}"
+      - --max-batch-requests
+      - "${TEI_EMBED_MAX_BATCH_REQUESTS:-1}"
+      - --max-batch-tokens
+      - "${TEI_EMBED_MAX_BATCH_TOKENS:-4096}"
+      - --auto-truncate
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  reranker:
+    <<: *tei-gpu-image
+    container_name: besedy-tei-reranker
+    profiles: ["legacy-tei"]
+    gpus: all
+    ports:
+      - "${TEI_HOST_BIND:-0.0.0.0}:${TEI_RERANK_PORT:-8191}:80"
+    volumes:
+      - model_cache:/data
+    command:
+      - --model-id
+      - Alibaba-NLP/gte-multilingual-reranker-base
+      - --dtype
+      - "${TEI_RERANK_DTYPE:-float16}"
+      - --max-concurrent-requests
+      - "${TEI_RERANK_MAX_CONCURRENT_REQUESTS:-64}"
+      - --max-client-batch-size
+      - "${TEI_RERANK_MAX_CLIENT_BATCH_SIZE:-50}"
+      - --max-batch-requests
+      - "${TEI_RERANK_MAX_BATCH_REQUESTS:-1}"
+      - --max-batch-tokens
+      - "${TEI_RERANK_MAX_BATCH_TOKENS:-16384}"
+      - --auto-truncate
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  colbert:
+    image: "${COLBERT_IMAGE:-besedy/colbert:local}"
+    build:
+      context: ..
+      dockerfile: rag-services/colbert/Dockerfile
+    container_name: besedy-colbert
+    ports:
+      - "${COLBERT_HOST_BIND:-0.0.0.0}:${COLBERT_HOST_PORT:-8192}:8192"
+    working_dir: /workspace/besedy
+    command:
+      - python
+      - -m
+      - besedy.lib.rag_colbert_runtime.server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8192"
+    volumes:
+      - ..:/workspace/besedy:rw
+      - ${BESEDY_CONFIG_FILE:-${HOME}/.config/lukleh/besedy/besedy.toml}:/data/config/besedy.toml:ro
+      - ${RAG_COLBERT_HOST_DIR:-${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/tmp/rag_colbert}:/data/state/rag_colbert:rw
+      - colbert_model_cache:/data/hf
+      - colbert_torch_cache:/data/torch
+    environment:
+      BESEDY_CONFIG: /data/config/besedy.toml
+      HF_HOME: /data/hf
+      HF_HUB_CACHE: /data/hf/hub
+      TRANSFORMERS_CACHE: /data/hf/transformers
+      TORCH_HOME: /data/torch
+      COLBERT_PRELOAD_INDEX_DIR: ${COLBERT_PRELOAD_INDEX_DIR:-}
+      CUDA_VISIBLE_DEVICES: ""
+      NVIDIA_VISIBLE_DEVICES: void
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8192/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+
+  colbert-indexer:
+    image: "${COLBERT_IMAGE:-besedy/colbert:local}"
+    build:
+      context: ..
+      dockerfile: rag-services/colbert/Dockerfile
+    profiles: ["colbert-indexer"]
+    working_dir: /workspace/besedy
+    entrypoint:
+      - bash
+      - /workspace/besedy/rag-services/colbert/run_worker.sh
+    gpus: all
+    volumes:
+      - ..:/workspace/besedy:rw
+      - ${BESEDY_CONFIG_FILE:-${HOME}/.config/lukleh/besedy/besedy.toml}:/data/config/besedy.toml:ro
+      - ${RAG_COLBERT_HOST_DIR:-${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/tmp/rag_colbert}:/data/state/rag_colbert:rw
+      - colbert_model_cache:/data/hf
+      - colbert_torch_cache:/data/torch
+    environment:
+      BESEDY_CONFIG: /data/config/besedy.toml
+      HF_HOME: /data/hf
+      HF_HUB_CACHE: /data/hf/hub
+      TRANSFORMERS_CACHE: /data/hf/transformers
+      TORCH_HOME: /data/torch
+      TORCH_EXTENSIONS_DIR: /data/torch/extensions
+      TMPDIR: ${TMPDIR:-/tmp}
+      TMP: ${TMPDIR:-/tmp}
+      TEMP: ${TMPDIR:-/tmp}
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+
+volumes:
+  model_cache:
+    name: besedy_tei_model_cache
+  colbert_model_cache:
+    name: besedy_colbert_model_cache
+  colbert_torch_cache:
+    name: besedy_colbert_torch_cache
