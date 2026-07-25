@@ -48,6 +48,26 @@ branches. Only the current `main` receives security fixes; there are no backport
 | `main` (latest) | ✅ |
 | older commits / forks | ❌ |
 
+## Accepted Dependency Advisories
+
+Two upstream advisories are currently accepted with narrow threat models:
+
+- **`brace-expansion` — `GHSA-mh99-v99m-4gvg` (high).** This denial-of-service
+  advisory is reachable only through development-time ESLint dependencies.
+  Published ESLint plugins still require minimatch 3's callable CommonJS API;
+  forcing the patched minimatch major can crash supported lint rules. CI allows
+  only this advisory on dev-only paths and continues to reject every other high
+  or critical npm advisory. Remove the exception when the ESLint plugin chain
+  supports a patched minimatch major.
+- **`diskcache` — `GHSA-w8v5-vhqr-4h9v` (moderate).** DSPy uses DiskCache only
+  as a worker-owned cache. Production places it on an ephemeral, non-root
+  `/tmp` filesystem, so replacing its pickle files already requires control of
+  the worker UID. No patched DiskCache release exists. Remove the exception
+  when upstream publishes a fix.
+
+These exceptions are documented in CI next to the audit commands so dependency
+updates cannot silently broaden them.
+
 ## Scope
 
 In scope — vulnerabilities in this repository's own code:

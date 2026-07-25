@@ -12,7 +12,8 @@ Besedy is self-hosted and was built with Czech spoken-word collections in mind.
 Languages and transcription backends are configurable, so the same workflow can
 support multilingual archives.
 
-[Visit besedy.org](https://besedy.org) · [Get started](#get-started) ·
+[Maintainer deployment (sign-in required)](https://besedy.org) ·
+[Get started](#get-started) ·
 [Read the documentation](docs/README.md)
 
 ## What you can do with Besedy
