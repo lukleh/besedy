@@ -61,7 +61,8 @@ jobs:
         with:
           enable-cache: true
           prune-cache: true
-      - run: uv sync --locked --extra jobs
+      - run: uv lock --upgrade-package rlmbenchy
+      - run: uv sync --frozen --extra jobs
       - run: >-
           uv run pytest
           tests/test_prefect_jobs.py

@@ -234,9 +234,10 @@ through the development runtime.
 
    `jobs-prod-up` refuses a dirty Besedy worktree, labels the image with the
    Besedy revision and build time, then starts both services with `--no-build`.
-   The exact public `rlmbenchy` Git revision is part of Besedy's committed
-   `uv.lock`. The running containers therefore execute packaged image code
-   rather than a mutable repository bind mount.
+   The image build refreshes the public `rlmbenchy` repository's default branch
+   and packages the resolved revision into the image. Running containers
+   therefore execute immutable packaged image code rather than a mutable
+   repository bind mount.
 
    The Python dependency audit has one explicit accepted-risk exception:
    `PYSEC-2026-2447` for DiskCache's pickle serialization. DSPy uses DiskCache

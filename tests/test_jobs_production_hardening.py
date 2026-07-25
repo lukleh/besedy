@@ -1,5 +1,6 @@
 """Guardrails for the immutable, least-privilege production jobs runtime."""
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -8,11 +9,12 @@ JOBS_DOCKERFILE = PROJECT_ROOT / "jobs-service" / "Dockerfile"
 JOBS_PROD_COMPOSE = PROJECT_ROOT / "jobs-service" / "docker-compose.jobs-prod.yml"
 JOBS_CODEX_OVERLAY = PROJECT_ROOT / "jobs-service" / "docker-compose.jobs-codex-auth.yml"
 CI_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+JUSTFILE = PROJECT_ROOT / "Justfile"
 OPERATIONS_DOC = PROJECT_ROOT / "docs" / "web" / "operations.md"
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 UV_LOCK = PROJECT_ROOT / "uv.lock"
 WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
-RLMBENCHY_REVISION = "99ac7864c52f15d298d39fac80dd0c72a2d2ab27"
+RLMBENCHY_GIT_URL = "https://github.com/lukleh/rlmbenchy.git"
 
 
 def test_jobs_image_uses_locked_non_editable_installs() -> None:
@@ -27,6 +29,8 @@ def test_jobs_image_uses_locked_non_editable_installs() -> None:
     assert dockerfile.count("apt-get install") == 1
     assert "uv pip check --python /opt/venv/bin/python" in dockerfile
     assert "from rlmbenchy.rlm import load_lm_profile, run_task" in dockerfile
+    assert "ARG RLMBENCHY_REFRESH=manual" in dockerfile
+    assert "uv lock --upgrade-package rlmbenchy" in dockerfile
     assert "uv build --wheel" not in dockerfile
     assert "rlmbenchy_source" not in dockerfile
     assert "DSPY_CACHEDIR=/tmp/cache/dspy" in dockerfile
@@ -37,16 +41,27 @@ def test_jobs_image_uses_locked_non_editable_installs() -> None:
     assert "python -m pip install" not in dockerfile
 
 
-def test_jobs_extra_pins_rlmbenchy_to_an_exact_git_revision() -> None:
+def test_jobs_extra_tracks_and_refreshes_rlmbenchy_default_branch() -> None:
     pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    lock = tomllib.loads(UV_LOCK.read_text(encoding="utf-8"))
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    justfile = JUSTFILE.read_text(encoding="utf-8")
 
     assert (
-        "rlmbenchy @ "
-        f"git+https://github.com/lukleh/rlmbenchy.git@{RLMBENCHY_REVISION}"
+        f"rlmbenchy @ git+{RLMBENCHY_GIT_URL}"
         in pyproject["project"]["optional-dependencies"]["jobs"]
     )
     assert "rlmbenchy" not in pyproject["tool"]["uv"]["sources"]
-    assert RLMBENCHY_REVISION in UV_LOCK.read_text(encoding="utf-8")
+    rlmbenchy = next(package for package in lock["package"] if package["name"] == "rlmbenchy")
+    assert re.fullmatch(
+        rf"{re.escape(RLMBENCHY_GIT_URL)}#[0-9a-f]{{40}}",
+        rlmbenchy["source"]["git"],
+    )
+    assert "uv lock --upgrade-package rlmbenchy" in workflow
+    assert "uv sync --extra jobs --upgrade-package rlmbenchy" in justfile
+    assert "uv sync --all-extras --upgrade-package rlmbenchy" in justfile
+    assert "uv run --all-extras --upgrade-package rlmbenchy pytest" in justfile
+    assert justfile.count("--build-arg RLMBENCHY_REFRESH=") == 5
 
 
 def test_diskcache_audit_exception_is_scoped_and_documented() -> None:

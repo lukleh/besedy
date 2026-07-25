@@ -16,11 +16,14 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
-# Resolve the jobs environment exclusively from Besedy's committed lock. Copying
-# the project metadata first keeps this expensive layer reusable for source-only
-# changes.
+# Refresh Rlmbenchy's moving default branch before resolving the jobs
+# environment. The Justfile changes this argument for each jobs image build so
+# Docker cannot reuse a dependency layer resolved from an older branch head.
+ARG RLMBENCHY_REFRESH=manual
 COPY pyproject.toml uv.lock README.md LICENSE ./
-RUN uv sync --frozen --no-dev --extra jobs --no-install-project
+RUN echo "Refreshing Rlmbenchy dependency (${RLMBENCHY_REFRESH})" \
+    && uv lock --upgrade-package rlmbenchy \
+    && uv sync --frozen --no-dev --extra jobs --no-install-project
 
 COPY besedy ./besedy
 RUN uv sync --frozen --no-dev --extra jobs --no-editable \
