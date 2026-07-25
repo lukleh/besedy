@@ -70,7 +70,9 @@ runtime dependencies are no longer part of the default host environment. Use
 `just setup-ml` for host-side ML, retrieval, and speaker helpers;
 `just setup-jobs` for Prefect jobs tooling; or `just setup-all` when you
 explicitly want every optional extra in one environment. `just test` pulls in
-the optional extras it needs when running the full suite.
+the optional extras it needs when running the full suite. Jobs and all-extras
+setup refresh `rlmbenchy` from its latest default-branch revision before
+syncing.
 
 ### Configuration
 

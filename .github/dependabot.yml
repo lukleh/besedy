@@ -4,39 +4,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    groups:
-      github-actions:
-        patterns:
-          - "*"
+    # Disable routine version-update PRs. Dependabot security updates use a
+    # separate limit and remain enabled through the repository settings.
+    open-pull-requests-limit: 0
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
       interval: "weekly"
-    groups:
-      npm-minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    ignore:
-      # Revisit when eslint-config-next's React plugin supports ESLint 10.
-      - dependency-name: "eslint"
-        versions:
-          - ">=10.0.0"
-      # Revisit when an eslint-config-next update brings a typescript-eslint
-      # parser whose peer range includes TypeScript 6.1 or newer.
-      - dependency-name: "typescript"
-        versions:
-          - ">=6.1.0"
+    open-pull-requests-limit: 0
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-    groups:
-      python-minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+    open-pull-requests-limit: 0

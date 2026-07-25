@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "23 4 * * 1"
 
 # Read-only token; no job needs write access.
 permissions:
@@ -61,7 +63,8 @@ jobs:
         with:
           enable-cache: true
           prune-cache: true
-      - run: uv sync --locked --extra jobs
+      - run: uv lock --upgrade-package rlmbenchy
+      - run: uv sync --frozen --extra jobs
       - run: >-
           uv run pytest
           tests/test_prefect_jobs.py
