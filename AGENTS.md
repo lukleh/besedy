@@ -67,6 +67,15 @@ Keep shared operational facts here and have provider-specific files such as
 - E2E tests run against a **production build** with security hardening (read-only filesystem, dropped capabilities)
 - Next.js 16 uses `web/src/proxy.ts` instead of `middleware.ts`; keep auth/request interception there and use `proxy*` config keys in `web/next.config.ts`.
 
+### Web Dependency Compatibility
+- Keep ESLint on major 9 until `eslint-config-next`'s React plugin supports
+  ESLint 10.
+- Before adopting TypeScript 6.1 or newer, confirm the parser brought in by
+  `eslint-config-next` has a compatible peer range.
+- Do not encode these compatibility notes as Dependabot `ignore` rules:
+  ignores can also suppress security updates. Re-evaluate them during
+  intentional manual dependency upgrades.
+
 ## Coding Style & Naming Conventions
 
 - 4-space indentation; keep functions small and composable.
