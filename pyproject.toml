@@ -24,7 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 jobs = [
     "prefect==3.8.0",
-    "rlmbenchy @ git+https://github.com/lukleh/rlmbenchy.git@99ac7864c52f15d298d39fac80dd0c72a2d2ab27",
+    "rlmbenchy @ git+https://github.com/lukleh/rlmbenchy.git",
 ]
 ml = [
     # Optional host-side helpers for RAG, speaker tooling, and workflow scripts.

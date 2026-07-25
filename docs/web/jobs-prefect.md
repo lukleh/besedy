@@ -52,8 +52,9 @@ The following boundary points still hold, independent of the orchestration subst
 - Besedy remains the domain source for retrieval, citation expansion, and metadata lookup
 - Besedy owns the deep-search signature and retrieval tools; `rlmbenchy` provides the generic RLM runtime
 - the worker runtime is Python-based
-- the `jobs` extra declares `rlmbenchy` as a Git dependency pinned to an
-  exact revision; Besedy's committed `uv.lock` resolves the complete runtime
+- the `jobs` extra declares `rlmbenchy` as a Git dependency tracking its
+  default branch; jobs setup, tests, CI, and image builds refresh that branch
+  before syncing, while `uv.lock` records the revision resolved most recently
 - the public route shape stays typed and Besedy-owned
 - product auth and per-user visibility rules are still deferred until the execution path is proven
 
@@ -456,8 +457,8 @@ Suggested image split:
 - use a Besedy repo image for `jobs-api` and `prefect-worker`, with `prefect` and the packaged `rlmbenchy` distribution installed in the same environment as Besedy
 
 The production runtime is image-only: it does not mount the Besedy checkout.
-The Docker build installs Besedy and its revision-pinned `rlmbenchy` dependency
-from the public Git repository over HTTPS according to the committed `uv.lock`.
+The Docker build refreshes and installs Besedy's `rlmbenchy` dependency from
+the latest default-branch revision in the public Git repository over HTTPS.
 Production containers run as a non-root UID/GID, use a read-only root filesystem
 with a bounded `/tmp` tmpfs, drop all capabilities, and enable
 `no-new-privileges`. Only the worker output directory is writable persistently;
@@ -467,9 +468,9 @@ For the first worker, mount only the persistent output volume (plus the Besedy
 config file read-only). The production API sees output read-only; the worker
 sees it read-write.
 
-Do not mount the `rlmbenchy` checkout into the build or running worker. Update
-the pinned Git revision and regenerate `uv.lock` when Besedy intentionally
-adopts a newer `rlmbenchy` version.
+Do not mount the `rlmbenchy` checkout into the build or running worker. The
+dependency remains packaged into the image; rebuilding refreshes its default
+branch and records the resolved commit in the build-stage lockfile.
 
 ## Deployment Registration Plan
 
