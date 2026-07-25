@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
 
   prefect-db-upgrade:
-    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.7.8-python3.13}
+    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.8.0-python3.13}
     container_name: besedy-prefect-db-upgrade
     depends_on:
       prefect-postgres:
@@ -41,7 +41,7 @@ services:
       - prefect
 
   prefect-server:
-    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.7.8-python3.13}
+    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.8.0-python3.13}
     container_name: besedy-prefect-server
     depends_on:
       prefect-db-upgrade:
@@ -76,7 +76,7 @@ services:
     restart: unless-stopped
 
   prefect-services:
-    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.7.8-python3.13}
+    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.8.0-python3.13}
     container_name: besedy-prefect-services
     depends_on:
       prefect-db-upgrade:
