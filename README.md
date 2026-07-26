@@ -16,6 +16,21 @@ support multilingual archives.
 [Get started](#get-started) ·
 [Read the documentation](docs/README.md)
 
+![Besedy event catalog showing synthetic demonstration data](docs/assets/besedy-event-catalog.png)
+
+*Desktop and mobile views shown with entirely synthetic demonstration data.*
+
+<table>
+  <tr>
+    <th>Browse events</th>
+    <th>Listen and read along</th>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/besedy-event-catalog-mobile.png" alt="Besedy mobile event catalog showing synthetic demonstration data"></td>
+    <td><img src="docs/assets/besedy-recording-mobile.png" alt="Besedy mobile recording and transcript view showing synthetic demonstration data"></td>
+  </tr>
+</table>
+
 ## What you can do with Besedy
 
 - Bring a folder of recordings into a content-addressed catalog that detects
