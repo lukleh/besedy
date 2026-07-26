@@ -5,7 +5,7 @@
  * These files are gitignored and regenerated on each test run.
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -26,7 +26,7 @@ export interface TestAudioFile {
  */
 export function checkFfmpeg(): boolean {
   try {
-    execSync("ffmpeg -version", { stdio: "ignore" });
+    execFileSync("ffmpeg", ["-version"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -47,18 +47,22 @@ export async function generateAudioFile(
   // sine: generate sine wave
   // -ar 16000: sample rate 16kHz (matches production requirement)
   // -ac 1: mono channel
-  const cmd = [
-    "ffmpeg",
+  const args = [
     "-y", // overwrite output
-    "-f", "lavfi",
-    `-i`, `sine=frequency=${spec.frequency}:duration=${spec.duration}`,
-    "-ar", "16000",
-    "-ac", "1",
-    "-c:a", "pcm_s16le", // 16-bit PCM
+    "-f",
+    "lavfi",
+    "-i",
+    `sine=frequency=${spec.frequency}:duration=${spec.duration}`,
+    "-ar",
+    "16000",
+    "-ac",
+    "1",
+    "-c:a",
+    "pcm_s16le", // 16-bit PCM
     outputPath,
-  ].join(" ");
+  ];
 
-  execSync(cmd, { stdio: "ignore" });
+  execFileSync("ffmpeg", args, { stdio: "ignore" });
 
   return outputPath;
 }
@@ -76,16 +80,18 @@ export async function generateCompressedAudio(
 
   const outputPath = path.join(compressedDir, `${hash}.webm`);
 
-  const cmd = [
-    "ffmpeg",
+  const args = [
     "-y",
-    "-i", wavPath,
-    "-c:a", "libopus",
-    "-b:a", "64k",
+    "-i",
+    wavPath,
+    "-c:a",
+    "libopus",
+    "-b:a",
+    "64k",
     outputPath,
-  ].join(" ");
+  ];
 
-  execSync(cmd, { stdio: "ignore" });
+  execFileSync("ffmpeg", args, { stdio: "ignore" });
 
   return outputPath;
 }
