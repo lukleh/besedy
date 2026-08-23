@@ -95,6 +95,8 @@ catalogs, transcripts, and audio from mounted host paths.
 ### Release Preflight
 
 - [ ] Deploy from a clean checkout of the intended commit
+- [ ] Keep `CONFIG_FILE` on an absolute path outside the checkout; the deploy
+      preflight requires a regular file readable by the unprivileged web container
 - [ ] Record current deployed version: `curl -s https://besedy.org/api/version | jq`
 - [ ] `just web-check` on the release candidate
 - [ ] `cd web && npm run test:e2e:smoke` for production smoke coverage

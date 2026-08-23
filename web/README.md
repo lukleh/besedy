@@ -108,9 +108,11 @@ For exposing to the internet via Cloudflare Tunnel, see [docs/web/operations.md]
 # Create production config from template
 mkdir -p ~/.config/lukleh/besedy
 cp .env.prod.example ~/.config/lukleh/besedy/web.env.prod
-cp besedy.container.toml.example besedy.container.toml
+cp besedy.container.toml.example ~/.config/lukleh/besedy/besedy.container.toml
+chmod 644 ~/.config/lukleh/besedy/besedy.container.toml
 
 # Edit with actual values:
+# - CONFIG_FILE: the absolute path to the external besedy.container.toml above
 # - APP_ENV=production
 # - POSTGRES_PASSWORD: strong password
 # - AUTH_SECRET: random 32-byte secret (openssl rand -base64 32)
@@ -128,18 +130,14 @@ web search and transcript export pointed at the language-aware transcript tree.
 ### Deploy
 
 ```bash
-# Build and start production
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" --profile backup up -d --build
-```
-
-Or use just commands:
-```bash
 just prod-deploy     # Full deploy with migrations
 just prod-up         # Start (assumes already built)
 just prod-rebuild    # Rebuild and restart
 ```
 
-The `--build` flag rebuilds the image from current code. This is the deployment step.
+These commands validate the external config bind before Docker can create or
+replace containers. Use `prod-deploy` for releases; it rebuilds the image from
+the current code and applies database migrations.
 
 ### Production Services
 

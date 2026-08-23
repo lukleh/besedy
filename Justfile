@@ -372,6 +372,8 @@ dev-status:
 # Start prod environment with version tracking
 prod-up:
     #!/usr/bin/env bash
+    set -euo pipefail
+    bash scripts/validate_web_config_mount.sh production
     {{ ensure_internal_network }}
     cd web
     export GIT_COMMIT=$(git rev-parse HEAD)
@@ -394,6 +396,7 @@ prod-restart:
 prod-rebuild:
     #!/usr/bin/env bash
     set -euo pipefail
+    bash scripts/validate_web_config_mount.sh production
     echo "Running web checks..."
     just web-check
     cd web
@@ -437,6 +440,7 @@ prod-rebuild:
 prod-deploy:
     #!/usr/bin/env bash
     set -euo pipefail
+    bash scripts/validate_web_config_mount.sh production
     echo "Running web checks..."
     just web-check
     cd web
