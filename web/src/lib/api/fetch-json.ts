@@ -2,7 +2,7 @@
 
 import type { ZodError, ZodType } from "zod";
 import { createClientLogger } from "@/lib/log/client";
-import { notifyCommitObserver } from "@/lib/service-worker/runtime";
+import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";
 
 type SchemaValidationIssue = ZodError["issues"][number];
 
@@ -104,13 +104,15 @@ export async function fetchJson<T>(
   const response = await fetch(input, requestInit);
 
   try {
-    const commit = response.headers?.get?.("X-App-Commit");
-    if (commit) {
-      notifyCommitObserver(commit);
+    const webVersion =
+      response.headers?.get?.("X-Web-Version") ??
+      response.headers?.get?.("X-App-Commit");
+    if (webVersion) {
+      notifyWebVersionObserver(webVersion);
     }
   } catch (error) {
-    // Observing the build commit must never break a real request.
-    logger.warn("Failed to notify commit observer", {
+    // Observing the deployed web version must never break a real request.
+    logger.warn("Failed to notify web-version observer", {
       input: formatRequestTarget(input),
       error,
     });

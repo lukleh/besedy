@@ -432,6 +432,7 @@ prod-rebuild:
         exit 1
     fi
     export GIT_COMMIT=$(git rev-parse HEAD)
+    export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull --no-cache web
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup up -d web
@@ -472,6 +473,7 @@ prod-deploy:
     fi
     echo "Building production with version tracking..."
     export GIT_COMMIT=$(git rev-parse HEAD)
+    export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull --no-cache web
     echo "Starting production services..."

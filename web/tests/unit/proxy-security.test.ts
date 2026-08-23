@@ -112,6 +112,7 @@ describe("proxy security controls", () => {
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost/");
     expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
     expect(response.headers.get("X-Frame-Options")).toBe("DENY");
     expect(response.headers.get("Strict-Transport-Security")).toBe(
       "max-age=31536000; includeSubDomains"

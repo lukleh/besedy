@@ -15,7 +15,7 @@ import { useSession } from "@/contexts/session-context";
 import type { SWToClientMessage, ClientToSWMessage } from "@/lib/service-worker/messages";
 import {
   createServiceWorkerRuntime,
-  registerCommitObserver,
+  registerWebVersionObserver,
   type ServiceWorkerMessageHandler,
   type ServiceWorkerRuntimeSnapshot,
 } from "@/lib/service-worker/runtime";
@@ -70,7 +70,7 @@ export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
   }, [runtime]);
 
   useEffect(() => {
-    return registerCommitObserver(runtime.observeCommit);
+    return registerWebVersionObserver(runtime.observeWebVersion);
   }, [runtime]);
 
   const applyUpdate = useCallback(() => {
