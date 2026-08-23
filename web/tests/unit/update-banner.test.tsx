@@ -20,7 +20,8 @@ const messages = {
   update: {
     banner: {
       title: "Update available",
-      description: "A new version is ready",
+      description: "A newer version was found",
+      readyDescription: "The latest version is ready",
     },
     refresh: "Refresh",
   },
@@ -34,6 +35,7 @@ const baseServiceWorkerState = {
   isRegistered: true,
   isReady: true,
   updateAvailable: true,
+  updateReady: true,
   error: null,
   wasDismissed: false,
   applyUpdate: vi.fn(),
@@ -95,6 +97,15 @@ describe("UpdateBanner", () => {
     renderBanner();
 
     expect(screen.getByText("Update available")).toBeInTheDocument();
+    expect(screen.getByText("The latest version is ready")).toBeInTheDocument();
+  });
+
+  it("uses the reload fallback while the service-worker update is not ready", () => {
+    setServiceWorkerState({ updateReady: false });
+
+    renderBanner();
+
+    expect(screen.getByText("A newer version was found")).toBeInTheDocument();
   });
 
   it("does not render when dismissed even if logged in", () => {

@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 export function UpdateBanner() {
   const t = useTranslations();
   const pathname = usePathname();
-  const { updateAvailable, wasDismissed, applyUpdate, dismissUpdate } = useServiceWorker();
+  const { updateAvailable, updateReady, wasDismissed, applyUpdate, dismissUpdate } = useServiceWorker();
   const { session } = useSession();
   const isLoggedIn = Boolean(session);
   const isAuthPage = pathname?.startsWith("/auth");
@@ -39,7 +39,7 @@ export function UpdateBanner() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">{t("update.banner.title")}</p>
           <p className="text-xs text-muted-foreground">
-            {t("update.banner.description")}
+            {t(updateReady ? "update.banner.readyDescription" : "update.banner.description")}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

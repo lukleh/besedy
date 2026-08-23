@@ -1761,7 +1761,8 @@
     "refresh": "Obnovit pro aktualizaci",
     "banner": {
       "title": "Aktualizace dostupná",
-      "description": "Obnovte stránku pro nejnovější verzi"
+      "description": "Byla nalezena novější verze. Obnovte stránku pro její načtení.",
+      "readyDescription": "Nejnovější verze je připravena k instalaci."
     }
   }
 }

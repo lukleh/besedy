@@ -317,17 +317,18 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
 - **Update banner** shows only to **logged-in** users when an update is
   available and not dismissed. **Logged-out sessions never see it and
   auto-apply updates** (SKIP_WAITING) to avoid stale sign-in pages.
-- **Dismissed updates auto-apply after a deadline** (default 24h) once the tab
-  is hidden or the user is idle (default 5min, checked every 30s) **and audio is
-  not playing** — an update arriving mid-playback waits until audio stops (1s
-  delay). Keys: `besedy-sw-update-dismissed`,
-  `besedy-sw-update-dismissed-deadline`. A **newer build clears the dismissal**
-  so the banner reappears.
+- **Updates auto-apply after a deadline** (default 24h from detection) once the
+  tab is hidden or the user is idle (default 5min, checked every 30s) **and
+  audio is not playing** — an update arriving mid-playback waits until audio
+  stops (1s delay). The version-scoped state is stored under
+  `besedy-sw-update-state`; a **newer web version clears an older dismissal** so
+  the banner reappears.
 - **Update detection:** the provider polls `/api/version` with
-  `cache: "no-store"` and compares the returned `commit` (sourced from the
-  `GIT_COMMIT` build env) against the running build; a changed commit signals a
-  new version. `/sw.js` is registered with `updateViaCache: "none"` but is not
-  itself the update signal.
+  `cache: "no-store"` and compares the returned `webVersion` against the
+  version embedded in the running client. `WEB_VERSION` is derived from the
+  tracked `web/` Git tree, so unrelated repository commits do not prompt a web
+  update. `/sw.js` is registered with `updateViaCache: "none"` and stamped with
+  the same web version so browsers install a changed worker.
 
 ## Offline
 

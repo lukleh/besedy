@@ -9,20 +9,19 @@ import { useSession } from "@/contexts/session-context";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   createServiceWorkerRuntime,
-  notifyCommitObserver,
-  registerCommitObserver,
+  notifyWebVersionObserver,
+  registerWebVersionObserver
 } from "@/lib/service-worker/runtime";
 
 vi.mock("@/contexts/audio-playback-context", () => ({
-  useAudioPlayback: () => ({ isAudioPlaying: false }),
+  useAudioPlayback: () => ({ isAudioPlaying: false })
 }));
 
 vi.mock("@/contexts/session-context", () => ({
-  useSession: vi.fn(),
+  useSession: vi.fn()
 }));
 
-const DISMISSED_STORAGE_KEY = "besedy-sw-update-dismissed";
-const DISMISSED_UPDATE_DEADLINE_KEY = "besedy-sw-update-dismissed-deadline";
+const UPDATE_STATE_STORAGE_KEY = "besedy-sw-update-state";
 
 function StateProbe() {
   const { wasDismissed, updateAvailable } = useServiceWorker();
@@ -36,7 +35,7 @@ function StateProbe() {
 }
 
 function CallbackProbe({
-  onRender,
+  onRender
 }: {
   onRender: (callbacks: {
     postMessage: ReturnType<typeof useServiceWorker>["postMessage"];
@@ -54,10 +53,7 @@ function CallbackProbe({
 }
 
 describe("ServiceWorkerProvider", () => {
-  const originalServiceWorker = Object.getOwnPropertyDescriptor(
-    navigator,
-    "serviceWorker"
-  );
+  const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,16 +68,16 @@ describe("ServiceWorkerProvider", () => {
           email: "user@example.com",
           name: "User",
           image: null,
-          emailVerified: true,
+          emailVerified: true
         },
         session: {
           id: "session-1",
           token: "token",
-          expiresAt: new Date("2025-01-01T00:00:00.000Z"),
-        },
+          expiresAt: new Date("2025-01-01T00:00:00.000Z")
+        }
       },
       isPending: false,
-      refetch: vi.fn(),
+      refetch: vi.fn()
     });
   });
 
@@ -99,13 +95,13 @@ describe("ServiceWorkerProvider", () => {
     }
   });
 
-  it("clears dismissed update keys on controllerchange", async () => {
+  it("clears persisted update state on controllerchange", async () => {
     const listeners = new Map<string, Set<() => void>>();
     const registrationMock = {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
 
     const serviceWorkerMock = {
@@ -119,12 +115,12 @@ describe("ServiceWorkerProvider", () => {
       }),
       removeEventListener: vi.fn((event: string, handler: () => void) => {
         listeners.get(event)?.delete(handler);
-      }),
+      })
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     render(
@@ -141,36 +137,46 @@ describe("ServiceWorkerProvider", () => {
       listeners.get("controllerchange")?.forEach((handler) => handler());
     });
 
-    expect(window.localStorage.removeItem).toHaveBeenCalledWith(
-      DISMISSED_STORAGE_KEY
-    );
-    expect(window.localStorage.removeItem).toHaveBeenCalledWith(
-      DISMISSED_UPDATE_DEADLINE_KEY
-    );
+    expect(window.localStorage.removeItem).toHaveBeenCalledWith(UPDATE_STATE_STORAGE_KEY);
   });
 
-  it("keeps dismissal when update already waiting", async () => {
+  it("restores dismissal for the same web version when its worker is waiting", async () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+    );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
-      if (key === DISMISSED_STORAGE_KEY) return "true";
+      if (key === UPDATE_STATE_STORAGE_KEY) {
+        return JSON.stringify({
+          version: "web-b",
+          dismissed: true,
+          deadline: Date.now() + 60_000
+        });
+      }
       return null;
     });
 
@@ -188,48 +194,45 @@ describe("ServiceWorkerProvider", () => {
       expect(screen.getByTestId("state").dataset.dismissed).toBe("true");
     });
 
-    expect(window.localStorage.removeItem).not.toHaveBeenCalledWith(
-      DISMISSED_STORAGE_KEY
-    );
+    expect(window.localStorage.removeItem).not.toHaveBeenCalledWith(UPDATE_STATE_STORAGE_KEY);
   });
 
-  it("clears dismissal when new update is found", async () => {
-    const listeners = new Map<string, Set<() => void>>();
-    let stateChangeHandler: (() => void) | null = null;
-    const installingWorker = {
-      state: "installing",
-      addEventListener: vi.fn((event: string, handler: () => void) => {
-        if (event === "statechange") {
-          stateChangeHandler = handler;
-        }
-      }),
-    };
+  it("clears dismissal when a different web version is detected", async () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
     const registrationMock = {
       waiting: null,
-      installing: installingWorker,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn((event: string, handler: () => void) => {
-        if (!listeners.has(event)) {
-          listeners.set(event, new Set());
-        }
-        listeners.get(event)?.add(handler);
-      }),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: {},
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+      })
+    );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
-      if (key === DISMISSED_STORAGE_KEY) return "true";
+      if (key === UPDATE_STATE_STORAGE_KEY) {
+        return JSON.stringify({
+          version: "web-b",
+          dismissed: true,
+          deadline: Date.now() + 60_000
+        });
+      }
       return null;
     });
 
@@ -243,54 +246,56 @@ describe("ServiceWorkerProvider", () => {
       expect(serviceWorkerMock.register).toHaveBeenCalled();
     });
 
-    act(() => {
-      listeners.get("updatefound")?.forEach((handler) => handler());
-      installingWorker.state = "installed";
-      stateChangeHandler?.();
-    });
-
     await waitFor(() => {
       expect(screen.getByTestId("state").dataset.dismissed).toBe("false");
     });
 
-    expect(window.localStorage.removeItem).toHaveBeenCalledWith(
-      DISMISSED_STORAGE_KEY
-    );
-    expect(window.localStorage.removeItem).toHaveBeenCalledWith(
-      DISMISSED_UPDATE_DEADLINE_KEY
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(
+      UPDATE_STATE_STORAGE_KEY,
+      expect.stringContaining('"version":"web-c"')
     );
   });
 
-  it("auto-applies dismissed update after deadline when hidden in the app shell", async () => {
+  it("auto-applies an ignored update after its deadline when hidden", async () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     const deadline = Date.now() - 1000;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+    );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
-      if (key === DISMISSED_STORAGE_KEY) return "true";
-      if (key === DISMISSED_UPDATE_DEADLINE_KEY) return String(deadline);
+      if (key === UPDATE_STATE_STORAGE_KEY) {
+        return JSON.stringify({ version: "web-b", dismissed: false, deadline });
+      }
       return null;
     });
 
     Object.defineProperty(document, "visibilityState", {
       value: "hidden",
-      configurable: true,
+      configurable: true
     });
 
     render(
@@ -303,32 +308,30 @@ describe("ServiceWorkerProvider", () => {
       expect(serviceWorkerMock.register).toHaveBeenCalled();
     });
 
-    act(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
-
     await waitFor(() => {
-      expect(waitingWorker.postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+      expect(waitingWorker.postMessage).toHaveBeenCalledWith({
+        type: "SKIP_WAITING"
+      });
     });
   });
 
-  it("triggers registration.update() when a new commit is observed", async () => {
+  it("triggers registration.update() when a new web version is observed", async () => {
     const registrationMock = {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     render(
@@ -348,42 +351,42 @@ describe("ServiceWorkerProvider", () => {
     });
 
     act(() => {
-      notifyCommitObserver("commit-a");
+      notifyWebVersionObserver("web-a");
     });
     await waitFor(() => {
       expect(registrationMock.update).toHaveBeenCalledTimes(1);
     });
 
     act(() => {
-      notifyCommitObserver("commit-a");
+      notifyWebVersionObserver("web-a");
     });
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
 
     act(() => {
-      notifyCommitObserver("commit-b");
+      notifyWebVersionObserver("web-b");
     });
     await waitFor(() => {
       expect(registrationMock.update).toHaveBeenCalledTimes(2);
     });
   });
 
-  it("triggers registration.update() via fetchJson X-App-Commit header", async () => {
+  it("triggers registration.update() via fetchJson X-Web-Version header", async () => {
     const registrationMock = {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -391,9 +394,9 @@ describe("ServiceWorkerProvider", () => {
       status: 200,
       headers: new Headers({
         "content-type": "application/json",
-        "x-app-commit": "deployed-commit",
+        "x-web-version": "deployed-web-version"
       }),
-      json: vi.fn().mockResolvedValue({ ok: true }),
+      json: vi.fn().mockResolvedValue({ ok: true })
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -419,28 +422,28 @@ describe("ServiceWorkerProvider", () => {
       expect(registrationMock.update).toHaveBeenCalledTimes(1);
     });
 
-    // Same commit on a subsequent response must not re-trigger update().
+    // The same web version on a subsequent response must not re-trigger update().
     await fetchJson("/api/some-endpoint");
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores unknown and empty commit signals", async () => {
+  it("ignores unknown and empty web-version signals", async () => {
     const registrationMock = {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     render(
@@ -460,15 +463,15 @@ describe("ServiceWorkerProvider", () => {
     });
 
     act(() => {
-      notifyCommitObserver("unknown");
-      notifyCommitObserver("");
-      notifyCommitObserver(null);
+      notifyWebVersionObserver("unknown");
+      notifyWebVersionObserver("");
+      notifyWebVersionObserver(null);
     });
 
     expect(registrationMock.update).not.toHaveBeenCalled();
 
     act(() => {
-      notifyCommitObserver("real-commit");
+      notifyWebVersionObserver("real-web-version");
     });
 
     await waitFor(() => {
@@ -476,23 +479,23 @@ describe("ServiceWorkerProvider", () => {
     });
   });
 
-  it("advances commit detection on non-ok responses (500, 401)", async () => {
+  it("advances web-version detection on non-ok responses (500, 401)", async () => {
     const registrationMock = {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     const fetchMock = vi
@@ -503,9 +506,9 @@ describe("ServiceWorkerProvider", () => {
         statusText: "Internal Server Error",
         headers: new Headers({
           "content-type": "application/json",
-          "x-app-commit": "commit-500",
+          "x-web-version": "web-500"
         }),
-        json: vi.fn().mockResolvedValue({ error: "boom" }),
+        json: vi.fn().mockResolvedValue({ error: "boom" })
       })
       .mockResolvedValueOnce({
         ok: false,
@@ -513,9 +516,9 @@ describe("ServiceWorkerProvider", () => {
         statusText: "Unauthorized",
         headers: new Headers({
           "content-type": "application/json",
-          "x-app-commit": "commit-401",
+          "x-web-version": "web-401"
         }),
-        json: vi.fn().mockResolvedValue({ error: "unauthorized" }),
+        json: vi.fn().mockResolvedValue({ error: "unauthorized" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -540,9 +543,7 @@ describe("ServiceWorkerProvider", () => {
       expect(registrationMock.update).toHaveBeenCalledTimes(1);
     });
 
-    await expect(
-      fetchJson("/api/b", { skipAuthCheck: true })
-    ).rejects.toThrow();
+    await expect(fetchJson("/api/b", { skipAuthCheck: true })).rejects.toThrow();
     await waitFor(() => {
       expect(registrationMock.update).toHaveBeenCalledTimes(2);
     });
@@ -550,40 +551,41 @@ describe("ServiceWorkerProvider", () => {
 
   it("checks /api/version immediately and then hourly in the authenticated app shell", async () => {
     vi.useFakeTimers();
-    vi.stubEnv("NEXT_PUBLIC_GIT_COMMIT", "commit-a");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
 
     const registrationMock = {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ commit: "commit-a" }),
+        json: vi.fn().mockResolvedValue({ webVersion: "web-a" })
       })
       .mockResolvedValueOnce({
         ok: false,
-        status: 304,
+        status: 304
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ commit: "commit-b" }),
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -609,9 +611,10 @@ describe("ServiceWorkerProvider", () => {
       expect.objectContaining({ cache: "no-store" })
     );
     expect(
-      new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers)
-        .get("If-None-Match")
-    ).toBe('"commit-a"');
+      new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers).get(
+        "If-None-Match"
+      )
+    ).toBe('"web-a"');
     expect(registrationMock.update).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -620,9 +623,10 @@ describe("ServiceWorkerProvider", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(
-      new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers)
-        .get("If-None-Match")
-    ).toBe('"commit-a"');
+      new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).get(
+        "If-None-Match"
+      )
+    ).toBe('"web-a"');
     expect(registrationMock.update).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -631,41 +635,42 @@ describe("ServiceWorkerProvider", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(
-      new Headers((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers)
-        .get("If-None-Match")
-    ).toBe('"commit-a"');
+      new Headers((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers).get(
+        "If-None-Match"
+      )
+    ).toBe('"web-a"');
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
   });
 
-  it("offers a direct reload when the server commit changes but no worker installs", async () => {
+  it("offers a direct reload when the server web version changes but no worker installs", async () => {
     const registrationMock = {
       waiting: null,
       active: {},
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: {},
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ commit: "server-commit" }),
+      json: vi.fn().mockResolvedValue({ webVersion: "web-server" })
     });
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientCommit: "client-commit",
-      reloadPage,
+      clientVersion: "web-client",
+      reloadPage
     });
 
     const stop = runtime.start();
@@ -675,12 +680,13 @@ describe("ServiceWorkerProvider", () => {
 
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
-      shouldSilentlyActivateWaitingWorker: false,
+      shouldSilentlyActivateWaitingWorker: false
     });
 
     await waitFor(() => {
       expect(runtime.getSnapshot().updateAvailable).toBe(true);
     });
+    expect(runtime.getSnapshot().updateReady).toBe(false);
     expect(registrationMock.waiting).toBeNull();
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
 
@@ -689,33 +695,157 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
-  it("checks for a new commit when the installed app returns to the foreground", async () => {
-    vi.stubEnv("NEXT_PUBLIC_GIT_COMMIT", "client-commit");
-
+  it("persists a dismissal made before the target web version is known", async () => {
+    const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
-      waiting: null,
+      waiting: waitingWorker,
       active: {},
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: {},
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
-    const fetchMock = vi.fn()
+    let resolveVersionCheck!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(
+        new Promise<Response>((resolve) => {
+          resolveVersionCheck = resolve;
+        })
+      )
+    );
+
+    const runtime = createServiceWorkerRuntime({ clientVersion: "web-client" });
+    const stop = runtime.start();
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+
+    await waitFor(() => {
+      expect(runtime.getSnapshot().updateReady).toBe(true);
+    });
+
+    runtime.dismissUpdate();
+    resolveVersionCheck(
+      new Response(JSON.stringify({ webVersion: "web-server" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await waitFor(() => {
+      expect(window.localStorage.setItem).toHaveBeenCalledWith(
+        UPDATE_STATE_STORAGE_KEY,
+        expect.stringContaining('"dismissed":true')
+      );
+    });
+
+    stop();
+  });
+
+  it("detects a newer web version while an earlier update is still pending", async () => {
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    const serviceWorkerMock = {
+      controller: {},
+      register: vi.fn().mockResolvedValue(registrationMock),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    };
+
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runtime = createServiceWorkerRuntime({ clientVersion: "web-a" });
+    const stop = runtime.start();
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(runtime.getSnapshot().updateAvailable).toBe(true);
+    });
+    runtime.dismissUpdate();
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(window.localStorage.setItem).toHaveBeenLastCalledWith(
+        UPDATE_STATE_STORAGE_KEY,
+        expect.stringContaining('"version":"web-c"')
+      );
+      expect(runtime.getSnapshot().wasDismissed).toBe(false);
+    });
+
+    stop();
+  });
+
+  it("checks for a new web version when the installed app returns to the foreground", async () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-client");
+
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    const serviceWorkerMock = {
+      controller: {},
+      register: vi.fn().mockResolvedValue(registrationMock),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    };
+
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true
+    });
+
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce({ ok: false, status: 304 })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ commit: "server-commit" }),
+        json: vi.fn().mockResolvedValue({ webVersion: "web-server" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -731,7 +861,7 @@ describe("ServiceWorkerProvider", () => {
 
     Object.defineProperty(document, "visibilityState", {
       value: "visible",
-      configurable: true,
+      configurable: true
     });
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
@@ -744,11 +874,11 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("swallows observer errors to protect fetch callers", () => {
-    const unregister = registerCommitObserver(() => {
+    const unregister = registerWebVersionObserver(() => {
       throw new Error("observer boom");
     });
 
-    expect(() => notifyCommitObserver("throwing-commit")).not.toThrow();
+    expect(() => notifyWebVersionObserver("throwing-version")).not.toThrow();
 
     unregister();
   });
@@ -763,18 +893,18 @@ describe("ServiceWorkerProvider", () => {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     window.history.replaceState({}, "", "/auth/signin");
@@ -808,24 +938,24 @@ describe("ServiceWorkerProvider", () => {
       waiting: waitingWorker,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: {},
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     vi.mocked(useSession).mockReturnValue({
       session: null,
       isPending: false,
-      refetch: vi.fn(),
+      refetch: vi.fn()
     });
     window.history.replaceState({}, "", "/auth/signin");
     vi.mocked(usePathname).mockReturnValue("/auth/signin");
@@ -837,7 +967,9 @@ describe("ServiceWorkerProvider", () => {
     );
 
     await waitFor(() => {
-      expect(waitingWorker.postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+      expect(waitingWorker.postMessage).toHaveBeenCalledWith({
+        type: "SKIP_WAITING"
+      });
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(registrationMock.update).not.toHaveBeenCalled();
@@ -856,7 +988,7 @@ describe("ServiceWorkerProvider", () => {
         if (event === "statechange") {
           stateChangeHandler = handler;
         }
-      }),
+      })
     };
     const registrationMock = {
       waiting: null,
@@ -868,24 +1000,24 @@ describe("ServiceWorkerProvider", () => {
           listeners.set(event, new Set());
         }
         listeners.get(event)?.add(handler);
-      }),
+      })
     };
     const serviceWorkerMock = {
       controller: {},
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     vi.mocked(useSession).mockReturnValue({
       session: null,
       isPending: false,
-      refetch: vi.fn(),
+      refetch: vi.fn()
     });
     window.history.replaceState({}, "", "/auth/signin");
     vi.mocked(usePathname).mockReturnValue("/auth/signin");
@@ -907,7 +1039,9 @@ describe("ServiceWorkerProvider", () => {
     });
 
     await waitFor(() => {
-      expect(installingWorker.postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+      expect(installingWorker.postMessage).toHaveBeenCalledWith({
+        type: "SKIP_WAITING"
+      });
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -922,24 +1056,24 @@ describe("ServiceWorkerProvider", () => {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
 
     vi.mocked(useSession).mockReturnValue({
       session: null,
       isPending: false,
-      refetch: vi.fn(),
+      refetch: vi.fn()
     });
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     render(
@@ -967,7 +1101,7 @@ describe("ServiceWorkerProvider", () => {
       waiting: null,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: {},
@@ -980,19 +1114,19 @@ describe("ServiceWorkerProvider", () => {
       }),
       removeEventListener: vi.fn((event: string, handler: () => void) => {
         listeners.get(event)?.delete(handler);
-      }),
+      })
     };
     const consoleLogMock = vi.spyOn(console, "log").mockImplementation(() => {});
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     vi.mocked(useSession).mockReturnValue({
       session: null,
       isPending: false,
-      refetch: vi.fn(),
+      refetch: vi.fn()
     });
     window.history.replaceState({}, "", "/auth/signin");
     vi.mocked(usePathname).mockReturnValue("/auth/signin");
@@ -1026,13 +1160,13 @@ describe("ServiceWorkerProvider", () => {
       waiting: waitingWorker,
       active: null,
       update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn()
     };
     const serviceWorkerMock = {
       controller: null,
       register: vi.fn().mockResolvedValue(registrationMock),
       addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     };
     const renders: Array<{
       postMessage: ReturnType<typeof useServiceWorker>["postMessage"];
@@ -1042,7 +1176,7 @@ describe("ServiceWorkerProvider", () => {
 
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
-      configurable: true,
+      configurable: true
     });
 
     render(

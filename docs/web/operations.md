@@ -124,8 +124,11 @@ container recreation (which can corrupt indexes). Its `prod-migrate` step grants
 the app access to newly migrated tables and then re-applies the `audit_log`
 DELETE revoke.
 
-**Version tracking:** The build embeds `GIT_COMMIT` and `BUILD_TIME`. Visible at
-`GET /api/version` and in the admin sidebar footer.
+**Version tracking:** The build keeps `GIT_COMMIT` for deployment diagnostics
+and derives `WEB_VERSION` from the tracked `web/` Git tree for browser updates.
+Root-only and jobs/Python commits therefore do not replace the service worker.
+Both identifiers are visible at `GET /api/version`; the admin sidebar continues
+to display the source commit.
 
 **Fresh database caveat:** On a brand-new DB from the full migration chain,
 install the `vector` extension before the first migration:

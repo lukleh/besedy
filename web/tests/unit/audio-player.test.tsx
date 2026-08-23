@@ -10,6 +10,7 @@ vi.mock("@/contexts/service-worker-context", () => ({
     isRegistered: false,
     isReady: false,
     updateAvailable: false,
+    updateReady: false,
     error: null,
     wasDismissed: false,
     applyUpdate: vi.fn(),

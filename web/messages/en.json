@@ -1762,7 +1762,8 @@
     "refresh": "Refresh to update",
     "banner": {
       "title": "Update available",
-      "description": "Refresh to get the latest version"
+      "description": "A newer version was found. Refresh to load it.",
+      "readyDescription": "The latest version is ready to install."
     }
   }
 }

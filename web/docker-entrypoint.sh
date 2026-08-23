@@ -65,6 +65,11 @@ if [ "${APP_ENV}" = "production" ]; then
     echo "ERROR: GIT_COMMIT must be set in production"
     exit 1
   fi
+  require_env WEB_VERSION
+  if [ "${WEB_VERSION}" = "unknown" ]; then
+    echo "ERROR: WEB_VERSION must be set in production"
+    exit 1
+  fi
 
   if [ -z "${AUTH_SECRET:-}" ] && [ -z "${BETTER_AUTH_SECRET:-}" ]; then
     echo "ERROR: AUTH_SECRET or BETTER_AUTH_SECRET must be set in production"

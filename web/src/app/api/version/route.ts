@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   const gitCommit = process.env.GIT_COMMIT || "unknown";
+  const webVersion = process.env.WEB_VERSION || gitCommit;
   const buildTime = process.env.BUILD_TIME || null;
   const appEnv = process.env.APP_ENV || "development";
-  const etag = `"${gitCommit}"`;
+  const etag = `"${webVersion}"`;
 
   const ifNoneMatch = request.headers.get("if-none-match");
   if (ifNoneMatch && ifNoneMatch === etag) {
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.json({
     commit: gitCommit,
     commitShort: gitCommit.slice(0, 7),
+    webVersion,
     buildTime,
     environment: appEnv,
   });

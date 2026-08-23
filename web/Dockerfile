@@ -40,13 +40,13 @@ ARG NEXT_PUBLIC_SUPPORT_EMAIL_B64
 ENV NEXT_PUBLIC_SUPPORT_EMAIL_B64=${NEXT_PUBLIC_SUPPORT_EMAIL_B64}
 ARG OAUTH_MOCK_URL
 ENV OAUTH_MOCK_URL=${OAUTH_MOCK_URL}
-# Git commit for version tracking
-ARG GIT_COMMIT=unknown
-ARG BUILD_TIME
-ENV NEXT_PUBLIC_GIT_COMMIT=${GIT_COMMIT}
-# Service-worker updates are byte-compared by browsers. Stamp every production
-# build so an app-only deploy still creates a waiting worker for existing PWAs.
-RUN printf '\n// Build commit: %s\n' "$GIT_COMMIT" >> public/sw.js \
+# Web-tree version for client update tracking. The repository commit remains a
+# separate runtime diagnostic and does not alter browser assets.
+ARG WEB_VERSION=unknown
+ENV NEXT_PUBLIC_WEB_VERSION=${WEB_VERSION}
+# Service-worker updates are byte-compared by browsers. Stamp it only when the
+# tracked web application changes, not for unrelated repository commits.
+RUN printf '\n// Web version: %s\n' "$WEB_VERSION" >> public/sw.js \
     && npm run build
 
 # Production target
@@ -55,8 +55,10 @@ ENV NODE_ENV=production
 
 # Version tracking (passed from build stage)
 ARG GIT_COMMIT=unknown
+ARG WEB_VERSION=unknown
 ARG BUILD_TIME
 ENV GIT_COMMIT=${GIT_COMMIT}
+ENV WEB_VERSION=${WEB_VERSION}
 ENV BUILD_TIME=${BUILD_TIME}
 
 # Refresh Alpine packages even when the local Node base image is stale, and

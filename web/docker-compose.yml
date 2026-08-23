@@ -59,6 +59,7 @@ services:
         NEXT_PUBLIC_SUPPORT_EMAIL_B64: ${NEXT_PUBLIC_SUPPORT_EMAIL_B64:-}
         OAUTH_MOCK_URL: ${OAUTH_MOCK_URL:-}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        WEB_VERSION: ${WEB_VERSION:-unknown}
         BUILD_TIME: ${BUILD_TIME:-}
     depends_on:
       db:

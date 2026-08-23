@@ -26,6 +26,7 @@ import { SESSION_STATIC_QUERY_PROFILE } from "@/lib/query/profiles";
 interface VersionInfo {
   commit: string;
   commitShort: string;
+  webVersion: string;
   buildTime: string | null;
   environment: string;
 }
@@ -85,7 +86,7 @@ function VersionDisplay() {
       <GitCommit className="h-3 w-3" />
       <span
         className="font-mono"
-        title={`Commit: ${version.commit}\n${version.buildTime ? `Built: ${version.buildTime}` : ""}`}
+        title={`Commit: ${version.commit}\nWeb: ${version.webVersion}\n${version.buildTime ? `Built: ${version.buildTime}` : ""}`}
       >
         {version.commitShort}
       </span>
