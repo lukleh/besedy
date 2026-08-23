@@ -8,6 +8,7 @@ import { ServiceWorkerProvider, useServiceWorker } from "@/contexts/service-work
 import { useSession } from "@/contexts/session-context";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
+  createServiceWorkerRuntime,
   notifyCommitObserver,
   registerCommitObserver,
 } from "@/lib/service-worker/runtime";
@@ -86,6 +87,7 @@ describe("ServiceWorkerProvider", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   afterAll(() => {
@@ -546,8 +548,9 @@ describe("ServiceWorkerProvider", () => {
     });
   });
 
-  it("checks /api/version hourly with ETag fallback in the authenticated app shell", async () => {
+  it("checks /api/version immediately and then hourly in the authenticated app shell", async () => {
     vi.useFakeTimers();
+    vi.stubEnv("NEXT_PUBLIC_GIT_COMMIT", "commit-a");
 
     const registrationMock = {
       waiting: null,
@@ -595,10 +598,8 @@ describe("ServiceWorkerProvider", () => {
     });
     expect(serviceWorkerMock.register).toHaveBeenCalled();
 
-    expect(fetchMock).not.toHaveBeenCalled();
-
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000 * 60 * 60);
+      await Promise.resolve();
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -607,7 +608,11 @@ describe("ServiceWorkerProvider", () => {
       "/api/version",
       expect.objectContaining({ cache: "no-store" })
     );
-    expect(registrationMock.update).toHaveBeenCalledTimes(1);
+    expect(
+      new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers)
+        .get("If-None-Match")
+    ).toBe('"commit-a"');
+    expect(registrationMock.update).not.toHaveBeenCalled();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000 * 60 * 60);
@@ -618,7 +623,7 @@ describe("ServiceWorkerProvider", () => {
       new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers)
         .get("If-None-Match")
     ).toBe('"commit-a"');
-    expect(registrationMock.update).toHaveBeenCalledTimes(1);
+    expect(registrationMock.update).not.toHaveBeenCalled();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000 * 60 * 60);
@@ -629,7 +634,113 @@ describe("ServiceWorkerProvider", () => {
       new Headers((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers)
         .get("If-None-Match")
     ).toBe('"commit-a"');
-    expect(registrationMock.update).toHaveBeenCalledTimes(2);
+    expect(registrationMock.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers a direct reload when the server commit changes but no worker installs", async () => {
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn(),
+    };
+    const serviceWorkerMock = {
+      controller: {},
+      register: vi.fn().mockResolvedValue(registrationMock),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true,
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ commit: "server-commit" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientCommit: "client-commit",
+      reloadPage,
+    });
+
+    const stop = runtime.start();
+    await waitFor(() => {
+      expect(serviceWorkerMock.register).toHaveBeenCalled();
+    });
+
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false,
+    });
+
+    await waitFor(() => {
+      expect(runtime.getSnapshot().updateAvailable).toBe(true);
+    });
+    expect(registrationMock.waiting).toBeNull();
+    expect(registrationMock.update).toHaveBeenCalledTimes(1);
+
+    expect(runtime.applyUpdate()).toBe(true);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("checks for a new commit when the installed app returns to the foreground", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GIT_COMMIT", "client-commit");
+
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn(),
+    };
+    const serviceWorkerMock = {
+      controller: {},
+      register: vi.fn().mockResolvedValue(registrationMock),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true,
+    });
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 304 })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ commit: "server-commit" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ServiceWorkerProvider>
+        <StateProbe />
+      </ServiceWorkerProvider>
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId("state").dataset.update).toBe("true");
+    });
   });
 
   it("swallows observer errors to protect fetch callers", () => {
