@@ -61,6 +61,16 @@ interface VersionInfoResponse {
   commit?: string | null;
 }
 
+interface ServiceWorkerRuntimeOptions {
+  clientCommit?: string;
+  reloadPage?: () => void;
+}
+
+function normalizeCommit(commit: string | null | undefined): string | null {
+  if (!commit || commit === "unknown") return null;
+  return commit;
+}
+
 function hasServiceWorkerSupport(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator;
 }
@@ -92,7 +102,11 @@ function createInitialSnapshot(): ServiceWorkerRuntimeSnapshot {
   };
 }
 
-export function createServiceWorkerRuntime() {
+export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions = {}) {
+  const clientCommit = normalizeCommit(
+    options.clientCommit ?? process.env.NEXT_PUBLIC_GIT_COMMIT
+  );
+  const reloadPage = options.reloadPage ?? (() => window.location.reload());
   let snapshot = createInitialSnapshot();
   let mode: ServiceWorkerRuntimeMode = {
     isAuthenticatedAppShell: false,
@@ -108,7 +122,9 @@ export function createServiceWorkerRuntime() {
   let versionCheckAbortController: AbortController | null = null;
   let lastActivity = Date.now();
   let autoApplyDismissed = false;
-  let lastVersion: string | null = null;
+  let lastVersion: string | null = clientCommit;
+  let initialVersionCheckPending = clientCommit !== null;
+  let hasServerCommitMismatch = false;
   let wasAudioPlayingOnUpdate = false;
 
   const listeners = new Set<ServiceWorkerRuntimeListener>();
@@ -163,19 +179,30 @@ export function createServiceWorkerRuntime() {
     return true;
   }
 
-  function applyWaitingUpdate(): boolean {
+  function applyAvailableUpdate(): boolean {
     if (!mode.isAuthenticatedAppShell) {
       logger.info("Skipping automatic update activation outside app shell");
       return false;
     }
 
-    return activateWaitingWorker();
+    if (activateWaitingWorker()) {
+      return true;
+    }
+
+    if (!snapshot.updateAvailable) {
+      return false;
+    }
+
+    logger.info("Applying update with a direct page reload");
+    wasAudioPlayingOnUpdate = false;
+    clearAutoApplyTimeout();
+    reloadPage();
+    return true;
   }
 
   function shouldAutoApplyDismissedUpdate(): boolean {
     if (autoApplyDismissed) return false;
     if (!snapshot.updateAvailable || !snapshot.wasDismissed) return false;
-    if (!waitingWorker) return false;
     if (isAudioPlaying) return false;
 
     const deadline = readDismissedDeadline();
@@ -198,7 +225,7 @@ export function createServiceWorkerRuntime() {
 
     const runAutoApply = () => {
       if (!shouldAutoApplyDismissedUpdate()) return;
-      if (applyWaitingUpdate()) {
+      if (applyAvailableUpdate()) {
         autoApplyDismissed = true;
       }
     };
@@ -237,7 +264,7 @@ export function createServiceWorkerRuntime() {
     clearAutoApplyTimeout();
 
     if (!AUTO_APPLY_SW_UPDATES) return;
-    if (!snapshot.updateAvailable || !waitingWorker) return;
+    if (!snapshot.updateAvailable) return;
     if (!mode.isAuthenticatedAppShell) return;
     if (!wasAudioPlayingOnUpdate) return;
 
@@ -249,7 +276,7 @@ export function createServiceWorkerRuntime() {
     logger.info("Audio stopped, scheduling auto-apply update");
     autoApplyTimeoutId = window.setTimeout(() => {
       logger.info("Auto-applying update (audio stopped)");
-      applyWaitingUpdate();
+      applyAvailableUpdate();
     }, AUTO_APPLY_DELAY_MS);
   }
 
@@ -262,10 +289,28 @@ export function createServiceWorkerRuntime() {
   }
 
   function observeCommitUpdate(commit: string | null | undefined) {
-    if (!commit || commit === "unknown") return;
+    const normalizedCommit = normalizeCommit(commit);
+    if (!normalizedCommit) return;
     const previous = lastVersion;
-    if (previous === commit) return;
-    lastVersion = commit;
+    if (previous === normalizedCommit) return;
+    lastVersion = normalizedCommit;
+
+    if (clientCommit && normalizedCommit !== clientCommit) {
+      hasServerCommitMismatch = true;
+      if (!snapshot.updateAvailable) {
+        clearDismissedState();
+        setSnapshot((current) => ({ ...current, updateAvailable: true }));
+        logger.info("Update available - server commit differs from client build");
+
+        if (AUTO_APPLY_SW_UPDATES && mode.isAuthenticatedAppShell) {
+          wasAudioPlayingOnUpdate = isAudioPlaying;
+          logger.info("Audio playing on update:", isAudioPlaying);
+        }
+
+        refreshAutomation();
+      }
+    }
+
     registration?.update().catch(() => {});
   }
 
@@ -320,10 +365,30 @@ export function createServiceWorkerRuntime() {
       return;
     }
 
+    if (initialVersionCheckPending) {
+      initialVersionCheckPending = false;
+      void runVersionCheck();
+      return;
+    }
+
     versionCheckTimeoutId = window.setTimeout(
       runVersionCheck,
       VERSION_ETAG_CHECK_INTERVAL_MS
     );
+  }
+
+  function requestImmediateVersionCheck() {
+    if (!clientCommit) return;
+    if (!hasServiceWorkerSupport()) return;
+    if (!mode.isAuthenticatedAppShell || snapshot.updateAvailable) return;
+    if (versionCheckAbortController) return;
+
+    if (versionCheckTimeoutId !== null) {
+      window.clearTimeout(versionCheckTimeoutId);
+      versionCheckTimeoutId = null;
+    }
+
+    void runVersionCheck();
   }
 
   function refreshAutomation() {
@@ -406,8 +471,15 @@ export function createServiceWorkerRuntime() {
       messageHandlers.forEach((handler) => handler(event.data));
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        requestImmediateVersionCheck();
+      }
+    };
+
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     navigator.serviceWorker.addEventListener("message", handleMessage);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
@@ -416,6 +488,10 @@ export function createServiceWorkerRuntime() {
 
         registration = nextRegistration;
         setSnapshot((current) => ({ ...current, isRegistered: true }));
+
+        if (hasServerCommitMismatch) {
+          nextRegistration.update().catch(() => {});
+        }
 
         if (nextRegistration.waiting) {
           trackWaitingWorker(nextRegistration.waiting, false);
@@ -456,6 +532,7 @@ export function createServiceWorkerRuntime() {
 
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       navigator.serviceWorker.removeEventListener("message", handleMessage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
 
       clearAutoApplyTimeout();
       stopDismissedWatcher();
@@ -505,7 +582,7 @@ export function createServiceWorkerRuntime() {
     },
 
     applyUpdate() {
-      return applyWaitingUpdate();
+      return applyAvailableUpdate();
     },
 
     dismissUpdate() {

@@ -43,7 +43,11 @@ ENV OAUTH_MOCK_URL=${OAUTH_MOCK_URL}
 # Git commit for version tracking
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME
-RUN npm run build
+ENV NEXT_PUBLIC_GIT_COMMIT=${GIT_COMMIT}
+# Service-worker updates are byte-compared by browsers. Stamp every production
+# build so an app-only deploy still creates a waiting worker for existing PWAs.
+RUN printf '\n// Build commit: %s\n' "$GIT_COMMIT" >> public/sw.js \
+    && npm run build
 
 # Production target
 FROM base AS production
