@@ -154,6 +154,9 @@ export function EventListResults({
                   </TableHead>
                 </>
               ) : null}
+              <TableHead className="w-36 text-right">
+                {t("columnProgress")}
+              </TableHead>
             </TableRow>
             <TableRow className="bg-muted/30 hover:bg-muted/30">
               <TableHead className="py-1.5 font-normal">
@@ -236,13 +239,14 @@ export function EventListResults({
                   </TableHead>
                 </>
               ) : null}
+              <TableHead className="w-36 py-1.5 font-normal" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={showAllColumns ? 7 : 2}
+                  colSpan={showAllColumns ? 8 : 3}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   {hasActiveFilters ? t("noMatch") : t("empty")}
@@ -271,11 +275,6 @@ export function EventListResults({
                           {t("sessionLabel", { index: catalogEvent.sessionIndex })}
                         </Badge>
                       ) : null}
-                      <EventPlaybackProgress
-                        playback={catalogEvent.playback}
-                        className="mt-1"
-                        showLabel
-                      />
                     </TableCell>
                     <TableCell className="font-medium">
                       <div>{catalogEvent.location?.name ?? t("unknownLocation")}</div>
@@ -310,6 +309,15 @@ export function EventListResults({
                         </TableCell>
                       </>
                     ) : null}
+                    <TableCell className="w-36 text-right">
+                      <div className="flex justify-end">
+                        <EventPlaybackProgress
+                          playback={catalogEvent.playback}
+                          layout="inline"
+                          showLabel
+                        />
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })

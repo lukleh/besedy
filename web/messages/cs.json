@@ -1287,6 +1287,7 @@
       "sortOldestFirst": "Řadit podle data od nejstarších",
       "columnDate": "Datum",
       "columnLocation": "Místo",
+      "columnProgress": "Průběh",
       "columnStatus": "Stav",
       "columnRecordings": "Nahrávky",
       "columnSources": "Zdroje",

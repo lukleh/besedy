@@ -1288,6 +1288,7 @@
       "sortOldestFirst": "Sort by date, oldest first",
       "columnDate": "Date",
       "columnLocation": "Location",
+      "columnProgress": "Progress",
       "columnStatus": "Status",
       "columnRecordings": "Recordings",
       "columnSources": "Sources",
