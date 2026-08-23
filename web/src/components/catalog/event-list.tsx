@@ -14,6 +14,8 @@ import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
+  ArrowDownNarrowWide,
+  ArrowUpNarrowWide,
   ChevronDown,
   ChevronUp,
   Filter,
@@ -191,28 +193,44 @@ export function EventList({
     setFiltersReady(true);
   }, [catalogId, showAllColumns, showReleaseState]);
 
+  // Mobile only exposes date sorting. Keep an unsupported desktop sort in
+  // storage, though, so merely opening or resizing the mobile view does not
+  // erase the user's desktop preference.
+  const effectiveSortKey: EventSortKey = isDesktop ? sortKey : "date";
+  const effectiveSortDir: SortDirection = isDesktop
+    ? sortDir
+    : sortKey === "date"
+      ? sortDir
+      : "desc";
+
   const queryState = useMemo<EventListQueryState>(
     () => ({
       releasedFilter,
       locationFilter,
       dateYearFilter,
-      sortKey,
-      sortDir,
+      sortKey: effectiveSortKey,
+      sortDir: effectiveSortDir,
     }),
-    [releasedFilter, locationFilter, dateYearFilter, sortKey, sortDir],
+    [
+      releasedFilter,
+      locationFilter,
+      dateYearFilter,
+      effectiveSortKey,
+      effectiveSortDir,
+    ],
   );
 
   const listStateKey = useMemo(
     () =>
-      `${catalogId}|${page}|${releasedFilter}|${locationFilter}|${dateYearFilter}|${sortKey}|${sortDir}`,
+      `${catalogId}|${page}|${releasedFilter}|${locationFilter}|${dateYearFilter}|${effectiveSortKey}|${effectiveSortDir}`,
     [
       catalogId,
       page,
       releasedFilter,
       locationFilter,
       dateYearFilter,
-      sortKey,
-      sortDir,
+      effectiveSortKey,
+      effectiveSortDir,
     ],
   );
   const listStateKeyRef = useRef(listStateKey);
@@ -226,8 +244,8 @@ export function EventList({
         releasedFilter,
         locationFilter,
         dateYearFilter,
-        sortKey,
-        sortDir,
+        effectiveSortKey,
+        effectiveSortDir,
       ] as const,
     [
       catalogId,
@@ -235,8 +253,8 @@ export function EventList({
       releasedFilter,
       locationFilter,
       dateYearFilter,
-      sortKey,
-      sortDir,
+      effectiveSortKey,
+      effectiveSortDir,
     ],
   );
 
@@ -404,12 +422,16 @@ export function EventList({
     setPage(1);
   }
 
+  function handleMobileDateSort() {
+    setSortKey("date");
+    setSortDir(effectiveSortDir === "desc" ? "asc" : "desc");
+    setPage(1);
+  }
+
   function clearFilters() {
     setReleasedFilter("all");
     setLocationFilter("all");
     setDateYearFilter("all");
-    setSortKey("date");
-    setSortDir("desc");
     setPage(1);
     clearStoredEventListState(catalogId);
   }
@@ -735,6 +757,29 @@ export function EventList({
             ) : (
               <ChevronDown className="h-4 w-4" />
             )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleMobileDateSort}
+            className="h-9 shrink-0 px-3"
+            aria-label={
+              effectiveSortDir === "desc"
+                ? t("sortNewestFirst")
+                : t("sortOldestFirst")
+            }
+            data-testid="mobile-event-date-sort"
+          >
+            {effectiveSortDir === "desc" ? (
+              <ArrowDownNarrowWide className="mr-2 h-4 w-4" />
+            ) : (
+              <ArrowUpNarrowWide className="mr-2 h-4 w-4" />
+            )}
+            <span className="hidden min-[360px]:inline">
+              {effectiveSortDir === "desc"
+                ? t("sortNewest")
+                : t("sortOldest")}
+            </span>
           </Button>
           {hasActiveFilters && (
             <Button

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
+import { EventPlaybackProgress } from "./event-playback-progress";
 import type {
   CatalogEventRow,
   EventSortKey,
@@ -153,6 +154,9 @@ export function EventListResults({
                   </TableHead>
                 </>
               ) : null}
+              <TableHead className="w-36 text-right">
+                {t("columnProgress")}
+              </TableHead>
             </TableRow>
             <TableRow className="bg-muted/30 hover:bg-muted/30">
               <TableHead className="py-1.5 font-normal">
@@ -235,13 +239,14 @@ export function EventListResults({
                   </TableHead>
                 </>
               ) : null}
+              <TableHead className="w-36 py-1.5 font-normal" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={showAllColumns ? 7 : 2}
+                  colSpan={showAllColumns ? 8 : 3}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   {hasActiveFilters ? t("noMatch") : t("empty")}
@@ -304,6 +309,15 @@ export function EventListResults({
                         </TableCell>
                       </>
                     ) : null}
+                    <TableCell className="w-36 text-right">
+                      <div className="flex justify-end">
+                        <EventPlaybackProgress
+                          playback={catalogEvent.playback}
+                          layout="inline"
+                          showLabel
+                        />
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })
@@ -350,8 +364,8 @@ export function EventListResults({
                 )}
                 onClick={() => openEvent(catalogEvent.id)}
               >
-                <div className="px-4 py-3.5">
-                  <div className="min-w-0">
+                <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5">
+                  <div className="min-w-0 flex-1">
                     <div className="min-h-14 @[400px]:min-h-0">
                       <div className="text-lg leading-7 font-semibold">
                         <span className="block truncate @[400px]:inline">
@@ -369,6 +383,7 @@ export function EventListResults({
                       ) : null}
                     </div>
                   </div>
+                  <EventPlaybackProgress playback={catalogEvent.playback} />
                 </div>
               </button>
             );

@@ -2,8 +2,9 @@ export interface AudioPlayerProps {
   src: string;
   catalogId?: string;
   onTimeUpdate?: (time: number) => void;
+  onDurationChange?: (duration: number) => void;
   onPlayingChange?: (isPlaying: boolean) => void;
-  onEnded?: () => void;
+  onEnded?: (duration: number) => void;
   seekTo?: number;
   seekKey?: number;
   autoPlayOnSeek?: boolean;

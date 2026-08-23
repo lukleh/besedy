@@ -69,6 +69,7 @@ export function AudioPlayer({
   src,
   catalogId,
   onTimeUpdate,
+  onDurationChange,
   onPlayingChange,
   onEnded,
   seekTo,
@@ -544,6 +545,7 @@ export function AudioPlayer({
         return;
       }
       setDuration(nextDuration);
+      onDurationChange?.(nextDuration);
       logDebugEvent('loaded', label, `Duration: ${nextDuration.toFixed(1)}s`);
     };
 
@@ -579,7 +581,7 @@ export function AudioPlayer({
     const handleEnded = () => {
       setIsPlaying(false);
       onPlayingChange?.(false);
-      onEnded?.();
+      onEnded?.(Number.isFinite(audio.duration) ? audio.duration : 0);
     };
 
     const handlePlay = () => {
@@ -698,6 +700,7 @@ export function AudioPlayer({
     };
   }, [
     onTimeUpdate,
+    onDurationChange,
     onPlayingChange,
     onEnded,
     handleError,

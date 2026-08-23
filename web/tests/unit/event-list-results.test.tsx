@@ -33,6 +33,7 @@ const BASE_PROPS = {
       sourceCount: 2,
       posterStatus: { portrait: true, landscape: true },
       primaryTitle: "Primary track",
+      playback: null,
     },
   ],
   hasActiveFilters: false,
@@ -49,7 +50,7 @@ const BASE_PROPS = {
 };
 
 describe("EventListResults", () => {
-  it("shows only date and location when full columns are hidden", () => {
+  it("shows listener columns without owner-only fields", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
@@ -60,6 +61,7 @@ describe("EventListResults", () => {
 
     expect(screen.getByText("columnDate")).toBeInTheDocument();
     expect(screen.getByText("columnLocation")).toBeInTheDocument();
+    expect(screen.getByText("columnProgress")).toBeInTheDocument();
     expect(screen.queryByText("columnRecordings")).not.toBeInTheDocument();
     expect(screen.queryByText("columnStatus")).not.toBeInTheDocument();
     expect(screen.queryByText("Recordings: 3")).not.toBeInTheDocument();
@@ -107,5 +109,58 @@ describe("EventListResults", () => {
     expect(screen.getByText("columnStatus")).toBeInTheDocument();
     expect(screen.getAllByText("Primary track").length).toBeGreaterThan(0);
     expect(screen.getAllByText("released").length).toBeGreaterThan(0);
+  });
+
+  it("shows listening progress on the mobile event card", () => {
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        events={[
+          {
+            ...BASE_PROPS.events[0],
+            playback: {
+              positionSec: 900,
+              durationSec: 3600,
+              percent: 25,
+              completed: false,
+            },
+          },
+        ]}
+        showAllColumns={false}
+        showReleaseState={false}
+      />
+    );
+
+    expect(screen.getAllByLabelText("percentListened").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("25%").length).toBeGreaterThan(0);
+  });
+
+  it("places desktop progress in the fixed rightmost column", () => {
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        events={[
+          {
+            ...BASE_PROPS.events[0],
+            playback: {
+              positionSec: 900,
+              durationSec: 3600,
+              percent: 25,
+              completed: false,
+            },
+          },
+        ]}
+        showAllColumns={false}
+        showReleaseState={false}
+      />
+    );
+
+    const desktopTable = screen.getByRole("table");
+    const progress = within(desktopTable).getByLabelText("percentListened");
+    const progressCell = progress.closest("td");
+
+    expect(progressCell).toBe(progressCell?.parentElement?.lastElementChild);
+    expect(progressCell).toHaveClass("w-36", "text-right");
+    expect(progress).toHaveClass("inline-flex");
   });
 });

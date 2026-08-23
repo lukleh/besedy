@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -26,6 +27,8 @@ interface EventDetailProps {
   catalogId: string;
   eventId: number;
   canEdit: boolean;
+  showAllColumns: boolean;
+  showReleaseState: boolean;
 }
 
 interface EventRecording {
@@ -63,7 +66,13 @@ interface EventDetailResponse {
   } | null;
 }
 
-export function EventDetail({ catalogId, eventId, canEdit }: EventDetailProps) {
+export function EventDetail({
+  catalogId,
+  eventId,
+  canEdit,
+  showAllColumns,
+  showReleaseState,
+}: EventDetailProps) {
   const locale = useLocale();
   const t = useTranslations("events.detail");
   const tRoot = useTranslations();
@@ -283,6 +292,15 @@ export function EventDetail({ catalogId, eventId, canEdit }: EventDetailProps) {
       </div>
     ) : null;
 
+  const eventNavigation = (
+    <EventSequenceNavigation
+      catalogId={catalogId}
+      eventId={eventId}
+      showAllColumns={showAllColumns}
+      showReleaseState={showReleaseState}
+    />
+  );
+
   if (selectedRecording) {
     return (
       <RecordingContent
@@ -291,7 +309,12 @@ export function EventDetail({ catalogId, eventId, canEdit }: EventDetailProps) {
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
-        afterAudioPlayer={detailExtras}
+        afterAudioPlayer={
+          <div className="space-y-4">
+            {eventNavigation}
+            {detailExtras}
+          </div>
+        }
       />
     );
   }
@@ -357,6 +380,7 @@ export function EventDetail({ catalogId, eventId, canEdit }: EventDetailProps) {
       <div className="rounded-md border p-6 text-sm text-muted-foreground">
         {t("noRecordings")}
       </div>
+      {eventNavigation}
     </div>
   );
 }

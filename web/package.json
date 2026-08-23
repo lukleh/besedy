@@ -133,6 +133,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
+    "deepmerge-ts": "8.0.2",
     "find-my-way": "9.7.0",
     "postcss": "8.5.23",
     "sharp": "$sharp",

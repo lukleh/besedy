@@ -114,12 +114,13 @@ export default function RecordingContent({
     autoPlayOnSeek,
     currentTime,
     handleAudioEnded,
+    handleDurationChange,
     handlePlayingChange,
     handleSeek,
     isPlaying,
     seekRequest,
     setCurrentTime,
-  } = useRecordingPlayback(hash);
+  } = useRecordingPlayback(catalogId, hash);
 
   // Build back link URL - filters are restored from localStorage automatically
   const backToListUrl = `/catalog/${catalogId}`;
@@ -281,6 +282,7 @@ export default function RecordingContent({
         hash={hash}
         onAudioDownload={handleAudioDownload}
         onAudioEnded={handleAudioEnded}
+        onDurationChange={handleDurationChange}
         onPlayingChange={handlePlayingChange}
         onSourceChange={handleSourceChange}
         permissions={data ?? {}}

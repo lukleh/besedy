@@ -1282,8 +1282,13 @@
       "unassignedRecordingsWithCount": "Unassigned Recordings ({count})",
       "filters": "Filters",
       "clear": "Clear",
+      "sortNewest": "Newest",
+      "sortOldest": "Oldest",
+      "sortNewestFirst": "Sort by date, newest first",
+      "sortOldestFirst": "Sort by date, oldest first",
       "columnDate": "Date",
       "columnLocation": "Location",
+      "columnProgress": "Progress",
       "columnStatus": "Status",
       "columnRecordings": "Recordings",
       "columnSources": "Sources",
@@ -1347,6 +1352,16 @@
       "unknownRecorder": "Unknown recorder",
       "unknownLocation": "Unknown location",
       "noRecordings": "This event has no recordings attached yet."
+    },
+    "navigation": {
+      "ariaLabel": "Event navigation",
+      "previous": "Previous",
+      "next": "Next",
+      "position": "{position} of {total}"
+    },
+    "progress": {
+      "listened": "Listened",
+      "percentListened": "{percent}% listened"
     },
     "editor": {
       "toastRecordingAttached": "Recording attached",

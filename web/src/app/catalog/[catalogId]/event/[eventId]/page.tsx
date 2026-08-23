@@ -32,6 +32,8 @@ export default async function EventDetailPage({
       catalogId={catalogId}
       eventId={parsedEventId}
       canEdit={featureData.data.features.events.canEdit}
+      showAllColumns={featureData.data.features.events.showAllColumns}
+      showReleaseState={featureData.data.features.events.showReleaseState}
     />
   );
 }

@@ -36,6 +36,9 @@ vi.mock("@/lib/db", () => ({
     audioMetadata: {
       findMany: vi.fn(),
     },
+    recordingPlaybackProgress: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -56,6 +59,7 @@ describe("catalog events route", () => {
     location: { findMany: ReturnType<typeof vi.fn> };
     catalogEntry: { findMany: ReturnType<typeof vi.fn> };
     audioMetadata: { findMany: ReturnType<typeof vi.fn> };
+    recordingPlaybackProgress: { findMany: ReturnType<typeof vi.fn> };
   };
 
   beforeEach(async () => {
@@ -98,7 +102,7 @@ describe("catalog events route", () => {
           sortOrder: 1,
           createdAt: new Date("2024-04-03T10:00:00.000Z"),
           updatedAt: new Date("2024-04-03T10:00:00.000Z"),
-          recordings: [{ audioHash: primaryHash }],
+          recordings: [{ audioHash: primaryHash, isPrimary: true }],
           _count: { recordings: 1 },
         },
       ])
@@ -108,9 +112,11 @@ describe("catalog events route", () => {
       {
         audioHash: primaryHash,
         sourceTitle: "Primary recording",
+        durationHms: "01:00:00",
       },
     ]);
     prisma.audioMetadata.findMany.mockResolvedValue([]);
+    prisma.recordingPlaybackProgress.findMany.mockResolvedValue([]);
   });
 
   it("keeps draft events visible for owner listings", async () => {
@@ -131,6 +137,12 @@ describe("catalog events route", () => {
         where: {
           workflowGroupId: catalogId,
         },
+        include: expect.objectContaining({
+          recordings: {
+            select: { audioHash: true, isPrimary: true },
+            orderBy: [{ sortOrder: "asc" }, { audioHash: "asc" }],
+          },
+        }),
       }),
     );
 
@@ -189,5 +201,49 @@ describe("catalog events route", () => {
         },
       }),
     );
+  });
+
+  it("returns a lean, ordered sequence for detail navigation", async () => {
+    prisma.catalogEvent.findMany.mockReset();
+    prisma.catalogEvent.findMany
+      .mockResolvedValueOnce([{ id: 7 }, { id: 8 }])
+      .mockResolvedValueOnce([
+        {
+          id: 8,
+          dateYear: 2025,
+          dateMonth: 5,
+          dateDay: 4,
+          location: { id: 4, name: "Brno" },
+        },
+      ]);
+    const response = await getCatalogEvents(
+      new NextRequest(
+        `http://localhost/api/catalog-events?group=${catalogId}&sequence=true&current=7&sort=date&dir=asc`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(prisma.catalogEvent.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        orderBy: [
+          { dateYear: "asc" },
+          { dateMonth: "asc" },
+          { dateDay: "asc" },
+          { sessionIndex: "asc" },
+          { id: "asc" },
+        ],
+        select: { id: true },
+      }),
+    );
+    expect(await response.json()).toMatchObject({
+      previous: null,
+      next: { id: 8, location: { name: "Brno" } },
+      position: 1,
+      total: 2,
+    });
+    expect(prisma.location.findMany).not.toHaveBeenCalled();
+    expect(prisma.catalogEntry.findMany).not.toHaveBeenCalled();
+    expect(prisma.recordingPlaybackProgress.findMany).not.toHaveBeenCalled();
   });
 });
