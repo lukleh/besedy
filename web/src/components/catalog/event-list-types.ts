@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { PaginationInfo } from "@/components/catalog/catalog-list/types";
+import type { PlaybackProgressSummary } from "@/lib/playback-progress";
 
 export interface EventListProps {
   catalogId: string;
@@ -30,6 +31,7 @@ export interface CatalogEventRow {
     landscape: boolean;
   };
   primaryTitle: string | null;
+  playback: PlaybackProgressSummary | null;
 }
 
 export interface EventListResponse {
@@ -73,6 +75,14 @@ export const catalogEventRowSchema = z.object({
     landscape: z.boolean(),
   }),
   primaryTitle: z.string().nullable(),
+  playback: z
+    .object({
+      positionSec: z.number(),
+      durationSec: z.number().nullable(),
+      percent: z.number(),
+      completed: z.boolean(),
+    })
+    .nullable(),
 });
 
 export const eventListResponseSchema = z.object({

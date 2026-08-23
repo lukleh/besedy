@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
+import { EventPlaybackProgress } from "./event-playback-progress";
 import type {
   CatalogEventRow,
   EventSortKey,
@@ -270,6 +271,11 @@ export function EventListResults({
                           {t("sessionLabel", { index: catalogEvent.sessionIndex })}
                         </Badge>
                       ) : null}
+                      <EventPlaybackProgress
+                        playback={catalogEvent.playback}
+                        className="mt-1"
+                        showLabel
+                      />
                     </TableCell>
                     <TableCell className="font-medium">
                       <div>{catalogEvent.location?.name ?? t("unknownLocation")}</div>
@@ -350,8 +356,8 @@ export function EventListResults({
                 )}
                 onClick={() => openEvent(catalogEvent.id)}
               >
-                <div className="px-4 py-3.5">
-                  <div className="min-w-0">
+                <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5">
+                  <div className="min-w-0 flex-1">
                     <div className="min-h-14 @[400px]:min-h-0">
                       <div className="text-lg leading-7 font-semibold">
                         <span className="block truncate @[400px]:inline">
@@ -369,6 +375,7 @@ export function EventListResults({
                       ) : null}
                     </div>
                   </div>
+                  <EventPlaybackProgress playback={catalogEvent.playback} />
                 </div>
               </button>
             );

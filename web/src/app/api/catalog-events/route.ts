@@ -14,10 +14,15 @@ import {
   deriveEventTitle,
   normalizeOptionalString,
   parseEventSortKey,
+  parseDurationHmsToSeconds,
   parsePagination,
   parsePositiveInt,
   parseSortDirection,
 } from "@/lib/catalog-events/utils";
+import {
+  selectEventPlaybackProgress,
+  summarizePlaybackProgress,
+} from "@/lib/playback-progress";
 import { getPublishedVisibleEventIds } from "@/lib/catalog-events/visibility";
 import { requiresListenerEventVisibilityScope } from "@/lib/policy/event";
 
@@ -113,7 +118,7 @@ export async function GET(request: NextRequest) {
     if (!group) {
       return notFound("catalog");
     }
-    const { accessLevel } = await requireCatalogEventsAccess(workflowGroupId, "view");
+    const { accessLevel, userId } = await requireCatalogEventsAccess(workflowGroupId, "view");
     const publishedVisibleEventIds =
       requiresListenerEventVisibilityScope(accessLevel)
         ? await getPublishedVisibleEventIds(prisma, workflowGroupId)
@@ -127,6 +132,8 @@ export async function GET(request: NextRequest) {
     const locationId = parsePositiveInt(searchParams.get("location"));
     const dateYear = parsePositiveInt(searchParams.get("dateYear"));
     const search = normalizeOptionalString(searchParams.get("search"));
+    const sequenceOnly = searchParams.get("sequence") === "true";
+    const sequenceEventId = parsePositiveInt(searchParams.get("current"));
     const sortKey = parseEventSortKey(searchParams.get("sort"));
     const sortDir = parseSortDirection(searchParams.get("dir"));
     const pagination = parsePagination(searchParams);
@@ -147,6 +154,57 @@ export async function GET(request: NextRequest) {
         : {}),
     };
 
+    if (sequenceOnly) {
+      if (sequenceEventId === null) {
+        return badRequest("Missing or invalid current event id");
+      }
+
+      // Keep the response bounded: only IDs are needed to locate the current
+      // event, then details are loaded for its two neighbors at most.
+      const orderedIds = await prisma.catalogEvent.findMany({
+        where,
+        orderBy: parseListOrderBy(sortKey, sortDir),
+        select: { id: true },
+      });
+      const index = orderedIds.findIndex((event) => event.id === sequenceEventId);
+      if (index < 0) {
+        return NextResponse.json({
+          previous: null,
+          next: null,
+          position: null,
+          total: orderedIds.length,
+        });
+      }
+
+      const previousId = index > 0 ? orderedIds[index - 1].id : null;
+      const nextId =
+        index < orderedIds.length - 1 ? orderedIds[index + 1].id : null;
+      const neighborIds = [previousId, nextId].filter(
+        (id): id is number => id !== null
+      );
+      const neighbors =
+        neighborIds.length > 0
+          ? await prisma.catalogEvent.findMany({
+              where: { AND: [where, { id: { in: neighborIds } }] },
+              select: {
+                id: true,
+                dateYear: true,
+                dateMonth: true,
+                dateDay: true,
+                location: { select: { id: true, name: true } },
+              },
+            })
+          : [];
+      const neighborById = new Map(neighbors.map((event) => [event.id, event]));
+
+      return NextResponse.json({
+        previous: previousId === null ? null : neighborById.get(previousId) ?? null,
+        next: nextId === null ? null : neighborById.get(nextId) ?? null,
+        position: index + 1,
+        total: orderedIds.length,
+      });
+    }
+
     const isFiltered =
       released !== null ||
       locationId !== null ||
@@ -166,9 +224,8 @@ export async function GET(request: NextRequest) {
         include: {
           location: { select: { id: true, name: true } },
           recordings: {
-            where: { isPrimary: true },
-            take: 1,
-            select: { audioHash: true },
+            select: { audioHash: true, isPrimary: true },
+            orderBy: [{ sortOrder: "asc" }, { audioHash: "asc" }],
           },
           _count: { select: { recordings: true } },
         },
@@ -195,16 +252,23 @@ export async function GET(request: NextRequest) {
     const primaryHashes = Array.from(
       new Set(
         events
-          .map((event) => event.recordings[0]?.audioHash)
+          .map(
+            (event) =>
+              event.recordings.find((recording) => recording.isPrimary)
+                ?.audioHash ?? event.recordings[0]?.audioHash
+          )
           .filter((hash): hash is string => typeof hash === "string")
       )
     );
+    const eventHashes = Array.from(
+      new Set(events.flatMap((event) => event.recordings.map((recording) => recording.audioHash)))
+    );
 
-    const [catalogRows, metadataRows] = await Promise.all([
-      primaryHashes.length > 0
+    const [catalogRows, metadataRows, playbackRows] = await Promise.all([
+      eventHashes.length > 0
         ? prisma.catalogEntry.findMany({
-            where: { workflowGroupId, audioHash: { in: primaryHashes } },
-            select: { audioHash: true, sourceTitle: true },
+            where: { workflowGroupId, audioHash: { in: eventHashes } },
+            select: { audioHash: true, sourceTitle: true, durationHms: true },
           })
         : Promise.resolve([]),
       primaryHashes.length > 0
@@ -213,10 +277,25 @@ export async function GET(request: NextRequest) {
             select: { audioHash: true, title: true },
           })
         : Promise.resolve([]),
+      eventHashes.length > 0
+        ? prisma.recordingPlaybackProgress.findMany({
+            where: { userId, audioHash: { in: eventHashes } },
+            select: {
+              audioHash: true,
+              positionSec: true,
+              durationSec: true,
+              completedAt: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
     const sourceTitleByHash = new Map(catalogRows.map((row) => [row.audioHash, row.sourceTitle]));
+    const durationByHash = new Map(
+      catalogRows.map((row) => [row.audioHash, parseDurationHmsToSeconds(row.durationHms)])
+    );
     const curatedTitleByHash = new Map(metadataRows.map((row) => [row.audioHash, row.title]));
+    const playbackByHash = new Map(playbackRows.map((row) => [row.audioHash, row]));
     const eventAssetPairs = await Promise.all(
       events.map(async (event) => [
         event.id,
@@ -226,7 +305,10 @@ export async function GET(request: NextRequest) {
     const eventAssetsById = new Map(eventAssetPairs);
 
     const serialized = events.map((event) => {
-      const primaryAudioHash = event.recordings[0]?.audioHash ?? null;
+      const primaryAudioHash =
+        event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
+        event.recordings[0]?.audioHash ??
+        null;
       const primaryTitle =
         primaryAudioHash === null
           ? null
@@ -237,6 +319,14 @@ export async function GET(request: NextRequest) {
         posterStatus: EMPTY_POSTER_STATUS,
         sourceCount: 0,
       };
+      const playback = selectEventPlaybackProgress(
+        event.recordings.map((recording) =>
+          summarizePlaybackProgress(
+            playbackByHash.get(recording.audioHash),
+            durationByHash.get(recording.audioHash)
+          )
+        )
+      );
 
       return {
         id: event.id,
@@ -258,6 +348,7 @@ export async function GET(request: NextRequest) {
         posterStatus: eventAssets.posterStatus,
         primaryAudioHash,
         primaryTitle,
+        playback,
       };
     });
 

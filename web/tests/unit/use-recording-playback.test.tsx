@@ -30,7 +30,9 @@ vi.mock("@/contexts/audio-playback-context", () => ({
 }));
 
 const HASH = "a".repeat(64);
+const CATALOG_ID = "20260101_120000";
 const STORAGE_KEY = `besedy-playback-${HASH}`;
+const COMPLETION_KEY = `besedy-playback-completed-${HASH}`;
 
 function setVisibilityState(state: DocumentVisibilityState) {
   Object.defineProperty(document, "visibilityState", {
@@ -63,6 +65,15 @@ describe("useRecordingPlayback", () => {
       storage.clear();
     });
     localStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ progress: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
     setVisibilityState("visible");
   });
 
@@ -77,7 +88,7 @@ describe("useRecordingPlayback", () => {
     localStorage.setItem(STORAGE_KEY, "47");
 
     act(() => {
-      renderHook(() => useRecordingPlayback(HASH));
+      renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
       window.dispatchEvent(new Event("pagehide"));
     });
 
@@ -85,7 +96,7 @@ describe("useRecordingPlayback", () => {
   });
 
   it("saves on hide", () => {
-    const { result } = renderHook(() => useRecordingPlayback(HASH));
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
 
     act(() => {
       result.current.setCurrentTime(91);
@@ -104,7 +115,7 @@ describe("useRecordingPlayback", () => {
   it("clears a stale saved position when the user seeks back to the start", () => {
     localStorage.setItem(STORAGE_KEY, "33");
 
-    const { result } = renderHook(() => useRecordingPlayback(HASH));
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
 
     act(() => {
       vi.runAllTimers();
@@ -126,7 +137,7 @@ describe("useRecordingPlayback", () => {
     // StrictMode double-invokes the effect (setup -> cleanup -> setup), the
     // condition under which the old deferred-microtask handoff silently dropped
     // the seek. The handoff must still apply the position exactly once.
-    const { result } = renderHook(() => useRecordingPlayback(HASH), {
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), {
       wrapper: StrictMode,
     });
     await act(async () => {
@@ -149,7 +160,7 @@ describe("useRecordingPlayback", () => {
       stopRadio: vi.fn(),
     };
 
-    renderHook(() => useRecordingPlayback(HASH), { wrapper: StrictMode });
+    renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), { wrapper: StrictMode });
     await act(async () => {
       await Promise.resolve();
     });
@@ -163,7 +174,7 @@ describe("useRecordingPlayback", () => {
     // would drop a deferred-microtask restore, so it must be synchronous.
     localStorage.setItem(STORAGE_KEY, "47");
 
-    const { result } = renderHook(() => useRecordingPlayback(HASH), {
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), {
       wrapper: StrictMode,
     });
     await act(async () => {
@@ -171,5 +182,264 @@ describe("useRecordingPlayback", () => {
     });
 
     expect(result.current.seekRequest?.time).toBe(47);
+  });
+
+  it("restores the furthest server position", async () => {
+    localStorage.setItem(STORAGE_KEY, "20");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          progress: {
+            positionSec: 75,
+            durationSec: 100,
+            completed: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    expect(result.current.seekRequest?.time).toBe(20);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.seekRequest?.time).toBe(75);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("75");
+  });
+
+  it("imports a browser position when it is further than server progress", async () => {
+    localStorage.setItem(STORAGE_KEY, "75");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          progress: {
+            positionSec: 20,
+            durationSec: 100,
+            completed: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.seekRequest?.time).toBe(75);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [, request] = vi.mocked(fetch).mock.calls[1];
+    expect(request).toMatchObject({ method: "PUT" });
+    expect(JSON.parse(String(request?.body))).toEqual({
+      positionSec: 75,
+      durationSec: 100,
+      completed: false,
+    });
+  });
+
+  it("imports browser-only progress immediately", async () => {
+    localStorage.setItem(STORAGE_KEY, "47");
+
+    renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [, request] = vi.mocked(fetch).mock.calls[1];
+    expect(request).toMatchObject({ method: "PUT" });
+    expect(JSON.parse(String(request?.body))).toEqual({
+      positionSec: 47,
+      durationSec: null,
+      completed: false,
+    });
+  });
+
+  it("keeps server completion authoritative and restarts at the beginning", async () => {
+    localStorage.setItem(STORAGE_KEY, "75");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          progress: {
+            positionSec: 100,
+            durationSec: 100,
+            completed: true,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.seekRequest?.time).toBe(0);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(COMPLETION_KEY)).toBe("true");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite further server progress when playback starts before restore", async () => {
+    let resolveRestore: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveRestore = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    act(() => {
+      result.current.handlePlayingChange(true);
+      result.current.setCurrentTime(1);
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRestore?.(
+        new Response(
+          JSON.stringify({
+            progress: {
+              positionSec: 75,
+              durationSec: 100,
+              completed: false,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.seekRequest?.time).toBe(75);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throttles routine local saves while restore is pending", () => {
+    vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>(() => {}));
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    act(() => {
+      result.current.handlePlayingChange(true);
+      result.current.setCurrentTime(1);
+    });
+    expect(localStorage.setItem).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setCurrentTime(2);
+      vi.advanceTimersByTime(4_999);
+      result.current.setCurrentTime(3);
+    });
+    expect(localStorage.setItem).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+      result.current.setCurrentTime(4);
+    });
+    expect(localStorage.setItem).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      result.current.handlePlayingChange(false);
+    });
+    expect(localStorage.setItem).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not run server restoration after a radio handoff", async () => {
+    mocks.searchParams = new URLSearchParams({ fromRadio: "true" });
+    const handOffPlayback = vi.fn(() => ({ time: 42, wasPlaying: false }));
+    mocks.radio = {
+      currentTrack: { hash: HASH },
+      handOffPlayback,
+      isActive: true,
+      stopRadio: vi.fn(),
+    };
+
+    const { rerender } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+    mocks.radio = {
+      currentTrack: null,
+      handOffPlayback,
+      isActive: false,
+      stopRadio: vi.fn(),
+    };
+    rerender();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps actual-end completion durable without a later unfinished save", async () => {
+    const { result, unmount } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleDurationChange(100);
+      result.current.setCurrentTime(100);
+      result.current.handleAudioEnded(100);
+    });
+    unmount();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(COMPLETION_KEY)).toBe("true");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [, completionRequest] = vi.mocked(fetch).mock.calls[1];
+    expect(JSON.parse(String(completionRequest?.body))).toMatchObject({
+      completed: true,
+    });
+  });
+
+  it("deduplicates equivalent lifecycle saves", async () => {
+    const { result, unmount } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      result.current.setCurrentTime(91);
+    });
+
+    act(() => {
+      setVisibilityState("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("pagehide"));
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    unmount();
+
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

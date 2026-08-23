@@ -68,7 +68,8 @@ interface RecordingAudioSectionProps {
   currentTimeSetter: (time: number) => void;
   hash: string;
   onAudioDownload: (source: "archived" | "original") => void;
-  onAudioEnded: () => void;
+  onAudioEnded: (duration: number) => void;
+  onDurationChange: (duration: number) => void;
   onPlayingChange: (playing: boolean) => void;
   onSourceChange: (sourceId: string) => void;
   permissions: RecordingPermissions;
@@ -207,6 +208,7 @@ export function RecordingAudioSection({
   hash,
   onAudioDownload,
   onAudioEnded,
+  onDurationChange,
   onPlayingChange,
   onSourceChange,
   permissions,
@@ -256,6 +258,7 @@ export function RecordingAudioSection({
         src={audioUrl}
         catalogId={catalogId}
         onTimeUpdate={currentTimeSetter}
+        onDurationChange={onDurationChange}
         onPlayingChange={onPlayingChange}
         onEnded={onAudioEnded}
         seekTo={seekRequest?.time}

@@ -33,6 +33,7 @@ const BASE_PROPS = {
       sourceCount: 2,
       posterStatus: { portrait: true, landscape: true },
       primaryTitle: "Primary track",
+      playback: null,
     },
   ],
   hasActiveFilters: false,
@@ -107,5 +108,29 @@ describe("EventListResults", () => {
     expect(screen.getByText("columnStatus")).toBeInTheDocument();
     expect(screen.getAllByText("Primary track").length).toBeGreaterThan(0);
     expect(screen.getAllByText("released").length).toBeGreaterThan(0);
+  });
+
+  it("shows listening progress on the mobile event card", () => {
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        events={[
+          {
+            ...BASE_PROPS.events[0],
+            playback: {
+              positionSec: 900,
+              durationSec: 3600,
+              percent: 25,
+              completed: false,
+            },
+          },
+        ]}
+        showAllColumns={false}
+        showReleaseState={false}
+      />
+    );
+
+    expect(screen.getAllByLabelText("percentListened").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("25%").length).toBeGreaterThan(0);
   });
 });

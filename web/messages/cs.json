@@ -1281,6 +1281,10 @@
       "unassignedRecordingsWithCount": "Nepřiřazené nahrávky ({count})",
       "filters": "Filtry",
       "clear": "Vymazat",
+      "sortNewest": "Nejnovější",
+      "sortOldest": "Nejstarší",
+      "sortNewestFirst": "Řadit podle data od nejnovějších",
+      "sortOldestFirst": "Řadit podle data od nejstarších",
       "columnDate": "Datum",
       "columnLocation": "Místo",
       "columnStatus": "Stav",
@@ -1346,6 +1350,16 @@
       "unknownRecorder": "Neznámý zvukař",
       "unknownLocation": "Neznámé místo",
       "noRecordings": "Tato událost zatím nemá přiřazené žádné nahrávky."
+    },
+    "navigation": {
+      "ariaLabel": "Navigace mezi událostmi",
+      "previous": "Předchozí",
+      "next": "Další",
+      "position": "{position} z {total}"
+    },
+    "progress": {
+      "listened": "Poslechnuto",
+      "percentListened": "Poslechnuto {percent} %"
     },
     "editor": {
       "toastRecordingAttached": "Nahrávka připojena",

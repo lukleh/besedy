@@ -112,6 +112,8 @@ model User {
   deepSearchSharesReceived     DeepSearchJobShare[]    @relation("DeepSearchJobShareRecipient")
   /// Deep-search shares created by this user
   deepSearchSharesCreated      DeepSearchJobShare[]    @relation("DeepSearchJobShareCreator")
+  /// Per-recording listening progress for this user
+  recordingPlaybackProgress    RecordingPlaybackProgress[]
 
   @@map("users")
 }
@@ -595,6 +597,23 @@ model UserPreferences {
   activeGroup WorkflowGroup? @relation(fields: [activeGroupId], references: [id])
 
   @@map("user_preferences")
+}
+
+/// Durable per-user playback state keyed by the content-addressed audio hash.
+model RecordingPlaybackProgress {
+  userId       String    @map("user_id")
+  audioHash    String    @map("audio_hash") @db.VarChar(64)
+  positionSec  Float     @default(0) @map("position_sec")
+  durationSec  Float?    @map("duration_sec")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, audioHash])
+  @@index([userId, updatedAt])
+  @@map("recording_playback_progress")
 }
 
 /// Admin-configured ordering for transcript backends

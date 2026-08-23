@@ -1,7 +1,12 @@
 const PLAYBACK_POSITION_PREFIX = "besedy-playback-";
+const PLAYBACK_COMPLETION_PREFIX = "besedy-playback-completed-";
 
 function getPlaybackPositionKey(hash: string) {
   return `${PLAYBACK_POSITION_PREFIX}${hash}`;
+}
+
+function getPlaybackCompletionKey(hash: string) {
+  return `${PLAYBACK_COMPLETION_PREFIX}${hash}`;
 }
 
 export function getSavedPlaybackPosition(hash: string): number | null {
@@ -52,5 +57,26 @@ export function clearPlaybackPosition(hash: string) {
     localStorage.removeItem(getPlaybackPositionKey(hash));
   } catch {
     // Ignore localStorage errors
+  }
+}
+
+export function isPlaybackCompleted(hash: string): boolean {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return localStorage.getItem(getPlaybackCompletionKey(hash)) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function markPlaybackCompleted(hash: string) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(getPlaybackCompletionKey(hash), "true");
+    localStorage.removeItem(getPlaybackPositionKey(hash));
+  } catch {
+    // Ignore localStorage errors (quota exceeded, etc.)
   }
 }

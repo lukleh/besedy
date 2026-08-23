@@ -107,6 +107,7 @@ describe("RecordingContent transcript toggle", () => {
       autoPlayOnSeek: false,
       currentTime: 0,
       handleAudioEnded: vi.fn(),
+      handleDurationChange: vi.fn(),
       handlePlayingChange: vi.fn(),
       handleSeek: vi.fn(),
       isPlaying: false,
