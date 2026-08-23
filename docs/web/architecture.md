@@ -319,10 +319,10 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   auto-apply updates** (SKIP_WAITING) to avoid stale sign-in pages.
 - **Updates auto-apply after a deadline** (default 24h from detection) once the
   tab is hidden or the user is idle (default 5min, checked every 30s) **and
-  audio is not playing** — an update arriving mid-playback waits until audio
-  stops (1s delay). The version-scoped state is stored under
-  `besedy-sw-update-state`; a **newer web version clears an older dismissal** so
-  the banner reappears.
+  audio is not playing and the browser is online** — an update arriving
+  mid-playback waits until audio stops (1s delay). The version-scoped state is
+  stored under `besedy-sw-update-state`; a **newer web version clears an older
+  dismissal** so the banner reappears.
 - **Update detection:** the provider polls `/api/version` with
   `cache: "no-store"` and compares the returned `webVersion` against the
   version embedded in the running client. `WEB_VERSION` is derived from the
