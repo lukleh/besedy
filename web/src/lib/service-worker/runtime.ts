@@ -82,9 +82,9 @@ function hasServiceWorkerSupport(): boolean {
 
 function readPersistedUpdateState(): PersistedUpdateState | null {
   if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(UPDATE_STATE_STORAGE_KEY);
-  if (!raw) return null;
   try {
+    const raw = localStorage.getItem(UPDATE_STATE_STORAGE_KEY);
+    if (!raw) return null;
     const value = JSON.parse(raw) as Partial<PersistedUpdateState>;
     if (
       typeof value.version !== "string" ||
@@ -101,13 +101,25 @@ function readPersistedUpdateState(): PersistedUpdateState | null {
 }
 
 function writePersistedUpdateState(state: PersistedUpdateState): void {
-  localStorage.setItem(UPDATE_STATE_STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(UPDATE_STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Update detection must keep working when browser storage is unavailable.
+  }
 }
 
 function clearPersistedUpdateState(): void {
-  localStorage.removeItem(UPDATE_STATE_STORAGE_KEY);
-  localStorage.removeItem(LEGACY_DISMISSED_STORAGE_KEY);
-  localStorage.removeItem(LEGACY_DISMISSED_UPDATE_DEADLINE_KEY);
+  try {
+    localStorage.removeItem(UPDATE_STATE_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_DISMISSED_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_DISMISSED_UPDATE_DEADLINE_KEY);
+  } catch {
+    // Best-effort cleanup for browsers that block local storage.
+  }
+}
+
+function isBrowserOnline(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
 }
 
 function createInitialSnapshot(): ServiceWorkerRuntimeSnapshot {
@@ -224,6 +236,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     if (autoAppliedExpiredUpdate) return false;
     if (!snapshot.updateAvailable || !currentUpdateVersion) return false;
     if (isAudioPlaying) return false;
+    if (!isBrowserOnline()) return false;
 
     const persisted = readPersistedUpdateState();
     if (!persisted || persisted.version !== currentUpdateVersion || Date.now() < persisted.deadline) {
@@ -285,6 +298,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     if (!snapshot.updateAvailable) return;
     if (!mode.isAuthenticatedAppShell) return;
     if (!wasAudioPlayingOnUpdate) return;
+    if (!isBrowserOnline()) return;
 
     if (isAudioPlaying) {
       logger.info("Deferring auto-apply while audio is playing");
@@ -520,9 +534,15 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       }
     };
 
+    const handleOnline = () => {
+      refreshAutomation();
+      requestImmediateVersionCheck();
+    };
+
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     navigator.serviceWorker.addEventListener("message", handleMessage);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleOnline);
 
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
@@ -576,6 +596,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       navigator.serviceWorker.removeEventListener("message", handleMessage);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
 
       clearAutoApplyTimeout();
       stopUpdateDeadlineWatcher();

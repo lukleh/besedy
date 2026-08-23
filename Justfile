@@ -377,6 +377,7 @@ prod-up:
     {{ ensure_internal_network }}
     cd web
     export GIT_COMMIT=$(git rev-parse HEAD)
+    export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} up -d --remove-orphans
 

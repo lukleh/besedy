@@ -59,6 +59,8 @@ describe("ServiceWorkerProvider", () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     vi.mocked(window.localStorage.getItem).mockImplementation(() => null);
+    vi.mocked(window.localStorage.setItem).mockImplementation(() => undefined);
+    vi.mocked(window.localStorage.removeItem).mockImplementation(() => undefined);
     window.history.replaceState({}, "", "/catalog");
     vi.mocked(usePathname).mockReturnValue("/catalog");
     vi.mocked(useSession).mockReturnValue({
@@ -313,6 +315,95 @@ describe("ServiceWorkerProvider", () => {
         type: "SKIP_WAITING"
       });
     });
+  });
+
+  it("waits to auto-apply an expired update until the browser is online", async () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: null,
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    const serviceWorkerMock = {
+      controller: null,
+      register: vi.fn().mockResolvedValue(registrationMock),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    };
+
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true
+    });
+    Object.defineProperty(navigator, "onLine", {
+      value: false,
+      configurable: true
+    });
+    Object.defineProperty(document, "visibilityState", {
+      value: "hidden",
+      configurable: true
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+    );
+    vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
+      if (key === UPDATE_STATE_STORAGE_KEY) {
+        return JSON.stringify({
+          version: "web-b",
+          dismissed: false,
+          deadline: Date.now() - 1000
+        });
+      }
+      return null;
+    });
+
+    render(
+      <ServiceWorkerProvider>
+        <div>child</div>
+      </ServiceWorkerProvider>
+    );
+
+    await waitFor(() => {
+      expect(serviceWorkerMock.register).toHaveBeenCalled();
+    });
+    expect(waitingWorker.postMessage).not.toHaveBeenCalled();
+
+    Object.defineProperty(navigator, "onLine", {
+      value: true,
+      configurable: true
+    });
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    await waitFor(() => {
+      expect(waitingWorker.postMessage).toHaveBeenCalledWith({
+        type: "SKIP_WAITING"
+      });
+    });
+  });
+
+  it("still detects an update when local storage is unavailable", () => {
+    vi.mocked(window.localStorage.getItem).mockImplementation(() => {
+      throw new DOMException("Storage blocked", "SecurityError");
+    });
+    vi.mocked(window.localStorage.setItem).mockImplementation(() => {
+      throw new DOMException("Storage blocked", "SecurityError");
+    });
+
+    const runtime = createServiceWorkerRuntime({ clientVersion: "web-a" });
+
+    expect(() => runtime.observeWebVersion("web-b")).not.toThrow();
+    expect(runtime.getSnapshot().updateAvailable).toBe(true);
+    expect(runtime.getSnapshot().wasDismissed).toBe(false);
   });
 
   it("triggers registration.update() when a new web version is observed", async () => {
