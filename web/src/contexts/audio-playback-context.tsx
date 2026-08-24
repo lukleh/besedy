@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRadioMode } from "@/contexts/radio-mode-context";
+import { useReloadBlocker } from "@/contexts/reload-safety-context";
 
 /**
  * Global audio playback tracking context.
@@ -43,6 +44,15 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
 
   // Combined state: any source playing means audio is playing
   const isAudioPlaying = isRadioPlaying || isRecordingPlaying;
+  useReloadBlocker(
+    {
+      id: "audio-playback",
+      kind: "audio",
+      blocksAutomatic: true,
+      blocksManual: false,
+    },
+    isAudioPlaying
+  );
 
   return (
     <AudioPlaybackContext.Provider value={{ isAudioPlaying, setRecordingPlaying }}>

@@ -10,9 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
-import { useAudioPlayback } from "@/contexts/audio-playback-context";
+import { useReloadSafety } from "@/contexts/reload-safety-context";
 import { useSession } from "@/contexts/session-context";
 import type { SWToClientMessage, ClientToSWMessage } from "@/lib/service-worker/messages";
+import type { ReloadBlockerKind } from "@/lib/service-worker/reload-safety";
 import {
   createServiceWorkerRuntime,
   registerWebVersionObserver,
@@ -42,12 +43,14 @@ const ServiceWorkerContext = createContext<ServiceWorkerContextValue | undefined
 
 export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
   const runtime = useMemo(() => createServiceWorkerRuntime(), []);
-  const { isAudioPlaying } = useAudioPlayback();
+  const { automaticBlockerKinds, manualBlockerKinds } = useReloadSafety();
   const { session, isPending } = useSession();
   const pathname = usePathname() ?? "/";
   const isAuthPage = pathname.startsWith("/auth");
   const isAuthenticatedAppShell = Boolean(session) && !isPending && !isAuthPage;
   const shouldSilentlyActivateWaitingWorker = isAuthPage || (!session && !isPending);
+  const automaticBlockerKey = automaticBlockerKinds.join(",");
+  const manualBlockerKey = manualBlockerKinds.join(",");
   const [state, setState] = useState<ServiceWorkerRuntimeSnapshot>(() => runtime.getSnapshot());
 
   useEffect(() => {
@@ -62,8 +65,13 @@ export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticatedAppShell, runtime, shouldSilentlyActivateWaitingWorker]);
 
   useEffect(() => {
-    runtime.setAudioPlaying(isAudioPlaying);
-  }, [isAudioPlaying, runtime]);
+    const parseKinds = (key: string): ReloadBlockerKind[] =>
+      key ? (key.split(",") as ReloadBlockerKind[]) : [];
+    runtime.setReloadSafety({
+      automaticBlockerKinds: parseKinds(automaticBlockerKey),
+      manualBlockerKinds: parseKinds(manualBlockerKey),
+    });
+  }, [automaticBlockerKey, manualBlockerKey, runtime]);
 
   useEffect(() => {
     return runtime.start();

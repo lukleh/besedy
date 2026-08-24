@@ -17,6 +17,7 @@ import {
   FolderCog,
   ListPlus,
   ListOrdered,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,11 @@ const navItems = [
     titleKey: "nav.clientErrors" as const,
     href: "/admin/client-errors",
     icon: AlertTriangle,
+  },
+  {
+    titleKey: "nav.webUpdates" as const,
+    href: "/admin/web-updates",
+    icon: RefreshCw,
   },
 ];
 

@@ -63,6 +63,20 @@ enum CatalogSyncStatus {
   ERROR
 }
 
+enum WebUpdateEventType {
+  CLIENT_SEEN
+  UPDATE_DETECTED
+  WORKER_READY
+  UPDATE_DISMISSED
+  APPLY_REQUESTED
+  APPLY_BLOCKED
+  VERSION_PROBE_FAILED
+  ACTIVATION_STARTED
+  ACTIVATION_COMPLETE
+  RELOAD_FALLBACK
+  REGISTRATION_FAILED
+}
+
 model User {
   id            String     @id @default(cuid())
   name          String?
@@ -88,6 +102,7 @@ model User {
   accessRevoked                CatalogAccess[]         @relation("AccessRevokedBy")
   auditLogs                    AuditLog[]
   clientErrorReports           ClientErrorReport[]
+  webUpdateEvents              WebUpdateEvent[]
   /// Portal admissions this user created or explicitly reviewed
   portalAdmissionsAdmitted     PortalAdmission[]       @relation("PortalAdmissionAdmittedBy")
   portalAdmissionsClaimed      PortalAdmission[]       @relation("PortalAdmissionClaimedBy")
@@ -756,6 +771,29 @@ model ClientErrorReport {
   @@index([digest])
   @@index([createdAt])
   @@map("client_error_report")
+}
+
+/// Privacy-safe lifecycle event for browser client updates
+model WebUpdateEvent {
+  id            String             @id @default(cuid())
+  userId        String?            @map("user_id")
+  event         WebUpdateEventType
+  attemptId     String             @map("attempt_id") @db.VarChar(64)
+  clientVersion String?            @map("client_version") @db.VarChar(64)
+  targetVersion String?            @map("target_version") @db.VarChar(64)
+  workerReady   Boolean?           @map("worker_ready")
+  blockerKinds  String[]           @default([]) @map("blocker_kinds")
+  routeGroup    String?            @map("route_group") @db.VarChar(40)
+  browser       String?            @db.VarChar(30)
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([event, createdAt])
+  @@index([targetVersion, createdAt])
+  @@index([attemptId])
+  @@map("web_update_event")
 }
 
 // ============================================================================

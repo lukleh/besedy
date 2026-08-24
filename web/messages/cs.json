@@ -489,7 +489,42 @@
       "transcripts": "Pořadí přepisů",
       "addUsers": "Přidat uživatele",
       "auditLog": "Auditní log",
-      "clientErrors": "Chyby klienta"
+      "clientErrors": "Chyby klienta",
+      "webUpdates": "Aktualizace webu"
+    },
+    "webUpdates": {
+      "title": "Aktualizace webového klienta",
+      "description": "Průběh aktualizací za posledních 24 hodin a 100 nejnovějších událostí.",
+      "recentTitle": "Nedávné události aktualizací",
+      "anonymous": "Anonymní",
+      "empty": "Zatím nebyly přijaty žádné události aktualizací.",
+      "metrics": {
+        "seen": "Spuštění klienta",
+        "detected": "Zjištěné aktualizace",
+        "completed": "Dokončené aktualizace",
+        "blocked": "Blokované pokusy",
+        "probeFailed": "Chyby dostupnosti"
+      },
+      "table": {
+        "time": "Čas",
+        "event": "Událost",
+        "version": "Klient → cílová verze",
+        "user": "Uživatel",
+        "context": "Kontext"
+      },
+      "events": {
+        "client_seen": "Klient aktivní",
+        "update_detected": "Aktualizace zjištěna",
+        "worker_ready": "Worker připraven",
+        "update_dismissed": "Aktualizace odložena",
+        "apply_requested": "Aktualizace vyžádána",
+        "apply_blocked": "Aktualizace blokována",
+        "version_probe_failed": "Kontrola dostupnosti selhala",
+        "activation_started": "Aktivace zahájena",
+        "activation_complete": "Aktivace dokončena",
+        "reload_fallback": "Náhradní obnovení stránky",
+        "registration_failed": "Registrace selhala"
+      }
     },
     "transcripts": {
       "title": "Nastavení pořadí přepisů",
@@ -1759,10 +1794,17 @@
   "update": {
     "available": "Aktualizace dostupná - klikněte pro obnovení",
     "refresh": "Obnovit pro aktualizaci",
+    "working": "Aktualizace…",
     "banner": {
       "title": "Aktualizace dostupná",
       "description": "Byla nalezena novější verze. Obnovte stránku pro její načtení.",
-      "readyDescription": "Nejnovější verze je připravena k instalaci."
+      "readyDescription": "Nejnovější verze je připravena k instalaci.",
+      "checkingDescription": "Ověřuji dostupnost nejnovější verze…",
+      "applyingDescription": "Aktualizace se instaluje…",
+      "connectionDescription": "Server s aktualizací zatím není dostupný. Zkusíme to znovu po obnovení připojení.",
+      "unsavedDescription": "Před aktualizací uložte nebo zahoďte své změny.",
+      "savingDescription": "Změna se stále ukládá. Aktualizace bude pokračovat po dokončení.",
+      "audioDescription": "V této nebo jiné kartě probíhá přehrávání. Aktualizace bude pokračovat po jeho zastavení."
     }
   }
 }

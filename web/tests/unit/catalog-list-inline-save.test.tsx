@@ -4,6 +4,10 @@ import { ApiError } from "@/lib/api/fetch-json";
 import { useCatalogListController } from "@/components/catalog/catalog-list/hooks/use-catalog-list-controller";
 import type { RagSearchResult } from "@/components/catalog/catalog-list/hooks/use-rag-search";
 
+vi.mock("@/contexts/reload-safety-context", () => ({
+  useReloadBlocker: vi.fn(),
+}));
+
 const mocks = vi.hoisted(() => {
   const inlineEditState = {
     isEditMode: false,

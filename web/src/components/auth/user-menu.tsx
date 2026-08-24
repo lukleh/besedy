@@ -63,7 +63,7 @@ export function UserMenu() {
   const t = useTranslations();
   const { session, isPending } = useSession();
   const adminStatus = useAdminStatus();
-  const { updateAvailable, wasDismissed, applyUpdate } = useServiceWorker();
+  const { updateAvailable, wasDismissed, applyState, applyUpdate } = useServiceWorker();
   const route = useCatalogRouteState();
 
   // Don't show anything on auth pages
@@ -132,7 +132,7 @@ export function UserMenu() {
       </ResponsiveMenuTrigger>
       <ResponsiveMenuContent align="end" className="w-56" title={t("nav.account")}>
         {/* Update available - shown at top when banner was dismissed */}
-        {updateAvailable && wasDismissed && (
+        {updateAvailable && wasDismissed && applyState === "idle" && (
           <>
             <ResponsiveMenuItem
               className="cursor-pointer text-primary"

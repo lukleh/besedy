@@ -376,6 +376,10 @@ prod-up:
     bash scripts/validate_web_config_mount.sh production
     {{ ensure_internal_network }}
     cd web
+    env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
+    set -a
+    . "$env_file"
+    set +a
     export GIT_COMMIT=$(git rev-parse HEAD)
     export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
