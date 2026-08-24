@@ -726,7 +726,6 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       }
 
       pendingControllerReload = true;
-      reportLifecycleEvent("activation_complete");
       refreshAutomation();
       void attemptPendingControllerReload();
     };

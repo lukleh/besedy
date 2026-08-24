@@ -12,6 +12,7 @@ import {
   notifyWebVersionObserver,
   registerWebVersionObserver
 } from "@/lib/service-worker/runtime";
+import { reportWebUpdateEvent } from "@/lib/service-worker/telemetry";
 
 vi.mock("@/contexts/reload-safety-context", () => ({
   useReloadSafety: () => ({
@@ -927,9 +928,15 @@ describe("ServiceWorkerProvider", () => {
     });
     expect(reloadPage).not.toHaveBeenCalled();
     expect(runtime.getSnapshot().applyState).toBe("blocked");
+    expect(reportWebUpdateEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: "activation_complete" })
+    );
 
     runtime.setReloadSafety({ automaticBlockerKinds: [], manualBlockerKinds: [] });
     await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    expect(reportWebUpdateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "activation_complete" })
+    );
     stop();
   });
 
