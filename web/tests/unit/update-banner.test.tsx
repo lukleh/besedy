@@ -22,15 +22,22 @@ const messages = {
       title: "Update available",
       description: "A newer version was found",
       readyDescription: "The latest version is ready",
+      checkingDescription: "Checking reachability",
+      applyingDescription: "Applying update",
+      connectionDescription: "Waiting for connection",
+      unsavedDescription: "Save your changes",
+      savingDescription: "Saving a change",
+      audioDescription: "Playback is active",
     },
     refresh: "Refresh",
+    working: "Updating",
   },
   notifications: {
     promptDismiss: "Dismiss",
   },
 };
 
-const baseServiceWorkerState = {
+const baseServiceWorkerState: ReturnType<typeof useServiceWorker> = {
   isSupported: true,
   isRegistered: true,
   isReady: true,
@@ -38,6 +45,8 @@ const baseServiceWorkerState = {
   updateReady: true,
   error: null,
   wasDismissed: false,
+  applyState: "idle",
+  blockedReasons: [],
   applyUpdate: vi.fn(),
   dismissUpdate: vi.fn(),
   postMessage: vi.fn(() => false),
@@ -114,6 +123,29 @@ describe("UpdateBanner", () => {
     renderBanner();
 
     expect(screen.queryByText("Update available")).toBeNull();
+  });
+
+  it("resurfaces after a dismissed manual update is blocked by unsaved changes", () => {
+    setServiceWorkerState({
+      updateAvailable: true,
+      wasDismissed: true,
+      applyState: "blocked",
+      blockedReasons: ["unsaved-changes"],
+    });
+
+    renderBanner();
+
+    expect(screen.getByText("Save your changes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+  });
+
+  it("shows connection failures without losing the available update", () => {
+    setServiceWorkerState({ applyState: "waiting-for-connection" });
+
+    renderBanner();
+
+    expect(screen.getByText("Waiting for connection")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
   it("does not render on auth pages", () => {

@@ -12,6 +12,7 @@ import { useRecorders, useLocations, useAlbums } from "@/hooks/use-metadata-enum
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useColumnResize, type ColumnKey as ResizeColumnKey } from "@/hooks/use-column-resize";
 import { useCatalogStatus } from "@/hooks/use-catalog-status";
+import { useReloadBlocker } from "@/contexts/reload-safety-context";
 import {
   useInlineEdit,
   type UseInlineEditReturn,
@@ -526,6 +527,25 @@ export function useCatalogListController({
       });
     },
   });
+
+  useReloadBlocker(
+    {
+      id: `catalog-inline-edit:${activeCatalogId ?? "unknown"}`,
+      kind: "unsaved-changes",
+      blocksAutomatic: true,
+      blocksManual: true,
+    },
+    inlineEdit.hasUnsavedChanges
+  );
+  useReloadBlocker(
+    {
+      id: `catalog-inline-save:${activeCatalogId ?? "unknown"}`,
+      kind: "critical-mutation",
+      blocksAutomatic: true,
+      blocksManual: true,
+    },
+    inlineEdit.isSaving
+  );
 
   const columnResize = useColumnResize(visibleColumnKeys as ResizeColumnKey[]);
 

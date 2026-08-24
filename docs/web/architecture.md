@@ -318,16 +318,19 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   available and not dismissed. **Logged-out sessions never see it and
   auto-apply updates** (SKIP_WAITING) to avoid stale sign-in pages.
 - **Updates auto-apply after a deadline** (default 24h from detection) once the
-  tab is hidden or the user is idle (default 5min, checked every 30s) **and
-  audio is not playing and the browser is online** — an update arriving
-  mid-playback waits until audio stops (1s delay). The version-scoped state is
+  tab is hidden or the user is idle (default 5min, checked every 30s). An update
+  arriving mid-playback waits until audio stops (1s delay). Unsaved edits and
+  in-flight mutations block both manual and automatic reloads, with blockers
+  shared across tabs through `BroadcastChannel`. Every activation first proves
+  `/api/version` is reachable instead of trusting `navigator.onLine`. The version-scoped state is
   stored under `besedy-sw-update-state`; a **newer web version clears an older
   dismissal** so the banner reappears.
 - **Update detection:** the provider polls `/api/version` with
   `cache: "no-store"` and compares the returned `webVersion` against the
-  version embedded in the running client. `WEB_VERSION` is derived from the
-  tracked `web/` Git tree, so unrelated repository commits do not prompt a web
-  update. `/sw.js` is registered with `updateViaCache: "none"` and stamped with
+  version embedded in the running client. `WEB_VERSION` is derived from
+  allowlisted production inputs and public build configuration, so unrelated
+  repository commits, tests, and documentation do not prompt a web update.
+  `/sw.js` is registered with `updateViaCache: "none"` and stamped with
   the same web version so browsers install a changed worker.
 
 ## Offline

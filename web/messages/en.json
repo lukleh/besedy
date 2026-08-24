@@ -489,7 +489,42 @@
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
       "auditLog": "Audit Log",
-      "clientErrors": "Client Errors"
+      "clientErrors": "Client Errors",
+      "webUpdates": "Web Updates"
+    },
+    "webUpdates": {
+      "title": "Web client updates",
+      "description": "Update lifecycle activity from the last 24 hours, followed by the 100 most recent events.",
+      "recentTitle": "Recent update events",
+      "anonymous": "Anonymous",
+      "empty": "No update events have been received yet.",
+      "metrics": {
+        "seen": "Client starts",
+        "detected": "Updates detected",
+        "completed": "Updates completed",
+        "blocked": "Blocked attempts",
+        "probeFailed": "Reachability failures"
+      },
+      "table": {
+        "time": "Time",
+        "event": "Event",
+        "version": "Client → target",
+        "user": "User",
+        "context": "Context"
+      },
+      "events": {
+        "client_seen": "Client seen",
+        "update_detected": "Update detected",
+        "worker_ready": "Worker ready",
+        "update_dismissed": "Update dismissed",
+        "apply_requested": "Apply requested",
+        "apply_blocked": "Apply blocked",
+        "version_probe_failed": "Reachability failed",
+        "activation_started": "Activation started",
+        "activation_complete": "Activation complete",
+        "reload_fallback": "Reload fallback",
+        "registration_failed": "Registration failed"
+      }
     },
     "transcripts": {
       "title": "Transcript Ordering",
@@ -1760,10 +1795,17 @@
   "update": {
     "available": "Update available - click to refresh",
     "refresh": "Refresh to update",
+    "working": "Updating…",
     "banner": {
       "title": "Update available",
       "description": "A newer version was found. Refresh to load it.",
-      "readyDescription": "The latest version is ready to install."
+      "readyDescription": "The latest version is ready to install.",
+      "checkingDescription": "Checking that the latest version is reachable…",
+      "applyingDescription": "Applying the update…",
+      "connectionDescription": "The update server cannot be reached yet. We will retry when the connection returns.",
+      "unsavedDescription": "Save or discard your changes before updating.",
+      "savingDescription": "A change is still being saved. The update will continue when it finishes.",
+      "audioDescription": "Playback is active in this or another tab. The update will continue when it stops."
     }
   }
 }

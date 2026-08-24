@@ -138,8 +138,10 @@ just prod-rebuild    # Rebuild and restart
 These commands validate the external config bind before Docker can create or
 replace containers. Use `prod-deploy` for releases; it rebuilds the image from
 the current code and applies database migrations. Production builds must use a
-clean tracked `web/` tree: deployment derives a stable `WEB_VERSION` from that
-tree so unrelated repository commits do not prompt installed clients to update.
+clean tracked `web/` tree. Deployment derives a stable `WEB_VERSION` from
+production web inputs and browser-visible build configuration, so unrelated
+repository commits and web-only tests or documentation do not prompt installed
+clients to update.
 
 ### Production Services
 

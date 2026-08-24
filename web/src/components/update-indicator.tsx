@@ -11,10 +11,10 @@ import { Button } from "@/components/ui/button";
  */
 export function UpdateIndicator() {
   const t = useTranslations();
-  const { updateAvailable, wasDismissed, applyUpdate } = useServiceWorker();
+  const { updateAvailable, wasDismissed, applyState, applyUpdate } = useServiceWorker();
 
   // Only show when update is available AND banner was dismissed
-  if (!updateAvailable || !wasDismissed) {
+  if (!updateAvailable || !wasDismissed || applyState !== "idle") {
     return null;
   }
 

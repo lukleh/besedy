@@ -9,6 +9,7 @@ import { Loader2, Trash2, Star, StarOff, Pencil } from "lucide-react";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { formatPartialDate } from "@/lib/date-format";
 import { useToast } from "@/hooks/use-toast";
+import { useReloadBlocker } from "@/contexts/reload-safety-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -236,6 +237,46 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
     },
   });
 
+  const isBusy =
+    attachMutation.isPending ||
+    detachMutation.isPending ||
+    setPrimaryMutation.isPending ||
+    toggleReleaseMutation.isPending ||
+    updateMetadataMutation.isPending ||
+    deleteMutation.isPending;
+
+  useReloadBlocker(
+    {
+      id: `event-editor:${catalogId}:${eventId}`,
+      kind: "critical-mutation",
+      blocksAutomatic: true,
+      blocksManual: true,
+    },
+    isBusy
+  );
+
+  const hasUnsavedEdit = Boolean(
+    editOpen &&
+      data &&
+      (editTitle !== (data.title ?? "") ||
+        editLocationId !== (data.location?.id ? String(data.location.id) : "") ||
+        editDateYear !== String(data.dateYear) ||
+        editDateMonth !== (data.dateMonth ? String(data.dateMonth) : "") ||
+        editDateDay !== (data.dateDay ? String(data.dateDay) : "") ||
+        editSessionIndex !== String(data.sessionIndex) ||
+        editDescription !== (data.description ?? ""))
+  );
+
+  useReloadBlocker(
+    {
+      id: `event-editor-draft:${catalogId}:${eventId}`,
+      kind: "unsaved-changes",
+      blocksAutomatic: true,
+      blocksManual: true,
+    },
+    hasUnsavedEdit
+  );
+
   const openEditDialog = () => {
     if (!data) return;
     setEditTitle(data.title ?? "");
@@ -331,14 +372,6 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
       </div>
     );
   }
-
-  const isBusy =
-    attachMutation.isPending ||
-    detachMutation.isPending ||
-    setPrimaryMutation.isPending ||
-    toggleReleaseMutation.isPending ||
-    updateMetadataMutation.isPending ||
-    deleteMutation.isPending;
 
   const primaryRecording = data.recordings.find((recording) => recording.isPrimary) ?? null;
   const canManagePosters = data.canManagePosters ?? false;

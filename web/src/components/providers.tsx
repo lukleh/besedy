@@ -8,6 +8,7 @@ import { TextSizeProvider } from "@/contexts/text-size-context";
 import { RadioModeProvider } from "@/contexts/radio-mode-context";
 import { AudioPlaybackProvider } from "@/contexts/audio-playback-context";
 import { ServiceWorkerProvider } from "@/contexts/service-worker-context";
+import { ReloadSafetyProvider } from "@/contexts/reload-safety-context";
 import { useLabsSyncListener } from "@/hooks/use-labs";
 import { QUERY_CLIENT_DEFAULT_OPTIONS } from "@/lib/query/profiles";
 
@@ -42,9 +43,11 @@ export function Providers({
       >
         <TextSizeProvider>
           <RadioModeProvider>
-            <AudioPlaybackProvider>
-              <ServiceWorkerProvider>{children}</ServiceWorkerProvider>
-            </AudioPlaybackProvider>
+            <ReloadSafetyProvider>
+              <AudioPlaybackProvider>
+                <ServiceWorkerProvider>{children}</ServiceWorkerProvider>
+              </AudioPlaybackProvider>
+            </ReloadSafetyProvider>
           </RadioModeProvider>
         </TextSizeProvider>
       </ThemeProvider>

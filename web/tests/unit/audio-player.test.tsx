@@ -13,6 +13,8 @@ vi.mock("@/contexts/service-worker-context", () => ({
     updateReady: false,
     error: null,
     wasDismissed: false,
+    applyState: "idle",
+    blockedReasons: [],
     applyUpdate: vi.fn(),
     dismissUpdate: vi.fn(),
     postMessage: vi.fn(() => false),
