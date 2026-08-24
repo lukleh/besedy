@@ -322,7 +322,10 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   arriving mid-playback waits until audio stops (1s delay). Unsaved edits and
   in-flight mutations block both manual and automatic reloads, with blockers
   shared across tabs through `BroadcastChannel`. Every activation first proves
-  `/api/version` is reachable instead of trusting `navigator.onLine`. The version-scoped state is
+  `/api/version` is reachable instead of trusting `navigator.onLine`. If browser
+  activation takes longer than 8 seconds, the banner becomes dismissible while
+  activation continues in the background and records an `ACTIVATION_DELAYED`
+  telemetry event. The version-scoped state is
   stored under `besedy-sw-update-state`; a **newer web version clears an older
   dismissal** so the banner reappears.
 - **Update detection:** the provider polls `/api/version` with

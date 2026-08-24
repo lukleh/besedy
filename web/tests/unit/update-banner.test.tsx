@@ -1,7 +1,7 @@
 "use client";
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { UpdateBanner } from "@/components/update-banner";
@@ -24,6 +24,7 @@ const messages = {
       readyDescription: "The latest version is ready",
       checkingDescription: "Checking reachability",
       applyingDescription: "Applying update",
+      delayedDescription: "Taking longer than expected; close this and continue",
       connectionDescription: "Waiting for connection",
       unsavedDescription: "Save your changes",
       savingDescription: "Saving a change",
@@ -146,6 +147,22 @@ describe("UpdateBanner", () => {
 
     expect(screen.getByText("Waiting for connection")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
+  it("allows a delayed activation notice to be hidden without cancelling the update", () => {
+    setServiceWorkerState({ applyState: "activation-delayed" });
+
+    renderBanner();
+
+    expect(
+      screen.getByText("Taking longer than expected; close this and continue")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Updating" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByText("Update available")).toBeNull();
+    expect(baseServiceWorkerState.dismissUpdate).not.toHaveBeenCalled();
   });
 
   it("does not render on auth pages", () => {

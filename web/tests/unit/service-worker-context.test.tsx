@@ -877,6 +877,77 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
+  it("reports a delayed activation while continuing to wait for controllerchange", async () => {
+    vi.useFakeTimers();
+    const listeners = new Map<string, Set<() => void>>();
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    const serviceWorkerMock = {
+      controller: {},
+      register: vi.fn().mockResolvedValue(registrationMock),
+      addEventListener: vi.fn((event: string, handler: () => void) => {
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event)?.add(handler);
+      }),
+      removeEventListener: vi.fn()
+    };
+
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+    );
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({ reloadPage });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(runtime.getSnapshot().updateReady).toBe(true);
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
+    expect(runtime.getSnapshot().applyState).toBe("applying");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7999);
+    });
+    expect(runtime.getSnapshot().applyState).toBe("applying");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(runtime.getSnapshot().applyState).toBe("activation-delayed");
+    expect(reportWebUpdateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "activation_delayed" })
+    );
+
+    await act(async () => {
+      listeners.get("controllerchange")?.forEach((handler) => handler());
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(reportWebUpdateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "activation_complete" })
+    );
+    stop();
+  });
+
   it("defers controllerchange reloads while another tab has unsaved work", async () => {
     const listeners = new Map<string, Set<() => void>>();
     const waitingWorker = { postMessage: vi.fn() };

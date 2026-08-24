@@ -502,6 +502,7 @@
         "seen": "Client starts",
         "detected": "Updates detected",
         "completed": "Updates completed",
+        "delayed": "Slow activations",
         "blocked": "Blocked attempts",
         "probeFailed": "Reachability failures"
       },
@@ -521,6 +522,7 @@
         "apply_blocked": "Apply blocked",
         "version_probe_failed": "Reachability failed",
         "activation_started": "Activation started",
+        "activation_delayed": "Activation delayed",
         "activation_complete": "Activation complete",
         "reload_fallback": "Reload fallback",
         "registration_failed": "Registration failed"
@@ -1802,6 +1804,7 @@
       "readyDescription": "The latest version is ready to install.",
       "checkingDescription": "Checking that the latest version is reachable…",
       "applyingDescription": "Applying the update…",
+      "delayedDescription": "The update is taking longer than expected. You can close this message and continue; the app will reload when ready.",
       "connectionDescription": "The update server cannot be reached yet. We will retry when the connection returns.",
       "unsavedDescription": "Save or discard your changes before updating.",
       "savingDescription": "A change is still being saved. The update will continue when it finishes.",

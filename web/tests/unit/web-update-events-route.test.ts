@@ -78,6 +78,20 @@ describe("web update telemetry endpoint", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
+  it("stores delayed activation events", async () => {
+    const response = await POST(
+      request({ event: "activation_delayed", attemptId: "slow-attempt-1" })
+    );
+
+    expect(response.status).toBe(202);
+    expect(mocks.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        event: WebUpdateEventType.ACTIVATION_DELAYED,
+        attemptId: "slow-attempt-1",
+      }),
+    });
+  });
+
   it("acknowledges storage failures so clients do not retry", async () => {
     mocks.create.mockRejectedValueOnce(new Error("migration pending"));
 
