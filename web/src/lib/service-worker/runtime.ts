@@ -36,6 +36,8 @@ const ACTIVATION_DELAY_NOTICE_MS = 8000;
 const CONNECTION_RETRY_MS = 30_000;
 const IMMEDIATE_VERSION_CHECK_MIN_INTERVAL_MS = 30_000;
 const WAITING_WORKER_VERSION_TIMEOUT_MS = 1000;
+const WAITING_WORKER_RETRY_BASE_MS = 1000;
+const WAITING_WORKER_RETRY_MAX_MS = 30_000;
 const logger = createClientLogger("SW");
 
 let activeVersionObserver: ((version: string) => void) | null = null;
@@ -182,6 +184,8 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
   let autoApplyTimeoutId: number | null = null;
   let activationDelayTimeoutId: number | null = null;
   let connectionRetryTimeoutId: number | null = null;
+  let waitingWorkerRetryTimeoutId: number | null = null;
+  let waitingWorkerVersionFailures = 0;
   let updateDeadlineWatcherCleanup: (() => void) | null = null;
   let registrationCleanup: (() => void) | null = null;
   let versionCheckTimeoutId: number | null = null;
@@ -280,6 +284,10 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       : reloadSafety.automaticBlockerKinds;
   }
 
+  function rememberDeferredPolicy(policy: UpdatePolicy) {
+    pendingControllerReloadPolicy = policy === "manual" ? "automatic" : policy;
+  }
+
   function setApplyState(
     applyState: ServiceWorkerRuntimeSnapshot["applyState"],
     blockedReasons: ReloadBlockerKind[] = []
@@ -301,6 +309,14 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     }
   }
 
+  function clearWaitingWorkerRetry(resetFailures = false) {
+    if (waitingWorkerRetryTimeoutId !== null) {
+      window.clearTimeout(waitingWorkerRetryTimeoutId);
+      waitingWorkerRetryTimeoutId = null;
+    }
+    if (resetFailures) waitingWorkerVersionFailures = 0;
+  }
+
   function scheduleConnectionRetry(policy: UpdatePolicy) {
     clearConnectionRetry();
     const retryPolicy = policy === "manual" ? "automatic" : policy;
@@ -315,6 +331,25 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
         void attemptApply(retryPolicy);
       }
     }, CONNECTION_RETRY_MS);
+  }
+
+  function scheduleWaitingWorkerRetry(policy: UpdatePolicy) {
+    clearWaitingWorkerRetry();
+    const retryPolicy = policy === "manual" ? "automatic" : policy;
+    pendingControllerReloadPolicy = retryPolicy;
+    if (!isStarted || !waitingWorker) return;
+
+    const exponent = Math.min(Math.max(waitingWorkerVersionFailures - 1, 0), 5);
+    const delay = Math.min(
+      WAITING_WORKER_RETRY_BASE_MS * 2 ** exponent,
+      WAITING_WORKER_RETRY_MAX_MS
+    );
+    waitingWorkerRetryTimeoutId = window.setTimeout(() => {
+      waitingWorkerRetryTimeoutId = null;
+      if (waitingWorker && snapshot.updateAvailable) {
+        void attemptApply(retryPolicy);
+      }
+    }, delay);
   }
 
   function readWaitingWorkerVersion(worker: ServiceWorker): Promise<string | null> {
@@ -352,17 +387,97 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     });
   }
 
-  async function waitingWorkerStatus(): Promise<"ready" | "missing" | "mismatch"> {
-    if (!waitingWorker) return "missing";
-    if (waitingWorkerVersionPromise) {
-      await waitingWorkerVersionPromise;
+  function startWaitingWorkerVersionRead(worker: ServiceWorker): Promise<string | null> | null {
+    if (!clientVersion || !("scriptURL" in worker)) return null;
+
+    const versionPromise = readWaitingWorkerVersion(worker);
+    waitingWorkerVersionPromise = versionPromise;
+    void versionPromise.then((version) => {
+      if (waitingWorker !== worker || waitingWorkerVersionPromise !== versionPromise) return;
+      waitingWorkerVersionPromise = null;
+      waitingWorkerVersion = version;
+
+      if (!version) {
+        waitingWorkerVersionFailures += 1;
+        return;
+      }
+
+      clearWaitingWorkerRetry(true);
+      if (
+        lastSuccessfulVersionProbe &&
+        version !== lastSuccessfulVersionProbe.version
+      ) {
+        setSnapshot((current) => ({ ...current, updateReady: false }));
+        registration?.update().catch(() => {});
+        return;
+      }
+
+      if (clientVersion && version === clientVersion) {
+        waitingWorker = null;
+        setSnapshot((current) => ({
+          ...current,
+          updateAvailable: hasServerVersionMismatch,
+          updateReady: false,
+        }));
+        registration?.update().catch(() => {});
+        refreshAutomation();
+        return;
+      }
+
+      if (!currentUpdateVersion) {
+        syncUpdateTarget(version);
+      } else if (version !== currentUpdateVersion) {
+        setSnapshot((current) => ({ ...current, updateReady: false }));
+        registration?.update().catch(() => {});
+      }
+    });
+    return versionPromise;
+  }
+
+  async function waitingWorkerStatus(): Promise<
+    "ready" | "missing" | "mismatch" | "unverified"
+  > {
+    const worker = waitingWorker;
+    if (!worker) return "missing";
+
+    const versionPromise =
+      waitingWorkerVersionPromise ?? startWaitingWorkerVersionRead(worker);
+    if (versionPromise) {
+      await versionPromise;
     }
+
+    // A newer update may replace the waiting worker while its predecessor is
+    // answering the identity handshake. Never activate the replacement until
+    // it has been checked independently.
+    if (waitingWorker !== worker) return "mismatch";
+
+    // Real ServiceWorker instances always expose scriptURL. If a legacy worker
+    // cannot answer the version handshake, its identity cannot be tied to the
+    // deployment we just probed, so leave it waiting and retry with backoff.
+    if (clientVersion && "scriptURL" in worker && !waitingWorkerVersion) {
+      registration?.update().catch(() => {});
+      setSnapshot((current) => ({ ...current, updateReady: false }));
+      return "unverified";
+    }
+
+    const probedVersion = lastSuccessfulVersionProbe?.version;
     if (
       waitingWorkerVersion &&
-      currentUpdateVersion &&
-      waitingWorkerVersion !== currentUpdateVersion
+      ((probedVersion && waitingWorkerVersion !== probedVersion) ||
+        (currentUpdateVersion && waitingWorkerVersion !== currentUpdateVersion))
     ) {
       registration?.update().catch(() => {});
+      if (probedVersion === clientVersion) {
+        clearUpdateState();
+        setSnapshot((current) => ({
+          ...current,
+          updateAvailable: false,
+          updateReady: false,
+          applyState: "idle",
+          blockedReasons: [],
+        }));
+        return "mismatch";
+      }
       setSnapshot((current) => ({ ...current, updateReady: false }));
       return "mismatch";
     }
@@ -447,25 +562,31 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     return true;
   }
 
+  function clearPendingReloadOutsideAppShell(): false {
+    pendingControllerReload = false;
+    clearConnectionRetry();
+    clearUpdateState();
+    setSnapshot((current) => ({
+      ...current,
+      updateAvailable: false,
+      updateReady: false,
+      applyState: "idle",
+      blockedReasons: [],
+    }));
+    return false;
+  }
+
   async function attemptPendingControllerReload(
     policy: UpdatePolicy = pendingControllerReloadPolicy
   ): Promise<boolean> {
     if (!pendingControllerReload) return false;
     if (!mode.isAuthenticatedAppShell) {
-      pendingControllerReload = false;
-      clearUpdateState();
-      setSnapshot((current) => ({
-        ...current,
-        updateAvailable: false,
-        updateReady: false,
-        applyState: "idle",
-        blockedReasons: [],
-      }));
-      return false;
+      return clearPendingReloadOutsideAppShell();
     }
 
     const blockers = getBlockerKinds(policy);
     if (blockers.length > 0) {
+      rememberDeferredPolicy(policy);
       reportLifecycleEvent("apply_blocked", { blockers });
       setApplyState("blocked", blockers);
       return false;
@@ -475,12 +596,17 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     const probeResult = await probeDeploymentVersion(false);
     if (probeResult !== "ready") {
       setApplyState(probeResult === "unreachable" ? "waiting-for-connection" : "idle");
-      if (probeResult === "unreachable") scheduleConnectionRetry(policy);
+      scheduleConnectionRetry(policy);
       return false;
+    }
+
+    if (!mode.isAuthenticatedAppShell) {
+      return clearPendingReloadOutsideAppShell();
     }
 
     const blockersAfterProbe = getBlockerKinds(policy);
     if (blockersAfterProbe.length > 0) {
+      rememberDeferredPolicy(policy);
       reportLifecycleEvent("apply_blocked", { blockers: blockersAfterProbe });
       setApplyState("blocked", blockersAfterProbe);
       return false;
@@ -514,6 +640,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
       const blockers = getBlockerKinds(policy);
       if (blockers.length > 0) {
+        rememberDeferredPolicy(policy);
         reportLifecycleEvent("apply_blocked", { blockers });
         setApplyState("blocked", blockers);
         return false;
@@ -523,12 +650,13 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       const probeResult = await probeDeploymentVersion();
       if (probeResult !== "ready") {
         setApplyState(probeResult === "unreachable" ? "waiting-for-connection" : "idle");
-        if (probeResult === "unreachable") scheduleConnectionRetry(policy);
+        scheduleConnectionRetry(policy);
         return false;
       }
 
       const blockersAfterProbe = getBlockerKinds(policy);
       if (blockersAfterProbe.length > 0) {
+        rememberDeferredPolicy(policy);
         reportLifecycleEvent("apply_blocked", { blockers: blockersAfterProbe });
         setApplyState("blocked", blockersAfterProbe);
         return false;
@@ -543,6 +671,11 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       }
       if (workerStatus === "mismatch") {
         setApplyState("idle");
+        return false;
+      }
+      if (workerStatus === "unverified") {
+        setApplyState("idle");
+        scheduleWaitingWorkerRetry(policy);
         return false;
       }
 
@@ -652,9 +785,11 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
   function syncUpdateTarget(version: string) {
     const replacesPendingVersion = currentUpdateVersion !== null && currentUpdateVersion !== version;
     const persisted = readPersistedUpdateState();
-    const isSamePersistedVersion = persisted?.version === version;
-    const nextState: PersistedUpdateState = isSamePersistedVersion
-      ? persisted
+    const nextState: PersistedUpdateState = persisted?.version === version
+      ? {
+          ...persisted,
+          dismissed: persisted.dismissed || dismissalRequestedWithoutVersion,
+        }
       : {
           version,
           dismissed: dismissalRequestedWithoutVersion,
@@ -692,6 +827,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
         waitingWorkerVersionPromise = null;
         pendingControllerReload = false;
         clearConnectionRetry();
+        clearWaitingWorkerRetry(true);
         clearUpdateState();
         setSnapshot((current) => ({
           ...current,
@@ -833,6 +969,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     if (typeof window === "undefined") return;
 
     clearActivationDelayTimeout();
+    clearWaitingWorkerRetry(true);
     autoAppliedExpiredUpdate = false;
     dismissalRequestedWithoutVersion = false;
     currentUpdateVersion = null;
@@ -846,6 +983,29 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     }
   }
 
+  function dismissCurrentUpdate() {
+    if (typeof window === "undefined") return;
+
+    clearWaitingWorkerRetry();
+    const persisted = readPersistedUpdateState();
+    if (currentUpdateVersion) {
+      writePersistedUpdateState({
+        version: currentUpdateVersion,
+        dismissed: true,
+        deadline:
+          persisted?.version === currentUpdateVersion
+            ? persisted.deadline
+            : Date.now() + MAX_UPDATE_AGE_MS,
+      });
+    } else {
+      dismissalRequestedWithoutVersion = true;
+    }
+    autoAppliedExpiredUpdate = false;
+    reportLifecycleEvent("update_dismissed", { workerReady: snapshot.updateReady });
+    setSnapshot((current) => ({ ...current, wasDismissed: true }));
+    refreshAutomation();
+  }
+
   function trackWaitingWorker(worker: ServiceWorker | null) {
     if (!worker) {
       return;
@@ -853,6 +1013,8 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
     waitingWorker = worker;
     waitingWorkerVersion = null;
+    waitingWorkerVersionPromise = null;
+    clearWaitingWorkerRetry(true);
     beginUpdateAttempt();
     autoAppliedExpiredUpdate = false;
     const persisted = readPersistedUpdateState();
@@ -869,34 +1031,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     logger.info("Update available - new version waiting");
     reportLifecycleEvent("worker_ready", { workerReady: true });
 
-    const versionPromise = clientVersion && "scriptURL" in worker
-      ? readWaitingWorkerVersion(worker)
-      : Promise.resolve(null);
-    waitingWorkerVersionPromise = versionPromise;
-    void versionPromise.then((version) => {
-      if (waitingWorker !== worker || waitingWorkerVersionPromise !== versionPromise) return;
-      waitingWorkerVersionPromise = null;
-      waitingWorkerVersion = version;
-
-      if (version && clientVersion && version === clientVersion) {
-        waitingWorker = null;
-        setSnapshot((current) => ({
-          ...current,
-          updateAvailable: hasServerVersionMismatch,
-          updateReady: false,
-        }));
-        registration?.update().catch(() => {});
-        refreshAutomation();
-        return;
-      }
-
-      if (version && !currentUpdateVersion) {
-        syncUpdateTarget(version);
-      } else if (version && currentUpdateVersion && version !== currentUpdateVersion) {
-        setSnapshot((current) => ({ ...current, updateReady: false }));
-        registration?.update().catch(() => {});
-      }
-    });
+    void startWaitingWorkerVersionRead(worker);
 
     if (AUTO_APPLY_SW_UPDATES && mode.isAuthenticatedAppShell) {
       wasAudioPlayingOnUpdate = reloadSafety.automaticBlockerKinds.includes("audio");
@@ -922,6 +1057,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       waitingWorker = null;
       waitingWorkerVersion = null;
       waitingWorkerVersionPromise = null;
+      clearWaitingWorkerRetry(true);
       setSnapshot((current) => ({
         ...current,
         isReady: true,
@@ -971,10 +1107,11 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     const handleOnline = () => {
       refreshAutomation();
       requestImmediateVersionCheck();
-      clearConnectionRetry();
       if (pendingControllerReload) {
+        clearConnectionRetry();
         void attemptPendingControllerReload();
       } else if (snapshot.applyState === "waiting-for-connection" && snapshot.updateAvailable) {
+        clearConnectionRetry();
         void attemptApply(pendingControllerReloadPolicy);
       }
     };
@@ -1052,6 +1189,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       clearAutoApplyTimeout();
       clearActivationDelayTimeout();
       clearConnectionRetry();
+      clearWaitingWorkerRetry(true);
       stopUpdateDeadlineWatcher();
       stopVersionCheck();
     };
@@ -1129,27 +1267,15 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     cancelPendingApply() {
       if (snapshot.applyState !== "waiting-for-connection") return;
       clearConnectionRetry();
+      clearWaitingWorkerRetry();
+      pendingControllerReload = false;
       pendingControllerReloadPolicy = "automatic";
       setApplyState("idle");
+      dismissCurrentUpdate();
     },
 
     dismissUpdate() {
-      if (typeof window === "undefined") return;
-
-      const persisted = readPersistedUpdateState();
-      if (currentUpdateVersion) {
-        writePersistedUpdateState({
-          version: currentUpdateVersion,
-          dismissed: true,
-          deadline: persisted?.version === currentUpdateVersion ? persisted.deadline : Date.now() + MAX_UPDATE_AGE_MS
-        });
-      } else {
-        dismissalRequestedWithoutVersion = true;
-      }
-      autoAppliedExpiredUpdate = false;
-      reportLifecycleEvent("update_dismissed", { workerReady: snapshot.updateReady });
-      setSnapshot((current) => ({ ...current, wasDismissed: true }));
-      refreshAutomation();
+      dismissCurrentUpdate();
     },
 
     observeWebVersion(version: string | null | undefined) {
