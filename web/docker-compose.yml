@@ -112,7 +112,7 @@ services:
       RAG_RELATIVE_SCORE_CUTOFF: ${RAG_RELATIVE_SCORE_CUTOFF:-0}
     volumes:
       # Config file (path varies by environment)
-      - ${CONFIG_FILE:-./besedy.docker.toml}:${CONFIG_MOUNT:-/data/config/besedy.docker.toml}:ro
+      - ${CONFIG_FILE:?CONFIG_FILE is required}:${CONFIG_MOUNT:-/data/config/besedy.docker.toml}:ro
       # Web application logs (host bind mount, persisted across container recreation)
       - ${WEB_LOGS_DIR:-${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/web/logs/dev}:/var/log/besedy:rw
       # Text data: catalogs and transcripts

@@ -373,7 +373,6 @@ dev-status:
 prod-up:
     #!/usr/bin/env bash
     set -euo pipefail
-    bash scripts/validate_web_config_mount.sh production
     {{ ensure_internal_network }}
     cd web
     env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
@@ -381,7 +380,8 @@ prod-up:
     . "$env_file"
     set +a
     export GIT_COMMIT=$(git rev-parse HEAD)
-    export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
+    WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
+    export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} up -d --remove-orphans
 
@@ -437,7 +437,8 @@ prod-rebuild:
         exit 1
     fi
     export GIT_COMMIT=$(git rev-parse HEAD)
-    export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
+    WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
+    export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull --no-cache web
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup up -d web
@@ -478,7 +479,8 @@ prod-deploy:
     fi
     echo "Building production with version tracking..."
     export GIT_COMMIT=$(git rev-parse HEAD)
-    export WEB_VERSION=$(bash ../scripts/resolve_web_version.sh)
+    WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
+    export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull --no-cache web
     echo "Starting production services..."

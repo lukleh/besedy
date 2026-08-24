@@ -13,6 +13,17 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 env_file="$("$script_dir/resolve_web_env_file.sh" "$mode")"
 
+if [[ "$mode" == "production" ]]; then
+  for compose_arg in "$@"; do
+    case "$compose_arg" in
+      up | create | run)
+        "$script_dir/validate_web_config_mount.sh" production
+        break
+        ;;
+    esac
+  done
+fi
+
 case "$mode" in
   development)
     compose_args=(-f docker-compose.yml -f docker-compose.dev.yml --profile mock-oauth)

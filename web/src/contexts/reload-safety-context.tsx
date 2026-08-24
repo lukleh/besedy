@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ReloadBlockerKind } from "@/lib/service-worker/reload-safety";
+import { createBrowserId } from "@/lib/browser-id";
 
 const CHANNEL_NAME = "besedy-reload-safety";
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -48,11 +49,7 @@ const ReloadSafetyContext = createContext<ReloadSafetyContextValue | undefined>(
 );
 
 function createTabId(): string {
-  try {
-    return crypto.randomUUID();
-  } catch {
-    return `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
+  return createBrowserId("tab");
 }
 
 function isReloadBlocker(value: unknown): value is ReloadBlocker {

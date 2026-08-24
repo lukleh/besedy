@@ -80,6 +80,7 @@ export function UpdateBanner() {
     applyState,
     blockedReasons,
     applyUpdate,
+    cancelPendingApply,
     dismissUpdate,
   } = useServiceWorker();
   const { session } = useSession();
@@ -99,6 +100,9 @@ export function UpdateBanner() {
   const isActivationDelayed = applyState === "activation-delayed";
   const isApplying =
     applyState === "checking" || applyState === "applying" || isActivationDelayed;
+  const isWaitingForConnection = applyState === "waiting-for-connection";
+  const canManuallyOverrideBlock =
+    applyState === "blocked" && blockedReasons.every((reason) => reason === "audio");
   const descriptionKey = isActivationDelayed
     ? "update.banner.delayedDescription"
     : applyState === "checking"
@@ -124,10 +128,20 @@ export function UpdateBanner() {
       description={t(descriptionKey)}
       updateLabel={t(isApplying ? "update.working" : "update.refresh")}
       dismissLabel={t("notifications.promptDismiss")}
-      updateDisabled={isApplying || applyState === "blocked"}
-      dismissDisabled={applyState !== "idle" && !isActivationDelayed}
+      updateDisabled={
+        isApplying || (applyState === "blocked" && !canManuallyOverrideBlock)
+      }
+      dismissDisabled={
+        applyState !== "idle" && !isActivationDelayed && !isWaitingForConnection
+      }
       onUpdate={applyUpdate}
-      onDismiss={isActivationDelayed ? undefined : dismissUpdate}
+      onDismiss={
+        isActivationDelayed
+          ? undefined
+          : isWaitingForConnection
+            ? cancelPendingApply
+            : dismissUpdate
+      }
     />
   );
 }

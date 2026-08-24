@@ -6,11 +6,12 @@ import { clearAllRateLimits } from "@/lib/security/rate-limit";
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn().mockResolvedValue({}),
+  deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   getCurrentUserId: vi.fn().mockResolvedValue("user-1"),
 }));
 
 vi.mock("@/lib/db", () => ({
-  default: { webUpdateEvent: { create: mocks.create } },
+  default: { webUpdateEvent: { create: mocks.create, deleteMany: mocks.deleteMany } },
 }));
 
 vi.mock("@/lib/auth/permissions", () => ({
@@ -34,6 +35,7 @@ describe("web update telemetry endpoint", () => {
     clearAllRateLimits();
     vi.clearAllMocks();
     mocks.create.mockResolvedValue({});
+    mocks.deleteMany.mockResolvedValue({ count: 0 });
     mocks.getCurrentUserId.mockResolvedValue("user-1");
   });
 
@@ -99,5 +101,21 @@ describe("web update telemetry endpoint", () => {
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ received: false });
+  });
+
+  it("periodically removes telemetry older than 30 days", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
+
+      const response = await POST(request({ event: "client_seen", attemptId: "attempt-1" }));
+
+      expect(response.status).toBe(202);
+      expect(mocks.deleteMany).toHaveBeenCalledWith({
+        where: { createdAt: { lt: new Date("2029-12-02T00:00:00.000Z") } },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

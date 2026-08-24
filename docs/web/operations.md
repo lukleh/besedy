@@ -131,7 +131,7 @@ documentation commits therefore do not replace the service worker. Dirty web
 checkouts are still rejected to keep production builds reproducible.
 Both identifiers are visible at `GET /api/version`; the admin sidebar continues
 to display the source commit. Update lifecycle telemetry is available under
-**Admin → Web Updates**.
+**Admin → Web Updates** and is retained for 30 days.
 
 **Fresh database caveat:** On a brand-new DB from the full migration chain,
 install the `vector` extension before the first migration:

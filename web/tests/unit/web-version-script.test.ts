@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -112,6 +112,15 @@ describe("resolve_web_version.sh", () => {
     expect(resolveVersion().stdout).not.toBe(initial.stdout);
   });
 
+  it("includes production files whose names contain non-ASCII characters", () => {
+    commit("web/src/příliš.ts", "export const value = 'first';\n", "non-ascii source");
+    const initial = resolveVersion();
+
+    commit("web/src/příliš.ts", "export const value = 'second';\n", "change source");
+
+    expect(resolveVersion().stdout).not.toBe(initial.stdout);
+  });
+
   it("refuses all dirty web sources, including excluded tests", () => {
     write("web/tests/unit/example.test.ts", "dirty test\n");
 
@@ -119,5 +128,13 @@ describe("resolve_web_version.sh", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("dirty web sources");
+  });
+
+  it("does not mask resolver failures in production recipes", () => {
+    const justfile = readFileSync(resolve(process.cwd(), "../Justfile"), "utf8");
+
+    expect(justfile).not.toContain("export WEB_VERSION=$(bash");
+    expect(justfile.match(/WEB_VERSION="\$\(bash \.\.\/scripts\/resolve_web_version\.sh\)"/g))
+      .toHaveLength(3);
   });
 });

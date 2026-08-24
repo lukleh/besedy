@@ -36,6 +36,14 @@ if [[ "$mode" == "production" && "$config_file" != /* ]]; then
   fail "CONFIG_FILE must be an absolute host path outside the checkout; got $config_file"
 fi
 
+if [[ "$mode" == "production" ]]; then
+  case "$config_file" in
+    "$repo_root" | "$repo_root"/*)
+      fail "CONFIG_FILE must live outside the checkout; symlinks inside it are not allowed: $config_file"
+      ;;
+  esac
+fi
+
 resolved_config="$config_file"
 if [[ "$resolved_config" != /* ]]; then
   resolved_config="$repo_root/web/${resolved_config#./}"
