@@ -107,7 +107,7 @@ export function AudioPlayerChrome({
               onClick={onSkipBackward}
               title={t("skipBack")}
               aria-label={t("skipBack")}
-              className="flex h-12 w-12 flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 sm:h-10 sm:w-10"
+              className="flex h-12 w-12 flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 active:scale-90 active:bg-foreground active:text-background sm:h-10 sm:w-10"
               data-testid="audio-skip-backward"
             >
               <Undo2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
@@ -139,7 +139,7 @@ export function AudioPlayerChrome({
               onClick={onSkipForward}
               title={t("skipForward")}
               aria-label={t("skipForward")}
-              className="flex h-12 w-12 flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 sm:h-10 sm:w-10"
+              className="flex h-12 w-12 flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 active:scale-90 active:bg-foreground active:text-background sm:h-10 sm:w-10"
               data-testid="audio-skip-forward"
             >
               <Redo2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
