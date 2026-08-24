@@ -32,6 +32,7 @@ const EVENT_TYPES: Record<string, WebUpdateEventType> = {
   apply_blocked: WebUpdateEventType.APPLY_BLOCKED,
   version_probe_failed: WebUpdateEventType.VERSION_PROBE_FAILED,
   activation_started: WebUpdateEventType.ACTIVATION_STARTED,
+  activation_delayed: WebUpdateEventType.ACTIVATION_DELAYED,
   activation_complete: WebUpdateEventType.ACTIVATION_COMPLETE,
   reload_fallback: WebUpdateEventType.RELOAD_FALLBACK,
   registration_failed: WebUpdateEventType.REGISTRATION_FAILED,

@@ -502,6 +502,7 @@
         "seen": "Spuštění klienta",
         "detected": "Zjištěné aktualizace",
         "completed": "Dokončené aktualizace",
+        "delayed": "Pomalé aktivace",
         "blocked": "Blokované pokusy",
         "probeFailed": "Chyby dostupnosti"
       },
@@ -521,6 +522,7 @@
         "apply_blocked": "Aktualizace blokována",
         "version_probe_failed": "Kontrola dostupnosti selhala",
         "activation_started": "Aktivace zahájena",
+        "activation_delayed": "Aktivace se zpozdila",
         "activation_complete": "Aktivace dokončena",
         "reload_fallback": "Náhradní obnovení stránky",
         "registration_failed": "Registrace selhala"
@@ -1801,6 +1803,7 @@
       "readyDescription": "Nejnovější verze je připravena k instalaci.",
       "checkingDescription": "Ověřuji dostupnost nejnovější verze…",
       "applyingDescription": "Aktualizace se instaluje…",
+      "delayedDescription": "Aktualizace trvá déle, než se očekávalo. Toto oznámení můžete zavřít a pokračovat; aplikace se po dokončení znovu načte.",
       "connectionDescription": "Server s aktualizací zatím není dostupný. Zkusíme to znovu po obnovení připojení.",
       "unsavedDescription": "Před aktualizací uložte nebo zahoďte své změny.",
       "savingDescription": "Změna se stále ukládá. Aktualizace bude pokračovat po dokončení.",

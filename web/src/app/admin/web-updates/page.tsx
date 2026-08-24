@@ -49,6 +49,7 @@ export default async function WebUpdatesPage() {
     [t("metrics.seen"), countFor(counts, WebUpdateEventType.CLIENT_SEEN)],
     [t("metrics.detected"), countFor(counts, WebUpdateEventType.UPDATE_DETECTED)],
     [t("metrics.completed"), countFor(counts, WebUpdateEventType.ACTIVATION_COMPLETE)],
+    [t("metrics.delayed"), countFor(counts, WebUpdateEventType.ACTIVATION_DELAYED)],
     [t("metrics.blocked"), countFor(counts, WebUpdateEventType.APPLY_BLOCKED)],
     [t("metrics.probeFailed"), countFor(counts, WebUpdateEventType.VERSION_PROBE_FAILED)],
   ] as const;
@@ -60,7 +61,7 @@ export default async function WebUpdatesPage() {
         <p className="text-muted-foreground">{t("description")}</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         {metrics.map(([label, value]) => (
           <Card key={label}>
             <CardHeader className="pb-2">

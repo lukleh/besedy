@@ -1,11 +1,67 @@
 "use client";
 
+import { useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 import { Button } from "@/components/ui/button";
+
+interface UpdateBannerNoticeProps {
+  title: string;
+  description: string;
+  updateLabel: string;
+  dismissLabel: string;
+  updateDisabled: boolean;
+  dismissDisabled: boolean;
+  onUpdate: () => void;
+  onDismiss?: () => void;
+}
+
+function UpdateBannerNotice({
+  title,
+  description,
+  updateLabel,
+  dismissLabel,
+  updateDisabled,
+  dismissDisabled,
+  onUpdate,
+  onDismiss,
+}: UpdateBannerNoticeProps) {
+  const [isHidden, setIsHidden] = useState(false);
+
+  if (isHidden) return null;
+
+  return (
+    <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md animate-in slide-in-from-bottom-4 duration-300">
+      <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg">
+        <RefreshCw className="h-5 w-5 text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">{title}</p>
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            {description}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" onClick={onUpdate} className="h-8" disabled={updateDisabled}>
+            {updateLabel}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onDismiss ?? (() => setIsHidden(true))}
+            className="h-8 w-8 p-0"
+            aria-label={dismissLabel}
+            disabled={dismissDisabled}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Banner shown when a Service Worker update is available.
@@ -40,9 +96,12 @@ export function UpdateBanner() {
     return null;
   }
 
-  const isApplying = applyState === "checking" || applyState === "applying";
-  const descriptionKey =
-    applyState === "checking"
+  const isActivationDelayed = applyState === "activation-delayed";
+  const isApplying =
+    applyState === "checking" || applyState === "applying" || isActivationDelayed;
+  const descriptionKey = isActivationDelayed
+    ? "update.banner.delayedDescription"
+    : applyState === "checking"
       ? "update.banner.checkingDescription"
       : applyState === "applying"
         ? "update.banner.applyingDescription"
@@ -59,36 +118,16 @@ export function UpdateBanner() {
               : "update.banner.description";
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md animate-in slide-in-from-bottom-4 duration-300">
-      <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg">
-        <RefreshCw className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">{t("update.banner.title")}</p>
-          <p className="text-xs text-muted-foreground" aria-live="polite">
-            {t(descriptionKey)}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            size="sm"
-            onClick={applyUpdate}
-            className="h-8"
-            disabled={isApplying || applyState === "blocked"}
-          >
-            {t(isApplying ? "update.working" : "update.refresh")}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={dismissUpdate}
-            className="h-8 w-8 p-0"
-            aria-label={t("notifications.promptDismiss")}
-            disabled={applyState !== "idle"}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
+    <UpdateBannerNotice
+      key={applyState}
+      title={t("update.banner.title")}
+      description={t(descriptionKey)}
+      updateLabel={t(isApplying ? "update.working" : "update.refresh")}
+      dismissLabel={t("notifications.promptDismiss")}
+      updateDisabled={isApplying || applyState === "blocked"}
+      dismissDisabled={applyState !== "idle" && !isActivationDelayed}
+      onUpdate={applyUpdate}
+      onDismiss={isActivationDelayed ? undefined : dismissUpdate}
+    />
   );
 }

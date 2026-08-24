@@ -24,6 +24,7 @@ const UPDATE_DEADLINE_CHECK_INTERVAL_MS = 1000 * 30;
 const VERSION_ETAG_CHECK_INTERVAL_MS = 1000 * 60 * 60;
 const VERSION_PROBE_TIMEOUT_MS = 5000;
 const VERSION_PROBE_CACHE_MS = 30_000;
+const ACTIVATION_DELAY_NOTICE_MS = 8000;
 const logger = createClientLogger("SW");
 
 let activeVersionObserver: ((version: string) => void) | null = null;
@@ -56,7 +57,13 @@ export interface ServiceWorkerRuntimeSnapshot {
   updateReady: boolean;
   error: Error | null;
   wasDismissed: boolean;
-  applyState: "idle" | "checking" | "blocked" | "waiting-for-connection" | "applying";
+  applyState:
+    | "idle"
+    | "checking"
+    | "blocked"
+    | "waiting-for-connection"
+    | "applying"
+    | "activation-delayed";
   blockedReasons: ReloadBlockerKind[];
 }
 
@@ -161,6 +168,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
   let registration: ServiceWorkerRegistration | null = null;
   let waitingWorker: ServiceWorker | null = null;
   let autoApplyTimeoutId: number | null = null;
+  let activationDelayTimeoutId: number | null = null;
   let updateDeadlineWatcherCleanup: (() => void) | null = null;
   let registrationCleanup: (() => void) | null = null;
   let versionCheckTimeoutId: number | null = null;
@@ -257,6 +265,29 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     setSnapshot((current) => ({ ...current, applyState, blockedReasons }));
   }
 
+  function clearActivationDelayTimeout() {
+    if (activationDelayTimeoutId !== null) {
+      window.clearTimeout(activationDelayTimeoutId);
+      activationDelayTimeoutId = null;
+    }
+  }
+
+  function scheduleActivationDelayNotice() {
+    clearActivationDelayTimeout();
+    activationDelayTimeoutId = window.setTimeout(() => {
+      activationDelayTimeoutId = null;
+      if (
+        mode.isAuthenticatedAppShell &&
+        waitingWorker &&
+        !pendingControllerReload &&
+        snapshot.applyState === "applying"
+      ) {
+        reportLifecycleEvent("activation_delayed", { workerReady: true });
+        setApplyState("activation-delayed");
+      }
+    }, ACTIVATION_DELAY_NOTICE_MS);
+  }
+
   async function probeDeploymentVersion(
     allowRecentSuccess = true
   ): Promise<"ready" | "unreachable" | "target-changed"> {
@@ -309,6 +340,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     logger.info("Applying update - sending SKIP_WAITING");
     reportLifecycleEvent("activation_started", { workerReady: true });
     waitingWorker.postMessage({ type: "SKIP_WAITING" });
+    scheduleActivationDelayNotice();
     wasAudioPlayingOnUpdate = false;
     clearAutoApplyTimeout();
     return true;
@@ -645,6 +677,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
   function clearUpdateState() {
     if (typeof window === "undefined") return;
 
+    clearActivationDelayTimeout();
     autoAppliedExpiredUpdate = false;
     dismissalRequestedWithoutVersion = false;
     currentUpdateVersion = null;
@@ -693,6 +726,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     let isDisposed = false;
 
     const handleControllerChange = () => {
+      clearActivationDelayTimeout();
       waitingWorker = null;
       setSnapshot((current) => ({
         ...current,
@@ -811,6 +845,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       window.removeEventListener("online", handleOnline);
 
       clearAutoApplyTimeout();
+      clearActivationDelayTimeout();
       stopUpdateDeadlineWatcher();
       stopVersionCheck();
     };

@@ -9,6 +9,7 @@ export type WebUpdateTelemetryEvent =
   | "apply_blocked"
   | "version_probe_failed"
   | "activation_started"
+  | "activation_delayed"
   | "activation_complete"
   | "reload_fallback"
   | "registration_failed";
