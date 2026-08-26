@@ -4,14 +4,24 @@ import {
   getPublishedAccessibleRecordingHashes,
   getPublishedVisibleEventIds,
 } from '@/lib/catalog-events/visibility';
-import { getMcpEvent, listMcpEvents } from '@/lib/mcp/read-service';
+import { getRecordingCapability } from '@/lib/access/capabilities';
+import {
+  getMcpEvent,
+  getMcpRecording,
+  listMcpEvents,
+} from '@/lib/mcp/read-service';
 
 vi.mock('@/lib/db', () => ({
   default: {
     catalogEvent: { findMany: vi.fn(), findFirst: vi.fn() },
+    catalogEventRecording: { findMany: vi.fn(), count: vi.fn() },
     catalogEntry: { findMany: vi.fn() },
     audioMetadata: { findMany: vi.fn() },
   },
+}));
+
+vi.mock('@/lib/access/capabilities', () => ({
+  getRecordingCapability: vi.fn(),
 }));
 
 vi.mock('@/lib/catalog-events/visibility', () => ({
@@ -28,7 +38,7 @@ vi.mock('@/app/api/catalogs/[id]/search/search-service', () => ({
   executeCatalogSearch: vi.fn(),
 }));
 
-describe('MCP event list service', () => {
+describe('MCP read service', () => {
   const db = prisma as unknown as {
     catalogEvent: {
       findMany: ReturnType<typeof vi.fn>;
@@ -36,6 +46,10 @@ describe('MCP event list service', () => {
     };
     catalogEntry: { findMany: ReturnType<typeof vi.fn> };
     audioMetadata: { findMany: ReturnType<typeof vi.fn> };
+    catalogEventRecording: {
+      findMany: ReturnType<typeof vi.fn>;
+      count: ReturnType<typeof vi.fn>;
+    };
   };
 
   beforeEach(() => {
@@ -44,6 +58,10 @@ describe('MCP event list service', () => {
     vi.mocked(getPublishedAccessibleRecordingHashes).mockResolvedValue(
       new Set(['visible-recording']),
     );
+    vi.mocked(getRecordingCapability).mockResolvedValue({
+      canAccessRecording: true,
+      catalogGrant: 'VIEWER',
+    } as Awaited<ReturnType<typeof getRecordingCapability>>);
     db.catalogEvent.findMany.mockResolvedValue([
       {
         id: 42,
@@ -123,6 +141,20 @@ describe('MCP event list service', () => {
         location: { id: 7, name: 'Prague' },
       },
     ]);
+    db.catalogEventRecording.findMany.mockResolvedValue([
+      {
+        isPrimary: true,
+        event: {
+          id: 42,
+          title: 'Visible event',
+          released: true,
+          dateYear: 2026,
+          dateMonth: 8,
+          dateDay: 26,
+        },
+      },
+    ]);
+    db.catalogEventRecording.count.mockResolvedValue(2);
   });
 
   it('filters listener counts, searches descriptions, and returns compact links', async () => {
@@ -217,5 +249,78 @@ describe('MCP event list service', () => {
         },
       },
     });
+  });
+
+  it('returns detailed recording metadata with a bounded visible event page', async () => {
+    const result = await getMcpRecording(
+      'user-1',
+      'catalog-a',
+      'visible-recording',
+      { offset: 0, limit: 1 },
+    );
+
+    expect(db.catalogEventRecording.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workflowGroupId: 'catalog-a',
+          audioHash: 'visible-recording',
+        },
+        skip: 0,
+        take: 1,
+      }),
+    );
+    expect(result).toMatchObject({
+      catalogId: 'catalog-a',
+      recording: {
+        audioHash: 'visible-recording',
+        title: 'Recording title',
+        notes: 'Detailed notes must stay out of event lists',
+        tags: ['tag'],
+        webUrl:
+          'https://besedy.example/catalog/catalog-a/recording/visible-recording',
+      },
+      events: {
+        items: [
+          {
+            id: 42,
+            webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
+            title: 'Visible event',
+            released: true,
+            date: { year: 2026, month: 8, day: 26 },
+            isPrimary: true,
+          },
+        ],
+        totalVisible: 2,
+        nextOffset: 1,
+      },
+    });
+  });
+
+  it('scopes linked event pagination and totals for listeners', async () => {
+    vi.mocked(getRecordingCapability).mockResolvedValue({
+      canAccessRecording: true,
+      catalogGrant: 'LISTENER',
+    } as Awaited<ReturnType<typeof getRecordingCapability>>);
+    db.catalogEventRecording.count.mockResolvedValue(1);
+
+    const result = await getMcpRecording(
+      'listener-1',
+      'catalog-a',
+      'visible-recording',
+      { offset: 0, limit: 25 },
+    );
+
+    const permissionScopedWhere = {
+      workflowGroupId: 'catalog-a',
+      audioHash: 'visible-recording',
+      eventId: { in: [42] },
+    };
+    expect(db.catalogEventRecording.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: permissionScopedWhere }),
+    );
+    expect(db.catalogEventRecording.count).toHaveBeenCalledWith({
+      where: permissionScopedWhere,
+    });
+    expect(result.events.totalVisible).toBe(1);
   });
 });

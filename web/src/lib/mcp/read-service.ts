@@ -61,6 +61,11 @@ export interface McpEventRecordingPageInput {
   limit: number;
 }
 
+export interface McpRecordingEventPageInput {
+  offset: number;
+  limit: number;
+}
+
 export class McpReadError extends Error {
   constructor(
     readonly code:
@@ -337,6 +342,7 @@ export async function getMcpRecording(
   userId: string,
   catalogId: string,
   audioHash: string,
+  input: McpRecordingEventPageInput,
 ) {
   const capability = await getRecordingCapability(catalogId, audioHash, userId);
   if (!capability.canAccessRecording) {
@@ -348,41 +354,67 @@ export async function getMcpRecording(
   }
   const recording = serializeRecording(audioHash, rows);
 
-  const eventLinks = await prisma.catalogEventRecording.findMany({
-    where: { workflowGroupId: catalogId, audioHash },
-    select: {
-      isPrimary: true,
-      event: {
-        select: {
-          id: true,
-          title: true,
-          released: true,
-          dateYear: true,
-          dateMonth: true,
-          dateDay: true,
-        },
-      },
-    },
-    orderBy: { eventId: 'desc' },
-  });
   const visibleEventIds = requiresReleasedEventVisibilityScope(
     capability.catalogGrant,
   )
-    ? new Set(await getPublishedVisibleEventIds(prisma, catalogId))
+    ? await getPublishedVisibleEventIds(prisma, catalogId)
     : null;
+  const eventWhere: Prisma.CatalogEventRecordingWhereInput = {
+    workflowGroupId: catalogId,
+    audioHash,
+    ...(visibleEventIds === null
+      ? {}
+      : {
+          eventId: {
+            in: visibleEventIds.length > 0 ? visibleEventIds : [-1],
+          },
+        }),
+  };
+  const [eventLinks, totalVisible] = await Promise.all([
+    prisma.catalogEventRecording.findMany({
+      where: eventWhere,
+      select: {
+        isPrimary: true,
+        event: {
+          select: {
+            id: true,
+            title: true,
+            released: true,
+            dateYear: true,
+            dateMonth: true,
+            dateDay: true,
+          },
+        },
+      },
+      orderBy: { eventId: 'desc' },
+      skip: input.offset,
+      take: input.limit,
+    }),
+    prisma.catalogEventRecording.count({ where: eventWhere }),
+  ]);
+  const nextOffset =
+    input.offset + eventLinks.length < totalVisible
+      ? input.offset + eventLinks.length
+      : null;
 
   return {
     catalogId,
-    recording,
-    events: eventLinks
-      .filter(({ event }) => visibleEventIds?.has(event.id) ?? true)
-      .map(({ event, isPrimary }) => ({
+    recording: {
+      ...recording,
+      webUrl: buildRecordingWebUrl(catalogId, audioHash),
+    },
+    events: {
+      items: eventLinks.map(({ event, isPrimary }) => ({
         id: event.id,
+        webUrl: buildEventWebUrl(catalogId, event.id),
         title: event.title,
         released: event.released,
         date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
         isPrimary,
       })),
+      totalVisible,
+      nextOffset,
+    },
   };
 }
 

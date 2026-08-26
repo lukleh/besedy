@@ -28,6 +28,8 @@ const DEFAULT_EVENT_PAGE_SIZE = 25;
 const MAX_EVENT_PAGE_SIZE = 100;
 const DEFAULT_EVENT_RECORDING_LIMIT = 25;
 const MAX_EVENT_RECORDING_LIMIT = 100;
+const DEFAULT_RECORDING_EVENT_LIMIT = 25;
+const MAX_RECORDING_EVENT_LIMIT = 100;
 const DEFAULT_TRANSCRIPT_SEGMENT_LIMIT = 100;
 const MAX_TRANSCRIPT_SEGMENT_LIMIT = 200;
 const DEFAULT_SEARCH_LIMIT = 10;
@@ -241,14 +243,21 @@ export async function createBesedyMcpServer(
       {
         title: 'Get Besedy recording metadata',
         description:
-          'Get metadata for one visible recording without returning audio or filesystem paths.',
+          'Get metadata for one visible recording and a bounded page of its visible events, without returning audio or filesystem paths.',
         inputSchema: z.object({
           catalogId: z.string().min(1).optional(),
           audioHash: HashSchema,
+          eventOffset: z.number().int().min(0).default(0),
+          eventLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_RECORDING_EVENT_LIMIT)
+            .default(DEFAULT_RECORDING_EVENT_LIMIT),
         }),
         annotations: readOnlyAnnotations,
       },
-      async ({ catalogId, audioHash }) => {
+      async ({ catalogId, audioHash, eventOffset, eventLimit }) => {
         const catalog = resolveToolCatalog(
           profile,
           catalogId,
@@ -256,7 +265,11 @@ export async function createBesedyMcpServer(
         );
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
         return runReadTool(
-          () => getMcpRecording(userId, catalog.id, audioHash),
+          () =>
+            getMcpRecording(userId, catalog.id, audioHash, {
+              offset: eventOffset,
+              limit: eventLimit,
+            }),
           () => `Returned metadata for Besedy recording ${audioHash}.`,
         );
       },

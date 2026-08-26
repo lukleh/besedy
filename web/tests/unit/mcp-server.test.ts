@@ -4,6 +4,7 @@ import { createBesedyMcpServer, paginateCatalogs } from '@/lib/mcp/server';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
 import {
   getMcpEvent,
+  getMcpRecording,
   getMcpTranscript,
   listMcpEvents,
 } from '@/lib/mcp/read-service';
@@ -289,6 +290,40 @@ describe('MCP personalized tool surface', () => {
       offset: 0,
       limit: 25,
     });
+  });
+
+  it('applies bounded event pagination defaults to get_recording', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+    vi.mocked(getMcpRecording).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      recording: { audioHash: 'a'.repeat(64) },
+      events: { items: [], totalVisible: 0, nextOffset: null },
+    } as unknown as Awaited<ReturnType<typeof getMcpRecording>>);
+
+    const body = await invokeMcp('tools/call', {
+      name: 'get_recording',
+      arguments: { audioHash: 'a'.repeat(64) },
+    });
+
+    expect(body.error).toBeUndefined();
+    expect(getMcpRecording).toHaveBeenCalledWith(
+      'user-1',
+      'viewer-catalog',
+      'a'.repeat(64),
+      { offset: 0, limit: 25 },
+    );
   });
 
   it('still denies a transcript call against a listener catalog', async () => {

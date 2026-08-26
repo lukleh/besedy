@@ -177,7 +177,11 @@ caller. `get_event` takes an event ID plus an optional `recordingOffset`
 event's authenticated `webUrl` and a permission-scoped recording page with
 `items`, `totalVisible`, and `nextOffset`; each compact recording summary also
 has an authenticated `webUrl`. Recording and transcript reads use the stable
-audio hash. Transcript responses are windowable by time and paged by segment
+audio hash. `get_recording` accepts an optional `eventOffset` (default 0) and
+`eventLimit` from 1 to 100 (default 25). It returns detailed metadata with an
+authenticated recording `webUrl` and a permission-scoped event page containing
+`items`, `totalVisible`, and `nextOffset`; every linked event also has a
+`webUrl`. Transcript responses are windowable by time and paged by segment
 offset, with at most 200 segments per call. Search accepts up to 1,000 query
 characters and returns at most 20 grounded matches per call.
 
