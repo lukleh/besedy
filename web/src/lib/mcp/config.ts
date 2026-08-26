@@ -9,6 +9,14 @@ export const MCP_AUTH_SCOPES = [
   MCP_READ_SCOPE,
 ] as const;
 
+// Codex can keep several tasks connected to the same MCP credential. Keep
+// access tokens long-lived so routine app restarts do not create a refresh
+// stampede, and allow identical refresh retries enough time to receive the
+// already-rotated response instead of invalidating the token family.
+export const MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 30;
+export const MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 365;
+export const MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS = 60 * 5;
+
 function isProductionRuntime(
   appEnv = process.env.APP_ENV,
   nodeEnv = process.env.NODE_ENV,

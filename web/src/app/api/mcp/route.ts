@@ -2,6 +2,7 @@ import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
 import { getPortalCapability } from '@/lib/access/capabilities';
+import { hasActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
@@ -89,8 +90,12 @@ const protectedMcpHandler = resourceUrl
         }
 
         const clientIdClaim = claims.client_id ?? claims.azp;
-        const clientId =
-          typeof clientIdClaim === 'string' ? clientIdClaim : 'unknown-client';
+        if (typeof clientIdClaim !== 'string' || clientIdClaim.length === 0) {
+          return jsonRpcAccessDenied(
+            'The access token has no OAuth client identity',
+          );
+        }
+        const clientId = clientIdClaim;
         if (
           !checkRateLimit(
             'mcp:authenticated:global',
@@ -109,6 +114,18 @@ const protectedMcpHandler = resourceUrl
           )
         ) {
           return jsonRpcRateLimited();
+        }
+
+        if (
+          !(await hasActiveMcpAuthorization({
+            clientId,
+            resourceUrl,
+            userId,
+          }))
+        ) {
+          return jsonRpcAccessDenied(
+            'Active Besedy MCP authorization is required',
+          );
         }
 
         const portal = await getPortalCapability(userId);

@@ -185,6 +185,9 @@ describe("auth admission hardening", () => {
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
         clientRegistrationRequirePKCE: true,
+        accessTokenExpiresIn: 60 * 60 * 24 * 30,
+        refreshTokenExpiresIn: 60 * 60 * 24 * 365,
+        refreshTokenReuseInterval: 60 * 5,
       }),
     );
     expect(mocks.cimd).toHaveBeenCalledWith(

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   getPortalCapability: vi.fn(),
+  hasActiveMcpAuthorization: vi.fn(),
   mcpFetch: vi.fn(),
   requireMcpAuth: vi.fn(),
 }));
@@ -18,6 +19,9 @@ vi.mock('@better-auth/mcp', () => ({
 vi.mock('@/lib/auth', () => ({ auth: {} }));
 vi.mock('@/lib/access/capabilities', () => ({
   getPortalCapability: mocks.getPortalCapability,
+}));
+vi.mock('@/lib/mcp/authorization', () => ({
+  hasActiveMcpAuthorization: mocks.hasActiveMcpAuthorization,
 }));
 vi.mock('@/lib/mcp/server', () => ({
   createBesedyMcpServer: vi.fn(),
@@ -36,6 +40,7 @@ describe('MCP route hardening', () => {
 
     mocks.checkRateLimit.mockReturnValue(true);
     mocks.getPortalCapability.mockResolvedValue({ canEnterPortal: true });
+    mocks.hasActiveMcpAuthorization.mockResolvedValue(true);
     mocks.mcpFetch.mockResolvedValue(Response.json({ ok: true }));
     mocks.requireMcpAuth.mockImplementation(
       (
@@ -135,12 +140,41 @@ describe('MCP route hardening', () => {
     expect(mocks.mcpFetch).not.toHaveBeenCalled();
   });
 
+  it('denies a valid JWT after its OAuth authorization is revoked', async () => {
+    mocks.hasActiveMcpAuthorization.mockResolvedValue(false);
+    const { POST } = await import('@/app/api/mcp/route');
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message: 'Active Besedy MCP authorization is required',
+      },
+      id: null,
+    });
+    expect(mocks.hasActiveMcpAuthorization).toHaveBeenCalledWith({
+      clientId: 'client-1',
+      resourceUrl: 'http://localhost:3001/api/mcp',
+      userId: 'user-1',
+    });
+    expect(mocks.getPortalCapability).not.toHaveBeenCalled();
+    expect(mocks.mcpFetch).not.toHaveBeenCalled();
+  });
+
   it('forwards a currently authorized request to the MCP handler', async () => {
     const { POST } = await import('@/app/api/mcp/route');
 
     const response = await POST(request());
 
     expect(response.status).toBe(200);
+    expect(mocks.hasActiveMcpAuthorization).toHaveBeenCalledWith({
+      clientId: 'client-1',
+      resourceUrl: 'http://localhost:3001/api/mcp',
+      userId: 'user-1',
+    });
     expect(mocks.getPortalCapability).toHaveBeenCalledWith('user-1');
     expect(mocks.requireMcpAuth).toHaveBeenCalledWith(
       expect.anything(),

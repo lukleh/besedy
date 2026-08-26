@@ -23,7 +23,10 @@ import { getGoogleOAuthConfig } from "./provider-config";
 import {
   getMcpResourceUrl,
   isMcpEnabled,
+  MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
   MCP_AUTH_SCOPES,
+  MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS,
+  MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS,
 } from "@/lib/mcp/config";
 import { fetchCimdClientMetadataResource } from "@/lib/auth/cimd-fetch";
 
@@ -140,6 +143,10 @@ export const auth = betterAuth({
               },
             ],
             scopes: [...MCP_AUTH_SCOPES],
+            accessTokenExpiresIn: MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+            refreshTokenExpiresIn: MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS,
+            refreshTokenReuseInterval:
+              MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS,
             allowPublicClientPrelogin: true,
           }),
           cimd({
