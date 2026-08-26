@@ -2,7 +2,10 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
-import { genericOAuth } from "better-auth/plugins";
+import { genericOAuth, jwt } from "better-auth/plugins";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
+import { mcp } from "@better-auth/mcp";
 import prisma from "@/lib/db";
 import { getSuperadminEmail } from "@/lib/config";
 import { canonicalizeEmail } from "@/lib/email";
@@ -18,11 +21,24 @@ import {
 } from "@/lib/admission/auth-claim";
 import { logLogin, logPortalAdmissionEvent } from "@/lib/audit/logger";
 import { getGoogleOAuthConfig } from "./provider-config";
+import {
+  getMcpResourceUrl,
+  isMcpEnabled,
+  MCP_AUTH_SCOPES,
+} from "@/lib/mcp/config";
 
 const appEnv = process.env.APP_ENV;
 const mockOAuthUrl = process.env.OAUTH_MOCK_URL?.trim();
 const hasMockOAuth =
   Boolean(mockOAuthUrl) && (appEnv === "development" || appEnv === "test");
+// OAuth-provider plugins seed their protected-resource model during startup.
+// Unit tests that import auth through unrelated session helpers do not have a
+// real adapter; dedicated auth tests opt in with the test-only flag below.
+const hasMcpAuthPlugins =
+  isMcpEnabled() &&
+  (process.env.NODE_ENV !== "test" ||
+    process.env.BESEDY_MCP_TEST_ENABLED === "true");
+const mcpResourceUrl = hasMcpAuthPlugins ? getMcpResourceUrl() : null;
 
 // Build social providers based on environment
 const socialProviders: BetterAuthOptions["socialProviders"] = {};
@@ -73,6 +89,13 @@ export const auth = betterAuth({
             config: [
               {
                 providerId: "mock-oauth",
+                accountIssuer: "local:oauth:mock-oauth",
+                accountSubject: ({ profile }) => {
+                  if (typeof profile.sub !== "string" || profile.sub.length === 0) {
+                    throw new Error("Mock OAuth profile is missing a subject");
+                  }
+                  return profile.sub;
+                },
                 clientId: "test-client-id",
                 clientSecret: "test-client-secret",
                 authorizationUrl: `${process.env.AUTH_URL || "http://localhost:3001"}/mock-oauth/authorize`,
@@ -82,7 +105,6 @@ export const auth = betterAuth({
                 // oauth2-mock-server uses OIDC-style claim names (sub, picture).
                 // Better Auth expects id/image fields for provider profiles.
                 mapProfileToUser: (profile: Record<string, unknown>) => ({
-                  id: typeof profile.sub === "string" ? profile.sub : undefined,
                   email: typeof profile.email === "string" ? profile.email : undefined,
                   name: typeof profile.name === "string" ? profile.name : undefined,
                   image: typeof profile.picture === "string" ? profile.picture : undefined,
@@ -93,6 +115,36 @@ export const auth = betterAuth({
                 }),
               },
             ],
+          }),
+        ]
+      : []),
+    ...(mcpResourceUrl
+      ? [
+          jwt(),
+          mcp({
+            loginPage: "/auth/mcp-signin",
+            consentPage: "/auth/mcp-consent",
+            resource: mcpResourceUrl,
+            // MCP 2026-07-28 prefers CIMD, while clients such as Claude still
+            // require RFC 7591 DCR. Registration creates only an OAuth client
+            // identity; PKCE, user consent, scopes, and live Besedy
+            // authorization remain mandatory before any data is returned.
+            allowDynamicClientRegistration: true,
+            allowUnauthenticatedClientRegistration: true,
+            clientRegistrationRequirePKCE: true,
+            resources: [
+              {
+                identifier: mcpResourceUrl,
+                name: "Besedy MCP",
+                allowedScopes: [...MCP_AUTH_SCOPES],
+              },
+            ],
+            scopes: [...MCP_AUTH_SCOPES],
+            allowPublicClientPrelogin: true,
+          }),
+          cimd({
+            fetchClientMetadataResource,
+            metadataProfile: "mcp-2026-07-28",
           }),
         ]
       : []),

@@ -5,6 +5,7 @@ import {
   listUserCatalogAccessEntries,
 } from "@/lib/access/catalog-access-queries";
 import {
+  hasSystemCatalogAuthority,
   resolveCatalogActorContext,
   resolvePortalActorContext,
 } from "@/lib/policy/actor";
@@ -79,7 +80,7 @@ interface CatalogCapabilityOptions {
   activeCatalogOnly?: boolean;
 }
 
-function buildCatalogCapability(
+export function buildCatalogCapability(
   portal: PortalCapability,
   catalogId: string,
   catalogExists: boolean,
@@ -143,7 +144,7 @@ export async function getAdminCapability(userId?: string): Promise<AdminCapabili
   }
 
   const isSuperadmin = actor.systemRole === "SUPERADMIN";
-  const isAdmin = actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN";
+  const isAdmin = hasSystemCatalogAuthority(actor);
 
   const editorOnAnyCatalog = await hasEditorAuthorityOnAnyCatalog(actor);
 

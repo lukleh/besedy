@@ -3,6 +3,7 @@ import { logAccessDenied } from "@/lib/audit/logger";
 import { requireAuth } from "@/lib/auth/permissions";
 import { forbidden, notFound } from "@/lib/api";
 import {
+  hasSystemCatalogAuthority,
   resolveCatalogActorContext,
   type CatalogActorContext,
 } from "@/lib/policy/actor";
@@ -57,8 +58,7 @@ function normalizeManagementActor(
     return actor;
   }
 
-  const isElevatedAdmin =
-    actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN";
+  const isElevatedAdmin = hasSystemCatalogAuthority(actor);
 
   if (!isElevatedAdmin) {
     return actor;

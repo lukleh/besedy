@@ -21,6 +21,7 @@ describe("proxy security controls", () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.env.APP_ENV = "production";
+    process.env.BESEDY_MCP_ENABLED = "true";
     delete process.env.TRUST_PROXY_HEADERS;
 
     mocks.checkRateLimit.mockReturnValue(true);
@@ -280,6 +281,73 @@ describe("proxy security controls", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: "Invalid request origin",
     });
+  });
+
+  it("allows bearer-authenticated MCP POST requests without a browser origin", async () => {
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer mcp-access-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("lets the MCP route issue an OAuth challenge without a browser origin", async () => {
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("does not exempt MCP bearer requests from CSRF when MCP is disabled", async () => {
+    process.env.BESEDY_MCP_ENABLED = "false";
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer mcp-access-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("does not parse malformed MCP configuration for unrelated mutations", async () => {
+    process.env.BESEDY_MCP_ENABLED = "1";
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/preferences", {
+      method: "PATCH",
+      headers: {
+        origin: "http://localhost",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ theme: "system" }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(200);
   });
 
   it("allows mutating API requests from the same origin to reach the route handler", async () => {

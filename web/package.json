@@ -25,6 +25,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test",
     "test:e2e:smoke": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --grep @smoke --project='Desktop Chrome'",
+    "test:e2e:mcp": "playwright test --config=playwright.mcp.config.ts",
     "test:e2e:desktop": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --project='Desktop Chrome'",
     "test:e2e:security": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --grep @security",
     "test:e2e:regression": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --grep @regression",
@@ -54,7 +55,11 @@
     "audit:dependencies": "node scripts/audit-dependencies.mjs"
   },
   "dependencies": {
+    "@better-auth/cimd": "1.7.1",
+    "@better-auth/mcp": "1.7.1",
+    "@better-auth/oauth-provider": "1.7.1",
     "@iarna/toml": "^2.2.5",
+    "@modelcontextprotocol/server": "2.0.0",
     "@prisma/adapter-pg": "^7.9.0",
     "@prisma/client": "^7.9.0",
     "@radix-ui/react-alert-dialog": "^1.1.22",
@@ -73,7 +78,7 @@
     "@swc/helpers": "^0.5.23",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-virtual": "^3.14.8",
-    "better-auth": "^1.6.22",
+    "better-auth": "1.7.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

@@ -6,10 +6,12 @@ import {
   canGrantCatalogAccessLevel,
   canManageCatalogConfiguration,
   canManageExistingCatalogAccessLevel,
+  canUseCatalogRag,
   hasCatalogManagementAuthority,
   canViewCatalog,
   canViewCatalogTranscripts,
 } from "@/lib/policy/catalog";
+import { canViewUnreleasedEvents } from "@/lib/policy/event";
 import {
   canPublishRecording,
   requiresReadyRecordingScope,
@@ -19,6 +21,30 @@ import {
 } from "@/lib/policy/recording";
 
 describe("policy access helpers", () => {
+  it.each([
+    ["LISTENER", false],
+    ["VIEWER", true],
+    ["MEMBER", true],
+    ["EDITOR", true],
+    ["OWNER", true],
+  ] as const)(
+    "keeps transcript, search, and unreleased-event access aligned for %s",
+    (catalogGrant, canReadTranscriptContent) => {
+      const context = {
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant,
+        isCatalogAdmin: false,
+      };
+
+      expect(canViewCatalogTranscripts(context)).toBe(canReadTranscriptContent);
+      expect(canUseCatalogRag(context)).toBe(canReadTranscriptContent);
+      expect(canViewUnreleasedEvents(context)).toBe(
+        catalogGrant !== "LISTENER"
+      );
+    }
+  );
+
   it("treats listeners as catalog viewers but restricts recording visibility to published actionable items", () => {
     const listenerContext = {
       catalogExists: true,
@@ -29,6 +55,8 @@ describe("policy access helpers", () => {
 
     expect(canViewCatalog(listenerContext)).toBe(true);
     expect(canViewCatalogTranscripts(listenerContext)).toBe(false);
+    expect(canUseCatalogRag(listenerContext)).toBe(false);
+    expect(canViewUnreleasedEvents(listenerContext)).toBe(false);
     expect(
       canViewRecording(listenerContext, { isActionable: true, isPublished: true })
     ).toBe(true);
@@ -58,6 +86,8 @@ describe("policy access helpers", () => {
     expect(canViewCatalog(ownerContext)).toBe(true);
     expect(canBrowseRecordings(ownerContext)).toBe(true);
     expect(canViewCatalogTranscripts(ownerContext)).toBe(true);
+    expect(canUseCatalogRag(ownerContext)).toBe(true);
+    expect(canViewUnreleasedEvents(ownerContext)).toBe(true);
     expect(canViewRecording(ownerContext)).toBe(true);
     expect(canViewRecordingTranscript(ownerContext)).toBe(true);
     expect(canAttemptCatalogManagement(ownerContext)).toBe(true);
@@ -83,6 +113,8 @@ describe("policy access helpers", () => {
     expect(canViewCatalog(adminContext)).toBe(true);
     expect(canBrowseRecordings(adminContext)).toBe(true);
     expect(canViewCatalogTranscripts(adminContext)).toBe(true);
+    expect(canUseCatalogRag(adminContext)).toBe(true);
+    expect(canViewUnreleasedEvents(adminContext)).toBe(true);
     expect(canAttemptCatalogManagement(adminContext)).toBe(true);
     expect(hasCatalogManagementAuthority(adminContext)).toBe(true);
     expect(canAccessCatalogSettings(adminContext)).toBe(true);
@@ -102,6 +134,8 @@ describe("policy access helpers", () => {
     };
 
     expect(canAttemptCatalogManagement(viewerContext)).toBe(false);
+    expect(canUseCatalogRag(viewerContext)).toBe(true);
+    expect(canViewUnreleasedEvents(viewerContext)).toBe(true);
     expect(hasCatalogManagementAuthority(viewerContext)).toBe(false);
     expect(canGrantCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
     expect(canManageExistingCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);

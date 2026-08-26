@@ -81,6 +81,7 @@ export function EventList({
   canEdit,
   showAllColumns,
   showReleaseState,
+  canUseRagSearch,
   deepSearchHref,
 }: EventListProps) {
   // Owns the query state and page behavior for catalog events. Data shapes and
@@ -339,7 +340,7 @@ export function EventList({
 
   const rag = useRagSearch({
     activeCatalogId: catalogId,
-    canUseRagSearch: true,
+    canUseRagSearch,
     sessionScope: "events",
     dataLoaded: !!data,
     onSessionRestore: handleRagSessionRestore,
@@ -641,17 +642,19 @@ export function EventList({
               ? t("countFiltered", { filtered: totalFiltered, total: totalAll })
               : t("count", { total: totalAll })}
           </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="@[768px]/catalog:hidden landscape-mobile:inline-flex"
-            onClick={openMobileSearchOverlay}
-            aria-label={tCatalog("ragSearch.placeholder")}
-            data-testid="mobile-rag-search-button"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
+          {canUseRagSearch ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="@[768px]/catalog:hidden landscape-mobile:inline-flex"
+              onClick={openMobileSearchOverlay}
+              aria-label={tCatalog("ragSearch.placeholder")}
+              data-testid="mobile-rag-search-button"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+          ) : null}
           {deepSearchHref ? (
             <DeepSearchIconAction
               href={deepSearchHref}
@@ -695,27 +698,31 @@ export function EventList({
         </div>
       </div>
 
-      <div className="hidden items-stretch gap-3 @[768px]/catalog:flex landscape-mobile:hidden">
-        <div className="min-w-0 flex-1">
-          <RagSearchBar
-            ragQuery={rag.ragQuery}
-            setRagQuery={rag.setRagQuery}
-            isRagMode={rag.isRagMode}
-            ragLoading={rag.ragLoading}
-            onSubmit={rag.handleRagSubmit}
-            onBack={() => rag.exitRagMode(false)}
-            onClear={() =>
-              rag.isRagMode ? rag.exitRagMode(true) : rag.setRagQuery("")
-            }
-          />
+      {canUseRagSearch || deepSearchHref ? (
+        <div className="hidden items-stretch gap-3 @[768px]/catalog:flex landscape-mobile:hidden">
+          {canUseRagSearch ? (
+            <div className="min-w-0 flex-1">
+              <RagSearchBar
+                ragQuery={rag.ragQuery}
+                setRagQuery={rag.setRagQuery}
+                isRagMode={rag.isRagMode}
+                ragLoading={rag.ragLoading}
+                onSubmit={rag.handleRagSubmit}
+                onBack={() => rag.exitRagMode(false)}
+                onClear={() =>
+                  rag.isRagMode ? rag.exitRagMode(true) : rag.setRagQuery("")
+                }
+              />
+            </div>
+          ) : null}
+          {deepSearchHref ? (
+            <DeepSearchAction
+              href={deepSearchHref}
+              label={tCatalog("deepSearch.label")}
+            />
+          ) : null}
         </div>
-        {deepSearchHref ? (
-          <DeepSearchAction
-            href={deepSearchHref}
-            label={tCatalog("deepSearch.label")}
-          />
-        ) : null}
-      </div>
+      ) : null}
 
       {rag.isRagMode ? (
         <div className="hidden space-y-3 @[768px]/catalog:block landscape-mobile:hidden">
@@ -924,22 +931,24 @@ export function EventList({
         />
       )}
 
-      <MobileSearchOverlay
-        open={searchOverlayOpen}
-        ragQuery={rag.ragQuery}
-        ragSubmittedQuery={rag.ragSubmittedQuery}
-        ragResults={rag.ragResults}
-        ragLoading={rag.ragLoading}
-        ragError={rag.ragError}
-        setRagQuery={rag.setRagQuery}
-        onSubmit={rag.handleRagSubmit}
-        onRetry={() => {
-          void rag.executeRagSearch(rag.ragSubmittedQuery || rag.ragQuery);
-        }}
-        onOpenResult={openRagResult}
-        onClear={() => rag.exitRagMode(true)}
-        onClose={closeMobileSearchOverlay}
-      />
+      {canUseRagSearch ? (
+        <MobileSearchOverlay
+          open={searchOverlayOpen}
+          ragQuery={rag.ragQuery}
+          ragSubmittedQuery={rag.ragSubmittedQuery}
+          ragResults={rag.ragResults}
+          ragLoading={rag.ragLoading}
+          ragError={rag.ragError}
+          setRagQuery={rag.setRagQuery}
+          onSubmit={rag.handleRagSubmit}
+          onRetry={() => {
+            void rag.executeRagSearch(rag.ragSubmittedQuery || rag.ragQuery);
+          }}
+          onOpenResult={openRagResult}
+          onClear={() => rag.exitRagMode(true)}
+          onClose={closeMobileSearchOverlay}
+        />
+      ) : null}
 
       {canEdit && (
         <EventListCreateDialog

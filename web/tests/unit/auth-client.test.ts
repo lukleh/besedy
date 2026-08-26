@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   signInSocial: vi.fn(),
-  signInOAuth2: vi.fn(),
+  oauth2Consent: vi.fn(),
   useSession: vi.fn(),
   signOut: vi.fn(),
   getSession: vi.fn(),
@@ -12,7 +12,9 @@ vi.mock("better-auth/react", () => ({
   createAuthClient: vi.fn(() => ({
     signIn: {
       social: mocks.signInSocial,
-      oauth2: mocks.signInOAuth2,
+    },
+    oauth2: {
+      consent: mocks.oauth2Consent,
     },
     useSession: mocks.useSession,
     signOut: mocks.signOut,
@@ -24,7 +26,7 @@ describe("auth client", () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.signInSocial.mockReset();
-    mocks.signInOAuth2.mockReset();
+    mocks.oauth2Consent.mockReset();
     mocks.signOut.mockReset();
     delete process.env.NEXT_PUBLIC_APP_ENV;
   });
@@ -38,8 +40,8 @@ describe("auth client", () => {
 
     await signInWithOAuth("/catalog");
 
-    expect(mocks.signInOAuth2).toHaveBeenCalledWith({
-      providerId: "mock-oauth",
+    expect(mocks.signInSocial).toHaveBeenCalledWith({
+      provider: "mock-oauth",
       callbackURL: "/auth/complete?callbackUrl=%2Fcatalog",
       errorCallbackURL: "/auth/complete?callbackUrl=%2Fcatalog",
     });
@@ -76,8 +78,8 @@ describe("auth client", () => {
 
     await signInWithOAuth("https://evil.example");
 
-    expect(mocks.signInOAuth2).toHaveBeenCalledWith({
-      providerId: "mock-oauth",
+    expect(mocks.signInSocial).toHaveBeenCalledWith({
+      provider: "mock-oauth",
       callbackURL: "/auth/complete?callbackUrl=%2Fcatalog",
       errorCallbackURL: "/auth/complete?callbackUrl=%2Fcatalog",
     });
@@ -105,11 +107,67 @@ describe("auth client", () => {
   });
 
   it("surfaces OAuth bootstrap failures", async () => {
-    mocks.signInOAuth2.mockRejectedValueOnce(new Error("boom"));
+    mocks.signInSocial.mockRejectedValueOnce(new Error("boom"));
 
     const { signInWithOAuth } = await import("@/lib/auth/client");
 
     await expect(signInWithOAuth("/catalog")).rejects.toThrow("boom");
+  });
+
+  it("continues MCP authorization with the selected sign-in provider", async () => {
+    const { signInForMcpAuthorization } = await import("@/lib/auth/client");
+
+    await signInForMcpAuthorization(false);
+
+    expect(mocks.signInSocial).toHaveBeenCalledWith({ provider: "google" });
+  });
+
+  it("submits the MCP consent decision through the OAuth provider client", async () => {
+    const { respondToMcpConsent } = await import("@/lib/auth/client");
+
+    await respondToMcpConsent(true);
+
+    expect(mocks.oauth2Consent).toHaveBeenCalledWith({ accept: true });
+  });
+
+  it("validates signed MCP requests before trusting client metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          client_id: "https://client.example/metadata.json",
+          client_name: "Example client",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { validateMcpAuthorizationRequest } = await import("@/lib/auth/client");
+
+    await expect(
+      validateMcpAuthorizationRequest(
+        "https://client.example/metadata.json",
+        "client_id=https%3A%2F%2Fclient.example%2Fmetadata.json&sig=signed"
+      )
+    ).resolves.toMatchObject({ client_name: "Example client" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/oauth2/public-client-prelogin",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"oauth_query"'),
+      })
+    );
+  });
+
+  it("rejects MCP client metadata when signed-query validation fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 }))
+    );
+    const { validateMcpAuthorizationRequest } = await import("@/lib/auth/client");
+
+    await expect(
+      validateMcpAuthorizationRequest("spoofed-client", "sig=forged")
+    ).rejects.toThrow("Invalid MCP authorization request");
   });
 
   it("clears offline caches during sign out before redirecting", async () => {

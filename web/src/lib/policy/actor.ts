@@ -1,6 +1,5 @@
 import type { AccessLevel, UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
-import { getCurrentUserId } from "@/lib/auth/session";
 
 export type SystemRole = "USER" | "ADMIN" | "SUPERADMIN";
 
@@ -21,6 +20,12 @@ export interface CatalogActorContext extends PortalActorContext {
   isCatalogAdmin: boolean;
 }
 
+export function hasSystemCatalogAuthority(
+  actor: Pick<PortalActorContext, "systemRole">
+): boolean {
+  return actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN";
+}
+
 interface ResolveCatalogActorContextOptions {
   activeCatalogOnly?: boolean;
 }
@@ -29,6 +34,11 @@ async function resolveUserId(userId?: string): Promise<string | null> {
   if (userId !== undefined) {
     return userId;
   }
+
+  // Service callers such as MCP always provide a verified user ID. Load the
+  // request/session stack only for browser-facing callers that need it, so a
+  // reusable policy import does not initialize Better Auth as a side effect.
+  const { getCurrentUserId } = await import("@/lib/auth/session");
   return getCurrentUserId();
 }
 
@@ -102,8 +112,7 @@ export async function resolveCatalogActorContext(
     };
   }
 
-  const isCatalogAdmin =
-    portal.systemRole === "ADMIN" || portal.systemRole === "SUPERADMIN";
+  const isCatalogAdmin = hasSystemCatalogAuthority(portal);
 
   const access = isCatalogAdmin
     ? null

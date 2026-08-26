@@ -16,7 +16,7 @@ import {
   type PosterExtension,
   writePosterMeta,
 } from "@/lib/event-posters";
-import { requiresListenerEventVisibilityScope } from "@/lib/policy/event";
+import { requiresReleasedEventVisibilityScope } from "@/lib/policy/event";
 import { validatePath } from "@/lib/security/path-validation";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 import { isPublishedVisibleEvent } from "@/lib/catalog-events/visibility";
@@ -251,7 +251,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { accessLevel } = await requireCatalogEventsAccess(catalogId, "view");
 
-    if (requiresListenerEventVisibilityScope(accessLevel)) {
+    if (requiresReleasedEventVisibilityScope(accessLevel)) {
       const isVisible = await isPublishedVisibleEvent(prisma, catalogId, eventId);
       if (!isVisible) {
         return NextResponse.json({ error: "Event not found" }, { status: 404 });

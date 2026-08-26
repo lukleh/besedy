@@ -90,5 +90,7 @@ export function canBatchEditCatalogMetadata(context: CatalogPolicyContext): bool
 }
 
 export function canUseCatalogRag(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context);
+  // Search returns transcript-derived content, so it must never be broader than
+  // direct transcript access. Web and MCP both consume this capability.
+  return canViewCatalogTranscripts(context);
 }

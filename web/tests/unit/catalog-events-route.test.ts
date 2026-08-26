@@ -139,7 +139,7 @@ describe("catalog events route", () => {
         },
         include: expect.objectContaining({
           recordings: {
-            select: { audioHash: true, isPrimary: true },
+            select: { audioHash: true, isPrimary: true, sortOrder: true },
             orderBy: [{ sortOrder: "asc" }, { audioHash: "asc" }],
           },
         }),

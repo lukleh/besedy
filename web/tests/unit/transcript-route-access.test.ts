@@ -120,7 +120,7 @@ describe("transcript route access", () => {
     }
     expect(result.response.status).toBe(403);
     await expect(result.response.json()).resolves.toEqual({
-      error: "Transcript access requires VIEWER role or higher",
+      error: "Current catalog permissions do not allow transcript access",
     });
   });
 

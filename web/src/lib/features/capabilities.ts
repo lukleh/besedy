@@ -8,7 +8,7 @@ import {
 } from "@/lib/features/labs";
 import { type FeatureKey, getFeatureRollout } from "@/lib/features/rollout";
 import { type CatalogFeaturesResponse } from "@/lib/features/types";
-import { canBrowseRecordings } from "@/lib/policy/catalog";
+import { canBrowseRecordings, canUseCatalogRag } from "@/lib/policy/catalog";
 import {
   canBrowseEvents,
   canEditCatalogEvents,
@@ -26,17 +26,36 @@ export function isFeatureEnabledForUser(feature: FeatureKey, labsEnabled: boolea
   return labsEnabled;
 }
 
-export async function getLabsPreferenceForUser(userId: string): Promise<LabsPreference> {
+export interface UserFeaturePreferences {
+  activeGroupId: string | null;
+  labsPreference: LabsPreference;
+}
+
+export async function getUserFeaturePreferences(
+  userId: string
+): Promise<UserFeaturePreferences> {
   const prefs = await prisma.userPreferences.findUnique({
     where: { userId },
-    select: { settings: true },
+    select: { activeGroupId: true, settings: true },
   });
 
   if (!prefs) {
-    return defaultLabsPreference();
+    return {
+      activeGroupId: null,
+      labsPreference: defaultLabsPreference(),
+    };
   }
 
-  return readLabsPreferenceFromSettings(prefs.settings);
+  return {
+    activeGroupId: prefs.activeGroupId,
+    labsPreference: readLabsPreferenceFromSettings(prefs.settings),
+  };
+}
+
+export async function getLabsPreferenceForUser(
+  userId: string
+): Promise<LabsPreference> {
+  return (await getUserFeaturePreferences(userId)).labsPreference;
 }
 
 export function buildCatalogFeaturesResponse(
@@ -60,12 +79,15 @@ export function buildCatalogFeaturesResponse(
     catalogGrant,
     isCatalogAdmin,
   });
-  const eventPolicyContext = {
-    featureEnabled,
+  const catalogPolicyContext = {
     catalogExists,
     canEnterPortal,
     catalogGrant,
     isCatalogAdmin,
+  };
+  const eventPolicyContext = {
+    featureEnabled,
+    ...catalogPolicyContext,
   };
   const canView = canBrowseEvents(eventPolicyContext);
   const canEdit = canEditCatalogEvents(eventPolicyContext);
@@ -92,6 +114,7 @@ export function buildCatalogFeaturesResponse(
           catalogGrant,
           isCatalogAdmin,
         }),
+        canUseRagSearch: canUseCatalogRag(catalogPolicyContext),
       },
       deepSearch: {
         rollout: deepSearchRollout,

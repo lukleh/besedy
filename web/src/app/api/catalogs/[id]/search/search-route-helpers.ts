@@ -1,8 +1,6 @@
 import path from "node:path";
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma, type AccessLevel } from "@/generated/prisma/client";
-import { AuthError } from "@/lib/auth/permissions";
 import { requiresReadyRecordingScope } from "@/lib/policy/recording";
 import {
   getRagBackendKey,
@@ -459,7 +457,10 @@ export function elapsedMs(startedAt: number): number {
   return Number((performance.now() - startedAt).toFixed(2));
 }
 
-export function applyTimingHeaders(response: NextResponse, timings: SearchTimings): void {
+export function applyTimingHeaders(
+  response: { headers: Headers },
+  timings: SearchTimings,
+): void {
   const parts: string[] = [];
   const entries: Array<[string, number | undefined]> = [
     ["total", timings.totalMs],
@@ -484,13 +485,6 @@ export function applyTimingHeaders(response: NextResponse, timings: SearchTiming
 
 export function logSearchTelemetry(payload: SearchTelemetryPayload): void {
   console.info("[RAG Search]", JSON.stringify(payload));
-}
-
-export function getErrorType(error: unknown): string {
-  if (error instanceof AuthError) return "auth";
-  if (error instanceof RagServiceError) return "service";
-  if (error instanceof Error) return error.name;
-  return "unknown";
 }
 
 async function fetchJsonWithTimeout(

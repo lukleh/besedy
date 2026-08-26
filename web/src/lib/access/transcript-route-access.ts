@@ -7,6 +7,7 @@ import { logAccessDenied } from "@/lib/audit/logger";
 import { requireAuth } from "@/lib/auth/permissions";
 import { resolveActiveGroup } from "@/lib/catalog/resolve-group";
 import { resolveTranscriptsPath } from "@/lib/paths";
+import { TRANSCRIPT_ACCESS_DENIED_MESSAGE } from "@/lib/access/messages";
 
 interface TranscriptRouteGroup {
   id: string;
@@ -33,8 +34,6 @@ interface TranscriptRouteAccessOptions {
   auditResource?: string;
 }
 
-const TRANSCRIPT_ACCESS_DENIED =
-  "Transcript access requires VIEWER role or higher";
 const DOWNLOAD_ACCESS_DENIED = "Download not permitted for this transcript";
 
 export async function resolveTranscriptRouteAccess(
@@ -75,14 +74,14 @@ export async function resolveTranscriptRouteAccess(
     if (options.auditResource) {
       await logAccessDenied(userId, options.auditResource, options.hash, {
         groupId: group.id,
-        reason: TRANSCRIPT_ACCESS_DENIED,
+        reason: TRANSCRIPT_ACCESS_DENIED_MESSAGE,
       });
     }
 
     return {
       ok: false,
       response: NextResponse.json(
-        { error: TRANSCRIPT_ACCESS_DENIED },
+        { error: TRANSCRIPT_ACCESS_DENIED_MESSAGE },
         { status: 403 }
       ),
     };

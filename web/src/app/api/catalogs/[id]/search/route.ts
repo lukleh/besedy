@@ -6,7 +6,6 @@ import { TimestampIdParamSchema } from "@/lib/validation/schemas";
 import { executeCatalogSearch } from "./search-service";
 import {
   elapsedMs,
-  getErrorType,
   getSearchConfig,
   type SearchTimings,
   applyTimingHeaders,
@@ -18,6 +17,13 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function getErrorType(error: unknown): string {
+  if (error instanceof AuthError) return "auth";
+  if (error instanceof RagServiceError) return "service";
+  if (error instanceof Error) return error.name;
+  return "unknown";
+}
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const config = getSearchConfig();

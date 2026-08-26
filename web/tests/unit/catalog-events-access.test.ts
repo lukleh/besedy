@@ -11,6 +11,10 @@ vi.mock("@/lib/auth/permissions", async (importOriginal) => {
 
 vi.mock("@/lib/policy/actor", () => ({
   resolveCatalogActorContext: vi.fn(),
+  hasSystemCatalogAuthority: vi.fn(
+    (actor: { systemRole?: string }) =>
+      actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN"
+  ),
 }));
 
 vi.mock("@/lib/features/capabilities", async (importOriginal) => {

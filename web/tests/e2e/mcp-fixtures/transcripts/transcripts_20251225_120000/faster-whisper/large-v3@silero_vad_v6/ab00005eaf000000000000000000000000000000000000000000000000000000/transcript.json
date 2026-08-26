@@ -1,0 +1,23 @@
+{
+  "backend": "faster-whisper",
+  "hash": "ab00005eaf000000000000000000000000000000000000000000000000000000",
+  "model": "large-v3@silero_vad_v6",
+  "language": "cs",
+  "duration": 45,
+  "segments": [
+    {
+      "id": 0,
+      "text": "Besedy MCP transcript fixture opens the discussion.",
+      "start": 0,
+      "end": 5,
+      "speaker": "SPEAKER_00"
+    },
+    {
+      "id": 1,
+      "text": "The second segment confirms bounded transcript pagination.",
+      "start": 5,
+      "end": 10,
+      "speaker": "SPEAKER_01"
+    }
+  ]
+}
