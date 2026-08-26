@@ -1,6 +1,8 @@
 import { test, expect } from '../helpers/base-test';
+import type { Locator } from '@playwright/test';
 import { loginAs } from '../helpers/auth';
 import {
+  FIRST_RECORDING,
   TEST_AUDIO_FILES,
   TEST_CATALOG_ID,
   TEST_EVENTS,
@@ -15,7 +17,93 @@ interface EventItem {
   dateDay: number | null;
 }
 
+interface ControlRect {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
+
+function rectanglesOverlap(first: ControlRect, second: ControlRect): boolean {
+  return (
+    first.x < second.x + second.width &&
+    first.x + first.width > second.x &&
+    first.y < second.y + second.height &&
+    first.y + first.height > second.y
+  );
+}
+
+async function requireBoundingBox(
+  locator: Locator,
+  viewportWidth: number,
+): Promise<ControlRect> {
+  const rect = await locator.boundingBox();
+  if (!rect) {
+    throw new Error(`Missing player geometry at ${viewportWidth}px`);
+  }
+  return rect;
+}
+
 test.describe('Mobile event listening flow', () => {
+  test('player controls stay separated at narrow mobile widths', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await loginAs(page, 'listener');
+    await page.goto(URLS.recording(FIRST_RECORDING.hash));
+    await waitForPageReady(page);
+
+    const skipBackward = page.getByTestId('audio-skip-backward');
+    const play = page.getByTestId('audio-play-button');
+    const skipForward = page.getByTestId('audio-skip-forward');
+    const volume = page
+      .getByRole('button', { name: /mute/i })
+      .filter({ visible: true });
+    const cache = page
+      .getByRole('button', { name: /cache|offline/i })
+      .filter({ visible: true });
+    const progressSlider = page.locator("[data-slot='slider']").first();
+    const progressThumb = progressSlider.locator("[data-slot='slider-thumb']");
+
+    for (const width of [320, 360, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+
+      await expect(skipBackward).toBeVisible();
+      await expect(play).toBeVisible();
+      await expect(skipForward).toBeVisible();
+      await expect(volume).toBeVisible();
+      await expect(cache).toBeVisible();
+
+      const [backRect, playRect, forwardRect, volumeRect, cacheRect, sliderRect, thumbRect] =
+        await Promise.all([
+          requireBoundingBox(skipBackward, width),
+          requireBoundingBox(play, width),
+          requireBoundingBox(skipForward, width),
+          requireBoundingBox(volume, width),
+          requireBoundingBox(cache, width),
+          requireBoundingBox(progressSlider, width),
+          requireBoundingBox(progressThumb, width),
+        ]);
+
+      expect(playRect.x - (backRect.x + backRect.width)).toBeGreaterThanOrEqual(
+        11,
+      );
+      expect(forwardRect.x - (playRect.x + playRect.width)).toBeGreaterThanOrEqual(
+        11,
+      );
+      expect(rectanglesOverlap(forwardRect, volumeRect)).toBe(false);
+      expect(
+        Math.abs(
+          forwardRect.x + forwardRect.width / 2 -
+            (volumeRect.x + volumeRect.width / 2),
+        ),
+      ).toBeLessThanOrEqual(1);
+      expect(cacheRect.width).toBeGreaterThanOrEqual(48);
+      expect(cacheRect.height).toBeGreaterThanOrEqual(48);
+      expect(sliderRect.height).toBeGreaterThanOrEqual(44);
+      expect(thumbRect.width).toBeGreaterThanOrEqual(24);
+      expect(thumbRect.height).toBeGreaterThanOrEqual(24);
+    }
+  });
+
   test('listener can sort events, see progress, and move through the event order', async ({
     page,
   }, testInfo) => {

@@ -77,7 +77,7 @@ export function AudioPlayerChrome({
           max={duration || 100}
           step={0.1}
           onValueChange={onSeek}
-          className="cursor-pointer"
+          className="min-h-11 cursor-pointer [&_[data-slot=slider-thumb]]:size-6"
           aria-label={t("progress")}
         />
         <div className="mt-1 flex justify-between text-xs text-muted-foreground">
@@ -86,10 +86,12 @@ export function AudioPlayerChrome({
         </div>
       </div>
 
-      <div className="flex flex-col items-center gap-1 sm:gap-0">
+      <div className="flex flex-col items-center gap-2 sm:gap-0">
         <div className="relative flex w-full items-center justify-center gap-2 sm:gap-4">
           <div className="absolute left-0 hidden items-center gap-1 sm:flex">
-            {hash && catalogId && <CacheButton audioUrl={src} hash={hash} catalogId={catalogId} />}
+            {hash && catalogId && (
+              <CacheButton audioUrl={src} hash={hash} catalogId={catalogId} size="player" />
+            )}
             <BufferIndicator
               bufferAhead={bufferInfo.bufferAhead}
               peakBuffer={bufferInfo.peakBuffer}
@@ -100,18 +102,18 @@ export function AudioPlayerChrome({
             />
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-3 sm:gap-4">
             <Button
               variant="outline"
               size="icon"
               onClick={onSkipBackward}
               title={t("skipBack")}
               aria-label={t("skipBack")}
-              className="flex h-12 w-12 flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 active:scale-90 active:bg-foreground active:text-background sm:h-10 sm:w-10"
+              className="flex h-[4.25rem] w-[4.25rem] flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 active:scale-90 active:bg-foreground active:text-background sm:h-14 sm:w-14"
               data-testid="audio-skip-backward"
             >
-              <Undo2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-              <span className="text-[8px] font-semibold leading-none sm:text-[7px]">10s</span>
+              <Undo2 className="size-6 sm:size-5" />
+              <span className="text-[10px] font-semibold leading-none sm:text-[9px]">10s</span>
             </Button>
             <Button
               variant="default"
@@ -120,17 +122,17 @@ export function AudioPlayerChrome({
               disabled={isReconnecting}
               title={isReconnecting ? t("reconnecting") : isPlaying ? t("pause") : t("play")}
               aria-label={isReconnecting ? t("reconnecting") : isPlaying ? t("pause") : t("play")}
-              className="h-12 w-12 rounded-full sm:h-10 sm:w-10"
+              className="h-[4.25rem] w-[4.25rem] rounded-full sm:h-14 sm:w-14"
               data-testid="audio-play-button"
             >
               {isReconnecting ? (
-                <WifiOff className="h-5 w-5 animate-pulse sm:h-4 sm:w-4" />
+                <WifiOff className="size-7 animate-pulse sm:size-6" />
               ) : isBuffering ? (
-                <Loader2 className="h-5 w-5 animate-spin sm:h-4 sm:w-4" />
+                <Loader2 className="size-7 animate-spin sm:size-6" />
               ) : isPlaying ? (
-                <Pause className="h-5 w-5 sm:h-4 sm:w-4" />
+                <Pause className="size-7 sm:size-6" />
               ) : (
-                <Play className="h-5 w-5 sm:h-4 sm:w-4" />
+                <Play className="size-7 sm:size-6" />
               )}
             </Button>
             <Button
@@ -139,27 +141,27 @@ export function AudioPlayerChrome({
               onClick={onSkipForward}
               title={t("skipForward")}
               aria-label={t("skipForward")}
-              className="flex h-12 w-12 flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 active:scale-90 active:bg-foreground active:text-background sm:h-10 sm:w-10"
+              className="flex h-[4.25rem] w-[4.25rem] flex-col gap-0 rounded-full border-2 border-foreground/70 py-1 active:scale-90 active:bg-foreground active:text-background sm:h-14 sm:w-14"
               data-testid="audio-skip-forward"
             >
-              <Redo2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-              <span className="text-[8px] font-semibold leading-none sm:text-[7px]">10s</span>
+              <Redo2 className="size-6 sm:size-5" />
+              <span className="text-[10px] font-semibold leading-none sm:text-[9px]">10s</span>
             </Button>
           </div>
 
-          <div className="absolute right-0 flex items-center justify-end gap-2">
+          <div className="absolute right-0 hidden items-center justify-end gap-2 sm:flex">
             <Button
               variant="ghost"
               size="icon"
               onClick={onToggleMute}
               title={isMuted ? t("unmute") : t("mute")}
               aria-label={isMuted ? t("unmute") : t("mute")}
-              className="h-11 w-11 sm:h-10 sm:w-10"
+              className="h-14 w-14"
             >
               {isMuted ? (
-                <VolumeX className="h-5 w-5 sm:h-4 sm:w-4" />
+                <VolumeX className="size-7 sm:size-6" />
               ) : (
-                <Volume2 className="h-5 w-5 sm:h-4 sm:w-4" />
+                <Volume2 className="size-7 sm:size-6" />
               )}
             </Button>
             <Slider
@@ -173,10 +175,10 @@ export function AudioPlayerChrome({
           </div>
         </div>
 
-        <div className="relative flex w-full items-center justify-center gap-2 sm:hidden">
+        <div className="relative flex w-full justify-center sm:hidden">
           <button
             onClick={onToggleDebug}
-            className={`absolute left-0 rounded p-1 transition-colors ${
+            className={`absolute top-1/2 left-0 flex size-8 -translate-y-1/2 items-center justify-center rounded transition-colors ${
               showDebug
                 ? "text-foreground/70 hover:text-foreground"
                 : "text-muted-foreground/15 hover:text-muted-foreground/40"
@@ -186,22 +188,44 @@ export function AudioPlayerChrome({
           >
             <Bug className="h-3.5 w-3.5" />
           </button>
-          {hash && catalogId && <CacheButton audioUrl={src} hash={hash} catalogId={catalogId} />}
-          <BufferIndicator
-            bufferAhead={bufferInfo.bufferAhead}
-            peakBuffer={bufferInfo.peakBuffer}
-            networkState={bufferInfo.networkState}
-            isBuffering={isBuffering}
-            isReconnecting={isReconnecting}
-            isCached={cacheStatus === "cached"}
-          />
+          <div className="grid w-[14.25rem] grid-cols-3 items-center justify-items-center gap-3">
+            <div className="flex h-12 items-center justify-center">
+              {hash && catalogId && (
+                <CacheButton audioUrl={src} hash={hash} catalogId={catalogId} size="player" />
+              )}
+            </div>
+            <div className="flex h-12 items-center justify-center">
+              <BufferIndicator
+                bufferAhead={bufferInfo.bufferAhead}
+                peakBuffer={bufferInfo.peakBuffer}
+                networkState={bufferInfo.networkState}
+                isBuffering={isBuffering}
+                isReconnecting={isReconnecting}
+                isCached={cacheStatus === "cached"}
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggleMute}
+              title={isMuted ? t("unmute") : t("mute")}
+              aria-label={isMuted ? t("unmute") : t("mute")}
+              className="h-12 w-12"
+            >
+              {isMuted ? (
+                <VolumeX className="size-6" />
+              ) : (
+                <Volume2 className="size-6" />
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
       <div className="mt-2 hidden items-center sm:flex">
         <button
           onClick={onToggleDebug}
-          className={`rounded p-1 transition-colors ${
+          className={`flex size-8 items-center justify-center rounded transition-colors ${
             showDebug
               ? "text-foreground/70 hover:text-foreground"
               : "text-muted-foreground/15 hover:text-muted-foreground/40"
@@ -214,7 +238,7 @@ export function AudioPlayerChrome({
         <div className="hidden flex-1 text-center text-xs text-muted-foreground sm:block">
           {t("keyboardHints")}
         </div>
-        <div className="hidden w-[26px] sm:block" />
+        <div className="hidden w-8 sm:block" />
       </div>
     </>
   );
