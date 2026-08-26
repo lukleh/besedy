@@ -69,7 +69,18 @@ the policy, but the policy code is authoritative.
   installation. A client authorization ultimately uses the same Google sign-in,
   Besedy admission, user status, and session rules as the web application.
 - Tokens: short-lived, audience-bound JWT access tokens validated by the MCP
-  endpoint. Dynamic client registration follows the MCP CIMD profile.
+  endpoint.
+- OAuth client registration supports both mechanisms needed by remote clients:
+  Client ID Metadata Documents (CIMD) for MCP 2026-07-28 clients such as Codex,
+  and RFC 7591 Dynamic Client Registration (DCR) as a compatibility fallback
+  for clients such as Claude. Both are discovery-driven; users do not create or
+  paste Besedy API keys.
+- DCR registration is open because an MCP client must register before a user is
+  signed in. Registration creates only an OAuth application identity and grants
+  no Besedy access. Public clients must use S256 PKCE, redirect URIs are matched
+  exactly, the client remains limited to configured scopes and the canonical
+  MCP resource, the user must still sign in and consent, and the existing auth
+  endpoint rate limit applies.
 - Co-located Docker deployments validate JWT signatures through the
   process-local `BESEDY_MCP_JWKS_URL` (default
   `http://127.0.0.1:3000/api/auth/jwks`). The token issuer and audience remain
@@ -92,6 +103,32 @@ the policy, but the policy code is authoritative.
 `PENDING`, `BLOCKED`, deleted, or otherwise inactive users cannot use MCP even
 if they previously obtained a token. Revoked catalog grants stop authorizing
 catalog data on the next call.
+
+### Remote client setup
+
+With the production `AUTH_URL` set to `https://besedy.org`, the public
+Streamable HTTP endpoint is `https://besedy.org/api/mcp`. Clients discover the
+OAuth endpoints and choose CIMD or DCR automatically.
+
+Codex CLI:
+
+```bash
+codex mcp add besedy --url https://besedy.org/api/mcp
+codex mcp login besedy
+```
+
+Claude Code:
+
+```bash
+claude mcp add --transport http --scope user besedy https://besedy.org/api/mcp
+claude mcp login besedy
+```
+
+The interactive Claude Code `/mcp` menu can start the same login. In Claude or
+Claude Desktop, add a custom web connector under **Settings → Connectors** and
+use the same endpoint URL. In every client, the browser flow signs the user into
+Besedy through Google and displays the Besedy MCP consent screen. No bearer
+token or Google credential is pasted into the client configuration.
 
 ## Access matrix
 
@@ -248,6 +285,7 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Add Better Auth JWT, MCP authorization-server, and CIMD plugins.
 - [x] Add the required Prisma OAuth/JWT schema migration and OAuth replay storage.
 - [x] Add Google-backed MCP login and consent continuation pages.
+- [x] Support CIMD plus a PKCE-protected DCR fallback for remote clients.
 - [x] Publish OAuth discovery/protected-resource metadata.
 - [x] Mount authenticated, stateless `POST /api/mcp`; reject legacy transport.
 - [x] Exempt only the bearer-authenticated MCP endpoint from browser CSRF checks.
@@ -270,7 +308,7 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Add initial global/client/user MCP rate limits and bound `list_catalogs`.
 - [x] Gate production enablement with `BESEDY_MCP_ENABLED` and strict `AUTH_URL` validation.
 - [ ] Add audit events, deployment-level limits, and safe metrics.
-- [ ] Document client setup after the remaining read tools are implemented.
+- [x] Document client registration and authentication behavior.
 
 ## Change checklist for permissions
 

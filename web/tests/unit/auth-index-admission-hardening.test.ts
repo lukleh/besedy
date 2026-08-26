@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   getGoogleOAuthConfig: vi.fn(() => null),
   logLogin: vi.fn(),
   logPortalAdmissionEvent: vi.fn(),
+  mcp: vi.fn(() => ({ id: "mcpPlugin" })),
+  cimd: vi.fn(() => ({ id: "cimdPlugin" })),
   prisma: {
     user: {
       findUnique: vi.fn(),
@@ -42,11 +44,11 @@ vi.mock("better-auth/plugins", () => ({
 }));
 
 vi.mock("@better-auth/mcp", () => ({
-  mcp: vi.fn(() => ({ id: "mcpPlugin" })),
+  mcp: mocks.mcp,
 }));
 
 vi.mock("@better-auth/cimd", () => ({
-  cimd: vi.fn(() => ({ id: "cimdPlugin" })),
+  cimd: mocks.cimd,
 }));
 
 vi.mock("@better-auth/cimd/node", () => ({
@@ -174,6 +176,19 @@ describe("auth admission hardening", () => {
     mocks.logPortalAdmissionEvent.mockResolvedValue(undefined);
 
     await import("@/lib/auth/index");
+  });
+
+  it("supports CIMD with a PKCE-protected DCR fallback for MCP clients", () => {
+    expect(mocks.mcp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        clientRegistrationRequirePKCE: true,
+      }),
+    );
+    expect(mocks.cimd).toHaveBeenCalledWith(
+      expect.objectContaining({ metadataProfile: "mcp-2026-07-28" }),
+    );
   });
 
   it("uses portal admission checks before signup", async () => {

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, createHash } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
 import { TEST_AUDIO_FILES } from '../../prisma/test-data';
@@ -28,6 +28,19 @@ interface AccessTokenClaims {
   sub?: string;
 }
 
+interface AuthorizationServerMetadata {
+  client_id_metadata_document_supported?: boolean;
+  code_challenge_methods_supported?: string[];
+  registration_endpoint?: string;
+}
+
+interface ClientRegistrationResponse {
+  client_id?: string;
+  redirect_uris?: string[];
+  resources?: string[];
+  token_endpoint_auth_method?: string;
+}
+
 interface McpResponse<T> {
   jsonrpc: '2.0';
   id: number;
@@ -39,32 +52,6 @@ interface McpToolResult<T> {
   isError?: boolean;
   content?: Array<{ type: string; text?: string }>;
   structuredContent: T;
-}
-
-async function registerLocalTestClient(
-  clientId: string,
-  redirectUri: string,
-): Promise<void> {
-  const clientRowId = randomUUID();
-  await pool.query(
-    `INSERT INTO "oauthClient" (
-       id, "clientId", scopes, "clientCredentialsScopes", contacts,
-       "redirectUris", "postLogoutRedirectUris", "grantTypes",
-       "responseTypes", "tokenEndpointAuthMethod", "requirePKCE", name,
-       "createdAt", "updatedAt"
-     ) VALUES (
-       $1, $2, ARRAY['besedy:read'], ARRAY[]::text[], ARRAY[]::text[],
-       ARRAY[$3], ARRAY[]::text[], ARRAY['authorization_code', 'refresh_token'],
-       ARRAY['code'], 'none', true, 'Besedy MCP E2E client', NOW(), NOW()
-     )`,
-    [clientRowId, clientId, redirectUri],
-  );
-  await pool.query(
-    `INSERT INTO "oauthClientResource" (
-       id, "clientId", "resourceId", "createdAt"
-     ) VALUES ($1, $2, $3, NOW())`,
-    [randomUUID(), clientId, MCP_RESOURCE],
-  );
 }
 
 async function removeLocalTestClient(clientId: string): Promise<void> {
@@ -81,7 +68,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
   page,
   request,
 }) => {
-  const clientId = `besedy-mcp-e2e-${randomUUID()}`;
   // Keep the callback under an unauthenticated route prefix so middleware
   // does not replace the authorization response with a sign-in redirect.
   const redirectUri = `${BASE_URL}/auth/mcp-signin/test-callback`;
@@ -89,9 +75,54 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   const state = randomBytes(16).toString('base64url');
 
-  // CIMD deliberately rejects loopback metadata URLs. Register a public PKCE
-  // client directly as test data so this remains a fully local OAuth test.
-  await registerLocalTestClient(clientId, redirectUri);
+  const metadataResponse = await request.get(
+    `${BASE_URL}/.well-known/oauth-authorization-server/api/auth`,
+  );
+  expect(metadataResponse.ok()).toBe(true);
+  const metadata =
+    (await metadataResponse.json()) as AuthorizationServerMetadata;
+  expect(metadata).toMatchObject({
+    client_id_metadata_document_supported: true,
+    code_challenge_methods_supported: expect.arrayContaining(['S256']),
+    registration_endpoint: `${BASE_URL}/api/auth/oauth2/register`,
+  });
+
+  const registrationResponse = await request.post(
+    metadata.registration_endpoint!,
+    {
+      // Playwright retains the locale cookie set by discovery, so Better Auth
+      // correctly treats this as a browser-originated mutation and requires a
+      // same-origin header. Ordinary server-side MCP clients send no cookies.
+      headers: {
+        Origin: BASE_URL,
+        'User-Agent': 'besedy-mcp-e2e/1.0',
+      },
+      data: {
+        application_type: 'native',
+        client_name: 'Besedy MCP DCR E2E client',
+        grant_types: ['authorization_code', 'refresh_token'],
+        redirect_uris: [redirectUri],
+        response_types: ['code'],
+        scope: 'besedy:read',
+        token_endpoint_auth_method: 'none',
+      },
+    },
+  );
+  const registrationResponseText = await registrationResponse.text();
+  expect(registrationResponse.status(), registrationResponseText).toBe(201);
+  const registration = JSON.parse(
+    registrationResponseText,
+  ) as ClientRegistrationResponse;
+  expect(registration).toMatchObject({
+    client_id: expect.any(String),
+    redirect_uris: [redirectUri],
+    resources: expect.arrayContaining([MCP_RESOURCE]),
+    token_endpoint_auth_method: 'none',
+  });
+  const clientId = registration.client_id;
+  if (!clientId) {
+    throw new Error('DCR response is missing client_id');
+  }
 
   try {
     const authorizeUrl = new URL(`${BASE_URL}/api/auth/oauth2/authorize`);
@@ -121,6 +152,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const tokenResponse = await request.post(
       `${BASE_URL}/api/auth/oauth2/token`,
       {
+        headers: { Origin: BASE_URL },
         form: {
           grant_type: 'authorization_code',
           client_id: clientId,
@@ -131,8 +163,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         },
       },
     );
-    expect(tokenResponse.ok()).toBe(true);
-    const token = (await tokenResponse.json()) as TokenResponse;
+    const tokenResponseText = await tokenResponse.text();
+    expect(tokenResponse.ok(), tokenResponseText).toBe(true);
+    const token = JSON.parse(tokenResponseText) as TokenResponse;
     expect(token.token_type).toBe('Bearer');
     expect(token.scope).toContain('besedy:read');
     expect(token.access_token).toBeTruthy();
