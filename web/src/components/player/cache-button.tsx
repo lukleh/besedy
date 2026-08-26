@@ -12,8 +12,8 @@ interface CacheButtonProps {
   hash: string;
   /** Catalog ID for transcript caching */
   catalogId: string;
-  /** Size variant: default (36px) for player, sm (24px) for catalog */
-  size?: "default" | "sm";
+  /** Size variant: player (48px target with 36px ring), default (36px), or sm (24px) */
+  size?: "default" | "player" | "sm";
 }
 
 /**
@@ -68,6 +68,7 @@ export function CacheButton({ audioUrl, hash, catalogId, size: sizeVariant = "de
 
   // SVG circle parameters - scaled based on size variant
   const dimensions = sizeVariant === "sm" ? 24 : 36;
+  const hitTargetDimensions = sizeVariant === "player" ? 48 : dimensions;
   const strokeWidth = sizeVariant === "sm" ? 2 : 3;
   const radius = (dimensions - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -116,11 +117,11 @@ export function CacheButton({ audioUrl, hash, catalogId, size: sizeVariant = "de
         isClickable && "cursor-pointer hover:opacity-80",
         !isClickable && "cursor-default"
       )}
-      style={{ width: dimensions, height: dimensions }}
+      style={{ width: hitTargetDimensions, height: hitTargetDimensions }}
     >
       {/* Circular ring */}
       <svg
-        className="absolute inset-0 -rotate-90"
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90"
         width={dimensions}
         height={dimensions}
         aria-hidden="true"
