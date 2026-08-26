@@ -16,6 +16,7 @@ import {
 } from '@/lib/transcript';
 import { listTranscriptBackendPriorities } from '@/lib/transcript-priority';
 import { executeCatalogSearch } from '@/app/api/catalogs/[id]/search/search-service';
+import { getMcpResourceUrl } from '@/lib/mcp/config';
 
 const eventSummaryInclude = {
   location: { select: { id: true, name: true } },
@@ -23,7 +24,6 @@ const eventSummaryInclude = {
     select: { audioHash: true, isPrimary: true, sortOrder: true },
     orderBy: [{ sortOrder: 'asc' }, { audioHash: 'asc' }],
   },
-  _count: { select: { recordings: true } },
 } satisfies Prisma.CatalogEventInclude;
 
 const recordingMetadataSelect = {
@@ -135,6 +135,28 @@ function serializeRecording(
   };
 }
 
+function serializeRecordingSummary(
+  hash: string,
+  rows: Awaited<ReturnType<typeof loadRecordingRows>>,
+) {
+  const recording = serializeRecording(hash, rows);
+  return {
+    audioHash: recording.audioHash,
+    title: recording.title,
+    artist: recording.artist,
+    durationHms: recording.durationHms,
+    ready: recording.ready,
+    published: recording.published,
+  };
+}
+
+function buildEventWebUrl(catalogId: string, eventId: number): string {
+  return new URL(
+    `/catalog/${encodeURIComponent(catalogId)}/event/${eventId}`,
+    getMcpResourceUrl(),
+  ).toString();
+}
+
 export async function listMcpEvents(
   catalogId: string,
   catalogGrant: AccessLevel | null,
@@ -154,6 +176,7 @@ export async function listMcpEvents(
       ? {
           OR: [
             { title: { contains: input.query, mode: 'insensitive' } },
+            { description: { contains: input.query, mode: 'insensitive' } },
             {
               location: {
                 name: { contains: input.query, mode: 'insensitive' },
@@ -171,13 +194,25 @@ export async function listMcpEvents(
   });
   const hasMore = events.length > input.limit;
   const page = hasMore ? events.slice(0, input.limit) : events;
+  const pageHashes = [
+    ...new Set(
+      page.flatMap((event) =>
+        event.recordings.map((recording) => recording.audioHash),
+      ),
+    ),
+  ];
+  const visibleHashes = requiresReadyRecordingScope(catalogGrant)
+    ? await getPublishedAccessibleRecordingHashes(prisma, catalogId, pageHashes)
+    : new Set(pageHashes);
   const primaryHashes = page
     .map(
       (event) =>
         event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
         event.recordings[0]?.audioHash,
     )
-    .filter((hash): hash is string => Boolean(hash));
+    .filter(
+      (hash): hash is string => hash !== undefined && visibleHashes.has(hash),
+    );
   const rows = await loadRecordingRows(catalogId, primaryHashes);
 
   return {
@@ -187,17 +222,26 @@ export async function listMcpEvents(
         event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
         event.recordings[0]?.audioHash ??
         null;
+      const visiblePrimaryHash =
+        primaryHash !== null && visibleHashes.has(primaryHash)
+          ? primaryHash
+          : null;
       return {
         id: event.id,
+        webUrl: buildEventWebUrl(catalogId, event.id),
         title: event.title,
         description: event.description,
         date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
         sessionIndex: event.sessionIndex,
         location: event.location,
         released: event.released,
-        recordingCount: event._count.recordings,
+        recordingCount: event.recordings.filter((recording) =>
+          visibleHashes.has(recording.audioHash),
+        ).length,
         primaryRecording:
-          primaryHash === null ? null : serializeRecording(primaryHash, rows),
+          visiblePrimaryHash === null
+            ? null
+            : serializeRecordingSummary(visiblePrimaryHash, rows),
         updatedAt: event.updatedAt.toISOString(),
       };
     }),

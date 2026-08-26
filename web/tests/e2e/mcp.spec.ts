@@ -261,8 +261,16 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         catalogId: string;
         events: Array<{
           id: number;
+          webUrl: string;
           released: boolean;
-          primaryRecording: { audioHash: string } | null;
+          primaryRecording: {
+            audioHash: string;
+            title: string;
+            artist: string | null;
+            durationHms: string | null;
+            ready: boolean;
+            published: boolean;
+          } | null;
         }>;
         nextCursor: number | null;
       }>
@@ -278,6 +286,17 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         candidate.primaryRecording?.audioHash === MCP_FIXTURE_RECORDING.hash,
     );
     expect(event).toBeTruthy();
+    expect(event?.webUrl).toBe(
+      `${BASE_URL}/catalog/${result?.defaultCatalogId}/event/${event?.id}`,
+    );
+    expect(Object.keys(event!.primaryRecording!).sort()).toEqual([
+      'artist',
+      'audioHash',
+      'durationHms',
+      'published',
+      'ready',
+      'title',
+    ]);
 
     const eventResponse = await request.post(MCP_RESOURCE, {
       headers: {

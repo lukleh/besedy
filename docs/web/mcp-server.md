@@ -168,12 +168,14 @@ filesystem paths or audio URLs.
 one of `user_preference`, `global_default`, `most_recent`, or `null`. An invalid
 cursor returns the standard structured `invalid_cursor` tool error.
 
-`list_events` accepts an optional numeric cursor, release-state and title/location
-filters, and a limit from 1 to 100 (default 25). `get_event` takes an event ID,
-while recording and transcript reads use the stable audio hash. Transcript
-responses are windowable by time and paged by segment offset, with at most 200
-segments per call. Search accepts up to 1,000 query characters and returns at
-most 20 grounded matches per call.
+`list_events` accepts an optional numeric cursor, release-state and
+title/description/location filters, and a limit from 1 to 100 (default 25).
+Each event includes its authenticated Besedy `webUrl`, a compact primary
+recording summary, and a `recordingCount` scoped to recordings visible to the
+caller. `get_event` takes an event ID, while recording and transcript reads use
+the stable audio hash. Transcript responses are windowable by time and paged by
+segment offset, with at most 200 segments per call. Search accepts up to 1,000
+query characters and returns at most 20 grounded matches per call.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
