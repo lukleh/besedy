@@ -24,7 +24,11 @@ describe("validate_web_config_mount.sh", () => {
     if (checkoutTemp) rmSync(checkoutTemp, { recursive: true, force: true });
   });
 
-  function validate(configFile: string, overrides: string[] = []) {
+  function validate(
+    configFile: string,
+    overrides: string[] = [],
+    validatorScript = script
+  ) {
     writeFileSync(
       resolve(configHome, "web.env.prod"),
       [
@@ -36,7 +40,7 @@ describe("validate_web_config_mount.sh", () => {
       ].join("\n")
     );
 
-    return spawnSync("bash", [script, "production"], {
+    return spawnSync("bash", [validatorScript, "production"], {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -119,7 +123,7 @@ describe("validate_web_config_mount.sh", () => {
     expect(result.stderr).toContain("symlinks inside it are not allowed");
   });
 
-  it("rejects a checkout symlink reached through an alternate checkout spelling", () => {
+  it("rejects a checkout symlink when the validator uses an alternate checkout spelling", () => {
     const externalConfig = resolve(testRoot, "besedy.container.toml");
     writeFileSync(externalConfig, '[paths]\ntext_data_dir = "/data/text"\n');
     chmodSync(externalConfig, 0o644);
@@ -136,7 +140,12 @@ describe("validate_web_config_mount.sh", () => {
       "besedy.container.toml"
     );
 
-    const result = validate(aliasedConfigLink);
+    const aliasedValidator = resolve(
+      checkoutAlias,
+      "scripts",
+      "validate_web_config_mount.sh"
+    );
+    const result = validate(aliasedConfigLink, [], aliasedValidator);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("symlinks inside it are not allowed");

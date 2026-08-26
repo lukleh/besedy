@@ -206,6 +206,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     checkedAt: number;
   } | null = null;
   let pendingControllerReload = false;
+  let pendingControllerReloadCancelled = false;
   let pendingControllerReloadPolicy: UpdatePolicy = "automatic";
   let updateAttemptId = createUpdateAttemptId();
   let hasActiveUpdateAttempt = false;
@@ -331,10 +332,14 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
     connectionRetryTimeoutId = window.setTimeout(() => {
       connectionRetryTimeoutId = null;
-      if (snapshot.wasDismissed) return;
       if (pendingControllerReload) {
-        void attemptPendingControllerReload(retryPolicy);
-      } else if (snapshot.updateAvailable) {
+        if (!pendingControllerReloadCancelled) {
+          void attemptPendingControllerReload(retryPolicy);
+        }
+        return;
+      }
+      if (snapshot.wasDismissed) return;
+      if (snapshot.updateAvailable) {
         void attemptApply(retryPolicy);
       }
     }, CONNECTION_RETRY_MS);
@@ -538,7 +543,8 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       const payload = (await response.json().catch(() => null)) as VersionInfoResponse | null;
       const version = selectObservedWebVersion(payload?.webVersion, payload?.commit, clientVersion);
       if (!version) {
-        const reportedVersion = normalizeWebVersion(payload?.webVersion ?? payload?.commit);
+        const reportedVersion =
+          normalizeWebVersion(payload?.webVersion) ?? normalizeWebVersion(payload?.commit);
         if (reportedVersion) return "unversioned";
         reportLifecycleEvent("version_probe_failed");
         return "unreachable";
@@ -632,6 +638,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
     applyPromise = (async () => {
       if (pendingControllerReload) {
+        pendingControllerReloadCancelled = false;
         pendingControllerReloadPolicy = policy;
         return attemptPendingControllerReload(policy);
       }
@@ -994,6 +1001,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     clearApplyRetries(true);
     autoAppliedExpiredUpdate = false;
     dismissalRequestedWithoutVersion = false;
+    pendingControllerReloadCancelled = false;
     currentUpdateVersion = null;
     hasServerVersionMismatch = false;
     lastSuccessfulVersionProbe = null;
@@ -1114,6 +1122,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       }
 
       pendingControllerReload = true;
+      pendingControllerReloadCancelled = false;
       refreshAutomation();
       void attemptPendingControllerReload();
     };
@@ -1130,12 +1139,16 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
     const handleOnline = () => {
       refreshAutomation();
+      if (pendingControllerReload) {
+        if (!pendingControllerReloadCancelled) {
+          clearApplyRetries();
+          void attemptPendingControllerReload();
+        }
+        return;
+      }
       requestImmediateVersionCheck();
       if (snapshot.wasDismissed) return;
-      if (pendingControllerReload) {
-        clearApplyRetries();
-        void attemptPendingControllerReload();
-      } else if (snapshot.applyState === "waiting-for-connection" && snapshot.updateAvailable) {
+      if (snapshot.applyState === "waiting-for-connection" && snapshot.updateAvailable) {
         clearApplyRetries();
         void attemptApply(pendingControllerReloadPolicy);
       }
@@ -1295,6 +1308,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     cancelPendingApply() {
       if (snapshot.applyState !== "waiting-for-connection") return;
       clearApplyRetries();
+      pendingControllerReloadCancelled = pendingControllerReload;
       pendingControllerReloadPolicy = "automatic";
       setApplyState("idle");
       dismissCurrentUpdate();

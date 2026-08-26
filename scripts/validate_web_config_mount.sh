@@ -8,8 +8,8 @@ if [[ -z "$mode" ]]; then
   exit 1
 fi
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/.." && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd "$script_dir/.." && pwd -P)"
 env_file="$("$script_dir/resolve_web_env_file.sh" "$mode")"
 
 set -a

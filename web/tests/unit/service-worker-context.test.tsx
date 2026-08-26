@@ -1276,6 +1276,71 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
+  it("retries a committed controller reload despite an earlier dismissal", async () => {
+    const listeners = new Map<string, Set<() => void>>();
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn((event: string, handler: () => void) => {
+          if (!listeners.has(event)) listeners.set(event, new Set());
+          listeners.get(event)?.add(handler);
+        }),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+      .mockRejectedValueOnce(new TypeError("server unavailable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-a",
+      reloadPage
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() => {
+      expect(listeners.get("controllerchange")?.size).toBe(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    runtime.observeWebVersion("web-b");
+    runtime.dismissUpdate();
+    act(() => {
+      listeners.get("controllerchange")?.forEach((handler) => handler());
+    });
+    await waitFor(() => {
+      expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
+    });
+
+    window.dispatchEvent(new Event("online"));
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
   it("does not apply a dismissed update from a stale connection retry", async () => {
     vi.useFakeTimers();
     const registrationMock = {
@@ -1618,7 +1683,10 @@ describe("ServiceWorkerProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ commit: "legacy-commit" })
+      json: vi.fn().mockResolvedValue({
+        webVersion: "unknown",
+        commit: "legacy-commit"
+      })
     });
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
