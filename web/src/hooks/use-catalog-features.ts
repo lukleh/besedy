@@ -14,6 +14,7 @@ const featureCapabilitySchema = z.object({
   showTabs: z.boolean(),
   showAllColumns: z.boolean(),
   showReleaseState: z.boolean(),
+  canUseRagSearch: z.boolean(),
 });
 
 const deepSearchFeatureCapabilitySchema = z.object({

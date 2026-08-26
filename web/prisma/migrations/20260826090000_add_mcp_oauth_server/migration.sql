@@ -1,6 +1,27 @@
--- Better Auth 1.7 identifies upstream accounts by issuer + subject. Backfill
--- existing accounts before enforcing the new non-null key.
+-- Better Auth 1.7 identifies upstream accounts by issuer + subject. Keep the
+-- previous provider key and populate issuer for writes from a temporarily
+-- overlapping or rolled-back Better Auth 1.6 application. A later contract
+-- migration may remove the trigger and old index after rollback compatibility
+-- is no longer required.
 ALTER TABLE "accounts" ADD COLUMN "issuer" TEXT;
+
+CREATE FUNCTION "set_account_issuer_for_legacy_write"() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW."issuer" IS NULL THEN
+        NEW."issuer" := CASE
+            WHEN NEW."provider_id" = 'google' THEN 'https://accounts.google.com'
+            WHEN NEW."provider_id" = 'mock-oauth' THEN 'local:oauth:mock-oauth'
+            ELSE 'local:oauth:' || NEW."provider_id"
+        END;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "accounts_set_issuer_for_legacy_write"
+BEFORE INSERT OR UPDATE OF "provider_id", "issuer" ON "accounts"
+FOR EACH ROW EXECUTE FUNCTION "set_account_issuer_for_legacy_write"();
+
 UPDATE "accounts"
 SET "issuer" = CASE
     WHEN "provider_id" = 'google' THEN 'https://accounts.google.com'
@@ -9,7 +30,6 @@ SET "issuer" = CASE
 END
 WHERE "issuer" IS NULL;
 ALTER TABLE "accounts" ALTER COLUMN "issuer" SET NOT NULL;
-DROP INDEX "accounts_provider_id_account_id_key";
 CREATE UNIQUE INDEX "accounts_issuer_account_id_key" ON "accounts"("issuer", "account_id");
 
 CREATE TABLE "jwks" (

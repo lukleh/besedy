@@ -136,16 +136,14 @@ function isAuthorizedInternalDeepSearchRequest(req: NextRequest): boolean {
   return authHeader !== null && constantTimeEqual(authHeader, `Bearer ${expected}`);
 }
 
-function isMcpBearerRequest(req: NextRequest): boolean {
-  if (
-    !isMcpEnabled() ||
-    req.nextUrl.pathname !== "/api/mcp" ||
-    req.method !== "POST"
-  ) {
+function isEnabledMcpPostRequest(req: NextRequest): boolean {
+  // Check the route before parsing MCP configuration. A malformed MCP-only
+  // setting must not break unrelated web mutations.
+  if (req.nextUrl.pathname !== "/api/mcp" || req.method !== "POST") {
     return false;
   }
 
-  return /^Bearer\s+\S+$/i.test(req.headers.get("authorization") ?? "");
+  return isMcpEnabled();
 }
 
 // Query params safe to log - everything else gets redacted.
@@ -524,7 +522,10 @@ export async function proxy(req: NextRequest) {
     if (
       isMutationMethod(req.method) &&
       !isAuthorizedInternalDeepSearchRequest(req) &&
-      !isMcpBearerRequest(req)
+      // MCP is bearer-only. Let its route handler produce the OAuth challenge
+      // for the initial unauthenticated request instead of applying the
+      // browser-cookie CSRF policy here.
+      !isEnabledMcpPostRequest(req)
     ) {
       const sourceError = validateMutationSource(req);
       if (sourceError) {

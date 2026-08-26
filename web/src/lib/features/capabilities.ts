@@ -8,7 +8,7 @@ import {
 } from "@/lib/features/labs";
 import { type FeatureKey, getFeatureRollout } from "@/lib/features/rollout";
 import { type CatalogFeaturesResponse } from "@/lib/features/types";
-import { canBrowseRecordings } from "@/lib/policy/catalog";
+import { canBrowseRecordings, canUseCatalogRag } from "@/lib/policy/catalog";
 import {
   canBrowseEvents,
   canEditCatalogEvents,
@@ -79,12 +79,15 @@ export function buildCatalogFeaturesResponse(
     catalogGrant,
     isCatalogAdmin,
   });
-  const eventPolicyContext = {
-    featureEnabled,
+  const catalogPolicyContext = {
     catalogExists,
     canEnterPortal,
     catalogGrant,
     isCatalogAdmin,
+  };
+  const eventPolicyContext = {
+    featureEnabled,
+    ...catalogPolicyContext,
   };
   const canView = canBrowseEvents(eventPolicyContext);
   const canEdit = canEditCatalogEvents(eventPolicyContext);
@@ -111,6 +114,7 @@ export function buildCatalogFeaturesResponse(
           catalogGrant,
           isCatalogAdmin,
         }),
+        canUseRagSearch: canUseCatalogRag(catalogPolicyContext),
       },
       deepSearch: {
         rollout: deepSearchRollout,

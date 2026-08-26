@@ -7,6 +7,7 @@ export interface EventListProps {
   canEdit: boolean;
   showAllColumns: boolean;
   showReleaseState: boolean;
+  canUseRagSearch: boolean;
   deepSearchHref?: string;
 }
 

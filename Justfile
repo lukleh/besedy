@@ -707,6 +707,7 @@ mcp-smoke:
     chmod -R a+rX "$fixture_dir"
     export CONFIG_FILE="$runtime_dir/besedy.docker.toml"
     export TEXT_DATA_DIR="$fixture_dir"
+    export BESEDY_MCP_ENABLED=true
     export RAG_COLBERT_URL="http://$rag_container:18192/query"
     export RAG_COLBERT_INDEX_DIR=
     export RAG_COLBERT_RERANK_ENABLED=false

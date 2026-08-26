@@ -20,6 +20,12 @@ export interface CatalogActorContext extends PortalActorContext {
   isCatalogAdmin: boolean;
 }
 
+export function hasSystemCatalogAuthority(
+  actor: Pick<PortalActorContext, "systemRole">
+): boolean {
+  return actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN";
+}
+
 interface ResolveCatalogActorContextOptions {
   activeCatalogOnly?: boolean;
 }
@@ -106,8 +112,7 @@ export async function resolveCatalogActorContext(
     };
   }
 
-  const isCatalogAdmin =
-    portal.systemRole === "ADMIN" || portal.systemRole === "SUPERADMIN";
+  const isCatalogAdmin = hasSystemCatalogAuthority(portal);
 
   const access = isCatalogAdmin
     ? null

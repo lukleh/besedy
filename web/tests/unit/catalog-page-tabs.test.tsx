@@ -42,11 +42,13 @@ vi.mock("@/components/catalog/event-list", () => ({
     canEdit,
     showAllColumns,
     showReleaseState,
+    canUseRagSearch,
   }: {
     catalogId: string;
     canEdit: boolean;
     showAllColumns: boolean;
     showReleaseState: boolean;
+    canUseRagSearch: boolean;
   }) => (
     <div
       data-testid="event-list"
@@ -54,6 +56,7 @@ vi.mock("@/components/catalog/event-list", () => ({
       data-can-edit={String(canEdit)}
       data-show-all-columns={String(showAllColumns)}
       data-show-release-state={String(showReleaseState)}
+      data-can-use-rag-search={String(canUseRagSearch)}
     />
   ),
 }));
@@ -127,6 +130,7 @@ describe("CatalogPageTabs", () => {
             showTabs: false,
             showAllColumns: false,
             showReleaseState: true,
+            canUseRagSearch: false,
           },
         },
       },
@@ -138,6 +142,7 @@ describe("CatalogPageTabs", () => {
     expect(screen.queryByTestId("catalog-tabs")).not.toBeInTheDocument();
     expect(screen.getByTestId("event-list")).toHaveAttribute("data-can-edit", "false");
     expect(screen.getByTestId("event-list")).toHaveAttribute("data-show-release-state", "true");
+    expect(screen.getByTestId("event-list")).toHaveAttribute("data-can-use-rag-search", "false");
     expect(screen.queryByTestId("catalog-list")).not.toBeInTheDocument();
   });
 
@@ -154,6 +159,7 @@ describe("CatalogPageTabs", () => {
             showTabs: true,
             showAllColumns: true,
             showReleaseState: true,
+            canUseRagSearch: true,
           },
         },
       },
@@ -185,6 +191,7 @@ describe("CatalogPageTabs", () => {
             showTabs: true,
             showAllColumns: true,
             showReleaseState: true,
+            canUseRagSearch: true,
           },
         },
       },
@@ -220,6 +227,7 @@ describe("CatalogPageTabs", () => {
             showTabs: false,
             showAllColumns: true,
             showReleaseState: true,
+            canUseRagSearch: true,
           },
         },
       },

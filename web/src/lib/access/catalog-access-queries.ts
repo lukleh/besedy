@@ -1,15 +1,14 @@
 import type { AccessLevel } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
-import type { PortalActorContext } from "@/lib/policy/actor";
+import {
+  hasSystemCatalogAuthority,
+  type PortalActorContext,
+} from "@/lib/policy/actor";
 
 type CatalogAccessEntry = {
   catalogId: string;
   accessLevel: AccessLevel;
 };
-
-function hasSystemCatalogAuthority(actor: PortalActorContext): boolean {
-  return actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN";
-}
 
 export async function hasEditorAuthorityOnAnyCatalog(
   actor: PortalActorContext

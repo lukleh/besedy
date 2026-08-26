@@ -1,16 +1,15 @@
 import prisma from '@/lib/db';
 import type { AccessLevel } from '@/generated/prisma/client';
+import { buildCatalogCapability } from '@/lib/access/capabilities';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
 import {
   getUserFeaturePreferences,
   isFeatureEnabledForUser,
 } from '@/lib/features/capabilities';
-import { resolvePortalActorContext } from '@/lib/policy/actor';
 import {
-  canUseCatalogRag,
-  canViewCatalog,
-  canViewCatalogTranscripts,
-} from '@/lib/policy/catalog';
+  hasSystemCatalogAuthority,
+  resolvePortalActorContext,
+} from '@/lib/policy/actor';
 import { canBrowseEvents, canViewUnreleasedEvents } from '@/lib/policy/event';
 import {
   selectDefaultReadableGroup,
@@ -100,19 +99,32 @@ export async function getMcpAccessProfile(
     'events',
     preferences.labsPreference.enabled,
   );
-  const isCatalogAdmin =
-    actor.systemRole === 'ADMIN' || actor.systemRole === 'SUPERADMIN';
+  const isCatalogAdmin = hasSystemCatalogAuthority(actor);
   const effectiveDefault = selectDefaultReadableGroup(
     groups,
     preferences.activeGroupId,
   );
   const catalogs = groups.map((group): McpCatalogAccess => {
     const accessLevel = accessByCatalogId.get(group.id) ?? null;
-    const policyContext = {
-      catalogExists: true,
-      canEnterPortal: actor.canEnterPortal,
-      catalogGrant: isCatalogAdmin ? null : accessLevel,
+    const catalogGrant = isCatalogAdmin ? null : accessLevel;
+    const capability = buildCatalogCapability(
+      {
+        userId: actor.userId,
+        isAuthenticated: actor.isAuthenticated,
+        userStatus: actor.userStatus,
+        canEnterPortal: actor.canEnterPortal,
+      },
+      group.id,
+      true,
+      catalogGrant,
+      accessLevel,
       isCatalogAdmin,
+    );
+    const policyContext = {
+      catalogExists: capability.catalogExists,
+      canEnterPortal: capability.canEnterPortal,
+      catalogGrant: capability.catalogGrant,
+      isCatalogAdmin: capability.isCatalogAdmin,
     };
 
     return {
@@ -121,16 +133,16 @@ export async function getMcpAccessProfile(
       isUserDefault: preferences.activeGroupId === group.id,
       isGlobalDefault: group.isDefault,
       isEffectiveDefault: effectiveDefault?.group.id === group.id,
-      catalogGrant: isCatalogAdmin ? null : accessLevel,
+      catalogGrant,
       isCatalogAdmin,
       capabilities: {
         canListEvents: canBrowseEvents({
           ...policyContext,
           featureEnabled: eventsEnabled,
         }),
-        canGetRecordings: canViewCatalog(policyContext),
-        canViewTranscripts: canViewCatalogTranscripts(policyContext),
-        canSearchTranscripts: canUseCatalogRag(policyContext),
+        canGetRecordings: capability.canViewCatalog,
+        canViewTranscripts: capability.canViewTranscripts,
+        canSearchTranscripts: capability.canUseRagSearch,
         canSeeUnreleasedEvents: canViewUnreleasedEvents(policyContext),
       },
     };

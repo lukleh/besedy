@@ -300,7 +300,7 @@ describe("proxy security controls", () => {
     expect(response.status).toBe(200);
   });
 
-  it("keeps MCP POST requests without a bearer token behind CSRF validation", async () => {
+  it("lets the MCP route issue an OAuth challenge without a browser origin", async () => {
     const { proxy } = await import("@/proxy");
 
     const request = new NextRequest("http://localhost/api/mcp", {
@@ -311,7 +311,7 @@ describe("proxy security controls", () => {
 
     const response = await proxy(request);
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
   });
 
   it("does not exempt MCP bearer requests from CSRF when MCP is disabled", async () => {
@@ -330,6 +330,24 @@ describe("proxy security controls", () => {
     const response = await proxy(request);
 
     expect(response.status).toBe(403);
+  });
+
+  it("does not parse malformed MCP configuration for unrelated mutations", async () => {
+    process.env.BESEDY_MCP_ENABLED = "1";
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/preferences", {
+      method: "PATCH",
+      headers: {
+        origin: "http://localhost",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ theme: "system" }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(200);
   });
 
   it("allows mutating API requests from the same origin to reach the route handler", async () => {

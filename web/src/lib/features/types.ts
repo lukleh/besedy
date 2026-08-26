@@ -10,6 +10,7 @@ export interface FeatureCapability {
   showTabs: boolean;
   showAllColumns: boolean;
   showReleaseState: boolean;
+  canUseRagSearch: boolean;
 }
 
 export interface DeepSearchFeatureCapability {

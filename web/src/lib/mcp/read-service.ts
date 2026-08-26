@@ -78,6 +78,7 @@ export class McpReadError extends Error {
       | 'permission_denied'
       | 'transcript_not_found'
       | 'invalid_window'
+      | 'search_not_configured'
       | 'search_unavailable',
     message: string,
   ) {
@@ -87,6 +88,26 @@ export class McpReadError extends Error {
 
 function serializeDate(year: number, month: number | null, day: number | null) {
   return { year, month, day };
+}
+
+function escapePrismaContains(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
+function resolveSearchTranscriptBackend(
+  indexedBackend: string,
+  availableBackends: TranscriptBackend[],
+): TranscriptBackend | null {
+  if (availableBackends.includes(indexedBackend)) {
+    return indexedBackend;
+  }
+
+  const languageAgnosticBackend = indexedBackend.replace(/@lang-[^/@]+$/, '');
+  if (availableBackends.includes(languageAgnosticBackend)) {
+    return languageAgnosticBackend;
+  }
+
+  return availableBackends[0] ?? null;
 }
 
 async function loadRecordingRows(catalogId: string, hashes: string[]) {
@@ -195,6 +216,9 @@ export async function listMcpEvents(
   catalogGrant: AccessLevel | null,
   input: McpEventListInput,
 ) {
+  const literalQuery = input.query
+    ? escapePrismaContains(input.query)
+    : undefined;
   const visibleEventIds = requiresReleasedEventVisibilityScope(catalogGrant)
     ? await getPublishedVisibleEventIds(prisma, catalogId)
     : null;
@@ -205,14 +229,14 @@ export async function listMcpEvents(
       : { id: { in: visibleEventIds.length > 0 ? visibleEventIds : [-1] } }),
     ...(input.cursor ? { AND: [{ id: { lt: input.cursor } }] } : {}),
     ...(input.released === undefined ? {} : { released: input.released }),
-    ...(input.query
+    ...(literalQuery
       ? {
           OR: [
-            { title: { contains: input.query, mode: 'insensitive' } },
-            { description: { contains: input.query, mode: 'insensitive' } },
+            { title: { contains: literalQuery, mode: 'insensitive' } },
+            { description: { contains: literalQuery, mode: 'insensitive' } },
             {
               location: {
-                name: { contains: input.query, mode: 'insensitive' },
+                name: { contains: literalQuery, mode: 'insensitive' },
               },
             },
           ],
@@ -575,6 +599,12 @@ export async function searchMcpTranscripts(
     });
   } catch (error) {
     if (error instanceof RagServiceError) {
+      if (error.status === 404) {
+        throw new McpReadError(
+          'search_not_configured',
+          'Transcript search is not configured for this catalog',
+        );
+      }
       throw new McpReadError(
         'search_unavailable',
         'Transcript search is temporarily unavailable',
@@ -582,9 +612,26 @@ export async function searchMcpTranscripts(
     }
     throw error;
   }
-  const recordingRows = await loadRecordingRows(catalogId, [
+  const audioHashes = [
     ...new Set(execution.results.map((result) => result.audioHash)),
+  ];
+  const [recordingRows, priorities] = await Promise.all([
+    loadRecordingRows(catalogId, audioHashes),
+    listTranscriptBackendPriorities(),
   ]);
+  const transcriptsPath = resolveTranscriptsPath(catalogId);
+  const availableBackendsByHash = new Map(
+    await Promise.all(
+      audioHashes.map(async (audioHash) => {
+        const available = await getAvailableTranscripts(
+          transcriptsPath,
+          audioHash,
+          { priorities },
+        );
+        return [audioHash, available.backends] as const;
+      }),
+    ),
+  );
 
   return {
     catalogId,
@@ -596,49 +643,60 @@ export async function searchMcpTranscripts(
       returnedCount: execution.results.length,
       maxPerRecording: input.maxPerRecording,
     },
-    results: execution.results.map((result) => ({
-      rank: result.rank,
-      score: result.score,
-      recording: {
-        ...serializeRecordingSummary(result.audioHash, recordingRows),
-        webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
-      },
-      match: {
-        chunkId: result.chunkId,
-        startSec: result.startSec,
-        endSec: result.endSec,
-        text: result.text,
-        webUrl: buildRecordingSeekWebUrl(
-          catalogId,
-          result.audioHash,
-          result.startSec,
-        ),
-      },
-      context:
-        input.contextChunks > 0
+    results: execution.results.map((result) => {
+      const transcriptBackend = resolveSearchTranscriptBackend(
+        result.citation.backendKey,
+        availableBackendsByHash.get(result.audioHash) ?? [],
+      );
+      return {
+        rank: result.rank,
+        score: result.score,
+        recording: {
+          ...serializeRecordingSummary(result.audioHash, recordingRows),
+          webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
+        },
+        match: {
+          chunkId: result.chunkId,
+          startSec: result.startSec,
+          endSec: result.endSec,
+          text: result.text,
+          webUrl: buildRecordingSeekWebUrl(
+            catalogId,
+            result.audioHash,
+            result.startSec,
+          ),
+        },
+        context:
+          input.contextChunks > 0
+            ? {
+                startSec: result.contextStartSec,
+                endSec: result.contextEndSec,
+                beforeText:
+                  result.neighbors.before
+                    .map((neighbor) => neighbor.text)
+                    .join('\n\n') || null,
+                afterText:
+                  result.neighbors.after
+                    .map((neighbor) => neighbor.text)
+                    .join('\n\n') || null,
+              }
+            : null,
+        metadata: result.metadata,
+        citation: result.citation,
+        transcriptRequest: transcriptBackend
           ? {
-              startSec: result.contextStartSec,
-              endSec: result.contextEndSec,
-              beforeText:
-                result.neighbors.before
-                  .map((neighbor) => neighbor.text)
-                  .join('\n\n') || null,
-              afterText:
-                result.neighbors.after
-                  .map((neighbor) => neighbor.text)
-                  .join('\n\n') || null,
+              catalogId,
+              audioHash: result.audioHash,
+              backend: transcriptBackend,
+              startSec:
+                input.contextChunks > 0
+                  ? result.contextStartSec
+                  : result.startSec,
+              endSec:
+                input.contextChunks > 0 ? result.contextEndSec : result.endSec,
             }
           : null,
-      metadata: result.metadata,
-      citation: result.citation,
-      transcriptRequest: {
-        catalogId,
-        audioHash: result.audioHash,
-        backend: result.citation.backendKey,
-        startSec:
-          input.contextChunks > 0 ? result.contextStartSec : result.startSec,
-        endSec: input.contextChunks > 0 ? result.contextEndSec : result.endSec,
-      },
-    })),
+      };
+    }),
   };
 }

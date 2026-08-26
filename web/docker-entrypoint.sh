@@ -59,6 +59,15 @@ run_with_daily_log_files() {
 }
 
 echo "Starting application..."
+mcp_enabled="$(printf '%s' "${BESEDY_MCP_ENABLED:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
+case "$mcp_enabled" in
+  ""|true|false) ;;
+  *)
+    echo "ERROR: BESEDY_MCP_ENABLED must be either 'true' or 'false'"
+    exit 1
+    ;;
+esac
+
 if [ "${APP_ENV}" = "production" ]; then
   require_env GIT_COMMIT
   if [ "${GIT_COMMIT}" = "unknown" ]; then

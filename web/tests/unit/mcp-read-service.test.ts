@@ -146,12 +146,12 @@ describe('MCP read service', () => {
             startSec: 60,
             endSec: 90,
             workflowGroupId: 'catalog-a',
-            backendKey: 'whisperx/model',
+            backendKey: 'whisperx/model@lang-auto',
             chunkVersion: 'v1',
           },
           provenance: {
             workflowGroupId: 'catalog-a',
-            backendKey: 'whisperx/model',
+            backendKey: 'whisperx/model@lang-auto',
             runId: 'run-1',
             chunkVersion: 'v1',
             embeddingModel: 'colbert',
@@ -306,6 +306,28 @@ describe('MCP read service', () => {
       ],
       nextCursor: null,
     });
+  });
+
+  it('treats event query metacharacters as literal text', async () => {
+    await listMcpEvents('catalog-a', 'VIEWER', {
+      limit: 25,
+      query: String.raw`100%_done\today`,
+    });
+
+    expect(db.catalogEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            {
+              title: {
+                contains: String.raw`100\%\_done\\today`,
+                mode: 'insensitive',
+              },
+            },
+          ]),
+        }),
+      }),
+    );
   });
 
   it('returns a bounded page of compact recording summaries and links', async () => {
@@ -548,7 +570,7 @@ describe('MCP read service', () => {
             startSec: 60,
             endSec: 90,
             workflowGroupId: 'catalog-a',
-            backendKey: 'whisperx/model',
+            backendKey: 'whisperx/model@lang-auto',
             chunkVersion: 'v1',
           },
           transcriptRequest: {
@@ -578,6 +600,24 @@ describe('MCP read service', () => {
     ).rejects.toMatchObject({
       code: 'search_unavailable',
       message: 'Transcript search is temporarily unavailable',
+    });
+  });
+
+  it('returns a non-retryable error when transcript search is not configured', async () => {
+    vi.mocked(executeCatalogSearch).mockRejectedValue(
+      new RagServiceError('ColBERT bundle not found for catalog', 404),
+    );
+
+    await expect(
+      searchMcpTranscripts('catalog-a', 'VIEWER', {
+        query: 'search phrase',
+        limit: 10,
+        contextChunks: 0,
+        maxPerRecording: 3,
+      }),
+    ).rejects.toMatchObject({
+      code: 'search_not_configured',
+      message: 'Transcript search is not configured for this catalog',
     });
   });
 });

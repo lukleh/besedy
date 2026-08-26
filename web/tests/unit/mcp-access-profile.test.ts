@@ -10,6 +10,10 @@ vi.mock('@/lib/access/catalog-access-queries', () => ({
 
 vi.mock('@/lib/policy/actor', () => ({
   resolvePortalActorContext: vi.fn(),
+  hasSystemCatalogAuthority: vi.fn(
+    (actor: { systemRole: string }) =>
+      actor.systemRole === 'ADMIN' || actor.systemRole === 'SUPERADMIN',
+  ),
 }));
 
 vi.mock('@/lib/features/capabilities', async () => {

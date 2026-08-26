@@ -221,8 +221,10 @@ authenticated recording `webUrl` and a permission-scoped event page containing
 `webUrl`. `get_transcript` accepts a half-open time range through `startSec`
 (inclusive) and `endSec` (exclusive), plus `segmentOffset`, `segmentLimit`, and
 `maxTextChars`. Defaults cap each response at 50 segments and approximately
-20,000 transcript characters; hard maxima are 200 segments and 50,000
-characters. Each result includes the authenticated recording `webUrl`, the
+20,000 transcript characters; accepted input maxima are 200 segments and
+50,000 characters. Segment boundaries are preserved, so a single unusually
+large segment may exceed the requested character target. Each result includes
+the authenticated recording `webUrl`, the
 selected and available backends, and a segment page with absolute
 `segmentIndex` values, `totalMatching`, and `nextOffset`. Search accepts up to
 1,000 query characters and returns at most 20 grounded matches per call.
@@ -231,14 +233,18 @@ selected and available backends, and a segment page with absolute
 hash, location, recorder, year, and verification filters. Results contain a
 compact recording summary, an exact match with a seekable `webUrl`, optional
 before/after context without repeating the exact match, metadata, a stable
-citation, and a ready-to-call `transcriptRequest` pinned to the indexed backend.
+citation, and, when a stored transcript is available, a ready-to-call
+`transcriptRequest` using the actual stored backend. The citation continues to
+identify the RAG backend used for retrieval.
 Search is explicitly marked semantic and non-exhaustive, and defaults to at
 most three results per recording for corpus diversity. Transcript pages return
 a `continuation` object that preserves their catalog, backend, range, limits,
 and next offset. Both tools render the actual evidence text in standard MCP
 `content` as well as structured JSON for broad client compatibility. Agents
 should normally search first, then fetch only the relevant transcript range. An
-unavailable RAG service returns the structured `search_unavailable` error.
+unavailable RAG service returns the structured `search_unavailable` error; a
+catalog without a search bundle returns the non-retryable
+`search_not_configured` error.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
@@ -288,7 +294,8 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Support CIMD plus a PKCE-protected DCR fallback for remote clients.
 - [x] Publish OAuth discovery/protected-resource metadata.
 - [x] Mount authenticated, stateless `POST /api/mcp`; reject legacy transport.
-- [x] Exempt only the bearer-authenticated MCP endpoint from browser CSRF checks.
+- [x] Exempt the enabled bearer-only MCP endpoint from browser CSRF checks so
+  unauthenticated clients can receive the OAuth challenge.
 
 ### MCP surface
 

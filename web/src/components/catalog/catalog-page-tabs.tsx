@@ -25,6 +25,7 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
   const showTabs = featureData?.features.events.showTabs ?? false;
   const showAllColumns = featureData?.features.events.showAllColumns ?? false;
   const showReleaseState = featureData?.features.events.showReleaseState ?? false;
+  const canUseRagSearch = featureData?.features.events.canUseRagSearch ?? false;
   const canViewDeepSearch = featureData?.features.deepSearch?.canView ?? false;
   const { activeTab, setActiveTab } = useCatalogTab(catalogId, showTabs);
   const tabFromUrl = searchParams.get("tab");
@@ -86,6 +87,7 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
           canEdit={canEditEvents}
           showAllColumns={showAllColumns}
           showReleaseState={showReleaseState}
+          canUseRagSearch={canUseRagSearch}
           deepSearchHref={deepSearchHref}
         />
       )}
