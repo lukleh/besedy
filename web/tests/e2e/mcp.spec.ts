@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
+import { TEST_AUDIO_FILES } from '../../prisma/test-data';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3002';
 const DATABASE_URL =
@@ -9,6 +10,8 @@ const DATABASE_URL =
   'postgresql://besedy_test:besedy_test@localhost:5434/besedy_test';
 const MCP_RESOURCE = `${BASE_URL}/api/mcp`;
 const MCP_PROTOCOL_VERSION = '2026-07-28';
+const TRANSCRIPT_BACKEND = 'faster-whisper/large-v3@silero_vad_v6';
+const MCP_FIXTURE_RECORDING = TEST_AUDIO_FILES[4];
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 interface TokenResponse {
@@ -30,6 +33,11 @@ interface McpResponse<T> {
   id: number;
   result?: T;
   error?: { code: number; message: string };
+}
+
+interface McpToolResult<T> {
+  isError?: boolean;
+  structuredContent: T;
 }
 
 async function registerLocalTestClient(
@@ -68,7 +76,7 @@ test.afterAll(async () => {
   await pool.end();
 });
 
-test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
+test('@smoke MCP OAuth v2 exercises every read tool', async ({
   page,
   request,
 }) => {
@@ -196,8 +204,8 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
       },
     });
     expect(catalogResponse.ok()).toBe(true);
-    const catalogBody = (await catalogResponse.json()) as McpResponse<{
-      structuredContent: {
+    const catalogBody = (await catalogResponse.json()) as McpResponse<
+      McpToolResult<{
         catalogs: Array<{
           id: string;
           accessLevel: string;
@@ -207,9 +215,10 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
         defaultCatalogId: string;
         defaultCatalogSource: string;
         nextCursor: string | null;
-      };
-    }>;
+      }>
+    >;
     expect(catalogBody.error).toBeUndefined();
+    expect(catalogBody.result?.isError).not.toBe(true);
     const result = catalogBody.result?.structuredContent;
     expect(result?.catalogs).toHaveLength(1);
     expect(result?.defaultCatalogId).toBe(result?.catalogs[0]?.id);
@@ -245,8 +254,8 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
       },
     });
     expect(eventsResponse.ok()).toBe(true);
-    const eventsBody = (await eventsResponse.json()) as McpResponse<{
-      structuredContent: {
+    const eventsBody = (await eventsResponse.json()) as McpResponse<
+      McpToolResult<{
         catalogId: string;
         events: Array<{
           id: number;
@@ -254,15 +263,17 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
           primaryRecording: { audioHash: string } | null;
         }>;
         nextCursor: number | null;
-      };
-    }>;
+      }>
+    >;
     expect(eventsBody.error).toBeUndefined();
+    expect(eventsBody.result?.isError).not.toBe(true);
     const eventResult = eventsBody.result?.structuredContent;
     expect(eventResult?.catalogId).toBe(result?.defaultCatalogId);
     expect(eventResult?.events).toHaveLength(3);
     expect(eventResult?.events.some((event) => !event.released)).toBe(true);
     const event = eventResult?.events.find(
-      (candidate) => candidate.primaryRecording !== null,
+      (candidate) =>
+        candidate.primaryRecording?.audioHash === MCP_FIXTURE_RECORDING.hash,
     );
     expect(event).toBeTruthy();
 
@@ -284,19 +295,21 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
       },
     });
     expect(eventResponse.ok()).toBe(true);
-    const eventBody = (await eventResponse.json()) as McpResponse<{
-      structuredContent: {
+    const eventBody = (await eventResponse.json()) as McpResponse<
+      McpToolResult<{
         catalogId: string;
         event: { id: number; recordings: Array<{ audioHash: string }> };
-      };
-    }>;
+      }>
+    >;
     expect(eventBody.error).toBeUndefined();
+    expect(eventBody.result?.isError).not.toBe(true);
     expect(eventBody.result?.structuredContent.event.id).toBe(event!.id);
     expect(
       eventBody.result?.structuredContent.event.recordings.length,
     ).toBeGreaterThan(0);
 
     const audioHash = event!.primaryRecording!.audioHash;
+    expect(audioHash).toBe(MCP_FIXTURE_RECORDING.hash);
     const recordingResponse = await request.post(MCP_RESOURCE, {
       headers: {
         ...mcpHeaders,
@@ -315,14 +328,15 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
       },
     });
     expect(recordingResponse.ok()).toBe(true);
-    const recordingBody = (await recordingResponse.json()) as McpResponse<{
-      structuredContent: {
+    const recordingBody = (await recordingResponse.json()) as McpResponse<
+      McpToolResult<{
         catalogId: string;
         recording: { audioHash: string };
         events: Array<{ id: number }>;
-      };
-    }>;
+      }>
+    >;
     expect(recordingBody.error).toBeUndefined();
+    expect(recordingBody.result?.isError).not.toBe(true);
     expect(recordingBody.result?.structuredContent.recording.audioHash).toBe(
       audioHash,
     );
@@ -331,6 +345,136 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
         (linkedEvent) => linkedEvent.id === event!.id,
       ),
     ).toBe(true);
+
+    const transcriptResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'get_transcript',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: {
+          name: 'get_transcript',
+          arguments: {
+            audioHash,
+            backend: TRANSCRIPT_BACKEND,
+            limit: 1,
+          },
+          _meta: envelope,
+        },
+      },
+    });
+    expect(transcriptResponse.ok()).toBe(true);
+    const transcriptBody = (await transcriptResponse.json()) as McpResponse<
+      McpToolResult<{
+        catalogId: string;
+        audioHash: string;
+        backend: string;
+        language: string;
+        segments: Array<{
+          id: number;
+          text: string;
+          startSec: number;
+          endSec: number;
+          speaker: string;
+        }>;
+        totalMatchingSegments: number;
+        nextOffset: number | null;
+      }>
+    >;
+    expect(transcriptBody.error).toBeUndefined();
+    expect(
+      transcriptBody.result?.isError,
+      JSON.stringify(transcriptBody),
+    ).not.toBe(true);
+    expect(transcriptBody.result?.structuredContent).toMatchObject({
+      catalogId: result?.defaultCatalogId,
+      audioHash,
+      backend: TRANSCRIPT_BACKEND,
+      language: 'cs',
+      totalMatchingSegments: 2,
+      nextOffset: 1,
+      segments: [
+        {
+          id: 0,
+          text: 'Besedy MCP transcript fixture opens the discussion.',
+          startSec: 0,
+          endSec: 5,
+          speaker: 'SPEAKER_00',
+        },
+      ],
+    });
+
+    const searchResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'search_transcripts',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'search_transcripts',
+          arguments: {
+            query: 'Besedy MCP deterministic search',
+            limit: 5,
+            includeNeighbors: true,
+          },
+          _meta: envelope,
+        },
+      },
+    });
+    expect(searchResponse.ok()).toBe(true);
+    const searchBody = (await searchResponse.json()) as McpResponse<
+      McpToolResult<{
+        catalogId: string;
+        query: string;
+        results: Array<{
+          rank: number;
+          audioHash: string;
+          chunkId: string;
+          text: string;
+          contextText: string;
+          neighbors: { before: Array<{ text: string }>; after: unknown[] };
+          citation: { workflowGroupId: string; chunkVersion: string };
+        }>;
+      }>
+    >;
+    expect(searchBody.error).toBeUndefined();
+    expect(searchBody.result?.isError, JSON.stringify(searchBody)).not.toBe(
+      true,
+    );
+    expect(searchBody.result?.structuredContent).toMatchObject({
+      catalogId: result?.defaultCatalogId,
+      query: 'Besedy MCP deterministic search',
+      results: [
+        {
+          rank: 1,
+          audioHash,
+          chunkId: 'mcp-smoke-chunk-1',
+          text: 'Deterministic Besedy MCP search evidence.',
+          contextText:
+            'Neighbor context before the deterministic evidence.\n\nDeterministic Besedy MCP search evidence.',
+          neighbors: {
+            before: [
+              {
+                text: 'Neighbor context before the deterministic evidence.',
+              },
+            ],
+            after: [],
+          },
+          citation: {
+            workflowGroupId: result?.defaultCatalogId,
+            chunkVersion: 'mcp-smoke-v1',
+          },
+        },
+      ],
+    });
   } finally {
     await removeLocalTestClient(clientId);
   }

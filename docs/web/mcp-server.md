@@ -14,11 +14,12 @@ just mcp-smoke
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
-`list_catalogs`, `list_events`, `get_event`, and `get_recording`. It verifies
-default-catalog resolution, the owner's live capability flags, and metadata
-reads without supplying `catalogId`. The test keeps the test containers running
-for reuse; stop them with `just test-down`. On a new machine, install the
-Playwright browser once with
+all six tools. It verifies default-catalog resolution, the owner's live
+capability flags, metadata reads, bounded transcript pagination, and a grounded
+RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
+not supply `catalogId`, so the same run covers default selection. The test keeps
+the test containers running for reuse; stop them with `just test-down`. On a
+new machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
 > Last updated: 2026-08-26

@@ -688,7 +688,48 @@ test-ready:
 mcp-smoke:
     #!/usr/bin/env bash
     set -euo pipefail
+    repo_root="$PWD"
+    source_config="${CONFIG_FILE:?CONFIG_FILE is required}"
+    if [[ "$source_config" != /* ]]; then
+      source_config="$repo_root/web/${source_config#./}"
+    fi
+    fixture_dir="$repo_root/web/tests/e2e/mcp-fixtures"
+    rag_mock="$repo_root/web/tests/e2e/rag-mock/server.mjs"
+    runtime_dir="$repo_root/web/.playwright-mcp"
+    rag_container="besedy-mcp-rag-${RANDOM}-$$"
+    cleanup() {
+      docker rm -f "$rag_container" > /dev/null 2>&1 || true
+    }
+    trap cleanup EXIT
+    mkdir -p "$runtime_dir"
+    install -m 0644 "$source_config" "$runtime_dir/besedy.docker.toml"
+    chmod a+r "$rag_mock"
+    chmod -R a+rX "$fixture_dir"
+    export CONFIG_FILE="$runtime_dir/besedy.docker.toml"
+    export TEXT_DATA_DIR="$fixture_dir"
+    export RAG_COLBERT_URL="http://$rag_container:18192/query"
+    export RAG_COLBERT_INDEX_DIR=
+    export RAG_COLBERT_RERANK_ENABLED=false
     just test-up
+    docker run -d \
+      --name "$rag_container" \
+      --network "${BESEDY_INTERNAL_NETWORK:-besedy-internal}" \
+      --mount "type=bind,source=$rag_mock,target=/mock/server.mjs,readonly" \
+      node:24-alpine node /mock/server.mjs > /dev/null
+    rag_ready=false
+    for _ in {1..30}; do
+      if docker exec "$rag_container" node -e \
+        "fetch('http://127.0.0.1:18192/health').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+        rag_ready=true
+        break
+      fi
+      sleep 0.1
+    done
+    if [[ "$rag_ready" != true ]]; then
+      echo "MCP RAG mock did not become ready" >&2
+      docker logs "$rag_container" >&2 || true
+      exit 1
+    fi
     just test-rebuild
     echo "Waiting for rebuilt MCP test server..."
     for i in {1..60}; do
