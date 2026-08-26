@@ -335,7 +335,7 @@ export async function createBesedyMcpServer(
       {
         title: 'Get a Besedy transcript',
         description:
-          'Get a time-windowed, character-bounded segment page from an accessible recording transcript.',
+          'Get a time-windowed segment page from an accessible recording transcript, using maxTextChars as a soft target while preserving whole segments.',
         inputSchema: z.object({
           catalogId: z.string().min(1).optional(),
           audioHash: HashSchema,
