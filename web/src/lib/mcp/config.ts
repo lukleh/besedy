@@ -9,6 +9,14 @@ export const MCP_AUTH_SCOPES = [
   MCP_READ_SCOPE,
 ] as const;
 
+// Keep refresh credentials durable so reconnects stay seamless, while limiting
+// the exposure of self-contained access JWTs that cannot be revoked directly.
+// Better Auth's MCP replay window lets serialized refresh retries recover the
+// same rotation response without suppressing token-theft detection for long.
+export const MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS = 60 * 60;
+export const MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 365;
+export const MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS = 30;
+
 function isProductionRuntime(
   appEnv = process.env.APP_ENV,
   nodeEnv = process.env.NODE_ENV,

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { APIError } from "better-auth/api";
+import {
+  MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+  MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS,
+  MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS,
+} from "@/lib/mcp/config";
 
 const mocks = vi.hoisted(() => ({
   capturedAuthOptions: null as unknown,
@@ -185,6 +190,9 @@ describe("auth admission hardening", () => {
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
         clientRegistrationRequirePKCE: true,
+        accessTokenExpiresIn: MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+        refreshTokenExpiresIn: MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS,
+        refreshTokenReuseInterval: MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS,
       }),
     );
     expect(mocks.cimd).toHaveBeenCalledWith(

@@ -2,6 +2,7 @@ import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
 import { getPortalCapability } from '@/lib/access/capabilities';
+import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
@@ -89,8 +90,12 @@ const protectedMcpHandler = resourceUrl
         }
 
         const clientIdClaim = claims.client_id ?? claims.azp;
-        const clientId =
-          typeof clientIdClaim === 'string' ? clientIdClaim : 'unknown-client';
+        if (typeof clientIdClaim !== 'string' || clientIdClaim.length === 0) {
+          return jsonRpcAccessDenied(
+            'The access token has no OAuth client identity',
+          );
+        }
+        const clientId = clientIdClaim;
         if (
           !checkRateLimit(
             'mcp:authenticated:global',
@@ -111,7 +116,22 @@ const protectedMcpHandler = resourceUrl
           return jsonRpcRateLimited();
         }
 
-        const portal = await getPortalCapability(userId);
+        const tokenScopes = readScopes(claims);
+        const [authorization, portal] = await Promise.all([
+          getActiveMcpAuthorization({
+            clientId,
+            resourceUrl,
+            tokenScopes,
+            userId,
+          }),
+          getPortalCapability(userId),
+        ]);
+        if (!authorization) {
+          return jsonRpcAccessDenied(
+            'Active Besedy MCP authorization is required',
+          );
+        }
+
         if (!portal.canEnterPortal) {
           return jsonRpcAccessDenied('Active Besedy portal access is required');
         }
@@ -119,7 +139,7 @@ const protectedMcpHandler = resourceUrl
         const authInfo: AuthInfo = {
           token: readBearerToken(request),
           clientId,
-          scopes: readScopes(claims),
+          scopes: authorization.scopes,
           expiresAt: claims.exp,
           resource: new URL(resourceUrl),
           extra: { userId },

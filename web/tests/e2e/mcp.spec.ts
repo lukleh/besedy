@@ -2,6 +2,10 @@ import { randomBytes, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
 import { TEST_AUDIO_FILES } from '../../prisma/test-data';
+import {
+  MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+  MCP_AUTH_SCOPES,
+} from '../../src/lib/mcp/config';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3002';
 const DATABASE_URL =
@@ -9,6 +13,7 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://besedy_test:besedy_test@localhost:5434/besedy_test';
 const MCP_RESOURCE = `${BASE_URL}/api/mcp`;
+const MCP_REQUESTED_SCOPES = MCP_AUTH_SCOPES.join(' ');
 const MCP_PROTOCOL_VERSION = '2026-07-28';
 const LEGACY_MCP_PROTOCOL_VERSION = '2025-06-18';
 const TRANSCRIPT_BACKEND = 'faster-whisper/large-v3@silero_vad_v6';
@@ -18,6 +23,7 @@ const pool = new Pool({ connectionString: DATABASE_URL });
 interface TokenResponse {
   access_token?: string;
   expires_in?: number;
+  refresh_token?: string;
   scope?: string;
   token_type?: string;
 }
@@ -104,7 +110,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         grant_types: ['authorization_code', 'refresh_token'],
         redirect_uris: [redirectUri],
         response_types: ['code'],
-        scope: 'besedy:read',
+        scope: MCP_REQUESTED_SCOPES,
         token_endpoint_auth_method: 'none',
       },
     },
@@ -131,7 +137,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'besedy:read',
+      scope: MCP_REQUESTED_SCOPES,
       state,
       code_challenge: challenge,
       code_challenge_method: 'S256',
@@ -170,13 +176,66 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(token.token_type).toBe('Bearer');
     expect(token.scope).toContain('besedy:read');
     expect(token.access_token).toBeTruthy();
+    expect(token.refresh_token).toBeTruthy();
+    expect(token.expires_in).toBe(MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS);
+
+    const refresh = () =>
+      request.post(`${BASE_URL}/api/auth/oauth2/token`, {
+        headers: { Origin: BASE_URL },
+        form: {
+          grant_type: 'refresh_token',
+          client_id: clientId,
+          refresh_token: token.refresh_token!,
+          resource: MCP_RESOURCE,
+        },
+      });
+    const [firstRefreshResponse, retryRefreshResponse] = await Promise.all([
+      refresh(),
+      refresh(),
+    ]);
+    const firstRefreshText = await firstRefreshResponse.text();
+    const retryRefreshText = await retryRefreshResponse.text();
+    expect(firstRefreshResponse.ok(), firstRefreshText).toBe(true);
+    expect(retryRefreshResponse.ok(), retryRefreshText).toBe(true);
+
+    const refreshedToken = JSON.parse(firstRefreshText) as TokenResponse;
+    const retriedToken = JSON.parse(retryRefreshText) as TokenResponse;
+    expect(refreshedToken).toMatchObject({
+      token_type: 'Bearer',
+      access_token: expect.any(String),
+      refresh_token: expect.any(String),
+    });
+    expect(retriedToken).toMatchObject({
+      token_type: refreshedToken.token_type,
+      scope: refreshedToken.scope,
+      access_token: refreshedToken.access_token,
+      refresh_token: refreshedToken.refresh_token,
+    });
+    for (const expiresIn of [
+      refreshedToken.expires_in,
+      retriedToken.expires_in,
+    ]) {
+      expect(expiresIn).toBeGreaterThanOrEqual(
+        MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS - 2,
+      );
+      expect(expiresIn).toBeLessThanOrEqual(
+        MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+      );
+    }
+    token.access_token = refreshedToken.access_token;
+    token.refresh_token = refreshedToken.refresh_token;
+
     const tokenParts = token.access_token!.split('.');
     expect(tokenParts, 'MCP access token must be a signed JWT').toHaveLength(3);
     const accessTokenClaims = JSON.parse(
       Buffer.from(tokenParts[1]!, 'base64url').toString('utf8'),
     ) as AccessTokenClaims;
+    expect(
+      Array.isArray(accessTokenClaims.aud)
+        ? accessTokenClaims.aud
+        : [accessTokenClaims.aud],
+    ).toContain(MCP_RESOURCE);
     expect(accessTokenClaims).toMatchObject({
-      aud: MCP_RESOURCE,
       iss: `${BASE_URL}/api/auth`,
       scope: expect.stringContaining('besedy:read'),
       sub: expect.any(String),
@@ -187,6 +246,31 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       Accept: 'application/json, text/event-stream',
       'Content-Type': 'application/json',
     };
+    await pool.query(
+      `UPDATE "oauthClient" SET "disabled" = TRUE WHERE "clientId" = $1`,
+      [clientId],
+    );
+    try {
+      const revokedClientResponse = await request.post(MCP_RESOURCE, {
+        headers: legacyHeaders,
+        data: {
+          jsonrpc: '2.0',
+          id: 99,
+          method: 'tools/list',
+          params: {},
+        },
+      });
+      expect(revokedClientResponse.status()).toBe(403);
+      expect(await revokedClientResponse.json()).toMatchObject({
+        error: { message: 'Active Besedy MCP authorization is required' },
+      });
+    } finally {
+      await pool.query(
+        `UPDATE "oauthClient" SET "disabled" = FALSE WHERE "clientId" = $1`,
+        [clientId],
+      );
+    }
+
     const legacyInitializeResponse = await request.post(MCP_RESOURCE, {
       headers: legacyHeaders,
       data: {
