@@ -86,6 +86,7 @@ describe("access capabilities", () => {
       canAccessAdmin: true,
       hasEditorOnAnyCatalog: true,
     });
+    expect(session.getCurrentUserId).not.toHaveBeenCalled();
   });
 
   it("derives catalog permissions from a typed capability object", async () => {

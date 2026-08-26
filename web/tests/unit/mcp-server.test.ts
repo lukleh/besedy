@@ -198,6 +198,14 @@ describe('MCP personalized tool surface', () => {
       released: undefined,
       query: undefined,
     });
+    expect(body.result?.content).toEqual([
+      { type: 'text', text: 'Listed 0 visible Besedy event(s).' },
+    ]);
+    expect(body.result?.structuredContent).toEqual({
+      catalogId: 'viewer-catalog',
+      events: [],
+      nextCursor: null,
+    });
   });
 
   it('still denies a transcript call against a listener catalog', async () => {

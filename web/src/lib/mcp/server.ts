@@ -62,9 +62,9 @@ function resolveToolCatalog(
   return catalog;
 }
 
-function toolSuccess(result: Record<string, unknown>) {
+function toolSuccess(result: Record<string, unknown>, summary: string) {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+    content: [{ type: 'text' as const, text: summary }],
     structuredContent: result,
   };
 }
@@ -78,9 +78,13 @@ function toolError(code: string, message: string) {
   };
 }
 
-async function runReadTool(operation: () => Promise<Record<string, unknown>>) {
+async function runReadTool(
+  operation: () => Promise<Record<string, unknown>>,
+  summarize: (result: Record<string, unknown>) => string,
+) {
   try {
-    return toolSuccess(await operation());
+    const result = await operation();
+    return toolSuccess(result, summarize(result));
   } catch (error) {
     if (error instanceof McpReadError) {
       return toolError(error.code, error.message);
@@ -153,7 +157,10 @@ export async function createBesedyMcpServer(
         defaultCatalogSource: profile.defaultCatalogSource,
         nextCursor: page.nextCursor,
       };
-      return toolSuccess(result);
+      return toolSuccess(
+        result,
+        `Listed ${page.items.length} accessible Besedy catalog(s).`,
+      );
     },
   );
 
@@ -188,6 +195,8 @@ export async function createBesedyMcpServer(
             released,
             query,
           }),
+          (result) =>
+            `Listed ${Array.isArray(result.events) ? result.events.length : 0} visible Besedy event(s).`,
         );
       },
     );
@@ -209,6 +218,7 @@ export async function createBesedyMcpServer(
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
         return runReadTool(() =>
           getMcpEvent(catalog.id, eventId, catalog.accessLevel),
+          () => `Returned Besedy event ${eventId}.`,
         );
       },
     );
@@ -236,6 +246,7 @@ export async function createBesedyMcpServer(
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
         return runReadTool(() =>
           getMcpRecording(userId, catalog.id, audioHash),
+          () => `Returned metadata for Besedy recording ${audioHash}.`,
         );
       },
     );
@@ -287,6 +298,8 @@ export async function createBesedyMcpServer(
             offset,
             limit,
           }),
+          (result) =>
+            `Returned ${Array.isArray(result.segments) ? result.segments.length : 0} transcript segment(s) for Besedy recording ${audioHash}.`,
         );
       },
     );
@@ -325,6 +338,8 @@ export async function createBesedyMcpServer(
             limit,
             includeNeighbors,
           }),
+          (result) =>
+            `Found ${Array.isArray(result.results) ? result.results.length : 0} Besedy transcript match(es).`,
         );
       },
     );
