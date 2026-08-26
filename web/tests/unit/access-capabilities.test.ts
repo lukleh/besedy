@@ -230,6 +230,7 @@ describe("access capabilities", () => {
       canViewRecordingTranscripts: false,
       canDownloadRecording: false,
       canEditRecording: false,
+      canUseRagSearch: false,
     });
   });
 

@@ -9,6 +9,7 @@ Documentation for the Besedy web app and adjacent service architecture.
 - [docker-container-topology.md](docker-container-topology.md) -- Docker container, network, volume, and environment-sharing map for web, shared Prefect, jobs runtimes, and RAG
 - [data-and-database.md](data-and-database.md) -- web data model, migration safety, configuration
 - [security.md](security.md) -- auth model, access control, deployment hardening
+- [mcp-server.md](mcp-server.md) -- remote MCP tools, OAuth, access matrix, and implementation plan
 - [operations.md](operations.md) -- deploy runbook, monitoring, environments
 
 See [../README.md](../README.md) for the full documentation index.

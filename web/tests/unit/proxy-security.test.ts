@@ -282,6 +282,37 @@ describe("proxy security controls", () => {
     });
   });
 
+  it("allows bearer-authenticated MCP POST requests without a browser origin", async () => {
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer mcp-access-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("keeps MCP POST requests without a bearer token behind CSRF validation", async () => {
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(403);
+  });
+
   it("allows mutating API requests from the same origin to reach the route handler", async () => {
     const { proxy } = await import("@/proxy");
 

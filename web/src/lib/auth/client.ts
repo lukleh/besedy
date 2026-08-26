@@ -1,7 +1,7 @@
 "use client";
 
 import { createAuthClient } from "better-auth/react";
-import { genericOAuthClient } from "better-auth/client/plugins";
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import {
   buildAuthCompletePath,
   sanitizeAppRelativePath,
@@ -102,7 +102,7 @@ export function subscribeToAuthEvents(
 // Create auth client with the same base URL as the app
 export const authClient = createAuthClient({
   baseURL: typeof window !== "undefined" ? window.location.origin : undefined,
-  plugins: [genericOAuthClient()],
+  plugins: [oauthProviderClient()],
 });
 
 // Re-export commonly used hooks and functions
@@ -151,8 +151,8 @@ export async function signInWithOAuth(
   const useMockOAuth = options?.useMockOAuth ?? !isProductionApp;
 
   if (useMockOAuth) {
-    return authClient.signIn.oauth2({
-      providerId: "mock-oauth",
+    return authClient.signIn.social({
+      provider: "mock-oauth",
       callbackURL: authCompleteURL,
       errorCallbackURL: authCompleteURL,
     });
@@ -163,6 +163,18 @@ export async function signInWithOAuth(
     callbackURL: authCompleteURL,
     errorCallbackURL: authCompleteURL,
   });
+}
+
+/** Continue a signed OAuth-provider authorization request initiated by an MCP client. */
+export async function signInForMcpAuthorization(useMockOAuth = !isProductionApp) {
+  return authClient.signIn.social({
+    provider: useMockOAuth ? "mock-oauth" : "google",
+  });
+}
+
+/** Accept or deny the signed OAuth request represented by the current page URL. */
+export async function respondToMcpConsent(accept: boolean) {
+  return authClient.oauth2.consent({ accept });
 }
 
 // Sign out helper - broadcasts to other tabs before redirecting

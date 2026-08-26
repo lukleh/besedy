@@ -3,7 +3,7 @@ import {
   canViewRecordingForAccessLevel,
   type RecordingVisibilityState,
 } from "@/lib/policy/recording";
-import { canViewEvent, type ListenerVisibleEventState } from "@/lib/policy/event";
+import { canViewEvent, type ReleasedVisibleEventState } from "@/lib/policy/event";
 
 type VisibilityClient = Pick<PrismaClient, "$queryRaw" | "catalogEntry">;
 type EventVisibilityRow = {
@@ -20,7 +20,7 @@ function isListenerVisibleRecordingState(
 }
 
 function isListenerVisibleEventRow(row: EventVisibilityRow): boolean {
-  const state: ListenerVisibleEventState = {
+  const state: ReleasedVisibleEventState = {
     released: row.released,
     primaryRecordingActionable: row.primaryRecordingActionable === true,
     primaryRecordingPublished: row.primaryRecordingPublished === true,

@@ -24,7 +24,7 @@ import {
   summarizePlaybackProgress,
 } from "@/lib/playback-progress";
 import { getPublishedVisibleEventIds } from "@/lib/catalog-events/visibility";
-import { requiresListenerEventVisibilityScope } from "@/lib/policy/event";
+import { requiresReleasedEventVisibilityScope } from "@/lib/policy/event";
 
 export const dynamic = "force-dynamic";
 
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
     }
     const { accessLevel, userId } = await requireCatalogEventsAccess(workflowGroupId, "view");
     const publishedVisibleEventIds =
-      requiresListenerEventVisibilityScope(accessLevel)
+      requiresReleasedEventVisibilityScope(accessLevel)
         ? await getPublishedVisibleEventIds(prisma, workflowGroupId)
         : null;
     const visibilityWhere =

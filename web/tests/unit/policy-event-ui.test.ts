@@ -9,8 +9,8 @@ import {
   canSetPrimaryRecording,
   canViewEvent,
   canViewCatalogEvents,
-  isListenerVisibleEventState,
-  requiresListenerEventVisibilityScope,
+  isReleasedVisibleEventState,
+  requiresReleasedEventVisibilityScope,
 } from "@/lib/policy/event";
 import {
   canSeeAllEventColumns,
@@ -108,7 +108,7 @@ describe("event and ui policies", () => {
       primaryRecordingPublished: true,
     };
 
-    expect(isListenerVisibleEventState(visibleState)).toBe(true);
+    expect(isReleasedVisibleEventState(visibleState)).toBe(true);
     expect(
       canViewEvent(
         {
@@ -137,8 +137,8 @@ describe("event and ui policies", () => {
         }
       )
     ).toBe(false);
-    expect(requiresListenerEventVisibilityScope("LISTENER")).toBe(true);
-    expect(requiresListenerEventVisibilityScope("OWNER")).toBe(false);
+    expect(requiresReleasedEventVisibilityScope("LISTENER")).toBe(true);
+    expect(requiresReleasedEventVisibilityScope("OWNER")).toBe(false);
   });
 
   it("shows tabs only for actors who can browse both surfaces and edit events", () => {

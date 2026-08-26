@@ -19,7 +19,7 @@ import { deriveEventTitle } from "@/lib/catalog-events/utils";
 import { getPosterInfo } from "@/lib/event-posters";
 import {
   canReleaseEvent,
-  requiresListenerEventVisibilityScope,
+  requiresReleasedEventVisibilityScope,
 } from "@/lib/policy/event";
 import { requiresReadyRecordingScope } from "@/lib/policy/recording";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
@@ -62,7 +62,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const { userId, accessLevel } = await requireCatalogEventsAccess(catalogId, "view");
 
-    if (requiresListenerEventVisibilityScope(accessLevel)) {
+    if (requiresReleasedEventVisibilityScope(accessLevel)) {
       const isVisible = await isPublishedVisibleEvent(prisma, catalogId, eventId);
       if (!isVisible) {
         return notFound("catalog event");

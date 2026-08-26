@@ -38,6 +38,19 @@ vi.mock("better-auth/next-js", () => ({
 
 vi.mock("better-auth/plugins", () => ({
   genericOAuth: vi.fn(() => ({ id: "genericOAuthPlugin" })),
+  jwt: vi.fn(() => ({ id: "jwtPlugin" })),
+}));
+
+vi.mock("@better-auth/mcp", () => ({
+  mcp: vi.fn(() => ({ id: "mcpPlugin" })),
+}));
+
+vi.mock("@better-auth/cimd", () => ({
+  cimd: vi.fn(() => ({ id: "cimdPlugin" })),
+}));
+
+vi.mock("@better-auth/cimd/node", () => ({
+  fetchClientMetadataResource: vi.fn(),
 }));
 
 vi.mock("better-auth/api", () => {
@@ -139,6 +152,7 @@ describe("auth admission hardening", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.stubEnv("BESEDY_MCP_TEST_ENABLED", "true");
 
     mocks.capturedAuthOptions = null;
     mocks.betterAuth.mockImplementation((options: unknown) => {

@@ -135,6 +135,14 @@ function isAuthorizedInternalDeepSearchRequest(req: NextRequest): boolean {
   return authHeader !== null && constantTimeEqual(authHeader, `Bearer ${expected}`);
 }
 
+function isMcpBearerRequest(req: NextRequest): boolean {
+  if (req.nextUrl.pathname !== "/api/mcp" || req.method !== "POST") {
+    return false;
+  }
+
+  return /^Bearer\s+\S+$/i.test(req.headers.get("authorization") ?? "");
+}
+
 // Query params safe to log - everything else gets redacted.
 const SAFE_LOG_PARAMS = new Set([
   "page",
@@ -193,6 +201,8 @@ function logRequest(req: NextRequest, status: LoggedStatus, durationMs: number):
 // Routes that don't require authentication.
 const publicRoutes = [
   "/auth/signin",
+  "/auth/mcp-signin",
+  "/auth/mcp-consent",
   "/auth/complete",
   "/auth/blocked",
   "/auth/pending",
@@ -201,6 +211,8 @@ const publicRoutes = [
   "/mock-oauth",
   "/robots.txt",
   "/.well-known/security.txt",
+  "/.well-known/oauth-authorization-server",
+  "/.well-known/oauth-protected-resource",
 ];
 
 // Public API routes.
@@ -504,7 +516,11 @@ export async function proxy(req: NextRequest) {
 
   // Non-auth APIs are not redirected by middleware; route handlers return 401/403.
   if (pathname.startsWith("/api/")) {
-    if (isMutationMethod(req.method) && !isAuthorizedInternalDeepSearchRequest(req)) {
+    if (
+      isMutationMethod(req.method) &&
+      !isAuthorizedInternalDeepSearchRequest(req) &&
+      !isMcpBearerRequest(req)
+    ) {
       const sourceError = validateMutationSource(req);
       if (sourceError) {
         handleLocale(req, sourceError);

@@ -8,16 +8,31 @@ export interface EventFeaturePolicyContext extends CatalogPolicyContext {
   featureEnabled: boolean;
 }
 
-export interface ListenerVisibleEventState {
+export interface ReleasedVisibleEventState {
   released: boolean;
   primaryRecordingActionable: boolean;
   primaryRecordingPublished: boolean;
 }
 
-export function requiresListenerEventVisibilityScope(
+export function requiresReleasedEventVisibilityScope(
   catalogGrant: AccessLevel | null | undefined
 ): boolean {
   return catalogGrant === "LISTENER";
+}
+
+/**
+ * Whether the actor may see events before release.
+ *
+ * Keep this as the canonical release-visibility decision for web and MCP. Query
+ * builders use the inverse helper above to apply the listener-only DB scope.
+ */
+export function canViewUnreleasedEvents(
+  context: CatalogPolicyContext
+): boolean {
+  return (
+    hasCatalogAccess(context) &&
+    !requiresReleasedEventVisibilityScope(context.catalogGrant)
+  );
 }
 
 export function canBrowseEvents(context: EventFeaturePolicyContext): boolean {
@@ -36,17 +51,17 @@ export function canViewCatalogEvents(context: EventFeaturePolicyContext): boolea
 
 export function canViewEvent(
   context: EventFeaturePolicyContext,
-  state?: ListenerVisibleEventState
+  state?: ReleasedVisibleEventState
 ): boolean {
   if (!canBrowseEvents(context)) {
     return false;
   }
 
-  if (!requiresListenerEventVisibilityScope(context.catalogGrant)) {
+  if (!requiresReleasedEventVisibilityScope(context.catalogGrant)) {
     return true;
   }
 
-  return state !== undefined && isListenerVisibleEventState(state);
+  return state !== undefined && isReleasedVisibleEventState(state);
 }
 
 export function canEditEvent(context: EventFeaturePolicyContext): boolean {
@@ -80,8 +95,8 @@ export function canCreateEventFromRecording(context: EventFeaturePolicyContext):
   return canEditEvent(context);
 }
 
-export function isListenerVisibleEventState(
-  state: ListenerVisibleEventState
+export function isReleasedVisibleEventState(
+  state: ReleasedVisibleEventState
 ): boolean {
   return (
     state.released &&
