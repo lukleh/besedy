@@ -10,6 +10,8 @@ const MAX_BODY_SIZE = 2048;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const PER_CLIENT_RATE_LIMIT = 30;
 const GLOBAL_RATE_LIMIT = 1200;
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const RETENTION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const VERSION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const ATTEMPT_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const ROUTE_GROUPS = new Set([
@@ -22,6 +24,7 @@ const ROUTE_GROUPS = new Set([
   "other",
 ]);
 const BLOCKER_KINDS = new Set(["audio", "unsaved-changes", "critical-mutation"]);
+let nextRetentionCleanupAt = 0;
 
 const EVENT_TYPES: Record<string, WebUpdateEventType> = {
   client_seen: WebUpdateEventType.CLIENT_SEEN,
@@ -128,6 +131,18 @@ export async function POST(request: NextRequest) {
   } catch {
     // Telemetry storage must not create a retry storm in old or partially deployed clients.
     return NextResponse.json({ received: false }, { status: 202 });
+  }
+
+  const now = Date.now();
+  if (now >= nextRetentionCleanupAt) {
+    nextRetentionCleanupAt = now + RETENTION_CLEANUP_INTERVAL_MS;
+    await prisma.webUpdateEvent
+      .deleteMany({
+        where: { createdAt: { lt: new Date(now - RETENTION_MS) } },
+      })
+      .catch(() => {
+        // Retention is best-effort and must not reject accepted telemetry.
+      });
   }
 
   return NextResponse.json({ received: true }, { status: 202 });

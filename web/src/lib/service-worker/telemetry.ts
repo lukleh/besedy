@@ -1,4 +1,5 @@
 import type { ReloadBlockerKind } from "@/lib/service-worker/reload-safety";
+import { createBrowserId } from "@/lib/browser-id";
 
 export type WebUpdateTelemetryEvent =
   | "client_seen"
@@ -34,11 +35,7 @@ function routeGroup(): string {
 }
 
 export function createUpdateAttemptId(): string {
-  try {
-    return crypto.randomUUID();
-  } catch {
-    return `update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
+  return createBrowserId("update");
 }
 
 export function reportWebUpdateEvent(payload: WebUpdateTelemetryPayload): void {

@@ -34,6 +34,7 @@ type MessageHandler = ServiceWorkerMessageHandler;
 
 interface ServiceWorkerContextValue extends ServiceWorkerRuntimeSnapshot {
   applyUpdate: () => void;
+  cancelPendingApply: () => void;
   dismissUpdate: () => void;
   postMessage: (message: ClientToSWMessage) => boolean;
   subscribe: (handler: MessageHandler) => () => void;
@@ -89,6 +90,10 @@ export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
     runtime.dismissUpdate();
   }, [runtime]);
 
+  const cancelPendingApply = useCallback(() => {
+    runtime.cancelPendingApply();
+  }, [runtime]);
+
   const postMessage = useCallback((message: ClientToSWMessage) => {
     return runtime.postMessage(message);
   }, [runtime]);
@@ -100,10 +105,11 @@ export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     ...state,
     applyUpdate,
+    cancelPendingApply,
     dismissUpdate,
     postMessage,
     subscribe,
-  }), [state, applyUpdate, dismissUpdate, postMessage, subscribe]);
+  }), [state, applyUpdate, cancelPendingApply, dismissUpdate, postMessage, subscribe]);
 
   return (
     <ServiceWorkerContext.Provider

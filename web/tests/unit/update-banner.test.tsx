@@ -49,6 +49,7 @@ const baseServiceWorkerState: ReturnType<typeof useServiceWorker> = {
   applyState: "idle",
   blockedReasons: [],
   applyUpdate: vi.fn(),
+  cancelPendingApply: vi.fn(),
   dismissUpdate: vi.fn(),
   postMessage: vi.fn(() => false),
   subscribe: vi.fn(() => () => {}),
@@ -147,6 +148,20 @@ describe("UpdateBanner", () => {
 
     expect(screen.getByText("Waiting for connection")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(baseServiceWorkerState.cancelPendingApply).toHaveBeenCalledOnce();
+  });
+
+  it("allows a manual update when only playback blocks automatic activation", () => {
+    setServiceWorkerState({ applyState: "blocked", blockedReasons: ["audio"] });
+
+    renderBanner();
+
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    expect(refresh).toBeEnabled();
+    fireEvent.click(refresh);
+    expect(baseServiceWorkerState.applyUpdate).toHaveBeenCalledOnce();
   });
 
   it("allows a delayed activation notice to be hidden without cancelling the update", () => {

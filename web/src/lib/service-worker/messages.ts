@@ -3,6 +3,10 @@
  */
 
 export const SW_MESSAGE_TYPES = {
+  // Client ↔ SW: update identity handshake
+  GET_WEB_VERSION: "GET_WEB_VERSION",
+  WEB_VERSION: "WEB_VERSION",
+
   // Client → SW: Audio-only (legacy, for backward compatibility)
   CACHE_AUDIO: "CACHE_AUDIO",
   CHECK_CACHE: "CHECK_CACHE",
@@ -71,6 +75,15 @@ export interface CheckContentCacheMessage {
 export interface ClearContentCacheMessage {
   type: typeof SW_MESSAGE_TYPES.CLEAR_CONTENT_CACHE;
   hash: string;
+}
+
+export interface GetWebVersionMessage {
+  type: typeof SW_MESSAGE_TYPES.GET_WEB_VERSION;
+}
+
+export interface WebVersionMessage {
+  type: typeof SW_MESSAGE_TYPES.WEB_VERSION;
+  version: string | null;
 }
 
 // =============================================================================
@@ -160,6 +173,7 @@ export interface ContentCacheStatusMessage {
 // =============================================================================
 
 export type ClientToSWMessage =
+  | GetWebVersionMessage
   // Legacy audio-only
   | CacheAudioMessage
   | CheckCacheMessage
@@ -170,6 +184,7 @@ export type ClientToSWMessage =
   | ClearContentCacheMessage;
 
 export type SWToClientMessage =
+  | WebVersionMessage
   // Legacy audio-only
   | CacheProgressMessage
   | CacheCompleteMessage

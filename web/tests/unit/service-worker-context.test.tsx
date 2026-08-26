@@ -208,6 +208,57 @@ describe("ServiceWorkerProvider", () => {
     expect(window.localStorage.removeItem).not.toHaveBeenCalledWith(UPDATE_STATE_STORAGE_KEY);
   });
 
+  it("does not restore a dismissal before the waiting worker version is known", async () => {
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
+      if (key === UPDATE_STATE_STORAGE_KEY) {
+        return JSON.stringify({
+          version: "web-v2-previous",
+          dismissed: true,
+          deadline: Date.now() + 60_000
+        });
+      }
+      return null;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted")));
+          })
+      )
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
+    expect(runtime.getSnapshot().wasDismissed).toBe(false);
+    stop();
+  });
+
   it("clears dismissal when a different web version is detected", async () => {
     vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
     const registrationMock = {
@@ -265,6 +316,49 @@ describe("ServiceWorkerProvider", () => {
       UPDATE_STATE_STORAGE_KEY,
       expect.stringContaining('"version":"web-c"')
     );
+  });
+
+  it("refreshes the registration when the server rolls back to the client version", async () => {
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+      })
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await waitFor(() => expect(runtime.getSnapshot().updateAvailable).toBe(true));
+    registrationMock.update.mockClear();
+
+    runtime.observeWebVersion("web-v2-client");
+
+    expect(registrationMock.update).toHaveBeenCalledTimes(1);
+    expect(runtime.getSnapshot().updateAvailable).toBe(false);
+    stop();
   });
 
   it("auto-applies an ignored update after its deadline when hidden", async () => {
@@ -402,6 +496,24 @@ describe("ServiceWorkerProvider", () => {
     expect(runtime.getSnapshot().wasDismissed).toBe(false);
   });
 
+  it("clears a pending update when the server rolls back to the running client", () => {
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+
+    runtime.observeWebVersion("web-v2-newer");
+    expect(runtime.getSnapshot().updateAvailable).toBe(true);
+
+    runtime.observeWebVersion("web-v2-client");
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      updateAvailable: false,
+      updateReady: false,
+      applyState: "idle"
+    });
+    expect(window.localStorage.removeItem).toHaveBeenCalledWith(UPDATE_STATE_STORAGE_KEY);
+  });
+
   it("triggers registration.update() when a new web version is observed", async () => {
     const registrationMock = {
       waiting: null,
@@ -512,6 +624,29 @@ describe("ServiceWorkerProvider", () => {
     // The same web version on a subsequent response must not re-trigger update().
     await fetchJson("/api/some-endpoint");
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not compare a fingerprinted client with the legacy commit header", async () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-client");
+    const observer = vi.fn();
+    const unregister = registerWebVersionObserver(observer);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          "content-type": "application/json",
+          "x-app-commit": "0123456789abcdef"
+        }),
+        json: vi.fn().mockResolvedValue({ ok: true })
+      })
+    );
+
+    await fetchJson("/api/legacy-endpoint");
+
+    expect(observer).not.toHaveBeenCalled();
+    unregister();
   });
 
   it("ignores unknown and empty web-version signals", async () => {
@@ -782,6 +917,65 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
+  it("retries apply when the deployment target changes during its probe", async () => {
+    vi.useFakeTimers();
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-a",
+      reloadPage
+    });
+    const stop = runtime.start();
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runtime.getSnapshot().updateAvailable).toBe(true);
+
+    await expect(runtime.applyUpdate()).resolves.toBe(false);
+    expect(runtime.getSnapshot().applyState).toBe("idle");
+    expect(reloadPage).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it("does not activate an update while unsaved changes are present", async () => {
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
@@ -821,10 +1015,73 @@ describe("ServiceWorkerProvider", () => {
     await expect(runtime.applyUpdate()).resolves.toBe(false);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(waitingWorker.postMessage).not.toHaveBeenCalled();
+    expect(waitingWorker.postMessage).not.toHaveBeenCalledWith({
+      type: "SKIP_WAITING"
+    });
     expect(runtime.getSnapshot()).toMatchObject({
       applyState: "blocked",
       blockedReasons: ["unsaved-changes"]
+    });
+    stop();
+  });
+
+  it("downgrades a blocked manual request before retrying it", async () => {
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runtime = createServiceWorkerRuntime();
+    runtime.setReloadSafety({
+      automaticBlockerKinds: ["audio", "unsaved-changes"],
+      manualBlockerKinds: ["unsaved-changes"]
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
+    await expect(runtime.applyUpdate()).resolves.toBe(false);
+    expect(runtime.getSnapshot().blockedReasons).toEqual(["unsaved-changes"]);
+
+    runtime.setReloadSafety({
+      automaticBlockerKinds: ["audio"],
+      manualBlockerKinds: []
+    });
+    expect(runtime.getSnapshot()).toMatchObject({
+      applyState: "blocked",
+      blockedReasons: ["audio"]
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    runtime.setReloadSafety({
+      automaticBlockerKinds: [],
+      manualBlockerKinds: []
+    });
+    await waitFor(() => {
+      expect(waitingWorker.postMessage).toHaveBeenCalledWith({
+        type: "SKIP_WAITING"
+      });
     });
     stop();
   });
@@ -870,10 +1127,266 @@ describe("ServiceWorkerProvider", () => {
     });
     await expect(runtime.applyUpdate()).resolves.toBe(false);
     expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
-    expect(waitingWorker.postMessage).not.toHaveBeenCalled();
+    expect(waitingWorker.postMessage).not.toHaveBeenCalledWith({
+      type: "SKIP_WAITING"
+    });
+
+    runtime.cancelPendingApply();
+    expect(runtime.getSnapshot().applyState).toBe("idle");
 
     await expect(runtime.applyUpdate()).resolves.toBe(true);
-    expect(waitingWorker.postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    expect(waitingWorker.postMessage).toHaveBeenCalledWith({
+      type: "SKIP_WAITING"
+    });
+    stop();
+  });
+
+  it("retries a failed manual request as automatic and respects playback", async () => {
+    vi.useFakeTimers();
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("server unavailable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runtime = createServiceWorkerRuntime();
+    runtime.setReloadSafety({
+      automaticBlockerKinds: ["audio"],
+      manualBlockerKinds: []
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(runtime.applyUpdate()).resolves.toBe(false);
+    expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(runtime.getSnapshot()).toMatchObject({
+      applyState: "blocked",
+      blockedReasons: ["audio"]
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    runtime.setReloadSafety({
+      automaticBlockerKinds: [],
+      manualBlockerKinds: []
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(waitingWorker.postMessage).toHaveBeenCalledWith({
+      type: "SKIP_WAITING"
+    });
+    stop();
+  });
+
+  it("cancels and dismisses an offline reload after controllerchange", async () => {
+    const listeners = new Map<string, Set<() => void>>();
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn((event: string, handler: () => void) => {
+          if (!listeners.has(event)) listeners.set(event, new Set());
+          listeners.get(event)?.add(handler);
+        }),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+      .mockRejectedValueOnce(new TypeError("server unavailable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+
+    const runtime = createServiceWorkerRuntime({ reloadPage });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
+    act(() => {
+      listeners.get("controllerchange")?.forEach((handler) => handler());
+    });
+    await waitFor(() => {
+      expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
+    });
+
+    runtime.cancelPendingApply();
+    expect(runtime.getSnapshot()).toMatchObject({
+      applyState: "idle",
+      updateAvailable: true,
+      wasDismissed: true
+    });
+
+    window.dispatchEvent(new Event("online"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(reloadPage).not.toHaveBeenCalled();
+
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("retries a committed controller reload despite an earlier dismissal", async () => {
+    const listeners = new Map<string, Set<() => void>>();
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn((event: string, handler: () => void) => {
+          if (!listeners.has(event)) listeners.set(event, new Set());
+          listeners.get(event)?.add(handler);
+        }),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+      .mockRejectedValueOnce(new TypeError("server unavailable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-a",
+      reloadPage
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() => {
+      expect(listeners.get("controllerchange")?.size).toBe(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    runtime.observeWebVersion("web-b");
+    runtime.dismissUpdate();
+    act(() => {
+      listeners.get("controllerchange")?.forEach((handler) => handler());
+    });
+    await waitFor(() => {
+      expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
+    });
+
+    window.dispatchEvent(new Event("online"));
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it("does not apply a dismissed update from a stale connection retry", async () => {
+    vi.useFakeTimers();
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-client" })
+      })
+      .mockRejectedValue(new TypeError("server unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client",
+      reloadPage
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    runtime.observeWebVersion("web-v2-target");
+
+    await expect(runtime.applyUpdate()).resolves.toBe(false);
+    expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
+    runtime.dismissUpdate();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(reloadPage).not.toHaveBeenCalled();
     stop();
   });
 
@@ -1003,11 +1516,198 @@ describe("ServiceWorkerProvider", () => {
       expect.objectContaining({ event: "activation_complete" })
     );
 
-    runtime.setReloadSafety({ automaticBlockerKinds: [], manualBlockerKinds: [] });
+    runtime.setReloadSafety({
+      automaticBlockerKinds: [],
+      manualBlockerKinds: []
+    });
     await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
     expect(reportWebUpdateEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: "activation_complete" })
     );
+    stop();
+  });
+
+  it("does not reload when the app leaves the authenticated shell during the probe", async () => {
+    const listeners = new Map<string, Set<() => void>>();
+    const waitingWorker = { postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn((event: string, handler: () => void) => {
+          if (!listeners.has(event)) listeners.set(event, new Set());
+          listeners.get(event)?.add(handler);
+        }),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+
+    let resolveReloadProbe!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      })
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolveReloadProbe = resolve;
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({ reloadPage });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
+    act(() => {
+      listeners.get("controllerchange")?.forEach((handler) => handler());
+    });
+    await waitFor(() => expect(runtime.getSnapshot().applyState).toBe("checking"));
+
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: false,
+      shouldSilentlyActivateWaitingWorker: true
+    });
+    resolveReloadProbe(
+      new Response(JSON.stringify({ webVersion: "web-b" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(runtime.getSnapshot()).toMatchObject({
+      updateAvailable: false,
+      updateReady: false,
+      applyState: "idle"
+    });
+    stop();
+  });
+
+  it("rechecks app-shell mode before the direct reload fallback", async () => {
+    const registrationMock = {
+      waiting: null,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+
+    let resolveApplyProbe!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+      })
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolveApplyProbe = resolve;
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client",
+      reloadPage
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await waitFor(() => expect(runtime.getSnapshot().updateAvailable).toBe(true));
+
+    const applyPromise = runtime.applyUpdate();
+    await waitFor(() => expect(runtime.getSnapshot().applyState).toBe("checking"));
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: false,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    resolveApplyProbe(
+      new Response(JSON.stringify({ webVersion: "web-v2-target" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(applyPromise).resolves.toBe(false);
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(runtime.getSnapshot().applyState).toBe("idle");
+    stop();
+  });
+
+  it("uses a direct reload for a reachable legacy server", async () => {
+    const waitingWorker = { scriptURL: "/sw.js", postMessage: vi.fn() };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        webVersion: "unknown",
+        commit: "legacy-commit"
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client",
+      reloadPage
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
+
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
+
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(runtime.getSnapshot().applyState).not.toBe("waiting-for-connection");
+    expect(waitingWorker.postMessage).not.toHaveBeenCalledWith({
+      type: "SKIP_WAITING"
+    });
     stop();
   });
 
@@ -1029,6 +1729,16 @@ describe("ServiceWorkerProvider", () => {
     Object.defineProperty(navigator, "serviceWorker", {
       value: serviceWorkerMock,
       configurable: true
+    });
+    vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
+      if (key === UPDATE_STATE_STORAGE_KEY) {
+        return JSON.stringify({
+          version: "web-server",
+          dismissed: false,
+          deadline: Date.now() + 60_000
+        });
+      }
+      return null;
     });
 
     let resolveVersionCheck!: (response: Response) => void;
@@ -1134,6 +1844,343 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
+  it("does not activate a waiting worker that reports a different target version", async () => {
+    const postMessage = vi.fn((message: { type?: string }, transfer?: Transferable[]) => {
+      if (message.type === "GET_WEB_VERSION") {
+        (transfer?.[0] as MessagePort | undefined)?.postMessage({
+          type: "WEB_VERSION",
+          version: "web-v2-stale"
+        });
+      }
+    });
+    const waitingWorker = { scriptURL: "/sw.js", postMessage };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-current" })
+      })
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith({ type: "GET_WEB_VERSION" }, expect.any(Array))
+    );
+    await waitFor(() =>
+      expect(runtime.getSnapshot()).toMatchObject({
+        updateAvailable: true,
+        updateReady: false
+      })
+    );
+    await expect(runtime.applyUpdate()).resolves.toBe(false);
+    expect(postMessage).not.toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    expect(registrationMock.update).toHaveBeenCalled();
+    stop();
+  });
+
+  it("does not activate an unidentified legacy worker after a rollback", async () => {
+    vi.useFakeTimers();
+    const postMessage = vi.fn();
+    const waitingWorker = { scriptURL: "/sw.js", postMessage };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-client" })
+      })
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: false,
+      shouldSilentlyActivateWaitingWorker: true
+    });
+    const stop = runtime.start();
+
+    await vi.advanceTimersByTimeAsync(6000);
+
+    expect(
+      postMessage.mock.calls.filter(([message]) => message?.type === "GET_WEB_VERSION")
+    ).toHaveLength(3);
+    expect(postMessage).not.toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    expect(registrationMock.update).toHaveBeenCalled();
+    expect(runtime.getSnapshot()).toMatchObject({
+      updateAvailable: true,
+      updateReady: false,
+      applyState: "idle"
+    });
+    stop();
+  });
+
+  it("does not activate a delayed worker response that disagrees with the probe", async () => {
+    vi.useFakeTimers();
+    const postMessage = vi.fn((message: { type?: string }, transfer?: Transferable[]) => {
+      if (message.type !== "GET_WEB_VERSION") return;
+      window.setTimeout(() => {
+        (transfer?.[0] as MessagePort | undefined)?.postMessage({
+          type: "WEB_VERSION",
+          version: "web-v2-stale"
+        });
+      }, 100);
+    });
+    const waitingWorker = { scriptURL: "/sw.js", postMessage };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-client" })
+      })
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: false,
+      shouldSilentlyActivateWaitingWorker: true
+    });
+    const stop = runtime.start();
+
+    await vi.advanceTimersByTimeAsync(100);
+    await Promise.resolve();
+
+    expect(postMessage).not.toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    expect(runtime.getSnapshot()).toMatchObject({
+      updateAvailable: false,
+      updateReady: false,
+      applyState: "idle"
+    });
+    stop();
+  });
+
+  it("recovers when a waiting worker answers a retried version handshake", async () => {
+    vi.useFakeTimers();
+    let handshakeCount = 0;
+    const postMessage = vi.fn((message: { type?: string }, transfer?: Transferable[]) => {
+      if (message.type !== "GET_WEB_VERSION") return;
+      handshakeCount += 1;
+      if (handshakeCount === 2) {
+        (transfer?.[0] as MessagePort | undefined)?.postMessage({
+          type: "WEB_VERSION",
+          version: "web-v2-target"
+        });
+      }
+    });
+    const waitingWorker = { scriptURL: "/sw.js", postMessage };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+      })
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: false,
+      shouldSilentlyActivateWaitingWorker: true
+    });
+    const stop = runtime.start();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await Promise.resolve();
+
+    expect(handshakeCount).toBe(2);
+    expect(postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    stop();
+  });
+
+  it("reuses a verified waiting-worker identity when applying", async () => {
+    const postMessage = vi.fn((message: { type?: string }, transfer?: Transferable[]) => {
+      if (message.type !== "GET_WEB_VERSION") return;
+      (transfer?.[0] as MessagePort | undefined)?.postMessage({
+        type: "WEB_VERSION",
+        version: "web-v2-target"
+      });
+    });
+    const waitingWorker = { scriptURL: "/sw.js", postMessage };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+      })
+    );
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
+    await waitFor(() =>
+      expect(
+        postMessage.mock.calls.filter(([message]) => message?.type === "GET_WEB_VERSION")
+      ).toHaveLength(1)
+    );
+
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
+
+    expect(
+      postMessage.mock.calls.filter(([message]) => message?.type === "GET_WEB_VERSION")
+    ).toHaveLength(1);
+    expect(postMessage).toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    stop();
+  });
+
+  it("stops retrying a mute worker and uses the direct reload fallback", async () => {
+    vi.useFakeTimers();
+    const postMessage = vi.fn();
+    const waitingWorker = { scriptURL: "/sw.js", postMessage };
+    const registrationMock = {
+      waiting: waitingWorker,
+      active: {},
+      update: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue(registrationMock),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+      })
+    );
+    const reloadPage = vi.fn();
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client",
+      reloadPage
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const firstApply = runtime.applyUpdate();
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(firstApply).resolves.toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(
+      postMessage.mock.calls.filter(([message]) => message?.type === "GET_WEB_VERSION")
+    ).toHaveLength(5);
+    expect(postMessage).not.toHaveBeenCalledWith({ type: "SKIP_WAITING" });
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(
+      postMessage.mock.calls.filter(([message]) => message?.type === "GET_WEB_VERSION")
+    ).toHaveLength(5);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it("checks for a new web version when the installed app returns to the foreground", async () => {
     vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-client");
 
@@ -1187,6 +2234,52 @@ describe("ServiceWorkerProvider", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(screen.getByTestId("state").dataset.update).toBe("true");
     });
+
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-arm a version check after the runtime is stopped", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted")));
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        controller: {},
+        register: vi.fn().mockResolvedValue({
+          waiting: null,
+          active: {},
+          update: vi.fn().mockResolvedValue(undefined),
+          addEventListener: vi.fn()
+        }),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true
+    });
+
+    const runtime = createServiceWorkerRuntime({
+      clientVersion: "web-v2-client"
+    });
+    runtime.setAppShellMode({
+      isAuthenticatedAppShell: true,
+      shouldSilentlyActivateWaitingWorker: false
+    });
+    const stop = runtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    stop();
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("swallows observer errors to protect fetch callers", () => {

@@ -665,6 +665,12 @@ self.addEventListener("message", (event) => {
   if (!data || typeof data !== "object") return;
 
   switch (data.type) {
+    case "GET_WEB_VERSION":
+      event.ports[0]?.postMessage({
+        type: "WEB_VERSION",
+        version: self.__BESEDY_WEB_VERSION || null,
+      });
+      return;
     case "SKIP_WAITING":
       console.log("[SW] Received SKIP_WAITING, activating new version");
       self.skipWaiting();

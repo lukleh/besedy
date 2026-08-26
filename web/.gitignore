@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.config-link-*/
 /tests/e2e/fixtures/
 /test-output/
 /test-results/

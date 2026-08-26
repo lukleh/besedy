@@ -322,7 +322,10 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   arriving mid-playback waits until audio stops (1s delay). Unsaved edits and
   in-flight mutations block both manual and automatic reloads, with blockers
   shared across tabs through `BroadcastChannel`. Every activation first proves
-  `/api/version` is reachable instead of trusting `navigator.onLine`. If browser
+  `/api/version` is reachable instead of trusting `navigator.onLine`, and a
+  failed probe retries every 30 seconds. A manually requested retry falls back
+  to automatic blocker policy until the user explicitly requests it again; the
+  waiting banner can also cancel the retry. If browser
   activation takes longer than 8 seconds, the banner becomes dismissible while
   activation continues in the background and records an `ACTIVATION_DELAYED`
   telemetry event. The version-scoped state is
@@ -333,8 +336,9 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   version embedded in the running client. `WEB_VERSION` is derived from
   allowlisted production inputs and public build configuration, so unrelated
   repository commits, tests, and documentation do not prompt a web update.
-  `/sw.js` is registered with `updateViaCache: "none"` and stamped with
-  the same web version so browsers install a changed worker.
+  `/sw.js` is registered with `updateViaCache: "none"`, stamped with the same
+  web version, and reports that identity before activation so a stale waiting
+  worker cannot be mistaken for the current target.
 
 ## Offline
 

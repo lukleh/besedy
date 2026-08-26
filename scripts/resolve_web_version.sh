@@ -37,23 +37,21 @@ if [[ -n "$dirty_sources" ]]; then
   exit 1
 fi
 
-tracked_inputs="$({
-  for input in "${production_inputs[@]}"; do
-    git -C "$repo_root" ls-tree -r --name-only HEAD -- "$input"
-  done
-} | LC_ALL=C sort -u)"
+tracked_input_bytes="$(
+  git -C "$repo_root" ls-tree -r -z --full-tree HEAD -- "${production_inputs[@]}" \
+    | wc -c
+)"
 
-if [[ -z "$tracked_inputs" ]]; then
+if (( tracked_input_bytes == 0 )); then
   echo "Cannot resolve tracked production web inputs in $repo_root" >&2
   exit 1
 fi
 
 fingerprint="$({
-  while IFS= read -r path; do
-    printf 'file:%s\0' "$path"
-    git -C "$repo_root" show "HEAD:$path"
-    printf '\0'
-  done <<< "$tracked_inputs"
+  # Hash Git's NUL-delimited tree entries directly. Each entry includes the
+  # exact path bytes, file mode, object type, and blob ID, so filenames that
+  # Git would quote for display (for example non-ASCII paths) remain intact.
+  git -C "$repo_root" ls-tree -r -z --full-tree HEAD -- "${production_inputs[@]}"
 
   # Only browser-visible/build-shaping values belong here. Never add secrets.
   printf 'config:APP_ENV\0%s\0' "${APP_ENV:-development}"

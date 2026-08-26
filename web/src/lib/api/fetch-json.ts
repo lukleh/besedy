@@ -3,6 +3,7 @@
 import type { ZodError, ZodType } from "zod";
 import { createClientLogger } from "@/lib/log/client";
 import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";
+import { selectObservedWebVersion } from "@/lib/service-worker/version";
 
 type SchemaValidationIssue = ZodError["issues"][number];
 
@@ -104,9 +105,11 @@ export async function fetchJson<T>(
   const response = await fetch(input, requestInit);
 
   try {
-    const webVersion =
-      response.headers?.get?.("X-Web-Version") ??
-      response.headers?.get?.("X-App-Commit");
+    const webVersion = selectObservedWebVersion(
+      response.headers?.get?.("X-Web-Version"),
+      response.headers?.get?.("X-App-Commit"),
+      process.env.NEXT_PUBLIC_WEB_VERSION
+    );
     if (webVersion) {
       notifyWebVersionObserver(webVersion);
     }

@@ -20,7 +20,11 @@ type RangeParseResult =
 
 type ScriptContext = {
   fetchHandler?: (event: FetchHandlerEvent) => void;
-  messageHandler?: (event: { data: unknown; source?: unknown }) => void;
+  messageHandler?: (event: {
+    data: unknown;
+    ports: Array<{ postMessage: (message: unknown) => void }>;
+    source?: unknown;
+  }) => void;
   parseRangeHeader: (rangeHeader: string | null, totalSize: number) => RangeParseResult;
   cleanupPartialCache: (cache: unknown, baseKey: string) => Promise<void>;
   hasActiveCleanup: (hash: string | null) => boolean;
@@ -44,6 +48,7 @@ function loadScript(): ScriptContext {
     error: vi.fn(),
   };
   const selfScope = {
+    __BESEDY_WEB_VERSION: "web-v2-test",
     addEventListener: vi.fn((type: string, handler: (event: FetchHandlerEvent) => void) => {
       listeners.set(type, handler);
     }),
@@ -120,6 +125,23 @@ function createApiEvent(url: string): FetchHandlerEvent {
     respondWith: vi.fn(),
   };
 }
+
+describe("service worker version handshake", () => {
+  it("reports the version embedded in the waiting worker", () => {
+    const { messageHandler } = loadScript();
+    const postMessage = vi.fn();
+
+    messageHandler?.({
+      data: { type: "GET_WEB_VERSION" },
+      ports: [{ postMessage }],
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: "WEB_VERSION",
+      version: "web-v2-test",
+    });
+  });
+});
 
 describe("service worker navigation handling", () => {
   it("bypasses auth callback navigations", () => {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -30,7 +30,7 @@ describe("resolve_web_version.sh", () => {
     write("web/tsconfig.json", "{}\n");
     write("web/postcss.config.mjs", "export default {};\n");
     write("web/prisma.config.ts", "export default {};\n");
-    write("web/prisma/schema.prisma", "datasource db { provider = \"postgresql\" }\n");
+    write("web/prisma/schema.prisma", 'datasource db { provider = "postgresql" }\n');
     write("web/Dockerfile", "FROM scratch\n");
     write("web/docker-compose.yml", "services: {}\n");
     write("web/.dockerignore", "tests\n");
@@ -67,8 +67,8 @@ describe("resolve_web_version.sh", () => {
         NEXT_PUBLIC_SUPPORT_EMAIL: "support@example.test",
         NEXT_PUBLIC_SUPPORT_EMAIL_B64: "",
         OAUTH_MOCK_URL: "",
-        ...env,
-      },
+        ...env
+      }
     });
   }
 
@@ -96,9 +96,7 @@ describe("resolve_web_version.sh", () => {
     expect(resolveVersion({ NEXT_PUBLIC_APP_URL: "https://new.example" }).stdout).not.toBe(
       initial.stdout
     );
-    expect(resolveVersion({ VAPID_PUBLIC_KEY: "public-vapid-b" }).stdout).not.toBe(
-      initial.stdout
-    );
+    expect(resolveVersion({ VAPID_PUBLIC_KEY: "public-vapid-b" }).stdout).not.toBe(initial.stdout);
     expect(resolveVersion({ AUTH_SECRET: "secret-a" }).stdout).toBe(
       resolveVersion({ AUTH_SECRET: "secret-b" }).stdout
     );
@@ -112,6 +110,15 @@ describe("resolve_web_version.sh", () => {
     expect(resolveVersion().stdout).not.toBe(initial.stdout);
   });
 
+  it("includes production files whose names contain non-ASCII characters", () => {
+    commit("web/src/příliš.ts", "export const value = 'first';\n", "non-ascii source");
+    const initial = resolveVersion();
+
+    commit("web/src/příliš.ts", "export const value = 'second';\n", "change source");
+
+    expect(resolveVersion().stdout).not.toBe(initial.stdout);
+  });
+
   it("refuses all dirty web sources, including excluded tests", () => {
     write("web/tests/unit/example.test.ts", "dirty test\n");
 
@@ -119,5 +126,21 @@ describe("resolve_web_version.sh", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("dirty web sources");
+  });
+
+  it("does not mask resolver failures in production recipes", () => {
+    const justfile = readFileSync(resolve(process.cwd(), "../Justfile"), "utf8");
+
+    expect(justfile).not.toContain("export WEB_VERSION=$(bash");
+    expect(
+      justfile.match(/WEB_VERSION="\$\(bash \.\.\/scripts\/resolve_web_version\.sh\)"/g)
+    ).toHaveLength(3);
+  });
+
+  it("JSON-escapes the version embedded in the service worker", () => {
+    const dockerfile = readFileSync(resolve(process.cwd(), "Dockerfile"), "utf8");
+
+    expect(dockerfile).toContain("JSON.stringify(process.argv[1])");
+    expect(dockerfile).not.toContain('self.__BESEDY_WEB_VERSION = "%s"');
   });
 });
