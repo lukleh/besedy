@@ -67,10 +67,13 @@ function jsonRpcRateLimited(): Response {
 const mcpHandler = createMcpHandler(
   async ({ authInfo }) => {
     const userId = authInfo?.extra?.userId;
-    if (typeof userId !== 'string') {
+    if (!authInfo || typeof userId !== 'string') {
       throw new Error('Authenticated MCP request is missing a user subject');
     }
-    return createBesedyMcpServer(userId);
+    return createBesedyMcpServer(userId, {
+      clientId: authInfo.clientId,
+      scopes: authInfo.scopes,
+    });
   },
   {
     legacy: 'stateless',

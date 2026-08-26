@@ -5,6 +5,7 @@ import {
   type McpAccessProfile,
   type McpCatalogAccess,
 } from '@/lib/mcp/access-profile';
+import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
   getMcpEvent,
   getMcpRecording,
@@ -42,6 +43,11 @@ const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 3;
 const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
+
+export interface McpConnectionContext {
+  clientId: string;
+  scopes: string[];
+}
 
 function resolveToolCatalog(
   profile: McpAccessProfile,
@@ -171,6 +177,7 @@ export function paginateCatalogs<T extends { id: string }>(
 
 export async function createBesedyMcpServer(
   userId: string,
+  connection: McpConnectionContext,
 ): Promise<McpServer> {
   const profile = await getMcpAccessProfile(userId);
   const server = new McpServer({
@@ -180,6 +187,47 @@ export async function createBesedyMcpServer(
 
   if (!profile.canEnterPortal) {
     return server;
+  }
+
+  const identity = await getMcpIdentity(userId, connection.clientId);
+  if (identity) {
+    server.registerTool(
+      'who_am_i',
+      {
+        title: 'Show current Besedy identity',
+        description:
+          'Show which Besedy account and OAuth client this MCP connection is using, including its effective access summary.',
+        inputSchema: z.object({}),
+        annotations: readOnlyAnnotations,
+      },
+      async () => {
+        const canReadProfile = connection.scopes.includes('profile');
+        const canReadEmail = connection.scopes.includes('email');
+        const result = {
+          account: {
+            id: identity.userId,
+            name: canReadProfile ? identity.name : null,
+            email: canReadEmail ? identity.email : null,
+            emailVerified: canReadEmail ? identity.emailVerified : null,
+            status: identity.status,
+            systemRole: identity.systemRole,
+          },
+          authorization: {
+            clientId: identity.clientId,
+            clientName: identity.clientName,
+            grantedScopes: connection.scopes,
+            accessibleCatalogCount: profile.catalogs.length,
+            defaultCatalogId: profile.defaultCatalogId,
+          },
+        };
+        const accountLabel =
+          result.account.email ?? result.account.name ?? identity.userId;
+        return toolSuccess(
+          result,
+          `Connected to Besedy as ${accountLabel} (${identity.systemRole}) via ${identity.clientName ?? identity.clientId}.`,
+        );
+      },
+    );
   }
 
   server.registerTool(

@@ -2,6 +2,7 @@ import { createMcpHandler } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBesedyMcpServer, paginateCatalogs } from '@/lib/mcp/server';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
+import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
   getMcpEvent,
   getMcpRecording,
@@ -13,6 +14,10 @@ import {
 
 vi.mock('@/lib/mcp/access-profile', () => ({
   getMcpAccessProfile: vi.fn(),
+}));
+
+vi.mock('@/lib/mcp/identity', () => ({
+  getMcpIdentity: vi.fn(),
 }));
 
 vi.mock('@/lib/mcp/read-service', () => ({
@@ -43,11 +48,23 @@ const envelope = {
   'io.modelcontextprotocol/clientCapabilities': {},
 };
 
-async function invokeMcp(method: string, params: Record<string, unknown> = {}) {
-  const handler = createMcpHandler(() => createBesedyMcpServer('user-1'), {
-    legacy: 'reject',
-    responseMode: 'json',
-  });
+const defaultConnection = {
+  clientId: 'client-1',
+  scopes: ['openid', 'profile', 'email', 'besedy:read'],
+};
+
+async function invokeMcp(
+  method: string,
+  params: Record<string, unknown> = {},
+  connection = defaultConnection,
+) {
+  const handler = createMcpHandler(
+    () => createBesedyMcpServer('user-1', connection),
+    {
+      legacy: 'reject',
+      responseMode: 'json',
+    },
+  );
   const name = typeof params.name === 'string' ? params.name : null;
   const response = await handler.fetch(
     new Request('http://localhost/api/mcp', {
@@ -127,6 +144,86 @@ describe('MCP server catalog pagination', () => {
 describe('MCP personalized tool surface', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getMcpIdentity).mockResolvedValue({
+      userId: 'user-1',
+      name: 'Test User',
+      email: 'user@example.com',
+      emailVerified: true,
+      status: 'ACTIVE',
+      systemRole: 'USER',
+      clientId: 'client-1',
+      clientName: 'Test MCP client',
+    });
+  });
+
+  it('reports the current account, client, scopes, and access summary', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+
+    const body = await invokeMcp('tools/call', {
+      name: 'who_am_i',
+      arguments: {},
+    });
+
+    expect(body.result?.structuredContent).toEqual({
+      account: {
+        id: 'user-1',
+        name: 'Test User',
+        email: 'user@example.com',
+        emailVerified: true,
+        status: 'ACTIVE',
+        systemRole: 'USER',
+      },
+      authorization: {
+        clientId: 'client-1',
+        clientName: 'Test MCP client',
+        grantedScopes: ['openid', 'profile', 'email', 'besedy:read'],
+        accessibleCatalogCount: 1,
+        defaultCatalogId: 'viewer-catalog',
+      },
+    });
+  });
+
+  it('withholds profile fields that were not granted to the client', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: null,
+      defaultCatalogSource: null,
+      catalogs: [],
+      aggregate: {
+        canListEvents: false,
+        canGetRecordings: false,
+        canViewTranscripts: false,
+        canSearchTranscripts: false,
+      },
+    });
+
+    const body = await invokeMcp(
+      'tools/call',
+      { name: 'who_am_i', arguments: {} },
+      { clientId: 'client-1', scopes: ['besedy:read'] },
+    );
+
+    expect(body.result?.structuredContent).toMatchObject({
+      account: {
+        name: null,
+        email: null,
+        emailVerified: null,
+      },
+      authorization: { grantedScopes: ['besedy:read'] },
+    });
   });
 
   it('returns explicit catalog authority and a structured cursor error', async () => {
@@ -194,6 +291,7 @@ describe('MCP personalized tool surface', () => {
     const body = await invokeMcp('tools/list');
     const tools = body.result?.tools as Array<{ name: string }>;
     expect(tools.map((tool) => tool.name)).toEqual([
+      'who_am_i',
       'list_catalogs',
       'list_events',
       'get_event',
@@ -222,6 +320,7 @@ describe('MCP personalized tool surface', () => {
     const body = await invokeMcp('tools/list');
     const tools = body.result?.tools as Array<{ name: string }>;
     expect(tools.map((tool) => tool.name)).toEqual([
+      'who_am_i',
       'list_catalogs',
       'list_events',
       'get_event',
