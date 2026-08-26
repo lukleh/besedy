@@ -71,6 +71,16 @@ the policy, but the policy code is authoritative.
 - Authentication: OAuth 2.1 authorization through the existing Better Auth
   installation. A client authorization ultimately uses the same Google sign-in,
   Besedy admission, user status, and session rules as the web application.
+- MCP access is a strict subset of Besedy access. A person whose email is not on
+  the preallowed users list cannot create a Besedy account or session through the
+  MCP authorization flow and therefore cannot authorize an MCP client. The
+  configured superadmin bootstrap account is the same explicit exception used by
+  the web application.
+- A pending admission is marked `CLAIMED` when the user first signs in. After
+  that claim, every MCP request checks the user's current Besedy portal status,
+  and every tool invocation checks current catalog grants and resource policy.
+  Blocking a user from Besedy therefore also blocks MCP access; an old OAuth
+  token does not bypass that check.
 - Tokens: short-lived, audience-bound JWT access tokens validated by the MCP
   endpoint.
 - OAuth client registration supports both mechanisms needed by remote clients:
