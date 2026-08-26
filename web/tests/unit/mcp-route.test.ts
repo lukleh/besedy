@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
+  getActiveMcpAuthorization: vi.fn(),
   getPortalCapability: vi.fn(),
-  hasActiveMcpAuthorization: vi.fn(),
   mcpFetch: vi.fn(),
   requireMcpAuth: vi.fn(),
 }));
@@ -21,7 +21,7 @@ vi.mock('@/lib/access/capabilities', () => ({
   getPortalCapability: mocks.getPortalCapability,
 }));
 vi.mock('@/lib/mcp/authorization', () => ({
-  hasActiveMcpAuthorization: mocks.hasActiveMcpAuthorization,
+  getActiveMcpAuthorization: mocks.getActiveMcpAuthorization,
 }));
 vi.mock('@/lib/mcp/server', () => ({
   createBesedyMcpServer: vi.fn(),
@@ -40,7 +40,9 @@ describe('MCP route hardening', () => {
 
     mocks.checkRateLimit.mockReturnValue(true);
     mocks.getPortalCapability.mockResolvedValue({ canEnterPortal: true });
-    mocks.hasActiveMcpAuthorization.mockResolvedValue(true);
+    mocks.getActiveMcpAuthorization.mockResolvedValue({
+      scopes: ['profile', 'besedy:read'],
+    });
     mocks.mcpFetch.mockResolvedValue(Response.json({ ok: true }));
     mocks.requireMcpAuth.mockImplementation(
       (
@@ -51,7 +53,7 @@ describe('MCP route hardening', () => {
           handler(request, {
             sub: 'user-1',
             azp: 'client-1',
-            scope: 'besedy:read',
+            scope: 'openid profile email besedy:read',
             exp: 2_000_000_000,
           }),
     );
@@ -141,7 +143,7 @@ describe('MCP route hardening', () => {
   });
 
   it('denies a valid JWT after its OAuth authorization is revoked', async () => {
-    mocks.hasActiveMcpAuthorization.mockResolvedValue(false);
+    mocks.getActiveMcpAuthorization.mockResolvedValue(null);
     const { POST } = await import('@/app/api/mcp/route');
 
     const response = await POST(request());
@@ -155,12 +157,13 @@ describe('MCP route hardening', () => {
       },
       id: null,
     });
-    expect(mocks.hasActiveMcpAuthorization).toHaveBeenCalledWith({
+    expect(mocks.getActiveMcpAuthorization).toHaveBeenCalledWith({
       clientId: 'client-1',
       resourceUrl: 'http://localhost:3001/api/mcp',
+      tokenScopes: ['openid', 'profile', 'email', 'besedy:read'],
       userId: 'user-1',
     });
-    expect(mocks.getPortalCapability).not.toHaveBeenCalled();
+    expect(mocks.getPortalCapability).toHaveBeenCalledWith('user-1');
     expect(mocks.mcpFetch).not.toHaveBeenCalled();
   });
 
@@ -170,9 +173,10 @@ describe('MCP route hardening', () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
-    expect(mocks.hasActiveMcpAuthorization).toHaveBeenCalledWith({
+    expect(mocks.getActiveMcpAuthorization).toHaveBeenCalledWith({
       clientId: 'client-1',
       resourceUrl: 'http://localhost:3001/api/mcp',
+      tokenScopes: ['openid', 'profile', 'email', 'besedy:read'],
       userId: 'user-1',
     });
     expect(mocks.getPortalCapability).toHaveBeenCalledWith('user-1');
@@ -191,6 +195,7 @@ describe('MCP route hardening', () => {
         authInfo: expect.objectContaining({
           clientId: 'client-1',
           extra: { userId: 'user-1' },
+          scopes: ['profile', 'besedy:read'],
         }),
       }),
     );

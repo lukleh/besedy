@@ -2,7 +2,7 @@ import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
 import { getPortalCapability } from '@/lib/access/capabilities';
-import { hasActiveMcpAuthorization } from '@/lib/mcp/authorization';
+import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
@@ -116,19 +116,22 @@ const protectedMcpHandler = resourceUrl
           return jsonRpcRateLimited();
         }
 
-        if (
-          !(await hasActiveMcpAuthorization({
+        const tokenScopes = readScopes(claims);
+        const [authorization, portal] = await Promise.all([
+          getActiveMcpAuthorization({
             clientId,
             resourceUrl,
+            tokenScopes,
             userId,
-          }))
-        ) {
+          }),
+          getPortalCapability(userId),
+        ]);
+        if (!authorization) {
           return jsonRpcAccessDenied(
             'Active Besedy MCP authorization is required',
           );
         }
 
-        const portal = await getPortalCapability(userId);
         if (!portal.canEnterPortal) {
           return jsonRpcAccessDenied('Active Besedy portal access is required');
         }
@@ -136,7 +139,7 @@ const protectedMcpHandler = resourceUrl
         const authInfo: AuthInfo = {
           token: readBearerToken(request),
           clientId,
-          scopes: readScopes(claims),
+          scopes: authorization.scopes,
           expiresAt: claims.exp,
           resource: new URL(resourceUrl),
           extra: { userId },

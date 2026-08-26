@@ -8,11 +8,13 @@ const pgMock = vi.hoisted(() => {
   return {
     client,
     connect: vi.fn().mockResolvedValue(client),
+    poolOptions: vi.fn(),
   };
 });
 
 vi.mock('pg', () => ({
-  Pool: vi.fn(function MockPool() {
+  Pool: vi.fn(function MockPool(options: unknown) {
+    pgMock.poolOptions(options);
     return { connect: pgMock.connect };
   }),
 }));
@@ -36,6 +38,7 @@ describe('MCP refresh token serialization', () => {
     pgMock.client.query.mockClear();
     pgMock.client.release.mockClear();
     pgMock.connect.mockClear();
+    pgMock.poolOptions.mockClear();
   });
 
   it('holds a PostgreSQL advisory lock while rotating a refresh token', async () => {
@@ -49,6 +52,13 @@ describe('MCP refresh token serialization', () => {
     expect(response.ok).toBe(true);
     expect(handler).toHaveBeenCalledOnce();
     expect(pgMock.connect).toHaveBeenCalledOnce();
+    expect(pgMock.poolOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max: 4,
+        connectionTimeoutMillis: 5_000,
+        statement_timeout: 15_000,
+      }),
+    );
     expect(pgMock.client.query).toHaveBeenCalledTimes(2);
     expect(pgMock.client.query.mock.calls[0]?.[0]).toContain(
       'pg_advisory_lock',
@@ -78,5 +88,37 @@ describe('MCP refresh token serialization', () => {
 
     expect(handler).toHaveBeenCalledOnce();
     expect(pgMock.connect).not.toHaveBeenCalled();
+  });
+
+  it('discards the connection when lock acquisition times out', async () => {
+    const lockError = new Error('canceling statement due to statement timeout');
+    pgMock.client.query.mockRejectedValueOnce(lockError);
+    const handler = vi.fn(async () => Response.json({ ok: true }));
+
+    await expect(
+      serializeMcpRefreshTokenGrant(tokenRequest(), handler),
+    ).rejects.toBe(lockError);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(pgMock.client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('recognizes the token endpoint under a different auth base path', async () => {
+    const handler = vi.fn(async () => Response.json({ ok: true }));
+    const request = new Request(
+      'https://besedy.example/custom/auth/oauth2/token/',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: 'test-refresh-token',
+        }),
+      },
+    );
+
+    await serializeMcpRefreshTokenGrant(request, handler);
+
+    expect(pgMock.connect).toHaveBeenCalledOnce();
   });
 });

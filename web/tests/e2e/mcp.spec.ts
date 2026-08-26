@@ -2,7 +2,10 @@ import { randomBytes, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
 import { TEST_AUDIO_FILES } from '../../prisma/test-data';
-import { MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS } from '../../src/lib/mcp/config';
+import {
+  MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+  MCP_AUTH_SCOPES,
+} from '../../src/lib/mcp/config';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3002';
 const DATABASE_URL =
@@ -10,7 +13,7 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://besedy_test:besedy_test@localhost:5434/besedy_test';
 const MCP_RESOURCE = `${BASE_URL}/api/mcp`;
-const MCP_REQUESTED_SCOPES = 'openid profile email offline_access besedy:read';
+const MCP_REQUESTED_SCOPES = MCP_AUTH_SCOPES.join(' ');
 const MCP_PROTOCOL_VERSION = '2026-07-28';
 const LEGACY_MCP_PROTOCOL_VERSION = '2025-06-18';
 const TRANSCRIPT_BACKEND = 'faster-whisper/large-v3@silero_vad_v6';
@@ -199,11 +202,26 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const retriedToken = JSON.parse(retryRefreshText) as TokenResponse;
     expect(refreshedToken).toMatchObject({
       token_type: 'Bearer',
-      expires_in: MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
       access_token: expect.any(String),
       refresh_token: expect.any(String),
     });
-    expect(retriedToken).toEqual(refreshedToken);
+    expect(retriedToken).toMatchObject({
+      token_type: refreshedToken.token_type,
+      scope: refreshedToken.scope,
+      access_token: refreshedToken.access_token,
+      refresh_token: refreshedToken.refresh_token,
+    });
+    for (const expiresIn of [
+      refreshedToken.expires_in,
+      retriedToken.expires_in,
+    ]) {
+      expect(expiresIn).toBeGreaterThanOrEqual(
+        MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS - 2,
+      );
+      expect(expiresIn).toBeLessThanOrEqual(
+        MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+      );
+    }
     token.access_token = refreshedToken.access_token;
     token.refresh_token = refreshedToken.refresh_token;
 

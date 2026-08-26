@@ -10,9 +10,9 @@ import {
 
 describe('MCP runtime configuration', () => {
   it('uses durable OAuth token and refresh-retry lifetimes', () => {
-    expect(MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS).toBe(60 * 60 * 24 * 30);
+    expect(MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS).toBe(60 * 60);
     expect(MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS).toBe(60 * 60 * 24 * 365);
-    expect(MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS).toBe(60 * 5);
+    expect(MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS).toBe(30);
   });
 
   it('defaults off in production and on in development', () => {

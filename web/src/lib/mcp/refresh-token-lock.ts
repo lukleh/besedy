@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 
-const TOKEN_ENDPOINT_PATH = '/api/auth/oauth2/token';
+const TOKEN_ENDPOINT_SUFFIX = '/oauth2/token';
+const LOCK_POOL_SIZE = 4;
+const LOCK_CONNECTION_TIMEOUT_MS = 5_000;
+const LOCK_STATEMENT_TIMEOUT_MS = 15_000;
 
 const globalForMcpRefreshLock = globalThis as unknown as {
   mcpRefreshLockPool: Pool | undefined;
@@ -17,7 +20,12 @@ function getLockPool(): Pool {
     throw new Error('DATABASE_URL environment variable is not set');
   }
 
-  lockPool = new Pool({ connectionString, max: 4 });
+  lockPool = new Pool({
+    connectionString,
+    max: LOCK_POOL_SIZE,
+    connectionTimeoutMillis: LOCK_CONNECTION_TIMEOUT_MS,
+    statement_timeout: LOCK_STATEMENT_TIMEOUT_MS,
+  });
   if (process.env.APP_ENV !== 'production') {
     globalForMcpRefreshLock.mcpRefreshLockPool = lockPool;
   }
@@ -31,7 +39,8 @@ function advisoryLockKey(refreshToken: string): [number, number] {
 }
 
 async function getRefreshToken(request: Request): Promise<string | null> {
-  if (new URL(request.url).pathname !== TOKEN_ENDPOINT_PATH) return null;
+  const pathname = new URL(request.url).pathname.replace(/\/+$/, '');
+  if (!pathname.endsWith(TOKEN_ENDPOINT_SUFFIX)) return null;
 
   try {
     const form = await request.clone().formData();

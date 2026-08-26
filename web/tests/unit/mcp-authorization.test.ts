@@ -1,62 +1,109 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  findConsent: vi.fn(),
+  findClient: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
   default: {
-    oauthConsent: { findFirst: mocks.findConsent },
+    oauthClient: { findUnique: mocks.findClient },
   },
 }));
 
-import { hasActiveMcpAuthorization } from '@/lib/mcp/authorization';
+import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
+
+const authorizationRequest = {
+  clientId: 'client-1',
+  resourceUrl: 'https://besedy.example/api/mcp',
+  tokenScopes: ['openid', 'profile', 'email', 'besedy:read'],
+  userId: 'user-1',
+};
 
 describe('MCP authorization liveness', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('requires live consent for an enabled client and resource', async () => {
-    mocks.findConsent.mockResolvedValue({ id: 'consent-1' });
+  it('returns the intersection of token scopes and live consent scopes', async () => {
+    mocks.findClient.mockResolvedValue({
+      disabled: false,
+      skipConsent: false,
+      resources: [{ resource: { disabled: false } }],
+      consents: [{ scopes: ['openid', 'profile', 'besedy:read'] }],
+    });
 
     await expect(
-      hasActiveMcpAuthorization({
-        clientId: 'client-1',
-        resourceUrl: 'https://besedy.example/api/mcp',
-        userId: 'user-1',
-      }),
-    ).resolves.toBe(true);
+      getActiveMcpAuthorization(authorizationRequest),
+    ).resolves.toEqual({
+      scopes: ['openid', 'profile', 'besedy:read'],
+    });
 
-    expect(mocks.findConsent).toHaveBeenCalledWith({
-      where: {
-        clientId: 'client-1',
-        userId: 'user-1',
-        scopes: { has: 'besedy:read' },
-        resources: { has: 'https://besedy.example/api/mcp' },
-        client: {
-          disabled: false,
-          resources: {
-            some: {
-              resourceId: 'https://besedy.example/api/mcp',
-              resource: { disabled: false },
-            },
+    expect(mocks.findClient).toHaveBeenCalledWith({
+      where: { clientId: 'client-1' },
+      select: {
+        disabled: true,
+        skipConsent: true,
+        resources: {
+          where: { resourceId: 'https://besedy.example/api/mcp' },
+          select: {
+            resource: { select: { disabled: true } },
           },
         },
+        consents: {
+          where: { userId: 'user-1' },
+          select: { scopes: true },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+        },
       },
-      select: { id: true },
     });
   });
 
-  it('rejects a token whose consent or client is no longer active', async () => {
-    mocks.findConsent.mockResolvedValue(null);
+  it('supports consent-free clients and nullable enabled flags', async () => {
+    mocks.findClient.mockResolvedValue({
+      disabled: null,
+      skipConsent: true,
+      resources: [{ resource: { disabled: null } }],
+      consents: [],
+    });
 
     await expect(
-      hasActiveMcpAuthorization({
-        clientId: 'client-1',
-        resourceUrl: 'https://besedy.example/api/mcp',
-        userId: 'user-1',
-      }),
-    ).resolves.toBe(false);
+      getActiveMcpAuthorization(authorizationRequest),
+    ).resolves.toEqual({ scopes: authorizationRequest.tokenScopes });
+  });
+
+  it('rejects consent that no longer grants MCP read access', async () => {
+    mocks.findClient.mockResolvedValue({
+      disabled: false,
+      skipConsent: false,
+      resources: [{ resource: { disabled: false } }],
+      consents: [{ scopes: ['openid', 'profile'] }],
+    });
+
+    await expect(
+      getActiveMcpAuthorization(authorizationRequest),
+    ).resolves.toBeNull();
+  });
+
+  it.each([
+    null,
+    {
+      disabled: true,
+      skipConsent: false,
+      resources: [{ resource: { disabled: false } }],
+      consents: [{ scopes: ['besedy:read'] }],
+    },
+    {
+      disabled: false,
+      skipConsent: false,
+      resources: [{ resource: { disabled: true } }],
+      consents: [{ scopes: ['besedy:read'] }],
+    },
+  ])('rejects a missing or disabled client/resource', async (client) => {
+    mocks.findClient.mockResolvedValue(client);
+
+    await expect(
+      getActiveMcpAuthorization(authorizationRequest),
+    ).resolves.toBeNull();
   });
 });
