@@ -10,7 +10,7 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
-env_file="$($script_dir/resolve_web_env_file.sh "$mode")"
+env_file="$("$script_dir/resolve_web_env_file.sh" "$mode")"
 
 set -a
 # shellcheck disable=SC1090
@@ -36,14 +36,6 @@ if [[ "$mode" == "production" && "$config_file" != /* ]]; then
   fail "CONFIG_FILE must be an absolute host path outside the checkout; got $config_file"
 fi
 
-if [[ "$mode" == "production" ]]; then
-  case "$config_file" in
-    "$repo_root" | "$repo_root"/*)
-      fail "CONFIG_FILE must live outside the checkout; symlinks inside it are not allowed: $config_file"
-      ;;
-  esac
-fi
-
 resolved_config="$config_file"
 if [[ "$resolved_config" != /* ]]; then
   resolved_config="$repo_root/web/${resolved_config#./}"
@@ -53,6 +45,16 @@ fi
   "CONFIG_FILE does not exist: $resolved_config (Docker would create a directory at a missing bind source)"
 [[ -f "$resolved_config" ]] || fail "CONFIG_FILE is not a regular file: $resolved_config"
 [[ -r "$resolved_config" ]] || fail "CONFIG_FILE is not readable by the deployment user: $resolved_config"
+resolved_parent="$(realpath -e "$(dirname "$resolved_config")")"
+
+if [[ "$mode" == "production" ]]; then
+  case "$resolved_parent" in
+    "$repo_root" | "$repo_root"/*)
+      fail "CONFIG_FILE must live outside the checkout; symlinks inside it are not allowed: $resolved_config"
+      ;;
+  esac
+fi
+
 resolved_config="$(realpath -e "$resolved_config")"
 
 if [[ "$mode" == "production" ]]; then

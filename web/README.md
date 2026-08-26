@@ -255,6 +255,13 @@ just test-down-clean # Stop and delete volumes
 | `.env.prod.example` | Template for production config |
 | `.env.local` | Next.js local overrides (gitignored) |
 
+Test env files copied before the web-version rollout need these entries added:
+
+```dotenv
+CONFIG_FILE=./besedy.docker.toml
+CONFIG_MOUNT=/data/config/besedy.docker.toml
+```
+
 ## Docker Compose Structure
 
 The app uses a unified `docker-compose.yml` with profiles:

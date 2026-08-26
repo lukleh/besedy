@@ -46,7 +46,7 @@ ARG WEB_VERSION=unknown
 ENV NEXT_PUBLIC_WEB_VERSION=${WEB_VERSION}
 # Service-worker updates are byte-compared by browsers. Stamp it only when the
 # tracked web application changes, not for unrelated repository commits.
-RUN printf '\nself.__BESEDY_WEB_VERSION = "%s";\n' "$WEB_VERSION" >> public/sw.js \
+RUN node -e 'require("node:fs").appendFileSync("public/sw.js", `\nself.__BESEDY_WEB_VERSION = ${JSON.stringify(process.argv[1])};\n`)' "$WEB_VERSION" \
     && npm run build
 
 # Production target

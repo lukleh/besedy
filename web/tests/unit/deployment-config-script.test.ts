@@ -1,13 +1,6 @@
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -39,7 +32,7 @@ describe("validate_web_config_mount.sh", () => {
         "CONFIG_MOUNT=/data/config/besedy.toml",
         "BESEDY_CONFIG=/data/config/besedy.toml",
         ...overrides,
-        "",
+        ""
       ].join("\n")
     );
 
@@ -48,14 +41,14 @@ describe("validate_web_config_mount.sh", () => {
       env: {
         ...process.env,
         BESEDY_WEB_ENV_PROD: "",
-        XDG_CONFIG_HOME: resolve(testRoot, "config"),
-      },
+        XDG_CONFIG_HOME: resolve(testRoot, "config")
+      }
     });
   }
 
   it("accepts an absolute, container-readable regular file", () => {
     const configFile = resolve(testRoot, "besedy.container.toml");
-    writeFileSync(configFile, "[paths]\ntext_data_dir = \"/data/text\"\n");
+    writeFileSync(configFile, '[paths]\ntext_data_dir = "/data/text"\n');
     chmodSync(configFile, 0o644);
 
     const result = validate(configFile);
@@ -88,7 +81,7 @@ describe("validate_web_config_mount.sh", () => {
         `CONFIG_FILE=${missingConfig}`,
         "CONFIG_MOUNT=/data/config/besedy.toml",
         "BESEDY_CONFIG=/data/config/besedy.toml",
-        "",
+        ""
       ].join("\n")
     );
 
@@ -97,8 +90,8 @@ describe("validate_web_config_mount.sh", () => {
       env: {
         ...process.env,
         BESEDY_WEB_ENV_PROD: "",
-        XDG_CONFIG_HOME: resolve(testRoot, "config"),
-      },
+        XDG_CONFIG_HOME: resolve(testRoot, "config")
+      }
     });
 
     expect(result.status).toBe(1);
@@ -114,13 +107,36 @@ describe("validate_web_config_mount.sh", () => {
 
   it("rejects a symlink inside the checkout even when its target is external", () => {
     const externalConfig = resolve(testRoot, "besedy.container.toml");
-    writeFileSync(externalConfig, "[paths]\ntext_data_dir = \"/data/text\"\n");
+    writeFileSync(externalConfig, '[paths]\ntext_data_dir = "/data/text"\n');
     chmodSync(externalConfig, 0o644);
     checkoutTemp = mkdtempSync(resolve(process.cwd(), ".config-link-"));
     const configLink = resolve(checkoutTemp, "besedy.container.toml");
     symlinkSync(externalConfig, configLink);
 
     const result = validate(configLink);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("symlinks inside it are not allowed");
+  });
+
+  it("rejects a checkout symlink reached through an alternate checkout spelling", () => {
+    const externalConfig = resolve(testRoot, "besedy.container.toml");
+    writeFileSync(externalConfig, '[paths]\ntext_data_dir = "/data/text"\n');
+    chmodSync(externalConfig, 0o644);
+    checkoutTemp = mkdtempSync(resolve(process.cwd(), ".config-link-"));
+    const configLink = resolve(checkoutTemp, "besedy.container.toml");
+    symlinkSync(externalConfig, configLink);
+
+    const checkoutAlias = resolve(testRoot, "checkout-alias");
+    symlinkSync(resolve(process.cwd(), ".."), checkoutAlias, "dir");
+    const aliasedConfigLink = resolve(
+      checkoutAlias,
+      "web",
+      basename(checkoutTemp),
+      "besedy.container.toml"
+    );
+
+    const result = validate(aliasedConfigLink);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("symlinks inside it are not allowed");
@@ -138,7 +154,7 @@ describe("validate_web_config_mount.sh", () => {
 
   it("rejects a file the production container user cannot read", () => {
     const configFile = resolve(testRoot, "besedy.container.toml");
-    writeFileSync(configFile, "[paths]\ntext_data_dir = \"/data/text\"\n");
+    writeFileSync(configFile, '[paths]\ntext_data_dir = "/data/text"\n');
     chmodSync(configFile, 0o640);
 
     const result = validate(configFile);
@@ -149,12 +165,14 @@ describe("validate_web_config_mount.sh", () => {
 
   it("rejects a runtime path that differs from the mount target", () => {
     const configFile = resolve(testRoot, "besedy.container.toml");
-    writeFileSync(configFile, "[paths]\ntext_data_dir = \"/data/text\"\n");
+    writeFileSync(configFile, '[paths]\ntext_data_dir = "/data/text"\n');
     chmodSync(configFile, 0o644);
 
     const result = validate(configFile, ["BESEDY_CONFIG=/data/config/other.toml"]);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("BESEDY_CONFIG (/data/config/other.toml) must match CONFIG_MOUNT");
+    expect(result.stderr).toContain(
+      "BESEDY_CONFIG (/data/config/other.toml) must match CONFIG_MOUNT"
+    );
   });
 });

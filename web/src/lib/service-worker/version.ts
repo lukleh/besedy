@@ -9,12 +9,14 @@ export function selectObservedWebVersion(
   clientVersion: string | null | undefined
 ): string | null {
   const normalizedWebVersion = normalizeWebVersion(webVersion);
-  if (normalizedWebVersion) return normalizedWebVersion;
-
-  // Content fingerprints and commit hashes are different identity domains.
-  // Falling back to a commit while a fingerprinted client is running creates a
-  // permanent false mismatch during mixed-version deployments.
   const normalizedClientVersion = normalizeWebVersion(clientVersion);
-  if (normalizedClientVersion?.startsWith("web-v")) return null;
+  if (normalizedClientVersion?.startsWith("web-v")) {
+    // Content fingerprints and commit hashes are different identity domains.
+    // Older servers can expose their commit through either field, so accept
+    // only a fingerprint while a fingerprinted client is running.
+    return normalizedWebVersion?.startsWith("web-v") ? normalizedWebVersion : null;
+  }
+
+  if (normalizedWebVersion) return normalizedWebVersion;
   return normalizeWebVersion(commit);
 }
