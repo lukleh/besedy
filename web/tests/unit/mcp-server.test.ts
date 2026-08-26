@@ -326,6 +326,47 @@ describe('MCP personalized tool surface', () => {
     );
   });
 
+  it('applies compact transcript pagination defaults', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+    vi.mocked(getMcpTranscript).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      audioHash: 'a'.repeat(64),
+      segments: { items: [], totalMatching: 0, nextOffset: null },
+    } as unknown as Awaited<ReturnType<typeof getMcpTranscript>>);
+
+    const body = await invokeMcp('tools/call', {
+      name: 'get_transcript',
+      arguments: { audioHash: 'a'.repeat(64) },
+    });
+
+    expect(body.error).toBeUndefined();
+    expect(getMcpTranscript).toHaveBeenCalledWith(
+      'user-1',
+      'viewer-catalog',
+      'a'.repeat(64),
+      {
+        backend: undefined,
+        startSec: undefined,
+        endSec: undefined,
+        segmentOffset: 0,
+        segmentLimit: 50,
+        maxTextChars: 20_000,
+      },
+    );
+  });
+
   it('still denies a transcript call against a listener catalog', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',

@@ -433,7 +433,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           arguments: {
             audioHash,
             backend: TRANSCRIPT_BACKEND,
-            limit: 1,
+            segmentLimit: 1,
           },
           _meta: envelope,
         },
@@ -444,17 +444,22 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogId: string;
         audioHash: string;
+        recordingWebUrl: string;
         backend: string;
         language: string;
-        segments: Array<{
-          id: number;
-          text: string;
-          startSec: number;
-          endSec: number;
-          speaker: string;
-        }>;
-        totalMatchingSegments: number;
-        nextOffset: number | null;
+        segments: {
+          items: Array<{
+            segmentIndex: number;
+            id: number;
+            text: string;
+            startSec: number;
+            endSec: number;
+            speaker: string;
+          }>;
+          returnedTextChars: number;
+          totalMatching: number;
+          nextOffset: number | null;
+        };
       }>
     >;
     expect(transcriptBody.error).toBeUndefined();
@@ -465,20 +470,27 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(transcriptBody.result?.structuredContent).toMatchObject({
       catalogId: result?.defaultCatalogId,
       audioHash,
+      recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
       backend: TRANSCRIPT_BACKEND,
       language: 'cs',
-      totalMatchingSegments: 2,
-      nextOffset: 1,
-      segments: [
-        {
-          id: 0,
-          text: 'Besedy MCP transcript fixture opens the discussion.',
-          startSec: 0,
-          endSec: 5,
-          speaker: 'SPEAKER_00',
-        },
-      ],
+      segments: {
+        totalMatching: 2,
+        nextOffset: 1,
+        items: [
+          {
+            segmentIndex: 0,
+            id: 0,
+            text: 'Besedy MCP transcript fixture opens the discussion.',
+            startSec: 0,
+            endSec: 5,
+            speaker: 'SPEAKER_00',
+          },
+        ],
+      },
     });
+    expect(
+      transcriptBody.result?.structuredContent.segments.returnedTextChars,
+    ).toBe('Besedy MCP transcript fixture opens the discussion.'.length);
 
     const searchResponse = await request.post(MCP_RESOURCE, {
       headers: {

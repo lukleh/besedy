@@ -30,8 +30,10 @@ const DEFAULT_EVENT_RECORDING_LIMIT = 25;
 const MAX_EVENT_RECORDING_LIMIT = 100;
 const DEFAULT_RECORDING_EVENT_LIMIT = 25;
 const MAX_RECORDING_EVENT_LIMIT = 100;
-const DEFAULT_TRANSCRIPT_SEGMENT_LIMIT = 100;
+const DEFAULT_TRANSCRIPT_SEGMENT_LIMIT = 50;
 const MAX_TRANSCRIPT_SEGMENT_LIMIT = 200;
+const DEFAULT_TRANSCRIPT_TEXT_CHAR_LIMIT = 20_000;
+const MAX_TRANSCRIPT_TEXT_CHAR_LIMIT = 50_000;
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 20;
 
@@ -80,6 +82,12 @@ function toolError(code: string, message: string) {
     content: [{ type: 'text' as const, text: JSON.stringify(result) }],
     structuredContent: result,
   };
+}
+
+function getPageItemCount(page: unknown): number {
+  if (!page || typeof page !== 'object') return 0;
+  const items = (page as { items?: unknown }).items;
+  return Array.isArray(items) ? items.length : 0;
 }
 
 async function runReadTool(
@@ -282,20 +290,26 @@ export async function createBesedyMcpServer(
       {
         title: 'Get a Besedy transcript',
         description:
-          'Get a bounded segment page from an accessible recording transcript.',
+          'Get a time-windowed, character-bounded segment page from an accessible recording transcript.',
         inputSchema: z.object({
           catalogId: z.string().min(1).optional(),
           audioHash: HashSchema,
           backend: TranscriptBackendSchema.optional(),
           startSec: z.number().min(0).optional(),
           endSec: z.number().positive().optional(),
-          offset: z.number().int().min(0).default(0),
-          limit: z
+          segmentOffset: z.number().int().min(0).default(0),
+          segmentLimit: z
             .number()
             .int()
             .min(1)
             .max(MAX_TRANSCRIPT_SEGMENT_LIMIT)
             .default(DEFAULT_TRANSCRIPT_SEGMENT_LIMIT),
+          maxTextChars: z
+            .number()
+            .int()
+            .min(1_000)
+            .max(MAX_TRANSCRIPT_TEXT_CHAR_LIMIT)
+            .default(DEFAULT_TRANSCRIPT_TEXT_CHAR_LIMIT),
         }),
         annotations: readOnlyAnnotations,
       },
@@ -305,8 +319,9 @@ export async function createBesedyMcpServer(
         backend,
         startSec,
         endSec,
-        offset,
-        limit,
+        segmentOffset,
+        segmentLimit,
+        maxTextChars,
       }) => {
         const catalog = resolveToolCatalog(
           profile,
@@ -320,11 +335,12 @@ export async function createBesedyMcpServer(
               backend,
               startSec,
               endSec,
-              offset,
-              limit,
+              segmentOffset,
+              segmentLimit,
+              maxTextChars,
             }),
           (result) =>
-            `Returned ${Array.isArray(result.segments) ? result.segments.length : 0} transcript segment(s) for Besedy recording ${audioHash}.`,
+            `Returned ${getPageItemCount(result.segments)} transcript segment(s) for Besedy recording ${audioHash}.`,
         );
       },
     );

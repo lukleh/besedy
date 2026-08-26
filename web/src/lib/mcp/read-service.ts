@@ -52,8 +52,9 @@ export interface McpTranscriptInput {
   backend?: TranscriptBackend;
   startSec?: number;
   endSec?: number;
-  offset: number;
-  limit: number;
+  segmentOffset: number;
+  segmentLimit: number;
+  maxTextChars: number;
 }
 
 export interface McpEventRecordingPageInput {
@@ -459,41 +460,63 @@ export async function getMcpTranscript(
     throw new McpReadError('transcript_not_found', 'Transcript not found');
   }
 
-  const matchingSegments = transcript.segments.filter(
-    (segment) =>
-      (input.startSec === undefined || segment.end >= input.startSec) &&
-      (input.endSec === undefined || segment.start <= input.endSec),
+  const matchingSegments = transcript.segments
+    .map((segment, segmentIndex) => ({ segment, segmentIndex }))
+    .filter(
+      ({ segment }) =>
+        (input.startSec === undefined || segment.end > input.startSec) &&
+        (input.endSec === undefined || segment.start < input.endSec),
+    );
+  const candidates = matchingSegments.slice(
+    input.segmentOffset,
+    input.segmentOffset + input.segmentLimit,
   );
-  const segments = matchingSegments
-    .slice(input.offset, input.offset + input.limit)
-    .map(({ id, text, start, end, speaker }) => ({
-      id: id ?? null,
-      text,
-      startSec: start,
-      endSec: end,
-      speaker: speaker ?? null,
-    }));
+  const segments = [];
+  let returnedTextChars = 0;
+  for (const { segment, segmentIndex } of candidates) {
+    const textChars = segment.text.length;
+    if (
+      segments.length > 0 &&
+      returnedTextChars + textChars > input.maxTextChars
+    ) {
+      break;
+    }
+    segments.push({
+      segmentIndex,
+      id: segment.id ?? null,
+      text: segment.text,
+      startSec: segment.start,
+      endSec: segment.end,
+      speaker: segment.speaker ?? null,
+    });
+    returnedTextChars += textChars;
+  }
   const nextOffset =
-    input.offset + segments.length < matchingSegments.length
-      ? input.offset + segments.length
+    input.segmentOffset + segments.length < matchingSegments.length
+      ? input.segmentOffset + segments.length
       : null;
 
   return {
     catalogId,
     audioHash,
+    recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
     backend,
     availableBackends: available.backends,
     language: transcript.language ?? null,
     durationSec: transcript.duration ?? null,
-    window: {
+    timeWindow: {
       startSec: input.startSec ?? null,
       endSec: input.endSec ?? null,
-      offset: input.offset,
-      limit: input.limit,
     },
-    segments,
-    totalMatchingSegments: matchingSegments.length,
-    nextOffset,
+    segments: {
+      items: segments,
+      offset: input.segmentOffset,
+      limit: input.segmentLimit,
+      maxTextChars: input.maxTextChars,
+      returnedTextChars,
+      totalMatching: matchingSegments.length,
+      nextOffset,
+    },
   };
 }
 

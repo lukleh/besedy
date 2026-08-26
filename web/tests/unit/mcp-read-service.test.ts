@@ -5,9 +5,11 @@ import {
   getPublishedVisibleEventIds,
 } from '@/lib/catalog-events/visibility';
 import { getRecordingCapability } from '@/lib/access/capabilities';
+import { getAvailableTranscripts, loadTranscript } from '@/lib/transcript';
 import {
   getMcpEvent,
   getMcpRecording,
+  getMcpTranscript,
   listMcpEvents,
 } from '@/lib/mcp/read-service';
 
@@ -22,6 +24,19 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/access/capabilities', () => ({
   getRecordingCapability: vi.fn(),
+}));
+
+vi.mock('@/lib/transcript', () => ({
+  getAvailableTranscripts: vi.fn(),
+  loadTranscript: vi.fn(),
+}));
+
+vi.mock('@/lib/transcript-priority', () => ({
+  listTranscriptBackendPriorities: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('@/lib/paths', () => ({
+  resolveTranscriptsPath: vi.fn().mockReturnValue('/transcripts/catalog-a'),
 }));
 
 vi.mock('@/lib/catalog-events/visibility', () => ({
@@ -60,8 +75,37 @@ describe('MCP read service', () => {
     );
     vi.mocked(getRecordingCapability).mockResolvedValue({
       canAccessRecording: true,
+      canViewRecordingTranscripts: true,
       catalogGrant: 'VIEWER',
     } as Awaited<ReturnType<typeof getRecordingCapability>>);
+    vi.mocked(getAvailableTranscripts).mockResolvedValue({
+      hash: 'visible-recording',
+      backends: ['whisperx/model'],
+    });
+    vi.mocked(loadTranscript).mockResolvedValue({
+      hash: 'visible-recording',
+      backend: 'whisperx/model',
+      language: 'cs',
+      duration: 20,
+      segments: [
+        { id: 10, text: 'before', start: 0, end: 5 },
+        {
+          id: 11,
+          text: 'a'.repeat(700),
+          start: 5,
+          end: 10,
+          speaker: 'SPEAKER_00',
+        },
+        {
+          id: 12,
+          text: 'b'.repeat(700),
+          start: 10,
+          end: 15,
+          speaker: 'SPEAKER_01',
+        },
+        { id: 13, text: 'after', start: 15, end: 20 },
+      ],
+    });
     db.catalogEvent.findMany.mockResolvedValue([
       {
         id: 42,
@@ -322,5 +366,51 @@ describe('MCP read service', () => {
       where: permissionScopedWhere,
     });
     expect(result.events.totalVisible).toBe(1);
+  });
+
+  it('returns a half-open time range bounded by transcript text size', async () => {
+    const result = await getMcpTranscript(
+      'user-1',
+      'catalog-a',
+      'visible-recording',
+      {
+        backend: 'whisperx/model',
+        startSec: 5,
+        endSec: 15,
+        segmentOffset: 0,
+        segmentLimit: 50,
+        maxTextChars: 1_000,
+      },
+    );
+
+    expect(result).toMatchObject({
+      catalogId: 'catalog-a',
+      audioHash: 'visible-recording',
+      recordingWebUrl:
+        'https://besedy.example/catalog/catalog-a/recording/visible-recording',
+      backend: 'whisperx/model',
+      availableBackends: ['whisperx/model'],
+      language: 'cs',
+      durationSec: 20,
+      timeWindow: { startSec: 5, endSec: 15 },
+      segments: {
+        items: [
+          {
+            segmentIndex: 1,
+            id: 11,
+            text: 'a'.repeat(700),
+            startSec: 5,
+            endSec: 10,
+            speaker: 'SPEAKER_00',
+          },
+        ],
+        offset: 0,
+        limit: 50,
+        maxTextChars: 1_000,
+        returnedTextChars: 700,
+        totalMatching: 2,
+        nextOffset: 1,
+      },
+    });
   });
 });

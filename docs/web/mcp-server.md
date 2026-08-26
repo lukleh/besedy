@@ -181,9 +181,15 @@ audio hash. `get_recording` accepts an optional `eventOffset` (default 0) and
 `eventLimit` from 1 to 100 (default 25). It returns detailed metadata with an
 authenticated recording `webUrl` and a permission-scoped event page containing
 `items`, `totalVisible`, and `nextOffset`; every linked event also has a
-`webUrl`. Transcript responses are windowable by time and paged by segment
-offset, with at most 200 segments per call. Search accepts up to 1,000 query
-characters and returns at most 20 grounded matches per call.
+`webUrl`. `get_transcript` accepts a half-open time range through `startSec`
+(inclusive) and `endSec` (exclusive), plus `segmentOffset`, `segmentLimit`, and
+`maxTextChars`. Defaults cap each response at 50 segments and approximately
+20,000 transcript characters; hard maxima are 200 segments and 50,000
+characters. Each result includes the authenticated recording `webUrl`, the
+selected and available backends, and a segment page with absolute
+`segmentIndex` values, `totalMatching`, and `nextOffset`. Search accepts up to
+1,000 query characters and returns at most 20 grounded matches per call. Agents
+should normally search first, then fetch only the relevant transcript range.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
