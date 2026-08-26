@@ -207,12 +207,18 @@ filesystem paths or audio URLs.
 
 | Tool                 | Purpose                                                       | Minimum catalog capability          |
 | -------------------- | ------------------------------------------------------------- | ----------------------------------- |
+| `who_am_i`           | Show the current account and OAuth connection                   | Active portal user                  |
 | `list_catalogs`      | List accessible catalogs and their capabilities               | Active portal user                  |
 | `list_events`        | Page/filter visible events and their metadata                 | Catalog access                      |
 | `get_event`          | Get one visible event and paged recording summaries           | Catalog access and event visibility |
 | `get_recording`      | Get metadata for one visible recording                        | Recording visibility                |
 | `get_transcript`     | Get a recording transcript, optionally by time/segment window | `canViewTranscripts`                |
 | `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canSearchTranscripts`              |
+
+`who_am_i` always reports the authenticated account ID, OAuth client, effective
+scopes, and catalog-access summary. Account name, status, and system role are
+included only with the `profile` scope; email and verification status require
+the `email` scope.
 
 `list_catalogs` accepts an optional cursor and a `limit` from 1 to 100 (default
 50). Its response includes `nextCursor`, `defaultCatalogId`, and

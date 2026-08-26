@@ -26,9 +26,6 @@ describe('MCP identity', () => {
       name: 'Lukas',
       email: 'lukas@example.com',
       emailVerified: true,
-      status: 'ACTIVE',
-      isAdmin: true,
-      isSuperadmin: false,
     });
 
     await expect(getMcpIdentity('user-1', 'client-1')).resolves.toEqual({
@@ -36,27 +33,23 @@ describe('MCP identity', () => {
       name: 'Lukas',
       email: 'lukas@example.com',
       emailVerified: true,
-      status: 'ACTIVE',
-      systemRole: 'ADMIN',
       clientId: 'client-1',
       clientName: 'Codex',
     });
   });
 
-  it('prefers the superadmin role and tolerates missing client metadata', async () => {
+  it('tolerates missing account and client profile metadata', async () => {
     mocks.findUser.mockResolvedValue({
       id: 'user-1',
       name: null,
       email: null,
       emailVerified: false,
-      status: 'ACTIVE',
-      isAdmin: true,
-      isSuperadmin: true,
     });
     mocks.findClient.mockResolvedValue(null);
 
     await expect(getMcpIdentity('user-1', 'client-1')).resolves.toMatchObject({
-      systemRole: 'SUPERADMIN',
+      name: null,
+      email: null,
       clientName: null,
     });
   });

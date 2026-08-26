@@ -215,8 +215,8 @@ export async function createBesedyMcpServer(
           name: canReadProfile ? identity.name : null,
           email: canReadEmail ? identity.email : null,
           emailVerified: canReadEmail ? identity.emailVerified : null,
-          status: identity.status,
-          systemRole: identity.systemRole,
+          status: canReadProfile ? profile.userStatus : null,
+          systemRole: canReadProfile ? profile.systemRole : null,
         },
         authorization: {
           clientId: identity.clientId,
@@ -228,9 +228,10 @@ export async function createBesedyMcpServer(
       };
       const accountLabel =
         result.account.email ?? result.account.name ?? identity.userId;
+      const roleLabel = canReadProfile ? ` (${profile.systemRole})` : '';
       return toolSuccess(
         result,
-        `Connected to Besedy as ${accountLabel} (${identity.systemRole}) via ${identity.clientName ?? identity.clientId}.`,
+        `Connected to Besedy as ${accountLabel}${roleLabel} via ${identity.clientName ?? identity.clientId}.`,
       );
     },
   );

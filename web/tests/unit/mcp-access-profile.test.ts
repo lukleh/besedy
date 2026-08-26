@@ -67,6 +67,10 @@ describe('MCP access profile', () => {
   it('derives listener and viewer MCP capabilities from canonical policy', async () => {
     const profile = await getMcpAccessProfile('user-1');
 
+    expect(profile).toMatchObject({
+      userStatus: 'ACTIVE',
+      systemRole: 'USER',
+    });
     expect(profile.catalogs).toEqual([
       expect.objectContaining({
         id: 'catalog-listener',
@@ -119,6 +123,8 @@ describe('MCP access profile', () => {
     });
 
     await expect(getMcpAccessProfile('blocked-1')).resolves.toMatchObject({
+      userStatus: 'BLOCKED',
+      systemRole: 'USER',
       canEnterPortal: false,
       catalogs: [],
     });
@@ -143,6 +149,10 @@ describe('MCP access profile', () => {
 
     const profile = await getMcpAccessProfile('admin-1');
 
+    expect(profile).toMatchObject({
+      userStatus: 'ACTIVE',
+      systemRole: 'ADMIN',
+    });
     expect(profile.catalogs[0]).toMatchObject({
       catalogGrant: null,
       isCatalogAdmin: true,

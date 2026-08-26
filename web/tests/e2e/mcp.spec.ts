@@ -379,20 +379,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const identityResponseText = await identityResponse.text();
     expect(identityResponse.ok(), identityResponseText).toBe(true);
     const identityBody = JSON.parse(identityResponseText) as McpResponse<
-      McpToolResult<{
-        account: {
-          id: string;
-          name: string | null;
-          email: string | null;
-          status: string;
-          systemRole: string;
-        };
-        authorization: {
-          clientId: string;
-          clientName: string | null;
-          grantedScopes: string[];
-        };
-      }>
+      McpToolResult<Record<string, unknown>>
     >;
     expect(identityBody.result?.structuredContent).toMatchObject({
       account: {

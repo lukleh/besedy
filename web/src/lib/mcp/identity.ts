@@ -1,14 +1,10 @@
-import type { UserStatus } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
-import type { SystemRole } from '@/lib/policy/actor';
 
 export interface McpIdentity {
   userId: string;
   name: string | null;
   email: string | null;
   emailVerified: boolean;
-  status: UserStatus;
-  systemRole: SystemRole;
   clientId: string;
   clientName: string | null;
 }
@@ -25,9 +21,6 @@ export async function getMcpIdentity(
         name: true,
         email: true,
         emailVerified: true,
-        status: true,
-        isAdmin: true,
-        isSuperadmin: true,
       },
     }),
     prisma.oauthClient.findUnique({
@@ -43,12 +36,6 @@ export async function getMcpIdentity(
     name: user.name,
     email: user.email,
     emailVerified: user.emailVerified,
-    status: user.status,
-    systemRole: user.isSuperadmin
-      ? 'SUPERADMIN'
-      : user.isAdmin
-        ? 'ADMIN'
-        : 'USER',
     clientId,
     clientName: client?.name ?? null,
   };

@@ -53,6 +53,11 @@ const defaultConnection = {
   scopes: ['openid', 'profile', 'email', 'besedy:read'],
 };
 
+const activeProfileFields = {
+  userStatus: 'ACTIVE',
+  systemRole: 'USER',
+} as const;
+
 async function invokeMcp(
   method: string,
   params: Record<string, unknown> = {},
@@ -149,8 +154,6 @@ describe('MCP personalized tool surface', () => {
       name: 'Test User',
       email: 'user@example.com',
       emailVerified: true,
-      status: 'ACTIVE',
-      systemRole: 'USER',
       clientId: 'client-1',
       clientName: 'Test MCP client',
     });
@@ -159,6 +162,7 @@ describe('MCP personalized tool surface', () => {
   it('reports the current account, client, scopes, and access summary', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -200,6 +204,7 @@ describe('MCP personalized tool surface', () => {
   it('withholds profile fields that were not granted to the client', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -223,14 +228,50 @@ describe('MCP personalized tool surface', () => {
         name: null,
         email: null,
         emailVerified: null,
+        status: null,
+        systemRole: null,
       },
       authorization: { grantedScopes: ['besedy:read'] },
+    });
+  });
+
+  it('returns a structured error when the account no longer exists', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: null,
+      defaultCatalogSource: null,
+      catalogs: [],
+      aggregate: {
+        canListEvents: false,
+        canGetRecordings: false,
+        canViewTranscripts: false,
+        canSearchTranscripts: false,
+      },
+    });
+    vi.mocked(getMcpIdentity).mockResolvedValueOnce(null);
+
+    const body = await invokeMcp('tools/call', {
+      name: 'who_am_i',
+      arguments: {},
+    });
+
+    expect(body.result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: {
+          code: 'identity_unavailable',
+          message: 'The authenticated Besedy account is no longer available',
+        },
+      },
     });
   });
 
   it('returns explicit catalog authority and a structured cursor error', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'global_default',
@@ -278,6 +319,7 @@ describe('MCP personalized tool surface', () => {
   it('omits transcript-derived tools for a listener-only user', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'listener-catalog',
       defaultCatalogSource: 'global_default',
@@ -305,6 +347,7 @@ describe('MCP personalized tool surface', () => {
   it('exposes the complete read surface when any catalog permits it', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -336,6 +379,7 @@ describe('MCP personalized tool surface', () => {
   it('uses the effective default catalog when catalogId is omitted', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -378,6 +422,7 @@ describe('MCP personalized tool surface', () => {
   it('applies bounded recording pagination defaults to get_event', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -409,6 +454,7 @@ describe('MCP personalized tool surface', () => {
   it('applies bounded event pagination defaults to get_recording', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -443,6 +489,7 @@ describe('MCP personalized tool surface', () => {
   it('applies compact transcript pagination defaults', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -506,6 +553,7 @@ describe('MCP personalized tool surface', () => {
   it('applies compact transcript search defaults', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -567,6 +615,7 @@ describe('MCP personalized tool surface', () => {
   it('still denies a transcript call against a listener catalog', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -600,6 +649,7 @@ describe('MCP personalized tool surface', () => {
   it('marks transient read failures as retryable', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
+      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
