@@ -4,7 +4,6 @@ import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt } from "better-auth/plugins";
 import { cimd } from "@better-auth/cimd";
-import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { mcp } from "@better-auth/mcp";
 import prisma from "@/lib/db";
 import { getSuperadminEmail } from "@/lib/config";
@@ -26,6 +25,7 @@ import {
   isMcpEnabled,
   MCP_AUTH_SCOPES,
 } from "@/lib/mcp/config";
+import { fetchCimdClientMetadataResource } from "@/lib/auth/cimd-fetch";
 
 const appEnv = process.env.APP_ENV;
 const mockOAuthUrl = process.env.OAUTH_MOCK_URL?.trim();
@@ -143,7 +143,7 @@ export const auth = betterAuth({
             allowPublicClientPrelogin: true,
           }),
           cimd({
-            fetchClientMetadataResource,
+            fetchClientMetadataResource: fetchCimdClientMetadataResource,
             metadataProfile: "mcp-2026-07-28",
           }),
         ]
