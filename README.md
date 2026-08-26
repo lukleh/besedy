@@ -42,6 +42,9 @@ support multilingual archives.
 - Separate speakers with pyannote and build a search index across transcripts.
 - Browse recordings, stream audio, read transcripts, and search spoken content
   from the web app.
+- Connect AI agents through the read-only MCP server to inspect event and
+  recording metadata, retrieve bounded transcript passages, and search across
+  transcripts.
 
 You can use the processing toolkit on its own or run it together with the web
 app.
@@ -53,13 +56,54 @@ This repository contains two parts:
 - **Processing toolkit** (`besedy/`) — a Python CLI for cataloging, preparing,
   transcribing, diarizing, and indexing recordings.
 - **Web app** (`web/`) — a Next.js interface for browsing the resulting archive,
-  listening to recordings, and searching transcripts. See
+  listening to recordings, searching transcripts, and serving the authenticated
+  MCP endpoint. See
   [web/README.md](web/README.md) for setup.
 
 ```text
 recordings → catalog and prepare → transcribe and identify speakers
            → index transcripts → browse, listen, and search
 ```
+
+## AI agent access (MCP)
+
+The Besedy web service includes a remote, read-only
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for AI
+agents. It exposes catalog, event, and recording metadata together with bounded
+transcript retrieval and semantic transcript search. It does not expose audio
+bytes, storage paths, mutations, administrative operations, or background-job
+controls.
+
+The maintainer deployment endpoint is:
+
+```text
+https://besedy.org/api/mcp
+```
+
+Access uses the same Google sign-in and preallowed-user admission as the Besedy
+web app. Available tools and returned data are derived from the user's live
+catalog permissions. When no catalog is specified, catalog-scoped tools use the
+user's effective default catalog according to the resolution order described in
+the MCP server reference below.
+
+Add the deployed server to Codex CLI:
+
+```bash
+codex mcp add besedy --url https://besedy.org/api/mcp
+codex mcp login besedy
+```
+
+Or to Claude Code:
+
+```bash
+claude mcp add --transport http --scope user besedy https://besedy.org/api/mcp
+claude mcp login besedy
+```
+
+The login command opens the Besedy OAuth flow in a browser; no Google credential
+or bearer token is pasted into the client configuration. See the
+[MCP server reference](docs/web/mcp-server.md) for the tool contracts, access
+matrix, authentication design, self-hosted enablement, and local smoke test.
 
 ## Get started
 
