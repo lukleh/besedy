@@ -72,7 +72,7 @@ const mcpHandler = createMcpHandler(
     return createBesedyMcpServer(userId);
   },
   {
-    legacy: 'reject',
+    legacy: 'stateless',
     responseMode: 'json',
   },
 );

@@ -10,6 +10,7 @@ const DATABASE_URL =
   'postgresql://besedy_test:besedy_test@localhost:5434/besedy_test';
 const MCP_RESOURCE = `${BASE_URL}/api/mcp`;
 const MCP_PROTOCOL_VERSION = '2026-07-28';
+const LEGACY_MCP_PROTOCOL_VERSION = '2025-06-18';
 const TRANSCRIPT_BACKEND = 'faster-whisper/large-v3@silero_vad_v6';
 const MCP_FIXTURE_RECORDING = TEST_AUDIO_FILES[4];
 const pool = new Pool({ connectionString: DATABASE_URL });
@@ -180,6 +181,58 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       scope: expect.stringContaining('besedy:read'),
       sub: expect.any(String),
     });
+
+    const legacyHeaders = {
+      Authorization: `Bearer ${token.access_token}`,
+      Accept: 'application/json, text/event-stream',
+      'Content-Type': 'application/json',
+    };
+    const legacyInitializeResponse = await request.post(MCP_RESOURCE, {
+      headers: legacyHeaders,
+      data: {
+        jsonrpc: '2.0',
+        id: 100,
+        method: 'initialize',
+        params: {
+          protocolVersion: LEGACY_MCP_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'besedy-legacy-e2e', version: '1.0.0' },
+        },
+      },
+    });
+    const legacyInitializeText = await legacyInitializeResponse.text();
+    expect(
+      legacyInitializeResponse.ok(),
+      legacyInitializeText,
+    ).toBe(true);
+    expect(legacyInitializeText).toContain(
+      `\"protocolVersion\":\"${LEGACY_MCP_PROTOCOL_VERSION}\"`,
+    );
+
+    const legacyToolsResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...legacyHeaders,
+        'MCP-Protocol-Version': LEGACY_MCP_PROTOCOL_VERSION,
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 101,
+        method: 'tools/list',
+        params: {},
+      },
+    });
+    const legacyToolsText = await legacyToolsResponse.text();
+    expect(legacyToolsResponse.ok(), legacyToolsText).toBe(true);
+    for (const toolName of [
+      'list_catalogs',
+      'list_events',
+      'get_event',
+      'get_recording',
+      'get_transcript',
+      'search_transcripts',
+    ]) {
+      expect(legacyToolsText).toContain(`\"name\":\"${toolName}\"`);
+    }
 
     const envelope = {
       'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,

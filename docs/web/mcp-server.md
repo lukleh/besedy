@@ -101,8 +101,10 @@ the policy, but the policy code is authoritative.
   omit this variable and use the public JWKS URL.
 - Discovery: OAuth authorization-server and protected-resource metadata are
   published for remote MCP clients.
-- Transport: stateless Streamable HTTP. Legacy MCP transport requests are
-  rejected.
+- Transport: stateless Streamable HTTP. The MCP SDK v2 handler serves both its
+  current protocol and the stateless 2025 protocol used by clients such as
+  Codex from the same server factory, so tool definitions and authorization
+  cannot drift between protocol generations.
 - Every tool call resolves the current user and current grants again. A token
   never freezes catalog permissions for its lifetime.
 - Production enablement is explicit: set `BESEDY_MCP_ENABLED=true` only with a
@@ -311,7 +313,8 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Add Google-backed MCP login and consent continuation pages.
 - [x] Support CIMD plus a PKCE-protected DCR fallback for remote clients.
 - [x] Publish OAuth discovery/protected-resource metadata.
-- [x] Mount authenticated, stateless `POST /api/mcp`; reject legacy transport.
+- [x] Mount authenticated, stateless `POST /api/mcp`; serve current and 2025-era
+      MCP clients from the same SDK v2 server factory.
 - [x] Exempt the enabled bearer-only MCP endpoint from browser CSRF checks so
       unauthenticated clients can receive the OAuth challenge.
 
