@@ -56,6 +56,11 @@ export interface McpTranscriptInput {
   limit: number;
 }
 
+export interface McpEventRecordingPageInput {
+  offset: number;
+  limit: number;
+}
+
 export class McpReadError extends Error {
   constructor(
     readonly code:
@@ -157,6 +162,13 @@ function buildEventWebUrl(catalogId: string, eventId: number): string {
   ).toString();
 }
 
+function buildRecordingWebUrl(catalogId: string, audioHash: string): string {
+  return new URL(
+    `/catalog/${encodeURIComponent(catalogId)}/recording/${encodeURIComponent(audioHash)}`,
+    getMcpResourceUrl(),
+  ).toString();
+}
+
 export async function listMcpEvents(
   catalogId: string,
   catalogGrant: AccessLevel | null,
@@ -253,6 +265,7 @@ export async function getMcpEvent(
   catalogId: string,
   eventId: number,
   catalogGrant: AccessLevel | null,
+  input: McpEventRecordingPageInput,
 ) {
   if (
     requiresReleasedEventVisibilityScope(catalogGrant) &&
@@ -271,31 +284,49 @@ export async function getMcpEvent(
   const visibleHashes = requiresReadyRecordingScope(catalogGrant)
     ? await getPublishedAccessibleRecordingHashes(prisma, catalogId, hashes)
     : new Set(hashes);
-  const orderedHashes = event.recordings
-    .filter((recording) => visibleHashes.has(recording.audioHash))
-    .map((recording) => recording.audioHash);
-  if (requiresReadyRecordingScope(catalogGrant) && orderedHashes.length === 0) {
+  const visibleRecordings = event.recordings.filter((recording) =>
+    visibleHashes.has(recording.audioHash),
+  );
+  if (
+    requiresReadyRecordingScope(catalogGrant) &&
+    visibleRecordings.length === 0
+  ) {
     throw new McpReadError('not_found', 'Event not found');
   }
-  const rows = await loadRecordingRows(catalogId, orderedHashes);
+  const recordingPage = visibleRecordings.slice(
+    input.offset,
+    input.offset + input.limit,
+  );
+  const rows = await loadRecordingRows(
+    catalogId,
+    recordingPage.map((recording) => recording.audioHash),
+  );
+  const nextOffset =
+    input.offset + recordingPage.length < visibleRecordings.length
+      ? input.offset + recordingPage.length
+      : null;
 
   return {
     catalogId,
     event: {
       id: event.id,
+      webUrl: buildEventWebUrl(catalogId, event.id),
       title: event.title,
       description: event.description,
       date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
       sessionIndex: event.sessionIndex,
       location: event.location,
       released: event.released,
-      recordings: event.recordings
-        .filter((recording) => visibleHashes.has(recording.audioHash))
-        .map((recording) => ({
-          ...serializeRecording(recording.audioHash, rows),
+      recordings: {
+        items: recordingPage.map((recording) => ({
+          ...serializeRecordingSummary(recording.audioHash, rows),
+          webUrl: buildRecordingWebUrl(catalogId, recording.audioHash),
           isPrimary: recording.isPrimary,
           sortOrder: recording.sortOrder,
         })),
+        totalVisible: visibleRecordings.length,
+        nextOffset,
+      },
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
     },

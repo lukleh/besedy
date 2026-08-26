@@ -310,7 +310,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         method: 'tools/call',
         params: {
           name: 'get_event',
-          arguments: { eventId: event!.id },
+          arguments: { eventId: event!.id, recordingLimit: 1 },
           _meta: envelope,
         },
       },
@@ -319,15 +319,53 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const eventBody = (await eventResponse.json()) as McpResponse<
       McpToolResult<{
         catalogId: string;
-        event: { id: number; recordings: Array<{ audioHash: string }> };
+        event: {
+          id: number;
+          webUrl: string;
+          recordings: {
+            items: Array<{
+              audioHash: string;
+              webUrl: string;
+              isPrimary: boolean;
+              sortOrder: number;
+            }>;
+            totalVisible: number;
+            nextOffset: number | null;
+          };
+        };
       }>
     >;
     expect(eventBody.error).toBeUndefined();
     expect(eventBody.result?.isError).not.toBe(true);
     expect(eventBody.result?.structuredContent.event.id).toBe(event!.id);
+    expect(eventBody.result?.structuredContent.event.webUrl).toBe(
+      event!.webUrl,
+    );
     expect(
-      eventBody.result?.structuredContent.event.recordings.length,
-    ).toBeGreaterThan(0);
+      eventBody.result?.structuredContent.event.recordings.items,
+    ).toHaveLength(1);
+    expect(
+      eventBody.result?.structuredContent.event.recordings.totalVisible,
+    ).toBeGreaterThan(1);
+    expect(
+      eventBody.result?.structuredContent.event.recordings.nextOffset,
+    ).toBe(1);
+    const eventRecording =
+      eventBody.result?.structuredContent.event.recordings.items[0];
+    expect(eventRecording?.webUrl).toBe(
+      `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${eventRecording?.audioHash}`,
+    );
+    expect(Object.keys(eventRecording!).sort()).toEqual([
+      'artist',
+      'audioHash',
+      'durationHms',
+      'isPrimary',
+      'published',
+      'ready',
+      'sortOrder',
+      'title',
+      'webUrl',
+    ]);
 
     const audioHash = event!.primaryRecording!.audioHash;
     expect(audioHash).toBe(MCP_FIXTURE_RECORDING.hash);

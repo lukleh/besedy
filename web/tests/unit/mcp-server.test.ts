@@ -2,7 +2,11 @@ import { createMcpHandler } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBesedyMcpServer, paginateCatalogs } from '@/lib/mcp/server';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
-import { getMcpTranscript, listMcpEvents } from '@/lib/mcp/read-service';
+import {
+  getMcpEvent,
+  getMcpTranscript,
+  listMcpEvents,
+} from '@/lib/mcp/read-service';
 
 vi.mock('@/lib/mcp/access-profile', () => ({
   getMcpAccessProfile: vi.fn(),
@@ -253,6 +257,37 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       events: [],
       nextCursor: null,
+    });
+  });
+
+  it('applies bounded recording pagination defaults to get_event', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+    vi.mocked(getMcpEvent).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      event: { id: 42 },
+    } as Awaited<ReturnType<typeof getMcpEvent>>);
+
+    const body = await invokeMcp('tools/call', {
+      name: 'get_event',
+      arguments: { eventId: 42 },
+    });
+
+    expect(body.error).toBeUndefined();
+    expect(getMcpEvent).toHaveBeenCalledWith('viewer-catalog', 42, 'VIEWER', {
+      offset: 0,
+      limit: 25,
     });
   });
 

@@ -26,6 +26,8 @@ const DEFAULT_CATALOG_PAGE_SIZE = 50;
 const MAX_CATALOG_PAGE_SIZE = 100;
 const DEFAULT_EVENT_PAGE_SIZE = 25;
 const MAX_EVENT_PAGE_SIZE = 100;
+const DEFAULT_EVENT_RECORDING_LIMIT = 25;
+const MAX_EVENT_RECORDING_LIMIT = 100;
 const DEFAULT_TRANSCRIPT_SEGMENT_LIMIT = 100;
 const MAX_TRANSCRIPT_SEGMENT_LIMIT = 200;
 const DEFAULT_SEARCH_LIMIT = 10;
@@ -204,18 +206,29 @@ export async function createBesedyMcpServer(
       {
         title: 'Get a Besedy event',
         description:
-          'Get one visible event and its visible recording metadata.',
+          'Get one visible event and a bounded page of compact visible recording summaries.',
         inputSchema: z.object({
           catalogId: z.string().min(1).optional(),
           eventId: z.number().int().positive(),
+          recordingOffset: z.number().int().min(0).default(0),
+          recordingLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_EVENT_RECORDING_LIMIT)
+            .default(DEFAULT_EVENT_RECORDING_LIMIT),
         }),
         annotations: readOnlyAnnotations,
       },
-      async ({ catalogId, eventId }) => {
+      async ({ catalogId, eventId, recordingOffset, recordingLimit }) => {
         const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
         return runReadTool(
-          () => getMcpEvent(catalog.id, eventId, catalog.catalogGrant),
+          () =>
+            getMcpEvent(catalog.id, eventId, catalog.catalogGrant, {
+              offset: recordingOffset,
+              limit: recordingLimit,
+            }),
           () => `Returned Besedy event ${eventId}.`,
         );
       },

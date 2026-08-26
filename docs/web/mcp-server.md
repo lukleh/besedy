@@ -156,7 +156,7 @@ filesystem paths or audio URLs.
 | -------------------- | ------------------------------------------------------------- | ----------------------------------- |
 | `list_catalogs`      | List accessible catalogs and their capabilities               | Active portal user                  |
 | `list_events`        | Page/filter visible events and their metadata                 | Catalog access                      |
-| `get_event`          | Get one visible event and attached recording metadata         | Catalog access and event visibility |
+| `get_event`          | Get one visible event and paged recording summaries           | Catalog access and event visibility |
 | `get_recording`      | Get metadata for one visible recording                        | Recording visibility                |
 | `get_transcript`     | Get a recording transcript, optionally by time/segment window | `canViewTranscripts`                |
 | `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canSearchTranscripts`              |
@@ -172,10 +172,14 @@ cursor returns the standard structured `invalid_cursor` tool error.
 title/description/location filters, and a limit from 1 to 100 (default 25).
 Each event includes its authenticated Besedy `webUrl`, a compact primary
 recording summary, and a `recordingCount` scoped to recordings visible to the
-caller. `get_event` takes an event ID, while recording and transcript reads use
-the stable audio hash. Transcript responses are windowable by time and paged by
-segment offset, with at most 200 segments per call. Search accepts up to 1,000
-query characters and returns at most 20 grounded matches per call.
+caller. `get_event` takes an event ID plus an optional `recordingOffset`
+(default 0) and `recordingLimit` from 1 to 100 (default 25). It returns the
+event's authenticated `webUrl` and a permission-scoped recording page with
+`items`, `totalVisible`, and `nextOffset`; each compact recording summary also
+has an authenticated `webUrl`. Recording and transcript reads use the stable
+audio hash. Transcript responses are windowable by time and paged by segment
+offset, with at most 200 segments per call. Search accepts up to 1,000 query
+characters and returns at most 20 grounded matches per call.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
