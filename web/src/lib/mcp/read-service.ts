@@ -69,12 +69,6 @@ export class McpReadError extends Error {
   }
 }
 
-function accessLevelForPolicy(
-  accessLevel: AccessLevel | 'NONE',
-): AccessLevel | null {
-  return accessLevel === 'NONE' ? null : accessLevel;
-}
-
 function serializeDate(year: number, month: number | null, day: number | null) {
   return { year, month, day };
 }
@@ -143,13 +137,10 @@ function serializeRecording(
 
 export async function listMcpEvents(
   catalogId: string,
-  accessLevel: AccessLevel | 'NONE',
+  catalogGrant: AccessLevel | null,
   input: McpEventListInput,
 ) {
-  const policyAccessLevel = accessLevelForPolicy(accessLevel);
-  const visibleEventIds = requiresReleasedEventVisibilityScope(
-    policyAccessLevel,
-  )
+  const visibleEventIds = requiresReleasedEventVisibilityScope(catalogGrant)
     ? await getPublishedVisibleEventIds(prisma, catalogId)
     : null;
   const where: Prisma.CatalogEventWhereInput = {
@@ -217,11 +208,10 @@ export async function listMcpEvents(
 export async function getMcpEvent(
   catalogId: string,
   eventId: number,
-  accessLevel: AccessLevel | 'NONE',
+  catalogGrant: AccessLevel | null,
 ) {
-  const policyAccessLevel = accessLevelForPolicy(accessLevel);
   if (
-    requiresReleasedEventVisibilityScope(policyAccessLevel) &&
+    requiresReleasedEventVisibilityScope(catalogGrant) &&
     !(await isPublishedVisibleEvent(prisma, catalogId, eventId))
   ) {
     throw new McpReadError('not_found', 'Event not found');
@@ -234,16 +224,13 @@ export async function getMcpEvent(
   if (!event) throw new McpReadError('not_found', 'Event not found');
 
   const hashes = event.recordings.map((recording) => recording.audioHash);
-  const visibleHashes = requiresReadyRecordingScope(policyAccessLevel)
+  const visibleHashes = requiresReadyRecordingScope(catalogGrant)
     ? await getPublishedAccessibleRecordingHashes(prisma, catalogId, hashes)
     : new Set(hashes);
   const orderedHashes = event.recordings
     .filter((recording) => visibleHashes.has(recording.audioHash))
     .map((recording) => recording.audioHash);
-  if (
-    requiresReadyRecordingScope(policyAccessLevel) &&
-    orderedHashes.length === 0
-  ) {
+  if (requiresReadyRecordingScope(catalogGrant) && orderedHashes.length === 0) {
     throw new McpReadError('not_found', 'Event not found');
   }
   const rows = await loadRecordingRows(catalogId, orderedHashes);
@@ -405,7 +392,7 @@ export async function getMcpTranscript(
 
 export async function searchMcpTranscripts(
   catalogId: string,
-  accessLevel: AccessLevel | 'NONE',
+  catalogGrant: AccessLevel | null,
   input: {
     query: string;
     limit: number;
@@ -418,7 +405,7 @@ export async function searchMcpTranscripts(
     limit: input.limit,
     includeNeighbors: input.includeNeighbors,
     neighborCount: input.includeNeighbors ? 1 : 0,
-    accessLevel: accessLevelForPolicy(accessLevel),
+    accessLevel: catalogGrant,
   });
 
   return {

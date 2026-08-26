@@ -58,17 +58,18 @@ async function invokeMcp(method: string, params: Record<string, unknown> = {}) {
 
 function catalog(
   id: string,
-  accessLevel: 'LISTENER' | 'VIEWER',
+  catalogGrant: 'LISTENER' | 'VIEWER',
   isEffectiveDefault: boolean,
 ) {
-  const elevated = accessLevel === 'VIEWER';
+  const elevated = catalogGrant === 'VIEWER';
   return {
     id,
     label: id,
     isUserDefault: isEffectiveDefault,
     isGlobalDefault: false,
     isEffectiveDefault,
-    accessLevel,
+    catalogGrant,
+    isCatalogAdmin: false,
     capabilities: {
       canListEvents: true,
       canGetRecordings: true,
@@ -111,12 +112,59 @@ describe('MCP personalized tool surface', () => {
     vi.clearAllMocks();
   });
 
+  it('returns explicit catalog authority and a structured cursor error', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'global_default',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+
+    const successBody = await invokeMcp('tools/call', {
+      name: 'list_catalogs',
+      arguments: {},
+    });
+    expect(successBody.result?.structuredContent).toMatchObject({
+      catalogs: [
+        {
+          id: 'viewer-catalog',
+          catalogGrant: 'VIEWER',
+          isCatalogAdmin: false,
+        },
+      ],
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'global_default',
+      nextCursor: null,
+    });
+
+    const errorBody = await invokeMcp('tools/call', {
+      name: 'list_catalogs',
+      arguments: { cursor: 'missing-catalog' },
+    });
+    expect(errorBody.result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: {
+          code: 'invalid_cursor',
+          message: 'Invalid catalog cursor',
+        },
+      },
+    });
+  });
+
   it('omits transcript-derived tools for a listener-only user', async () => {
     vi.mocked(getMcpAccessProfile).mockResolvedValue({
       userId: 'user-1',
       canEnterPortal: true,
       defaultCatalogId: 'listener-catalog',
-      defaultCatalogSource: 'default',
+      defaultCatalogSource: 'global_default',
       catalogs: [catalog('listener-catalog', 'LISTENER', true)],
       aggregate: {
         canListEvents: true,
@@ -141,7 +189,7 @@ describe('MCP personalized tool surface', () => {
       userId: 'user-1',
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'preference',
+      defaultCatalogSource: 'user_preference',
       catalogs: [
         catalog('listener-catalog', 'LISTENER', false),
         catalog('viewer-catalog', 'VIEWER', true),
@@ -171,7 +219,7 @@ describe('MCP personalized tool surface', () => {
       userId: 'user-1',
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'preference',
+      defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
       aggregate: {
         canListEvents: true,
@@ -213,7 +261,7 @@ describe('MCP personalized tool surface', () => {
       userId: 'user-1',
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'preference',
+      defaultCatalogSource: 'user_preference',
       catalogs: [
         catalog('listener-catalog', 'LISTENER', false),
         catalog('viewer-catalog', 'VIEWER', true),

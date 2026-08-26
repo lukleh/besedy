@@ -69,7 +69,8 @@ describe('MCP access profile', () => {
         isUserDefault: false,
         isGlobalDefault: true,
         isEffectiveDefault: false,
-        accessLevel: 'LISTENER',
+        catalogGrant: 'LISTENER',
+        isCatalogAdmin: false,
         capabilities: {
           canListEvents: true,
           canGetRecordings: true,
@@ -83,7 +84,8 @@ describe('MCP access profile', () => {
         isUserDefault: true,
         isGlobalDefault: false,
         isEffectiveDefault: true,
-        accessLevel: 'VIEWER',
+        catalogGrant: 'VIEWER',
+        isCatalogAdmin: false,
         capabilities: {
           canListEvents: true,
           canGetRecordings: true,
@@ -94,7 +96,7 @@ describe('MCP access profile', () => {
       }),
     ]);
     expect(profile.defaultCatalogId).toBe('catalog-viewer');
-    expect(profile.defaultCatalogSource).toBe('preference');
+    expect(profile.defaultCatalogSource).toBe('user_preference');
     expect(profile.aggregate).toEqual({
       canListEvents: true,
       canGetRecordings: true,
@@ -138,7 +140,8 @@ describe('MCP access profile', () => {
     const profile = await getMcpAccessProfile('admin-1');
 
     expect(profile.catalogs[0]).toMatchObject({
-      accessLevel: 'OWNER',
+      catalogGrant: null,
+      isCatalogAdmin: true,
       capabilities: {
         canListEvents: true,
         canGetRecordings: true,

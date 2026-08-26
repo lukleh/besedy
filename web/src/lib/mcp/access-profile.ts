@@ -23,7 +23,8 @@ export interface McpCatalogAccess {
   isUserDefault: boolean;
   isGlobalDefault: boolean;
   isEffectiveDefault: boolean;
-  accessLevel: AccessLevel | 'NONE';
+  catalogGrant: AccessLevel | null;
+  isCatalogAdmin: boolean;
   capabilities: {
     canListEvents: boolean;
     canGetRecordings: boolean;
@@ -33,14 +34,14 @@ export interface McpCatalogAccess {
   };
 }
 
+export type McpDefaultCatalogSource =
+  'user_preference' | 'global_default' | 'most_recent';
+
 export interface McpAccessProfile {
   userId: string;
   canEnterPortal: boolean;
   defaultCatalogId: string | null;
-  defaultCatalogSource: Exclude<
-    ReadableGroupResolutionSource,
-    'explicit'
-  > | null;
+  defaultCatalogSource: McpDefaultCatalogSource | null;
   catalogs: McpCatalogAccess[];
   aggregate: {
     canListEvents: boolean;
@@ -48,6 +49,21 @@ export interface McpAccessProfile {
     canViewTranscripts: boolean;
     canSearchTranscripts: boolean;
   };
+}
+
+function serializeDefaultCatalogSource(
+  source: Exclude<ReadableGroupResolutionSource, 'explicit'> | undefined,
+): McpDefaultCatalogSource | null {
+  switch (source) {
+    case 'preference':
+      return 'user_preference';
+    case 'default':
+      return 'global_default';
+    case 'recent':
+      return 'most_recent';
+    default:
+      return null;
+  }
 }
 
 export async function getMcpAccessProfile(
@@ -105,7 +121,8 @@ export async function getMcpAccessProfile(
       isUserDefault: preferences.activeGroupId === group.id,
       isGlobalDefault: group.isDefault,
       isEffectiveDefault: effectiveDefault?.group.id === group.id,
-      accessLevel: accessLevel ?? 'NONE',
+      catalogGrant: isCatalogAdmin ? null : accessLevel,
+      isCatalogAdmin,
       capabilities: {
         canListEvents: canBrowseEvents({
           ...policyContext,
@@ -123,7 +140,9 @@ export async function getMcpAccessProfile(
     userId,
     canEnterPortal: true,
     defaultCatalogId: effectiveDefault?.group.id ?? null,
-    defaultCatalogSource: effectiveDefault?.source ?? null,
+    defaultCatalogSource: serializeDefaultCatalogSource(
+      effectiveDefault?.source,
+    ),
     catalogs,
     aggregate: {
       canListEvents: catalogs.some(

@@ -208,7 +208,8 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogs: Array<{
           id: string;
-          accessLevel: string;
+          catalogGrant: string | null;
+          isCatalogAdmin: boolean;
           isEffectiveDefault: boolean;
           capabilities: Record<string, boolean>;
         }>;
@@ -222,10 +223,11 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const result = catalogBody.result?.structuredContent;
     expect(result?.catalogs).toHaveLength(1);
     expect(result?.defaultCatalogId).toBe(result?.catalogs[0]?.id);
-    expect(result?.defaultCatalogSource).toBe('default');
+    expect(result?.defaultCatalogSource).toBe('global_default');
     expect(result?.nextCursor).toBeNull();
     expect(result?.catalogs[0]).toMatchObject({
-      accessLevel: 'OWNER',
+      catalogGrant: 'OWNER',
+      isCatalogAdmin: false,
       isEffectiveDefault: true,
       capabilities: {
         canListEvents: true,

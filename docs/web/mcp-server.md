@@ -139,11 +139,12 @@ therefore cannot by itself authorize an invocation. Every tool still checks the
 resolved target catalog and returns a permission error if that particular
 catalog does not allow the requested operation.
 
-`list_catalogs` includes the effective role and explicit booleans such as
-`canViewTranscripts`, `canSearchTranscripts`, and `canSeeUnreleasedEvents`, so an
-agent can select valid operations without guessing from role names. It also
-distinguishes the user's saved default, the configured global default, and the
-effective default that an omitted `catalogId` will resolve.
+`list_catalogs` includes the explicit `catalogGrant`, the `isCatalogAdmin`
+system-authority flag, and booleans such as `canViewTranscripts`,
+`canSearchTranscripts`, and `canSeeUnreleasedEvents`, so an agent can select
+valid operations without guessing from role names. It also distinguishes the
+user's saved default, the configured global default, and the effective default
+that an omitted `catalogId` will resolve.
 
 ## Initial tools
 
@@ -163,7 +164,9 @@ filesystem paths or audio URLs.
 `list_catalogs` accepts an optional cursor and a `limit` from 1 to 100 (default
 50). Its response includes `nextCursor`, `defaultCatalogId`, and
 `defaultCatalogSource`. Catalog entries expose `isUserDefault`,
-`isGlobalDefault`, and `isEffectiveDefault` separately.
+`isGlobalDefault`, and `isEffectiveDefault` separately. The default source is
+one of `user_preference`, `global_default`, `most_recent`, or `null`. An invalid
+cursor returns the standard structured `invalid_cursor` tool error.
 
 `list_events` accepts an optional numeric cursor, release-state and title/location
 filters, and a limit from 1 to 100 (default 25). `get_event` takes an event ID,

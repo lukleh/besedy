@@ -145,10 +145,7 @@ export async function createBesedyMcpServer(
     async ({ cursor, limit }) => {
       const page = paginateCatalogs(profile.catalogs, cursor, limit);
       if (!page) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: 'Invalid catalog cursor' }],
-        };
+        return toolError('invalid_cursor', 'Invalid catalog cursor');
       }
 
       const result = {
@@ -188,13 +185,14 @@ export async function createBesedyMcpServer(
       async ({ catalogId, cursor, limit, released, query }) => {
         const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
-        return runReadTool(() =>
-          listMcpEvents(catalog.id, catalog.accessLevel, {
-            cursor,
-            limit,
-            released,
-            query,
-          }),
+        return runReadTool(
+          () =>
+            listMcpEvents(catalog.id, catalog.catalogGrant, {
+              cursor,
+              limit,
+              released,
+              query,
+            }),
           (result) =>
             `Listed ${Array.isArray(result.events) ? result.events.length : 0} visible Besedy event(s).`,
         );
@@ -216,8 +214,8 @@ export async function createBesedyMcpServer(
       async ({ catalogId, eventId }) => {
         const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
-        return runReadTool(() =>
-          getMcpEvent(catalog.id, eventId, catalog.accessLevel),
+        return runReadTool(
+          () => getMcpEvent(catalog.id, eventId, catalog.catalogGrant),
           () => `Returned Besedy event ${eventId}.`,
         );
       },
@@ -244,8 +242,8 @@ export async function createBesedyMcpServer(
           'canGetRecordings',
         );
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
-        return runReadTool(() =>
-          getMcpRecording(userId, catalog.id, audioHash),
+        return runReadTool(
+          () => getMcpRecording(userId, catalog.id, audioHash),
           () => `Returned metadata for Besedy recording ${audioHash}.`,
         );
       },
@@ -290,14 +288,15 @@ export async function createBesedyMcpServer(
           'canViewTranscripts',
         );
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
-        return runReadTool(() =>
-          getMcpTranscript(userId, catalog.id, audioHash, {
-            backend,
-            startSec,
-            endSec,
-            offset,
-            limit,
-          }),
+        return runReadTool(
+          () =>
+            getMcpTranscript(userId, catalog.id, audioHash, {
+              backend,
+              startSec,
+              endSec,
+              offset,
+              limit,
+            }),
           (result) =>
             `Returned ${Array.isArray(result.segments) ? result.segments.length : 0} transcript segment(s) for Besedy recording ${audioHash}.`,
         );
@@ -332,12 +331,13 @@ export async function createBesedyMcpServer(
           'canSearchTranscripts',
         );
         if ('error' in catalog) return toolError(catalog.code, catalog.error);
-        return runReadTool(() =>
-          searchMcpTranscripts(catalog.id, catalog.accessLevel, {
-            query,
-            limit,
-            includeNeighbors,
-          }),
+        return runReadTool(
+          () =>
+            searchMcpTranscripts(catalog.id, catalog.catalogGrant, {
+              query,
+              limit,
+              includeNeighbors,
+            }),
           (result) =>
             `Found ${Array.isArray(result.results) ? result.results.length : 0} Besedy transcript match(es).`,
         );
