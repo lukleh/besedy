@@ -14,7 +14,7 @@ const featureCapabilitySchema = z.object({
   showTabs: z.boolean(),
   showAllColumns: z.boolean(),
   showReleaseState: z.boolean(),
-  canUseRagSearch: z.boolean(),
+  canUseRagSearch: z.boolean().optional().default(false),
 });
 
 const deepSearchFeatureCapabilitySchema = z.object({
@@ -23,7 +23,7 @@ const deepSearchFeatureCapabilitySchema = z.object({
   canView: z.boolean(),
 });
 
-const catalogFeaturesResponseSchema = z.object({
+export const catalogFeaturesResponseSchema = z.object({
   labsEnabled: z.boolean(),
   features: z.object({
     events: featureCapabilitySchema,

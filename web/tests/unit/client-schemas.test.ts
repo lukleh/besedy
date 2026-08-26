@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { preferencesResponseSchema } from "@/lib/preferences/client-schema";
 import { catalogSchema } from "@/hooks/use-catalogs";
+import { catalogFeaturesResponseSchema } from "@/hooks/use-catalog-features";
 
 describe("client response schemas", () => {
   it("rejects unexpected keys in preferences payloads", () => {
@@ -29,5 +30,31 @@ describe("client response schemas", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("defaults a missing RAG capability to false during rolling deploys", () => {
+    const result = catalogFeaturesResponseSchema.safeParse({
+      labsEnabled: false,
+      features: {
+        events: {
+          rollout: "public",
+          enabled: true,
+          canView: true,
+          canEdit: false,
+          showTabs: true,
+          showAllColumns: false,
+          showReleaseState: false,
+        },
+        deepSearch: {
+          rollout: "off",
+          enabled: false,
+          canView: false,
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.features.events.canUseRagSearch).toBe(false);
   });
 });
