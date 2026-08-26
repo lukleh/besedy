@@ -1,7 +1,7 @@
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBesedyMcpServer, paginateCatalogs } from '@/lib/mcp/server';
-import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
+import type { McpAccessProfile } from '@/lib/mcp/access-profile';
 import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
   getMcpEvent,
@@ -11,10 +11,6 @@ import {
   McpReadError,
   searchMcpTranscripts,
 } from '@/lib/mcp/read-service';
-
-vi.mock('@/lib/mcp/access-profile', () => ({
-  getMcpAccessProfile: vi.fn(),
-}));
 
 vi.mock('@/lib/mcp/identity', () => ({
   getMcpIdentity: vi.fn(),
@@ -58,13 +54,20 @@ const activeProfileFields = {
   systemRole: 'USER',
 } as const;
 
+let accessProfile: McpAccessProfile;
+
 async function invokeMcp(
   method: string,
   params: Record<string, unknown> = {},
   connection = defaultConnection,
 ) {
   const handler = createMcpHandler(
-    () => createBesedyMcpServer('user-1', connection),
+    () =>
+      createBesedyMcpServer({
+        userId: 'user-1',
+        ...connection,
+        accessProfile,
+      }),
     {
       legacy: 'reject',
       responseMode: 'json',
@@ -149,6 +152,20 @@ describe('MCP server catalog pagination', () => {
 describe('MCP personalized tool surface', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: null,
+      defaultCatalogSource: null,
+      catalogs: [],
+      aggregate: {
+        canListEvents: false,
+        canGetRecordings: false,
+        canViewTranscripts: false,
+        canSearchTranscripts: false,
+      },
+    };
     vi.mocked(getMcpIdentity).mockResolvedValue({
       userId: 'user-1',
       name: 'Test User',
@@ -160,7 +177,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('reports the current account, client, scopes, and access summary', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -173,7 +190,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
 
     const body = await invokeMcp('tools/call', {
       name: 'who_am_i',
@@ -202,7 +219,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('withholds profile fields that were not granted to the client', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -215,7 +232,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: false,
         canSearchTranscripts: false,
       },
-    });
+    };
 
     const body = await invokeMcp(
       'tools/call',
@@ -236,7 +253,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('returns a structured error when the account no longer exists', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -249,7 +266,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: false,
         canSearchTranscripts: false,
       },
-    });
+    };
     vi.mocked(getMcpIdentity).mockResolvedValueOnce(null);
 
     const body = await invokeMcp('tools/call', {
@@ -269,7 +286,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('returns explicit catalog authority and a structured cursor error', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -282,7 +299,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
 
     const successBody = await invokeMcp('tools/call', {
       name: 'list_catalogs',
@@ -317,7 +334,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('omits transcript-derived tools for a listener-only user', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -330,7 +347,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: false,
         canSearchTranscripts: false,
       },
-    });
+    };
 
     const body = await invokeMcp('tools/list');
     const tools = body.result?.tools as Array<{ name: string }>;
@@ -345,7 +362,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('exposes the complete read surface when any catalog permits it', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -361,7 +378,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
 
     const body = await invokeMcp('tools/list');
     const tools = body.result?.tools as Array<{ name: string }>;
@@ -377,7 +394,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('uses the effective default catalog when catalogId is omitted', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -390,7 +407,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
     vi.mocked(listMcpEvents).mockResolvedValue({
       catalogId: 'viewer-catalog',
       events: [],
@@ -420,7 +437,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('applies bounded recording pagination defaults to get_event', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -433,7 +450,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
     vi.mocked(getMcpEvent).mockResolvedValue({
       catalogId: 'viewer-catalog',
       event: { id: 42 },
@@ -452,7 +469,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('applies bounded event pagination defaults to get_recording', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -465,7 +482,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
     vi.mocked(getMcpRecording).mockResolvedValue({
       catalogId: 'viewer-catalog',
       recording: { audioHash: 'a'.repeat(64) },
@@ -487,7 +504,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('applies compact transcript pagination defaults', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -500,7 +517,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
     vi.mocked(getMcpTranscript).mockResolvedValue({
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
@@ -551,7 +568,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('applies compact transcript search defaults', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -564,7 +581,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
     vi.mocked(searchMcpTranscripts).mockResolvedValue({
       catalogId: 'viewer-catalog',
       query: 'search phrase',
@@ -613,7 +630,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('still denies a transcript call against a listener catalog', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -629,7 +646,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
 
     const body = await invokeMcp('tools/call', {
       name: 'get_transcript',
@@ -647,7 +664,7 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('marks transient read failures as retryable', async () => {
-    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+    accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
       canEnterPortal: true,
@@ -660,7 +677,7 @@ describe('MCP personalized tool surface', () => {
         canViewTranscripts: true,
         canSearchTranscripts: true,
       },
-    });
+    };
     vi.mocked(searchMcpTranscripts).mockRejectedValue(
       new McpReadError(
         'search_unavailable',

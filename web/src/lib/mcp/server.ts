@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
-  getMcpAccessProfile,
   type McpAccessProfile,
   type McpCatalogAccess,
 } from '@/lib/mcp/access-profile';
@@ -44,9 +43,11 @@ const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
 
-export interface McpConnectionContext {
+export interface McpRequestContext {
+  userId: string;
   clientId: string;
   scopes: string[];
+  accessProfile: McpAccessProfile;
 }
 
 function resolveToolCatalog(
@@ -175,11 +176,12 @@ export function paginateCatalogs<T extends { id: string }>(
   };
 }
 
-export async function createBesedyMcpServer(
-  userId: string,
-  connection: McpConnectionContext,
-): Promise<McpServer> {
-  const profile = await getMcpAccessProfile(userId);
+export function createBesedyMcpServer({
+  userId,
+  clientId,
+  scopes,
+  accessProfile: profile,
+}: McpRequestContext): McpServer {
   const server = new McpServer({
     name: 'besedy',
     version: '0.1.0',
@@ -199,7 +201,7 @@ export async function createBesedyMcpServer(
       annotations: readOnlyAnnotations,
     },
     async () => {
-      const identity = await getMcpIdentity(userId, connection.clientId);
+      const identity = await getMcpIdentity(userId, clientId);
       if (!identity) {
         return toolError(
           'identity_unavailable',
@@ -207,8 +209,8 @@ export async function createBesedyMcpServer(
         );
       }
 
-      const canReadProfile = connection.scopes.includes('profile');
-      const canReadEmail = connection.scopes.includes('email');
+      const canReadProfile = scopes.includes('profile');
+      const canReadEmail = scopes.includes('email');
       const result = {
         account: {
           id: identity.userId,
@@ -221,7 +223,7 @@ export async function createBesedyMcpServer(
         authorization: {
           clientId: identity.clientId,
           clientName: identity.clientName,
-          grantedScopes: connection.scopes,
+          grantedScopes: scopes,
           accessibleCatalogCount: profile.catalogs.length,
           defaultCatalogId: profile.defaultCatalogId,
         },
