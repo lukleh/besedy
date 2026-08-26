@@ -5,6 +5,7 @@ import { getPortalCapability } from '@/lib/access/capabilities';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
+  getMcpJwksUrl,
   getMcpResourceUrl,
   isMcpEnabled,
   MCP_READ_SCOPE,
@@ -13,6 +14,7 @@ import {
 export const runtime = 'nodejs';
 
 const resourceUrl = isMcpEnabled() ? getMcpResourceUrl() : null;
+const jwksUrl = resourceUrl ? getMcpJwksUrl() : null;
 const MCP_RATE_WINDOW_MS = 60_000;
 const MCP_GLOBAL_RATE_LIMIT = 600;
 const MCP_CLIENT_RATE_LIMIT = 300;
@@ -121,6 +123,7 @@ const protectedMcpHandler = resourceUrl
         return mcpHandler.fetch(request, { authInfo });
       },
       {
+        jwksUrl: jwksUrl!,
         resource: resourceUrl,
         requiredScopes: [MCP_READ_SCOPE],
       },

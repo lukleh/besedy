@@ -1,6 +1,6 @@
 # Besedy MCP Server
 
-> Status: initial authenticated `list_catalogs` vertical slice implemented
+> Status: authenticated read surface implemented
 
 ## Local smoke test
 
@@ -12,11 +12,13 @@ just mcp-smoke
 ```
 
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
-the MCP consent screen, exchanges an authorization code with PKCE, sends MCP
-2026-07-28 `tools/list`, and calls `list_catalogs`. It verifies the effective
-default catalog and the owner's live capability flags. The test keeps the test
-containers running for reuse; stop them with `just test-down`. On a new
-machine, install the Playwright browser once with
+the MCP consent screen, exchanges an authorization code with PKCE, validates
+the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
+`list_catalogs`, `list_events`, `get_event`, and `get_recording`. It verifies
+default-catalog resolution, the owner's live capability flags, and metadata
+reads without supplying `catalogId`. The test keeps the test containers running
+for reuse; stop them with `just test-down`. On a new machine, install the
+Playwright browser once with
 `cd web && npx playwright install chromium`.
 
 > Last updated: 2026-08-26
@@ -67,6 +69,11 @@ the policy, but the policy code is authoritative.
   Besedy admission, user status, and session rules as the web application.
 - Tokens: short-lived, audience-bound JWT access tokens validated by the MCP
   endpoint. Dynamic client registration follows the MCP CIMD profile.
+- Co-located Docker deployments validate JWT signatures through the
+  process-local `BESEDY_MCP_JWKS_URL` (default
+  `http://127.0.0.1:3000/api/auth/jwks`). The token issuer and audience remain
+  the public `AUTH_URL` and MCP resource URL. A non-container deployment may
+  omit this variable and use the public JWKS URL.
 - Discovery: OAuth authorization-server and protected-resource metadata are
   published for remote MCP clients.
 - Transport: stateless Streamable HTTP. Legacy MCP transport requests are
@@ -143,10 +150,6 @@ All tools are annotated read-only and return structured JSON plus concise text.
 Results contain stable Besedy identifiers and web URLs where useful, but never
 filesystem paths or audio URLs.
 
-The currently implemented vertical slice is `list_catalogs`. The remaining
-tools stay intentionally undiscoverable until their shared application services
-and authorization tests are complete.
-
 | Tool                 | Purpose                                                       | Minimum catalog capability          |
 | -------------------- | ------------------------------------------------------------- | ----------------------------------- |
 | `list_catalogs`      | List accessible catalogs and their capabilities               | Active portal user                  |
@@ -154,12 +157,19 @@ and authorization tests are complete.
 | `get_event`          | Get one visible event and attached recording metadata         | Catalog access and event visibility |
 | `get_recording`      | Get metadata for one visible recording                        | Recording visibility                |
 | `get_transcript`     | Get a recording transcript, optionally by time/segment window | `canViewTranscripts`                |
-| `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canUseRagSearch`                   |
+| `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canSearchTranscripts`              |
 
 `list_catalogs` accepts an optional cursor and a `limit` from 1 to 100 (default
 50). Its response includes `nextCursor`, `defaultCatalogId`, and
 `defaultCatalogSource`. Catalog entries expose `isUserDefault`,
 `isGlobalDefault`, and `isEffectiveDefault` separately.
+
+`list_events` accepts an optional numeric cursor, release-state and title/location
+filters, and a limit from 1 to 100 (default 25). `get_event` takes an event ID,
+while recording and transcript reads use the stable audio hash. Transcript
+responses are windowable by time and paged by segment offset, with at most 200
+segments per call. Search accepts up to 1,000 query characters and returns at
+most 20 grounded matches per call.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
@@ -212,12 +222,12 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 
 ### MCP surface
 
-- [ ] Register tools dynamically from live aggregate capabilities.
+- [x] Register tools dynamically from live aggregate capabilities.
 - [x] Implement `list_catalogs` and side-effect-free catalog resolution.
-- [ ] Implement paginated `list_events`, `get_event`, and `get_recording`.
-- [ ] Implement bounded `get_transcript`.
-- [ ] Connect `search_transcripts` to the existing RAG search service.
-- [ ] Ensure structured outputs omit audio URLs, paths, and private fields.
+- [x] Implement paginated `list_events`, `get_event`, and `get_recording`.
+- [x] Implement bounded `get_transcript`.
+- [x] Connect `search_transcripts` to the existing RAG search service.
+- [x] Ensure structured outputs omit audio URLs, paths, and private fields.
 
 ### Verification and rollout
 

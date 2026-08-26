@@ -66,3 +66,31 @@ export function getMcpResourceUrl(
 
   return new URL('/api/mcp', baseUrl).toString();
 }
+
+export function getMcpJwksUrl(
+  configuredJwksUrl = process.env.BESEDY_MCP_JWKS_URL,
+  authUrl = process.env.AUTH_URL,
+  appEnv = process.env.APP_ENV,
+  nodeEnv = process.env.NODE_ENV,
+): string {
+  const configured = configuredJwksUrl?.trim();
+  if (!configured) {
+    const resourceUrl = getMcpResourceUrl(authUrl, appEnv, nodeEnv);
+    return new URL('/api/auth/jwks', resourceUrl).toString();
+  }
+
+  let jwksUrl: URL;
+  try {
+    jwksUrl = new URL(configured);
+  } catch {
+    throw new Error('BESEDY_MCP_JWKS_URL must be an absolute URL');
+  }
+  if (jwksUrl.username || jwksUrl.password) {
+    throw new Error('BESEDY_MCP_JWKS_URL must not include credentials');
+  }
+  if (jwksUrl.protocol !== 'http:' && jwksUrl.protocol !== 'https:') {
+    throw new Error('BESEDY_MCP_JWKS_URL must use HTTP or HTTPS');
+  }
+
+  return jwksUrl.toString();
+}

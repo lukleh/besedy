@@ -18,6 +18,13 @@ interface TokenResponse {
   token_type?: string;
 }
 
+interface AccessTokenClaims {
+  aud?: string | string[];
+  iss?: string;
+  scope?: string;
+  sub?: string;
+}
+
 interface McpResponse<T> {
   jsonrpc: '2.0';
   id: number;
@@ -120,6 +127,17 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
     expect(token.token_type).toBe('Bearer');
     expect(token.scope).toContain('besedy:read');
     expect(token.access_token).toBeTruthy();
+    const tokenParts = token.access_token!.split('.');
+    expect(tokenParts, 'MCP access token must be a signed JWT').toHaveLength(3);
+    const accessTokenClaims = JSON.parse(
+      Buffer.from(tokenParts[1]!, 'base64url').toString('utf8'),
+    ) as AccessTokenClaims;
+    expect(accessTokenClaims).toMatchObject({
+      aud: MCP_RESOURCE,
+      iss: `${BASE_URL}/api/auth`,
+      scope: expect.stringContaining('besedy:read'),
+      sub: expect.any(String),
+    });
 
     const envelope = {
       'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
@@ -145,13 +163,19 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
         params: { _meta: envelope },
       },
     });
-    expect(toolsResponse.ok()).toBe(true);
-    const toolsBody = (await toolsResponse.json()) as McpResponse<{
+    const toolsResponseText = await toolsResponse.text();
+    expect(toolsResponse.ok(), toolsResponseText).toBe(true);
+    const toolsBody = JSON.parse(toolsResponseText) as McpResponse<{
       tools: Array<{ name: string }>;
     }>;
     expect(toolsBody.error).toBeUndefined();
     expect(toolsBody.result?.tools.map((tool) => tool.name)).toEqual([
       'list_catalogs',
+      'list_events',
+      'get_event',
+      'get_recording',
+      'get_transcript',
+      'search_transcripts',
     ]);
 
     const catalogResponse = await request.post(MCP_RESOURCE, {
@@ -202,6 +226,111 @@ test("@smoke MCP OAuth v2 lists the owner's catalogs", async ({
         canSeeUnreleasedEvents: true,
       },
     });
+
+    const eventsResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'list_events',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'list_events',
+          arguments: { limit: 10 },
+          _meta: envelope,
+        },
+      },
+    });
+    expect(eventsResponse.ok()).toBe(true);
+    const eventsBody = (await eventsResponse.json()) as McpResponse<{
+      structuredContent: {
+        catalogId: string;
+        events: Array<{
+          id: number;
+          released: boolean;
+          primaryRecording: { audioHash: string } | null;
+        }>;
+        nextCursor: number | null;
+      };
+    }>;
+    expect(eventsBody.error).toBeUndefined();
+    const eventResult = eventsBody.result?.structuredContent;
+    expect(eventResult?.catalogId).toBe(result?.defaultCatalogId);
+    expect(eventResult?.events).toHaveLength(3);
+    expect(eventResult?.events.some((event) => !event.released)).toBe(true);
+    const event = eventResult?.events.find(
+      (candidate) => candidate.primaryRecording !== null,
+    );
+    expect(event).toBeTruthy();
+
+    const eventResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'get_event',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: {
+          name: 'get_event',
+          arguments: { eventId: event!.id },
+          _meta: envelope,
+        },
+      },
+    });
+    expect(eventResponse.ok()).toBe(true);
+    const eventBody = (await eventResponse.json()) as McpResponse<{
+      structuredContent: {
+        catalogId: string;
+        event: { id: number; recordings: Array<{ audioHash: string }> };
+      };
+    }>;
+    expect(eventBody.error).toBeUndefined();
+    expect(eventBody.result?.structuredContent.event.id).toBe(event!.id);
+    expect(
+      eventBody.result?.structuredContent.event.recordings.length,
+    ).toBeGreaterThan(0);
+
+    const audioHash = event!.primaryRecording!.audioHash;
+    const recordingResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'get_recording',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'get_recording',
+          arguments: { audioHash },
+          _meta: envelope,
+        },
+      },
+    });
+    expect(recordingResponse.ok()).toBe(true);
+    const recordingBody = (await recordingResponse.json()) as McpResponse<{
+      structuredContent: {
+        catalogId: string;
+        recording: { audioHash: string };
+        events: Array<{ id: number }>;
+      };
+    }>;
+    expect(recordingBody.error).toBeUndefined();
+    expect(recordingBody.result?.structuredContent.recording.audioHash).toBe(
+      audioHash,
+    );
+    expect(
+      recordingBody.result?.structuredContent.events.some(
+        (linkedEvent) => linkedEvent.id === event!.id,
+      ),
+    ).toBe(true);
   } finally {
     await removeLocalTestClient(clientId);
   }

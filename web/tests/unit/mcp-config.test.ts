@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getMcpResourceUrl, isMcpEnabled } from '@/lib/mcp/config';
+import {
+  getMcpJwksUrl,
+  getMcpResourceUrl,
+  isMcpEnabled,
+} from '@/lib/mcp/config';
 
 describe('MCP runtime configuration', () => {
   it('defaults off in production and on in development', () => {
@@ -39,6 +43,33 @@ describe('MCP runtime configuration', () => {
   it('keeps the localhost fallback for non-production development', () => {
     expect(getMcpResourceUrl(undefined, 'development', 'development')).toBe(
       'http://localhost:3001/api/mcp',
+    );
+  });
+
+  it('uses the public auth endpoint for JWKS unless an internal URL is set', () => {
+    expect(
+      getMcpJwksUrl(
+        undefined,
+        'https://besedy.example.com',
+        'production',
+        'production',
+      ),
+    ).toBe('https://besedy.example.com/api/auth/jwks');
+    expect(
+      getMcpJwksUrl(
+        'http://127.0.0.1:3000/api/auth/jwks',
+        'https://besedy.example.com',
+        'production',
+        'production',
+      ),
+    ).toBe('http://127.0.0.1:3000/api/auth/jwks');
+  });
+
+  it('rejects unsafe JWKS URL forms', () => {
+    expect(() => getMcpJwksUrl('relative/jwks')).toThrow('absolute URL');
+    expect(() => getMcpJwksUrl('file:///tmp/jwks')).toThrow('HTTP or HTTPS');
+    expect(() => getMcpJwksUrl('https://user:pass@example.com/jwks')).toThrow(
+      'must not include credentials',
     );
   });
 });

@@ -104,6 +104,15 @@ describe('MCP route hardening', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.getPortalCapability).toHaveBeenCalledWith('user-1');
+    expect(mocks.requireMcpAuth).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Function),
+      expect.objectContaining({
+        jwksUrl: 'http://localhost:3001/api/auth/jwks',
+        resource: 'http://localhost:3001/api/mcp',
+        requiredScopes: ['besedy:read'],
+      }),
+    );
     expect(mocks.mcpFetch).toHaveBeenCalledWith(
       expect.any(Request),
       expect.objectContaining({
