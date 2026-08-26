@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   canonicalizeEmail: vi.fn((email: string) => email.toLowerCase()),
   getAuthTrustedOrigins: vi.fn(() => []),
   getGoogleOAuthConfig: vi.fn(() => null),
+  fetchCimdClientMetadataResource: vi.fn(),
   logLogin: vi.fn(),
   logPortalAdmissionEvent: vi.fn(),
   mcp: vi.fn(() => ({ id: "mcpPlugin" })),
@@ -51,8 +52,8 @@ vi.mock("@better-auth/cimd", () => ({
   cimd: mocks.cimd,
 }));
 
-vi.mock("@better-auth/cimd/node", () => ({
-  fetchClientMetadataResource: vi.fn(),
+vi.mock("@/lib/auth/cimd-fetch", () => ({
+  fetchCimdClientMetadataResource: mocks.fetchCimdClientMetadataResource,
 }));
 
 vi.mock("better-auth/api", () => {
@@ -187,7 +188,10 @@ describe("auth admission hardening", () => {
       }),
     );
     expect(mocks.cimd).toHaveBeenCalledWith(
-      expect.objectContaining({ metadataProfile: "mcp-2026-07-28" }),
+      expect.objectContaining({
+        fetchClientMetadataResource: mocks.fetchCimdClientMetadataResource,
+        metadataProfile: "mcp-2026-07-28",
+      }),
     );
   });
 
