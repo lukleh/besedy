@@ -176,6 +176,8 @@ describe('MCP personalized tool surface', () => {
       arguments: {},
     });
 
+    expect(getMcpIdentity).toHaveBeenCalledOnce();
+    expect(getMcpIdentity).toHaveBeenCalledWith('user-1', 'client-1');
     expect(body.result?.structuredContent).toEqual({
       account: {
         id: 'user-1',
@@ -297,6 +299,7 @@ describe('MCP personalized tool surface', () => {
       'get_event',
       'get_recording',
     ]);
+    expect(getMcpIdentity).not.toHaveBeenCalled();
   });
 
   it('exposes the complete read surface when any catalog permits it', async () => {

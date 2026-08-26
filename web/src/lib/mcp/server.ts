@@ -189,46 +189,51 @@ export async function createBesedyMcpServer(
     return server;
   }
 
-  const identity = await getMcpIdentity(userId, connection.clientId);
-  if (identity) {
-    server.registerTool(
-      'who_am_i',
-      {
-        title: 'Show current Besedy identity',
-        description:
-          'Show which Besedy account and OAuth client this MCP connection is using, including its effective access summary.',
-        inputSchema: z.object({}),
-        annotations: readOnlyAnnotations,
-      },
-      async () => {
-        const canReadProfile = connection.scopes.includes('profile');
-        const canReadEmail = connection.scopes.includes('email');
-        const result = {
-          account: {
-            id: identity.userId,
-            name: canReadProfile ? identity.name : null,
-            email: canReadEmail ? identity.email : null,
-            emailVerified: canReadEmail ? identity.emailVerified : null,
-            status: identity.status,
-            systemRole: identity.systemRole,
-          },
-          authorization: {
-            clientId: identity.clientId,
-            clientName: identity.clientName,
-            grantedScopes: connection.scopes,
-            accessibleCatalogCount: profile.catalogs.length,
-            defaultCatalogId: profile.defaultCatalogId,
-          },
-        };
-        const accountLabel =
-          result.account.email ?? result.account.name ?? identity.userId;
-        return toolSuccess(
-          result,
-          `Connected to Besedy as ${accountLabel} (${identity.systemRole}) via ${identity.clientName ?? identity.clientId}.`,
+  server.registerTool(
+    'who_am_i',
+    {
+      title: 'Show current Besedy identity',
+      description:
+        'Show which Besedy account and OAuth client this MCP connection is using, including its effective access summary.',
+      inputSchema: z.object({}),
+      annotations: readOnlyAnnotations,
+    },
+    async () => {
+      const identity = await getMcpIdentity(userId, connection.clientId);
+      if (!identity) {
+        return toolError(
+          'identity_unavailable',
+          'The authenticated Besedy account is no longer available',
         );
-      },
-    );
-  }
+      }
+
+      const canReadProfile = connection.scopes.includes('profile');
+      const canReadEmail = connection.scopes.includes('email');
+      const result = {
+        account: {
+          id: identity.userId,
+          name: canReadProfile ? identity.name : null,
+          email: canReadEmail ? identity.email : null,
+          emailVerified: canReadEmail ? identity.emailVerified : null,
+          status: identity.status,
+          systemRole: identity.systemRole,
+        },
+        authorization: {
+          clientId: identity.clientId,
+          clientName: identity.clientName,
+          grantedScopes: connection.scopes,
+          accessibleCatalogCount: profile.catalogs.length,
+          defaultCatalogId: profile.defaultCatalogId,
+        },
+      };
+      const accountLabel =
+        result.account.email ?? result.account.name ?? identity.userId;
+      return toolSuccess(
+        result,
+        `Connected to Besedy as ${accountLabel} (${identity.systemRole}) via ${identity.clientName ?? identity.clientId}.`,
+      );
+    },
+  );
 
   server.registerTool(
     'list_catalogs',
