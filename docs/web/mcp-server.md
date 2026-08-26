@@ -1,6 +1,24 @@
 # Besedy MCP Server
 
 > Status: initial authenticated `list_catalogs` vertical slice implemented
+
+## Local smoke test
+
+Run the MCP server against the disposable test database and mock OAuth provider,
+never production:
+
+```bash
+just mcp-smoke
+```
+
+The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
+the MCP consent screen, exchanges an authorization code with PKCE, sends MCP
+2026-07-28 `tools/list`, and calls `list_catalogs`. It verifies the effective
+default catalog and the owner's live capability flags. The test keeps the test
+containers running for reuse; stop them with `just test-down`. On a new
+machine, install the Playwright browser once with
+`cd web && npx playwright install chromium`.
+
 > Last updated: 2026-08-26
 
 ## Purpose and scope

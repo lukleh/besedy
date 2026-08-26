@@ -683,3 +683,21 @@ test-ready:
     fi
 
     echo "Test environment ready"
+
+# Rebuild this checkout and run the authenticated MCP v2 smoke test.
+mcp-smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just test-up
+    just test-rebuild
+    echo "Waiting for rebuilt MCP test server..."
+    for i in {1..60}; do
+      if curl -sf http://localhost:3002/api/health > /dev/null 2>&1; then
+        cd web
+        npm run test:e2e:mcp
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "MCP test server did not become ready on port 3002" >&2
+    exit 1

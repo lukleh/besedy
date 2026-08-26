@@ -25,6 +25,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test",
     "test:e2e:smoke": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --grep @smoke --project='Desktop Chrome'",
+    "test:e2e:mcp": "playwright test --config=playwright.mcp.config.ts",
     "test:e2e:desktop": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --project='Desktop Chrome'",
     "test:e2e:security": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --grep @security",
     "test:e2e:regression": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test --grep @regression",
