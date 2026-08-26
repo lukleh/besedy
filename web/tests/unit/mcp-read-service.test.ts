@@ -6,11 +6,14 @@ import {
 } from '@/lib/catalog-events/visibility';
 import { getRecordingCapability } from '@/lib/access/capabilities';
 import { getAvailableTranscripts, loadTranscript } from '@/lib/transcript';
+import { executeCatalogSearch } from '@/app/api/catalogs/[id]/search/search-service';
+import { RagServiceError } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import {
   getMcpEvent,
   getMcpRecording,
   getMcpTranscript,
   listMcpEvents,
+  searchMcpTranscripts,
 } from '@/lib/mcp/read-service';
 
 vi.mock('@/lib/db', () => ({
@@ -106,6 +109,57 @@ describe('MCP read service', () => {
         { id: 13, text: 'after', start: 15, end: 20 },
       ],
     });
+    vi.mocked(executeCatalogSearch).mockResolvedValue({
+      query: 'search phrase',
+      results: [
+        {
+          rank: 1,
+          audioHash: 'visible-recording',
+          chunkId: 'chunk-1',
+          score: 0.91,
+          startSec: 60,
+          endSec: 90,
+          text: 'Matching evidence',
+          contextText: 'Context before\n\nMatching evidence',
+          contextStartSec: 30,
+          contextEndSec: 90,
+          neighbors: {
+            before: [
+              {
+                chunkId: 'chunk-0',
+                audioHash: 'visible-recording',
+                startSec: 30,
+                endSec: 60,
+                text: 'Context before',
+              },
+            ],
+            after: [],
+          },
+          metadata: {
+            date: { year: 2026, month: 8, day: 26 },
+            location: { id: 7, name: 'Prague' },
+            recorder: { id: 3, name: 'Recorder' },
+          },
+          citation: {
+            audioHash: 'visible-recording',
+            chunkId: 'chunk-1',
+            startSec: 60,
+            endSec: 90,
+            workflowGroupId: 'catalog-a',
+            backendKey: 'whisperx/model',
+            chunkVersion: 'v1',
+          },
+          provenance: {
+            workflowGroupId: 'catalog-a',
+            backendKey: 'whisperx/model',
+            runId: 'run-1',
+            chunkVersion: 'v1',
+            embeddingModel: 'colbert',
+            embeddingModelVersion: '1',
+          },
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof executeCatalogSearch>>);
     db.catalogEvent.findMany.mockResolvedValue([
       {
         id: 42,
@@ -411,6 +465,93 @@ describe('MCP read service', () => {
         totalMatching: 2,
         nextOffset: 1,
       },
+    });
+  });
+
+  it('returns compact grounded search matches with seekable recording links', async () => {
+    const filters = { dateYears: [2026], verified: true };
+    const result = await searchMcpTranscripts('catalog-a', 'VIEWER', {
+      query: 'search phrase',
+      limit: 10,
+      contextChunks: 1,
+      maxPerRecording: 2,
+      filters,
+    });
+
+    expect(executeCatalogSearch).toHaveBeenCalledWith({
+      catalogId: 'catalog-a',
+      query: 'search phrase',
+      limit: 10,
+      includeNeighbors: true,
+      neighborCount: 1,
+      maxPerAudio: 2,
+      metadataFilters: filters,
+      accessLevel: 'VIEWER',
+      failOnMissingBundle: true,
+    });
+    expect(result).toEqual({
+      catalogId: 'catalog-a',
+      query: 'search phrase',
+      results: [
+        {
+          rank: 1,
+          score: 0.91,
+          recording: {
+            audioHash: 'visible-recording',
+            title: 'Recording title',
+            artist: 'Speaker',
+            durationHms: '00:42:00',
+            ready: true,
+            published: true,
+            webUrl:
+              'https://besedy.example/catalog/catalog-a/recording/visible-recording',
+          },
+          match: {
+            chunkId: 'chunk-1',
+            startSec: 60,
+            endSec: 90,
+            text: 'Matching evidence',
+            webUrl:
+              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=60',
+          },
+          context: {
+            startSec: 30,
+            endSec: 90,
+            text: 'Context before\n\nMatching evidence',
+          },
+          metadata: {
+            date: { year: 2026, month: 8, day: 26 },
+            location: { id: 7, name: 'Prague' },
+            recorder: { id: 3, name: 'Recorder' },
+          },
+          citation: {
+            audioHash: 'visible-recording',
+            chunkId: 'chunk-1',
+            startSec: 60,
+            endSec: 90,
+            workflowGroupId: 'catalog-a',
+            backendKey: 'whisperx/model',
+            chunkVersion: 'v1',
+          },
+        },
+      ],
+    });
+  });
+
+  it('returns a structured error when transcript search is unavailable', async () => {
+    vi.mocked(executeCatalogSearch).mockRejectedValue(
+      new RagServiceError('Model service request failed', 502),
+    );
+
+    await expect(
+      searchMcpTranscripts('catalog-a', 'VIEWER', {
+        query: 'search phrase',
+        limit: 10,
+        contextChunks: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: 'search_unavailable',
+      message: 'Transcript search is temporarily unavailable',
     });
   });
 });

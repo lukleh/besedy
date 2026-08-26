@@ -7,6 +7,7 @@ import {
   getMcpRecording,
   getMcpTranscript,
   listMcpEvents,
+  searchMcpTranscripts,
 } from '@/lib/mcp/read-service';
 
 vi.mock('@/lib/mcp/access-profile', () => ({
@@ -363,6 +364,45 @@ describe('MCP personalized tool surface', () => {
         segmentOffset: 0,
         segmentLimit: 50,
         maxTextChars: 20_000,
+      },
+    );
+  });
+
+  it('applies compact transcript search defaults', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+    vi.mocked(searchMcpTranscripts).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      query: 'search phrase',
+      results: [],
+    });
+
+    const body = await invokeMcp('tools/call', {
+      name: 'search_transcripts',
+      arguments: { query: 'search phrase' },
+    });
+
+    expect(body.error).toBeUndefined();
+    expect(searchMcpTranscripts).toHaveBeenCalledWith(
+      'viewer-catalog',
+      'VIEWER',
+      {
+        query: 'search phrase',
+        limit: 10,
+        contextChunks: 0,
+        maxPerRecording: undefined,
+        filters: undefined,
       },
     );
   });

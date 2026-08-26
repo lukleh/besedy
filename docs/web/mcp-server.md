@@ -188,8 +188,15 @@ authenticated recording `webUrl` and a permission-scoped event page containing
 characters. Each result includes the authenticated recording `webUrl`, the
 selected and available backends, and a segment page with absolute
 `segmentIndex` values, `totalMatching`, and `nextOffset`. Search accepts up to
-1,000 query characters and returns at most 20 grounded matches per call. Agents
-should normally search first, then fetch only the relevant transcript range.
+1,000 query characters and returns at most 20 grounded matches per call.
+`contextChunks` controls zero to three surrounding chunks, while optional
+`maxPerRecording` diversifies results. Search also exposes the web UI's audio
+hash, location, recorder, year, and verification filters. Results contain a
+compact recording summary, an exact match with a seekable `webUrl`, optional
+assembled context without duplicate neighbor arrays, metadata, and a stable
+citation. Agents should normally search first, then fetch only the relevant
+transcript range. An unavailable RAG service returns the structured
+`search_unavailable` error.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.

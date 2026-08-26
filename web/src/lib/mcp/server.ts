@@ -14,6 +14,7 @@ import {
   searchMcpTranscripts,
 } from '@/lib/mcp/read-service';
 import { HashSchema, TranscriptBackendSchema } from '@/lib/validation/schemas';
+import { SearchMetadataFiltersSchema } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 
 const readOnlyAnnotations = {
   readOnlyHint: true,
@@ -36,6 +37,8 @@ const DEFAULT_TRANSCRIPT_TEXT_CHAR_LIMIT = 20_000;
 const MAX_TRANSCRIPT_TEXT_CHAR_LIMIT = 50_000;
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 20;
+const MAX_SEARCH_CONTEXT_CHUNKS = 3;
+const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
 
@@ -362,11 +365,30 @@ export async function createBesedyMcpServer(
             .min(1)
             .max(MAX_SEARCH_LIMIT)
             .default(DEFAULT_SEARCH_LIMIT),
-          includeNeighbors: z.boolean().default(false),
+          contextChunks: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_SEARCH_CONTEXT_CHUNKS)
+            .default(0),
+          maxPerRecording: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_SEARCH_RESULTS_PER_RECORDING)
+            .optional(),
+          filters: SearchMetadataFiltersSchema.optional(),
         }),
         annotations: readOnlyAnnotations,
       },
-      async ({ catalogId, query, limit, includeNeighbors }) => {
+      async ({
+        catalogId,
+        query,
+        limit,
+        contextChunks,
+        maxPerRecording,
+        filters,
+      }) => {
         const catalog = resolveToolCatalog(
           profile,
           catalogId,
@@ -378,7 +400,9 @@ export async function createBesedyMcpServer(
             searchMcpTranscripts(catalog.id, catalog.catalogGrant, {
               query,
               limit,
-              includeNeighbors,
+              contextChunks,
+              maxPerRecording,
+              filters,
             }),
           (result) =>
             `Found ${Array.isArray(result.results) ? result.results.length : 0} Besedy transcript match(es).`,

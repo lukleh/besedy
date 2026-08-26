@@ -507,7 +507,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           arguments: {
             query: 'Besedy MCP deterministic search',
             limit: 5,
-            includeNeighbors: true,
+            contextChunks: 1,
+            maxPerRecording: 2,
+            filters: { audioHashes: [audioHash] },
           },
           _meta: envelope,
         },
@@ -520,11 +522,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         query: string;
         results: Array<{
           rank: number;
-          audioHash: string;
-          chunkId: string;
-          text: string;
-          contextText: string;
-          neighbors: { before: Array<{ text: string }>; after: unknown[] };
+          recording: { audioHash: string; webUrl: string };
+          match: { chunkId: string; text: string; webUrl: string };
+          context: { text: string };
           citation: { workflowGroupId: string; chunkVersion: string };
         }>;
       }>
@@ -539,18 +539,17 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       results: [
         {
           rank: 1,
-          audioHash,
-          chunkId: 'mcp-smoke-chunk-1',
-          text: 'Deterministic Besedy MCP search evidence.',
-          contextText:
-            'Neighbor context before the deterministic evidence.\n\nDeterministic Besedy MCP search evidence.',
-          neighbors: {
-            before: [
-              {
-                text: 'Neighbor context before the deterministic evidence.',
-              },
-            ],
-            after: [],
+          recording: {
+            audioHash,
+            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
+          },
+          match: {
+            chunkId: 'mcp-smoke-chunk-1',
+            text: 'Deterministic Besedy MCP search evidence.',
+            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5`,
+          },
+          context: {
+            text: 'Neighbor context before the deterministic evidence.\n\nDeterministic Besedy MCP search evidence.',
           },
           citation: {
             workflowGroupId: result?.defaultCatalogId,

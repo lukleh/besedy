@@ -16,6 +16,10 @@ import {
 } from '@/lib/transcript';
 import { listTranscriptBackendPriorities } from '@/lib/transcript-priority';
 import { executeCatalogSearch } from '@/app/api/catalogs/[id]/search/search-service';
+import {
+  RagServiceError,
+  type SearchMetadataFilters,
+} from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import { getMcpResourceUrl } from '@/lib/mcp/config';
 
 const eventSummaryInclude = {
@@ -73,7 +77,8 @@ export class McpReadError extends Error {
       | 'not_found'
       | 'permission_denied'
       | 'transcript_not_found'
-      | 'invalid_window',
+      | 'invalid_window'
+      | 'search_unavailable',
     message: string,
   ) {
     super(message);
@@ -173,6 +178,16 @@ function buildRecordingWebUrl(catalogId: string, audioHash: string): string {
     `/catalog/${encodeURIComponent(catalogId)}/recording/${encodeURIComponent(audioHash)}`,
     getMcpResourceUrl(),
   ).toString();
+}
+
+function buildRecordingSeekWebUrl(
+  catalogId: string,
+  audioHash: string,
+  startSec: number,
+): string {
+  const url = new URL(buildRecordingWebUrl(catalogId, audioHash));
+  url.searchParams.set('seek', String(startSec));
+  return url.toString();
 }
 
 export async function listMcpEvents(
@@ -526,33 +541,66 @@ export async function searchMcpTranscripts(
   input: {
     query: string;
     limit: number;
-    includeNeighbors: boolean;
+    contextChunks: number;
+    maxPerRecording?: number;
+    filters?: SearchMetadataFilters;
   },
 ) {
-  const execution = await executeCatalogSearch({
-    catalogId,
-    query: input.query,
-    limit: input.limit,
-    includeNeighbors: input.includeNeighbors,
-    neighborCount: input.includeNeighbors ? 1 : 0,
-    accessLevel: catalogGrant,
-  });
+  let execution: Awaited<ReturnType<typeof executeCatalogSearch>>;
+  try {
+    execution = await executeCatalogSearch({
+      catalogId,
+      query: input.query,
+      limit: input.limit,
+      includeNeighbors: input.contextChunks > 0,
+      neighborCount: input.contextChunks,
+      maxPerAudio: input.maxPerRecording ?? null,
+      metadataFilters: input.filters ?? null,
+      accessLevel: catalogGrant,
+      failOnMissingBundle: true,
+    });
+  } catch (error) {
+    if (error instanceof RagServiceError) {
+      throw new McpReadError(
+        'search_unavailable',
+        'Transcript search is temporarily unavailable',
+      );
+    }
+    throw error;
+  }
+  const recordingRows = await loadRecordingRows(catalogId, [
+    ...new Set(execution.results.map((result) => result.audioHash)),
+  ]);
 
   return {
     catalogId,
     query: execution.query,
     results: execution.results.map((result) => ({
       rank: result.rank,
-      audioHash: result.audioHash,
-      chunkId: result.chunkId,
       score: result.score,
-      startSec: result.startSec,
-      endSec: result.endSec,
-      text: result.text,
-      contextText: result.contextText,
-      contextStartSec: result.contextStartSec,
-      contextEndSec: result.contextEndSec,
-      neighbors: result.neighbors,
+      recording: {
+        ...serializeRecordingSummary(result.audioHash, recordingRows),
+        webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
+      },
+      match: {
+        chunkId: result.chunkId,
+        startSec: result.startSec,
+        endSec: result.endSec,
+        text: result.text,
+        webUrl: buildRecordingSeekWebUrl(
+          catalogId,
+          result.audioHash,
+          result.startSec,
+        ),
+      },
+      context:
+        input.contextChunks > 0
+          ? {
+              startSec: result.contextStartSec,
+              endSec: result.contextEndSec,
+              text: result.contextText,
+            }
+          : null,
       metadata: result.metadata,
       citation: result.citation,
     })),
