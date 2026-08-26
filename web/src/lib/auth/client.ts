@@ -177,6 +177,36 @@ export async function respondToMcpConsent(accept: boolean) {
   return authClient.oauth2.consent({ accept });
 }
 
+export interface McpOAuthClientMetadata {
+  client_id: string;
+  client_name?: string;
+  client_uri?: string;
+}
+
+/** Verify the signed MCP authorization query and return trusted client metadata. */
+export async function validateMcpAuthorizationRequest(
+  clientId: string,
+  oauthQuery: string,
+  signal?: AbortSignal
+): Promise<McpOAuthClientMetadata> {
+  const response = await fetch("/api/auth/oauth2/public-client-prelogin", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      oauth_query: oauthQuery,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error("Invalid MCP authorization request");
+  }
+
+  return (await response.json()) as McpOAuthClientMetadata;
+}
+
 // Sign out helper - broadcasts to other tabs before redirecting
 export async function signOutAndRedirect() {
   await authClient.signOut();

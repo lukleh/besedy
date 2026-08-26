@@ -26,17 +26,36 @@ export function isFeatureEnabledForUser(feature: FeatureKey, labsEnabled: boolea
   return labsEnabled;
 }
 
-export async function getLabsPreferenceForUser(userId: string): Promise<LabsPreference> {
+export interface UserFeaturePreferences {
+  activeGroupId: string | null;
+  labsPreference: LabsPreference;
+}
+
+export async function getUserFeaturePreferences(
+  userId: string
+): Promise<UserFeaturePreferences> {
   const prefs = await prisma.userPreferences.findUnique({
     where: { userId },
-    select: { settings: true },
+    select: { activeGroupId: true, settings: true },
   });
 
   if (!prefs) {
-    return defaultLabsPreference();
+    return {
+      activeGroupId: null,
+      labsPreference: defaultLabsPreference(),
+    };
   }
 
-  return readLabsPreferenceFromSettings(prefs.settings);
+  return {
+    activeGroupId: prefs.activeGroupId,
+    labsPreference: readLabsPreferenceFromSettings(prefs.settings),
+  };
+}
+
+export async function getLabsPreferenceForUser(
+  userId: string
+): Promise<LabsPreference> {
+  return (await getUserFeaturePreferences(userId)).labsPreference;
 }
 
 export function buildCatalogFeaturesResponse(

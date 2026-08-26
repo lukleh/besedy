@@ -1,16 +1,43 @@
-import prisma from "@/lib/db";
-import { getCatalogDiscoveryCapability } from "@/lib/access/capabilities";
+import prisma from '@/lib/db';
+import { getCatalogDiscoveryCapability } from '@/lib/access/capabilities';
 
 type WorkflowGroup = NonNullable<
   Awaited<ReturnType<typeof prisma.workflowGroup.findFirst>>
 >;
 
 export type ReadableGroupResolutionSource =
-  "explicit" | "preference" | "default" | "recent";
+  'explicit' | 'preference' | 'default' | 'recent';
 
 export interface ReadableGroupResolution {
   group: WorkflowGroup;
   source: ReadableGroupResolutionSource;
+}
+
+export function selectDefaultReadableGroup<
+  T extends { id: string; isDefault: boolean },
+>(
+  groups: T[],
+  preferredGroupId: string | null | undefined,
+): {
+  group: T;
+  source: Exclude<ReadableGroupResolutionSource, 'explicit'>;
+} | null {
+  if (preferredGroupId) {
+    const preferredGroup = groups.find(
+      (group) => group.id === preferredGroupId,
+    );
+    if (preferredGroup) {
+      return { group: preferredGroup, source: 'preference' };
+    }
+  }
+
+  const defaultGroup = groups.find((group) => group.isDefault);
+  if (defaultGroup) {
+    return { group: defaultGroup, source: 'default' };
+  }
+
+  const recentGroup = groups[0];
+  return recentGroup ? { group: recentGroup, source: 'recent' } : null;
 }
 
 /**
@@ -22,7 +49,7 @@ export interface ReadableGroupResolution {
  */
 export async function resolveReadableGroup(
   catalogId: string | null | undefined,
-  userId: string
+  userId: string,
 ): Promise<ReadableGroupResolution | null> {
   const discovery = await getCatalogDiscoveryCapability(userId);
   if (
@@ -47,7 +74,7 @@ export async function resolveReadableGroup(
         id: { in: discovery.accessibleCatalogIds },
         isActive: true,
       },
-      orderBy: { id: "desc" },
+      orderBy: { id: 'desc' },
     }),
   ]);
 
@@ -55,21 +82,8 @@ export async function resolveReadableGroup(
 
   if (catalogId) {
     const explicitGroup = byId.get(catalogId);
-    return explicitGroup ? { group: explicitGroup, source: "explicit" } : null;
+    return explicitGroup ? { group: explicitGroup, source: 'explicit' } : null;
   }
 
-  if (preferences?.activeGroupId) {
-    const preferredGroup = byId.get(preferences.activeGroupId);
-    if (preferredGroup) {
-      return { group: preferredGroup, source: "preference" };
-    }
-  }
-
-  const defaultGroup = groups.find((group) => group.isDefault);
-  if (defaultGroup) {
-    return { group: defaultGroup, source: "default" };
-  }
-
-  const recentGroup = groups[0];
-  return recentGroup ? { group: recentGroup, source: "recent" } : null;
+  return selectDefaultReadableGroup(groups, preferences?.activeGroupId);
 }

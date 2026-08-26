@@ -1,6 +1,6 @@
 # Besedy MCP Server
 
-> Status: initial authenticated `list_catalogs` vertical slice implemented  
+> Status: initial authenticated `list_catalogs` vertical slice implemented
 > Last updated: 2026-08-26
 
 ## Purpose and scope
@@ -55,6 +55,13 @@ the policy, but the policy code is authoritative.
   rejected.
 - Every tool call resolves the current user and current grants again. A token
   never freezes catalog permissions for its lifetime.
+- Production enablement is explicit: set `BESEDY_MCP_ENABLED=true` only with a
+  canonical HTTPS `AUTH_URL`. MCP defaults to disabled in production and
+  enabled in development. Disabled deployments return 404 from MCP and its
+  discovery/login/consent routes and do not install the OAuth-provider plugins.
+- The initial endpoint applies per-process global, OAuth-client, and user rate
+  limits. Deployment-level rate limiting is still recommended for multi-instance
+  installations.
 
 `PENDING`, `BLOCKED`, deleted, or otherwise inactive users cannot use MCP even
 if they previously obtained a token. Revoked catalog grants stop authorizing
@@ -108,7 +115,9 @@ catalog does not allow the requested operation.
 
 `list_catalogs` includes the effective role and explicit booleans such as
 `canViewTranscripts`, `canSearchTranscripts`, and `canSeeUnreleasedEvents`, so an
-agent can select valid operations without guessing from role names.
+agent can select valid operations without guessing from role names. It also
+distinguishes the user's saved default, the configured global default, and the
+effective default that an omitted `catalogId` will resolve.
 
 ## Initial tools
 
@@ -128,6 +137,11 @@ and authorization tests are complete.
 | `get_recording`      | Get metadata for one visible recording                        | Recording visibility                |
 | `get_transcript`     | Get a recording transcript, optionally by time/segment window | `canViewTranscripts`                |
 | `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canUseRagSearch`                   |
+
+`list_catalogs` accepts an optional cursor and a `limit` from 1 to 100 (default
+50). Its response includes `nextCursor`, `defaultCatalogId`, and
+`defaultCatalogSource`. Catalog entries expose `isUserDefault`,
+`isGlobalDefault`, and `isEffectiveDefault` separately.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
@@ -193,8 +207,10 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [ ] Contract-test tool discovery and every tool's per-catalog authorization.
 - [ ] Integration-test OAuth discovery, Google login continuation, consent, and token validation.
 - [ ] Regression-test web event/search behavior against canonical policy.
-- [ ] Add audit events, rate limits, bounded result sizes, and safe metrics.
-- [ ] Gate production enablement with configuration and document client setup.
+- [x] Add initial global/client/user MCP rate limits and bound `list_catalogs`.
+- [x] Gate production enablement with `BESEDY_MCP_ENABLED` and strict `AUTH_URL` validation.
+- [ ] Add audit events, deployment-level limits, and safe metrics.
+- [ ] Document client setup after the remaining read tools are implemented.
 
 ## Change checklist for permissions
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SECURE_COOKIE_PREFIX } from "better-auth/cookies";
 import { checkRateLimit } from "./lib/security/rate-limit";
+import { isMcpEnabled } from "./lib/mcp/config";
 import { constantTimeEqual } from "./lib/security/constant-time";
 import {
   resolveRequestAuth,
@@ -136,7 +137,11 @@ function isAuthorizedInternalDeepSearchRequest(req: NextRequest): boolean {
 }
 
 function isMcpBearerRequest(req: NextRequest): boolean {
-  if (req.nextUrl.pathname !== "/api/mcp" || req.method !== "POST") {
+  if (
+    !isMcpEnabled() ||
+    req.nextUrl.pathname !== "/api/mcp" ||
+    req.method !== "POST"
+  ) {
     return false;
   }
 

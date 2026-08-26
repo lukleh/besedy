@@ -130,6 +130,46 @@ describe("auth client", () => {
     expect(mocks.oauth2Consent).toHaveBeenCalledWith({ accept: true });
   });
 
+  it("validates signed MCP requests before trusting client metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          client_id: "https://client.example/metadata.json",
+          client_name: "Example client",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { validateMcpAuthorizationRequest } = await import("@/lib/auth/client");
+
+    await expect(
+      validateMcpAuthorizationRequest(
+        "https://client.example/metadata.json",
+        "client_id=https%3A%2F%2Fclient.example%2Fmetadata.json&sig=signed"
+      )
+    ).resolves.toMatchObject({ client_name: "Example client" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/oauth2/public-client-prelogin",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"oauth_query"'),
+      })
+    );
+  });
+
+  it("rejects MCP client metadata when signed-query validation fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 }))
+    );
+    const { validateMcpAuthorizationRequest } = await import("@/lib/auth/client");
+
+    await expect(
+      validateMcpAuthorizationRequest("spoofed-client", "sig=forged")
+    ).rejects.toThrow("Invalid MCP authorization request");
+  });
+
   it("clears offline caches during sign out before redirecting", async () => {
     const keys = vi.fn().mockResolvedValue([
       "besedy-audio-v3",

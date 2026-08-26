@@ -21,6 +21,7 @@ describe("proxy security controls", () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.env.APP_ENV = "production";
+    process.env.BESEDY_MCP_ENABLED = "true";
     delete process.env.TRUST_PROXY_HEADERS;
 
     mocks.checkRateLimit.mockReturnValue(true);
@@ -305,6 +306,24 @@ describe("proxy security controls", () => {
     const request = new NextRequest("http://localhost/api/mcp", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("does not exempt MCP bearer requests from CSRF when MCP is disabled", async () => {
+    process.env.BESEDY_MCP_ENABLED = "false";
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer mcp-access-token",
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
     });
 

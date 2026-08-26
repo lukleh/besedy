@@ -1,44 +1,51 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { AlertCircle, Loader2 } from "lucide-react";
-import { respondToMcpConsent } from "@/lib/auth/client";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { respondToMcpConsent } from '@/lib/auth/client';
+import { useValidatedMcpAuthorizationRequest } from '@/app/auth/use-validated-mcp-authorization-request';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from '@/components/ui/card';
 
 export default function McpConsent() {
   const searchParams = useSearchParams();
-  const clientId = searchParams.get("client_id");
-  const scopes = (searchParams.get("scope") ?? "")
+  const clientId = searchParams.get('client_id');
+  const oauthQuery = searchParams.toString();
+  const scopes = (searchParams.get('scope') ?? '')
     .split(/\s+/)
     .filter(
-      (scope) => scope && scope !== "openid" && scope !== "offline_access"
+      (scope) => scope && scope !== 'openid' && scope !== 'offline_access',
     );
-  const hasSignedRequest = Boolean(clientId && searchParams.has("sig"));
-  const [pendingChoice, setPendingChoice] = useState<"accept" | "deny" | null>(
-    null
+  const { requestValidation, validatedClient } =
+    useValidatedMcpAuthorizationRequest(
+      clientId,
+      oauthQuery,
+      searchParams.has('sig'),
+    );
+  const [pendingChoice, setPendingChoice] = useState<'accept' | 'deny' | null>(
+    null,
   );
   const [error, setError] = useState<string | null>(null);
 
   async function choose(accept: boolean) {
-    setPendingChoice(accept ? "accept" : "deny");
+    setPendingChoice(accept ? 'accept' : 'deny');
     setError(null);
     try {
       const result = await respondToMcpConsent(accept);
       if (result.error) {
-        setError(result.error.message ?? "Could not complete authorization");
+        setError(result.error.message ?? 'Could not complete authorization');
         setPendingChoice(null);
       }
     } catch {
-      setError("Could not complete authorization");
+      setError('Could not complete authorization');
       setPendingChoice(null);
     }
   }
@@ -49,11 +56,21 @@ export default function McpConsent() {
         <CardHeader>
           <CardTitle>Allow access to Besedy?</CardTitle>
           <CardDescription className="break-all">
-            {clientId ?? "Unknown MCP client"}
+            {validatedClient?.client_name ??
+              validatedClient?.client_id ??
+              'Validating MCP client'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {!hasSignedRequest && (
+          {requestValidation === 'validating' && (
+            <Alert>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertDescription>
+                Verifying the authorization request…
+              </AlertDescription>
+            </Alert>
+          )}
+          {requestValidation === 'invalid' && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
@@ -68,41 +85,43 @@ export default function McpConsent() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <div className="space-y-2 text-sm">
-            <p>This client will be able to:</p>
-            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-              <li>
-                List metadata for catalogs, events, and recordings you can
-                access.
-              </li>
-              <li>
-                Read or search transcripts only where your Besedy role allows
-                it.
-              </li>
-              {scopes.map((scope) => (
-                <li key={scope}>Request scope: {scope}</li>
-              ))}
-            </ul>
-            <p className="text-muted-foreground">
-              Audio and Besedy mutations are not exposed by this MCP server.
-            </p>
-          </div>
+          {requestValidation === 'valid' && (
+            <div className="space-y-2 text-sm">
+              <p>This client will be able to:</p>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>
+                  List metadata for catalogs, events, and recordings you can
+                  access.
+                </li>
+                <li>
+                  Read or search transcripts only where your Besedy role allows
+                  it.
+                </li>
+                {scopes.map((scope) => (
+                  <li key={scope}>Request scope: {scope}</li>
+                ))}
+              </ul>
+              <p className="text-muted-foreground">
+                Audio and Besedy mutations are not exposed by this MCP server.
+              </p>
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
-              disabled={!hasSignedRequest || pendingChoice !== null}
+              disabled={requestValidation !== 'valid' || pendingChoice !== null}
               onClick={() => choose(false)}
             >
-              {pendingChoice === "deny" && (
+              {pendingChoice === 'deny' && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Deny
             </Button>
             <Button
-              disabled={!hasSignedRequest || pendingChoice !== null}
+              disabled={requestValidation !== 'valid' || pendingChoice !== null}
               onClick={() => choose(true)}
             >
-              {pendingChoice === "accept" && (
+              {pendingChoice === 'accept' && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Allow

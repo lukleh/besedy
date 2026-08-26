@@ -21,7 +21,11 @@ import {
 } from "@/lib/admission/auth-claim";
 import { logLogin, logPortalAdmissionEvent } from "@/lib/audit/logger";
 import { getGoogleOAuthConfig } from "./provider-config";
-import { getMcpResourceUrl, MCP_AUTH_SCOPES } from "@/lib/mcp/config";
+import {
+  getMcpResourceUrl,
+  isMcpEnabled,
+  MCP_AUTH_SCOPES,
+} from "@/lib/mcp/config";
 
 const appEnv = process.env.APP_ENV;
 const mockOAuthUrl = process.env.OAUTH_MOCK_URL?.trim();
@@ -31,9 +35,10 @@ const hasMockOAuth =
 // Unit tests that import auth through unrelated session helpers do not have a
 // real adapter; dedicated auth tests opt in with the test-only flag below.
 const hasMcpAuthPlugins =
-  process.env.NODE_ENV !== "test" ||
-  process.env.BESEDY_MCP_TEST_ENABLED === "true";
-const mcpResourceUrl = getMcpResourceUrl();
+  isMcpEnabled() &&
+  (process.env.NODE_ENV !== "test" ||
+    process.env.BESEDY_MCP_TEST_ENABLED === "true");
+const mcpResourceUrl = hasMcpAuthPlugins ? getMcpResourceUrl() : null;
 
 // Build social providers based on environment
 const socialProviders: BetterAuthOptions["socialProviders"] = {};
@@ -113,7 +118,7 @@ export const auth = betterAuth({
           }),
         ]
       : []),
-    ...(hasMcpAuthPlugins
+    ...(mcpResourceUrl
       ? [
           jwt(),
           mcp({
@@ -128,6 +133,7 @@ export const auth = betterAuth({
               },
             ],
             scopes: [...MCP_AUTH_SCOPES],
+            allowPublicClientPrelogin: true,
           }),
           cimd({
             fetchClientMetadataResource,

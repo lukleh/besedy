@@ -1,67 +1,75 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getMcpAccessProfile } from "@/lib/mcp/access-profile";
-import { listUserCatalogAccessEntries } from "@/lib/access/catalog-access-queries";
-import { getLabsPreferenceForUser } from "@/lib/features/capabilities";
-import { resolvePortalActorContext } from "@/lib/policy/actor";
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
+import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
+import { getUserFeaturePreferences } from '@/lib/features/capabilities';
+import { resolvePortalActorContext } from '@/lib/policy/actor';
 
-vi.mock("@/lib/access/catalog-access-queries", () => ({
+vi.mock('@/lib/access/catalog-access-queries', () => ({
   listUserCatalogAccessEntries: vi.fn(),
 }));
 
-vi.mock("@/lib/policy/actor", () => ({
+vi.mock('@/lib/policy/actor', () => ({
   resolvePortalActorContext: vi.fn(),
 }));
 
-vi.mock("@/lib/features/capabilities", async () => {
+vi.mock('@/lib/features/capabilities', async () => {
   const actual = await vi.importActual<
-    typeof import("@/lib/features/capabilities")
-  >("@/lib/features/capabilities");
+    typeof import('@/lib/features/capabilities')
+  >('@/lib/features/capabilities');
   return {
     ...actual,
-    getLabsPreferenceForUser: vi.fn(),
+    getUserFeaturePreferences: vi.fn(),
   };
 });
 
-vi.mock("@/lib/db", () => ({
+vi.mock('@/lib/db', () => ({
   default: {
     workflowGroup: { findMany: vi.fn() },
   },
 }));
 
-describe("MCP access profile", () => {
-  let prisma: { workflowGroup: { findMany: ReturnType<typeof vi.fn> } };
+describe('MCP access profile', () => {
+  let prisma: {
+    workflowGroup: { findMany: ReturnType<typeof vi.fn> };
+  };
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
+    prisma = (await import('@/lib/db')).default as unknown as typeof prisma;
     vi.mocked(resolvePortalActorContext).mockResolvedValue({
-      userId: "user-1",
+      userId: 'user-1',
       isAuthenticated: true,
-      userStatus: "ACTIVE",
-      systemRole: "USER",
+      userStatus: 'ACTIVE',
+      systemRole: 'USER',
       canEnterPortal: true,
     });
     vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([
-      { catalogId: "catalog-listener", accessLevel: "LISTENER" },
-      { catalogId: "catalog-viewer", accessLevel: "VIEWER" },
+      { catalogId: 'catalog-listener', accessLevel: 'LISTENER' },
+      { catalogId: 'catalog-viewer', accessLevel: 'VIEWER' },
     ]);
-    vi.mocked(getLabsPreferenceForUser).mockResolvedValue({
-      enabled: false,
-      updatedAt: null,
+    vi.mocked(getUserFeaturePreferences).mockResolvedValue({
+      activeGroupId: 'catalog-viewer',
+      labsPreference: {
+        enabled: false,
+        updatedAt: null,
+      },
     });
     prisma.workflowGroup.findMany.mockResolvedValue([
-      { id: "catalog-listener", label: "Listener", isDefault: true },
-      { id: "catalog-viewer", label: "Viewer", isDefault: false },
+      { id: 'catalog-listener', label: 'Listener', isDefault: true },
+      { id: 'catalog-viewer', label: 'Viewer', isDefault: false },
     ]);
   });
 
-  it("derives listener and viewer MCP capabilities from canonical policy", async () => {
-    const profile = await getMcpAccessProfile("user-1");
+  it('derives listener and viewer MCP capabilities from canonical policy', async () => {
+    const profile = await getMcpAccessProfile('user-1');
 
     expect(profile.catalogs).toEqual([
       expect.objectContaining({
-        id: "catalog-listener",
-        accessLevel: "LISTENER",
+        id: 'catalog-listener',
+        isUserDefault: false,
+        isGlobalDefault: true,
+        isEffectiveDefault: false,
+        accessLevel: 'LISTENER',
         capabilities: {
           canListEvents: true,
           canGetRecordings: true,
@@ -71,8 +79,11 @@ describe("MCP access profile", () => {
         },
       }),
       expect.objectContaining({
-        id: "catalog-viewer",
-        accessLevel: "VIEWER",
+        id: 'catalog-viewer',
+        isUserDefault: true,
+        isGlobalDefault: false,
+        isEffectiveDefault: true,
+        accessLevel: 'VIEWER',
         capabilities: {
           canListEvents: true,
           canGetRecordings: true,
@@ -82,6 +93,8 @@ describe("MCP access profile", () => {
         },
       }),
     ]);
+    expect(profile.defaultCatalogId).toBe('catalog-viewer');
+    expect(profile.defaultCatalogSource).toBe('preference');
     expect(profile.aggregate).toEqual({
       canListEvents: true,
       canGetRecordings: true,
@@ -90,16 +103,16 @@ describe("MCP access profile", () => {
     });
   });
 
-  it("returns no MCP catalogs for a blocked user", async () => {
+  it('returns no MCP catalogs for a blocked user', async () => {
     vi.mocked(resolvePortalActorContext).mockResolvedValue({
-      userId: "blocked-1",
+      userId: 'blocked-1',
       isAuthenticated: true,
-      userStatus: "BLOCKED",
-      systemRole: "USER",
+      userStatus: 'BLOCKED',
+      systemRole: 'USER',
       canEnterPortal: false,
     });
 
-    await expect(getMcpAccessProfile("blocked-1")).resolves.toMatchObject({
+    await expect(getMcpAccessProfile('blocked-1')).resolves.toMatchObject({
       canEnterPortal: false,
       catalogs: [],
     });
@@ -107,25 +120,25 @@ describe("MCP access profile", () => {
     expect(listUserCatalogAccessEntries).not.toHaveBeenCalled();
   });
 
-  it("gives catalog admins the complete read surface", async () => {
+  it('gives catalog admins the complete read surface', async () => {
     vi.mocked(resolvePortalActorContext).mockResolvedValue({
-      userId: "admin-1",
+      userId: 'admin-1',
       isAuthenticated: true,
-      userStatus: "ACTIVE",
-      systemRole: "ADMIN",
+      userStatus: 'ACTIVE',
+      systemRole: 'ADMIN',
       canEnterPortal: true,
     });
     vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([
-      { catalogId: "catalog-listener", accessLevel: "OWNER" },
+      { catalogId: 'catalog-listener', accessLevel: 'OWNER' },
     ]);
     prisma.workflowGroup.findMany.mockResolvedValue([
-      { id: "catalog-listener", label: "Admin catalog", isDefault: true },
+      { id: 'catalog-listener', label: 'Admin catalog', isDefault: true },
     ]);
 
-    const profile = await getMcpAccessProfile("admin-1");
+    const profile = await getMcpAccessProfile('admin-1');
 
     expect(profile.catalogs[0]).toMatchObject({
-      accessLevel: "OWNER",
+      accessLevel: 'OWNER',
       capabilities: {
         canListEvents: true,
         canGetRecordings: true,
