@@ -79,8 +79,8 @@ function toolSuccess(result: Record<string, unknown>, contentText: string) {
   };
 }
 
-function toolError(code: string, message: string) {
-  const result = { error: { code, message } };
+function toolError(code: string, message: string, retryable = false) {
+  const result = { error: { code, message, retryable } };
   return {
     isError: true,
     content: [{ type: 'text' as const, text: JSON.stringify(result) }],
@@ -144,7 +144,7 @@ async function runReadTool<T extends Record<string, unknown>>(
     return toolSuccess(result, renderContent?.(result) ?? summarize(result));
   } catch (error) {
     if (error instanceof McpReadError) {
-      return toolError(error.code, error.message);
+      return toolError(error.code, error.message, error.retryable);
     }
     throw error;
   }

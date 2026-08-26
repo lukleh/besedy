@@ -11,17 +11,13 @@ import { IntIdSchema, validateParams, validateRequestBody } from "@/lib/api/vali
 import {
   UpdateCatalogEventSchema,
 } from "@/lib/catalog-events/validation";
-import {
-  getPublishedAccessibleRecordingHashes,
-  isPublishedVisibleEvent,
-} from "@/lib/catalog-events/visibility";
+import { loadReadableCatalogEvent } from "@/lib/catalog-events/read-service";
+import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
 import { getPosterInfo } from "@/lib/event-posters";
 import {
   canReleaseEvent,
-  requiresReleasedEventVisibilityScope,
 } from "@/lib/policy/event";
-import { requiresReadyRecordingScope } from "@/lib/policy/recording";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
@@ -62,114 +58,34 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const { userId, accessLevel } = await requireCatalogEventsAccess(catalogId, "view");
 
-    if (requiresReleasedEventVisibilityScope(accessLevel)) {
-      const isVisible = await isPublishedVisibleEvent(prisma, catalogId, eventId);
-      if (!isVisible) {
-        return notFound("catalog event");
-      }
-    }
-
-    const event = await prisma.catalogEvent.findFirst({
-      where: { id: eventId, workflowGroupId: catalogId },
-      include: {
-        location: { select: { id: true, name: true } },
-        recordings: {
-          select: {
-            audioHash: true,
-            isPrimary: true,
-            sortOrder: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy: [{ sortOrder: "asc" }, { audioHash: "asc" }],
-        },
-      },
-    });
-
-    if (!event) {
+    const readable = await loadReadableCatalogEvent(
+      catalogId,
+      eventId,
+      accessLevel
+    );
+    if (!readable) {
       return notFound("catalog event");
     }
+    const { event, recordings: visibleRecordings } = readable;
+    const recordingByHash = await loadCatalogRecordingReadModels(
+      catalogId,
+      visibleRecordings.map((recording) => recording.audioHash)
+    );
 
-    const hashes = event.recordings.map((recording) => recording.audioHash);
-    const accessibleHashes =
-      requiresReadyRecordingScope(accessLevel)
-        ? await getPublishedAccessibleRecordingHashes(
-            prisma,
-            event.workflowGroupId,
-            hashes
-          )
-        : new Set(hashes);
-    const visibleHashes = hashes.filter((hash) => accessibleHashes.has(hash));
-
-    if (requiresReadyRecordingScope(accessLevel) && visibleHashes.length === 0) {
-      return notFound("catalog event");
-    }
-
-    const [catalogRows, metadataRows] = await Promise.all([
-      visibleHashes.length > 0
-        ? prisma.catalogEntry.findMany({
-            where: {
-              workflowGroupId: event.workflowGroupId,
-              audioHash: { in: visibleHashes },
-            },
-            select: {
-              audioHash: true,
-              durationHms: true,
-              sourceTitle: true,
-              sourceArtist: true,
-            },
-          })
-        : Promise.resolve([]),
-      visibleHashes.length > 0
-        ? prisma.audioMetadata.findMany({
-            where: {
-              workflowGroupId: event.workflowGroupId,
-              audioHash: { in: visibleHashes },
-            },
-            select: {
-              audioHash: true,
-              title: true,
-              artist: true,
-              verified: true,
-              dateYear: true,
-              dateMonth: true,
-              dateDay: true,
-              recorder: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-              location: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          })
-        : Promise.resolve([]),
-    ]);
-
-    const catalogByHash = new Map(catalogRows.map((row) => [row.audioHash, row]));
-    const metadataByHash = new Map(metadataRows.map((row) => [row.audioHash, row]));
-
-    const recordings = event.recordings
-      .filter((recording) => accessibleHashes.has(recording.audioHash))
+    const recordings = visibleRecordings
       .map((recording) => {
-        const catalog = catalogByHash.get(recording.audioHash);
-        const metadata = metadataByHash.get(recording.audioHash);
+        const model = recordingByHash.get(recording.audioHash)!;
         return {
           ...recording,
-          title: metadata?.title ?? catalog?.sourceTitle ?? recording.audioHash,
-          artist: metadata?.artist ?? catalog?.sourceArtist ?? null,
-          durationHms: catalog?.durationHms ?? null,
-          verified: metadata?.verified ?? false,
-          dateYear: metadata?.dateYear ?? event.dateYear,
-          dateMonth: metadata?.dateMonth ?? event.dateMonth,
-          dateDay: metadata?.dateDay ?? event.dateDay,
-          location: metadata?.location ?? event.location,
-          recorder: metadata?.recorder ?? null,
+          title: model.title,
+          artist: model.artist,
+          durationHms: model.durationHms,
+          verified: model.verified,
+          dateYear: model.date.year ?? event.dateYear,
+          dateMonth: model.date.month ?? event.dateMonth,
+          dateDay: model.date.day ?? event.dateDay,
+          location: model.location ?? event.location,
+          recorder: model.recorder,
         };
       })
       .sort((a, b) => {

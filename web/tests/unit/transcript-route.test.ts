@@ -83,7 +83,9 @@ describe("transcript route", () => {
 
       expect(response.status).toBe(403);
       const body = await response.json();
-      expect(body.error).toMatch(/VIEWER role or higher/);
+      expect(body.error).toBe(
+        "Current catalog permissions do not allow transcript access"
+      );
     });
 
     it("denies access when user cannot access the audio hash", async () => {

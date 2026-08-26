@@ -23,8 +23,13 @@ import {
   selectEventPlaybackProgress,
   summarizePlaybackProgress,
 } from "@/lib/playback-progress";
-import { getPublishedVisibleEventIds } from "@/lib/catalog-events/visibility";
-import { requiresReleasedEventVisibilityScope } from "@/lib/policy/event";
+import {
+  buildReadableCatalogEventWhere,
+  catalogEventVisibilityWhere,
+  listReadableCatalogEvents,
+  resolveReadableEventIds,
+} from "@/lib/catalog-events/read-service";
+import { resolveCatalogRecordingTitle } from "@/lib/catalog-recordings/read-service";
 
 export const dynamic = "force-dynamic";
 
@@ -119,14 +124,11 @@ export async function GET(request: NextRequest) {
       return notFound("catalog");
     }
     const { accessLevel, userId } = await requireCatalogEventsAccess(workflowGroupId, "view");
-    const publishedVisibleEventIds =
-      requiresReleasedEventVisibilityScope(accessLevel)
-        ? await getPublishedVisibleEventIds(prisma, workflowGroupId)
-        : null;
-    const visibilityWhere =
-      publishedVisibleEventIds === null
-        ? {}
-        : { id: { in: publishedVisibleEventIds.length > 0 ? publishedVisibleEventIds : [-1] } };
+    const readableEventIds = await resolveReadableEventIds(
+      workflowGroupId,
+      accessLevel
+    );
+    const visibilityWhere = catalogEventVisibilityWhere(readableEventIds);
 
     const released = parseReleasedParam(searchParams.get("released"));
     const locationId = parsePositiveInt(searchParams.get("location"));
@@ -138,9 +140,7 @@ export async function GET(request: NextRequest) {
     const sortDir = parseSortDirection(searchParams.get("dir"));
     const pagination = parsePagination(searchParams);
 
-    const where: Prisma.CatalogEventWhereInput = {
-      workflowGroupId,
-      ...visibilityWhere,
+    const eventFilters: Prisma.CatalogEventWhereInput = {
       ...(released !== null ? { released } : {}),
       ...(locationId !== null ? { locationId } : {}),
       ...(dateYear !== null ? { dateYear } : {}),
@@ -153,6 +153,11 @@ export async function GET(request: NextRequest) {
           }
         : {}),
     };
+    const where = buildReadableCatalogEventWhere(
+      workflowGroupId,
+      readableEventIds,
+      eventFilters
+    );
 
     if (sequenceOnly) {
       if (sequenceEventId === null) {
@@ -216,20 +221,16 @@ export async function GET(request: NextRequest) {
       isFiltered
         ? prisma.catalogEvent.count({ where: { workflowGroupId, ...visibilityWhere } })
         : Promise.resolve<number | null>(null),
-      prisma.catalogEvent.findMany({
-        where,
-        orderBy: parseListOrderBy(sortKey, sortDir),
-        skip: pagination.skip,
-        take: pagination.take,
-        include: {
-          location: { select: { id: true, name: true } },
-          recordings: {
-            select: { audioHash: true, isPrimary: true },
-            orderBy: [{ sortOrder: "asc" }, { audioHash: "asc" }],
-          },
-          _count: { select: { recordings: true } },
-        },
-      }),
+      listReadableCatalogEvents(
+        workflowGroupId,
+        readableEventIds,
+        eventFilters,
+        {
+          orderBy: parseListOrderBy(sortKey, sortDir),
+          skip: pagination.skip,
+          take: pagination.take,
+        }
+      ),
       prisma.catalogEvent.findMany({
         where: { workflowGroupId, ...visibilityWhere },
         distinct: ["dateYear"],
@@ -312,9 +313,10 @@ export async function GET(request: NextRequest) {
       const primaryTitle =
         primaryAudioHash === null
           ? null
-          : curatedTitleByHash.get(primaryAudioHash) ??
-            sourceTitleByHash.get(primaryAudioHash) ??
-            primaryAudioHash;
+          : resolveCatalogRecordingTitle(primaryAudioHash, {
+              curatedTitle: curatedTitleByHash.get(primaryAudioHash),
+              sourceTitle: sourceTitleByHash.get(primaryAudioHash),
+            });
       const eventAssets = eventAssetsById.get(event.id) ?? {
         posterStatus: EMPTY_POSTER_STATUS,
         sourceCount: 0,
@@ -343,7 +345,7 @@ export async function GET(request: NextRequest) {
         sortOrder: event.sortOrder,
         createdAt: event.createdAt,
         updatedAt: event.updatedAt,
-        recordingCount: event._count.recordings,
+        recordingCount: event.recordings.length,
         sourceCount: eventAssets.sourceCount,
         posterStatus: eventAssets.posterStatus,
         primaryAudioHash,

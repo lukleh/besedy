@@ -93,6 +93,11 @@ const protectedMcpHandler = resourceUrl
           typeof clientIdClaim === 'string' ? clientIdClaim : 'unknown-client';
         if (
           !checkRateLimit(
+            'mcp:authenticated:global',
+            MCP_GLOBAL_RATE_LIMIT,
+            MCP_RATE_WINDOW_MS,
+          ) ||
+          !checkRateLimit(
             `mcp:user:${userId}`,
             MCP_USER_RATE_LIMIT,
             MCP_RATE_WINDOW_MS,
@@ -133,11 +138,6 @@ const protectedMcpHandler = resourceUrl
 export async function POST(request: Request): Promise<Response> {
   if (!protectedMcpHandler) {
     return Response.json({ error: 'Not found' }, { status: 404 });
-  }
-  if (
-    !checkRateLimit('mcp:global', MCP_GLOBAL_RATE_LIMIT, MCP_RATE_WINDOW_MS)
-  ) {
-    return jsonRpcRateLimited();
   }
   return protectedMcpHandler(request);
 }

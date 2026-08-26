@@ -7,6 +7,7 @@ import {
   getMcpRecording,
   getMcpTranscript,
   listMcpEvents,
+  McpReadError,
   searchMcpTranscripts,
 } from '@/lib/mcp/read-service';
 
@@ -15,7 +16,17 @@ vi.mock('@/lib/mcp/access-profile', () => ({
 }));
 
 vi.mock('@/lib/mcp/read-service', () => ({
-  McpReadError: class McpReadError extends Error {},
+  McpReadError: class McpReadError extends Error {
+    readonly retryable: boolean;
+
+    constructor(
+      readonly code: string,
+      message: string,
+    ) {
+      super(message);
+      this.retryable = code === 'search_unavailable';
+    }
+  },
   listMcpEvents: vi.fn(),
   getMcpEvent: vi.fn(),
   getMcpRecording: vi.fn(),
@@ -477,9 +488,45 @@ describe('MCP personalized tool surface', () => {
       },
     });
     const structuredContent = body.result?.structuredContent as {
-      error: { code: string };
+      error: { code: string; retryable: boolean };
     };
     expect(structuredContent.error.code).toBe('permission_denied');
+    expect(structuredContent.error.retryable).toBe(false);
     expect(getMcpTranscript).not.toHaveBeenCalled();
+  });
+
+  it('marks transient read failures as retryable', async () => {
+    vi.mocked(getMcpAccessProfile).mockResolvedValue({
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    });
+    vi.mocked(searchMcpTranscripts).mockRejectedValue(
+      new McpReadError(
+        'search_unavailable',
+        'Transcript search is temporarily unavailable',
+      ),
+    );
+
+    const body = await invokeMcp('tools/call', {
+      name: 'search_transcripts',
+      arguments: { query: 'search phrase' },
+    });
+
+    expect(body.result?.structuredContent).toEqual({
+      error: {
+        code: 'search_unavailable',
+        message: 'Transcript search is temporarily unavailable',
+        retryable: true,
+      },
+    });
   });
 });

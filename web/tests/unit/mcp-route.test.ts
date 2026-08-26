@@ -70,7 +70,21 @@ describe('MCP route hardening', () => {
     expect(mocks.requireMcpAuth).not.toHaveBeenCalled();
   });
 
-  it('applies the global limit before token verification', async () => {
+  it('does not debit authenticated limits when token verification fails', async () => {
+    mocks.requireMcpAuth.mockImplementation(
+      () => async () =>
+        Response.json({ error: 'Unauthorized' }, { status: 401 }),
+    );
+    const { POST } = await import('@/app/api/mcp/route');
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(401);
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.getPortalCapability).not.toHaveBeenCalled();
+  });
+
+  it('applies the global limit after token verification', async () => {
     mocks.checkRateLimit.mockReturnValue(false);
     const { POST } = await import('@/app/api/mcp/route');
 
@@ -78,6 +92,11 @@ describe('MCP route hardening', () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('60');
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      'mcp:authenticated:global',
+      600,
+      60_000,
+    );
     expect(mocks.getPortalCapability).not.toHaveBeenCalled();
   });
 

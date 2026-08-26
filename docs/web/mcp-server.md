@@ -52,9 +52,12 @@ authenticated user
        v
 canonical actor + catalog/event/recording policy
        |
-       +---- web UI and web API
+       v
+shared event/recording/transcript/search read services
        |
-       +---- MCP tool discovery and tool execution
+       +---- web UI and web API serializers
+       |
+       +---- MCP tool discovery and agent-oriented serializers
 ```
 
 This makes a future policy change (for example, hiding unreleased events from
@@ -96,9 +99,10 @@ the policy, but the policy code is authoritative.
   canonical HTTPS `AUTH_URL`. MCP defaults to disabled in production and
   enabled in development. Disabled deployments return 404 from MCP and its
   discovery/login/consent routes and do not install the OAuth-provider plugins.
-- The initial endpoint applies per-process global, OAuth-client, and user rate
-  limits. Deployment-level rate limiting is still recommended for multi-instance
-  installations.
+- After OAuth validation, the endpoint applies per-process authenticated-global,
+  OAuth-client, and user rate limits. Anonymous traffic does not consume those
+  authenticated buckets. Deployment-level anonymous/IP limiting is still
+  recommended, as is distributed limiting for multi-instance installations.
 
 `PENDING`, `BLOCKED`, deleted, or otherwise inactive users cannot use MCP even
 if they previously obtained a token. Revoked catalog grants stop authorizing
@@ -244,7 +248,8 @@ and next offset. Both tools render the actual evidence text in standard MCP
 should normally search first, then fetch only the relevant transcript range. An
 unavailable RAG service returns the structured `search_unavailable` error; a
 catalog without a search bundle returns the non-retryable
-`search_not_configured` error.
+`search_not_configured` error. Every structured tool error includes a boolean
+`retryable`; agents may automatically retry only errors where it is `true`.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.
@@ -269,6 +274,8 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
   event or recording would leak information.
 - Use a permission error for an accessible catalog whose role does not allow a
   known capability such as transcripts.
+- Keep error messages capability-oriented rather than naming a particular role;
+  canonical policy is the source of truth for which roles grant a capability.
 - Do not include transcript content in logs, metrics, OAuth claims, or errors.
 - Enforce server-side result limits even when a client supplies a larger value.
 - Search results must pass the same catalog and recording policy as direct reads.
@@ -284,7 +291,8 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Define the access matrix, personalized discovery, and optional catalog rules.
 - [x] Make RAG permission derive from transcript permission in canonical policy.
 - [x] Add a side-effect-free default catalog resolver for service/MCP reads.
-- [ ] Extract shared event, recording, transcript, and search services from routes.
+- [x] Share event visibility/detail and canonical recording read models beneath
+      web and MCP serializers; reuse the existing transcript and RAG search services.
 
 ### OAuth and remote transport
 
@@ -295,7 +303,7 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Publish OAuth discovery/protected-resource metadata.
 - [x] Mount authenticated, stateless `POST /api/mcp`; reject legacy transport.
 - [x] Exempt the enabled bearer-only MCP endpoint from browser CSRF checks so
-  unauthenticated clients can receive the OAuth challenge.
+      unauthenticated clients can receive the OAuth challenge.
 
 ### MCP surface
 

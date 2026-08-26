@@ -1,13 +1,18 @@
 import type { AccessLevel, Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
 import { getRecordingCapability } from '@/lib/access/capabilities';
+import { TRANSCRIPT_ACCESS_DENIED_MESSAGE } from '@/lib/access/messages';
 import {
-  getPublishedAccessibleRecordingHashes,
-  getPublishedVisibleEventIds,
-  isPublishedVisibleEvent,
-} from '@/lib/catalog-events/visibility';
-import { requiresReleasedEventVisibilityScope } from '@/lib/policy/event';
-import { requiresReadyRecordingScope } from '@/lib/policy/recording';
+  catalogEventRecordingVisibilityWhere,
+  listReadableCatalogEvents,
+  loadReadableCatalogEvent,
+  resolveReadableEventIds,
+  resolveReadableRecordingHashes,
+} from '@/lib/catalog-events/read-service';
+import {
+  loadCatalogRecordingReadModels,
+  type CatalogRecordingReadModel,
+} from '@/lib/catalog-recordings/read-service';
 import { resolveTranscriptsPath } from '@/lib/paths';
 import {
   getAvailableTranscripts,
@@ -21,29 +26,6 @@ import {
   type SearchMetadataFilters,
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import { getMcpResourceUrl } from '@/lib/mcp/config';
-
-const eventSummaryInclude = {
-  location: { select: { id: true, name: true } },
-  recordings: {
-    select: { audioHash: true, isPrimary: true, sortOrder: true },
-    orderBy: [{ sortOrder: 'asc' }, { audioHash: 'asc' }],
-  },
-} satisfies Prisma.CatalogEventInclude;
-
-const recordingMetadataSelect = {
-  audioHash: true,
-  title: true,
-  artist: true,
-  verified: true,
-  dateYear: true,
-  dateMonth: true,
-  dateDay: true,
-  notes: true,
-  tags: true,
-  album: { select: { id: true, name: true } },
-  recorder: { select: { id: true, name: true } },
-  location: { select: { id: true, name: true } },
-} satisfies Prisma.AudioMetadataSelect;
 
 export interface McpEventListInput {
   cursor?: number;
@@ -71,18 +53,27 @@ export interface McpRecordingEventPageInput {
   limit: number;
 }
 
+export type McpReadErrorCode =
+  | 'not_found'
+  | 'permission_denied'
+  | 'transcript_not_found'
+  | 'invalid_window'
+  | 'search_not_configured'
+  | 'search_unavailable';
+
+function isRetryableReadError(code: McpReadErrorCode): boolean {
+  return code === 'search_unavailable';
+}
+
 export class McpReadError extends Error {
+  readonly retryable: boolean;
+
   constructor(
-    readonly code:
-      | 'not_found'
-      | 'permission_denied'
-      | 'transcript_not_found'
-      | 'invalid_window'
-      | 'search_not_configured'
-      | 'search_unavailable',
+    readonly code: McpReadErrorCode,
     message: string,
   ) {
     super(message);
+    this.retryable = isRetryableReadError(code);
   }
 }
 
@@ -110,73 +101,26 @@ function resolveSearchTranscriptBackend(
   return availableBackends[0] ?? null;
 }
 
-async function loadRecordingRows(catalogId: string, hashes: string[]) {
-  if (hashes.length === 0) {
-    return { catalogByHash: new Map(), metadataByHash: new Map() };
-  }
-
-  const [catalogRows, metadataRows] = await Promise.all([
-    prisma.catalogEntry.findMany({
-      where: { workflowGroupId: catalogId, audioHash: { in: hashes } },
-      select: {
-        audioHash: true,
-        durationHms: true,
-        sourceTitle: true,
-        sourceArtist: true,
-        sourceAlbum: true,
-        sourceDate: true,
-        isActionable: true,
-        isPublished: true,
-      },
-    }),
-    prisma.audioMetadata.findMany({
-      where: { workflowGroupId: catalogId, audioHash: { in: hashes } },
-      select: recordingMetadataSelect,
-    }),
-  ]);
-
+function serializeRecording(recording: CatalogRecordingReadModel) {
   return {
-    catalogByHash: new Map(catalogRows.map((row) => [row.audioHash, row])),
-    metadataByHash: new Map(metadataRows.map((row) => [row.audioHash, row])),
+    audioHash: recording.audioHash,
+    title: recording.title,
+    artist: recording.artist,
+    album: recording.album,
+    durationHms: recording.durationHms,
+    sourceDate: recording.sourceDate,
+    date: recording.date,
+    location: recording.location,
+    recorder: recording.recorder,
+    verified: recording.verified,
+    notes: recording.notes,
+    tags: recording.tags,
+    ready: recording.ready,
+    published: recording.published,
   };
 }
 
-function serializeRecording(
-  hash: string,
-  rows: Awaited<ReturnType<typeof loadRecordingRows>>,
-) {
-  const catalog = rows.catalogByHash.get(hash);
-  const metadata = rows.metadataByHash.get(hash);
-
-  return {
-    audioHash: hash,
-    title: metadata?.title ?? catalog?.sourceTitle ?? hash,
-    artist: metadata?.artist ?? catalog?.sourceArtist ?? null,
-    album:
-      metadata?.album ??
-      (catalog?.sourceAlbum ? { id: null, name: catalog.sourceAlbum } : null),
-    durationHms: catalog?.durationHms ?? null,
-    sourceDate: catalog?.sourceDate ?? null,
-    date: {
-      year: metadata?.dateYear ?? null,
-      month: metadata?.dateMonth ?? null,
-      day: metadata?.dateDay ?? null,
-    },
-    location: metadata?.location ?? null,
-    recorder: metadata?.recorder ?? null,
-    verified: metadata?.verified ?? false,
-    notes: metadata?.notes ?? null,
-    tags: metadata?.tags ?? [],
-    ready: catalog?.isActionable ?? false,
-    published: catalog?.isPublished ?? false,
-  };
-}
-
-function serializeRecordingSummary(
-  hash: string,
-  rows: Awaited<ReturnType<typeof loadRecordingRows>>,
-) {
-  const recording = serializeRecording(hash, rows);
+function serializeRecordingSummary(recording: CatalogRecordingReadModel) {
   return {
     audioHash: recording.audioHash,
     title: recording.title,
@@ -219,14 +163,11 @@ export async function listMcpEvents(
   const literalQuery = input.query
     ? escapePrismaContains(input.query)
     : undefined;
-  const visibleEventIds = requiresReleasedEventVisibilityScope(catalogGrant)
-    ? await getPublishedVisibleEventIds(prisma, catalogId)
-    : null;
-  const where: Prisma.CatalogEventWhereInput = {
-    workflowGroupId: catalogId,
-    ...(visibleEventIds === null
-      ? {}
-      : { id: { in: visibleEventIds.length > 0 ? visibleEventIds : [-1] } }),
+  const visibleEventIds = await resolveReadableEventIds(
+    catalogId,
+    catalogGrant,
+  );
+  const filters: Prisma.CatalogEventWhereInput = {
     ...(input.cursor ? { AND: [{ id: { lt: input.cursor } }] } : {}),
     ...(input.released === undefined ? {} : { released: input.released }),
     ...(literalQuery
@@ -243,12 +184,15 @@ export async function listMcpEvents(
         }
       : {}),
   };
-  const events = await prisma.catalogEvent.findMany({
-    where,
-    orderBy: { id: 'desc' },
-    take: input.limit + 1,
-    include: eventSummaryInclude,
-  });
+  const events = await listReadableCatalogEvents(
+    catalogId,
+    visibleEventIds,
+    filters,
+    {
+      orderBy: [{ id: 'desc' }],
+      take: input.limit + 1,
+    },
+  );
   const hasMore = events.length > input.limit;
   const page = hasMore ? events.slice(0, input.limit) : events;
   const pageHashes = [
@@ -258,9 +202,11 @@ export async function listMcpEvents(
       ),
     ),
   ];
-  const visibleHashes = requiresReadyRecordingScope(catalogGrant)
-    ? await getPublishedAccessibleRecordingHashes(prisma, catalogId, pageHashes)
-    : new Set(pageHashes);
+  const visibleHashes = await resolveReadableRecordingHashes(
+    catalogId,
+    catalogGrant,
+    pageHashes,
+  );
   const primaryHashes = page
     .map(
       (event) =>
@@ -270,7 +216,10 @@ export async function listMcpEvents(
     .filter(
       (hash): hash is string => hash !== undefined && visibleHashes.has(hash),
     );
-  const rows = await loadRecordingRows(catalogId, primaryHashes);
+  const recordingByHash = await loadCatalogRecordingReadModels(
+    catalogId,
+    primaryHashes,
+  );
 
   return {
     catalogId,
@@ -298,7 +247,9 @@ export async function listMcpEvents(
         primaryRecording:
           visiblePrimaryHash === null
             ? null
-            : serializeRecordingSummary(visiblePrimaryHash, rows),
+            : serializeRecordingSummary(
+                recordingByHash.get(visiblePrimaryHash)!,
+              ),
         updatedAt: event.updatedAt.toISOString(),
       };
     }),
@@ -312,37 +263,18 @@ export async function getMcpEvent(
   catalogGrant: AccessLevel | null,
   input: McpEventRecordingPageInput,
 ) {
-  if (
-    requiresReleasedEventVisibilityScope(catalogGrant) &&
-    !(await isPublishedVisibleEvent(prisma, catalogId, eventId))
-  ) {
-    throw new McpReadError('not_found', 'Event not found');
-  }
-
-  const event = await prisma.catalogEvent.findFirst({
-    where: { id: eventId, workflowGroupId: catalogId },
-    include: eventSummaryInclude,
-  });
-  if (!event) throw new McpReadError('not_found', 'Event not found');
-
-  const hashes = event.recordings.map((recording) => recording.audioHash);
-  const visibleHashes = requiresReadyRecordingScope(catalogGrant)
-    ? await getPublishedAccessibleRecordingHashes(prisma, catalogId, hashes)
-    : new Set(hashes);
-  const visibleRecordings = event.recordings.filter((recording) =>
-    visibleHashes.has(recording.audioHash),
+  const readable = await loadReadableCatalogEvent(
+    catalogId,
+    eventId,
+    catalogGrant,
   );
-  if (
-    requiresReadyRecordingScope(catalogGrant) &&
-    visibleRecordings.length === 0
-  ) {
-    throw new McpReadError('not_found', 'Event not found');
-  }
+  if (!readable) throw new McpReadError('not_found', 'Event not found');
+  const { event, recordings: visibleRecordings } = readable;
   const recordingPage = visibleRecordings.slice(
     input.offset,
     input.offset + input.limit,
   );
-  const rows = await loadRecordingRows(
+  const recordingByHash = await loadCatalogRecordingReadModels(
     catalogId,
     recordingPage.map((recording) => recording.audioHash),
   );
@@ -364,7 +296,9 @@ export async function getMcpEvent(
       released: event.released,
       recordings: {
         items: recordingPage.map((recording) => ({
-          ...serializeRecordingSummary(recording.audioHash, rows),
+          ...serializeRecordingSummary(
+            recordingByHash.get(recording.audioHash)!,
+          ),
           webUrl: buildRecordingWebUrl(catalogId, recording.audioHash),
           isPrimary: recording.isPrimary,
           sortOrder: recording.sortOrder,
@@ -388,27 +322,23 @@ export async function getMcpRecording(
   if (!capability.canAccessRecording) {
     throw new McpReadError('not_found', 'Recording not found');
   }
-  const rows = await loadRecordingRows(catalogId, [audioHash]);
-  if (!rows.catalogByHash.has(audioHash)) {
+  const recordingByHash = await loadCatalogRecordingReadModels(catalogId, [
+    audioHash,
+  ]);
+  const recordingModel = recordingByHash.get(audioHash)!;
+  if (!recordingModel.catalogEntryExists) {
     throw new McpReadError('not_found', 'Recording not found');
   }
-  const recording = serializeRecording(audioHash, rows);
+  const recording = serializeRecording(recordingModel);
 
-  const visibleEventIds = requiresReleasedEventVisibilityScope(
+  const visibleEventIds = await resolveReadableEventIds(
+    catalogId,
     capability.catalogGrant,
-  )
-    ? await getPublishedVisibleEventIds(prisma, catalogId)
-    : null;
+  );
   const eventWhere: Prisma.CatalogEventRecordingWhereInput = {
     workflowGroupId: catalogId,
     audioHash,
-    ...(visibleEventIds === null
-      ? {}
-      : {
-          eventId: {
-            in: visibleEventIds.length > 0 ? visibleEventIds : [-1],
-          },
-        }),
+    ...catalogEventRecordingVisibilityWhere(visibleEventIds),
   };
   const [eventLinks, totalVisible] = await Promise.all([
     prisma.catalogEventRecording.findMany({
@@ -471,7 +401,7 @@ export async function getMcpTranscript(
   if (!capability.canViewRecordingTranscripts) {
     throw new McpReadError(
       'permission_denied',
-      'Transcript access requires VIEWER role or higher',
+      TRANSCRIPT_ACCESS_DENIED_MESSAGE,
     );
   }
   if (
@@ -615,8 +545,8 @@ export async function searchMcpTranscripts(
   const audioHashes = [
     ...new Set(execution.results.map((result) => result.audioHash)),
   ];
-  const [recordingRows, priorities] = await Promise.all([
-    loadRecordingRows(catalogId, audioHashes),
+  const [recordingByHash, priorities] = await Promise.all([
+    loadCatalogRecordingReadModels(catalogId, audioHashes),
     listTranscriptBackendPriorities(),
   ]);
   const transcriptsPath = resolveTranscriptsPath(catalogId);
@@ -652,7 +582,7 @@ export async function searchMcpTranscripts(
         rank: result.rank,
         score: result.score,
         recording: {
-          ...serializeRecordingSummary(result.audioHash, recordingRows),
+          ...serializeRecordingSummary(recordingByHash.get(result.audioHash)!),
           webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
         },
         match: {

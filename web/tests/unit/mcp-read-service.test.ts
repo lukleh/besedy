@@ -600,6 +600,7 @@ describe('MCP read service', () => {
     ).rejects.toMatchObject({
       code: 'search_unavailable',
       message: 'Transcript search is temporarily unavailable',
+      retryable: true,
     });
   });
 
@@ -618,6 +619,7 @@ describe('MCP read service', () => {
     ).rejects.toMatchObject({
       code: 'search_not_configured',
       message: 'Transcript search is not configured for this catalog',
+      retryable: false,
     });
   });
 });
