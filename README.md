@@ -71,7 +71,8 @@ The Besedy web service includes a remote, read-only
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for AI
 agents. It exposes catalog, event, and recording metadata together with bounded
 transcript retrieval and semantic transcript search. It does not expose audio
-bytes, filesystem paths, mutations, or administrative operations.
+bytes, storage paths, mutations, administrative operations, or background-job
+controls.
 
 The maintainer deployment endpoint is:
 
@@ -81,10 +82,9 @@ https://besedy.org/api/mcp
 
 Access uses the same Google sign-in and preallowed-user admission as the Besedy
 web app. Available tools and returned data are derived from the user's live
-catalog permissions: listeners receive only their permitted event and recording
-metadata, while transcript and search tools are available only to roles with
-those capabilities. Catalog-scoped tools use the user's default catalog when no
-catalog is specified.
+catalog permissions. When no catalog is specified, catalog-scoped tools use the
+user's effective default catalog according to the resolution order described in
+the MCP server reference below.
 
 Add the deployed server to Codex CLI:
 
