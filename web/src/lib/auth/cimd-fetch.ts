@@ -1,16 +1,17 @@
 import { isPublicRoutableHost } from '@better-auth/core/utils/host';
 import type { ClientMetadataResourceFetch } from '@better-auth/oauth-provider';
-import type {
-  LookupAddress,
-  LookupAllOptions,
-  LookupOneOptions,
-} from 'node:dns';
+import type { LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
 import { request } from 'node:https';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
+import { returnResolvedAddresses } from '@/lib/network/resolved-lookup';
 
-const BODY_FORBIDDEN_RESPONSE_STATUSES = new Set([204, 205, 304]);
+const JSON_CONTENT_TYPE_RE = /^application\/(?:[-\w.]+\+)?json\s*(?:;|$)/i;
+
+// Keep this explicit so a Better Auth upgrade must revisit the local transport
+// instead of silently retaining a fork of an older SDK implementation.
+export const CIMD_TRANSPORT_SDK_VERSION = '1.7.1';
 
 function responseHeaders(headers: NodeJS.Dict<string | string[]>): Headers {
   const result = new Headers();
@@ -24,11 +25,34 @@ function responseHeaders(headers: NodeJS.Dict<string | string[]>): Headers {
   return result;
 }
 
-export function pinnedLookupResult(
-  address: LookupAddress,
-  options: LookupAllOptions | LookupOneOptions | number,
-): LookupAddress | LookupAddress[] {
-  return typeof options === 'object' && options.all ? [address] : address;
+function abortReason(signal: AbortSignal): unknown {
+  return (
+    signal.reason ??
+    new DOMException('CIMD metadata DNS lookup aborted', 'AbortError')
+  );
+}
+
+async function lookupWithSignal(
+  hostname: string,
+  signal: AbortSignal,
+): Promise<LookupAddress[]> {
+  signal.throwIfAborted();
+
+  let rejectOnAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectOnAbort = () => reject(abortReason(signal));
+    signal.addEventListener('abort', rejectOnAbort, { once: true });
+    if (signal.aborted) rejectOnAbort();
+  });
+
+  try {
+    return await Promise.race([
+      lookup(hostname, { all: true, verbatim: true }),
+      aborted,
+    ]);
+  } finally {
+    if (rejectOnAbort) signal.removeEventListener('abort', rejectOnAbort);
+  }
 }
 
 /**
@@ -51,10 +75,8 @@ export const fetchCimdClientMetadataResource: ClientMetadataResourceFetch =
       throw new TypeError('CIMD Node transport supports only GET and HEAD');
     }
 
-    const addresses = await lookup(url.hostname, {
-      all: true,
-      verbatim: true,
-    });
+    const signal = webRequest.signal;
+    const addresses = await lookupWithSignal(url.hostname, signal);
     if (addresses.length === 0) {
       throw new TypeError('metadata hostname returned no DNS addresses');
     }
@@ -66,12 +88,8 @@ export const fetchCimdClientMetadataResource: ClientMetadataResourceFetch =
       }
     }
 
-    const pinnedAddress = addresses[0];
     const headers = Object.fromEntries(webRequest.headers.entries());
     headers.host = url.host;
-    const signal =
-      init?.signal ??
-      (input instanceof Request ? input.signal : webRequest.signal);
 
     return new Promise<Response>((resolve, reject) => {
       const metadataRequest = request(
@@ -86,28 +104,42 @@ export const fetchCimdClientMetadataResource: ClientMetadataResourceFetch =
               : undefined,
           signal,
           lookup: (_hostname, options, callback) => {
-            const result = pinnedLookupResult(pinnedAddress, options);
-            if (Array.isArray(result)) {
-              callback(null, result);
-            } else {
-              callback(null, result.address, result.family);
-            }
+            returnResolvedAddresses(addresses, options, callback);
           },
         },
         (response) => {
-          const status = response.statusCode ?? 500;
-          const body =
-            webRequest.method === 'HEAD' ||
-            BODY_FORBIDDEN_RESPONSE_STATUSES.has(status)
-              ? null
-              : Readable.toWeb(response);
-          resolve(
-            new Response(body as BodyInit | null, {
-              headers: responseHeaders(response.headers),
-              status,
-              statusText: response.statusMessage,
-            }),
-          );
+          try {
+            const status = response.statusCode ?? 500;
+            if (status < 200 || status > 599) {
+              response.destroy();
+              reject(
+                new TypeError(
+                  `metadata server returned invalid HTTP status ${status}`,
+                ),
+              );
+              return;
+            }
+
+            const responseHeaderValues = responseHeaders(response.headers);
+            const contentType = responseHeaderValues.get('content-type') ?? '';
+            const hasMetadataBody =
+              webRequest.method !== 'HEAD' &&
+              status === 200 &&
+              JSON_CONTENT_TYPE_RE.test(contentType);
+            const body = hasMetadataBody ? Readable.toWeb(response) : null;
+            if (!hasMetadataBody) response.destroy();
+
+            resolve(
+              new Response(body as BodyInit | null, {
+                headers: responseHeaderValues,
+                status,
+                statusText: response.statusMessage,
+              }),
+            );
+          } catch (error) {
+            response.destroy();
+            reject(error);
+          }
         },
       );
       metadataRequest.once('error', reject);

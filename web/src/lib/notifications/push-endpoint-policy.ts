@@ -5,6 +5,7 @@ import {
 } from 'node:dns';
 import { Agent } from 'node:https';
 import { BlockList, isIP, type LookupFunction } from 'node:net';
+import { returnResolvedAddresses } from '@/lib/network/resolved-lookup';
 
 const IPV4_HOSTNAME_PATTERN = /^\d{1,3}(\.\d{1,3}){3}$/;
 
@@ -215,12 +216,7 @@ export function createPublicPushAgent(
           return;
         }
 
-        if (options.all) {
-          callback(null, addresses);
-          return;
-        }
-        const first = addresses[0];
-        callback(null, first.address, first.family);
+        returnResolvedAddresses(addresses, options, callback);
       },
     );
   };
