@@ -344,7 +344,23 @@ describe('MCP personalized tool surface', () => {
     vi.mocked(getMcpTranscript).mockResolvedValue({
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
-      segments: { items: [], totalMatching: 0, nextOffset: null },
+      backend: 'whisperx/model',
+      language: 'cs',
+      segments: {
+        items: [
+          {
+            segmentIndex: 0,
+            id: 0,
+            text: 'Transcript evidence',
+            startSec: 0,
+            endSec: 5,
+            speaker: 'SPEAKER_00',
+          },
+        ],
+        totalMatching: 2,
+        nextOffset: 1,
+      },
+      continuation: { segmentOffset: 1 },
     } as unknown as Awaited<ReturnType<typeof getMcpTranscript>>);
 
     const body = await invokeMcp('tools/call', {
@@ -353,6 +369,12 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('Transcript evidence'),
+      },
+    ]);
     expect(getMcpTranscript).toHaveBeenCalledWith(
       'user-1',
       'viewer-catalog',
@@ -385,8 +407,27 @@ describe('MCP personalized tool surface', () => {
     vi.mocked(searchMcpTranscripts).mockResolvedValue({
       catalogId: 'viewer-catalog',
       query: 'search phrase',
-      results: [],
-    });
+      retrieval: {
+        mode: 'semantic',
+        exhaustive: false,
+        requestedLimit: 10,
+        returnedCount: 1,
+        maxPerRecording: 3,
+      },
+      results: [
+        {
+          rank: 1,
+          recording: { title: 'Recording title' },
+          match: {
+            startSec: 5,
+            endSec: 10,
+            text: 'Search evidence',
+            webUrl: 'https://besedy.example/recording?seek=5',
+          },
+          context: null,
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof searchMcpTranscripts>>);
 
     const body = await invokeMcp('tools/call', {
       name: 'search_transcripts',
@@ -394,6 +435,9 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
+    expect(body.result?.content).toEqual([
+      { type: 'text', text: expect.stringContaining('Search evidence') },
+    ]);
     expect(searchMcpTranscripts).toHaveBeenCalledWith(
       'viewer-catalog',
       'VIEWER',
@@ -401,7 +445,7 @@ describe('MCP personalized tool surface', () => {
         query: 'search phrase',
         limit: 10,
         contextChunks: 0,
-        maxPerRecording: undefined,
+        maxPerRecording: 3,
         filters: undefined,
       },
     );

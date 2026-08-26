@@ -37,6 +37,7 @@ interface McpResponse<T> {
 
 interface McpToolResult<T> {
   isError?: boolean;
+  content?: Array<{ type: string; text?: string }>;
   structuredContent: T;
 }
 
@@ -491,6 +492,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(
       transcriptBody.result?.structuredContent.segments.returnedTextChars,
     ).toBe('Besedy MCP transcript fixture opens the discussion.'.length);
+    expect(transcriptBody.result?.content?.[0]?.text).toContain(
+      'Besedy MCP transcript fixture opens the discussion.',
+    );
 
     const searchResponse = await request.post(MCP_RESOURCE, {
       headers: {
@@ -520,12 +524,23 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogId: string;
         query: string;
+        retrieval: {
+          mode: string;
+          exhaustive: boolean;
+          maxPerRecording: number;
+        };
         results: Array<{
           rank: number;
           recording: { audioHash: string; webUrl: string };
           match: { chunkId: string; text: string; webUrl: string };
-          context: { text: string };
+          context: { beforeText: string | null; afterText: string | null };
           citation: { workflowGroupId: string; chunkVersion: string };
+          transcriptRequest: {
+            audioHash: string;
+            backend: string;
+            startSec: number;
+            endSec: number;
+          };
         }>;
       }>
     >;
@@ -536,6 +551,11 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(searchBody.result?.structuredContent).toMatchObject({
       catalogId: result?.defaultCatalogId,
       query: 'Besedy MCP deterministic search',
+      retrieval: {
+        mode: 'semantic',
+        exhaustive: false,
+        maxPerRecording: 2,
+      },
       results: [
         {
           rank: 1,
@@ -549,15 +569,25 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5`,
           },
           context: {
-            text: 'Neighbor context before the deterministic evidence.\n\nDeterministic Besedy MCP search evidence.',
+            beforeText: 'Neighbor context before the deterministic evidence.',
+            afterText: null,
           },
           citation: {
             workflowGroupId: result?.defaultCatalogId,
             chunkVersion: 'mcp-smoke-v1',
           },
+          transcriptRequest: {
+            audioHash,
+            backend: TRANSCRIPT_BACKEND,
+            startSec: 0,
+            endSec: 10,
+          },
         },
       ],
     });
+    expect(searchBody.result?.content?.[0]?.text).toContain(
+      'Deterministic Besedy MCP search evidence.',
+    );
   } finally {
     await removeLocalTestClient(clientId);
   }

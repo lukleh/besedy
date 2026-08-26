@@ -510,6 +510,19 @@ export async function getMcpTranscript(
     input.segmentOffset + segments.length < matchingSegments.length
       ? input.segmentOffset + segments.length
       : null;
+  const continuation =
+    nextOffset === null
+      ? null
+      : {
+          catalogId,
+          audioHash,
+          backend,
+          startSec: input.startSec ?? null,
+          endSec: input.endSec ?? null,
+          segmentOffset: nextOffset,
+          segmentLimit: input.segmentLimit,
+          maxTextChars: input.maxTextChars,
+        };
 
   return {
     catalogId,
@@ -532,6 +545,7 @@ export async function getMcpTranscript(
       totalMatching: matchingSegments.length,
       nextOffset,
     },
+    continuation,
   };
 }
 
@@ -542,7 +556,7 @@ export async function searchMcpTranscripts(
     query: string;
     limit: number;
     contextChunks: number;
-    maxPerRecording?: number;
+    maxPerRecording: number;
     filters?: SearchMetadataFilters;
   },
 ) {
@@ -554,7 +568,7 @@ export async function searchMcpTranscripts(
       limit: input.limit,
       includeNeighbors: input.contextChunks > 0,
       neighborCount: input.contextChunks,
-      maxPerAudio: input.maxPerRecording ?? null,
+      maxPerAudio: input.maxPerRecording,
       metadataFilters: input.filters ?? null,
       accessLevel: catalogGrant,
       failOnMissingBundle: true,
@@ -575,6 +589,13 @@ export async function searchMcpTranscripts(
   return {
     catalogId,
     query: execution.query,
+    retrieval: {
+      mode: 'semantic' as const,
+      exhaustive: false,
+      requestedLimit: input.limit,
+      returnedCount: execution.results.length,
+      maxPerRecording: input.maxPerRecording,
+    },
     results: execution.results.map((result) => ({
       rank: result.rank,
       score: result.score,
@@ -598,11 +619,26 @@ export async function searchMcpTranscripts(
           ? {
               startSec: result.contextStartSec,
               endSec: result.contextEndSec,
-              text: result.contextText,
+              beforeText:
+                result.neighbors.before
+                  .map((neighbor) => neighbor.text)
+                  .join('\n\n') || null,
+              afterText:
+                result.neighbors.after
+                  .map((neighbor) => neighbor.text)
+                  .join('\n\n') || null,
             }
           : null,
       metadata: result.metadata,
       citation: result.citation,
+      transcriptRequest: {
+        catalogId,
+        audioHash: result.audioHash,
+        backend: result.citation.backendKey,
+        startSec:
+          input.contextChunks > 0 ? result.contextStartSec : result.startSec,
+        endSec: input.contextChunks > 0 ? result.contextEndSec : result.endSec,
+      },
     })),
   };
 }

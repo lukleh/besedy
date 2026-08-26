@@ -193,10 +193,15 @@ selected and available backends, and a segment page with absolute
 `maxPerRecording` diversifies results. Search also exposes the web UI's audio
 hash, location, recorder, year, and verification filters. Results contain a
 compact recording summary, an exact match with a seekable `webUrl`, optional
-assembled context without duplicate neighbor arrays, metadata, and a stable
-citation. Agents should normally search first, then fetch only the relevant
-transcript range. An unavailable RAG service returns the structured
-`search_unavailable` error.
+before/after context without repeating the exact match, metadata, a stable
+citation, and a ready-to-call `transcriptRequest` pinned to the indexed backend.
+Search is explicitly marked semantic and non-exhaustive, and defaults to at
+most three results per recording for corpus diversity. Transcript pages return
+a `continuation` object that preserves their catalog, backend, range, limits,
+and next offset. Both tools render the actual evidence text in standard MCP
+`content` as well as structured JSON for broad client compatibility. Agents
+should normally search first, then fetch only the relevant transcript range. An
+unavailable RAG service returns the structured `search_unavailable` error.
 
 Pagination, limits, and transcript windows are mandatory safeguards; tools must
 not return an unbounded catalog or transcript collection.

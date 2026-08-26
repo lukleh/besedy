@@ -465,6 +465,16 @@ describe('MCP read service', () => {
         totalMatching: 2,
         nextOffset: 1,
       },
+      continuation: {
+        catalogId: 'catalog-a',
+        audioHash: 'visible-recording',
+        backend: 'whisperx/model',
+        startSec: 5,
+        endSec: 15,
+        segmentOffset: 1,
+        segmentLimit: 50,
+        maxTextChars: 1_000,
+      },
     });
   });
 
@@ -492,6 +502,13 @@ describe('MCP read service', () => {
     expect(result).toEqual({
       catalogId: 'catalog-a',
       query: 'search phrase',
+      retrieval: {
+        mode: 'semantic',
+        exhaustive: false,
+        requestedLimit: 10,
+        returnedCount: 1,
+        maxPerRecording: 2,
+      },
       results: [
         {
           rank: 1,
@@ -517,7 +534,8 @@ describe('MCP read service', () => {
           context: {
             startSec: 30,
             endSec: 90,
-            text: 'Context before\n\nMatching evidence',
+            beforeText: 'Context before',
+            afterText: null,
           },
           metadata: {
             date: { year: 2026, month: 8, day: 26 },
@@ -532,6 +550,13 @@ describe('MCP read service', () => {
             workflowGroupId: 'catalog-a',
             backendKey: 'whisperx/model',
             chunkVersion: 'v1',
+          },
+          transcriptRequest: {
+            catalogId: 'catalog-a',
+            audioHash: 'visible-recording',
+            backend: 'whisperx/model',
+            startSec: 30,
+            endSec: 90,
           },
         },
       ],
@@ -548,6 +573,7 @@ describe('MCP read service', () => {
         query: 'search phrase',
         limit: 10,
         contextChunks: 0,
+        maxPerRecording: 3,
       }),
     ).rejects.toMatchObject({
       code: 'search_unavailable',

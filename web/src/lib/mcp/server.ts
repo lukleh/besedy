@@ -38,6 +38,7 @@ const MAX_TRANSCRIPT_TEXT_CHAR_LIMIT = 50_000;
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 20;
 const MAX_SEARCH_CONTEXT_CHUNKS = 3;
+const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 3;
 const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
@@ -71,9 +72,9 @@ function resolveToolCatalog(
   return catalog;
 }
 
-function toolSuccess(result: Record<string, unknown>, summary: string) {
+function toolSuccess(result: Record<string, unknown>, contentText: string) {
   return {
-    content: [{ type: 'text' as const, text: summary }],
+    content: [{ type: 'text' as const, text: contentText }],
     structuredContent: result,
   };
 }
@@ -93,13 +94,54 @@ function getPageItemCount(page: unknown): number {
   return Array.isArray(items) ? items.length : 0;
 }
 
-async function runReadTool(
-  operation: () => Promise<Record<string, unknown>>,
-  summarize: (result: Record<string, unknown>) => string,
+function renderTranscriptContent(
+  result: Awaited<ReturnType<typeof getMcpTranscript>>,
+): string {
+  const lines = [
+    `Transcript for ${result.audioHash} (${result.backend}, ${result.language ?? 'unknown language'}):`,
+    ...result.segments.items.map((segment) => {
+      const speaker = segment.speaker ? ` ${segment.speaker}` : '';
+      return `[${segment.startSec}-${segment.endSec}s]${speaker}: ${segment.text}`;
+    }),
+  ];
+  if (result.continuation) {
+    lines.push(
+      `Continue with segmentOffset ${result.continuation.segmentOffset}.`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function renderSearchContent(
+  result: Awaited<ReturnType<typeof searchMcpTranscripts>>,
+): string {
+  const lines = [
+    `Semantic transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} non-exhaustive match(es).`,
+  ];
+  for (const searchResult of result.results) {
+    lines.push(
+      `${searchResult.rank}. ${searchResult.recording.title} [${searchResult.match.startSec}-${searchResult.match.endSec}s]`,
+      searchResult.match.text,
+    );
+    if (searchResult.context?.beforeText) {
+      lines.push(`Before: ${searchResult.context.beforeText}`);
+    }
+    if (searchResult.context?.afterText) {
+      lines.push(`After: ${searchResult.context.afterText}`);
+    }
+    lines.push(`Source: ${searchResult.match.webUrl}`);
+  }
+  return lines.join('\n');
+}
+
+async function runReadTool<T extends Record<string, unknown>>(
+  operation: () => Promise<T>,
+  summarize: (result: T) => string,
+  renderContent?: (result: T) => string,
 ) {
   try {
     const result = await operation();
-    return toolSuccess(result, summarize(result));
+    return toolSuccess(result, renderContent?.(result) ?? summarize(result));
   } catch (error) {
     if (error instanceof McpReadError) {
       return toolError(error.code, error.message);
@@ -344,6 +386,7 @@ export async function createBesedyMcpServer(
             }),
           (result) =>
             `Returned ${getPageItemCount(result.segments)} transcript segment(s) for Besedy recording ${audioHash}.`,
+          renderTranscriptContent,
         );
       },
     );
@@ -376,7 +419,7 @@ export async function createBesedyMcpServer(
             .int()
             .min(1)
             .max(MAX_SEARCH_RESULTS_PER_RECORDING)
-            .optional(),
+            .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING),
           filters: SearchMetadataFiltersSchema.optional(),
         }),
         annotations: readOnlyAnnotations,
@@ -406,6 +449,7 @@ export async function createBesedyMcpServer(
             }),
           (result) =>
             `Found ${Array.isArray(result.results) ? result.results.length : 0} Besedy transcript match(es).`,
+          renderSearchContent,
         );
       },
     );
