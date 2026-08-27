@@ -346,6 +346,34 @@ visible attached recording hash in event sort order.
 back to the first visible recording when no primary is marked, and is `null`
 when no recording is visible.
 
+Example return value:
+
+```json
+{
+  "catalogId": "20251222_144441",
+  "events": [
+    {
+      "id": 198,
+      "webUrl": "https://besedy.org/catalog/20251222_144441/event/198",
+      "title": "Čajovna Zlatý Serafín, 16 Aug 2026",
+      "description": null,
+      "date": { "year": 2026, "month": 8, "day": 16 },
+      "sessionIndex": 1,
+      "location": { "id": 22, "name": "Čajovna Zlatý Serafín" },
+      "released": true,
+      "recordings": {
+        "primaryAudioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
+        "audioHashes": [
+          "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46"
+        ]
+      },
+      "updatedAt": "2026-08-26T10:24:40.491Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
 Pass `nextCursor` unchanged to continue; `null` marks the final page.
 
 ### `get_event`
@@ -425,6 +453,85 @@ exists, `continuation` preserves the catalog, recording, backend, mode, window,
 limits, and next offset; omit any `null` window values before using it as the
 next call's arguments. Otherwise it is `null`.
 
+Example full-mode return value:
+
+```json
+{
+  "catalogId": "20251222_144441",
+  "audioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
+  "recordingWebUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
+  "seekWebUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46?seek=1.06",
+  "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "availableBackends": [
+    "faster-whisper/large-v3@silero_vad_v6",
+    "whisperx/large-v3@silero"
+  ],
+  "language": "cs",
+  "durationSec": 11080,
+  "mode": "full",
+  "timeWindow": { "startSec": null, "endSec": null },
+  "segments": {
+    "items": [
+      {
+        "segmentIndex": 0,
+        "id": null,
+        "text": "Transcript text...",
+        "startSec": 1.06,
+        "endSec": 26.93,
+        "speaker": null,
+        "webUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46?seek=1.06"
+      }
+    ],
+    "offset": 0,
+    "limit": null,
+    "maxTextChars": null,
+    "returnedTextChars": 184392,
+    "totalMatching": 320,
+    "nextOffset": null
+  },
+  "continuation": null
+}
+```
+
+Page mode has the same top-level shape, but reports numeric page limits and may
+return a continuation descriptor:
+
+```json
+{
+  "mode": "page",
+  "segments": {
+    "offset": 0,
+    "limit": 50,
+    "maxTextChars": 20000,
+    "returnedTextChars": 18341,
+    "totalMatching": 320,
+    "nextOffset": 50,
+    "items": [
+      {
+        "segmentIndex": 0,
+        "id": null,
+        "text": "Transcript text...",
+        "startSec": 1.06,
+        "endSec": 26.93,
+        "speaker": null,
+        "webUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46?seek=1.06"
+      }
+    ]
+  },
+  "continuation": {
+    "catalogId": "20251222_144441",
+    "audioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
+    "backend": "faster-whisper/large-v3@silero_vad_v6",
+    "mode": "page",
+    "startSec": null,
+    "endSec": null,
+    "segmentOffset": 50,
+    "segmentLimit": 50,
+    "maxTextChars": 20000
+  }
+}
+```
+
 ### `search_transcripts`
 
 Use this tool for semantic discovery, not as proof that the corpus does or does
@@ -463,7 +570,21 @@ Every result contains:
 - a stable `citation` naming the audio hash, chunk, time range, catalog, RAG
   backend, and chunk version; and
 - `transcriptRequest`, when a compatible stored transcript exists, with the
-  actual transcript backend and the time range to verify. This may be `null`.
+  actual transcript backend, `mode: "page"`, and the time range to verify. This
+  may be `null`.
+
+The generated request can be passed directly to `get_transcript`:
+
+```json
+{
+  "catalogId": "20251222_144441",
+  "audioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
+  "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "mode": "page",
+  "startSec": 600,
+  "endSec": 720
+}
+```
 
 The recommended evidence workflow is:
 
