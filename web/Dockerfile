@@ -1,15 +1,17 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:24-alpine AS base
 WORKDIR /app
 
 # Dependencies stage (all deps for build)
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
 
 # Production dependencies only (omit optional to exclude prisma CLI and its deps like hono)
 FROM base AS deps-prod
 COPY package*.json ./
-RUN npm ci --omit=dev --omit=optional
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci --omit=dev --omit=optional
 
 # Development target
 FROM base AS development
@@ -46,38 +48,40 @@ ARG WEB_VERSION=unknown
 ENV NEXT_PUBLIC_WEB_VERSION=${WEB_VERSION}
 # Service-worker updates are byte-compared by browsers. Stamp it only when the
 # tracked web application changes, not for unrelated repository commits.
-RUN node -e 'require("node:fs").appendFileSync("public/sw.js", `\nself.__BESEDY_WEB_VERSION = ${JSON.stringify(process.argv[1])};\n`)' "$WEB_VERSION" \
+RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
+    node -e 'require("node:fs").appendFileSync("public/sw.js", `\nself.__BESEDY_WEB_VERSION = ${JSON.stringify(process.argv[1])};\n`)' "$WEB_VERSION" \
     && npm run build
 
 # Production target
 FROM base AS production
 ENV NODE_ENV=production
 
-# Version tracking (passed from build stage)
-ARG GIT_COMMIT=unknown
-ARG WEB_VERSION=unknown
-ARG BUILD_TIME
-ENV GIT_COMMIT=${GIT_COMMIT}
-ENV WEB_VERSION=${WEB_VERSION}
-ENV BUILD_TIME=${BUILD_TIME}
-
-# Refresh Alpine packages even when the local Node base image is stale, and
-# remove npm from the runtime image because production never invokes it.
-RUN apk upgrade --no-cache \
-    && addgroup -g 1001 -S nodejs \
+# Create the runtime user and remove npm because production never invokes it.
+RUN addgroup -g 1001 -S nodejs \
     && adduser -S nextjs -u 1001 \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/prisma ./prisma
-COPY --from=deps-prod /app/node_modules ./node_modules
-COPY docker-entrypoint.sh ./
+COPY --chown=nextjs:nodejs --from=builder /app/.next/standalone ./
+COPY --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
+COPY --chown=nextjs:nodejs --from=builder /app/public ./public
+COPY --chown=nextjs:nodejs --from=builder /app/prisma ./prisma
+COPY --chown=nextjs:nodejs --from=deps-prod /app/node_modules ./node_modules
+COPY --chown=nextjs:nodejs --chmod=755 docker-entrypoint.sh ./
 
-# Set ownership and permissions
-RUN chmod +x docker-entrypoint.sh && chown -R nextjs:nodejs /app
+# Refresh Alpine packages on every deployment even when the Node base image is
+# unchanged. Keeping this after application copies lets those layers stay cached.
+ARG BUILD_TIME
+RUN echo "Refreshing Alpine packages (${BUILD_TIME:-unknown})" \
+    && apk upgrade --no-cache
+
+# Version tracking changes on every deployment, so keep it after the reusable
+# filesystem layers.
+ARG GIT_COMMIT=unknown
+ARG WEB_VERSION=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV WEB_VERSION=${WEB_VERSION}
+ENV BUILD_TIME=${BUILD_TIME}
 
 # Switch to non-root user
 USER nextjs

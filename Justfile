@@ -482,7 +482,7 @@ prod-deploy:
     WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull --no-cache web
+    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull web
     echo "Starting production services..."
     docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup up -d --no-build --remove-orphans web
     echo "Running migrations..."
