@@ -29,6 +29,7 @@ import {
   MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS,
 } from "@/lib/mcp/config";
 import { fetchCimdClientMetadataResource } from "@/lib/auth/cimd-fetch";
+import { hashMcpOAuthToken } from "@/lib/mcp/token-storage";
 
 const appEnv = process.env.APP_ENV;
 const mockOAuthUrl = process.env.OAUTH_MOCK_URL?.trim();
@@ -147,6 +148,8 @@ export const auth = betterAuth({
             refreshTokenExpiresIn: MCP_REFRESH_TOKEN_EXPIRES_IN_SECONDS,
             refreshTokenReuseInterval:
               MCP_REFRESH_TOKEN_REUSE_INTERVAL_SECONDS,
+            // Keep token persistence and the refresh lock's lookup in sync.
+            storeTokens: { hash: hashMcpOAuthToken },
             allowPublicClientPrelogin: true,
           }),
           cimd({

@@ -30,7 +30,10 @@ export async function getActiveMcpAuthorization({
         },
       },
       consents: {
-        where: { userId },
+        where: {
+          userId,
+          resources: { has: resourceUrl },
+        },
         select: { scopes: true },
         orderBy: { updatedAt: 'desc' },
         take: 1,
