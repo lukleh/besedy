@@ -416,6 +416,51 @@ describe('MCP personalized tool surface', () => {
     ]);
   });
 
+  it('describes the transcript discovery and verification workflow in tool metadata', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    };
+
+    const body = await invokeMcp('tools/list');
+    const tools = body.result?.tools as Array<{
+      name: string;
+      description: string;
+      inputSchema: {
+        properties: Record<string, { description?: string }>;
+      };
+    }>;
+    const searchTool = tools.find((tool) => tool.name === 'search_transcripts');
+    const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
+
+    expect(searchTool?.description).toContain('filters.audioHashes');
+    expect(searchTool?.description).toContain('get_transcript');
+    expect(searchTool?.inputSchema.properties.limit.description).toContain(
+      'default is 100',
+    );
+    expect(
+      searchTool?.inputSchema.properties.contextChunks.description,
+    ).toContain('candidate triage');
+    expect(
+      searchTool?.inputSchema.properties.maxPerRecording.description,
+    ).toContain('recording/audio hash');
+    expect(transcriptTool?.description).toContain('verify important evidence');
+    expect(transcriptTool?.description).toContain('seekWebUrl');
+    expect(
+      transcriptTool?.inputSchema.properties.segmentOffset.description,
+    ).toContain('continuation.segmentOffset');
+  });
+
   it('uses the effective default catalog when catalogId is omitted', async () => {
     accessProfile = {
       userId: 'user-1',
@@ -544,6 +589,8 @@ describe('MCP personalized tool surface', () => {
     vi.mocked(getMcpTranscript).mockResolvedValue({
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
+      recordingWebUrl: 'https://besedy.example/recording',
+      seekWebUrl: 'https://besedy.example/recording?seek=0',
       backend: 'whisperx/model',
       language: 'cs',
       segments: {
@@ -555,6 +602,7 @@ describe('MCP personalized tool surface', () => {
             startSec: 0,
             endSec: 5,
             speaker: 'SPEAKER_00',
+            webUrl: 'https://besedy.example/recording?seek=0',
           },
         ],
         totalMatching: 2,
@@ -575,6 +623,12 @@ describe('MCP personalized tool surface', () => {
         text: expect.stringContaining('Transcript evidence'),
       },
     ]);
+    expect(body.result?.structuredContent).toMatchObject({
+      seekWebUrl: 'https://besedy.example/recording?seek=0',
+      segments: {
+        items: [{ webUrl: 'https://besedy.example/recording?seek=0' }],
+      },
+    });
     expect(getMcpTranscript).toHaveBeenCalledWith(
       'user-1',
       'viewer-catalog',

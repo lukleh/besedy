@@ -300,14 +300,20 @@ authenticated recording `webUrl` and a permission-scoped event page containing
 20,000 transcript characters; accepted input maxima are 200 segments and
 50,000 characters. Segment boundaries are preserved, so a single unusually
 large segment may exceed the requested character target. Each result includes
-the authenticated recording `webUrl`, the
-selected and available backends, and a segment page with absolute
-`segmentIndex` values, `totalMatching`, and `nextOffset`. Search accepts up to
+the authenticated recording `recordingWebUrl`, a `seekWebUrl` pointing to the
+first segment actually returned, the selected and available backends, and a
+segment page with absolute `segmentIndex` values, `totalMatching`, and
+`nextOffset`. Every returned segment has its own timestamped `webUrl`; an empty
+page returns `seekWebUrl: null`. Search accepts up to
 1,000 query characters and returns at most 100 grounded matches per call.
 Search defaults to 100 matches. `contextChunks` controls zero to three chunks
 on each side of a match and defaults to one, so results include nearby text
-before and after the exact match. Optional `maxPerRecording` diversifies
-results. Search also exposes the web UI's audio
+before and after the exact match. This mechanically adjacent context is for
+candidate triage and does not guarantee a complete question, answer,
+qualification, or discussion arc. Optional `maxPerRecording` limits matches
+per recording/audio hash; a low value such as one favors broad discovery,
+while a higher value can surface several related passages in one recording.
+Search also exposes the web UI's audio
 hash, location, recorder, year, and verification filters. Results contain a
 compact recording summary, an exact match with a seekable `webUrl`, optional
 before/after context without repeating the exact match, metadata, a stable
@@ -315,11 +321,18 @@ citation, and, when a stored transcript is available, a ready-to-call
 `transcriptRequest` using the actual stored backend. The citation continues to
 identify the RAG backend used for retrieval.
 Search is explicitly marked semantic and non-exhaustive, and defaults to at
-most three results per recording for corpus diversity. Transcript pages return
+most three results per recording for corpus diversity. Results preserve their
+retrieval order and expose `rank`, but not the retrieval engine's internal
+numeric score. Transcript pages return
 a `continuation` object that preserves their catalog, backend, range, limits,
 and next offset. Both tools render the actual evidence text in standard MCP
 `content` as well as structured JSON for broad client compatibility. Agents
-should normally search first, then fetch only the relevant transcript range. An
+should normally use the broad default search for discovery, shortlist candidates
+from the match and adjacent context, optionally run a bounded follow-up with
+`filters.audioHashes`, and then use `get_transcript` to verify continuous source
+context before relying on important evidence. Reformulated or focused searches
+should use an intentional bounded `limit` instead of repeatedly requesting the
+full 100-result default. An
 unavailable RAG service returns the structured `search_unavailable` error; a
 catalog without a search bundle returns the non-retryable
 `search_not_configured` error. Every structured tool error includes a boolean

@@ -464,6 +464,8 @@ describe('MCP read service', () => {
       audioHash: 'visible-recording',
       recordingWebUrl:
         'https://besedy.example/catalog/catalog-a/recording/visible-recording',
+      seekWebUrl:
+        'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5',
       backend: 'whisperx/model',
       availableBackends: ['whisperx/model'],
       language: 'cs',
@@ -478,6 +480,8 @@ describe('MCP read service', () => {
             startSec: 5,
             endSec: 10,
             speaker: 'SPEAKER_00',
+            webUrl:
+              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5',
           },
         ],
         offset: 0,
@@ -498,6 +502,47 @@ describe('MCP read service', () => {
         maxTextChars: 1_000,
       },
     });
+  });
+
+  it('builds seek links from the first segment actually returned after an offset', async () => {
+    const result = await getMcpTranscript(
+      'user-1',
+      'catalog-a',
+      'visible-recording',
+      {
+        segmentOffset: 2,
+        segmentLimit: 1,
+        maxTextChars: 1_000,
+      },
+    );
+
+    expect(result.seekWebUrl).toBe(
+      'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10',
+    );
+    expect(result.segments.items).toEqual([
+      expect.objectContaining({
+        segmentIndex: 2,
+        startSec: 10,
+        webUrl:
+          'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10',
+      }),
+    ]);
+  });
+
+  it('returns a null seek link when the requested transcript page is empty', async () => {
+    const result = await getMcpTranscript(
+      'user-1',
+      'catalog-a',
+      'visible-recording',
+      {
+        segmentOffset: 10,
+        segmentLimit: 1,
+        maxTextChars: 1_000,
+      },
+    );
+
+    expect(result.seekWebUrl).toBeNull();
+    expect(result.segments.items).toEqual([]);
   });
 
   it('returns compact grounded search matches with seekable recording links', async () => {
@@ -534,7 +579,6 @@ describe('MCP read service', () => {
       results: [
         {
           rank: 1,
-          score: 0.91,
           recording: {
             audioHash: 'visible-recording',
             title: 'Recording title',

@@ -48,29 +48,53 @@ export function registerSearchTranscriptsTool(
     {
       title: 'Search Besedy transcripts',
       description:
-        'Search accessible transcript chunks with Besedy RAG and return grounded citations.',
+        'Discover candidate passages with a broad, semantic, non-exhaustive search of accessible Besedy transcripts. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Results are ordered by relevance and expose rank, not an internal retrieval score.',
       inputSchema: z.object({
-        catalogId: z.string().min(1).optional(),
-        query: z.string().trim().min(1).max(1_000),
+        catalogId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Accessible Besedy catalog to search. Omit it to use the effective default catalog.',
+          ),
+        query: z
+          .string()
+          .trim()
+          .min(1)
+          .max(1_000)
+          .describe(
+            'Natural-language semantic discovery query. Meaningfully different formulations may surface different candidate passages.',
+          ),
         limit: z
           .number()
           .int()
           .min(1)
           .max(MAX_SEARCH_LIMIT)
-          .default(DEFAULT_SEARCH_LIMIT),
+          .default(DEFAULT_SEARCH_LIMIT)
+          .describe(
+            'Maximum number of non-exhaustive matches to return. The broad discovery default is 100; use an intentional smaller limit for reformulations and focused follow-ups.',
+          ),
         contextChunks: z
           .number()
           .int()
           .min(0)
           .max(MAX_SEARCH_CONTEXT_CHUNKS)
-          .default(DEFAULT_SEARCH_CONTEXT_CHUNKS),
+          .default(DEFAULT_SEARCH_CONTEXT_CHUNKS)
+          .describe(
+            'Number of mechanically adjacent indexed chunks to return before and after each match. This context is for candidate triage and may not preserve a complete question, answer, qualification, or discussion arc.',
+          ),
         maxPerRecording: z
           .number()
           .int()
           .min(1)
           .max(MAX_SEARCH_RESULTS_PER_RECORDING)
-          .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING),
-        filters: SearchMetadataFiltersSchema.optional(),
+          .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING)
+          .describe(
+            'Maximum matches per recording/audio hash. A low value such as 1 favors discovery across recordings; a higher value can return several related passages from one recording.',
+          ),
+        filters: SearchMetadataFiltersSchema.optional().describe(
+          'Optional metadata constraints. Use filters.audioHashes with a bounded limit to follow up within recordings shortlisted by an earlier broad search.',
+        ),
       }),
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },

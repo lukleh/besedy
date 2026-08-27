@@ -457,6 +457,7 @@ export async function getMcpTranscript(
       startSec: segment.start,
       endSec: segment.end,
       speaker: segment.speaker ?? null,
+      webUrl: buildRecordingSeekWebUrl(catalogId, audioHash, segment.start),
     });
     returnedTextChars += textChars;
   }
@@ -482,6 +483,7 @@ export async function getMcpTranscript(
     catalogId,
     audioHash,
     recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
+    seekWebUrl: segments[0]?.webUrl ?? null,
     backend,
     availableBackends: available.backends,
     language: transcript.language ?? null,
@@ -580,7 +582,6 @@ export async function searchMcpTranscripts(
       );
       return {
         rank: result.rank,
-        score: result.score,
         recording: {
           ...serializeRecordingSummary(recordingByHash.get(result.audioHash)!),
           webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
