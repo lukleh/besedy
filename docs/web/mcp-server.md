@@ -22,7 +22,7 @@ the test containers running for reuse; stop them with `just test-down`. On a
 new machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
-> Last updated: 2026-08-26
+> Last updated: 2026-08-27
 
 ## Purpose and scope
 
@@ -253,93 +253,244 @@ valid operations without guessing from role names. It also distinguishes the
 user's saved default, the configured global default, and the effective default
 that an omitted `catalogId` will resolve.
 
-## Initial tools
+## Tool reference
 
-All tools are annotated read-only and return structured JSON plus concise text.
-Results contain stable Besedy identifiers and web URLs where useful, but never
-filesystem paths or audio URLs.
+All seven tools are read-only, idempotent, and limited to Besedy data rather
+than the open web. Successful calls return machine-readable JSON in
+`structuredContent`. The `content` field contains a concise summary; transcript
+and search calls additionally render their evidence text there for clients that
+do not consume structured results. Responses may contain stable Besedy IDs and
+authenticated web links, but never audio URLs or filesystem paths.
 
-| Tool                 | Purpose                                                       | Minimum catalog capability          |
-| -------------------- | ------------------------------------------------------------- | ----------------------------------- |
-| `who_am_i`           | Show the current account and OAuth connection                 | Active portal user                  |
-| `list_catalogs`      | List accessible catalogs and their capabilities               | Active portal user                  |
-| `list_events`        | Page/filter visible events and their metadata                 | Catalog access                      |
-| `get_event`          | Get one visible event and paged recording summaries           | Catalog access and event visibility |
-| `get_recording`      | Get metadata for one visible recording                        | Recording visibility                |
-| `get_transcript`     | Get a recording transcript, optionally by time/segment window | `canViewTranscripts`                |
-| `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canSearchTranscripts`              |
+Pagination, limits, and transcript windows are mandatory safeguards. A client
+must follow the returned cursor, offset, or continuation rather than request an
+unbounded collection.
 
-`who_am_i` always reports the authenticated account ID, OAuth client, effective
-scopes, and catalog-access summary. Account name, status, and system role are
-included only with the `profile` scope; email and verification status require
-the `email` scope.
+| Tool                 | Use it to                                                     | Required access                               |
+| -------------------- | ------------------------------------------------------------- | --------------------------------------------- |
+| `who_am_i`           | Inspect the account, OAuth client, scopes, and access summary | Active portal user                            |
+| `list_catalogs`      | Discover accessible catalogs and per-catalog capabilities     | Active portal user                            |
+| `list_events`        | Page and filter visible events                                | `canListEvents`                               |
+| `get_event`          | Read one event and its visible recording summaries            | `canListEvents` and event visibility          |
+| `get_recording`      | Read one recording's metadata and linked events               | `canGetRecordings` and recording visibility   |
+| `get_transcript`     | Read a bounded, continuous transcript window                  | `canViewTranscripts` and recording visibility |
+| `search_transcripts` | Find candidate passages with semantic transcript search       | `canSearchTranscripts`                        |
 
-`list_catalogs` accepts an optional cursor and a `limit` from 1 to 100 (default
-50). Its response includes `nextCursor`, `defaultCatalogId`, and
-`defaultCatalogSource`. Catalog entries expose `isUserDefault`,
-`isGlobalDefault`, and `isEffectiveDefault` separately. The default source is
-one of `user_preference`, `global_default`, `most_recent`, or `null`. An invalid
-cursor returns the standard structured `invalid_cursor` tool error.
+`who_am_i` and `list_catalogs` are always discoverable by an active portal
+user. The remaining tools are discoverable when the user has their required
+capability in at least one catalog. Discovery is only a usability hint: every
+catalog-scoped call authorizes its resolved catalog and target again.
 
-`list_events` accepts an optional numeric cursor, release-state and
-title/description/location filters, and a limit from 1 to 100 (default 25).
-Each event includes its authenticated Besedy `webUrl`, a compact primary
-recording summary, and a `recordingCount` scoped to recordings visible to the
-caller. `get_event` takes an event ID plus an optional `recordingOffset`
-(default 0) and `recordingLimit` from 1 to 100 (default 25). It returns the
-event's authenticated `webUrl` and a permission-scoped recording page with
-`items`, `totalVisible`, and `nextOffset`; each compact recording summary also
-has an authenticated `webUrl`. Recording and transcript reads use the stable
-audio hash. `get_recording` accepts an optional `eventOffset` (default 0) and
-`eventLimit` from 1 to 100 (default 25). It returns detailed metadata with an
-authenticated recording `webUrl` and a permission-scoped event page containing
-`items`, `totalVisible`, and `nextOffset`; every linked event also has a
-`webUrl`. `get_transcript` accepts a half-open time range through `startSec`
-(inclusive) and `endSec` (exclusive), plus `segmentOffset`, `segmentLimit`, and
-`maxTextChars`. Defaults cap each response at 50 segments and approximately
-20,000 transcript characters; accepted input maxima are 200 segments and
-50,000 characters. Segment boundaries are preserved, so a single unusually
-large segment may exceed the requested character target. Each result includes
-the authenticated recording `recordingWebUrl`, a `seekWebUrl` pointing to the
-first segment actually returned, the selected and available backends, and a
-segment page with absolute `segmentIndex` values, `totalMatching`, and
-`nextOffset`. Every returned segment has its own timestamped `webUrl`; an empty
-page returns `seekWebUrl: null`. Search accepts up to
-1,000 query characters and returns at most 100 grounded matches per call.
-Search defaults to 100 matches. `contextChunks` controls zero to three chunks
-on each side of a match and defaults to one, so results include nearby text
-before and after the exact match. This mechanically adjacent context is for
-candidate triage and does not guarantee a complete question, answer,
-qualification, or discussion arc. Optional `maxPerRecording` limits matches
-per recording/audio hash; a low value such as one favors broad discovery,
-while a higher value can surface several related passages in one recording.
-Search also exposes the web UI's audio
-hash, location, recorder, year, and verification filters. Results contain a
-compact recording summary, an exact match with a seekable `webUrl`, optional
-before/after context without repeating the exact match, metadata, a stable
-citation, and, when a stored transcript is available, a ready-to-call
-`transcriptRequest` using the actual stored backend. The citation continues to
-identify the RAG backend used for retrieval.
-Search is explicitly marked semantic and non-exhaustive, and defaults to at
-most three results per recording for corpus diversity. Results preserve their
-retrieval order and expose `rank`, but not the retrieval engine's internal
-numeric score. Transcript pages return
-a `continuation` object that preserves their catalog, backend, range, limits,
-and next offset. Both tools render the actual evidence text in standard MCP
-`content` as well as structured JSON for broad client compatibility. Agents
-should normally use the broad default search for discovery, shortlist candidates
-from the match and adjacent context, optionally run a bounded follow-up with
-`filters.audioHashes`, and then use `get_transcript` to verify continuous source
-context before relying on important evidence. Reformulated or focused searches
-should use an intentional bounded `limit` instead of repeatedly requesting the
-full 100-result default. An
-unavailable RAG service returns the structured `search_unavailable` error; a
-catalog without a search bundle returns the non-retryable
-`search_not_configured` error. Every structured tool error includes a boolean
-`retryable`; agents may automatically retry only errors where it is `true`.
+### `who_am_i`
 
-Pagination, limits, and transcript windows are mandatory safeguards; tools must
-not return an unbounded catalog or transcript collection.
+Use this tool to confirm which account and OAuth application a client is using,
+especially when diagnosing an unexpected catalog list or missing tool. It takes
+no arguments.
+
+The response has two objects:
+
+- `account` always contains the stable account `id`. `name`, `status`, and
+  `systemRole` require the `profile` OAuth scope; `email` and `emailVerified`
+  require the `email` scope. A field hidden by scope is returned as `null`.
+- `authorization` contains `clientId`, `clientName`, the effective
+  `grantedScopes`, `accessibleCatalogCount`, and `defaultCatalogId`.
+
+This tool reports authorization state; it does not grant access or change the
+active catalog.
+
+### `list_catalogs`
+
+Use this as the entry point when the catalog is unknown or when a later tool
+returns a catalog-related permission error.
+
+| Argument | Type                  | Default | Meaning                                       |
+| -------- | --------------------- | ------- | --------------------------------------------- |
+| `cursor` | string                | omitted | ID of the last catalog from the previous page |
+| `limit`  | integer from 1 to 100 | `50`    | Maximum catalogs in the page                  |
+
+Each item in `catalogs` contains `id`, `label`, `catalogGrant`,
+`isCatalogAdmin`, and the capability flags used by the other tools. It also
+distinguishes `isUserDefault`, `isGlobalDefault`, and `isEffectiveDefault`.
+The top-level `defaultCatalogId` is the catalog selected when a catalog-scoped
+tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
+`global_default`, `most_recent`, or `null`.
+
+Pass `nextCursor` unchanged to fetch the next page. `nextCursor: null` means the
+list is complete. An unknown cursor returns `invalid_cursor`.
+
+### `list_events`
+
+Use this tool to browse events or resolve an event ID before calling
+`get_event`.
+
+| Argument    | Type                                     | Default           | Meaning                                                                |
+| ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------- |
+| `catalogId` | string                                   | effective default | Catalog to read                                                        |
+| `cursor`    | positive integer                         | omitted           | Event ID returned as `nextCursor` by the previous page                 |
+| `limit`     | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
+| `released`  | boolean                                  | omitted           | Include only released or only unreleased events                        |
+| `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive literal match against title, description, or location |
+
+Events are ordered by descending event ID. Each event includes its metadata,
+release state, last-updated timestamp, authenticated `webUrl`, and
+`recordingCount` scoped to recordings visible to the caller. `primaryRecording`
+is either `null` or a compact visible recording summary with its stable
+`audioHash`.
+
+Pass `nextCursor` unchanged to continue; `null` marks the final page.
+
+### `get_event`
+
+Use this tool after `list_events` when the full event metadata or attached
+recordings are needed.
+
+| Argument          | Type                  | Default           | Meaning                                 |
+| ----------------- | --------------------- | ----------------- | --------------------------------------- |
+| `catalogId`       | string                | effective default | Catalog containing the event            |
+| `eventId`         | positive integer      | required          | Stable event ID                         |
+| `recordingOffset` | non-negative integer  | `0`               | Offset into visible attached recordings |
+| `recordingLimit`  | integer from 1 to 100 | `25`              | Maximum recording summaries in the page |
+
+The response contains `catalogId` and an `event` with full event metadata,
+timestamps, authenticated `webUrl`, and a `recordings` page. Every recording
+item includes the stable `audioHash`, compact metadata, `isPrimary`,
+`sortOrder`, and its authenticated `webUrl`. `totalVisible` counts only
+recordings visible to the caller. Continue with `nextOffset` as
+`recordingOffset`; `null` marks the final page.
+
+### `get_recording`
+
+Use this tool to inspect one recording identified by the stable SHA-256 audio
+hash returned by an event, search, or transcript response.
+
+| Argument      | Type                            | Default           | Meaning                           |
+| ------------- | ------------------------------- | ----------------- | --------------------------------- |
+| `catalogId`   | string                          | effective default | Catalog containing the recording  |
+| `audioHash`   | 64-character hexadecimal string | required          | Stable recording identifier       |
+| `eventOffset` | non-negative integer            | `0`               | Offset into visible linked events |
+| `eventLimit`  | integer from 1 to 100           | `25`              | Maximum linked events in the page |
+
+`recording` contains the descriptive metadata, readiness and publication
+flags, and authenticated `webUrl`; it deliberately omits audio and storage
+locations. The `events` page contains compact visible event summaries and
+whether the recording is primary for each event. Continue with `nextOffset` as
+`eventOffset`; `null` marks the final page.
+
+### `get_transcript`
+
+Use this tool to read continuous source context, normally after
+`search_transcripts` identifies a candidate passage. Copy the candidate's
+`transcriptRequest` when it is available so the catalog, recording, backend,
+and relevant time window remain aligned.
+
+| Argument        | Type                            | Default                            | Meaning                                                                    |
+| --------------- | ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
+| `catalogId`     | string                          | effective default                  | Catalog containing the recording                                           |
+| `audioHash`     | 64-character hexadecimal string | required                           | Stable recording identifier                                                |
+| `backend`       | `workflow/model` string         | highest-priority available backend | Stored transcript backend to read                                          |
+| `startSec`      | number at least 0               | start of transcript                | Inclusive start of the time window                                         |
+| `endSec`        | positive number                 | end of transcript                  | Exclusive end of the time window; must exceed `startSec` when both are set |
+| `segmentOffset` | non-negative integer            | `0`                                | Offset within segments overlapping the time window                         |
+| `segmentLimit`  | integer from 1 to 200           | `50`                               | Maximum whole segments in the page                                         |
+| `maxTextChars`  | integer from 1,000 to 50,000    | `20,000`                           | Soft text-size target for the page                                         |
+
+The time window is half-open, but whole segments are preserved: a segment is
+included when it overlaps the window, and one unusually large segment may
+exceed `maxTextChars`. Segment items include their absolute `segmentIndex`,
+text, timestamps, optional speaker and source ID, and a timestamped `webUrl`.
+
+The response also reports the chosen `backend`, `availableBackends`, language,
+duration, normalized `timeWindow`, `recordingWebUrl`, and a `seekWebUrl` for
+the first returned segment. An empty page has `seekWebUrl: null`. The
+`segments` object reports `returnedTextChars`, `totalMatching`, and
+`nextOffset`. When more data exists, `continuation` preserves the catalog,
+recording, backend, window, limits, and next offset; omit any `null` window
+values before using it as the next call's arguments. Otherwise it is `null`.
+
+### `search_transcripts`
+
+Use this tool for semantic discovery, not as proof that the corpus does or does
+not contain something. Retrieval is deliberately marked non-exhaustive, and
+results are ordered by relevance through `rank`; internal numeric retrieval
+scores are not exposed.
+
+| Argument          | Type                                       | Default           | Meaning                                                              |
+| ----------------- | ------------------------------------------ | ----------------- | -------------------------------------------------------------------- |
+| `catalogId`       | string                                     | effective default | Catalog to search                                                    |
+| `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                      |
+| `limit`           | integer from 1 to 100                      | `100`             | Maximum matches; use a smaller explicit limit for focused follow-ups |
+| `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match            |
+| `maxPerRecording` | integer from 1 to 20                       | `3`               | Maximum matches from one audio hash                                  |
+| `filters`         | object                                     | omitted           | Optional metadata constraints described below                        |
+
+`filters` is a strict object containing at least one of:
+
+- `audioHashes`: 1 to 50 stable 64-character audio hashes;
+- `locationIds` or `recorderIds`: 1 to 50 positive integer IDs;
+- `dateYears`: 1 to 50 years from 1900 through 2100; or
+- `verified`: a boolean.
+
+A low `maxPerRecording`, such as `1`, increases diversity across recordings. A
+higher value is useful after narrowing the search to one or more recordings.
+Adjacent chunks are mechanical context for triage: they may not contain a
+complete question, answer, qualification, or discussion arc.
+
+Every result contains:
+
+- a compact `recording` summary and authenticated recording `webUrl`;
+- the exact `match`, including chunk ID, time range, text, and seekable
+  `webUrl`;
+- optional before/after `context` without duplicating the exact match;
+- date, location, and recorder `metadata`;
+- a stable `citation` naming the audio hash, chunk, time range, catalog, RAG
+  backend, and chunk version; and
+- `transcriptRequest`, when a compatible stored transcript exists, with the
+  actual transcript backend and the time range to verify. This may be `null`.
+
+The recommended evidence workflow is:
+
+1. Run a broad semantic search with a low `maxPerRecording`.
+2. Shortlist results from their exact match and adjacent context.
+3. If needed, run a smaller follow-up restricted with `filters.audioHashes`.
+4. Call `get_transcript` with the chosen result's `transcriptRequest` and read
+   the continuous source context before relying on the passage.
+
+Do not repeatedly request the 100-result default for reformulations; choose an
+intentional smaller `limit`. `search_not_configured` means the catalog has no
+search bundle and is not retryable. `search_unavailable` means the search
+service is temporarily unavailable and is retryable.
+
+### Tool errors
+
+Expected tool failures set `isError: true` and return the same object in
+`structuredContent` and as JSON text in `content`:
+
+```json
+{
+  "error": {
+    "code": "permission_denied",
+    "message": "Catalog permission does not allow canViewTranscripts",
+    "retryable": false
+  }
+}
+```
+
+| Code                    | Meaning                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `catalog_required`      | No effective default exists; supply `catalogId`                                    |
+| `invalid_cursor`        | The catalog cursor is not present in the accessible catalog list                   |
+| `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
+| `permission_denied`     | The catalog or recording is visible, but the requested capability is unavailable   |
+| `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
+| `transcript_not_found`  | The requested recording/backend has no readable stored transcript                  |
+| `invalid_window`        | `endSec` is not greater than `startSec`                                            |
+| `search_not_configured` | The catalog has no transcript search bundle                                        |
+| `search_unavailable`    | The transcript search service is temporarily unavailable                           |
+
+Clients may automatically retry only when `retryable` is `true`; currently
+that applies only to `search_unavailable`. Schema-validation and protocol
+errors are produced by the MCP SDK before a tool handler runs and therefore do
+not use this application error shape.
 
 ## Optional catalog selection
 
