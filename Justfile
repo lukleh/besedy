@@ -389,7 +389,7 @@ prod-up:
 prod-down:
     cd web && {{ prod_compose }} down
 
-# Stop prod and delete volumes (DESTRUCTIVE - deletes database!)
+# Stop prod and remove non-external volumes (the production DB volume is external)
 prod-down-clean:
     cd web && {{ prod_compose }} down -v
 
@@ -440,8 +440,8 @@ prod-rebuild:
     WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull --no-cache web
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup up -d web
+    {{ prod_compose }} build --pull --no-cache web
+    {{ prod_compose }} up -d web
 
 # Full production deployment: build, migrate, restart
 prod-deploy:
@@ -482,13 +482,13 @@ prod-deploy:
     WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup build --pull web
+    {{ prod_compose }} build --pull web
     echo "Starting production services..."
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" --profile backup up -d --no-build --remove-orphans web
+    {{ prod_compose }} up -d --no-build --remove-orphans web
     echo "Running migrations..."
     just prod-migrate
     echo "Restarting web service..."
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" restart web
+    {{ prod_compose }} restart web
     echo "Deployment complete. Commit: ${GIT_COMMIT:0:7}"
     echo "Verify: curl -s http://localhost:3000/api/version | jq"
 
@@ -535,7 +535,7 @@ prod-migrate:
     echo "Running migrations as besedy_migrator..."
     npx prisma migrate deploy
     echo "Granting app user permissions and preserving audit-log hardening..."
-    docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$env_file" exec -T db \
+    {{ prod_compose }} exec -T db \
         psql -U "${POSTGRES_USER:-besedy}" -d "${POSTGRES_DB:-besedy}" \
         -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO besedy_app;" \
         -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO besedy_app;" \
@@ -689,16 +689,29 @@ mcp-smoke:
     #!/usr/bin/env bash
     set -euo pipefail
     repo_root="$PWD"
-    source_config="${CONFIG_FILE:?CONFIG_FILE is required}"
+    test_env_file="$(bash scripts/resolve_web_env_file.sh test)"
+    unset APP_ENV CONFIG_FILE
+    set -a
+    . "$test_env_file"
+    set +a
+    if [[ "${APP_ENV:-}" != "test" ]]; then
+      echo "Refusing MCP smoke: the resolved test env must set APP_ENV=test" >&2
+      exit 1
+    fi
+    source_config="${CONFIG_FILE:-$repo_root/web/besedy.docker.toml}"
     if [[ "$source_config" != /* ]]; then
       source_config="$repo_root/web/${source_config#./}"
     fi
     fixture_dir="$repo_root/web/tests/e2e/mcp-fixtures"
     rag_mock="$repo_root/web/tests/e2e/rag-mock/server.mjs"
-    runtime_dir="$repo_root/web/.playwright-mcp"
+    export BESEDY_WEB_COMPOSE_INSTANCE="test-mcp-$(date -u +%Y%m%d%H%M%S)-$$"
+    export BESEDY_WEB_ALLOW_TEST_OVERRIDES=1
+    runtime_dir="$repo_root/web/.playwright-mcp/$BESEDY_WEB_COMPOSE_INSTANCE"
     rag_container="besedy-mcp-rag-${RANDOM}-$$"
     cleanup() {
       docker rm -f "$rag_container" > /dev/null 2>&1 || true
+      just test-down-clean > /dev/null 2>&1 || true
+      rm -rf "$runtime_dir"
     }
     trap cleanup EXIT
     mkdir -p "$runtime_dir"

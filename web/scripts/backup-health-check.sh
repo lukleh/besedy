@@ -30,7 +30,7 @@ fi
 : "${BACKUP_DIR:?is not set — add it to ops.env (see web/setup/backup/ops.env.example)}"
 
 compose_cmd() {
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" -f "$COMPOSE_DIR/docker-compose.secure.yml" --env-file "$ENV_FILE" "$@"
+    "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
 }
 
 send_alert() {

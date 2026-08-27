@@ -15,12 +15,10 @@ set -euo pipefail
 
 COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
-ENV_FILE="$("$PROJECT_DIR/scripts/resolve_web_env_file.sh" production)"
 THRESHOLD_FAILED_LOGIN="${THRESHOLD_FAILED_LOGIN:-5}"
 
-# Compose command for production (base + security overlay)
 compose_cmd() {
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" -f "$COMPOSE_DIR/docker-compose.secure.yml" --env-file "$ENV_FILE" "$@"
+    "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
 }
 THRESHOLD_ACCESS_DENIED="${THRESHOLD_ACCESS_DENIED:-10}"
 ALERT_EMAIL="${ALERT_EMAIL:-}"

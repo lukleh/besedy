@@ -8,11 +8,8 @@
  */
 
 import { execSync } from "child_process";
-import { resolveScriptEnvFilePath } from "../../../src/lib/script-env";
-
 const TEST_DB_URL =
   "postgresql://besedy_test:besedy_test@localhost:5434/besedy_test";
-const TEST_ENV_FILE = resolveScriptEnvFilePath("test");
 
 function runCommand(
   cmd: string,
@@ -32,15 +29,9 @@ function runCommand(
 async function main(): Promise<void> {
   console.log("=== Resetting Test Database ===\n");
 
-  if (!TEST_ENV_FILE) {
-    throw new Error(
-      "Test env file not found. Set BESEDY_WEB_ENV_TEST or copy web/.env.test.example to ~/.config/lukleh/besedy/web.env.test."
-    );
-  }
-
   // Drop and recreate schema (runs in container)
   runCommand(
-    `docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "${TEST_ENV_FILE}" exec -T db psql -U besedy_test -d besedy_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"`,
+    'bash ../scripts/run_web_compose.sh test exec -T db psql -U besedy_test -d besedy_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"',
     "[1/3] Dropping existing schema"
   );
 

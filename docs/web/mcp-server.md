@@ -18,8 +18,9 @@ all seven tools. It verifies default-catalog resolution, the owner's live
 capability flags, metadata reads, complete transcript retrieval, and a grounded
 RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
 not supply `catalogId`, so the same run covers default selection. The test keeps
-the test containers running for reuse; stop them with `just test-down`. On a
-new machine, install the Playwright browser once with
+its own `test-mcp-*` Compose project and volume, then removes both on exit. It
+resolves the test env file itself; inherited production `APP_ENV`, config, and
+Compose project values are not used. On a new machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
 > Last updated: 2026-08-27

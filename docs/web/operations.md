@@ -14,11 +14,16 @@ For shared repo workflow and justfile commands see `AGENTS.md`.
 |-------------|----------|---------|-------------------|-----------------|
 | Development | 3001 | 5433 | `just dev-up` | `docker-compose.dev.yml` + `mock-oauth` profile |
 | Test (E2E) | 3002 | 5434 | `just test-up` | `docker-compose.secure.yml` (production-style) |
-| Production | 3000 | 5432 | `just prod-up` | `docker-compose.secure.yml` + `backup` profile |
+| Production | 3000 | 5432 | `just prod-up` | `docker-compose.secure.yml` + `docker-compose.production.yml` + `backup` profile |
 
 All three stacks can run simultaneously -- they use separate ports, volumes, and
 container name prefixes (`besedy-development-*`, `besedy-test-*`,
 `besedy-production-*`).
+
+Always use the `just` recipes or `scripts/run_web_compose.sh`. The wrapper clears
+unrelated shell state, fixes the Compose identity independently from runtime
+`APP_ENV`, and validates the fully rendered configuration before Docker can
+create, replace, stop, or remove resources.
 
 ---
 
@@ -91,6 +96,17 @@ catalogs, transcripts, and audio from mounted host paths.
 
 - [ ] Cloudflare Tunnel pointing to `localhost:3000`
 - [ ] Google OAuth redirect URI matches `AUTH_URL`
+- [ ] External DB volume exists: `docker volume inspect besedy_production_postgres`
+
+On a new host, create the production DB volume once before the first deployment:
+
+```bash
+docker volume create besedy_production_postgres
+```
+
+Production mounts this external volume at `/var/lib/postgresql`, as required by
+the PostgreSQL 18 image layout. Because it is external, `just prod-down-clean`
+does not delete database data.
 
 ### Release Preflight
 
@@ -182,12 +198,11 @@ errors, active/expired session counts, session endpoint health, deployed version
 
 ```bash
 cd web
-ENV_FILE="$(../scripts/resolve_web_env_file.sh production)"
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$ENV_FILE" stop web
+bash ../scripts/run_web_compose.sh production stop web
 gunzip -c /path/to/backup.sql.gz | \
-  docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$ENV_FILE" \
+  bash ../scripts/run_web_compose.sh production \
   exec -T db psql -U besedy -d besedy
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$ENV_FILE" start web
+bash ../scripts/run_web_compose.sh production start web
 ```
 
 4. Verify rollback: `curl -s https://besedy.org/api/version | jq`.
@@ -485,12 +500,11 @@ sync success.
 
 ```bash
 cd web
-ENV_FILE="$(../scripts/resolve_web_env_file.sh production)"
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$ENV_FILE" stop web
+bash ../scripts/run_web_compose.sh production stop web
 gunzip -c /path/to/backup.sql.gz | \
-  docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$ENV_FILE" \
+  bash ../scripts/run_web_compose.sh production \
   exec -T db psql -U besedy -d besedy
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$ENV_FILE" start web
+bash ../scripts/run_web_compose.sh production start web
 ```
 
 After restore, verify with `just prod-status` and

@@ -19,6 +19,7 @@ production_inputs=(
   "web/prisma/schema.prisma"
   "web/Dockerfile"
   "web/docker-compose.yml"
+  "web/docker-compose.production.yml"
   "web/.dockerignore"
   "scripts/resolve_web_version.sh"
 )

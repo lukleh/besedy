@@ -102,7 +102,7 @@ Before deploying, compare the target shape with the environment using the
 
 | Stack | Compose file | Project/name | Purpose | Environment-specific? |
 | --- | --- | --- | --- | --- |
-| Web | `web/docker-compose.yml` plus overlays | `besedy-${APP_ENV}` | Web app, web DB, optional OAuth mock, optional backup | Yes |
+| Web | `web/docker-compose.yml` plus overlays | wrapper-controlled `besedy-${BESEDY_COMPOSE_INSTANCE}` | Web app, web DB, optional OAuth mock, optional backup | Yes |
 | Prefect control plane | `jobs-service/docker-compose.prefect.yml` | `besedy-prefect` | Prefect API/UI, services, Prefect DB | Shared singleton |
 | Deep Search runtime | `jobs-service/docker-compose.jobs-{dev,test,prod}.yml` | `besedy-jobs-{dev,test,prod}` | Jobs API and Prefect worker for one web environment | Yes |
 | RAG | `rag-services/docker-compose.yml` | `besedy-rag-services` | ColBERT sidecar and optional legacy TEI services | Shared singleton |
@@ -110,13 +110,21 @@ Before deploying, compare the target shape with the environment using the
 
 ## Web Stacks
 
-The web stack is environment-scoped through `APP_ENV`.
+The web stack's Docker identity is controlled independently from the app runtime
+mode. `scripts/run_web_compose.sh` fixes both values per mode, renders the full
+configuration, and rejects cross-environment names or volumes before running the
+requested Compose command. Inherited `APP_ENV` and `COMPOSE_PROJECT_NAME` values
+cannot redirect a test command to production resources.
 
 | Environment | Containers | Docker network | Host ports | Data volume |
 | --- | --- | --- | --- | --- |
 | Development | `besedy-development-web`, `besedy-development-db`, `besedy-development-oauth` | `besedy-development_default` | web `3001`, DB `5433` | `besedy_development_postgres` |
 | Test | `besedy-test-web`, `besedy-test-db`, `besedy-test-oauth` | `besedy-test_default` | web `3002`, DB `5434` | `besedy_test_postgres` |
 | Production | `besedy-production-web`, `besedy-production-db`, `besedy-production-backup` | `besedy-production_default` | web `127.0.0.1:3000`, DB `127.0.0.1:5432` | `besedy_production_postgres` |
+
+The production database volume is external and is mounted at
+`/var/lib/postgresql`, the PostgreSQL 18 parent data directory. Development and
+test volumes remain Compose-managed and mount at `/var/lib/postgresql/data`.
 
 The web containers should also join `besedy-internal` when they need to call
 or be called by their Deep Search runtime. For the first production Deep Search

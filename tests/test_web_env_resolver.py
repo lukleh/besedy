@@ -62,32 +62,83 @@ def test_missing_web_env_file_has_actionable_error(
 
 
 @pytest.mark.parametrize(
-    ("mode", "override_var", "compose_override", "profile"),
+    ("mode", "override_var", "compose_overrides", "profile", "app_env", "instance"),
     [
-        ("development", "BESEDY_WEB_ENV_DEV", "docker-compose.dev.yml", "mock-oauth"),
-        ("production", "BESEDY_WEB_ENV_PROD", "docker-compose.secure.yml", "backup"),
-        ("test", "BESEDY_WEB_ENV_TEST", "docker-compose.secure.yml", "mock-oauth"),
+        (
+            "development",
+            "BESEDY_WEB_ENV_DEV",
+            ["docker-compose.dev.yml"],
+            "mock-oauth",
+            "development",
+            "development",
+        ),
+        (
+            "production",
+            "BESEDY_WEB_ENV_PROD",
+            ["docker-compose.secure.yml", "docker-compose.production.yml"],
+            "backup",
+            "production",
+            "production",
+        ),
+        (
+            "test",
+            "BESEDY_WEB_ENV_TEST",
+            ["docker-compose.secure.yml"],
+            "mock-oauth",
+            "test",
+            "test",
+        ),
     ],
 )
-def test_web_compose_wrapper_forwards_resolved_env_file(
+def test_web_compose_wrapper_isolates_mode_and_forwards_resolved_env_file(
     tmp_path: Path,
     mode: str,
     override_var: str,
-    compose_override: str,
+    compose_overrides: list[str],
     profile: str,
+    app_env: str,
+    instance: str,
 ) -> None:
     env_file = tmp_path / f"{mode}.env"
-    env_file.write_text("APP_ENV=test\n", encoding="utf-8")
+    env_file.write_text(f"APP_ENV={app_env}\nCONFIG_FILE=/safe/config.toml\n", encoding="utf-8")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker = bin_dir / "docker"
-    docker.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    docker.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" config --format json "* ]]; then
+  if [[ "$APP_ENV" == "production" ]]; then
+    volume_source="besedy_production_postgres"
+    volume_target="/var/lib/postgresql"
+    external=true
+  else
+    volume_source="besedy_${BESEDY_COMPOSE_INSTANCE}_postgres"
+    volume_target="/var/lib/postgresql/data"
+    external=false
+  fi
+  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"}}},"volumes":{"postgres_data":{"name":"%s","external":%s}}}\n' \
+    "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
+    "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external"
+  exit 0
+fi
+printf 'APP_ENV=%s\n' "$APP_ENV"
+printf 'BESEDY_COMPOSE_INSTANCE=%s\n' "$BESEDY_COMPOSE_INSTANCE"
+printf 'COMPOSE_PROJECT_NAME=%s\n' "$COMPOSE_PROJECT_NAME"
+printf 'CONFIG_FILE=%s\n' "${CONFIG_FILE-unset}"
+printf '%s\n' "$@"
+""",
+        encoding="utf-8",
+    )
     docker.chmod(0o755)
 
     env = os.environ.copy()
     env[override_var] = str(env_file)
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["APP_ENV"] = "production"
+    env["COMPOSE_PROJECT_NAME"] = "besedy-production"
+    env["CONFIG_FILE"] = "/production/config.toml"
 
     result = subprocess.run(
         ["bash", str(COMPOSE_WRAPPER), mode, "ps", "--format", "json"],
@@ -99,17 +150,65 @@ def test_web_compose_wrapper_forwards_resolved_env_file(
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == [
+    expected_args = [
+        f"APP_ENV={app_env}",
+        f"BESEDY_COMPOSE_INSTANCE={instance}",
+        f"COMPOSE_PROJECT_NAME=besedy-{instance}",
+        "CONFIG_FILE=unset",
         "compose",
         "-f",
         "docker-compose.yml",
-        "-f",
-        compose_override,
-        "--profile",
-        profile,
-        "--env-file",
-        str(env_file),
-        "ps",
-        "--format",
-        "json",
     ]
+    for compose_override in compose_overrides:
+        expected_args.extend(["-f", compose_override])
+    expected_args.extend(
+        [
+            "--profile",
+            profile,
+            "--env-file",
+            str(env_file),
+            "ps",
+            "--format",
+            "json",
+        ]
+    )
+    assert result.stdout.splitlines() == expected_args
+
+
+def test_web_compose_wrapper_rejects_production_named_test_instance(tmp_path: Path) -> None:
+    env_file = tmp_path / "test.env"
+    env_file.write_text("APP_ENV=test\nCONFIG_FILE=/safe/config.toml\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_TEST"] = str(env_file)
+    env["BESEDY_WEB_COMPOSE_INSTANCE"] = "production"
+
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", "ps"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Unsafe test Compose instance 'production'" in result.stderr
+
+
+def test_web_compose_wrapper_rejects_wrong_mode_env_file(tmp_path: Path) -> None:
+    env_file = tmp_path / "test.env"
+    env_file.write_text("APP_ENV=production\nCONFIG_FILE=/safe/config.toml\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_TEST"] = str(env_file)
+
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", "ps"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "APP_ENV is 'production', expected 'test'" in result.stderr

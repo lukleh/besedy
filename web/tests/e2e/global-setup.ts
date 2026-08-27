@@ -14,21 +14,11 @@ import { execSync } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import { TEST_AUDIO_FILES } from "../../prisma/test-data";
-import { resolveScriptEnvFilePath } from "../../src/lib/script-env";
 
 const TEST_WEB_URL = "http://localhost:3002";
 const MAX_RETRIES = 60;
 const RETRY_DELAY = 2000;
-const TEST_ENV_FILE = resolveScriptEnvFilePath("test");
-
-function requireTestEnvFile(): string {
-  if (!TEST_ENV_FILE) {
-    throw new Error(
-      "Test env file not found. Set BESEDY_WEB_ENV_TEST or copy web/.env.test.example to ~/.config/lukleh/besedy/web.env.test."
-    );
-  }
-  return TEST_ENV_FILE;
-}
+const TEST_COMPOSE_INSTANCE = process.env.BESEDY_WEB_COMPOSE_INSTANCE ?? "test";
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,12 +29,12 @@ async function verifyContainersRunning(): Promise<void> {
 
   try {
     const result = execSync(
-      `docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "${requireTestEnvFile()}" ps --format json`,
+      "bash ../scripts/run_web_compose.sh test ps --format json",
       { encoding: "utf-8", cwd: process.cwd() }
     );
 
-    const hasDb = result.includes("besedy-test-db");
-    const hasWeb = result.includes("besedy-test-web");
+    const hasDb = result.includes(`besedy-${TEST_COMPOSE_INSTANCE}-db`);
+    const hasWeb = result.includes(`besedy-${TEST_COMPOSE_INSTANCE}-web`);
 
     if (!hasDb || !hasWeb) {
       const missing = [
@@ -77,7 +67,7 @@ async function waitForDatabase(): Promise<void> {
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
       execSync(
-        `docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "${requireTestEnvFile()}" exec -T db pg_isready -U besedy_test`,
+        "bash ../scripts/run_web_compose.sh test exec -T db pg_isready -U besedy_test",
         { stdio: "ignore", cwd: process.cwd() }
       );
       console.log("  Database is ready!");
