@@ -437,7 +437,7 @@ describe('MCP personalized tool surface', () => {
       name: string;
       description: string;
       inputSchema: {
-        properties: Record<string, { description?: string }>;
+        properties: Record<string, { description?: string; maximum?: number }>;
       };
     }>;
     const searchTool = tools.find((tool) => tool.name === 'search_transcripts');
@@ -455,6 +455,9 @@ describe('MCP personalized tool surface', () => {
     expect(
       searchTool?.inputSchema.properties.maxPerRecording.description,
     ).toContain('recording/audio hash');
+    expect(searchTool?.inputSchema.properties.maxPerRecording.maximum).toBe(
+      100,
+    );
     expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain('complete stored transcript');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(

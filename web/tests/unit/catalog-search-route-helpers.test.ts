@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MAX_PER_AUDIO_LIMIT,
+  SearchRequestSchema,
   applyMaxPerAudio,
   assembleContextText,
   collectRerankCandidates,
@@ -46,6 +48,12 @@ describe("catalog search route helpers", () => {
   it("fails loudly on invalid numeric config", () => {
     process.env.RAG_RERANK_TOP_N = "zero";
     expect(() => getSearchConfig()).toThrow(/RAG_RERANK_TOP_N must be a positive integer/);
+  });
+
+  it("allows max-per-audio searches up to the overall result ceiling", () => {
+    expect(MAX_PER_AUDIO_LIMIT).toBe(100);
+    expect(SearchRequestSchema.safeParse({ query: "topic", maxPerAudio: 100 }).success).toBe(true);
+    expect(SearchRequestSchema.safeParse({ query: "topic", maxPerAudio: 101 }).success).toBe(false);
   });
 
   it("prefers the legacy TEI rerank URL and exposes the rerank model", () => {

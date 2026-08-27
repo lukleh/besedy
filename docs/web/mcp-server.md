@@ -543,7 +543,7 @@ scores are not exposed.
 | `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                      |
 | `limit`           | integer from 1 to 100                      | `100`             | Maximum matches; use a smaller explicit limit for focused follow-ups |
 | `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match            |
-| `maxPerRecording` | integer from 1 to 20                       | `3`               | Maximum matches from one audio hash                                  |
+| `maxPerRecording` | integer from 1 to 100                      | `3`               | Maximum matches from one audio hash                                  |
 | `filters`         | object                                     | omitted           | Optional metadata constraints described below                        |
 
 `filters` is a strict object containing at least one of:
@@ -555,6 +555,9 @@ scores are not exposed.
 
 A low `maxPerRecording`, such as `1`, increases diversity across recordings. A
 higher value is useful after narrowing the search to one or more recordings.
+The default remains `3` so one long recording does not dominate broad
+discovery, while values up to `100` support deep recording-focused searches.
+The overall `limit` still bounds the number of returned matches.
 Adjacent chunks are mechanical context for triage: they may not contain a
 complete question, answer, qualification, or discussion arc.
 
