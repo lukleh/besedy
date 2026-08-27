@@ -10,8 +10,9 @@ import {
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 
-const DEFAULT_SEARCH_LIMIT = 10;
-const MAX_SEARCH_LIMIT = 20;
+const DEFAULT_SEARCH_LIMIT = 100;
+const MAX_SEARCH_LIMIT = 100;
+const DEFAULT_SEARCH_CONTEXT_CHUNKS = 1;
 const MAX_SEARCH_CONTEXT_CHUNKS = 3;
 const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 3;
 const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
@@ -62,7 +63,7 @@ export function registerSearchTranscriptsTool(
           .int()
           .min(0)
           .max(MAX_SEARCH_CONTEXT_CHUNKS)
-          .default(0),
+          .default(DEFAULT_SEARCH_CONTEXT_CHUNKS),
         maxPerRecording: z
           .number()
           .int()
