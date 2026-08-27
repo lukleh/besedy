@@ -356,51 +356,6 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - MCP code calls reusable application services; it must not call Besedy's own
   HTTP routes or duplicate their queries.
 
-## Implementation checklist
-
-### Foundation
-
-- [x] Confirm current role, event-release, recording, transcript, and search policy.
-- [x] Select MCP TypeScript SDK v2 and Better Auth MCP/OAuth integration.
-- [x] Define the access matrix, personalized discovery, and optional catalog rules.
-- [x] Make RAG permission derive from transcript permission in canonical policy.
-- [x] Add a side-effect-free default catalog resolver for service/MCP reads.
-- [x] Share event visibility/detail and canonical recording read models beneath
-      web and MCP serializers; reuse the existing transcript and RAG search services.
-
-### OAuth and remote transport
-
-- [x] Add Better Auth JWT, MCP authorization-server, and CIMD plugins.
-- [x] Add the required Prisma OAuth/JWT schema migration and OAuth replay storage.
-- [x] Add Google-backed MCP login and consent continuation pages.
-- [x] Support CIMD plus a PKCE-protected DCR fallback for remote clients.
-- [x] Publish OAuth discovery/protected-resource metadata.
-- [x] Mount authenticated, stateless `POST /api/mcp`, expose the OAuth challenge
-      on `GET /api/mcp`, and serve current and 2025-era MCP clients from the same
-      SDK v2 server factory.
-- [x] Exempt the enabled bearer-only MCP endpoint from browser CSRF checks so
-      unauthenticated clients can receive the OAuth challenge.
-
-### MCP surface
-
-- [x] Register tools dynamically from live aggregate capabilities.
-- [x] Implement `list_catalogs` and side-effect-free catalog resolution.
-- [x] Implement paginated `list_events`, `get_event`, and `get_recording`.
-- [x] Implement bounded `get_transcript`.
-- [x] Connect `search_transcripts` to the existing RAG search service.
-- [x] Ensure structured outputs omit audio URLs, paths, and private fields.
-
-### Verification and rollout
-
-- [x] Unit-test the complete access matrix, including mixed catalog roles.
-- [ ] Contract-test tool discovery and every tool's per-catalog authorization.
-- [ ] Integration-test OAuth discovery, Google login continuation, consent, and token validation.
-- [ ] Regression-test web event/search behavior against canonical policy.
-- [x] Add initial global/client/user MCP rate limits and bound `list_catalogs`.
-- [x] Gate production enablement with `BESEDY_MCP_ENABLED` and strict `AUTH_URL` validation.
-- [ ] Add audit events, deployment-level limits, and safe metrics.
-- [x] Document client registration and authentication behavior.
-
 ## Change checklist for permissions
 
 Any access-level change is incomplete until all of these are true:
