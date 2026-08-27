@@ -285,10 +285,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       },
     });
     const legacyInitializeText = await legacyInitializeResponse.text();
-    expect(
-      legacyInitializeResponse.ok(),
-      legacyInitializeText,
-    ).toBe(true);
+    expect(legacyInitializeResponse.ok(), legacyInitializeText).toBe(true);
     expect(legacyInitializeText).toContain(
       `\"protocolVersion\":\"${LEGACY_MCP_PROTOCOL_VERSION}\"`,
     );
@@ -659,6 +656,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         catalogId: string;
         audioHash: string;
         recordingWebUrl: string;
+        seekWebUrl: string | null;
         backend: string;
         language: string;
         segments: {
@@ -669,6 +667,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             startSec: number;
             endSec: number;
             speaker: string;
+            webUrl: string;
           }>;
           returnedTextChars: number;
           totalMatching: number;
@@ -685,6 +684,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       catalogId: result?.defaultCatalogId,
       audioHash,
       recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
+      seekWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
       backend: TRANSCRIPT_BACKEND,
       language: 'cs',
       segments: {
@@ -698,6 +698,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             startSec: 0,
             endSec: 5,
             speaker: 'SPEAKER_00',
+            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
           },
         ],
       },
@@ -800,6 +801,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     });
     expect(searchBody.result?.content?.[0]?.text).toContain(
       'Deterministic Besedy MCP search evidence.',
+    );
+    expect(searchBody.result?.structuredContent.results[0]).not.toHaveProperty(
+      'score',
     );
   } finally {
     await removeLocalTestClient(clientId);
