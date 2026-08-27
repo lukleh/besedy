@@ -1,7 +1,10 @@
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBesedyMcpServer, paginateCatalogs } from '@/lib/mcp/server';
-import type { McpAccessProfile } from '@/lib/mcp/access-profile';
+import type {
+  McpAccessProfile,
+  McpCatalogAccess,
+} from '@/lib/mcp/access-profile';
 import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
   getMcpEvent,
@@ -101,7 +104,8 @@ function catalog(
   id: string,
   catalogGrant: 'LISTENER' | 'VIEWER',
   isEffectiveDefault: boolean,
-) {
+  capabilityOverrides: Partial<McpCatalogAccess['capabilities']> = {},
+): McpCatalogAccess {
   const elevated = catalogGrant === 'VIEWER';
   return {
     id,
@@ -117,8 +121,28 @@ function catalog(
       canViewTranscripts: elevated,
       canSearchTranscripts: elevated,
       canSeeUnreleasedEvents: elevated,
+      ...capabilityOverrides,
     },
-  } as const;
+  };
+}
+
+function catalogToolCalls(catalogId: string) {
+  return [
+    { name: 'list_events', arguments: { catalogId } },
+    { name: 'get_event', arguments: { catalogId, eventId: 42 } },
+    {
+      name: 'get_recording',
+      arguments: { catalogId, audioHash: 'a'.repeat(64) },
+    },
+    {
+      name: 'get_transcript',
+      arguments: { catalogId, audioHash: 'a'.repeat(64) },
+    },
+    {
+      name: 'search_transcripts',
+      arguments: { catalogId, query: 'search phrase' },
+    },
+  ];
 }
 
 describe('MCP server catalog pagination', () => {
@@ -660,6 +684,78 @@ describe('MCP personalized tool surface', () => {
     expect(structuredContent.error.code).toBe('permission_denied');
     expect(structuredContent.error.retryable).toBe(false);
     expect(getMcpTranscript).not.toHaveBeenCalled();
+  });
+
+  it('does not reveal inaccessible catalogs through any catalog tool', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    };
+    for (const call of catalogToolCalls('missing-catalog')) {
+      const body = await invokeMcp('tools/call', call);
+      expect(body.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          error: {
+            code: 'not_found',
+            message: 'Catalog not found or inaccessible',
+            retryable: false,
+          },
+        },
+      });
+    }
+    expect(listMcpEvents).not.toHaveBeenCalled();
+    expect(getMcpEvent).not.toHaveBeenCalled();
+    expect(getMcpRecording).not.toHaveBeenCalled();
+    expect(getMcpTranscript).not.toHaveBeenCalled();
+    expect(searchMcpTranscripts).not.toHaveBeenCalled();
+  });
+
+  it('checks each resolved catalog capability at invocation time', async () => {
+    const deniedCatalog = catalog('denied-catalog', 'VIEWER', false, {
+      canListEvents: false,
+      canGetRecordings: false,
+      canViewTranscripts: false,
+      canSearchTranscripts: false,
+    });
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [deniedCatalog, catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    };
+    for (const call of catalogToolCalls('denied-catalog')) {
+      const body = await invokeMcp('tools/call', call);
+      expect(body.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          error: { code: 'permission_denied', retryable: false },
+        },
+      });
+    }
+    expect(listMcpEvents).not.toHaveBeenCalled();
+    expect(getMcpEvent).not.toHaveBeenCalled();
+    expect(getMcpRecording).not.toHaveBeenCalled();
+    expect(getMcpTranscript).not.toHaveBeenCalled();
+    expect(searchMcpTranscripts).not.toHaveBeenCalled();
   });
 
   it('marks transient read failures as retryable', async () => {

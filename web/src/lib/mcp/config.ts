@@ -1,10 +1,12 @@
 const DEFAULT_AUTH_ORIGIN = 'http://localhost:3001';
 
 export const MCP_READ_SCOPE = 'besedy:read';
+export const MCP_PROFILE_SCOPE = 'profile';
+export const MCP_EMAIL_SCOPE = 'email';
 export const MCP_AUTH_SCOPES = [
   'openid',
-  'profile',
-  'email',
+  MCP_PROFILE_SCOPE,
+  MCP_EMAIL_SCOPE,
   'offline_access',
   MCP_READ_SCOPE,
 ] as const;
