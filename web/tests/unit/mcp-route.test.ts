@@ -114,6 +114,12 @@ describe('MCP route hardening', () => {
     });
   }
 
+  function discoveryRequest(): Request {
+    return new Request('http://localhost:3001/api/mcp', {
+      method: 'GET',
+    });
+  }
+
   it('returns 404 without installing auth middleware when MCP is disabled', async () => {
     process.env.BESEDY_MCP_ENABLED = 'false';
     const { POST } = await import('@/app/api/mcp/route');
@@ -136,6 +142,28 @@ describe('MCP route hardening', () => {
     expect(response.status).toBe(401);
     expect(mocks.checkRateLimit).not.toHaveBeenCalled();
     expect(mocks.resolvePortalActorContext).not.toHaveBeenCalled();
+  });
+
+  it('passes GET discovery probes through the OAuth guard', async () => {
+    mocks.requireMcpAuth.mockImplementation(
+      () => async () =>
+        new Response(null, {
+          status: 401,
+          headers: {
+            'WWW-Authenticate':
+              'Bearer resource_metadata="http://localhost:3001/.well-known/oauth-protected-resource/api/mcp"',
+          },
+        }),
+    );
+    const { GET } = await import('@/app/api/mcp/route');
+
+    const response = await GET(discoveryRequest());
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('WWW-Authenticate')).toContain(
+      'oauth-protected-resource/api/mcp',
+    );
+    expect(mocks.mcpFetch).not.toHaveBeenCalled();
   });
 
   it('applies the global limit after token verification', async () => {

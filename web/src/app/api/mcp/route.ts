@@ -166,9 +166,17 @@ const protectedMcpHandler = resourceUrl
     )
   : null;
 
-export async function POST(request: Request): Promise<Response> {
+async function handleMcpRequest(request: Request): Promise<Response> {
   if (!protectedMcpHandler) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
   return protectedMcpHandler(request);
+}
+
+export async function GET(request: Request): Promise<Response> {
+  return handleMcpRequest(request);
+}
+
+export async function POST(request: Request): Promise<Response> {
+  return handleMcpRequest(request);
 }
