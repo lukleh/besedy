@@ -123,6 +123,8 @@ scope-gated fields, a denied target, and the tool's structured failure paths.
   token does not bypass that check.
 - Tokens: short-lived, audience-bound JWT access tokens validated by the MCP
   endpoint.
+- Deleting an OAuth consent also revokes every refresh token for that user and
+  client, so authorizing the client again cannot revive an older connection.
 - OAuth client registration supports both mechanisms needed by remote clients:
   Client ID Metadata Documents (CIMD) for MCP 2026-07-28 clients such as Codex,
   and RFC 7591 Dynamic Client Registration (DCR) as a compatibility fallback

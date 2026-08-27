@@ -50,7 +50,10 @@ describe('MCP authorization liveness', () => {
           },
         },
         consents: {
-          where: { userId: 'user-1' },
+          where: {
+            userId: 'user-1',
+            resources: { has: 'https://besedy.example/api/mcp' },
+          },
           select: { scopes: true },
           orderBy: { updatedAt: 'desc' },
           take: 1,
