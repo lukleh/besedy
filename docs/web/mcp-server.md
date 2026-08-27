@@ -303,9 +303,11 @@ large segment may exceed the requested character target. Each result includes
 the authenticated recording `webUrl`, the
 selected and available backends, and a segment page with absolute
 `segmentIndex` values, `totalMatching`, and `nextOffset`. Search accepts up to
-1,000 query characters and returns at most 20 grounded matches per call.
-`contextChunks` controls zero to three surrounding chunks, while optional
-`maxPerRecording` diversifies results. Search also exposes the web UI's audio
+1,000 query characters and returns at most 100 grounded matches per call.
+Search defaults to 100 matches. `contextChunks` controls zero to three chunks
+on each side of a match and defaults to one, so results include nearby text
+before and after the exact match. Optional `maxPerRecording` diversifies
+results. Search also exposes the web UI's audio
 hash, location, recorder, year, and verification filters. Results contain a
 compact recording summary, an exact match with a seekable `webUrl`, optional
 before/after context without repeating the exact match, metadata, a stable

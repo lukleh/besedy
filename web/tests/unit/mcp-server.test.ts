@@ -590,7 +590,7 @@ describe('MCP personalized tool surface', () => {
     );
   });
 
-  it('applies compact transcript search defaults', async () => {
+  it('applies broad transcript search defaults with surrounding context', async () => {
     accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
@@ -611,7 +611,7 @@ describe('MCP personalized tool surface', () => {
       retrieval: {
         mode: 'semantic',
         exhaustive: false,
-        requestedLimit: 10,
+        requestedLimit: 100,
         returnedCount: 1,
         maxPerRecording: 3,
       },
@@ -625,7 +625,12 @@ describe('MCP personalized tool surface', () => {
             text: 'Search evidence',
             webUrl: 'https://besedy.example/recording?seek=5',
           },
-          context: null,
+          context: {
+            startSec: 0,
+            endSec: 15,
+            beforeText: 'Earlier context',
+            afterText: 'Later context',
+          },
         },
       ],
     } as unknown as Awaited<ReturnType<typeof searchMcpTranscripts>>);
@@ -637,15 +642,20 @@ describe('MCP personalized tool surface', () => {
 
     expect(body.error).toBeUndefined();
     expect(body.result?.content).toEqual([
-      { type: 'text', text: expect.stringContaining('Search evidence') },
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context/,
+        ),
+      },
     ]);
     expect(searchMcpTranscripts).toHaveBeenCalledWith(
       'viewer-catalog',
       'VIEWER',
       {
         query: 'search phrase',
-        limit: 10,
-        contextChunks: 0,
+        limit: 100,
+        contextChunks: 1,
         maxPerRecording: 3,
         filters: undefined,
       },
