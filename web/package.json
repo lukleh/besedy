@@ -47,7 +47,6 @@
     "catalog:verify": "tsx scripts/verify-catalog-db-parity.ts",
     "events:normalize-singletons": "tsx scripts/normalize-single-recording-events.ts",
     "i18n:report": "tsx scripts/i18n-report.ts --out i18n-report.json",
-    "db:push": "prisma db push && prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:dev": "tsx prisma/seed-dev.ts",
