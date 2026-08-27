@@ -51,62 +51,84 @@ export function registerGetTranscriptTool(
     {
       title: 'Get a Besedy transcript',
       description:
-        'Read continuous source context from an accessible Besedy recording transcript, typically after shortlisting a passage with search_transcripts. Use this tool to verify important evidence before relying on it in a synthesis. The response preserves the recording-level URL, provides seekWebUrl for the first segment actually returned (or null for an empty page), and gives every segment its own timestamped webUrl.',
-      inputSchema: z.object({
-        catalogId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
+        'Read continuous source context or the complete stored transcript from an accessible Besedy recording. Use mode full for every segment in the optional time window, or mode page to verify important evidence with a bounded read. The response preserves the recording-level URL, provides seekWebUrl for the first segment actually returned (or null for an empty result), and gives every segment its own timestamped webUrl.',
+      inputSchema: z
+        .object({
+          catalogId: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
+            ),
+          audioHash: HashSchema.describe(
+            'Stable audio hash of the recording. Copy it from a search result or recording response.',
           ),
-        audioHash: HashSchema.describe(
-          'Stable audio hash of the recording. Copy it from a search result or recording response.',
-        ),
-        backend: TranscriptBackendSchema.optional().describe(
-          'Stored transcript backend to read. Prefer the backend supplied by search_transcripts.transcriptRequest; omit it to use the highest-priority available backend.',
-        ),
-        startSec: z
-          .number()
-          .min(0)
-          .optional()
-          .describe(
-            'Optional inclusive start of the continuous transcript time window, in seconds.',
+          backend: TranscriptBackendSchema.optional().describe(
+            'Stored transcript backend to read. Prefer the backend supplied by search_transcripts.transcriptRequest; omit it to use the highest-priority available backend.',
           ),
-        endSec: z
-          .number()
-          .positive()
-          .optional()
-          .describe(
-            'Optional exclusive end of the continuous transcript time window, in seconds. It must be greater than startSec when both are provided.',
-          ),
-        segmentOffset: z
-          .number()
-          .int()
-          .min(0)
-          .default(0)
-          .describe(
-            'Zero-based offset within the segments matching the requested time window. Use continuation.segmentOffset to fetch the next page.',
-          ),
-        segmentLimit: z
-          .number()
-          .int()
-          .min(1)
-          .max(MAX_TRANSCRIPT_SEGMENT_LIMIT)
-          .default(DEFAULT_TRANSCRIPT_SEGMENT_LIMIT)
-          .describe(
-            'Maximum whole transcript segments to return in this page. Defaults to 50 and is capped at 200.',
-          ),
-        maxTextChars: z
-          .number()
-          .int()
-          .min(1_000)
-          .max(MAX_TRANSCRIPT_TEXT_CHAR_LIMIT)
-          .default(DEFAULT_TRANSCRIPT_TEXT_CHAR_LIMIT)
-          .describe(
-            'Soft character target for this page. Whole segments are preserved, so one unusually large segment may exceed it.',
-          ),
-      }),
+          startSec: z
+            .number()
+            .min(0)
+            .optional()
+            .describe(
+              'Optional inclusive start of the continuous transcript time window, in seconds.',
+            ),
+          endSec: z
+            .number()
+            .positive()
+            .optional()
+            .describe(
+              'Optional exclusive end of the continuous transcript time window, in seconds. It must be greater than startSec when both are provided.',
+            ),
+          mode: z
+            .enum(['full', 'page'])
+            .describe(
+              'Use full to return every segment matching the optional time window in one response. Use page for bounded reading with pagination controls.',
+            ),
+          segmentOffset: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe(
+              'Page mode only. Zero-based offset within matching segments; defaults to 0. Use continuation.segmentOffset for the next page.',
+            ),
+          segmentLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_TRANSCRIPT_SEGMENT_LIMIT)
+            .optional()
+            .describe(
+              'Page mode only. Maximum whole transcript segments to return; defaults to 50 and is capped at 200.',
+            ),
+          maxTextChars: z
+            .number()
+            .int()
+            .min(1_000)
+            .max(MAX_TRANSCRIPT_TEXT_CHAR_LIMIT)
+            .optional()
+            .describe(
+              'Page mode only. Soft character target; defaults to 20,000. Whole segments are preserved, so one unusually large segment may exceed it.',
+            ),
+        })
+        .superRefine((input, context) => {
+          if (input.mode !== 'full') return;
+          for (const field of [
+            'segmentOffset',
+            'segmentLimit',
+            'maxTextChars',
+          ] as const) {
+            if (input[field] !== undefined) {
+              context.addIssue({
+                code: 'custom',
+                message: `${field} is only valid in page mode`,
+                path: [field],
+              });
+            }
+          }
+        }),
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({
@@ -115,6 +137,7 @@ export function registerGetTranscriptTool(
       backend,
       startSec,
       endSec,
+      mode,
       segmentOffset,
       segmentLimit,
       maxTextChars,
@@ -131,9 +154,16 @@ export function registerGetTranscriptTool(
             backend,
             startSec,
             endSec,
-            segmentOffset,
-            segmentLimit,
-            maxTextChars,
+            ...(mode === 'full'
+              ? { mode }
+              : {
+                  mode,
+                  segmentOffset: segmentOffset ?? 0,
+                  segmentLimit:
+                    segmentLimit ?? DEFAULT_TRANSCRIPT_SEGMENT_LIMIT,
+                  maxTextChars:
+                    maxTextChars ?? DEFAULT_TRANSCRIPT_TEXT_CHAR_LIMIT,
+                }),
           }),
         (result) =>
           `Returned ${getPageItemCount(result.segments)} transcript segment(s) for Besedy recording ${audioHash}.`,

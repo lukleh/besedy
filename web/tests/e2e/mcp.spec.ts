@@ -461,7 +461,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         method: 'tools/call',
         params: {
           name: 'list_events',
-          arguments: { limit: 10 },
+          arguments: { limit: 10, date: { year: 2024 } },
           _meta: envelope,
         },
       },
@@ -474,14 +474,10 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           id: number;
           webUrl: string;
           released: boolean;
-          primaryRecording: {
-            audioHash: string;
-            title: string;
-            artist: string | null;
-            durationHms: string | null;
-            ready: boolean;
-            published: boolean;
-          } | null;
+          recordings: {
+            primaryAudioHash: string | null;
+            audioHashes: string[];
+          };
         }>;
         nextCursor: number | null;
       }>
@@ -494,20 +490,16 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(eventResult?.events.some((event) => !event.released)).toBe(true);
     const event = eventResult?.events.find(
       (candidate) =>
-        candidate.primaryRecording?.audioHash === MCP_FIXTURE_RECORDING.hash,
+        candidate.recordings.primaryAudioHash === MCP_FIXTURE_RECORDING.hash,
     );
     expect(event).toBeTruthy();
     expect(event?.webUrl).toBe(
       `${BASE_URL}/catalog/${result?.defaultCatalogId}/event/${event?.id}`,
     );
-    expect(Object.keys(event!.primaryRecording!).sort()).toEqual([
-      'artist',
-      'audioHash',
-      'durationHms',
-      'published',
-      'ready',
-      'title',
-    ]);
+    expect(event!.recordings).toEqual({
+      primaryAudioHash: MCP_FIXTURE_RECORDING.hash,
+      audioHashes: expect.arrayContaining([MCP_FIXTURE_RECORDING.hash]),
+    });
 
     const eventResponse = await request.post(MCP_RESOURCE, {
       headers: {
@@ -578,7 +570,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'webUrl',
     ]);
 
-    const audioHash = event!.primaryRecording!.audioHash;
+    const audioHash = event!.recordings.primaryAudioHash!;
     expect(audioHash).toBe(MCP_FIXTURE_RECORDING.hash);
     const recordingResponse = await request.post(MCP_RESOURCE, {
       headers: {
@@ -644,7 +636,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           arguments: {
             audioHash,
             backend: TRANSCRIPT_BACKEND,
-            segmentLimit: 1,
+            mode: 'full',
           },
           _meta: envelope,
         },
@@ -687,25 +679,29 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       seekWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
       backend: TRANSCRIPT_BACKEND,
       language: 'cs',
+      mode: 'full',
       segments: {
         totalMatching: 2,
-        nextOffset: 1,
-        items: [
-          {
-            segmentIndex: 0,
-            id: 0,
-            text: 'Besedy MCP transcript fixture opens the discussion.',
-            startSec: 0,
-            endSec: 5,
-            speaker: 'SPEAKER_00',
-            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
-          },
-        ],
+        nextOffset: null,
       },
     });
     expect(
+      transcriptBody.result?.structuredContent.segments.items,
+    ).toHaveLength(2);
+    expect(transcriptBody.result?.structuredContent.segments.items[0]).toEqual({
+      segmentIndex: 0,
+      id: 0,
+      text: 'Besedy MCP transcript fixture opens the discussion.',
+      startSec: 0,
+      endSec: 5,
+      speaker: 'SPEAKER_00',
+      webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
+    });
+    expect(
       transcriptBody.result?.structuredContent.segments.returnedTextChars,
-    ).toBe('Besedy MCP transcript fixture opens the discussion.'.length);
+    ).toBeGreaterThan(
+      'Besedy MCP transcript fixture opens the discussion.'.length,
+    );
     expect(transcriptBody.result?.content?.[0]?.text).toContain(
       'Besedy MCP transcript fixture opens the discussion.',
     );
@@ -752,6 +748,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           transcriptRequest: {
             audioHash: string;
             backend: string;
+            mode: 'page';
             startSec: number;
             endSec: number;
           };
@@ -793,6 +790,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           transcriptRequest: {
             audioHash,
             backend: TRANSCRIPT_BACKEND,
+            mode: 'page',
             startSec: 0,
             endSec: 10,
           },

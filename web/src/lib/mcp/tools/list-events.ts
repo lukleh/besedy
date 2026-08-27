@@ -11,6 +11,16 @@ import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 
 const DEFAULT_EVENT_PAGE_SIZE = 25;
 const MAX_EVENT_PAGE_SIZE = 100;
+const PartialEventDateSchema = z
+  .object({
+    year: z.number().int().min(1900).max(2100),
+    month: z.number().int().min(1).max(12).optional(),
+    day: z.number().int().min(1).max(31).optional(),
+  })
+  .refine((date) => date.day === undefined || date.month !== undefined, {
+    message: 'day requires month',
+    path: ['day'],
+  });
 
 export function registerListEventsTool(
   server: McpServer,
@@ -33,10 +43,21 @@ export function registerListEventsTool(
           .default(DEFAULT_EVENT_PAGE_SIZE),
         released: z.boolean().optional(),
         query: z.string().trim().min(1).max(200).optional(),
+        date: PartialEventDateSchema.optional().describe(
+          'Structured event date prefix. Supply only year for a year, add month for a month, or add day for an exact date.',
+        ),
+        locationId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Exact event location ID. Use query instead when only a location name is known.',
+          ),
       }),
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, cursor, limit, released, query }) => {
+    async ({ catalogId, cursor, limit, released, query, date, locationId }) => {
       const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
@@ -46,6 +67,8 @@ export function registerListEventsTool(
             limit,
             released,
             query,
+            date,
+            locationId,
           }),
         (result) =>
           `Listed ${Array.isArray(result.events) ? result.events.length : 0} visible Besedy event(s).`,

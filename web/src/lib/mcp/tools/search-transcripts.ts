@@ -1,6 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { SearchMetadataFiltersSchema } from '@/app/api/catalogs/[id]/search/search-route-helpers';
+import {
+  MAX_PER_AUDIO_LIMIT,
+  SearchMetadataFiltersSchema,
+} from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import { searchMcpTranscripts } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
@@ -15,7 +18,6 @@ const MAX_SEARCH_LIMIT = 100;
 const DEFAULT_SEARCH_CONTEXT_CHUNKS = 1;
 const MAX_SEARCH_CONTEXT_CHUNKS = 3;
 const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 3;
-const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
 
 function renderSearchContent(
   result: Awaited<ReturnType<typeof searchMcpTranscripts>>,
@@ -87,7 +89,7 @@ export function registerSearchTranscriptsTool(
           .number()
           .int()
           .min(1)
-          .max(MAX_SEARCH_RESULTS_PER_RECORDING)
+          .max(MAX_PER_AUDIO_LIMIT)
           .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING)
           .describe(
             'Maximum matches per recording/audio hash. A low value such as 1 favors discovery across recordings; a higher value can return several related passages from one recording.',

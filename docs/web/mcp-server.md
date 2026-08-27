@@ -15,7 +15,7 @@ The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
 all seven tools. It verifies default-catalog resolution, the owner's live
-capability flags, metadata reads, bounded transcript pagination, and a grounded
+capability flags, metadata reads, complete transcript retrieval, and a grounded
 RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
 not supply `catalogId`, so the same run covers default selection. The test keeps
 the test containers running for reuse; stop them with `just test-down`. On a
@@ -262,9 +262,9 @@ and search calls additionally render their evidence text there for clients that
 do not consume structured results. Responses may contain stable Besedy IDs and
 authenticated web links, but never audio URLs or filesystem paths.
 
-Pagination, limits, and transcript windows are mandatory safeguards. A client
-must follow the returned cursor, offset, or continuation rather than request an
-unbounded collection.
+Catalog and event collections remain paginated. Transcript reads deliberately
+support either bounded page mode or an explicit full mode for callers that need
+every matching segment in one response.
 
 | Tool                 | Use it to                                                     | Required access                               |
 | -------------------- | ------------------------------------------------------------- | --------------------------------------------- |
@@ -323,19 +323,56 @@ list is complete. An unknown cursor returns `invalid_cursor`.
 Use this tool to browse events or resolve an event ID before calling
 `get_event`.
 
-| Argument    | Type                                     | Default           | Meaning                                                                |
-| ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------- |
-| `catalogId` | string                                   | effective default | Catalog to read                                                        |
-| `cursor`    | positive integer                         | omitted           | Event ID returned as `nextCursor` by the previous page                 |
-| `limit`     | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
-| `released`  | boolean                                  | omitted           | Include only released or only unreleased events                        |
-| `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive literal match against title, description, or location |
+| Argument     | Type                                     | Default           | Meaning                                                                |
+| ------------ | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------- |
+| `catalogId`  | string                                   | effective default | Catalog to read                                                        |
+| `cursor`     | positive integer                         | omitted           | Event ID returned as `nextCursor` by the previous page                 |
+| `limit`      | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
+| `released`   | boolean                                  | omitted           | Include only released or only unreleased events                        |
+| `query`      | non-empty string, at most 200 characters | omitted           | Case-insensitive literal match against title, description, or location |
+| `date`       | partial date object                      | omitted           | Event date prefix: required `year`, optional `month`, optional `day`   |
+| `locationId` | positive integer                         | omitted           | Exact event location ID                                                |
+
+`date` accepts `{ year }`, `{ year, month }`, or `{ year, month, day }`; each
+form matches that exact date prefix. A day without a month is invalid. Use
+`locationId` for exact location matching or `query` when only the location name
+is known.
 
 Events are ordered by descending event ID. Each event includes its metadata,
-release state, last-updated timestamp, authenticated `webUrl`, and
-`recordingCount` scoped to recordings visible to the caller. `primaryRecording`
-is either `null` or a compact visible recording summary with its stable
-`audioHash`.
+release state, last-updated timestamp, authenticated `webUrl`, and a
+permission-scoped `recordings` object. `recordings.audioHashes` contains every
+visible attached recording hash in event sort order.
+`recordings.primaryAudioHash` identifies the visible primary recording, falls
+back to the first visible recording when no primary is marked, and is `null`
+when no recording is visible.
+
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "events": [
+    {
+      "id": 4242,
+      "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+      "title": "Example Hall, 12 Apr 2099",
+      "description": "Fictional event used only for documentation",
+      "date": { "year": 2099, "month": 4, "day": 12 },
+      "sessionIndex": 1,
+      "location": { "id": 999, "name": "Example Hall" },
+      "released": true,
+      "recordings": {
+        "primaryAudioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "audioHashes": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      },
+      "updatedAt": "2099-04-13T08:30:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
 
 Pass `nextCursor` unchanged to continue; `null` marks the final page.
 
@@ -390,22 +427,108 @@ and relevant time window remain aligned.
 | `backend`       | `workflow/model` string         | highest-priority available backend | Stored transcript backend to read                                          |
 | `startSec`      | number at least 0               | start of transcript                | Inclusive start of the time window                                         |
 | `endSec`        | positive number                 | end of transcript                  | Exclusive end of the time window; must exceed `startSec` when both are set |
-| `segmentOffset` | non-negative integer            | `0`                                | Offset within segments overlapping the time window                         |
-| `segmentLimit`  | integer from 1 to 200           | `50`                               | Maximum whole segments in the page                                         |
-| `maxTextChars`  | integer from 1,000 to 50,000    | `20,000`                           | Soft text-size target for the page                                         |
+| `mode`          | `full` or `page`                | required                           | Return every matching segment or a bounded page                            |
+| `segmentOffset` | non-negative integer            | `0` in `page` mode                 | Page mode only: offset within segments overlapping the time window         |
+| `segmentLimit`  | integer from 1 to 200           | `50` in `page` mode                | Page mode only: maximum whole segments                                     |
+| `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode            | Page mode only: soft text-size target                                      |
+
+`mode: "full"` returns every segment overlapping the optional time window in a
+single response. With no time window it returns the complete stored transcript.
+Pagination arguments are invalid in full mode. `mode: "page"` retains bounded
+reading and continuation behavior.
 
 The time window is half-open, but whole segments are preserved: a segment is
-included when it overlaps the window, and one unusually large segment may
-exceed `maxTextChars`. Segment items include their absolute `segmentIndex`,
-text, timestamps, optional speaker and source ID, and a timestamped `webUrl`.
+included when it overlaps the window. In page mode, one unusually large
+segment may exceed `maxTextChars`. Segment items include their absolute
+`segmentIndex`, text, timestamps, optional speaker and source ID, and a
+timestamped `webUrl`.
 
 The response also reports the chosen `backend`, `availableBackends`, language,
 duration, normalized `timeWindow`, `recordingWebUrl`, and a `seekWebUrl` for
 the first returned segment. An empty page has `seekWebUrl: null`. The
 `segments` object reports `returnedTextChars`, `totalMatching`, and
-`nextOffset`. When more data exists, `continuation` preserves the catalog,
-recording, backend, window, limits, and next offset; omit any `null` window
-values before using it as the next call's arguments. Otherwise it is `null`.
+`nextOffset`. Full mode reports `limit` and `maxTextChars` as `null` and always
+returns `nextOffset: null` and `continuation: null`. When more page-mode data
+exists, `continuation` preserves the catalog, recording, backend, mode, window,
+limits, and next offset and can be passed unchanged as the next call's
+arguments. Otherwise it is `null`.
+
+Example full-mode return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "seekWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0",
+  "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "availableBackends": [
+    "faster-whisper/large-v3@silero_vad_v6",
+    "whisperx/large-v3@silero"
+  ],
+  "language": "en",
+  "durationSec": 12.5,
+  "mode": "full",
+  "timeWindow": { "startSec": null, "endSec": null },
+  "segments": {
+    "items": [
+      {
+        "segmentIndex": 0,
+        "id": null,
+        "text": "Example transcript segment.",
+        "startSec": 0,
+        "endSec": 12.5,
+        "speaker": null,
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0"
+      }
+    ],
+    "offset": 0,
+    "limit": null,
+    "maxTextChars": null,
+    "returnedTextChars": 27,
+    "totalMatching": 1,
+    "nextOffset": null
+  },
+  "continuation": null
+}
+```
+
+Page mode has the same top-level shape, but reports numeric page limits and may
+return a continuation descriptor:
+
+```json
+{
+  "mode": "page",
+  "segments": {
+    "offset": 0,
+    "limit": 1,
+    "maxTextChars": 20000,
+    "returnedTextChars": 27,
+    "totalMatching": 2,
+    "nextOffset": 1,
+    "items": [
+      {
+        "segmentIndex": 0,
+        "id": null,
+        "text": "Example transcript segment.",
+        "startSec": 0,
+        "endSec": 12.5,
+        "speaker": null,
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0"
+      }
+    ]
+  },
+  "continuation": {
+    "catalogId": "20990101_000000",
+    "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "backend": "faster-whisper/large-v3@silero_vad_v6",
+    "mode": "page",
+    "segmentOffset": 1,
+    "segmentLimit": 1,
+    "maxTextChars": 20000
+  }
+}
+```
 
 ### `search_transcripts`
 
@@ -420,7 +543,7 @@ scores are not exposed.
 | `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                      |
 | `limit`           | integer from 1 to 100                      | `100`             | Maximum matches; use a smaller explicit limit for focused follow-ups |
 | `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match            |
-| `maxPerRecording` | integer from 1 to 20                       | `3`               | Maximum matches from one audio hash                                  |
+| `maxPerRecording` | integer from 1 to 100                      | `3`               | Maximum matches from one audio hash                                  |
 | `filters`         | object                                     | omitted           | Optional metadata constraints described below                        |
 
 `filters` is a strict object containing at least one of:
@@ -432,6 +555,9 @@ scores are not exposed.
 
 A low `maxPerRecording`, such as `1`, increases diversity across recordings. A
 higher value is useful after narrowing the search to one or more recordings.
+The default remains `3` so one long recording does not dominate broad
+discovery, while values up to `100` support deep recording-focused searches.
+The overall `limit` still bounds the number of returned matches.
 Adjacent chunks are mechanical context for triage: they may not contain a
 complete question, answer, qualification, or discussion arc.
 
@@ -445,7 +571,21 @@ Every result contains:
 - a stable `citation` naming the audio hash, chunk, time range, catalog, RAG
   backend, and chunk version; and
 - `transcriptRequest`, when a compatible stored transcript exists, with the
-  actual transcript backend and the time range to verify. This may be `null`.
+  actual transcript backend, `mode: "page"`, and the time range to verify. This
+  may be `null`.
+
+The generated request can be passed directly to `get_transcript`:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "mode": "page",
+  "startSec": 600,
+  "endSec": 720
+}
+```
 
 The recommended evidence workflow is:
 
