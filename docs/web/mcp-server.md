@@ -467,7 +467,7 @@ Example full-mode return value:
     "whisperx/large-v3@silero"
   ],
   "language": "en",
-  "durationSec": 7200,
+  "durationSec": 12.5,
   "mode": "full",
   "timeWindow": { "startSec": null, "endSec": null },
   "segments": {
@@ -485,8 +485,8 @@ Example full-mode return value:
     "offset": 0,
     "limit": null,
     "maxTextChars": null,
-    "returnedTextChars": 120000,
-    "totalMatching": 240,
+    "returnedTextChars": 27,
+    "totalMatching": 1,
     "nextOffset": null
   },
   "continuation": null
@@ -501,11 +501,11 @@ return a continuation descriptor:
   "mode": "page",
   "segments": {
     "offset": 0,
-    "limit": 50,
+    "limit": 1,
     "maxTextChars": 20000,
-    "returnedTextChars": 18000,
-    "totalMatching": 240,
-    "nextOffset": 50,
+    "returnedTextChars": 27,
+    "totalMatching": 2,
+    "nextOffset": 1,
     "items": [
       {
         "segmentIndex": 0,
@@ -523,8 +523,8 @@ return a continuation descriptor:
     "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "backend": "faster-whisper/large-v3@silero_vad_v6",
     "mode": "page",
-    "segmentOffset": 50,
-    "segmentLimit": 50,
+    "segmentOffset": 1,
+    "segmentLimit": 1,
     "maxTextChars": 20000
   }
 }
