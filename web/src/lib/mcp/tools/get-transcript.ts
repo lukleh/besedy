@@ -26,9 +26,12 @@ function renderTranscriptContent(
 ): string {
   const lines = [
     `Transcript for ${result.audioHash} (${result.backend}, ${result.language ?? 'unknown language'}):`,
-    ...result.segments.items.map((segment) => {
+    ...result.segments.items.flatMap((segment) => {
       const speaker = segment.speaker ? ` ${segment.speaker}` : '';
-      return `[${segment.startSec}-${segment.endSec}s]${speaker}: ${segment.text}`;
+      return [
+        `[${segment.startSec}-${segment.endSec}s]${speaker}: ${segment.text}`,
+        `Source: ${segment.webUrl}`,
+      ];
     }),
   ];
   if (result.continuation) {

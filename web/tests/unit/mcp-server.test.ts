@@ -620,7 +620,9 @@ describe('MCP personalized tool surface', () => {
     expect(body.result?.content).toEqual([
       {
         type: 'text',
-        text: expect.stringContaining('Transcript evidence'),
+        text: expect.stringMatching(
+          /Transcript evidence[\s\S]*Source: https:\/\/besedy\.example\/recording\?seek=0/,
+        ),
       },
     ]);
     expect(body.result?.structuredContent).toMatchObject({
