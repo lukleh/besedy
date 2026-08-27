@@ -43,8 +43,7 @@ const MAX_SEARCH_RESULTS_PER_RECORDING = 20;
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
 
-export interface McpRequestContext {
-  userId: string;
+export interface BesedyMcpRequestContext {
   clientId: string;
   scopes: string[];
   accessProfile: McpAccessProfile;
@@ -177,11 +176,11 @@ export function paginateCatalogs<T extends { id: string }>(
 }
 
 export function createBesedyMcpServer({
-  userId,
   clientId,
   scopes,
   accessProfile: profile,
-}: McpRequestContext): McpServer {
+}: BesedyMcpRequestContext): McpServer {
+  const userId = profile.userId;
   const server = new McpServer({
     name: 'besedy',
     version: '0.1.0',

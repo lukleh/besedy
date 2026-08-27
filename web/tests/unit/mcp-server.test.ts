@@ -64,7 +64,6 @@ async function invokeMcp(
   const handler = createMcpHandler(
     () =>
       createBesedyMcpServer({
-        userId: 'user-1',
         ...connection,
         accessProfile,
       }),

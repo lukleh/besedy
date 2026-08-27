@@ -3,10 +3,13 @@ import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
 import {
   getMcpAccessProfile,
-  type McpAccessProfile,
 } from '@/lib/mcp/access-profile';
 import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
+import {
+  resolvePortalActorContext,
+  type PortalActorContext,
+} from '@/lib/policy/actor';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   getMcpJwksUrl,
@@ -68,20 +71,17 @@ function jsonRpcRateLimited(): Response {
 }
 
 const mcpHandler = createMcpHandler(
-  ({ authInfo }) => {
-    const userId = authInfo?.extra?.userId;
-    const accessProfile = authInfo?.extra
-      ?.accessProfile as McpAccessProfile | undefined;
+  async ({ authInfo }) => {
+    const actor = authInfo?.extra?.actor as PortalActorContext | undefined;
     if (
       !authInfo ||
-      typeof userId !== 'string' ||
-      !accessProfile?.canEnterPortal ||
-      accessProfile.userId !== userId
+      !actor?.canEnterPortal ||
+      typeof actor.userId !== 'string'
     ) {
       throw new Error('Authenticated MCP request is missing its policy context');
     }
+    const accessProfile = await getMcpAccessProfile(actor.userId, { actor });
     return createBesedyMcpServer({
-      userId,
       clientId: authInfo.clientId,
       scopes: authInfo.scopes,
       accessProfile,
@@ -144,8 +144,8 @@ const protectedMcpHandler = resourceUrl
           );
         }
 
-        const accessProfile = await getMcpAccessProfile(userId);
-        if (!accessProfile.canEnterPortal) {
+        const actor = await resolvePortalActorContext(userId);
+        if (!actor.canEnterPortal) {
           return jsonRpcAccessDenied('Active Besedy portal access is required');
         }
 
@@ -155,7 +155,7 @@ const protectedMcpHandler = resourceUrl
           scopes: authorization.scopes,
           expiresAt: claims.exp,
           resource: new URL(resourceUrl),
-          extra: { userId, accessProfile },
+          extra: { actor },
         };
 
         return mcpHandler.fetch(request, { authInfo });

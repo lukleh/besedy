@@ -132,6 +132,42 @@ describe('MCP access profile', () => {
     expect(listUserCatalogAccessEntries).not.toHaveBeenCalled();
   });
 
+  it('reuses a provided canonical actor', async () => {
+    const actor = {
+      userId: 'user-1',
+      isAuthenticated: true,
+      userStatus: 'ACTIVE' as const,
+      systemRole: 'USER' as const,
+      canEnterPortal: true,
+    };
+
+    const profile = await getMcpAccessProfile('user-1', { actor });
+
+    expect(resolvePortalActorContext).not.toHaveBeenCalled();
+    expect(profile).toMatchObject({
+      userId: 'user-1',
+      userStatus: 'ACTIVE',
+      systemRole: 'USER',
+    });
+  });
+
+  it('rejects a provided actor for a different user', async () => {
+    await expect(
+      getMcpAccessProfile('user-1', {
+        actor: {
+          userId: 'user-2',
+          isAuthenticated: true,
+          userStatus: 'ACTIVE',
+          systemRole: 'USER',
+          canEnterPortal: true,
+        },
+      }),
+    ).rejects.toThrow(
+      'MCP access profile actor does not match the requested user',
+    );
+    expect(getUserFeaturePreferences).not.toHaveBeenCalled();
+  });
+
   it('gives catalog admins the complete read surface', async () => {
     vi.mocked(resolvePortalActorContext).mockResolvedValue({
       userId: 'admin-1',

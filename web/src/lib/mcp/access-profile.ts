@@ -9,6 +9,7 @@ import {
 import {
   hasSystemCatalogAuthority,
   resolvePortalActorContext,
+  type PortalActorContext,
   type SystemRole,
 } from '@/lib/policy/actor';
 import { canBrowseEvents, canViewUnreleasedEvents } from '@/lib/policy/event';
@@ -70,9 +71,13 @@ function serializeDefaultCatalogSource(
 
 export async function getMcpAccessProfile(
   userId: string,
+  options: { actor?: PortalActorContext } = {},
 ): Promise<McpAccessProfile> {
+  if (options.actor && options.actor.userId !== userId) {
+    throw new Error('MCP access profile actor does not match the requested user');
+  }
   const [actor, preferences] = await Promise.all([
-    resolvePortalActorContext(userId),
+    options.actor ?? resolvePortalActorContext(userId),
     getUserFeaturePreferences(userId),
   ]);
 

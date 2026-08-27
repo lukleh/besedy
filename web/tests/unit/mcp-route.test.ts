@@ -7,13 +7,25 @@ const mocks = vi.hoisted(() => ({
   getMcpAccessProfile: vi.fn(),
   mcpFetch: vi.fn(),
   requireMcpAuth: vi.fn(),
+  resolvePortalActorContext: vi.fn(),
 }));
 
 vi.mock('@modelcontextprotocol/server', () => ({
   createMcpHandler: vi.fn(
     (factory: (input: { authInfo?: unknown }) => unknown) => ({
       fetch: async (request: Request, options: { authInfo?: unknown }) => {
-        factory({ authInfo: options.authInfo });
+        try {
+          await factory({ authInfo: options.authInfo });
+        } catch {
+          return Response.json(
+            {
+              jsonrpc: '2.0',
+              error: { code: -32603, message: 'Internal server error' },
+              id: 1,
+            },
+            { status: 500 },
+          );
+        }
         return mocks.mcpFetch(request, options);
       },
     }),
@@ -34,11 +46,21 @@ vi.mock('@/lib/mcp/authorization', () => ({
 vi.mock('@/lib/mcp/server', () => ({
   createBesedyMcpServer: mocks.createBesedyMcpServer,
 }));
+vi.mock('@/lib/policy/actor', () => ({
+  resolvePortalActorContext: mocks.resolvePortalActorContext,
+}));
 vi.mock('@/lib/security/rate-limit', () => ({
   checkRateLimit: mocks.checkRateLimit,
 }));
 
 describe('MCP route hardening', () => {
+  const activeActor = {
+    userId: 'user-1',
+    isAuthenticated: true,
+    userStatus: 'ACTIVE',
+    systemRole: 'USER',
+    canEnterPortal: true,
+  } as const;
   const activeAccessProfile = {
     userId: 'user-1',
     userStatus: 'ACTIVE',
@@ -64,6 +86,7 @@ describe('MCP route hardening', () => {
 
     mocks.checkRateLimit.mockReturnValue(true);
     mocks.getMcpAccessProfile.mockResolvedValue(activeAccessProfile);
+    mocks.resolvePortalActorContext.mockResolvedValue(activeActor);
     mocks.getActiveMcpAuthorization.mockResolvedValue({
       scopes: ['profile', 'besedy:read'],
     });
@@ -112,7 +135,7 @@ describe('MCP route hardening', () => {
 
     expect(response.status).toBe(401);
     expect(mocks.checkRateLimit).not.toHaveBeenCalled();
-    expect(mocks.getMcpAccessProfile).not.toHaveBeenCalled();
+    expect(mocks.resolvePortalActorContext).not.toHaveBeenCalled();
   });
 
   it('applies the global limit after token verification', async () => {
@@ -128,7 +151,7 @@ describe('MCP route hardening', () => {
       600,
       60_000,
     );
-    expect(mocks.getMcpAccessProfile).not.toHaveBeenCalled();
+    expect(mocks.resolvePortalActorContext).not.toHaveBeenCalled();
   });
 
   it('applies authenticated user and client limits before policy queries', async () => {
@@ -144,12 +167,12 @@ describe('MCP route hardening', () => {
       120,
       60_000,
     );
-    expect(mocks.getMcpAccessProfile).not.toHaveBeenCalled();
+    expect(mocks.resolvePortalActorContext).not.toHaveBeenCalled();
   });
 
   it('denies MCP access when the user can no longer enter Besedy', async () => {
-    mocks.getMcpAccessProfile.mockResolvedValue({
-      ...activeAccessProfile,
+    mocks.resolvePortalActorContext.mockResolvedValue({
+      ...activeActor,
       userStatus: 'BLOCKED',
       canEnterPortal: false,
     });
@@ -166,7 +189,8 @@ describe('MCP route hardening', () => {
       },
       id: null,
     });
-    expect(mocks.getMcpAccessProfile).toHaveBeenCalledWith('user-1');
+    expect(mocks.resolvePortalActorContext).toHaveBeenCalledWith('user-1');
+    expect(mocks.getMcpAccessProfile).not.toHaveBeenCalled();
     expect(mocks.mcpFetch).not.toHaveBeenCalled();
   });
 
@@ -191,7 +215,27 @@ describe('MCP route hardening', () => {
       tokenScopes: ['openid', 'profile', 'email', 'besedy:read'],
       userId: 'user-1',
     });
+    expect(mocks.resolvePortalActorContext).not.toHaveBeenCalled();
     expect(mocks.getMcpAccessProfile).not.toHaveBeenCalled();
+    expect(mocks.mcpFetch).not.toHaveBeenCalled();
+  });
+
+  it('normalizes access-profile failures through the MCP handler', async () => {
+    mocks.getMcpAccessProfile.mockRejectedValue(new Error('database offline'));
+    const { POST } = await import('@/app/api/mcp/route');
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: 'Internal server error' },
+      id: 1,
+    });
+    expect(mocks.resolvePortalActorContext).toHaveBeenCalledWith('user-1');
+    expect(mocks.getMcpAccessProfile).toHaveBeenCalledWith('user-1', {
+      actor: activeActor,
+    });
     expect(mocks.mcpFetch).not.toHaveBeenCalled();
   });
 
@@ -207,7 +251,10 @@ describe('MCP route hardening', () => {
       tokenScopes: ['openid', 'profile', 'email', 'besedy:read'],
       userId: 'user-1',
     });
-    expect(mocks.getMcpAccessProfile).toHaveBeenCalledWith('user-1');
+    expect(mocks.resolvePortalActorContext).toHaveBeenCalledWith('user-1');
+    expect(mocks.getMcpAccessProfile).toHaveBeenCalledWith('user-1', {
+      actor: activeActor,
+    });
     expect(mocks.requireMcpAuth).toHaveBeenCalledWith(
       expect.anything(),
       expect.any(Function),
@@ -222,16 +269,12 @@ describe('MCP route hardening', () => {
       expect.objectContaining({
         authInfo: expect.objectContaining({
           clientId: 'client-1',
-          extra: {
-            userId: 'user-1',
-            accessProfile: activeAccessProfile,
-          },
+          extra: { actor: activeActor },
           scopes: ['profile', 'besedy:read'],
         }),
       }),
     );
     expect(mocks.createBesedyMcpServer).toHaveBeenCalledWith({
-      userId: 'user-1',
       clientId: 'client-1',
       scopes: ['profile', 'besedy:read'],
       accessProfile: activeAccessProfile,

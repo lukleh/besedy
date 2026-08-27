@@ -90,8 +90,9 @@ serialization:
    name, status, and role, while `email` controls email fields.
 5. **Share one policy snapshot inside the tool request.** The transport is
    stateless, so the next HTTP request rebuilds current policy state. Within a
-   request, `McpRequestContext` carries the user, client, effective scopes, and
-   access profile into the server. Handlers reuse that profile instead of
+   request, `BesedyMcpRequestContext` carries the client, effective scopes, and
+   access profile into the server; the user comes from that profile rather than
+   a second field that could disagree. Handlers reuse the profile instead of
    fetching or reconstructing the same authorization facts.
 6. **Fail without leaking protected data.** Expected races and revocations use
    structured tool errors. For example, if the authenticated account disappears
