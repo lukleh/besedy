@@ -20,7 +20,9 @@ RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
 not supply `catalogId`, so the same run covers default selection. The test keeps
 its own `test-mcp-*` Compose project and volume, then removes both on exit. It
 resolves the test env file itself; inherited production `APP_ENV`, config, and
-Compose project values are not used. On a new machine, install the Playwright browser once with
+Compose project values are not used. Docker assigns run-specific loopback ports,
+so an existing test stack and concurrent smoke runs do not conflict. On a new
+machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
 > Last updated: 2026-08-27

@@ -62,13 +62,22 @@ def test_missing_web_env_file_has_actionable_error(
 
 
 @pytest.mark.parametrize(
-    ("mode", "override_var", "compose_overrides", "profile", "app_env", "instance"),
+    (
+        "mode",
+        "override_var",
+        "compose_overrides",
+        "profile",
+        "extra_profile",
+        "app_env",
+        "instance",
+    ),
     [
         (
             "development",
             "BESEDY_WEB_ENV_DEV",
             ["docker-compose.dev.yml"],
             "mock-oauth",
+            "tools",
             "development",
             "development",
         ),
@@ -77,6 +86,7 @@ def test_missing_web_env_file_has_actionable_error(
             "BESEDY_WEB_ENV_PROD",
             ["docker-compose.secure.yml", "docker-compose.production.yml"],
             "backup",
+            None,
             "production",
             "production",
         ),
@@ -85,6 +95,7 @@ def test_missing_web_env_file_has_actionable_error(
             "BESEDY_WEB_ENV_TEST",
             ["docker-compose.secure.yml"],
             "mock-oauth",
+            None,
             "test",
             "test",
         ),
@@ -96,6 +107,7 @@ def test_web_compose_wrapper_isolates_mode_and_forwards_resolved_env_file(
     override_var: str,
     compose_overrides: list[str],
     profile: str,
+    extra_profile: str | None,
     app_env: str,
     instance: str,
 ) -> None:
@@ -140,8 +152,12 @@ printf '%s\n' "$@"
     env["COMPOSE_PROJECT_NAME"] = "besedy-production"
     env["CONFIG_FILE"] = "/production/config.toml"
 
+    command = ["bash", str(COMPOSE_WRAPPER), mode]
+    if extra_profile:
+        command.extend(["--profile", extra_profile])
+    command.extend(["ps", "--format", "json"])
     result = subprocess.run(
-        ["bash", str(COMPOSE_WRAPPER), mode, "ps", "--format", "json"],
+        command,
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -161,10 +177,11 @@ printf '%s\n' "$@"
     ]
     for compose_override in compose_overrides:
         expected_args.extend(["-f", compose_override])
+    expected_args.extend(["--profile", profile])
+    if extra_profile:
+        expected_args.extend(["--profile", extra_profile])
     expected_args.extend(
         [
-            "--profile",
-            profile,
             "--env-file",
             str(env_file),
             "ps",
@@ -212,3 +229,29 @@ def test_web_compose_wrapper_rejects_wrong_mode_env_file(tmp_path: Path) -> None
 
     assert result.returncode == 1
     assert "APP_ENV is 'production', expected 'test'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "unsafe_args",
+    [
+        ["--project-name", "besedy-production", "config"],
+        ["-pbesedy-production", "config"],
+        ["--file=docker-compose.production.yml", "config"],
+        ["-fdocker-compose.production.yml", "config"],
+        ["--env-file", "/tmp/production.env", "config"],
+        ["--project-directory=/tmp/production", "config"],
+    ],
+)
+def test_web_compose_wrapper_rejects_resource_shaping_global_options(
+    unsafe_args: list[str],
+) -> None:
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", *unsafe_args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Unsafe Docker Compose option" in result.stderr

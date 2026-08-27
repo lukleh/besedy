@@ -50,6 +50,47 @@ if (( ${#instance} > 48 )); then
   exit 1
 fi
 
+user_compose_args=()
+command_args=()
+while (( $# > 0 )); do
+  case "$1" in
+    --profile)
+      if (( $# < 2 )) || [[ -z "$2" ]]; then
+        echo "--profile requires a non-empty value" >&2
+        exit 1
+      fi
+      user_compose_args+=(--profile "$2")
+      shift 2
+      ;;
+    --profile=*)
+      profile="${1#*=}"
+      if [[ -z "$profile" ]]; then
+        echo "--profile requires a non-empty value" >&2
+        exit 1
+      fi
+      user_compose_args+=(--profile "$profile")
+      shift
+      ;;
+    -p | -p?* | --project-name | --project-name=* | -f | -f?* | --file | --file=* | --env-file | --env-file=* | --project-directory | --project-directory=*)
+      echo "Unsafe Docker Compose option '$1': project identity, Compose files, and env files are controlled by this wrapper" >&2
+      exit 1
+      ;;
+    -*)
+      echo "Unsupported Docker Compose global option '$1'; only --profile may precede the command" >&2
+      exit 1
+      ;;
+    *)
+      command_args=("$@")
+      break
+      ;;
+  esac
+done
+
+if (( ${#command_args[@]} == 0 )); then
+  echo "A Docker Compose command is required" >&2
+  exit 1
+fi
+
 env_file="$("$script_dir/resolve_web_env_file.sh" "$mode")"
 declared_app_env="$(
   awk -F= '
@@ -70,7 +111,7 @@ if [[ "$declared_app_env" != "$expected_app_env" ]]; then
 fi
 
 if [[ "$mode" == "production" ]]; then
-  for compose_arg in "$@"; do
+  for compose_arg in "${command_args[@]}"; do
     case "$compose_arg" in
       up | create | run)
         "$script_dir/validate_web_config_mount.sh" production
@@ -106,7 +147,8 @@ if [[ -n "${BESEDY_WEB_ALLOW_TEST_OVERRIDES:-}" ]]; then
     exit 1
   fi
   passthrough_vars+=(
-    CONFIG_FILE TEXT_DATA_DIR BESEDY_MCP_ENABLED RAG_COLBERT_URL
+    CONFIG_FILE TEXT_DATA_DIR WEB_PORT DB_PORT AUTH_URL NEXT_PUBLIC_APP_URL
+    AUTH_DEV_TRUSTED_ORIGINS BESEDY_MCP_ENABLED RAG_COLBERT_URL
     RAG_COLBERT_INDEX_DIR RAG_COLBERT_RERANK_ENABLED
   )
 fi
@@ -121,6 +163,7 @@ compose_command=(
   "${clean_env[@]}"
   docker compose
   "${compose_args[@]}"
+  "${user_compose_args[@]}"
   --env-file "$env_file"
 )
 
@@ -128,4 +171,4 @@ rendered_config="$("${compose_command[@]}" config --format json)"
 printf '%s\n' "$rendered_config" \
   | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance"
 
-exec "${compose_command[@]}" "$@"
+exec "${compose_command[@]}" "${command_args[@]}"

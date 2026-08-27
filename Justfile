@@ -441,7 +441,7 @@ prod-rebuild:
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} build --pull --no-cache web
-    {{ prod_compose }} up -d web
+    {{ prod_compose }} up -d --no-deps web
 
 # Full production deployment: build, migrate, restart
 prod-deploy:
@@ -484,7 +484,7 @@ prod-deploy:
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} build --pull web
     echo "Starting production services..."
-    {{ prod_compose }} up -d --no-build --remove-orphans web
+    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web
     echo "Running migrations..."
     just prod-migrate
     echo "Restarting web service..."
@@ -564,6 +564,17 @@ test-up:
     echo "Starting test containers..."
     {{ test_compose }} up -d
 
+    resolve_test_port() {
+      local endpoint
+      endpoint="$({{ test_compose }} port "$1" "$2" | head -n 1)"
+      endpoint="${endpoint##*:}"
+      if [[ ! "$endpoint" =~ ^[0-9]+$ ]] || [[ "$endpoint" == "0" ]]; then
+        echo "Could not resolve the published port for $1:$2" >&2
+        exit 1
+      fi
+      printf '%s\n' "$endpoint"
+    }
+
     # Wait for DB to be ready
     echo "Waiting for database..."
     for i in {1..30}; do
@@ -579,21 +590,24 @@ test-up:
       psql -U besedy_test -d besedy_test -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" > /dev/null
 
     echo "Applying migrations..."
-    DATABASE_URL=postgresql://besedy_test:besedy_test@localhost:5434/besedy_test npx prisma migrate deploy
+    test_db_port="$(resolve_test_port db 5432)"
+    test_database_url="postgresql://besedy_test:besedy_test@127.0.0.1:${test_db_port}/besedy_test"
+    DATABASE_URL="$test_database_url" npx prisma migrate deploy
 
     echo "Seeding test data..."
-    DATABASE_URL=postgresql://besedy_test:besedy_test@localhost:5434/besedy_test npx tsx prisma/seed-test.ts
+    DATABASE_URL="$test_database_url" npx tsx prisma/seed-test.ts
 
     # Wait for web server
     echo "Waiting for web server..."
+    test_web_port="$(resolve_test_port web 3000)"
     for i in {1..60}; do
-      if curl -sf http://localhost:3002/api/health > /dev/null 2>&1; then
+      if curl -sf "http://127.0.0.1:${test_web_port}/api/health" > /dev/null 2>&1; then
         break
       fi
       sleep 1
     done
 
-    echo "Test environment ready on port 3002"
+    echo "Test environment ready on port $test_web_port"
 
 # Stop test containers (keeps data)
 test-down:
@@ -706,12 +720,24 @@ mcp-smoke:
     rag_mock="$repo_root/web/tests/e2e/rag-mock/server.mjs"
     export BESEDY_WEB_COMPOSE_INSTANCE="test-mcp-$(date -u +%Y%m%d%H%M%S)-$$"
     export BESEDY_WEB_ALLOW_TEST_OVERRIDES=1
+    export WEB_PORT=127.0.0.1:0
+    export DB_PORT=127.0.0.1:0
     runtime_dir="$repo_root/web/.playwright-mcp/$BESEDY_WEB_COMPOSE_INSTANCE"
     rag_container="besedy-mcp-rag-${RANDOM}-$$"
     cleanup() {
       docker rm -f "$rag_container" > /dev/null 2>&1 || true
-      just test-down-clean > /dev/null 2>&1 || true
+      (cd "$repo_root/web" && bash ../scripts/run_web_compose.sh test down -v --rmi local) > /dev/null 2>&1 || true
       rm -rf "$runtime_dir"
+    }
+    resolve_mcp_port() {
+      local endpoint
+      endpoint="$(cd "$repo_root/web" && bash ../scripts/run_web_compose.sh test port "$1" "$2" | head -n 1)"
+      endpoint="${endpoint##*:}"
+      if [[ ! "$endpoint" =~ ^[0-9]+$ ]] || [[ "$endpoint" == "0" ]]; then
+        echo "Could not resolve the MCP port for $1:$2" >&2
+        exit 1
+      fi
+      printf '%s\n' "$endpoint"
     }
     trap cleanup EXIT
     mkdir -p "$runtime_dir"
@@ -725,6 +751,12 @@ mcp-smoke:
     export RAG_COLBERT_INDEX_DIR=
     export RAG_COLBERT_RERANK_ENABLED=false
     just test-up
+    mcp_web_port="$(resolve_mcp_port web 3000)"
+    mcp_db_port="$(resolve_mcp_port db 5432)"
+    export WEB_PORT="127.0.0.1:$mcp_web_port"
+    export AUTH_URL="http://127.0.0.1:$mcp_web_port"
+    export NEXT_PUBLIC_APP_URL="$AUTH_URL"
+    export AUTH_DEV_TRUSTED_ORIGINS="$AUTH_URL,http://localhost:$mcp_web_port"
     docker run -d \
       --name "$rag_container" \
       --network "${BESEDY_INTERNAL_NETWORK:-besedy-internal}" \
@@ -745,14 +777,16 @@ mcp-smoke:
       exit 1
     fi
     just test-rebuild
+    export PLAYWRIGHT_BASE_URL="$AUTH_URL"
+    export PLAYWRIGHT_DATABASE_URL="postgresql://besedy_test:besedy_test@127.0.0.1:${mcp_db_port}/besedy_test"
     echo "Waiting for rebuilt MCP test server..."
     for i in {1..60}; do
-      if curl -sf http://localhost:3002/api/health > /dev/null 2>&1; then
+      if curl -sf "$PLAYWRIGHT_BASE_URL/api/health" > /dev/null 2>&1; then
         cd web
         npm run test:e2e:mcp
         exit 0
       fi
       sleep 1
     done
-    echo "MCP test server did not become ready on port 3002" >&2
+    echo "MCP test server did not become ready at $PLAYWRIGHT_BASE_URL" >&2
     exit 1

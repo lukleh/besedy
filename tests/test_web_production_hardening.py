@@ -20,3 +20,10 @@ def test_production_recipes_do_not_require_removed_scanner_secret() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
 
     assert "SCAN_SECRET" not in justfile
+
+
+def test_web_only_production_deploys_do_not_start_or_recreate_dependencies() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+
+    assert "{{ prod_compose }} up -d --no-deps web" in justfile
+    assert "{{ prod_compose }} up -d --no-deps --no-build --remove-orphans web" in justfile
