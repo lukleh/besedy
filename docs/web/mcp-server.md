@@ -105,6 +105,15 @@ read services retrieve only authorized domain data, and the MCP handler shapes
 the agent-facing result. Tests should cover discovery, direct invocation,
 scope-gated fields, a denied target, and the tool's structured failure paths.
 
+Each tool lives in its own registrar module under
+`web/src/lib/mcp/tools/`. `server.ts` only creates the server and applies the
+personalized discovery gates before calling those registrars. Shared catalog
+resolution and structured success/error handling live in `tools/shared.ts` so
+tools cannot drift into different not-found, permission, or retry semantics.
+Keep tool-specific schemas, defaults, service calls, and response rendering in
+the tool's module; do not move policy derivation or raw database authorization
+queries there.
+
 ## Authentication and transport
 
 - Endpoint: `POST /api/mcp` over HTTPS in production.
