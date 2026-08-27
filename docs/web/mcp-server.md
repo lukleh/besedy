@@ -450,8 +450,8 @@ the first returned segment. An empty page has `seekWebUrl: null`. The
 `nextOffset`. Full mode reports `limit` and `maxTextChars` as `null` and always
 returns `nextOffset: null` and `continuation: null`. When more page-mode data
 exists, `continuation` preserves the catalog, recording, backend, mode, window,
-limits, and next offset; omit any `null` window values before using it as the
-next call's arguments. Otherwise it is `null`.
+limits, and next offset and can be passed unchanged as the next call's
+arguments. Otherwise it is `null`.
 
 Example full-mode return value:
 
@@ -523,8 +523,6 @@ return a continuation descriptor:
     "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "backend": "faster-whisper/large-v3@silero_vad_v6",
     "mode": "page",
-    "startSec": null,
-    "endSec": null,
     "segmentOffset": 50,
     "segmentLimit": 50,
     "maxTextChars": 20000

@@ -484,8 +484,10 @@ export async function getMcpTranscript(
           audioHash,
           backend,
           mode: 'page' as const,
-          startSec: input.startSec ?? null,
-          endSec: input.endSec ?? null,
+          ...(input.startSec === undefined
+            ? {}
+            : { startSec: input.startSec }),
+          ...(input.endSec === undefined ? {} : { endSec: input.endSec }),
           segmentOffset: nextOffset,
           segmentLimit: input.segmentLimit,
           maxTextChars: input.maxTextChars,

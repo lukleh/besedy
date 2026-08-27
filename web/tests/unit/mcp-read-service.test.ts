@@ -539,6 +539,30 @@ describe('MCP read service', () => {
     });
   });
 
+  it('omits absent time bounds from replayable page continuations', async () => {
+    const result = await getMcpTranscript(
+      'user-1',
+      'catalog-a',
+      'visible-recording',
+      {
+        mode: 'page',
+        segmentOffset: 0,
+        segmentLimit: 2,
+        maxTextChars: 1_000,
+      },
+    );
+
+    expect(result.continuation).toEqual({
+      catalogId: 'catalog-a',
+      audioHash: 'visible-recording',
+      backend: 'whisperx/model',
+      mode: 'page',
+      segmentOffset: 2,
+      segmentLimit: 2,
+      maxTextChars: 1_000,
+    });
+  });
+
   it('builds seek links from the first segment actually returned after an offset', async () => {
     const result = await getMcpTranscript(
       'user-1',
