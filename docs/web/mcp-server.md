@@ -116,7 +116,10 @@ queries there.
 
 ## Authentication and transport
 
-- Endpoint: `POST /api/mcp` over HTTPS in production.
+- Endpoint: `POST /api/mcp` over HTTPS in production. Authenticated and
+  unauthenticated `GET /api/mcp` requests pass through the same OAuth guard so
+  legacy clients can discover the protected-resource metadata from its bearer
+  challenge; the stateless MCP handler still rejects authenticated GET serving.
 - Authentication: OAuth 2.1 authorization through the existing Better Auth
   installation. A client authorization ultimately uses the same Google sign-in,
   Besedy admission, user status, and session rules as the web application.
@@ -370,8 +373,9 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - [x] Add Google-backed MCP login and consent continuation pages.
 - [x] Support CIMD plus a PKCE-protected DCR fallback for remote clients.
 - [x] Publish OAuth discovery/protected-resource metadata.
-- [x] Mount authenticated, stateless `POST /api/mcp`; serve current and 2025-era
-      MCP clients from the same SDK v2 server factory.
+- [x] Mount authenticated, stateless `POST /api/mcp`, expose the OAuth challenge
+      on `GET /api/mcp`, and serve current and 2025-era MCP clients from the same
+      SDK v2 server factory.
 - [x] Exempt the enabled bearer-only MCP endpoint from browser CSRF checks so
       unauthenticated clients can receive the OAuth challenge.
 
