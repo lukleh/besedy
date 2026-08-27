@@ -461,10 +461,10 @@ Example full-mode return value:
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "seekWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0",
-  "backend": "example-stt/example-model",
+  "backend": "faster-whisper/large-v3@silero_vad_v6",
   "availableBackends": [
-    "example-stt/example-model",
-    "example-stt/example-model-v2"
+    "faster-whisper/large-v3@silero_vad_v6",
+    "whisperx/large-v3@silero"
   ],
   "language": "en",
   "durationSec": 7200,
@@ -521,7 +521,7 @@ return a continuation descriptor:
   "continuation": {
     "catalogId": "20990101_000000",
     "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "backend": "example-stt/example-model",
+    "backend": "faster-whisper/large-v3@silero_vad_v6",
     "mode": "page",
     "startSec": null,
     "endSec": null,
@@ -579,7 +579,7 @@ The generated request can be passed directly to `get_transcript`:
 {
   "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "backend": "example-stt/example-model",
+  "backend": "faster-whisper/large-v3@silero_vad_v6",
   "mode": "page",
   "startSec": 600,
   "endSec": 720
