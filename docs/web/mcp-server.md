@@ -350,24 +350,24 @@ Example return value:
 
 ```json
 {
-  "catalogId": "20251222_144441",
+  "catalogId": "20990101_000000",
   "events": [
     {
-      "id": 198,
-      "webUrl": "https://besedy.org/catalog/20251222_144441/event/198",
-      "title": "Čajovna Zlatý Serafín, 16 Aug 2026",
-      "description": null,
-      "date": { "year": 2026, "month": 8, "day": 16 },
+      "id": 4242,
+      "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+      "title": "Example Hall, 12 Apr 2099",
+      "description": "Fictional event used only for documentation",
+      "date": { "year": 2099, "month": 4, "day": 12 },
       "sessionIndex": 1,
-      "location": { "id": 22, "name": "Čajovna Zlatý Serafín" },
+      "location": { "id": 999, "name": "Example Hall" },
       "released": true,
       "recordings": {
-        "primaryAudioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
+        "primaryAudioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "audioHashes": [
-          "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46"
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ]
       },
-      "updatedAt": "2026-08-26T10:24:40.491Z"
+      "updatedAt": "2099-04-13T08:30:00.000Z"
     }
   ],
   "nextCursor": null
@@ -457,17 +457,17 @@ Example full-mode return value:
 
 ```json
 {
-  "catalogId": "20251222_144441",
-  "audioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
-  "recordingWebUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
-  "seekWebUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46?seek=1.06",
-  "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "catalogId": "20990101_000000",
+  "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "seekWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0",
+  "backend": "example-stt/example-model",
   "availableBackends": [
-    "faster-whisper/large-v3@silero_vad_v6",
-    "whisperx/large-v3@silero"
+    "example-stt/example-model",
+    "example-stt/example-model-v2"
   ],
-  "language": "cs",
-  "durationSec": 11080,
+  "language": "en",
+  "durationSec": 7200,
   "mode": "full",
   "timeWindow": { "startSec": null, "endSec": null },
   "segments": {
@@ -475,18 +475,18 @@ Example full-mode return value:
       {
         "segmentIndex": 0,
         "id": null,
-        "text": "Transcript text...",
-        "startSec": 1.06,
-        "endSec": 26.93,
+        "text": "Example transcript segment.",
+        "startSec": 0,
+        "endSec": 12.5,
         "speaker": null,
-        "webUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46?seek=1.06"
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0"
       }
     ],
     "offset": 0,
     "limit": null,
     "maxTextChars": null,
-    "returnedTextChars": 184392,
-    "totalMatching": 320,
+    "returnedTextChars": 120000,
+    "totalMatching": 240,
     "nextOffset": null
   },
   "continuation": null
@@ -503,25 +503,25 @@ return a continuation descriptor:
     "offset": 0,
     "limit": 50,
     "maxTextChars": 20000,
-    "returnedTextChars": 18341,
-    "totalMatching": 320,
+    "returnedTextChars": 18000,
+    "totalMatching": 240,
     "nextOffset": 50,
     "items": [
       {
         "segmentIndex": 0,
         "id": null,
-        "text": "Transcript text...",
-        "startSec": 1.06,
-        "endSec": 26.93,
+        "text": "Example transcript segment.",
+        "startSec": 0,
+        "endSec": 12.5,
         "speaker": null,
-        "webUrl": "https://besedy.org/catalog/20251222_144441/recording/9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46?seek=1.06"
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0"
       }
     ]
   },
   "continuation": {
-    "catalogId": "20251222_144441",
-    "audioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
-    "backend": "faster-whisper/large-v3@silero_vad_v6",
+    "catalogId": "20990101_000000",
+    "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "backend": "example-stt/example-model",
     "mode": "page",
     "startSec": null,
     "endSec": null,
@@ -577,9 +577,9 @@ The generated request can be passed directly to `get_transcript`:
 
 ```json
 {
-  "catalogId": "20251222_144441",
-  "audioHash": "9a18a7683be4e7ea9e77cb92a7127b703a5ef04dc00647c1471fe6cf90574a46",
-  "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "catalogId": "20990101_000000",
+  "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "backend": "example-stt/example-model",
   "mode": "page",
   "startSec": 600,
   "endSec": 720
