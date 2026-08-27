@@ -308,6 +308,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const legacyToolsText = await legacyToolsResponse.text();
     expect(legacyToolsResponse.ok(), legacyToolsText).toBe(true);
     for (const toolName of [
+      'who_am_i',
       'list_catalogs',
       'list_events',
       'get_event',
@@ -349,6 +350,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     }>;
     expect(toolsBody.error).toBeUndefined();
     expect(toolsBody.result?.tools.map((tool) => tool.name)).toEqual([
+      'who_am_i',
       'list_catalogs',
       'list_events',
       'get_event',
@@ -356,6 +358,47 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'get_transcript',
       'search_transcripts',
     ]);
+
+    const identityResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'who_am_i',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'tools/call',
+        params: {
+          name: 'who_am_i',
+          arguments: {},
+          _meta: envelope,
+        },
+      },
+    });
+    const identityResponseText = await identityResponse.text();
+    expect(identityResponse.ok(), identityResponseText).toBe(true);
+    const identityBody = JSON.parse(identityResponseText) as McpResponse<
+      McpToolResult<Record<string, unknown>>
+    >;
+    expect(identityBody.result?.structuredContent).toMatchObject({
+      account: {
+        id: expect.any(String),
+        name: 'Catalog Owner',
+        email: 'owner@besedy.test',
+        status: 'ACTIVE',
+        systemRole: 'USER',
+      },
+      authorization: {
+        clientId,
+        clientName: 'Besedy MCP DCR E2E client',
+        grantedScopes: expect.arrayContaining([
+          'profile',
+          'email',
+          'besedy:read',
+        ]),
+      },
+    });
 
     const catalogResponse = await request.post(MCP_RESOURCE, {
       headers: {

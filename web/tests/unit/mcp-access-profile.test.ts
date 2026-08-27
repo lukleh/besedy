@@ -67,6 +67,10 @@ describe('MCP access profile', () => {
   it('derives listener and viewer MCP capabilities from canonical policy', async () => {
     const profile = await getMcpAccessProfile('user-1');
 
+    expect(profile).toMatchObject({
+      userStatus: 'ACTIVE',
+      systemRole: 'USER',
+    });
     expect(profile.catalogs).toEqual([
       expect.objectContaining({
         id: 'catalog-listener',
@@ -119,11 +123,49 @@ describe('MCP access profile', () => {
     });
 
     await expect(getMcpAccessProfile('blocked-1')).resolves.toMatchObject({
+      userStatus: 'BLOCKED',
+      systemRole: 'USER',
       canEnterPortal: false,
       catalogs: [],
     });
     expect(prisma.workflowGroup.findMany).not.toHaveBeenCalled();
     expect(listUserCatalogAccessEntries).not.toHaveBeenCalled();
+  });
+
+  it('reuses a provided canonical actor', async () => {
+    const actor = {
+      userId: 'user-1',
+      isAuthenticated: true,
+      userStatus: 'ACTIVE' as const,
+      systemRole: 'USER' as const,
+      canEnterPortal: true,
+    };
+
+    const profile = await getMcpAccessProfile('user-1', { actor });
+
+    expect(resolvePortalActorContext).not.toHaveBeenCalled();
+    expect(profile).toMatchObject({
+      userId: 'user-1',
+      userStatus: 'ACTIVE',
+      systemRole: 'USER',
+    });
+  });
+
+  it('rejects a provided actor for a different user', async () => {
+    await expect(
+      getMcpAccessProfile('user-1', {
+        actor: {
+          userId: 'user-2',
+          isAuthenticated: true,
+          userStatus: 'ACTIVE',
+          systemRole: 'USER',
+          canEnterPortal: true,
+        },
+      }),
+    ).rejects.toThrow(
+      'MCP access profile actor does not match the requested user',
+    );
+    expect(getUserFeaturePreferences).not.toHaveBeenCalled();
   });
 
   it('gives catalog admins the complete read surface', async () => {
@@ -143,6 +185,10 @@ describe('MCP access profile', () => {
 
     const profile = await getMcpAccessProfile('admin-1');
 
+    expect(profile).toMatchObject({
+      userStatus: 'ACTIVE',
+      systemRole: 'ADMIN',
+    });
     expect(profile.catalogs[0]).toMatchObject({
       catalogGrant: null,
       isCatalogAdmin: true,

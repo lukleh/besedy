@@ -14,7 +14,7 @@ just mcp-smoke
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
-all six tools. It verifies default-catalog resolution, the owner's live
+all seven tools. It verifies default-catalog resolution, the owner's live
 capability flags, metadata reads, bounded transcript pagination, and a grounded
 RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
 not supply `catalogId`, so the same run covers default selection. The test keeps
@@ -64,6 +64,46 @@ This makes a future policy change (for example, hiding unreleased events from
 VIEWER) apply to both surfaces. Tests must exercise the canonical policy and
 assert representative web and MCP behavior against it. Documentation describes
 the policy, but the policy code is authoritative.
+
+## Reference pattern for MCP tools
+
+`who_am_i` is the smallest reference implementation for how an MCP tool should
+combine authentication, current state, shared web policy, and response
+serialization:
+
+1. **Refresh authorization for every request.** The MCP route validates the
+   token subject, OAuth client, resource, current consent, and current portal
+   access. For consented clients, effective scopes are the intersection of the
+   token claims and live consent, so an old token cannot preserve a scope the
+   user has revoked. Current portal access is required for every client.
+2. **Use canonical policy state.** `getMcpAccessProfile` obtains the current
+   actor, system role, catalog grants, defaults, and capabilities through the
+   same policy functions used by the web application. A tool must not derive a
+   role or permission again from raw database flags.
+3. **Keep identity data separate from authorization.** `getMcpIdentity` loads
+   only account and OAuth-client display data. `who_am_i` gets status and role
+   from the access profile rather than treating identity fields as permission
+   facts.
+4. **Gate both tools and returned fields.** Tool discovery is personalized for
+   usability, but each invocation must still authorize its resolved target.
+   Response serialization must also enforce OAuth scopes: `profile` controls
+   name, status, and role, while `email` controls email fields.
+5. **Share one policy snapshot inside the tool request.** The transport is
+   stateless, so the next HTTP request rebuilds current policy state. Within a
+   request, `BesedyMcpRequestContext` carries the client, effective scopes, and
+   access profile into the server; the user comes from that profile rather than
+   a second field that could disagree. Handlers reuse the profile instead of
+   fetching or reconstructing the same authorization facts.
+6. **Fail without leaking protected data.** Expected races and revocations use
+   structured tool errors. For example, if the authenticated account disappears
+   before `who_am_i` loads its display data, the tool returns
+   `identity_unavailable` and no partial identity.
+
+New tools should follow the same division: the route establishes live OAuth and
+portal authorization, shared policy code decides Besedy capabilities, shared
+read services retrieve only authorized domain data, and the MCP handler shapes
+the agent-facing result. Tests should cover discovery, direct invocation,
+scope-gated fields, a denied target, and the tool's structured failure paths.
 
 ## Authentication and transport
 
@@ -207,12 +247,18 @@ filesystem paths or audio URLs.
 
 | Tool                 | Purpose                                                       | Minimum catalog capability          |
 | -------------------- | ------------------------------------------------------------- | ----------------------------------- |
+| `who_am_i`           | Show the current account and OAuth connection                 | Active portal user                  |
 | `list_catalogs`      | List accessible catalogs and their capabilities               | Active portal user                  |
 | `list_events`        | Page/filter visible events and their metadata                 | Catalog access                      |
 | `get_event`          | Get one visible event and paged recording summaries           | Catalog access and event visibility |
 | `get_recording`      | Get metadata for one visible recording                        | Recording visibility                |
 | `get_transcript`     | Get a recording transcript, optionally by time/segment window | `canViewTranscripts`                |
 | `search_transcripts` | Run existing Besedy RAG search and return grounded matches    | `canSearchTranscripts`              |
+
+`who_am_i` always reports the authenticated account ID, OAuth client, effective
+scopes, and catalog-access summary. Account name, status, and system role are
+included only with the `profile` scope; email and verification status require
+the `email` scope.
 
 `list_catalogs` accepts an optional cursor and a `limit` from 1 to 100 (default
 50). Its response includes `nextCursor`, `defaultCatalogId`, and

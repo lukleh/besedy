@@ -1,9 +1,13 @@
 import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
-import { getPortalCapability } from '@/lib/access/capabilities';
+import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
 import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
+import {
+  resolvePortalActorContext,
+  type PortalActorContext,
+} from '@/lib/policy/actor';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   getMcpJwksUrl,
@@ -66,11 +70,20 @@ function jsonRpcRateLimited(): Response {
 
 const mcpHandler = createMcpHandler(
   async ({ authInfo }) => {
-    const userId = authInfo?.extra?.userId;
-    if (typeof userId !== 'string') {
-      throw new Error('Authenticated MCP request is missing a user subject');
+    const actor = authInfo?.extra?.actor as PortalActorContext | undefined;
+    if (
+      !authInfo ||
+      !actor?.canEnterPortal ||
+      typeof actor.userId !== 'string'
+    ) {
+      throw new Error('Authenticated MCP request is missing its policy context');
     }
-    return createBesedyMcpServer(userId);
+    const accessProfile = await getMcpAccessProfile(actor.userId, { actor });
+    return createBesedyMcpServer({
+      clientId: authInfo.clientId,
+      scopes: authInfo.scopes,
+      accessProfile,
+    });
   },
   {
     legacy: 'stateless',
@@ -117,22 +130,20 @@ const protectedMcpHandler = resourceUrl
         }
 
         const tokenScopes = readScopes(claims);
-        const [authorization, portal] = await Promise.all([
-          getActiveMcpAuthorization({
-            clientId,
-            resourceUrl,
-            tokenScopes,
-            userId,
-          }),
-          getPortalCapability(userId),
-        ]);
+        const authorization = await getActiveMcpAuthorization({
+          clientId,
+          resourceUrl,
+          tokenScopes,
+          userId,
+        });
         if (!authorization) {
           return jsonRpcAccessDenied(
             'Active Besedy MCP authorization is required',
           );
         }
 
-        if (!portal.canEnterPortal) {
+        const actor = await resolvePortalActorContext(userId);
+        if (!actor.canEnterPortal) {
           return jsonRpcAccessDenied('Active Besedy portal access is required');
         }
 
@@ -142,7 +153,7 @@ const protectedMcpHandler = resourceUrl
           scopes: authorization.scopes,
           expiresAt: claims.exp,
           resource: new URL(resourceUrl),
-          extra: { userId },
+          extra: { actor },
         };
 
         return mcpHandler.fetch(request, { authInfo });

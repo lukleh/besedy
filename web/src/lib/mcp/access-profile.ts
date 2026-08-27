@@ -1,5 +1,5 @@
 import prisma from '@/lib/db';
-import type { AccessLevel } from '@/generated/prisma/client';
+import type { AccessLevel, UserStatus } from '@/generated/prisma/client';
 import { buildCatalogCapability } from '@/lib/access/capabilities';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
 import {
@@ -9,6 +9,8 @@ import {
 import {
   hasSystemCatalogAuthority,
   resolvePortalActorContext,
+  type PortalActorContext,
+  type SystemRole,
 } from '@/lib/policy/actor';
 import { canBrowseEvents, canViewUnreleasedEvents } from '@/lib/policy/event';
 import {
@@ -38,6 +40,8 @@ export type McpDefaultCatalogSource =
 
 export interface McpAccessProfile {
   userId: string;
+  userStatus: UserStatus | null;
+  systemRole: SystemRole;
   canEnterPortal: boolean;
   defaultCatalogId: string | null;
   defaultCatalogSource: McpDefaultCatalogSource | null;
@@ -67,14 +71,18 @@ function serializeDefaultCatalogSource(
 
 export async function getMcpAccessProfile(
   userId: string,
+  options: { actor?: PortalActorContext } = {},
 ): Promise<McpAccessProfile> {
+  if (options.actor && options.actor.userId !== userId) {
+    throw new Error('MCP access profile actor does not match the requested user');
+  }
   const [actor, preferences] = await Promise.all([
-    resolvePortalActorContext(userId),
+    options.actor ?? resolvePortalActorContext(userId),
     getUserFeaturePreferences(userId),
   ]);
 
   if (!actor.canEnterPortal) {
-    return emptyProfile(userId);
+    return emptyProfile(userId, actor.userStatus, actor.systemRole);
   }
 
   const accessEntries = await listUserCatalogAccessEntries(actor);
@@ -150,6 +158,8 @@ export async function getMcpAccessProfile(
 
   return {
     userId,
+    userStatus: actor.userStatus,
+    systemRole: actor.systemRole,
     canEnterPortal: true,
     defaultCatalogId: effectiveDefault?.group.id ?? null,
     defaultCatalogSource: serializeDefaultCatalogSource(
@@ -173,9 +183,15 @@ export async function getMcpAccessProfile(
   };
 }
 
-function emptyProfile(userId: string): McpAccessProfile {
+function emptyProfile(
+  userId: string,
+  userStatus: UserStatus | null,
+  systemRole: SystemRole,
+): McpAccessProfile {
   return {
     userId,
+    userStatus,
+    systemRole,
     canEnterPortal: false,
     defaultCatalogId: null,
     defaultCatalogSource: null,
