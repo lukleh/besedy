@@ -86,10 +86,24 @@ catalog permissions. When no catalog is specified, catalog-scoped tools use the
 user's effective default catalog according to the resolution order described in
 the MCP server reference below.
 
+Besedy is a standalone remote MCP server. Client machines do not need a Besedy
+package, plugin, repository checkout, or access to the deployment host.
+
+Use a current Codex CLI release. The connection is verified with Codex CLI
+`0.150.1`; `0.144.6` can detect the initial OAuth challenge but then fails with
+`No authorization support detected`.
+
 Add the deployed server to Codex CLI:
 
 ```bash
 codex mcp add besedy --url https://besedy.org/api/mcp
+```
+
+Current Codex releases normally start the OAuth flow during `mcp add`. If the
+server is added without opening or printing the authorization URL, start it
+explicitly:
+
+```bash
 codex mcp login besedy
 ```
 
@@ -100,10 +114,11 @@ claude mcp add --transport http --scope user besedy https://besedy.org/api/mcp
 claude mcp login besedy
 ```
 
-The login command opens the Besedy OAuth flow in a browser; no Google credential
-or bearer token is pasted into the client configuration. See the
-[MCP server reference](docs/web/mcp-server.md) for the tool contracts, access
-matrix, authentication design, self-hosted enablement, and local smoke test.
+The OAuth flow opens Besedy in a browser and continues through Google sign-in;
+no Google credential or bearer token is pasted into the client configuration.
+See the [MCP server reference](docs/web/mcp-server.md) for the tool contracts,
+access matrix, authentication design, self-hosted enablement, and local smoke
+test.
 
 ## Get started
 
