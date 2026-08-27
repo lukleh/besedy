@@ -136,7 +136,7 @@ function catalogToolCalls(catalogId: string) {
     },
     {
       name: 'get_transcript',
-      arguments: { catalogId, audioHash: 'a'.repeat(64) },
+      arguments: { catalogId, audioHash: 'a'.repeat(64), mode: 'page' },
     },
     {
       name: 'search_transcripts',
@@ -442,6 +442,7 @@ describe('MCP personalized tool surface', () => {
     }>;
     const searchTool = tools.find((tool) => tool.name === 'search_transcripts');
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
+    const eventsTool = tools.find((tool) => tool.name === 'list_events');
 
     expect(searchTool?.description).toContain('filters.audioHashes');
     expect(searchTool?.description).toContain('get_transcript');
@@ -455,10 +456,19 @@ describe('MCP personalized tool surface', () => {
       searchTool?.inputSchema.properties.maxPerRecording.description,
     ).toContain('recording/audio hash');
     expect(transcriptTool?.description).toContain('verify important evidence');
-    expect(transcriptTool?.description).toContain('seekWebUrl');
+    expect(transcriptTool?.description).toContain('complete stored transcript');
+    expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
+      'every segment',
+    );
     expect(
       transcriptTool?.inputSchema.properties.segmentOffset.description,
     ).toContain('continuation.segmentOffset');
+    expect(eventsTool?.inputSchema.properties.date.description).toContain(
+      'year',
+    );
+    expect(eventsTool?.inputSchema.properties.locationId.description).toContain(
+      'location ID',
+    );
   });
 
   it('uses the effective default catalog when catalogId is omitted', async () => {
@@ -493,6 +503,8 @@ describe('MCP personalized tool surface', () => {
       limit: 25,
       released: undefined,
       query: undefined,
+      date: undefined,
+      locationId: undefined,
     });
     expect(body.result?.content).toEqual([
       { type: 'text', text: 'Listed 0 visible Besedy event(s).' },
@@ -501,6 +513,22 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       events: [],
       nextCursor: null,
+    });
+
+    await invokeMcp('tools/call', {
+      name: 'list_events',
+      arguments: {
+        date: { year: 2026, month: 8 },
+        locationId: 7,
+      },
+    });
+    expect(listMcpEvents).toHaveBeenLastCalledWith('viewer-catalog', 'VIEWER', {
+      cursor: undefined,
+      limit: 25,
+      released: undefined,
+      query: undefined,
+      date: { year: 2026, month: 8 },
+      locationId: 7,
     });
   });
 
@@ -571,7 +599,7 @@ describe('MCP personalized tool surface', () => {
     );
   });
 
-  it('applies compact transcript pagination defaults', async () => {
+  it('supports compact transcript defaults and explicit full mode', async () => {
     accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
@@ -613,7 +641,7 @@ describe('MCP personalized tool surface', () => {
 
     const body = await invokeMcp('tools/call', {
       name: 'get_transcript',
-      arguments: { audioHash: 'a'.repeat(64) },
+      arguments: { audioHash: 'a'.repeat(64), mode: 'page' },
     });
 
     expect(body.error).toBeUndefined();
@@ -639,9 +667,26 @@ describe('MCP personalized tool surface', () => {
         backend: undefined,
         startSec: undefined,
         endSec: undefined,
+        mode: 'page',
         segmentOffset: 0,
         segmentLimit: 50,
         maxTextChars: 20_000,
+      },
+    );
+
+    await invokeMcp('tools/call', {
+      name: 'get_transcript',
+      arguments: { audioHash: 'a'.repeat(64), mode: 'full' },
+    });
+    expect(getMcpTranscript).toHaveBeenLastCalledWith(
+      'user-1',
+      'viewer-catalog',
+      'a'.repeat(64),
+      {
+        backend: undefined,
+        startSec: undefined,
+        endSec: undefined,
+        mode: 'full',
       },
     );
   });
@@ -742,6 +787,7 @@ describe('MCP personalized tool surface', () => {
       arguments: {
         catalogId: 'listener-catalog',
         audioHash: 'a'.repeat(64),
+        mode: 'page',
       },
     });
     const structuredContent = body.result?.structuredContent as {

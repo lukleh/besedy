@@ -255,15 +255,20 @@ describe('MCP read service', () => {
     db.catalogEventRecording.count.mockResolvedValue(2);
   });
 
-  it('filters listener counts, searches descriptions, and returns compact links', async () => {
+  it('filters events by partial date and location and returns visible hashes', async () => {
     const result = await listMcpEvents('catalog-a', 'LISTENER', {
       limit: 25,
       query: 'subject',
+      date: { year: 2026, month: 8 },
+      locationId: 7,
     });
 
     expect(db.catalogEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          dateYear: 2026,
+          dateMonth: 8,
+          locationId: 7,
           OR: expect.arrayContaining([
             {
               description: {
@@ -280,6 +285,8 @@ describe('MCP read service', () => {
       'catalog-a',
       ['visible-recording', 'hidden-recording'],
     );
+    expect(db.catalogEntry.findMany).not.toHaveBeenCalled();
+    expect(db.audioMetadata.findMany).not.toHaveBeenCalled();
     expect(result).toEqual({
       catalogId: 'catalog-a',
       events: [
@@ -292,14 +299,9 @@ describe('MCP read service', () => {
           sessionIndex: 1,
           location: { id: 7, name: 'Prague' },
           released: true,
-          recordingCount: 1,
-          primaryRecording: {
-            audioHash: 'visible-recording',
-            title: 'Recording title',
-            artist: 'Speaker',
-            durationHms: '00:42:00',
-            ready: true,
-            published: true,
+          recordings: {
+            primaryAudioHash: 'visible-recording',
+            audioHashes: ['visible-recording'],
           },
           updatedAt: '2026-08-26T10:00:00.000Z',
         },
@@ -450,6 +452,7 @@ describe('MCP read service', () => {
       'catalog-a',
       'visible-recording',
       {
+        mode: 'page',
         backend: 'whisperx/model',
         startSec: 5,
         endSec: 15,
@@ -470,6 +473,7 @@ describe('MCP read service', () => {
       availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 20,
+      mode: 'page',
       timeWindow: { startSec: 5, endSec: 15 },
       segments: {
         items: [
@@ -495,6 +499,7 @@ describe('MCP read service', () => {
         catalogId: 'catalog-a',
         audioHash: 'visible-recording',
         backend: 'whisperx/model',
+        mode: 'page',
         startSec: 5,
         endSec: 15,
         segmentOffset: 1,
@@ -504,12 +509,43 @@ describe('MCP read service', () => {
     });
   });
 
+  it('returns every matching transcript segment in full mode', async () => {
+    const result = await getMcpTranscript(
+      'user-1',
+      'catalog-a',
+      'visible-recording',
+      {
+        mode: 'full',
+        startSec: 5,
+      },
+    );
+
+    expect(result).toMatchObject({
+      mode: 'full',
+      timeWindow: { startSec: 5, endSec: null },
+      segments: {
+        offset: 0,
+        limit: null,
+        maxTextChars: null,
+        totalMatching: 3,
+        nextOffset: null,
+        items: [
+          { segmentIndex: 1, text: 'a'.repeat(700) },
+          { segmentIndex: 2, text: 'b'.repeat(700) },
+          { segmentIndex: 3, text: 'after' },
+        ],
+      },
+      continuation: null,
+    });
+  });
+
   it('builds seek links from the first segment actually returned after an offset', async () => {
     const result = await getMcpTranscript(
       'user-1',
       'catalog-a',
       'visible-recording',
       {
+        mode: 'page',
         segmentOffset: 2,
         segmentLimit: 1,
         maxTextChars: 1_000,
@@ -535,6 +571,7 @@ describe('MCP read service', () => {
       'catalog-a',
       'visible-recording',
       {
+        mode: 'page',
         segmentOffset: 10,
         segmentLimit: 1,
         maxTextChars: 1_000,
@@ -621,6 +658,7 @@ describe('MCP read service', () => {
             catalogId: 'catalog-a',
             audioHash: 'visible-recording',
             backend: 'whisperx/model',
+            mode: 'page',
             startSec: 30,
             endSec: 90,
           },

@@ -32,16 +32,30 @@ export interface McpEventListInput {
   limit: number;
   released?: boolean;
   query?: string;
+  date?: {
+    year: number;
+    month?: number;
+    day?: number;
+  };
+  locationId?: number;
 }
 
-export interface McpTranscriptInput {
+interface McpTranscriptCommonInput {
   backend?: TranscriptBackend;
   startSec?: number;
   endSec?: number;
-  segmentOffset: number;
-  segmentLimit: number;
-  maxTextChars: number;
 }
+
+export type McpTranscriptInput = McpTranscriptCommonInput &
+  (
+    | { mode: 'full' }
+    | {
+        mode: 'page';
+        segmentOffset: number;
+        segmentLimit: number;
+        maxTextChars: number;
+      }
+  );
 
 export interface McpEventRecordingPageInput {
   offset: number;
@@ -170,6 +184,16 @@ export async function listMcpEvents(
   const filters: Prisma.CatalogEventWhereInput = {
     ...(input.cursor ? { AND: [{ id: { lt: input.cursor } }] } : {}),
     ...(input.released === undefined ? {} : { released: input.released }),
+    ...(input.date
+      ? {
+          dateYear: input.date.year,
+          ...(input.date.month === undefined
+            ? {}
+            : { dateMonth: input.date.month }),
+          ...(input.date.day === undefined ? {} : { dateDay: input.date.day }),
+        }
+      : {}),
+    ...(input.locationId === undefined ? {} : { locationId: input.locationId }),
     ...(literalQuery
       ? {
           OR: [
@@ -207,31 +231,16 @@ export async function listMcpEvents(
     catalogGrant,
     pageHashes,
   );
-  const primaryHashes = page
-    .map(
-      (event) =>
-        event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
-        event.recordings[0]?.audioHash,
-    )
-    .filter(
-      (hash): hash is string => hash !== undefined && visibleHashes.has(hash),
-    );
-  const recordingByHash = await loadCatalogRecordingReadModels(
-    catalogId,
-    primaryHashes,
-  );
-
   return {
     catalogId,
     events: page.map((event) => {
-      const primaryHash =
-        event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
-        event.recordings[0]?.audioHash ??
+      const visibleRecordings = event.recordings.filter((recording) =>
+        visibleHashes.has(recording.audioHash),
+      );
+      const primaryAudioHash =
+        visibleRecordings.find((recording) => recording.isPrimary)?.audioHash ??
+        visibleRecordings[0]?.audioHash ??
         null;
-      const visiblePrimaryHash =
-        primaryHash !== null && visibleHashes.has(primaryHash)
-          ? primaryHash
-          : null;
       return {
         id: event.id,
         webUrl: buildEventWebUrl(catalogId, event.id),
@@ -241,15 +250,12 @@ export async function listMcpEvents(
         sessionIndex: event.sessionIndex,
         location: event.location,
         released: event.released,
-        recordingCount: event.recordings.filter((recording) =>
-          visibleHashes.has(recording.audioHash),
-        ).length,
-        primaryRecording:
-          visiblePrimaryHash === null
-            ? null
-            : serializeRecordingSummary(
-                recordingByHash.get(visiblePrimaryHash)!,
-              ),
+        recordings: {
+          primaryAudioHash,
+          audioHashes: visibleRecordings.map(
+            (recording) => recording.audioHash,
+          ),
+        },
         updatedAt: event.updatedAt.toISOString(),
       };
     }),
@@ -436,15 +442,19 @@ export async function getMcpTranscript(
         (input.startSec === undefined || segment.end > input.startSec) &&
         (input.endSec === undefined || segment.start < input.endSec),
     );
-  const candidates = matchingSegments.slice(
-    input.segmentOffset,
-    input.segmentOffset + input.segmentLimit,
-  );
+  const candidates =
+    input.mode === 'full'
+      ? matchingSegments
+      : matchingSegments.slice(
+          input.segmentOffset,
+          input.segmentOffset + input.segmentLimit,
+        );
   const segments = [];
   let returnedTextChars = 0;
   for (const { segment, segmentIndex } of candidates) {
     const textChars = segment.text.length;
     if (
+      input.mode === 'page' &&
       segments.length > 0 &&
       returnedTextChars + textChars > input.maxTextChars
     ) {
@@ -462,16 +472,18 @@ export async function getMcpTranscript(
     returnedTextChars += textChars;
   }
   const nextOffset =
+    input.mode === 'page' &&
     input.segmentOffset + segments.length < matchingSegments.length
       ? input.segmentOffset + segments.length
       : null;
   const continuation =
-    nextOffset === null
+    input.mode === 'full' || nextOffset === null
       ? null
       : {
           catalogId,
           audioHash,
           backend,
+          mode: 'page' as const,
           startSec: input.startSec ?? null,
           endSec: input.endSec ?? null,
           segmentOffset: nextOffset,
@@ -488,15 +500,16 @@ export async function getMcpTranscript(
     availableBackends: available.backends,
     language: transcript.language ?? null,
     durationSec: transcript.duration ?? null,
+    mode: input.mode,
     timeWindow: {
       startSec: input.startSec ?? null,
       endSec: input.endSec ?? null,
     },
     segments: {
       items: segments,
-      offset: input.segmentOffset,
-      limit: input.segmentLimit,
-      maxTextChars: input.maxTextChars,
+      offset: input.mode === 'page' ? input.segmentOffset : 0,
+      limit: input.mode === 'page' ? input.segmentLimit : null,
+      maxTextChars: input.mode === 'page' ? input.maxTextChars : null,
       returnedTextChars,
       totalMatching: matchingSegments.length,
       nextOffset,
@@ -619,6 +632,7 @@ export async function searchMcpTranscripts(
               catalogId,
               audioHash: result.audioHash,
               backend: transcriptBackend,
+              mode: 'page' as const,
               startSec:
                 input.contextChunks > 0
                   ? result.contextStartSec
