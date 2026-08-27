@@ -1,9 +1,7 @@
 import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
-import {
-  getMcpAccessProfile,
-} from '@/lib/mcp/access-profile';
+import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
 import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
 import {

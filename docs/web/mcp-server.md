@@ -247,7 +247,7 @@ filesystem paths or audio URLs.
 
 | Tool                 | Purpose                                                       | Minimum catalog capability          |
 | -------------------- | ------------------------------------------------------------- | ----------------------------------- |
-| `who_am_i`           | Show the current account and OAuth connection                   | Active portal user                  |
+| `who_am_i`           | Show the current account and OAuth connection                 | Active portal user                  |
 | `list_catalogs`      | List accessible catalogs and their capabilities               | Active portal user                  |
 | `list_events`        | Page/filter visible events and their metadata                 | Catalog access                      |
 | `get_event`          | Get one visible event and paged recording summaries           | Catalog access and event visibility |
