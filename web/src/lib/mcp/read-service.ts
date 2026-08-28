@@ -402,9 +402,13 @@ function buildRecordingSeekWebUrl(
   catalogId: string,
   audioHash: string,
   startSec: number,
+  endSec?: number,
 ): string {
   const url = new URL(buildRecordingWebUrl(catalogId, audioHash));
   url.searchParams.set('seek', String(startSec));
+  if (endSec !== undefined && endSec > startSec) {
+    url.searchParams.set('end', String(endSec));
+  }
   return url.toString();
 }
 
@@ -868,7 +872,12 @@ export async function getMcpTranscript(
       startSec: segment.start,
       endSec: segment.end,
       speaker: segment.speaker ?? null,
-      webUrl: buildRecordingSeekWebUrl(catalogId, audioHash, segment.start),
+      webUrl: buildRecordingSeekWebUrl(
+        catalogId,
+        audioHash,
+        segment.start,
+        segment.end,
+      ),
     });
     returnedTextChars += textChars;
   }
@@ -1011,6 +1020,7 @@ export async function searchMcpTranscripts(
             catalogId,
             result.audioHash,
             result.startSec,
+            result.endSec,
           ),
         },
         context:

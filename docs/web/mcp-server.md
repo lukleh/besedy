@@ -652,7 +652,9 @@ timestamped `webUrl`.
 
 The response also reports the chosen `backend`, `availableBackends`, language,
 duration, normalized `timeWindow`, `recordingWebUrl`, and a `seekWebUrl` for
-the first returned segment. An empty page has `seekWebUrl: null`. The
+the first returned segment. Segment and seek links include both `seek` and
+`end` timestamps. The player stops once at the linked end; pressing play again
+continues through the recording. An empty page has `seekWebUrl: null`. The
 `segments` object reports `returnedTextChars`, `totalMatching`, and
 `nextOffset`. Full mode reports `limit` and `maxTextChars` as `null` and always
 returns `nextOffset: null` and `continuation: null`. When more page-mode data
@@ -667,7 +669,7 @@ Example full-mode return value:
   "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "seekWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0",
+  "seekWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5",
   "backend": "faster-whisper/large-v3@silero_vad_v6",
   "availableBackends": [
     "faster-whisper/large-v3@silero_vad_v6",
@@ -686,7 +688,7 @@ Example full-mode return value:
         "startSec": 0,
         "endSec": 12.5,
         "speaker": null,
-        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0"
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5"
       }
     ],
     "offset": 0,
@@ -721,7 +723,7 @@ return a continuation descriptor:
         "startSec": 0,
         "endSec": 12.5,
         "speaker": null,
-        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0"
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5"
       }
     ]
   },
@@ -787,6 +789,10 @@ Every result contains:
   actual transcript backend, `mode: "page"`, and the time range to verify. This
   may be `null`.
 
+The match `webUrl` is a bounded excerpt link: it seeks to `startSec`, stops
+once at `endSec`, and then permits ordinary continued playback when the user
+presses play again. The recording summary's `webUrl` remains unbounded.
+
 The generated request can be passed directly to `get_transcript`:
 
 ```json
@@ -844,7 +850,7 @@ Example return value:
         "startSec": 600,
         "endSec": 620,
         "text": "Example matching transcript passage.",
-        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=600"
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=600&end=620"
       },
       "context": {
         "startSec": 580,

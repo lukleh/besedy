@@ -169,6 +169,29 @@ describe("useRecordingPlayback", () => {
     expect(mocks.radio.handOffPlayback).not.toHaveBeenCalled();
   });
 
+  it("restores a bounded seek from the URL", () => {
+    mocks.searchParams = new URLSearchParams({ seek: "12.5", end: "18.75" });
+
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+    expect(result.current.seekRequest).toEqual({
+      time: 12.5,
+      end: 18.75,
+      key: expect.any(Number),
+    });
+  });
+
+  it("ignores an end that does not follow the URL seek", () => {
+    mocks.searchParams = new URLSearchParams({ seek: "12.5", end: "12" });
+
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+    expect(result.current.seekRequest).toEqual({
+      time: 12.5,
+      key: expect.any(Number),
+    });
+  });
+
   it("restores a saved position synchronously under React Strict Mode", async () => {
     // Twin of the handoff seek: the same StrictMode setup -> cleanup -> setup
     // would drop a deferred-microtask restore, so it must be synchronous.

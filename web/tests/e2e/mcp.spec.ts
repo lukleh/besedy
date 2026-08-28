@@ -778,7 +778,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       catalogId: result?.defaultCatalogId,
       audioHash,
       recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
-      seekWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
+      seekWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0&end=5`,
       backend: TRANSCRIPT_BACKEND,
       language: 'cs',
       mode: 'full',
@@ -797,7 +797,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       startSec: 0,
       endSec: 5,
       speaker: 'SPEAKER_00',
-      webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0`,
+      webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0&end=5`,
     });
     expect(
       transcriptBody.result?.structuredContent.segments.returnedTextChars,
@@ -879,7 +879,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           match: {
             chunkId: 'mcp-smoke-chunk-1',
             text: 'Deterministic Besedy MCP search evidence.',
-            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5`,
+            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5&end=10`,
           },
           context: {
             beforeText: 'Neighbor context before the deterministic evidence.',

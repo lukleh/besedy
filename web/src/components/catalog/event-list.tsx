@@ -620,10 +620,11 @@ export function EventList({
   };
   const openRagResult = (result: RagSearchResult) => {
     const seek = result.startSec ?? 0;
+    const end = result.endSec;
     router.push(
       `/catalog/${catalogId}/recording/${result.audioHash}?seek=${encodeURIComponent(
         String(seek),
-      )}&fromSearch=1`,
+      )}${end > seek ? `&end=${encodeURIComponent(String(end))}` : ""}&fromSearch=1`,
     );
   };
 

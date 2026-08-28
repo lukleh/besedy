@@ -7,6 +7,7 @@ export interface AudioPlayerProps {
   onEnded?: (duration: number) => void;
   seekTo?: number;
   seekKey?: number;
+  playbackEnd?: number;
   autoPlayOnSeek?: boolean;
 }
 
