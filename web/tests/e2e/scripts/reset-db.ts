@@ -8,7 +8,9 @@
  */
 
 import { execSync } from "child_process";
+
 const TEST_DB_URL =
+  process.env.PLAYWRIGHT_DATABASE_URL ??
   "postgresql://besedy_test:besedy_test@localhost:5434/besedy_test";
 
 function runCommand(

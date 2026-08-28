@@ -233,8 +233,8 @@ through the development runtime.
    (re)creation via the compose `networks:` block -- under either `prod-up` or
    `prod-deploy`; use `prod-deploy` for a release because it also rebuilds the
    image and runs migrations, not because it is the only recipe that joins the
-   network. (`prod-up` and `jobs-prod-up` create the external `besedy-internal`
-   network if it is missing; `prod-deploy` assumes it already exists.)
+   network. `prod-up`, `prod-deploy`, and `jobs-prod-up` create the external
+   `besedy-internal` network if it is missing.
 2. **Shared Prefect + production runtime:**
 
    Before the first hardened deployment, create the output root and make it

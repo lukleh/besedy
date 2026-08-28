@@ -15,7 +15,7 @@ import path from "path";
 import fs from "fs/promises";
 import { TEST_AUDIO_FILES } from "../../prisma/test-data";
 
-const TEST_WEB_URL = "http://localhost:3002";
+const TEST_WEB_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3002";
 const MAX_RETRIES = 60;
 const RETRY_DELAY = 2000;
 const TEST_COMPOSE_INSTANCE = process.env.BESEDY_WEB_COMPOSE_INSTANCE ?? "test";

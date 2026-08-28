@@ -596,12 +596,18 @@ test-up:
     # Wait for web server
     echo "Waiting for web server..."
     test_web_port="$(resolve_test_port web 3000)"
+    web_ready=false
     for i in {1..60}; do
       if curl -sf "http://127.0.0.1:${test_web_port}/api/health" > /dev/null 2>&1; then
+        web_ready=true
         break
       fi
       sleep 1
     done
+    if [[ "$web_ready" != true ]]; then
+      echo "Test web server did not become ready on port $test_web_port" >&2
+      exit 1
+    fi
 
     echo "Test environment ready on port $test_web_port"
 
