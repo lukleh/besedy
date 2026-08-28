@@ -379,8 +379,9 @@ Use this tool to browse events or resolve an event ID before calling
 | Argument     | Type                                     | Default           | Meaning                                                                |
 | ------------ | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------- |
 | `catalogId`  | string                                   | effective default | Catalog to read                                                        |
-| `cursor`     | positive integer                         | omitted           | Event ID returned as `nextCursor` by the previous page                 |
+| `cursor`     | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page       |
 | `limit`      | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
+| `order`      | `asc` or `desc`                          | `desc`            | Chronological date order; ascending returns oldest events first        |
 | `released`   | boolean                                  | omitted           | Include only released or only unreleased events                        |
 | `query`      | non-empty string, at most 200 characters | omitted           | Case-insensitive literal match against title, description, or location |
 | `date`       | partial date object                      | omitted           | Event date prefix: required `year`, optional `month`, optional `day`   |
@@ -391,8 +392,9 @@ form matches that exact date prefix. A day without a month is invalid. Use
 `locationId` for exact location matching or `query` when only the location name
 is known.
 
-Events are ordered by descending event ID. Each event includes its metadata,
-release state, last-updated timestamp, authenticated `webUrl`, and a
+Events are ordered by event year, month, day, session index, and ID in the
+selected direction. Missing month or day values sort after known values. Each
+event includes its metadata, release state, last-updated timestamp, authenticated `webUrl`, and a
 permission-scoped `recordings` object. `recordings.audioHashes` contains every
 visible attached recording hash in event sort order.
 `recordings.primaryAudioHash` identifies the visible primary recording, falls
@@ -427,7 +429,9 @@ Example return value:
 }
 ```
 
-Pass `nextCursor` unchanged to continue; `null` marks the final page.
+Pass `nextCursor` unchanged with the same catalog, order, and filters to
+continue; `null` marks the final page. A malformed cursor, or one used with a
+different catalog or order, returns `invalid_cursor`.
 
 ### `get_event`
 

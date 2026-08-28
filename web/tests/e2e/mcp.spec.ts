@@ -461,7 +461,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         method: 'tools/call',
         params: {
           name: 'list_events',
-          arguments: { limit: 10, date: { year: 2024 } },
+          arguments: { limit: 10, order: 'asc', date: { year: 2024 } },
           _meta: envelope,
         },
       },
@@ -479,7 +479,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             audioHashes: string[];
           };
         }>;
-        nextCursor: number | null;
+        nextCursor: string | null;
       }>
     >;
     expect(eventsBody.error).toBeUndefined();
