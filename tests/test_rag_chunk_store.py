@@ -90,7 +90,7 @@ def test_write_chunk_store_builds_accent_insensitive_fts_index(tmp_path: Path) -
     assert _fts_matches(store_path, '"zlutoucky kun"') == ["chunk-0"]
 
 
-def test_ensure_chunk_store_fts_backfills_existing_store(tmp_path: Path) -> None:
+def test_ensure_chunk_store_fts_recovers_partial_existing_backfill(tmp_path: Path) -> None:
     store_path = tmp_path / "legacy_chunk_store.sqlite"
     with sqlite3.connect(store_path) as connection:
         connection.executescript(
@@ -120,6 +120,12 @@ def test_ensure_chunk_store_fts_backfills_existing_store(tmp_path: Path) -> None
               'v2',
               3,
               '/tmp/transcript.json'
+            );
+            CREATE VIRTUAL TABLE chunks_fts USING fts5(
+              text,
+              content = 'chunks',
+              content_rowid = 'rowid',
+              tokenize = 'unicode61 remove_diacritics 2'
             );
             """
         )
