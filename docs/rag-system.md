@@ -64,12 +64,24 @@ Each active runtime bundle must contain:
 | --- | --- |
 | `colbert_index/` | PLAID index files |
 | `index_meta.json` | Runtime metadata (counts, timestamps, config) |
-| `chunk_store.sqlite` | Canonical chunk hydration and neighbor lookup |
+| `chunk_store.sqlite` | Canonical chunk hydration, neighbor lookup, and FTS5 lexical index |
 | `source_state.sqlite` | Incremental sync state (per-`audio_hash` fingerprints) |
 
 Optional:
 
 - `chunk_manifest.jsonl` -- debug/export artifact, rewritten from chunk store at cutover.
+
+### Lexical index
+
+`chunk_store.sqlite` includes an external-content FTS5 index over chunk text. New
+bundle builds populate it automatically. SQLite triggers keep the index aligned
+with chunk inserts, updates, and deletes during incremental sync.
+
+Bundles created before the FTS5 schema was introduced need a one-time backfill.
+The backfill happens automatically when the chunk-store schema is initialized,
+including on the first staged chunk mutation. A full `rag-colbert-index
+--rebuild` also creates a populated FTS index. The web search route remains
+ColBERT-only until a lexical retrieval API is added.
 
 ### Active bundle selection
 
