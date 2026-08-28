@@ -30,4 +30,13 @@ describe('MCP usage analytics ranges', () => {
     );
     expect(now.toISOString()).toBe('2026-08-28T18:00:00.000Z');
   });
+
+  it('clamps a leap-day boundary to the last day of February', () => {
+    const now = new Date('2028-02-29T18:00:00.000Z');
+
+    expect(getMcpUsagePeriodStart('12m', now).toISOString()).toBe(
+      '2027-02-28T00:00:00.000Z',
+    );
+    expect(now.toISOString()).toBe('2028-02-29T18:00:00.000Z');
+  });
 });

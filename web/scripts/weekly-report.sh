@@ -204,7 +204,11 @@ LIMIT $PER_USER_BREAKDOWN_LIMIT
 " | sed 's/^/  • /')
 
 MCP_BY_CLIENT=$(db_query "
-SELECT COALESCE(MAX(client_name), client_id) || ': ' || SUM(calls) ||
+SELECT COALESCE(
+         (ARRAY_AGG(client_name ORDER BY last_used_at DESC)
+            FILTER (WHERE client_name IS NOT NULL))[1],
+         client_id
+       ) || ': ' || SUM(calls) ||
        CASE WHEN SUM(calls) = 1 THEN ' call' ELSE ' calls' END ||
        ' by ' || COUNT(DISTINCT actor_user_id) ||
        CASE WHEN COUNT(DISTINCT actor_user_id) = 1 THEN ' user' ELSE ' users' END

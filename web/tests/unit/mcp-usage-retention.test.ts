@@ -26,6 +26,8 @@ describe('MCP usage retention', () => {
   });
 
   it('rolls up before deleting expired raw rows in one transaction', () => {
+    const beginAt = retentionScript.indexOf('BEGIN;');
+    const lockAt = retentionScript.indexOf('pg_advisory_xact_lock');
     const insertAt = retentionScript.indexOf(
       'INSERT INTO mcp_tool_usage_daily',
     );
@@ -42,7 +44,8 @@ describe('MCP usage retention', () => {
     );
     expect(retentionScript).toContain('BEGIN;');
     expect(retentionScript).toContain('ON CONFLICT');
-    expect(insertAt).toBeGreaterThan(0);
+    expect(lockAt).toBeGreaterThan(beginAt);
+    expect(insertAt).toBeGreaterThan(lockAt);
     expect(deleteAt).toBeGreaterThan(insertAt);
     expect(rollupDeleteAt).toBeGreaterThan(deleteAt);
     expect(retentionScript).toContain('COMMIT;');

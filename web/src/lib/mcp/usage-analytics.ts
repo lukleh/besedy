@@ -77,7 +77,13 @@ export function getMcpUsagePeriodStart(
   else if (range === '7d') start.setUTCDate(start.getUTCDate() - 7);
   else if (range === '30d') start.setUTCDate(start.getUTCDate() - 30);
   else {
-    start.setUTCFullYear(start.getUTCFullYear() - 1);
+    const targetYear = start.getUTCFullYear() - 1;
+    const targetMonth = start.getUTCMonth();
+    const targetDay = Math.min(
+      start.getUTCDate(),
+      new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate(),
+    );
+    start.setUTCFullYear(targetYear, targetMonth, targetDay);
     start.setUTCHours(0, 0, 0, 0);
   }
   return start;

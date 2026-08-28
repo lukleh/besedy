@@ -43,6 +43,14 @@ RESULT="$(compose_cmd exec -T db psql \
 BEGIN;
 SET LOCAL TIME ZONE 'UTC';
 
+DO $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended('besedy:mcp-usage-retention', 0)
+    );
+END
+$$;
+
 WITH rolled_up AS (
     INSERT INTO mcp_tool_usage_daily (
         id,
