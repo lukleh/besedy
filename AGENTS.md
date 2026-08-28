@@ -102,13 +102,16 @@ Keep shared operational facts here and have provider-specific files such as
 ```bash
 cd web
 
-# Run tests (headless) - starts containers, seeds DB, generates fixtures automatically
+# Run tests (headless) against the standard stack started with `just test-up`
 npm run test:e2e
 
 # Specialized test runs
 npm run test:e2e:smoke      # Quick smoke tests only (@smoke tag)
 npm run test:e2e:desktop    # Desktop Chrome only
 npm run test:e2e:security   # Security tests only (@security tag)
+
+# Isolated MCP fixture + RAG mock (run from the repository root)
+(cd .. && just mcp-smoke)
 
 # Interactive modes
 npm run test:e2e:ui         # Interactive UI mode

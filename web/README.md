@@ -226,10 +226,11 @@ npm run test:coverage     # With coverage
 ### E2E Tests (Playwright)
 
 E2E tests run against a production build in an isolated Docker environment on port 3002.
-The test runner handles container startup, DB seeding, and fixture generation automatically.
+Start and seed the standard test stack before invoking the Playwright runner.
+The authenticated MCP suite uses its own isolated stack and deterministic RAG mock.
 
 ```bash
-npm run test:e2e          # Run tests (headless) - starts containers if needed
+npm run test:e2e          # Run tests (headless) against the started test stack
 npm run test:e2e:ui       # Interactive UI mode
 npm run test:e2e:headed   # With visible browser
 npm run test:e2e:teardown # Stop containers (keeps data)
@@ -239,6 +240,8 @@ npm run test:e2e:teardown:clean  # Stop and delete volumes
 Or use just commands:
 ```bash
 just test-up         # Start test environment
+just test-rebuild    # Rebuild the current checkout before release smoke tests
+just mcp-smoke       # Rebuild and run the isolated authenticated MCP suite
 just test-down       # Stop
 just test-down-clean # Stop and delete volumes
 ```
