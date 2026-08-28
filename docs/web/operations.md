@@ -417,7 +417,10 @@ anomalies.
 
 **`mcp-usage-retention.sh`** -- Aggregates raw MCP invocations older than 180
 days into privacy-safe daily rows and deletes the raw rows in the same database
-transaction. Set `MCP_RAW_RETENTION_DAYS` to change the raw retention window.
+transaction. It also deletes daily aggregates older than 400 days. Set
+`MCP_RAW_RETENTION_DAYS` to change the raw retention window and
+`MCP_ROLLUP_RETENTION_DAYS` to change aggregate retention; aggregate retention
+must be at least 366 days so 12-month reports remain complete.
 
 **`weekly-report.sh`** -- Broad operator summary for the last seven days:
 logins, active users, audio activity, MCP tool calls by tool/user/OAuth client,

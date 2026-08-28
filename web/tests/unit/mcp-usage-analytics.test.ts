@@ -13,7 +13,7 @@ describe('MCP usage analytics ranges', () => {
     expect(parseMcpUsageRange(null)).toBe('7d');
   });
 
-  it('calculates UTC period boundaries without mutating the supplied date', () => {
+  it('includes the 12-month boundary day without mutating the supplied date', () => {
     const now = new Date('2026-08-28T18:00:00.000Z');
 
     expect(getMcpUsagePeriodStart('24h', now).toISOString()).toBe(
@@ -26,7 +26,7 @@ describe('MCP usage analytics ranges', () => {
       '2026-07-29T18:00:00.000Z',
     );
     expect(getMcpUsagePeriodStart('12m', now).toISOString()).toBe(
-      '2025-08-28T18:00:00.000Z',
+      '2025-08-28T00:00:00.000Z',
     );
     expect(now.toISOString()).toBe('2026-08-28T18:00:00.000Z');
   });

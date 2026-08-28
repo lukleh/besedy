@@ -6,6 +6,8 @@ set -euo pipefail
 COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
 MCP_RAW_RETENTION_DAYS="${MCP_RAW_RETENTION_DAYS:-180}"
+MCP_ROLLUP_RETENTION_DAYS="${MCP_ROLLUP_RETENTION_DAYS:-400}"
+MIN_MCP_ROLLUP_RETENTION_DAYS=366
 TAG="${REPORT_LOG_TAG:-besedy-mcp-retention}"
 
 case "$MCP_RAW_RETENTION_DAYS" in
@@ -14,6 +16,18 @@ case "$MCP_RAW_RETENTION_DAYS" in
         exit 1
         ;;
 esac
+
+case "$MCP_ROLLUP_RETENTION_DAYS" in
+    ''|*[!0-9]*|0)
+        echo "MCP_ROLLUP_RETENTION_DAYS must be a positive integer, got: $MCP_ROLLUP_RETENTION_DAYS" >&2
+        exit 1
+        ;;
+esac
+
+if (( MCP_ROLLUP_RETENTION_DAYS < MIN_MCP_ROLLUP_RETENTION_DAYS )); then
+    echo "MCP_ROLLUP_RETENTION_DAYS must be at least $MIN_MCP_ROLLUP_RETENTION_DAYS to preserve 12-month reports" >&2
+    exit 1
+fi
 
 compose_cmd() {
     "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
@@ -24,6 +38,7 @@ RESULT="$(compose_cmd exec -T db psql \
     -d besedy \
     -v ON_ERROR_STOP=1 \
     -v retention_days="$MCP_RAW_RETENTION_DAYS" \
+    -v rollup_retention_days="$MCP_ROLLUP_RETENTION_DAYS" \
     -qAt <<'SQL'
 BEGIN;
 SET LOCAL TIME ZONE 'UTC';
@@ -93,8 +108,23 @@ WITH rolled_up AS (
     RETURNING 1
 )
 SELECT
-    COALESCE((SELECT COUNT(*) FROM rolled_up), 0) || ' daily groups updated, ' ||
-    COALESCE((SELECT COUNT(*) FROM deleted), 0) || ' raw rows rolled up and deleted';
+    COALESCE((SELECT COUNT(*) FROM rolled_up), 0) AS daily_groups_updated,
+    COALESCE((SELECT COUNT(*) FROM deleted), 0) AS raw_rows_deleted
+\gset retention_
+
+WITH expired_rollups AS (
+    DELETE FROM mcp_tool_usage_daily
+    WHERE usage_date < CURRENT_DATE - :'rollup_retention_days'::integer
+    RETURNING 1
+)
+SELECT COUNT(*) AS daily_groups_deleted
+FROM expired_rollups
+\gset retention_
+
+SELECT
+    :'retention_daily_groups_updated' || ' daily groups updated, ' ||
+    :'retention_raw_rows_deleted' || ' raw rows rolled up and deleted, ' ||
+    :'retention_daily_groups_deleted' || ' expired daily groups deleted';
 
 COMMIT;
 SQL

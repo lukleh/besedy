@@ -949,9 +949,11 @@ these calls by time, tool, user, client, and catalog. The weekly operator email
 contains the same high-level MCP activity summary.
 
 Raw invocations are retained for 180 days by `mcp-usage-retention.sh`. Before
-deletion they are merged into daily aggregate rows so the 12-month dashboard
-remains complete. The immutable actor ID is retained in both raw and aggregate
-rows, while the optional live `User` relation may be cleared by account deletion.
+deletion they are merged into daily aggregate rows. The aggregates are retained
+for 400 days, keeping the 12-month dashboard complete while bounding actor and
+tool usage data retention. The immutable actor ID is retained in both raw and
+aggregate rows, while the optional live `User` relation may be cleared by
+account deletion.
 
 Telemetry must never contain bearer or refresh tokens, raw search queries,
 transcript text, complete tool arguments, or response content. Search usage

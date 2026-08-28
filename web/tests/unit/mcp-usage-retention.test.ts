@@ -30,12 +30,21 @@ describe('MCP usage retention', () => {
       'INSERT INTO mcp_tool_usage_daily',
     );
     const deleteAt = retentionScript.indexOf('DELETE FROM mcp_tool_invocation');
+    const rollupDeleteAt = retentionScript.indexOf(
+      'DELETE FROM mcp_tool_usage_daily',
+    );
 
     expect(retentionScript).toContain('MCP_RAW_RETENTION_DAYS:-180');
+    expect(retentionScript).toContain('MCP_ROLLUP_RETENTION_DAYS:-400');
+    expect(retentionScript).toContain('MIN_MCP_ROLLUP_RETENTION_DAYS=366');
+    expect(retentionScript).toContain(
+      '-v rollup_retention_days="$MCP_ROLLUP_RETENTION_DAYS"',
+    );
     expect(retentionScript).toContain('BEGIN;');
     expect(retentionScript).toContain('ON CONFLICT');
     expect(insertAt).toBeGreaterThan(0);
     expect(deleteAt).toBeGreaterThan(insertAt);
+    expect(rollupDeleteAt).toBeGreaterThan(deleteAt);
     expect(retentionScript).toContain('COMMIT;');
   });
 });
