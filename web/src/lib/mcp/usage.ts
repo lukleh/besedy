@@ -18,6 +18,7 @@ const CATALOG_SCOPED_TOOLS = new Set([
   'get_recording',
   'get_transcript',
   'search_transcripts',
+  'find_transcript_mentions',
 ]);
 
 type ToolResult = CallToolResult | InputRequiredResult;

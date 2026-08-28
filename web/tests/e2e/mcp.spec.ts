@@ -351,6 +351,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'get_recording',
       'get_transcript',
       'search_transcripts',
+      'find_transcript_mentions',
     ]) {
       expect(legacyToolsText).toContain(`\"name\":\"${toolName}\"`);
     }
@@ -395,6 +396,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'get_recording',
       'get_transcript',
       'search_transcripts',
+      'find_transcript_mentions',
     ]);
 
     const identityResponse = await request.post(MCP_RESOURCE, {
@@ -903,6 +905,56 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'Deterministic Besedy MCP search evidence.',
     );
     expect(searchBody.result?.structuredContent.results[0]).not.toHaveProperty(
+      'score',
+    );
+
+    const lexicalResponse = await request.post(MCP_RESOURCE, {
+      headers: {
+        ...mcpHeaders,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'find_transcript_mentions',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 8,
+        method: 'tools/call',
+        params: {
+          name: 'find_transcript_mentions',
+          arguments: {
+            query: 'deterministic evidence',
+            matchMode: 'phrase',
+            limit: 5,
+            contextChunks: 1,
+            maxPerRecording: 2,
+            filters: { eventIds: [event!.id] },
+          },
+          _meta: envelope,
+        },
+      },
+    });
+    expect(lexicalResponse.ok()).toBe(true);
+    const lexicalBody = (await lexicalResponse.json()) as McpResponse<
+      McpToolResult<{
+        retrieval: {
+          mode: string;
+          matchMode: string;
+          corpusCoverage: string;
+          totalMatches: number;
+        };
+        results: Array<{ match: { chunkId: string }; score?: number }>;
+      }>
+    >;
+    expect(lexicalBody.error).toBeUndefined();
+    expect(lexicalBody.result?.structuredContent).toMatchObject({
+      retrieval: {
+        mode: 'lexical',
+        matchMode: 'phrase',
+        corpusCoverage: 'complete',
+        totalMatches: 1,
+      },
+      results: [{ match: { chunkId: 'mcp-smoke-chunk-1' } }],
+    });
+    expect(lexicalBody.result?.structuredContent.results[0]).not.toHaveProperty(
       'score',
     );
   } finally {

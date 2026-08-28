@@ -21,9 +21,14 @@ import {
   type TranscriptBackend,
 } from '@/lib/transcript';
 import { listTranscriptBackendPriorities } from '@/lib/transcript-priority';
-import { executeCatalogSearch } from '@/app/api/catalogs/[id]/search/search-service';
+import {
+  executeCatalogLexicalSearch,
+  executeCatalogSearch,
+  type CatalogSearchResult,
+} from '@/app/api/catalogs/[id]/search/search-service';
 import {
   RagServiceError,
+  type LexicalMatchMode,
   type SearchMetadataFilters,
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import { getMcpResourceUrl } from '@/lib/mcp/config';
@@ -955,22 +960,102 @@ export async function searchMcpTranscripts(
       failOnMissingBundle: true,
     });
   } catch (error) {
-    if (error instanceof RagServiceError) {
-      if (error.status === 404) {
-        throw new McpReadError(
-          'search_not_configured',
-          'Transcript search is not configured for this catalog',
-        );
-      }
+    throwMcpSearchError(error);
+  }
+  const results = await serializeMcpSearchResults(
+    catalogId,
+    execution.results,
+    input.contextChunks,
+  );
+
+  return {
+    catalogId,
+    query: execution.query,
+    retrieval: {
+      mode: 'semantic' as const,
+      exhaustive: false,
+      requestedLimit: input.limit,
+      returnedCount: results.length,
+      maxPerRecording: input.maxPerRecording,
+    },
+    results,
+  };
+}
+
+export async function findMcpTranscriptMentions(
+  catalogId: string,
+  catalogGrant: AccessLevel | null,
+  input: {
+    query: string;
+    matchMode: LexicalMatchMode;
+    limit: number;
+    contextChunks: number;
+    maxPerRecording: number;
+    filters?: SearchMetadataFilters;
+  },
+) {
+  let execution: Awaited<ReturnType<typeof executeCatalogLexicalSearch>>;
+  try {
+    execution = await executeCatalogLexicalSearch({
+      catalogId,
+      query: input.query,
+      matchMode: input.matchMode,
+      limit: input.limit,
+      includeNeighbors: input.contextChunks > 0,
+      neighborCount: input.contextChunks,
+      maxPerAudio: input.maxPerRecording,
+      metadataFilters: input.filters ?? null,
+      accessLevel: catalogGrant,
+      failOnMissingBundle: true,
+    });
+  } catch (error) {
+    throwMcpSearchError(error);
+  }
+  const results = await serializeMcpSearchResults(
+    catalogId,
+    execution.results,
+    input.contextChunks,
+  );
+
+  return {
+    catalogId,
+    query: execution.query,
+    retrieval: {
+      mode: 'lexical' as const,
+      matchMode: input.matchMode,
+      corpusCoverage: 'complete' as const,
+      totalMatches: execution.totalMatches,
+      requestedLimit: input.limit,
+      returnedCount: results.length,
+      maxPerRecording: input.maxPerRecording,
+    },
+    results,
+  };
+}
+
+function throwMcpSearchError(error: unknown): never {
+  if (error instanceof RagServiceError) {
+    if (error.status === 404) {
       throw new McpReadError(
-        'search_unavailable',
-        'Transcript search is temporarily unavailable',
+        'search_not_configured',
+        'Transcript search is not configured for this catalog',
       );
     }
-    throw error;
+    throw new McpReadError(
+      'search_unavailable',
+      'Transcript search is temporarily unavailable',
+    );
   }
+  throw error;
+}
+
+async function serializeMcpSearchResults(
+  catalogId: string,
+  searchResults: CatalogSearchResult[],
+  contextChunks: number,
+) {
   const audioHashes = [
-    ...new Set(execution.results.map((result) => result.audioHash)),
+    ...new Set(searchResults.map((result) => result.audioHash)),
   ];
   const [recordingByHash, priorities] = await Promise.all([
     loadCatalogRecordingReadModels(catalogId, audioHashes),
@@ -990,71 +1075,57 @@ export async function searchMcpTranscripts(
     ),
   );
 
-  return {
-    catalogId,
-    query: execution.query,
-    retrieval: {
-      mode: 'semantic' as const,
-      exhaustive: false,
-      requestedLimit: input.limit,
-      returnedCount: execution.results.length,
-      maxPerRecording: input.maxPerRecording,
-    },
-    results: execution.results.map((result) => {
-      const transcriptBackend = resolveSearchTranscriptBackend(
-        result.citation.backendKey,
-        availableBackendsByHash.get(result.audioHash) ?? [],
-      );
-      return {
-        rank: result.rank,
-        recording: {
-          ...serializeRecordingSummary(recordingByHash.get(result.audioHash)!),
-          webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
-        },
-        match: {
-          chunkId: result.chunkId,
-          startSec: result.startSec,
-          endSec: result.endSec,
-          text: result.text,
-          webUrl: buildRecordingSeekWebUrl(
-            catalogId,
-            result.audioHash,
-            result.startSec,
-            result.endSec,
-          ),
-        },
-        context:
-          input.contextChunks > 0
-            ? {
-                startSec: result.contextStartSec,
-                endSec: result.contextEndSec,
-                beforeText:
-                  result.neighbors.before
-                    .map((neighbor) => neighbor.text)
-                    .join('\n\n') || null,
-                afterText:
-                  result.neighbors.after
-                    .map((neighbor) => neighbor.text)
-                    .join('\n\n') || null,
-              }
-            : null,
-        metadata: result.metadata,
-        citation: result.citation,
-        transcriptRequest: transcriptBackend
+  return searchResults.map((result) => {
+    const transcriptBackend = resolveSearchTranscriptBackend(
+      result.citation.backendKey,
+      availableBackendsByHash.get(result.audioHash) ?? [],
+    );
+    return {
+      rank: result.rank,
+      recording: {
+        ...serializeRecordingSummary(recordingByHash.get(result.audioHash)!),
+        webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
+      },
+      match: {
+        chunkId: result.chunkId,
+        startSec: result.startSec,
+        endSec: result.endSec,
+        text: result.text,
+        webUrl: buildRecordingSeekWebUrl(
+          catalogId,
+          result.audioHash,
+          result.startSec,
+          result.endSec,
+        ),
+      },
+      context:
+        contextChunks > 0
           ? {
-              catalogId,
-              audioHash: result.audioHash,
-              backend: transcriptBackend,
-              mode: 'page' as const,
-              startSec:
-                input.contextChunks > 0
-                  ? result.contextStartSec
-                  : result.startSec,
-              endSec:
-                input.contextChunks > 0 ? result.contextEndSec : result.endSec,
+              startSec: result.contextStartSec,
+              endSec: result.contextEndSec,
+              beforeText:
+                result.neighbors.before
+                  .map((neighbor) => neighbor.text)
+                  .join('\n\n') || null,
+              afterText:
+                result.neighbors.after
+                  .map((neighbor) => neighbor.text)
+                  .join('\n\n') || null,
             }
           : null,
-      };
-    }),
-  };
+      metadata: result.metadata,
+      citation: result.citation,
+      transcriptRequest: transcriptBackend
+        ? {
+            catalogId,
+            audioHash: result.audioHash,
+            backend: transcriptBackend,
+            mode: 'page' as const,
+            startSec:
+              contextChunks > 0 ? result.contextStartSec : result.startSec,
+            endSec: contextChunks > 0 ? result.contextEndSec : result.endSec,
+          }
+        : null,
+    };
+  });
 }

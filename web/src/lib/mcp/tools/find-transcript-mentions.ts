@@ -1,10 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
+  LexicalMatchModeSchema,
   MAX_PER_AUDIO_LIMIT,
   SearchMetadataFiltersSchema,
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
-import { searchMcpTranscripts } from '@/lib/mcp/read-service';
+import { findMcpTranscriptMentions } from '@/lib/mcp/read-service';
+import { FindTranscriptMentionsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
@@ -13,7 +15,6 @@ import {
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
-import { SearchTranscriptsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_SEARCH_LIMIT = 50;
 const MAX_SEARCH_LIMIT = 200;
@@ -22,10 +23,10 @@ const MAX_SEARCH_CONTEXT_CHUNKS = 3;
 const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 10;
 
 function renderSearchContent(
-  result: Awaited<ReturnType<typeof searchMcpTranscripts>>,
+  result: Awaited<ReturnType<typeof findMcpTranscriptMentions>>,
 ): string {
   const lines = [
-    `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} non-exhaustive match(es).`,
+    `Lexical transcript search for ${JSON.stringify(result.query)} found ${result.retrieval.totalMatches} complete-corpus match(es) and returned ${result.results.length}.`,
   ];
   for (const searchResult of result.results) {
     lines.push(
@@ -43,7 +44,7 @@ function renderSearchContent(
   return lines.join('\n');
 }
 
-export function registerSearchTranscriptsTool(
+export function registerFindTranscriptMentionsTool(
   server: McpServer,
   context: BesedyMcpRequestContext,
 ): void {
@@ -51,11 +52,11 @@ export function registerSearchTranscriptsTool(
   registerBesedyTool(
     server,
     context,
-    'search_transcripts',
+    'find_transcript_mentions',
     {
-      title: 'Search transcripts by meaning',
+      title: 'Find exact transcript mentions',
       description:
-        'Find candidate passages by meaning across accessible Besedy transcripts. Use this for questions, themes, related concepts, paraphrases, and different wording; it can find relevant passages even when the exact query words are absent. This search is ranked and non-exhaustive. When actual words matter—for names, terminology, quotations, fixed phrases, prefixes, or a complete literal check—use find_transcript_mentions instead. For ordinary content questions, use a small first pass only for orientation, then run precise broad searches before synthesizing. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
+        'Search the actual transcript wording across all accessible Besedy recordings. Use this for names, terminology, quotations, fixed phrases, prefixes, or a complete check for a literal token pattern. Use search_transcripts instead when you want passages related by meaning, including concepts, paraphrases, or different wording. Filters, recording summaries, context, citations, and transcriptRequest behave like search_transcripts. Results are ordered by text-match relevance and expose rank, not an internal score.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -69,18 +70,23 @@ export function registerSearchTranscriptsTool(
           .trim()
           .min(1)
           .max(1_000)
+          .regex(
+            /[\p{L}\p{N}]/u,
+            'Query must contain a searchable letter or number.',
+          )
           .describe(
-            'Natural-language question or description of the meaning to find. Meaningfully different formulations may surface different candidate passages.',
+            'Literal words or phrase to find. Search operators are not accepted; punctuation is safely tokenized.',
           ),
+        matchMode: LexicalMatchModeSchema.default('all_terms').describe(
+          'How query tokens must match: all_terms requires every token in a chunk, phrase requires adjacency and order, any_term accepts any token, and prefix matches the beginning of every token.',
+        ),
         limit: z
           .number()
           .int()
           .min(1)
           .max(MAX_SEARCH_LIMIT)
           .default(DEFAULT_SEARCH_LIMIT)
-          .describe(
-            'Maximum number of non-exhaustive matches to return. The broad precision default is 50 and the maximum is 200. Use a smaller limit only for initial orientation or a tightly focused follow-up, not as the final evidence base for an ordinary content question.',
-          ),
+          .describe('Maximum number of matches to return, from 1 to 200.'),
         contextChunks: z
           .number()
           .int()
@@ -88,7 +94,7 @@ export function registerSearchTranscriptsTool(
           .max(MAX_SEARCH_CONTEXT_CHUNKS)
           .default(DEFAULT_SEARCH_CONTEXT_CHUNKS)
           .describe(
-            'Number of mechanically adjacent indexed chunks to return before and after each match. This context is for candidate triage and may not preserve a complete question, answer, qualification, or discussion arc.',
+            'Number of mechanically adjacent indexed chunks to return before and after each match.',
           ),
         maxPerRecording: z
           .number()
@@ -96,19 +102,18 @@ export function registerSearchTranscriptsTool(
           .min(1)
           .max(MAX_PER_AUDIO_LIMIT)
           .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING)
-          .describe(
-            'Maximum matches per recording/audio hash. A low value such as 1 favors diversity during initial orientation; for precise broad searches, keep the default or raise it when distinct passages from one recording may matter.',
-          ),
+          .describe('Maximum matches returned per recording/audio hash.'),
         filters: SearchMetadataFiltersSchema.optional().describe(
-          'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
+          'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for specific recordings.',
         ),
       }),
-      outputSchema: SearchTranscriptsOutputSchema,
+      outputSchema: FindTranscriptMentionsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({
       catalogId,
       query,
+      matchMode,
       limit,
       contextChunks,
       maxPerRecording,
@@ -122,15 +127,16 @@ export function registerSearchTranscriptsTool(
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          searchMcpTranscripts(catalog.id, catalog.catalogGrant, {
+          findMcpTranscriptMentions(catalog.id, catalog.catalogGrant, {
             query,
+            matchMode,
             limit,
             contextChunks,
             maxPerRecording,
             filters,
           }),
         (result) =>
-          `Found ${Array.isArray(result.results) ? result.results.length : 0} Besedy transcript match(es).`,
+          `Found ${typeof result.retrieval?.totalMatches === 'number' ? result.retrieval.totalMatches : 0} literal Besedy transcript match(es).`,
         renderSearchContent,
       );
     },

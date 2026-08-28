@@ -11,6 +11,7 @@ import type {
 } from '@/lib/mcp/access-profile';
 import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
+  findMcpTranscriptMentions,
   getMcpEvent,
   getMcpRecording,
   getMcpTranscript,
@@ -43,6 +44,7 @@ vi.mock('@/lib/mcp/read-service', () => ({
   getMcpEvent: vi.fn(),
   getMcpRecording: vi.fn(),
   getMcpTranscript: vi.fn(),
+  findMcpTranscriptMentions: vi.fn(),
   searchMcpTranscripts: vi.fn(),
 }));
 
@@ -163,6 +165,10 @@ function catalogToolCalls(catalogId: string) {
     {
       name: 'search_transcripts',
       arguments: { catalogId, query: 'search phrase' },
+    },
+    {
+      name: 'find_transcript_mentions',
+      arguments: { catalogId, query: 'exact phrase' },
     },
   ];
 }
@@ -446,6 +452,7 @@ describe('MCP personalized tool surface', () => {
       'get_recording',
       'get_transcript',
       'search_transcripts',
+      'find_transcript_mentions',
     ]);
     for (const tool of tools) {
       expect(tool.outputSchema, `${tool.name} output schema`).toMatchObject({
@@ -491,12 +498,22 @@ describe('MCP personalized tool surface', () => {
       };
     }>;
     const searchTool = tools.find((tool) => tool.name === 'search_transcripts');
+    const lexicalTool = tools.find(
+      (tool) => tool.name === 'find_transcript_mentions',
+    );
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
     const eventsTool = tools.find((tool) => tool.name === 'list_events');
     const locationsTool = tools.find((tool) => tool.name === 'list_locations');
     const recordersTool = tools.find((tool) => tool.name === 'list_recorders');
 
     expect(searchTool?.description).toContain('filters.eventIds');
+    expect(lexicalTool?.description).toContain('actual transcript wording');
+    expect(searchTool?.description).toContain('passages by meaning');
+    expect(lexicalTool?.description).toContain('search_transcripts');
+    expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
+    expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
+      10,
+    );
     expect(searchTool?.description).toContain('filters.audioHashes');
     expect(searchTool?.description).toContain('get_transcript');
     expect(searchTool?.description).toContain('small first pass');
@@ -570,6 +587,7 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
 
     const body = await invokeMcp('server/discover');
     expect(body.error).toBeUndefined();
@@ -1002,6 +1020,56 @@ describe('MCP personalized tool surface', () => {
     );
   });
 
+  it('applies symmetric lexical-search defaults and match mode', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    };
+    vi.mocked(findMcpTranscriptMentions).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      query: 'exact phrase',
+      retrieval: {
+        mode: 'lexical',
+        matchMode: 'all_terms',
+        corpusCoverage: 'complete',
+        totalMatches: 0,
+        requestedLimit: 50,
+        returnedCount: 0,
+        maxPerRecording: 10,
+      },
+      results: [],
+    });
+
+    const body = await invokeMcp('tools/call', {
+      name: 'find_transcript_mentions',
+      arguments: { query: 'exact phrase' },
+    });
+
+    expect(body.error).toBeUndefined();
+    expect(findMcpTranscriptMentions).toHaveBeenCalledWith(
+      'viewer-catalog',
+      'VIEWER',
+      {
+        query: 'exact phrase',
+        matchMode: 'all_terms',
+        limit: 50,
+        contextChunks: 1,
+        maxPerRecording: 10,
+        filters: undefined,
+      },
+    );
+  });
+
   it('still denies a transcript call against a listener catalog', async () => {
     accessProfile = {
       userId: 'user-1',
@@ -1072,6 +1140,7 @@ describe('MCP personalized tool surface', () => {
     expect(getMcpRecording).not.toHaveBeenCalled();
     expect(getMcpTranscript).not.toHaveBeenCalled();
     expect(searchMcpTranscripts).not.toHaveBeenCalled();
+    expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
   });
 
   it('checks each resolved catalog capability at invocation time', async () => {
@@ -1111,6 +1180,7 @@ describe('MCP personalized tool surface', () => {
     expect(getMcpRecording).not.toHaveBeenCalled();
     expect(getMcpTranscript).not.toHaveBeenCalled();
     expect(searchMcpTranscripts).not.toHaveBeenCalled();
+    expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
   });
 
   it('marks transient read failures as retryable', async () => {

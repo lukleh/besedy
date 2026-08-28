@@ -55,6 +55,29 @@ const server = http.createServer(async (request, response) => {
         ],
       });
     }
+    if (request.url === '/lexical-search') {
+      if (body.query !== 'deterministic evidence') {
+        return json(response, 400, { error: 'unexpected_query' });
+      }
+      if (!body.allowed_audio_hashes?.includes(audioHash)) {
+        return json(response, 403, { error: 'missing_authorized_recording' });
+      }
+      return json(response, 200, {
+        total_matches: 1,
+        matches: [
+          {
+            chunk_id: chunkId,
+            audio_hash: audioHash,
+            start_sec: 5,
+            end_sec: 10,
+            text: 'Deterministic Besedy MCP search evidence.',
+            run_id: 'mcp-smoke-run',
+            chunk_version: 'mcp-smoke-v1',
+            score: -1.25,
+          },
+        ],
+      });
+    }
     if (request.url === '/neighbors') {
       return json(response, 200, {
         neighbors: {

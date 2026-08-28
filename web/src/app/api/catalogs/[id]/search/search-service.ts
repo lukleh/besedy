@@ -5,6 +5,7 @@ import {
   applyRelativeCutoff,
   assembleContextText,
   buildAllowedAudioHashesQuery,
+  buildEligibleAudioHashesQuery,
   collectRerankCandidates,
   elapsedMs,
   getSearchConfig,
@@ -12,6 +13,7 @@ import {
   lookupColbertNeighbors,
   materializeColbertCandidates,
   queryColbertService,
+  queryLexicalService,
   RagServiceError,
   resolveColbertFetchLimit,
   resolveColbertIndexDir,
@@ -19,6 +21,8 @@ import {
   rerankCandidates,
   shouldOverfetchColbertResults,
   type AllowedAudioHashRow,
+  type Candidate,
+  type LexicalMatchMode,
   type SearchMetadataFilters,
   type SearchTimings,
 } from "./search-route-helpers";
@@ -102,6 +106,26 @@ export interface ExecuteCatalogSearchInput {
   requestStartedAt?: number;
   authMs?: number;
   failOnMissingBundle?: boolean;
+}
+
+export interface ExecuteCatalogLexicalSearchInput {
+  catalogId: string;
+  query: string;
+  matchMode: LexicalMatchMode;
+  limit: number;
+  includeNeighbors?: boolean;
+  neighborCount?: number;
+  maxPerAudio: number;
+  metadataFilters?: SearchMetadataFilters | null;
+  accessLevel?: AccessLevel | null;
+  config?: SearchConfig;
+  requestStartedAt?: number;
+  authMs?: number;
+  failOnMissingBundle?: boolean;
+}
+
+export interface CatalogLexicalSearchExecutionResult extends CatalogSearchExecutionResult {
+  totalMatches: number;
 }
 
 export async function resolveCatalogColbertIndexDir(
@@ -273,14 +297,119 @@ export async function executeCatalogSearch(
   );
   const deduped = applyMaxPerAudio(filteredByCutoff, input.maxPerAudio ?? null);
   const selected = deduped.slice(0, limit);
+  const materialized = await materializeSearchResults({
+    catalogId: input.catalogId,
+    config,
+    colbertIndexDir,
+    selected,
+    neighborCount,
+  });
+  return {
+    config,
+    query: input.query,
+    fusedCandidates,
+    timings: {
+      totalMs: elapsedMs(requestStartedAt),
+      authMs: input.authMs,
+      colbertMs,
+      rerankMs,
+      metadataMs: materialized.metadataMs,
+    },
+    results: materialized.results,
+  };
+}
+
+export async function executeCatalogLexicalSearch(
+  input: ExecuteCatalogLexicalSearchInput,
+): Promise<CatalogLexicalSearchExecutionResult> {
+  const config = input.config ?? getSearchConfig();
+  const requestStartedAt = input.requestStartedAt ?? performance.now();
+  const neighborCount = input.includeNeighbors ? (input.neighborCount ?? 1) : 0;
+  const searchStartedAt = performance.now();
+  const colbertIndexDir = await resolveCatalogColbertIndexDir(input.catalogId, config);
+  if (colbertIndexDir === null) {
+    if (input.failOnMissingBundle) {
+      throw new RagServiceError("ColBERT bundle not found for catalog", 404);
+    }
+    return {
+      config,
+      query: input.query,
+      results: [],
+      totalMatches: 0,
+      fusedCandidates: 0,
+      timings: { totalMs: elapsedMs(requestStartedAt), authMs: input.authMs },
+    };
+  }
+
+  const allowedRows = await prisma.$queryRaw<AllowedAudioHashRow[]>(
+    buildEligibleAudioHashesQuery(
+      input.catalogId,
+      input.accessLevel,
+      input.metadataFilters ?? null,
+    ),
+  );
+  const lexical = await queryLexicalService(
+    input.query,
+    input.matchMode,
+    config.colbertUrl,
+    colbertIndexDir,
+    allowedRows.map((row) => row.audioHash),
+    input.limit,
+    input.maxPerAudio,
+    config.timeoutMs,
+  );
+  const colbertMs = elapsedMs(searchStartedAt);
+  const selected: Candidate[] = lexical.matches.map((match) => ({
+    ...match,
+    embeddingModel: "sqlite-fts5",
+    embeddingModelVersion: "fts5-v1",
+    denseRank: null,
+    sparseRank: null,
+    denseScore: null,
+    sparseScore: null,
+    rrfScore: match.score,
+    rerankScore: null,
+  }));
+  const materialized = await materializeSearchResults({
+    catalogId: input.catalogId,
+    config,
+    colbertIndexDir,
+    selected,
+    neighborCount,
+  });
+  return {
+    config,
+    query: input.query,
+    results: materialized.results,
+    totalMatches: lexical.totalMatches,
+    fusedCandidates: lexical.totalMatches,
+    timings: {
+      totalMs: elapsedMs(requestStartedAt),
+      authMs: input.authMs,
+      colbertMs,
+      metadataMs: materialized.metadataMs,
+    },
+  };
+}
+
+async function materializeSearchResults({
+  catalogId,
+  config,
+  colbertIndexDir,
+  selected,
+  neighborCount,
+}: {
+  catalogId: string;
+  config: SearchConfig;
+  colbertIndexDir: string;
+  selected: Candidate[];
+  neighborCount: number;
+}): Promise<{ results: CatalogSearchResult[]; metadataMs: number }> {
   const audioHashes = Array.from(new Set(selected.map((item) => item.audioHash)));
   const metadataStartedAt = performance.now();
   const [metadataRows, neighborsByChunkId] = await Promise.all([
     prisma.audioMetadata.findMany({
-      where: {
-        workflowGroupId: input.catalogId,
-        audioHash: { in: audioHashes },
-      },
+      where: { workflowGroupId: catalogId, audioHash: { in: audioHashes } },
       include: {
         location: { select: { id: true, name: true } },
         recorder: { select: { id: true, name: true } },
@@ -295,22 +424,15 @@ export async function executeCatalogSearch(
     ),
   ]);
   const metadataMs = elapsedMs(metadataStartedAt);
-
   const metadataByHash = new Map(metadataRows.map((row) => [row.audioHash, row]));
   return {
-    config,
-    query: input.query,
-    fusedCandidates,
-    timings: {
-      totalMs: elapsedMs(requestStartedAt),
-      authMs: input.authMs,
-      colbertMs,
-      rerankMs,
-      metadataMs,
-    },
+    metadataMs,
     results: selected.map((item, index) => {
       const metadata = metadataByHash.get(item.audioHash);
-      const neighbors = neighborsByChunkId.get(item.chunkId) ?? { before: [], after: [] };
+      const neighbors = neighborsByChunkId.get(item.chunkId) ?? {
+        before: [],
+        after: [],
+      };
       const contextStartSec = neighbors.before[0]?.startSec ?? item.startSec;
       const contextEndSec = neighbors.after.at(-1)?.endSec ?? item.endSec;
       return {
@@ -343,12 +465,12 @@ export async function executeCatalogSearch(
           chunkId: item.chunkId,
           startSec: item.startSec,
           endSec: item.endSec,
-          workflowGroupId: input.catalogId,
+          workflowGroupId: catalogId,
           backendKey: config.backendKey,
           chunkVersion: item.chunkVersion,
         },
         provenance: {
-          workflowGroupId: input.catalogId,
+          workflowGroupId: catalogId,
           backendKey: config.backendKey,
           runId: item.runId,
           chunkVersion: item.chunkVersion,

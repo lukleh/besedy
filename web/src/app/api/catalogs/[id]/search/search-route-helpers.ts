@@ -14,6 +14,9 @@ const MAX_LIMIT = RAG_DEFAULTS.MAX_LIMIT;
 const MAX_CANDIDATE_LIMIT = 200;
 const MAX_NEIGHBOR_COUNT = 3;
 export const MAX_PER_AUDIO_LIMIT = 100;
+export const LEXICAL_MATCH_MODES = ["all_terms", "phrase", "any_term", "prefix"] as const;
+export const LexicalMatchModeSchema = z.enum(LEXICAL_MATCH_MODES);
+export type LexicalMatchMode = z.infer<typeof LexicalMatchModeSchema>;
 const MAX_METADATA_FILTER_VALUES = 50;
 const DEFAULT_RERANK_TOP_N = RAG_DEFAULTS.RERANK_TOP_N;
 const DEFAULT_RELATIVE_SCORE_CUTOFF = RAG_DEFAULTS.RELATIVE_SCORE_CUTOFF;
@@ -139,6 +142,15 @@ export interface ColbertLookupChunk {
   chunkVersion: string;
 }
 
+export interface LexicalServiceMatch extends ColbertLookupChunk {
+  score: number;
+}
+
+export interface LexicalServiceResult {
+  matches: LexicalServiceMatch[];
+  totalMatches: number;
+}
+
 export interface SearchTimings {
   totalMs: number;
   authMs?: number;
@@ -221,6 +233,23 @@ export function buildAllowedAudioHashesQuery(
 ): Prisma.Sql | null {
   if (audioHashes.length === 0) return null;
 
+  return buildAudioHashesQuery(catalogId, accessLevel, metadataFilters, audioHashes);
+}
+
+export function buildEligibleAudioHashesQuery(
+  catalogId: string,
+  accessLevel: AccessLevel | null | undefined,
+  metadataFilters: SearchMetadataFilters | null,
+): Prisma.Sql {
+  return buildAudioHashesQuery(catalogId, accessLevel, metadataFilters, null);
+}
+
+function buildAudioHashesQuery(
+  catalogId: string,
+  accessLevel: AccessLevel | null | undefined,
+  metadataFilters: SearchMetadataFilters | null,
+  candidateAudioHashes: string[] | null,
+): Prisma.Sql {
   const joins: Prisma.Sql[] = [];
   const filters: Prisma.Sql[] = [];
 
@@ -292,7 +321,9 @@ export function buildAllowedAudioHashesQuery(
     FROM catalog_entry ce
     ${joins.length > 0 ? Prisma.sql`${Prisma.join(joins, "\n")}` : Prisma.empty}
     WHERE ce.workflow_group_id = ${catalogId}
-      AND ce.audio_hash IN (${Prisma.join(audioHashes)})
+      ${candidateAudioHashes
+        ? Prisma.sql`AND ce.audio_hash IN (${Prisma.join(candidateAudioHashes)})`
+        : Prisma.empty}
       ${filters.length > 0 ? Prisma.sql`${Prisma.join(filters, "\n")}` : Prisma.empty}
   `;
 }
@@ -641,6 +672,60 @@ export async function queryColbertService(
   return hits;
 }
 
+export async function queryLexicalService(
+  query: string,
+  matchMode: LexicalMatchMode,
+  colbertUrl: string,
+  colbertIndexDir: string,
+  allowedAudioHashes: string[],
+  limit: number,
+  maxPerAudio: number,
+  timeoutMs: number,
+): Promise<LexicalServiceResult> {
+  if (allowedAudioHashes.length === 0) {
+    return { matches: [], totalMatches: 0 };
+  }
+
+  const raw = await fetchJsonWithTimeout(
+    resolveColbertServiceUrl(colbertUrl, "/lexical-search"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        colbert_index_dir: colbertIndexDir,
+        query,
+        match_mode: matchMode,
+        allowed_audio_hashes: allowedAudioHashes,
+        limit,
+        max_per_audio: maxPerAudio,
+      }),
+    },
+    timeoutMs,
+  );
+
+  const rawMatches = (raw as { matches?: unknown }).matches;
+  const totalMatches = (raw as { total_matches?: unknown }).total_matches;
+  if (
+    !Array.isArray(rawMatches) ||
+    typeof totalMatches !== "number" ||
+    !Number.isInteger(totalMatches) ||
+    totalMatches < 0
+  ) {
+    throw new RagServiceError("Invalid lexical search response payload", 502);
+  }
+
+  const matches: LexicalServiceMatch[] = [];
+  for (const item of rawMatches) {
+    const chunk = parseColbertLookupChunk(item);
+    const score = (item as { score?: unknown } | null)?.score;
+    if (!chunk || typeof score !== "number" || !Number.isFinite(score)) {
+      throw new RagServiceError("Invalid lexical search response payload", 502);
+    }
+    matches.push({ ...chunk, score });
+  }
+  return { matches, totalMatches };
+}
+
 function resolveColbertServiceUrl(colbertUrl: string, endpointPath: string): string {
   const url = new URL(colbertUrl);
   url.pathname = endpointPath;
@@ -676,43 +761,37 @@ export async function lookupColbertChunks(
 
   const chunks: ColbertLookupChunk[] = [];
   for (const item of rawChunks) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    const chunkId = typeof (item as { chunk_id?: unknown }).chunk_id === "string"
-      ? (item as { chunk_id: string }).chunk_id
-      : null;
-    const audioHash = typeof (item as { audio_hash?: unknown }).audio_hash === "string"
-      ? (item as { audio_hash: string }).audio_hash
-      : null;
-    const runId = typeof (item as { run_id?: unknown }).run_id === "string"
-      ? (item as { run_id: string }).run_id
-      : null;
-    const chunkVersion = typeof (item as { chunk_version?: unknown }).chunk_version === "string"
-      ? (item as { chunk_version: string }).chunk_version
-      : null;
-    const startSec = Number((item as { start_sec?: unknown }).start_sec);
-    const endSec = Number((item as { end_sec?: unknown }).end_sec);
-    const text = typeof (item as { text?: unknown }).text === "string"
-      ? (item as { text: string }).text
-      : null;
-    if (!chunkId || !audioHash || !runId || !chunkVersion || !text) {
-      continue;
-    }
-    if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) {
-      continue;
-    }
-    chunks.push({
-      chunkId,
-      audioHash,
-      startSec,
-      endSec,
-      text,
-      runId,
-      chunkVersion,
-    });
+    const chunk = parseColbertLookupChunk(item);
+    if (chunk) chunks.push(chunk);
   }
   return chunks;
+}
+
+function parseColbertLookupChunk(item: unknown): ColbertLookupChunk | null {
+  if (!item || typeof item !== "object") return null;
+  const chunkId =
+    typeof (item as { chunk_id?: unknown }).chunk_id === "string"
+      ? (item as { chunk_id: string }).chunk_id
+      : null;
+  const audioHash =
+    typeof (item as { audio_hash?: unknown }).audio_hash === "string"
+      ? (item as { audio_hash: string }).audio_hash
+      : null;
+  const runId =
+    typeof (item as { run_id?: unknown }).run_id === "string"
+      ? (item as { run_id: string }).run_id
+      : null;
+  const chunkVersion =
+    typeof (item as { chunk_version?: unknown }).chunk_version === "string"
+      ? (item as { chunk_version: string }).chunk_version
+      : null;
+  const startSec = Number((item as { start_sec?: unknown }).start_sec);
+  const endSec = Number((item as { end_sec?: unknown }).end_sec);
+  const text =
+    typeof (item as { text?: unknown }).text === "string" ? (item as { text: string }).text : null;
+  if (!chunkId || !audioHash || !runId || !chunkVersion || !text) return null;
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) return null;
+  return { chunkId, audioHash, startSec, endSec, text, runId, chunkVersion };
 }
 
 export async function lookupColbertNeighbors(

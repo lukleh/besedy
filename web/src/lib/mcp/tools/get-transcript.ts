@@ -70,7 +70,7 @@ export function registerGetTranscriptTool(
             'Stable audio hash of the recording. Copy it from a search result or recording response.',
           ),
           backend: TranscriptBackendSchema.optional().describe(
-            'Stored transcript backend to read. Prefer the backend supplied by search_transcripts.transcriptRequest; omit it to use the highest-priority available backend.',
+            'Stored transcript backend to read. Prefer the backend supplied by a transcript search result transcriptRequest; omit it to use the highest-priority available backend.',
           ),
           startSec: z
             .number()

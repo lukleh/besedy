@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LexicalMatchModeSchema } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import {
   AccessLevelSchema,
   HashSchema,
@@ -249,6 +250,55 @@ export const GetTranscriptOutputSchema = z.object({
   ),
 });
 
+const TranscriptSearchResultSchema = z.object({
+  rank: z.number().int().positive(),
+  recording: RecordingSummarySchema,
+  match: z.object({
+    chunkId: z.string(),
+    startSec: z.number().nonnegative(),
+    endSec: z.number().nonnegative(),
+    text: z.string(),
+    webUrl: WebUrlSchema.describe(
+      'Bounded source link for the exact transcript-search match.',
+    ),
+  }),
+  context: z
+    .object({
+      startSec: z.number().nonnegative(),
+      endSec: z.number().nonnegative(),
+      beforeText: z.string().nullable(),
+      afterText: z.string().nullable(),
+    })
+    .nullable(),
+  metadata: z.object({
+    date: RecordingDateSchema,
+    location: NamedEntitySchema.nullable(),
+    recorder: NamedEntitySchema.nullable(),
+  }),
+  citation: z.object({
+    audioHash: HashSchema,
+    chunkId: z.string(),
+    startSec: z.number().nonnegative(),
+    endSec: z.number().nonnegative(),
+    workflowGroupId: CatalogIdSchema,
+    backendKey: z.string(),
+    chunkVersion: z.string(),
+  }),
+  transcriptRequest: z
+    .object({
+      catalogId: CatalogIdSchema,
+      audioHash: HashSchema,
+      backend: TranscriptBackendSchema,
+      mode: z.literal('page'),
+      startSec: z.number().nonnegative(),
+      endSec: z.number().nonnegative(),
+    })
+    .nullable()
+    .describe(
+      'Ready-to-call get_transcript arguments for verifying this candidate in continuous context.',
+    ),
+});
+
 export const SearchTranscriptsOutputSchema = z.object({
   catalogId: CatalogIdSchema,
   query: z.string(),
@@ -259,54 +309,20 @@ export const SearchTranscriptsOutputSchema = z.object({
     returnedCount: z.number().int().nonnegative(),
     maxPerRecording: z.number().int().positive(),
   }),
-  results: z.array(
-    z.object({
-      rank: z.number().int().positive(),
-      recording: RecordingSummarySchema,
-      match: z.object({
-        chunkId: z.string(),
-        startSec: z.number().nonnegative(),
-        endSec: z.number().nonnegative(),
-        text: z.string(),
-        webUrl: WebUrlSchema.describe(
-          'Bounded source link for the exact semantic-search match.',
-        ),
-      }),
-      context: z
-        .object({
-          startSec: z.number().nonnegative(),
-          endSec: z.number().nonnegative(),
-          beforeText: z.string().nullable(),
-          afterText: z.string().nullable(),
-        })
-        .nullable(),
-      metadata: z.object({
-        date: RecordingDateSchema,
-        location: NamedEntitySchema.nullable(),
-        recorder: NamedEntitySchema.nullable(),
-      }),
-      citation: z.object({
-        audioHash: HashSchema,
-        chunkId: z.string(),
-        startSec: z.number().nonnegative(),
-        endSec: z.number().nonnegative(),
-        workflowGroupId: CatalogIdSchema,
-        backendKey: z.string(),
-        chunkVersion: z.string(),
-      }),
-      transcriptRequest: z
-        .object({
-          catalogId: CatalogIdSchema,
-          audioHash: HashSchema,
-          backend: TranscriptBackendSchema,
-          mode: z.literal('page'),
-          startSec: z.number().nonnegative(),
-          endSec: z.number().nonnegative(),
-        })
-        .nullable()
-        .describe(
-          'Ready-to-call get_transcript arguments for verifying this candidate in continuous context.',
-        ),
-    }),
-  ),
+  results: z.array(TranscriptSearchResultSchema),
+});
+
+export const FindTranscriptMentionsOutputSchema = z.object({
+  catalogId: CatalogIdSchema,
+  query: z.string(),
+  retrieval: z.object({
+    mode: z.literal('lexical'),
+    matchMode: LexicalMatchModeSchema,
+    corpusCoverage: z.literal('complete'),
+    totalMatches: z.number().int().nonnegative(),
+    requestedLimit: z.number().int().positive(),
+    returnedCount: z.number().int().nonnegative(),
+    maxPerRecording: z.number().int().positive(),
+  }),
+  results: z.array(TranscriptSearchResultSchema),
 });

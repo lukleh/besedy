@@ -6,10 +6,14 @@ import {
 } from '@/lib/catalog-events/visibility';
 import { getRecordingCapability } from '@/lib/access/capabilities';
 import { getAvailableTranscripts, loadTranscript } from '@/lib/transcript';
-import { executeCatalogSearch } from '@/app/api/catalogs/[id]/search/search-service';
+import {
+  executeCatalogLexicalSearch,
+  executeCatalogSearch,
+} from '@/app/api/catalogs/[id]/search/search-service';
 import { RagServiceError } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import {
   getMcpEvent,
+  findMcpTranscriptMentions,
   getMcpRecording,
   getMcpTranscript,
   listMcpLocations,
@@ -57,6 +61,7 @@ vi.mock('@/lib/mcp/config', () => ({
 }));
 
 vi.mock('@/app/api/catalogs/[id]/search/search-service', () => ({
+  executeCatalogLexicalSearch: vi.fn(),
   executeCatalogSearch: vi.fn(),
 }));
 
@@ -1024,6 +1029,46 @@ describe('MCP read service', () => {
           },
         },
       ],
+    });
+  });
+
+  it('forwards symmetric filters and reports complete lexical match counts', async () => {
+    vi.mocked(executeCatalogLexicalSearch).mockResolvedValue({
+      query: 'exact phrase',
+      results: [],
+      totalMatches: 7,
+    } as unknown as Awaited<ReturnType<typeof executeCatalogLexicalSearch>>);
+    const filters = { eventIds: [42], dateYears: [2026], verified: true };
+
+    const result = await findMcpTranscriptMentions('catalog-a', 'VIEWER', {
+      query: 'exact phrase',
+      matchMode: 'phrase',
+      limit: 10,
+      contextChunks: 1,
+      maxPerRecording: 2,
+      filters,
+    });
+
+    expect(executeCatalogLexicalSearch).toHaveBeenCalledWith({
+      catalogId: 'catalog-a',
+      query: 'exact phrase',
+      matchMode: 'phrase',
+      limit: 10,
+      includeNeighbors: true,
+      neighborCount: 1,
+      maxPerAudio: 2,
+      metadataFilters: filters,
+      accessLevel: 'VIEWER',
+      failOnMissingBundle: true,
+    });
+    expect(result.retrieval).toEqual({
+      mode: 'lexical',
+      matchMode: 'phrase',
+      corpusCoverage: 'complete',
+      totalMatches: 7,
+      requestedLimit: 10,
+      returnedCount: 0,
+      maxPerRecording: 2,
     });
   });
 
