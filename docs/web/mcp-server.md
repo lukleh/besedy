@@ -301,6 +301,28 @@ The response has two objects:
 This tool reports authorization state; it does not grant access or change the
 active catalog.
 
+Example return value:
+
+```json
+{
+  "account": {
+    "id": "user_01HZX7M4N5P6Q7R8S9T0",
+    "name": "Example Listener",
+    "email": "listener@example.test",
+    "emailVerified": true,
+    "status": "ACTIVE",
+    "systemRole": "USER"
+  },
+  "authorization": {
+    "clientId": "client_example",
+    "clientName": "Example MCP client",
+    "grantedScopes": ["openid", "profile", "email"],
+    "accessibleCatalogCount": 1,
+    "defaultCatalogId": "20990101_000000"
+  }
+}
+```
+
 ### `list_catalogs`
 
 Use this as the entry point when the catalog is unknown or when a later tool
@@ -320,6 +342,34 @@ tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
 
 Pass `nextCursor` unchanged to fetch the next page. `nextCursor: null` means the
 list is complete. An unknown cursor returns `invalid_cursor`.
+
+Example return value:
+
+```json
+{
+  "catalogs": [
+    {
+      "id": "20990101_000000",
+      "label": "Example catalog",
+      "isUserDefault": true,
+      "isGlobalDefault": false,
+      "isEffectiveDefault": true,
+      "catalogGrant": "VIEWER",
+      "isCatalogAdmin": false,
+      "capabilities": {
+        "canListEvents": true,
+        "canGetRecordings": true,
+        "canViewTranscripts": true,
+        "canSearchTranscripts": true,
+        "canSeeUnreleasedEvents": true
+      }
+    }
+  ],
+  "defaultCatalogId": "20990101_000000",
+  "defaultCatalogSource": "user_preference",
+  "nextCursor": null
+}
+```
 
 ### `list_events`
 
@@ -398,6 +448,43 @@ item includes the stable `audioHash`, compact metadata, `isPrimary`,
 recordings visible to the caller. Continue with `nextOffset` as
 `recordingOffset`; `null` marks the final page.
 
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "event": {
+    "id": 4242,
+    "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+    "title": "Example Hall, 12 Apr 2099",
+    "description": "Fictional event used only for documentation",
+    "date": { "year": 2099, "month": 4, "day": 12 },
+    "sessionIndex": 1,
+    "location": { "id": 999, "name": "Example Hall" },
+    "released": true,
+    "recordings": {
+      "items": [
+        {
+          "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "title": "Example recording",
+          "artist": "Example speaker",
+          "durationHms": "00:12:30",
+          "ready": true,
+          "published": true,
+          "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "isPrimary": true,
+          "sortOrder": 0
+        }
+      ],
+      "totalVisible": 1,
+      "nextOffset": null
+    },
+    "createdAt": "2099-04-12T18:00:00.000Z",
+    "updatedAt": "2099-04-13T08:30:00.000Z"
+  }
+}
+```
+
 ### `get_recording`
 
 Use this tool to inspect one recording identified by the stable SHA-256 audio
@@ -415,6 +502,45 @@ flags, and authenticated `webUrl`; it deliberately omits audio and storage
 locations. The `events` page contains compact visible event summaries and
 whether the recording is primary for each event. Continue with `nextOffset` as
 `eventOffset`; `null` marks the final page.
+
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "recording": {
+    "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "title": "Example recording",
+    "artist": "Example speaker",
+    "album": { "id": 77, "name": "Example series" },
+    "durationHms": "00:12:30",
+    "sourceDate": "2099-04-12",
+    "date": { "year": 2099, "month": 4, "day": 12 },
+    "location": { "id": 999, "name": "Example Hall" },
+    "recorder": { "id": 12, "name": "Example recorder" },
+    "verified": true,
+    "notes": "Fictional recording used only for documentation",
+    "tags": ["example"],
+    "ready": true,
+    "published": true,
+    "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "events": {
+    "items": [
+      {
+        "id": 4242,
+        "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+        "title": "Example Hall, 12 Apr 2099",
+        "released": true,
+        "date": { "year": 2099, "month": 4, "day": 12 },
+        "isPrimary": true
+      }
+    ],
+    "totalVisible": 1,
+    "nextOffset": null
+  }
+}
+```
 
 ### `get_transcript`
 
@@ -602,6 +728,71 @@ Do not repeatedly request the 100-result default for reformulations; choose an
 intentional smaller `limit`. `search_not_configured` means the catalog has no
 search bundle and is not retryable. `search_unavailable` means the search
 service is temporarily unavailable and is retryable.
+
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "query": "example topic",
+  "retrieval": {
+    "mode": "semantic",
+    "exhaustive": false,
+    "requestedLimit": 10,
+    "returnedCount": 1,
+    "maxPerRecording": 1
+  },
+  "results": [
+    {
+      "rank": 1,
+      "recording": {
+        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "title": "Example recording",
+        "artist": "Example speaker",
+        "durationHms": "00:12:30",
+        "ready": true,
+        "published": true,
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "match": {
+        "chunkId": "chunk-example-0001",
+        "startSec": 600,
+        "endSec": 620,
+        "text": "Example matching transcript passage.",
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=600"
+      },
+      "context": {
+        "startSec": 580,
+        "endSec": 640,
+        "beforeText": "Example preceding context.",
+        "afterText": "Example following context."
+      },
+      "metadata": {
+        "date": { "year": 2099, "month": 4, "day": 12 },
+        "location": { "id": 999, "name": "Example Hall" },
+        "recorder": { "id": 12, "name": "Example recorder" }
+      },
+      "citation": {
+        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "chunkId": "chunk-example-0001",
+        "startSec": 600,
+        "endSec": 620,
+        "workflowGroupId": "20990101_000000",
+        "backendKey": "faster-whisper/large-v3@silero_vad_v6",
+        "chunkVersion": "example-v1"
+      },
+      "transcriptRequest": {
+        "catalogId": "20990101_000000",
+        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "backend": "faster-whisper/large-v3@silero_vad_v6",
+        "mode": "page",
+        "startSec": 580,
+        "endSec": 640
+      }
+    }
+  ]
+}
+```
 
 ### Tool errors
 
