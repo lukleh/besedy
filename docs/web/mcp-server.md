@@ -764,7 +764,7 @@ scores are not exposed.
 | `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                      |
 | `limit`           | integer from 1 to 100                      | `100`             | Maximum matches; use a smaller explicit limit for focused follow-ups |
 | `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match            |
-| `maxPerRecording` | integer from 1 to 100                      | `3`               | Maximum matches from one audio hash                                  |
+| `maxPerRecording` | integer from 1 to 100                      | `10`              | Maximum matches from one audio hash                                  |
 | `filters`         | object                                     | omitted           | Optional metadata constraints described below                        |
 
 `filters` is a strict object containing at least one of:

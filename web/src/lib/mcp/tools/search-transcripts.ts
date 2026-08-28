@@ -19,7 +19,7 @@ const DEFAULT_SEARCH_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 100;
 const DEFAULT_SEARCH_CONTEXT_CHUNKS = 1;
 const MAX_SEARCH_CONTEXT_CHUNKS = 3;
-const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 3;
+const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 10;
 
 function renderSearchContent(
   result: Awaited<ReturnType<typeof searchMcpTranscripts>>,
