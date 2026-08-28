@@ -498,7 +498,6 @@
       "description": "Aktivita autentizovaných MCP nástrojů podle uživatele, OAuth klienta, nástroje a katalogu. Vyhledávaný text, obsah přepisů, tokeny ani úplné argumenty se neukládají.",
       "error": "Statistiky využití MCP se nepodařilo načíst.",
       "empty": "V tomto období nebyla zaznamenána žádná volání MCP nástrojů.",
-      "deletedUser": "Smazaný uživatel",
       "ranges": {
         "24h": "24 h",
         "7d": "7 dní",

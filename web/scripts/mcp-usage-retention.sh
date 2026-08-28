@@ -7,6 +7,7 @@ COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && p
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
 MCP_RAW_RETENTION_DAYS="${MCP_RAW_RETENTION_DAYS:-180}"
 MCP_ROLLUP_RETENTION_DAYS="${MCP_ROLLUP_RETENTION_DAYS:-400}"
+MIN_MCP_RAW_RETENTION_DAYS=30
 MIN_MCP_ROLLUP_RETENTION_DAYS=366
 TAG="${REPORT_LOG_TAG:-besedy-mcp-retention}"
 
@@ -16,6 +17,11 @@ case "$MCP_RAW_RETENTION_DAYS" in
         exit 1
         ;;
 esac
+
+if (( MCP_RAW_RETENTION_DAYS < MIN_MCP_RAW_RETENTION_DAYS )); then
+    echo "MCP_RAW_RETENTION_DAYS must be at least $MIN_MCP_RAW_RETENTION_DAYS to preserve exact 30-day analytics" >&2
+    exit 1
+fi
 
 case "$MCP_ROLLUP_RETENTION_DAYS" in
     ''|*[!0-9]*|0)

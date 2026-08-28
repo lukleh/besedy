@@ -4,7 +4,7 @@ CREATE TABLE "mcp_tool_invocation" (
     "id" TEXT NOT NULL,
     "user_id" TEXT,
     "client_id" TEXT NOT NULL,
-    "client_name" TEXT,
+    "client_name" VARCHAR(255),
     "tool_name" VARCHAR(64) NOT NULL,
     "catalog_id" VARCHAR(191),
     "target_type" VARCHAR(50),

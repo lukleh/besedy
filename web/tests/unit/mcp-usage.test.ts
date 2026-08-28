@@ -137,6 +137,26 @@ describe('MCP usage telemetry', () => {
     expect(mocks.logAccessDenied).not.toHaveBeenCalled();
   });
 
+  it('normalizes and bounds untrusted OAuth client names', async () => {
+    const result = {
+      content: [{ type: 'text' as const, text: 'ok' }],
+      structuredContent: { catalogs: [] },
+    } satisfies CallToolResult;
+    const unsafeClientName = `Injected\nMCP\u0000\u001b ACTIVITY\u2028\u202e${'x'.repeat(300)}`;
+
+    await trackMcpToolInvocation(
+      { ...context, clientName: unsafeClientName },
+      'list_catalogs',
+      {},
+      () => result,
+    );
+
+    const clientName = mocks.createInvocation.mock.calls[0][0].data.clientName;
+    expect(clientName).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+    expect(Array.from(clientName)).toHaveLength(255);
+    expect(clientName).toMatch(/^Injected MCP ACTIVITY x+$/u);
+  });
+
   it('attributes default-catalog calls without assigning a catalog to global tools', async () => {
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],

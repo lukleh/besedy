@@ -10,6 +10,7 @@ import { toPrismaJson } from '@/lib/prisma-json';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 
 const logger = createServerLogger('mcp-usage');
+const MCP_TELEMETRY_LABEL_MAX_LENGTH = 255;
 const CATALOG_SCOPED_TOOLS = new Set([
   'list_locations',
   'list_recorders',
@@ -53,6 +54,19 @@ function finiteNumber(value: unknown): number | null {
 
 function arrayLength(value: unknown): number | null {
   return Array.isArray(value) ? value.length : null;
+}
+
+function sanitizeTelemetryLabel(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (normalized.length === 0) return null;
+  if (normalized.length <= MCP_TELEMETRY_LABEL_MAX_LENGTH) return normalized;
+  return Array.from(normalized)
+    .slice(0, MCP_TELEMETRY_LABEL_MAX_LENGTH)
+    .join('');
 }
 
 export function summarizeMcpInvocationInput(
@@ -161,6 +175,7 @@ async function writeInvocation(params: {
   input: InvocationInputSummary;
   result: InvocationResultSummary;
 }): Promise<void> {
+  const clientName = sanitizeTelemetryLabel(params.context.clientName);
   const catalogId =
     params.result.catalogId ??
     params.input.catalogId ??
@@ -173,7 +188,7 @@ async function writeInvocation(params: {
         actorUserId: params.context.accessProfile.userId,
         userId: params.context.accessProfile.userId,
         clientId: params.context.clientId,
-        clientName: params.context.clientName,
+        clientName,
         toolName: params.toolName,
         catalogId,
         targetType: params.input.targetType,
@@ -197,7 +212,7 @@ async function writeInvocation(params: {
       params.toolName,
       {
         clientId: params.context.clientId,
-        clientName: params.context.clientName,
+        clientName,
         toolName: params.toolName,
         catalogId,
         errorCode: params.result.errorCode,

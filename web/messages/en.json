@@ -498,7 +498,6 @@
       "description": "Authenticated MCP tool activity by user, OAuth client, tool, and catalog. Search text, transcript content, tokens, and complete arguments are never stored.",
       "error": "MCP usage analytics could not be loaded.",
       "empty": "No MCP tool calls were recorded in this period.",
-      "deletedUser": "Deleted user",
       "ranges": {
         "24h": "24h",
         "7d": "7d",

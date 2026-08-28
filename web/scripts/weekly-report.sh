@@ -167,13 +167,32 @@ TRANSCRIPT_DOWNLOADS=$(db_query "SELECT COUNT(*) FROM audit_log WHERE action = '
 
 # MCP tool activity. The usage table intentionally contains no raw search text,
 # transcript content, bearer tokens, or complete tool arguments/responses.
-MCP_CALLS=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_UNIQUE_USERS=$(db_query "SELECT COUNT(DISTINCT actor_user_id) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_UNIQUE_CLIENTS=$(db_query "SELECT COUNT(DISTINCT client_id) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_SUCCESSES=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE outcome = 'SUCCESS' AND occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_ERRORS=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE outcome = 'ERROR' AND occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_DENIALS=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE outcome = 'DENIED' AND occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_RETURNED_TEXT_CHARS=$(db_query "SELECT COALESCE(SUM(returned_text_chars), 0) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_SUMMARY=$(db_query "
+SELECT COALESCE(SUM(calls), 0),
+       COUNT(DISTINCT actor_user_id),
+       COUNT(DISTINCT client_id),
+       COALESCE(SUM(calls) FILTER (WHERE outcome = 'SUCCESS'), 0),
+       COALESCE(SUM(calls) FILTER (WHERE outcome = 'ERROR'), 0),
+       COALESCE(SUM(calls) FILTER (WHERE outcome = 'DENIED'), 0),
+       COALESCE(SUM(returned_text_chars), 0)
+FROM mcp_tool_usage
+WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+")
+IFS='|' read -r \
+    MCP_CALLS \
+    MCP_UNIQUE_USERS \
+    MCP_UNIQUE_CLIENTS \
+    MCP_SUCCESSES \
+    MCP_ERRORS \
+    MCP_DENIALS \
+    MCP_RETURNED_TEXT_CHARS <<< "$MCP_SUMMARY"
+MCP_CALLS="${MCP_CALLS:-0}"
+MCP_UNIQUE_USERS="${MCP_UNIQUE_USERS:-0}"
+MCP_UNIQUE_CLIENTS="${MCP_UNIQUE_CLIENTS:-0}"
+MCP_SUCCESSES="${MCP_SUCCESSES:-0}"
+MCP_ERRORS="${MCP_ERRORS:-0}"
+MCP_DENIALS="${MCP_DENIALS:-0}"
+MCP_RETURNED_TEXT_CHARS="${MCP_RETURNED_TEXT_CHARS:-0}"
 
 MCP_BY_TOOL=$(db_query "
 SELECT tool_name || ': ' || SUM(calls) ||

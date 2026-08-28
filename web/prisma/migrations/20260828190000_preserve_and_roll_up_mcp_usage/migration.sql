@@ -15,7 +15,7 @@ CREATE TABLE "mcp_tool_usage_daily" (
     "usage_date" DATE NOT NULL,
     "actor_user_id" TEXT NOT NULL,
     "client_id" TEXT NOT NULL,
-    "client_name" TEXT,
+    "client_name" VARCHAR(255),
     "tool_name" VARCHAR(64) NOT NULL,
     "catalog_id" VARCHAR(191) NOT NULL DEFAULT '',
     "outcome" "McpToolOutcome" NOT NULL,

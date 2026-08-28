@@ -105,6 +105,8 @@ function bucketQuery(range: McpUsageRange, periodStart: Date) {
 
 export async function getMcpUsageAnalytics(range: McpUsageRange) {
   const periodStart = getMcpUsagePeriodStart(range);
+  // The retention job preserves at least 30 raw days, so these ranges have
+  // exact per-invocation latency data. Yearly rollups cannot provide a p95.
   const includeRawP95 = range !== '12m';
   const [
     summaryRows,

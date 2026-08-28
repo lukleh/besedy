@@ -72,12 +72,18 @@ export default function McpUsagePage() {
             ? date.toLocaleTimeString(locale, {
                 hour: '2-digit',
                 minute: '2-digit',
+                timeZone: 'UTC',
               })
             : range === '12m'
-              ? date.toLocaleDateString(locale, { month: 'short' })
+              ? date.toLocaleDateString(locale, {
+                  month: 'short',
+                  year: '2-digit',
+                  timeZone: 'UTC',
+                })
               : date.toLocaleDateString(locale, {
                   month: 'short',
                   day: 'numeric',
+                  timeZone: 'UTC',
                 }),
       };
     }) ?? [];

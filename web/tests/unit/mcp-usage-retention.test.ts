@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -9,10 +10,11 @@ const migration = readFileSync(
   ),
   'utf8',
 );
-const retentionScript = readFileSync(
-  resolve(process.cwd(), 'scripts/mcp-usage-retention.sh'),
-  'utf8',
+const retentionScriptPath = resolve(
+  process.cwd(),
+  'scripts/mcp-usage-retention.sh',
 );
+const retentionScript = readFileSync(retentionScriptPath, 'utf8');
 
 describe('MCP usage retention', () => {
   it('preserves an immutable actor ID and exposes raw plus daily usage', () => {
@@ -38,6 +40,7 @@ describe('MCP usage retention', () => {
 
     expect(retentionScript).toContain('MCP_RAW_RETENTION_DAYS:-180');
     expect(retentionScript).toContain('MCP_ROLLUP_RETENTION_DAYS:-400');
+    expect(retentionScript).toContain('MIN_MCP_RAW_RETENTION_DAYS=30');
     expect(retentionScript).toContain('MIN_MCP_ROLLUP_RETENTION_DAYS=366');
     expect(retentionScript).toContain(
       '-v rollup_retention_days="$MCP_ROLLUP_RETENTION_DAYS"',
@@ -49,5 +52,21 @@ describe('MCP usage retention', () => {
     expect(deleteAt).toBeGreaterThan(insertAt);
     expect(rollupDeleteAt).toBeGreaterThan(deleteAt);
     expect(retentionScript).toContain('COMMIT;');
+  });
+
+  it('rejects raw retention that cannot support exact 30-day analytics', () => {
+    const result = spawnSync('bash', [retentionScriptPath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MCP_RAW_RETENTION_DAYS: '29',
+        MCP_ROLLUP_RETENTION_DAYS: '400',
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'MCP_RAW_RETENTION_DAYS must be at least 30',
+    );
   });
 });

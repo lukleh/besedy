@@ -906,7 +906,7 @@ model McpToolInvocation {
   actorUserId       String         @map("actor_user_id")
   userId            String?        @map("user_id")
   clientId          String         @map("client_id")
-  clientName        String?        @map("client_name")
+  clientName        String?        @map("client_name") @db.VarChar(255)
   toolName          String         @map("tool_name") @db.VarChar(64)
   catalogId         String?        @map("catalog_id") @db.VarChar(191)
   targetType        String?        @map("target_type") @db.VarChar(50)
@@ -937,7 +937,7 @@ model McpToolUsageDaily {
   usageDate         DateTime       @map("usage_date") @db.Date
   actorUserId       String         @map("actor_user_id")
   clientId          String         @map("client_id")
-  clientName        String?        @map("client_name")
+  clientName        String?        @map("client_name") @db.VarChar(255)
   toolName          String         @map("tool_name") @db.VarChar(64)
   /// Empty string represents calls without a catalog, keeping the rollup key non-null.
   catalogId         String         @default("") @map("catalog_id") @db.VarChar(191)
