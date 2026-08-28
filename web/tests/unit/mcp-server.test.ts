@@ -42,6 +42,17 @@ vi.mock('@/lib/mcp/read-service', () => ({
   searchMcpTranscripts: vi.fn(),
 }));
 
+vi.mock('@/lib/mcp/usage', () => ({
+  trackMcpToolInvocation: vi.fn(
+    async (
+      _context: unknown,
+      _toolName: string,
+      _input: unknown,
+      operation: () => unknown,
+    ) => operation(),
+  ),
+}));
+
 const envelope = {
   'io.modelcontextprotocol/protocolVersion': '2026-07-28',
   'io.modelcontextprotocol/clientInfo': {
@@ -53,6 +64,7 @@ const envelope = {
 
 const defaultConnection = {
   clientId: 'client-1',
+  clientName: 'Test MCP client',
   scopes: ['openid', 'profile', 'email', 'besedy:read'],
 };
 
@@ -266,7 +278,11 @@ describe('MCP personalized tool surface', () => {
     const body = await invokeMcp(
       'tools/call',
       { name: 'who_am_i', arguments: {} },
-      { clientId: 'client-1', scopes: ['besedy:read'] },
+      {
+        clientId: 'client-1',
+        clientName: 'Test MCP client',
+        scopes: ['besedy:read'],
+      },
     );
 
     expect(body.result?.structuredContent).toMatchObject({

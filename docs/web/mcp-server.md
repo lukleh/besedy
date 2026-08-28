@@ -939,6 +939,22 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 - MCP code calls reusable application services; it must not call Besedy's own
   HTTP routes or duplicate their queries.
 
+## Usage telemetry
+
+Every authenticated tool handler is registered through the shared tracked-tool
+wrapper. It writes one `mcp_tool_invocation` row with the user, OAuth client,
+tool, resolved catalog/target where applicable, outcome, duration, result count,
+and returned transcript character count. The admin view at `/admin/mcp` shows
+these calls by time, tool, user, client, and catalog. The weekly operator email
+contains the same high-level MCP activity summary.
+
+Telemetry must never contain bearer or refresh tokens, raw search queries,
+transcript text, complete tool arguments, or response content. Search usage
+records only query length and filter names; transcript reads record only segment
+and character counts. Permission denials are also mirrored into `audit_log` as
+security events with `resource = 'mcp'`. A telemetry-write failure is logged but
+must not change the MCP tool result.
+
 ## Change checklist for permissions
 
 Any access-level change is incomplete until all of these are true:

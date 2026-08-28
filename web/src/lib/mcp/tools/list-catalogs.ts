@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   toolError,
   toolSuccess,
 } from '@/lib/mcp/tools/shared';
@@ -31,9 +32,12 @@ export function paginateCatalogs<T extends { id: string }>(
 
 export function registerListCatalogsTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'list_catalogs',
     {
       title: 'List Besedy catalogs',

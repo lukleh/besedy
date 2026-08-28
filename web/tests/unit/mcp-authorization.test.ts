@@ -26,6 +26,7 @@ describe('MCP authorization liveness', () => {
 
   it('returns the intersection of token scopes and live consent scopes', async () => {
     mocks.findClient.mockResolvedValue({
+      name: 'Codex',
       disabled: false,
       skipConsent: false,
       resources: [{ resource: { disabled: false } }],
@@ -35,12 +36,14 @@ describe('MCP authorization liveness', () => {
     await expect(
       getActiveMcpAuthorization(authorizationRequest),
     ).resolves.toEqual({
+      clientName: 'Codex',
       scopes: ['openid', 'profile', 'besedy:read'],
     });
 
     expect(mocks.findClient).toHaveBeenCalledWith({
       where: { clientId: 'client-1' },
       select: {
+        name: true,
         disabled: true,
         skipConsent: true,
         resources: {
@@ -64,6 +67,7 @@ describe('MCP authorization liveness', () => {
 
   it('supports consent-free clients and nullable enabled flags', async () => {
     mocks.findClient.mockResolvedValue({
+      name: null,
       disabled: null,
       skipConsent: true,
       resources: [{ resource: { disabled: null } }],
@@ -72,11 +76,15 @@ describe('MCP authorization liveness', () => {
 
     await expect(
       getActiveMcpAuthorization(authorizationRequest),
-    ).resolves.toEqual({ scopes: authorizationRequest.tokenScopes });
+    ).resolves.toEqual({
+      clientName: null,
+      scopes: authorizationRequest.tokenScopes,
+    });
   });
 
   it('rejects consent that no longer grants MCP read access', async () => {
     mocks.findClient.mockResolvedValue({
+      name: 'Codex',
       disabled: false,
       skipConsent: false,
       resources: [{ resource: { disabled: false } }],

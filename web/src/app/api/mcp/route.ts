@@ -1,6 +1,7 @@
 import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
+import { logAccessDenied } from '@/lib/audit/logger';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
 import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
@@ -15,6 +16,11 @@ import {
   isMcpEnabled,
   MCP_READ_SCOPE,
 } from '@/lib/mcp/config';
+
+interface McpAuthExtra {
+  actor: PortalActorContext;
+  clientName: string | null;
+}
 
 export const runtime = 'nodejs';
 
@@ -68,19 +74,34 @@ function jsonRpcRateLimited(): Response {
   return response;
 }
 
+async function auditMcpRequestDenied(
+  userId: string | null,
+  clientId: string | null,
+  reason: string,
+): Promise<void> {
+  await logAccessDenied(userId, 'mcp', 'request', {
+    clientId,
+    reason,
+  });
+}
+
 const mcpHandler = createMcpHandler(
   async ({ authInfo }) => {
-    const actor = authInfo?.extra?.actor as PortalActorContext | undefined;
+    const extra = authInfo?.extra as McpAuthExtra | undefined;
+    const actor = extra?.actor;
     if (
       !authInfo ||
       !actor?.canEnterPortal ||
       typeof actor.userId !== 'string'
     ) {
-      throw new Error('Authenticated MCP request is missing its policy context');
+      throw new Error(
+        'Authenticated MCP request is missing its policy context',
+      );
     }
     const accessProfile = await getMcpAccessProfile(actor.userId, { actor });
     return createBesedyMcpServer({
       clientId: authInfo.clientId,
+      clientName: extra?.clientName ?? null,
       scopes: authInfo.scopes,
       accessProfile,
     });
@@ -104,6 +125,7 @@ const protectedMcpHandler = resourceUrl
 
         const clientIdClaim = claims.client_id ?? claims.azp;
         if (typeof clientIdClaim !== 'string' || clientIdClaim.length === 0) {
+          await auditMcpRequestDenied(userId, null, 'missing_client_identity');
           return jsonRpcAccessDenied(
             'The access token has no OAuth client identity',
           );
@@ -126,6 +148,7 @@ const protectedMcpHandler = resourceUrl
             MCP_RATE_WINDOW_MS,
           )
         ) {
+          await auditMcpRequestDenied(userId, clientId, 'rate_limited');
           return jsonRpcRateLimited();
         }
 
@@ -137,6 +160,11 @@ const protectedMcpHandler = resourceUrl
           userId,
         });
         if (!authorization) {
+          await auditMcpRequestDenied(
+            userId,
+            clientId,
+            'authorization_inactive',
+          );
           return jsonRpcAccessDenied(
             'Active Besedy MCP authorization is required',
           );
@@ -144,6 +172,11 @@ const protectedMcpHandler = resourceUrl
 
         const actor = await resolvePortalActorContext(userId);
         if (!actor.canEnterPortal) {
+          await auditMcpRequestDenied(
+            userId,
+            clientId,
+            'portal_access_inactive',
+          );
           return jsonRpcAccessDenied('Active Besedy portal access is required');
         }
 
@@ -153,7 +186,7 @@ const protectedMcpHandler = resourceUrl
           scopes: authorization.scopes,
           expiresAt: claims.exp,
           resource: new URL(resourceUrl),
-          extra: { actor },
+          extra: { actor, clientName: authorization.clientName },
         };
 
         return mcpHandler.fetch(request, { authInfo });

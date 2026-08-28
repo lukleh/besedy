@@ -7,6 +7,7 @@ import {
 import { searchMcpTranscripts } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -43,9 +44,12 @@ function renderSearchContent(
 
 export function registerSearchTranscriptsTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'search_transcripts',
     {
       title: 'Search Besedy transcripts',

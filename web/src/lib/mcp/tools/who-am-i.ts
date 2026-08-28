@@ -4,6 +4,7 @@ import { MCP_EMAIL_SCOPE, MCP_PROFILE_SCOPE } from '@/lib/mcp/config';
 import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   toolError,
   toolSuccess,
 } from '@/lib/mcp/tools/shared';
@@ -11,9 +12,12 @@ import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 
 export function registerWhoAmITool(
   server: McpServer,
-  { clientId, scopes, accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { clientId, scopes, accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'who_am_i',
     {
       title: 'Show current Besedy identity',

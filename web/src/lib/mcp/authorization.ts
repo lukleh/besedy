@@ -9,6 +9,7 @@ interface McpAuthorizationIdentity {
 }
 
 export interface ActiveMcpAuthorization {
+  clientName: string | null;
   scopes: string[];
 }
 
@@ -21,6 +22,7 @@ export async function getActiveMcpAuthorization({
   const client = await prisma.oauthClient.findUnique({
     where: { clientId },
     select: {
+      name: true,
       disabled: true,
       skipConsent: true,
       resources: {
@@ -54,5 +56,7 @@ export async function getActiveMcpAuthorization({
     ? tokenScopes
     : tokenScopes.filter((scope) => liveConsentScopes.includes(scope));
 
-  return scopes.includes(MCP_READ_SCOPE) ? { scopes } : null;
+  return scopes.includes(MCP_READ_SCOPE)
+    ? { clientName: client.name, scopes }
+    : null;
 }

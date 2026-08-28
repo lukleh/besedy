@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getMcpTranscript } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -44,9 +45,12 @@ function renderTranscriptContent(
 
 export function registerGetTranscriptTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'get_transcript',
     {
       title: 'Get a Besedy transcript',

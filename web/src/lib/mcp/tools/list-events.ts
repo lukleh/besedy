@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { listMcpEvents } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -24,9 +25,12 @@ const PartialEventDateSchema = z
 
 export function registerListEventsTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'list_events',
     {
       title: 'List Besedy events',

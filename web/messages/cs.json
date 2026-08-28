@@ -489,8 +489,67 @@
       "transcripts": "Pořadí přepisů",
       "addUsers": "Přidat uživatele",
       "auditLog": "Auditní log",
+      "mcpUsage": "Využití MCP",
       "clientErrors": "Chyby klienta",
       "webUpdates": "Aktualizace webu"
+    },
+    "mcp": {
+      "title": "Využití MCP",
+      "description": "Aktivita autentizovaných MCP nástrojů podle uživatele, OAuth klienta, nástroje a katalogu. Vyhledávaný text, obsah přepisů, tokeny ani úplné argumenty se neukládají.",
+      "error": "Statistiky využití MCP se nepodařilo načíst.",
+      "empty": "V tomto období nebyla zaznamenána žádná volání MCP nástrojů.",
+      "deletedUser": "Smazaný uživatel",
+      "ranges": {
+        "24h": "24 h",
+        "7d": "7 dní",
+        "30d": "30 dní",
+        "12m": "12 měsíců"
+      },
+      "metrics": {
+        "calls": "Volání nástrojů",
+        "users": "Uživatelé",
+        "clients": "OAuth klienti",
+        "successRate": "Úspěšnost",
+        "averageDuration": "Průměrná doba",
+        "returnedText": "Znaků přepisu"
+      },
+      "activity": {
+        "title": "Aktivita v čase",
+        "description": "Dokončená volání MCP nástrojů ve zvoleném období."
+      },
+      "tools": {
+        "title": "Využití nástrojů",
+        "description": "Objem, uživatelé, spolehlivost a odezva jednotlivých MCP nástrojů."
+      },
+      "users": {
+        "title": "Nejaktivnější uživatelé"
+      },
+      "clients": {
+        "title": "OAuth klienti"
+      },
+      "catalogs": {
+        "title": "Katalogy"
+      },
+      "recent": {
+        "title": "Poslední volání",
+        "description": "50 nejnovějších volání bez obsahu argumentů nebo odpovědí."
+      },
+      "columns": {
+        "time": "Čas",
+        "tool": "Nástroj",
+        "calls": "Volání",
+        "users": "Uživatelé",
+        "user": "Uživatel",
+        "tools": "Nástroje",
+        "client": "Klient",
+        "catalog": "Katalog",
+        "outcome": "Výsledek",
+        "duration": "Doba",
+        "success": "Úspěšnost",
+        "average": "Průměr",
+        "p95": "p95",
+        "lastUsed": "Naposledy"
+      }
     },
     "webUpdates": {
       "title": "Aktualizace webového klienta",

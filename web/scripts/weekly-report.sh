@@ -165,6 +165,56 @@ AUDIO_UNIQUE_USERS=$(db_query "SELECT COUNT(DISTINCT user_id) FROM audit_log WHE
 AUDIO_DOWNLOADS=$(db_query "SELECT COUNT(*) FROM audit_log WHERE action = 'AUDIO_DOWNLOADED' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
 TRANSCRIPT_DOWNLOADS=$(db_query "SELECT COUNT(*) FROM audit_log WHERE action = 'TRANSCRIPT_DOWNLOADED' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
 
+# MCP tool activity. The usage table intentionally contains no raw search text,
+# transcript content, bearer tokens, or complete tool arguments/responses.
+MCP_CALLS=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_UNIQUE_USERS=$(db_query "SELECT COUNT(DISTINCT user_id) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_UNIQUE_CLIENTS=$(db_query "SELECT COUNT(DISTINCT client_id) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_SUCCESSES=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE outcome = 'SUCCESS' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_ERRORS=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE outcome = 'ERROR' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_DENIALS=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE outcome = 'DENIED' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_RETURNED_TEXT_CHARS=$(db_query "SELECT COALESCE(SUM(returned_text_chars), 0) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+
+MCP_BY_TOOL=$(db_query "
+SELECT tool_name || ': ' || COUNT(*) ||
+       CASE WHEN COUNT(*) = 1 THEN ' call' ELSE ' calls' END ||
+       ' by ' || COUNT(DISTINCT user_id) ||
+       CASE WHEN COUNT(DISTINCT user_id) = 1 THEN ' user' ELSE ' users' END ||
+       CASE WHEN COUNT(*) FILTER (WHERE outcome != 'SUCCESS') > 0
+         THEN ' (' || COUNT(*) FILTER (WHERE outcome != 'SUCCESS') || ' unsuccessful)'
+         ELSE ''
+       END
+FROM mcp_tool_invocation
+WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY tool_name
+ORDER BY COUNT(*) DESC, tool_name ASC
+" | sed 's/^/  • /')
+
+MCP_BY_USER=$(db_query "
+SELECT COALESCE(u.email, invocation.user_id, 'deleted user') || ': ' ||
+       COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' call' ELSE ' calls' END ||
+       ' across ' || COUNT(DISTINCT tool_name) ||
+       CASE WHEN COUNT(DISTINCT tool_name) = 1 THEN ' tool' ELSE ' tools' END
+FROM mcp_tool_invocation invocation
+LEFT JOIN users u ON u.id = invocation.user_id
+WHERE invocation.created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY invocation.user_id, u.email
+ORDER BY COUNT(*) DESC, COALESCE(LOWER(u.email), invocation.user_id, 'deleted user') ASC
+LIMIT $PER_USER_BREAKDOWN_LIMIT
+" | sed 's/^/  • /')
+
+MCP_BY_CLIENT=$(db_query "
+SELECT COALESCE(MAX(client_name), client_id) || ': ' || COUNT(*) ||
+       CASE WHEN COUNT(*) = 1 THEN ' call' ELSE ' calls' END ||
+       ' by ' || COUNT(DISTINCT user_id) ||
+       CASE WHEN COUNT(DISTINCT user_id) = 1 THEN ' user' ELSE ' users' END
+FROM mcp_tool_invocation
+WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY client_id
+ORDER BY COUNT(*) DESC, client_id ASC
+LIMIT $PER_USER_BREAKDOWN_LIMIT
+" | sed 's/^/  • /')
+
 # Per-user audio breakdown (top N users by plays)
 AUDIO_PER_USER=$(db_query "
 WITH ordered_events AS (
@@ -294,6 +344,23 @@ Transcript exports: $TRANSCRIPT_DOWNLOADS
 ${AUDIO_PER_USER:+
 Per-user breakdown:
 $AUDIO_PER_USER}
+
+MCP ACTIVITY
+------------
+Tool calls:          $MCP_CALLS by $MCP_UNIQUE_USERS users
+OAuth clients:       $MCP_UNIQUE_CLIENTS
+Successful:          $MCP_SUCCESSES
+Errors / denials:    $MCP_ERRORS / $MCP_DENIALS
+Transcript chars:    $MCP_RETURNED_TEXT_CHARS
+${MCP_BY_TOOL:+
+Tools:
+$MCP_BY_TOOL}
+${MCP_BY_USER:+
+Top users:
+$MCP_BY_USER}
+${MCP_BY_CLIENT:+
+Clients:
+$MCP_BY_CLIENT}
 
 ADMIN ACTIVITY
 --------------

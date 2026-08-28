@@ -414,9 +414,10 @@ Checks `LOGIN_FAILED` count (threshold default 5), `ACCESS_DENIED` count
 anomalies.
 
 **`weekly-report.sh`** -- Broad operator summary for the last seven days:
-logins, active users, audio activity, admin actions, security events, local DB
-dump health, and combined host snapshot coverage across the generic project
-snapshot root plus the Besedy-specific extra snapshot root. Calls
+logins, active users, audio activity, MCP tool calls by tool/user/OAuth client,
+admin actions, security events, local DB dump health, and combined host snapshot
+coverage across the generic project snapshot root plus the Besedy-specific extra
+snapshot root. Calls
 `backup-health-check.sh` and `host-backup-health-check.sh` internally
 (suppressed email) to embed backup status. Sends every run when `REPORT_EMAIL`
 is set.
