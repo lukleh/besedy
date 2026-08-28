@@ -15,8 +15,8 @@ import {
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { SearchTranscriptsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
-const DEFAULT_SEARCH_LIMIT = 100;
-const MAX_SEARCH_LIMIT = 100;
+const DEFAULT_SEARCH_LIMIT = 50;
+const MAX_SEARCH_LIMIT = 200;
 const DEFAULT_SEARCH_CONTEXT_CHUNKS = 1;
 const MAX_SEARCH_CONTEXT_CHUNKS = 3;
 const DEFAULT_SEARCH_RESULTS_PER_RECORDING = 10;
@@ -55,7 +55,7 @@ export function registerSearchTranscriptsTool(
     {
       title: 'Search Besedy transcripts',
       description:
-        'Discover candidate passages with a broad, semantic, non-exhaustive search of accessible Besedy transcripts. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
+        'Discover candidate passages with a semantic, non-exhaustive search of accessible Besedy transcripts. For ordinary content questions, use a small first pass only for orientation, then run precise broad searches before synthesizing. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -79,7 +79,7 @@ export function registerSearchTranscriptsTool(
           .max(MAX_SEARCH_LIMIT)
           .default(DEFAULT_SEARCH_LIMIT)
           .describe(
-            'Maximum number of non-exhaustive matches to return. The broad discovery default is 100; use an intentional smaller limit for reformulations and focused follow-ups.',
+            'Maximum number of non-exhaustive matches to return. The broad precision default is 50 and the maximum is 200. Use a smaller limit only for initial orientation or a tightly focused follow-up, not as the final evidence base for an ordinary content question.',
           ),
         contextChunks: z
           .number()
@@ -97,7 +97,7 @@ export function registerSearchTranscriptsTool(
           .max(MAX_PER_AUDIO_LIMIT)
           .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING)
           .describe(
-            'Maximum matches per recording/audio hash. A low value such as 1 favors discovery across recordings; a higher value can return several related passages from one recording.',
+            'Maximum matches per recording/audio hash. A low value such as 1 favors diversity during initial orientation; for precise broad searches, keep the default or raise it when distinct passages from one recording may matter.',
           ),
         filters: SearchMetadataFiltersSchema.optional().describe(
           'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',

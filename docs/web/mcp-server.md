@@ -270,12 +270,13 @@ authenticated web links, but never audio URLs or filesystem paths.
 
 The MCP initialization response also includes concise server instructions for
 agents that connect without the optional Besedy skill. They describe the
-cross-tool discovery and evidence workflow: semantic search is non-exhaustive,
-important passages should be verified through `transcriptRequest` and
-`get_transcript`, recorder variants of one event are not independent evidence,
-recurring themes require support from distinct events, and bounded segment
-links are preferred for citations. Tool descriptions and schemas remain
-authoritative for individual calls and their current limits.
+cross-tool discovery and evidence workflow: an initial small search provides
+orientation, a precise broad search must follow before synthesis, semantic
+search is non-exhaustive, important passages should be verified through
+`transcriptRequest` and `get_transcript`, recorder variants of one event are not
+independent evidence, recurring themes require support from distinct events,
+and bounded segment links are preferred for citations. Tool descriptions and
+schemas remain authoritative for individual calls and their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
@@ -758,14 +759,14 @@ not contain something. Retrieval is deliberately marked non-exhaustive, and
 results are ordered by relevance through `rank`; internal numeric retrieval
 scores are not exposed.
 
-| Argument          | Type                                       | Default           | Meaning                                                              |
-| ----------------- | ------------------------------------------ | ----------------- | -------------------------------------------------------------------- |
-| `catalogId`       | string                                     | effective default | Catalog to search                                                    |
-| `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                      |
-| `limit`           | integer from 1 to 100                      | `100`             | Maximum matches; use a smaller explicit limit for focused follow-ups |
-| `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match            |
-| `maxPerRecording` | integer from 1 to 100                      | `10`              | Maximum matches from one audio hash                                  |
-| `filters`         | object                                     | omitted           | Optional metadata constraints described below                        |
+| Argument          | Type                                       | Default           | Meaning                                                                   |
+| ----------------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------- |
+| `catalogId`       | string                                     | effective default | Catalog to search                                                         |
+| `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                           |
+| `limit`           | integer from 1 to 200                      | `50`              | Maximum matches; smaller limits are for orientation or focused follow-ups |
+| `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match                 |
+| `maxPerRecording` | integer from 1 to 100                      | `10`              | Maximum matches from one audio hash                                       |
+| `filters`         | object                                     | omitted           | Optional metadata constraints described below                             |
 
 `filters` is a strict object containing at least one of:
 
@@ -780,11 +781,12 @@ supports a direct `list_events` to `search_transcripts` workflow without making
 the caller expand each event into recording hashes. `locationIds`,
 `recorderIds`, `dateYears`, and `verified` refer to curated recording metadata.
 
-A low `maxPerRecording`, such as `1`, increases diversity across recordings. A
-higher value is useful after narrowing the search to one or more recordings.
-The default remains `3` so one long recording does not dominate broad
-discovery, while values up to `100` support deep recording-focused searches.
-The overall `limit` still bounds the number of returned matches.
+A low `maxPerRecording`, such as `1`, increases diversity across recordings and
+is useful for initial orientation. A precise broad search should keep the
+default or raise it when distinct passages from one recording may matter. The
+default remains `10` so one long recording does not dominate broad discovery,
+while values up to `100` support deep recording-focused searches. The overall
+`limit` still bounds the number of returned matches.
 Adjacent chunks are mechanical context for triage: they may not contain a
 complete question, answer, qualification, or discussion arc.
 
@@ -820,17 +822,25 @@ The generated request can be passed directly to `get_transcript`:
 
 The recommended evidence workflow is:
 
-1. Run a broad semantic search with a low `maxPerRecording`.
-2. Shortlist results from their exact match and adjacent context.
-3. If needed, run a smaller follow-up restricted with `filters.eventIds` or
+1. Run a small orientation search with a low `maxPerRecording` to learn the
+   corpus vocabulary and identify promising sources.
+2. Before synthesizing, run precise broad searches with the 50-result default,
+   several materially different reformulations, and multiple matches per
+   recording when useful. Do not wait for the user to request more precision.
+3. Shortlist and deduplicate results from their exact match, adjacent context,
+   recording, and linked event identity.
+4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.
-4. Call `get_transcript` with the chosen result's `transcriptRequest` and read
+5. Call `get_transcript` with the chosen result's `transcriptRequest` and read
    the continuous source context before relying on the passage.
 
-Do not repeatedly request the 100-result default for reformulations; choose an
-intentional smaller `limit`. `search_not_configured` means the catalog has no
-search bundle and is not retryable. `search_unavailable` means the search
-service is temporarily unavailable and is retryable.
+Run broad reformulations sequentially, compacting and deduplicating each
+structured response before requesting the next one. Use the maximum of `200`
+when the question requires wider coverage rather than lowering the limit merely
+to shorten tool output. Semantic retrieval remains non-exhaustive even at the
+maximum. `search_not_configured` means the catalog has no search bundle and is
+not retryable. `search_unavailable` means the search service is temporarily
+unavailable and is retryable.
 
 Example return value:
 
