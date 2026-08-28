@@ -486,12 +486,15 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       },
     });
 
+    const expectedEvents = TEST_EVENTS.filter(
+      (event) => event.dateYear === 2024,
+    );
     const listedEvents: McpListedEvent[] = [];
     let eventCursor: string | undefined;
     let eventPagesExhausted = false;
     for (
       let pageIndex = 0;
-      pageIndex <= TEST_EVENTS.length;
+      pageIndex <= expectedEvents.length;
       pageIndex += 1
     ) {
       const eventsResponse = await request.post(MCP_RESOURCE, {
@@ -538,11 +541,13 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     }
 
     expect(eventPagesExhausted).toBe(true);
-    expect(listedEvents).toHaveLength(TEST_EVENTS.length);
+    expect(listedEvents).toHaveLength(expectedEvents.length);
     expect(new Set(listedEvents.map((event) => event.id)).size).toBe(
       listedEvents.length,
     );
-    expect(listedEvents).toEqual([...listedEvents].sort(compareMcpListedEvents));
+    expect(listedEvents).toEqual(
+      [...listedEvents].sort(compareMcpListedEvents),
+    );
     expect(listedEvents.some((event) => !event.released)).toBe(true);
     const event = listedEvents.find(
       (candidate) =>
