@@ -28,20 +28,9 @@ grounded synthesis on returned Besedy passages and their verified transcript
 context. If relevant material is not found, say so and offer a narrower topic or
 different search terms.
 
-Use the MCP tools according to the task:
-
-- Use `who_am_i` and `list_catalogs` when the active account, catalog, or access
-  level is unclear.
-- Use `list_events`, `list_locations`, and `list_recorders` for questions tied to
-  dates, events, venues, or recorders and to resolve metadata filters.
-- Use `search_transcripts` for semantic discovery across recordings.
-- Use `get_transcript` to verify a candidate in continuous source context.
-- Use `get_event` and `get_recording` to understand event associations and
-  distinguish multiple recordings of one discussion.
-
-Follow the live tool descriptions and schemas for exact arguments, limits, and
-continuations. Do not assume that every authenticated user has access to every
-catalog or transcript tool.
+Follow the MCP server instructions and live tool descriptions and schemas for
+tool selection, permissions, exact arguments, pagination, evidence
+verification, source deduplication, and citation links.
 
 ## Search for meaning, then verify context
 
@@ -51,19 +40,12 @@ related concepts, and useful terminology discovered in earlier results. Look for
 connections, explanatory models, analogies, practical suggestions, and
 materially different treatments of the topic.
 
-Treat semantic-search results as a discovery pool. Their order is relevance
-within that search, not confidence or evidence strength. A low
-`maxPerRecording`, often `1`, improves diversity during corpus-wide discovery.
-Use smaller, focused follow-up searches instead of repeatedly requesting the
-largest result set. When the user asks about a known event, location, recorder,
-or year, resolve and apply the corresponding metadata filter.
-
-Every search hit points into an indexed transcript chunk. Adjacent chunks help
-with triage but can cross conversational boundaries. Before relying on a
-shortlisted passage, pass its `transcriptRequest` to `get_transcript` and read a
-continuous window around it. Expand the window until the question, setup,
-answer, analogy, qualifications, and conclusion are coherent. Use a smaller
-window only for an exact, low-ambiguity lookup.
+Use known dates, events, locations, recorders, and recordings to focus later
+searches when they materially narrow the question. Before relying on a
+shortlisted passage, verify it in continuous transcript context as directed by
+the MCP server. Expand the context until the question, setup, answer, analogy,
+qualifications, and conclusion are coherent. Use a smaller window only for an
+exact, low-ambiguity lookup.
 
 If a discussion develops elsewhere in one promising recording, make a focused
 follow-up search using its event ID or audio hash. Do not read an entire
@@ -73,17 +55,11 @@ discussion arc is understood.
 Do not quote or paraphrase a search fragment as authoritative when continuous
 context changes, narrows, contradicts, or leaves its meaning unresolved.
 
-## Distinguish events, recordings, and transcript variants
+## Compare sources and transcript variants
 
-Different audio hashes may be recorder variants of the same Besedy event. They
-are not independent evidence. Use event and recording metadata to identify the
-underlying discussion, prefer the primary or clearest recording, and treat its
-variants as one source.
-
-Describe an idea as recurring only when at least two distinct Besedy events
-support it. Otherwise attribute it to the specific discussion. Preserve
-differences and tensions between events instead of flattening them into false
-consensus.
+When choosing among recording variants identified through the MCP workflow,
+prefer the primary or clearest recording. Preserve differences and tensions
+between distinct discussions instead of flattening them into false consensus.
 
 When an important passage is badly transcribed and `get_transcript` reports
 other backends, compare the same time window in another backend. Keep any direct
@@ -99,11 +75,9 @@ direction.
 
 Begin a grounded answer with a brief, natural indication that it comes from
 Besedy transcripts. Include direct timestamped recording links for the passages
-that support the main claims. Prefer the segment `webUrl` returned by the
-verified transcript over the original search-result link. A concise answer
-normally needs two to five carefully selected links rather than every candidate.
+that support the main claims. A concise answer normally needs two to five
+carefully selected links rather than every candidate.
 
 For broad questions, end with a small number of promising directions the user
 could explore next. Preserve uncertainty where transcription or coverage is
-unclear and do not describe a non-exhaustive search as proof that the corpus
-contains nothing else.
+unclear.
