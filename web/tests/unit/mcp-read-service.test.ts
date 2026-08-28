@@ -432,6 +432,55 @@ describe('MCP read service', () => {
     ]);
   });
 
+  it('excludes orphaned curated metadata from elevated-reader lookups', async () => {
+    db.audioMetadata.findMany.mockResolvedValue([
+      {
+        audioHash: 'visible-recording',
+        locationId: 7,
+        recorderId: 3,
+      },
+      {
+        audioHash: 'orphaned-recording',
+        locationId: 8,
+        recorderId: 4,
+      },
+    ]);
+    db.catalogEntry.findMany.mockResolvedValue([
+      { audioHash: 'visible-recording' },
+    ]);
+    db.location.findMany.mockResolvedValue([{ id: 7, name: 'Prague' }]);
+    db.recorder.findMany.mockResolvedValue([{ id: 3, name: 'Petr' }]);
+
+    const locations = await listMcpLocations(
+      'catalog-a',
+      'VIEWER',
+      false,
+      { limit: 50 },
+    );
+    const recorders = await listMcpRecorders('catalog-a', 'VIEWER', {
+      limit: 50,
+    });
+
+    expect(db.catalogEntry.findMany).toHaveBeenCalledWith({
+      where: {
+        workflowGroupId: 'catalog-a',
+        audioHash: { in: ['visible-recording', 'orphaned-recording'] },
+      },
+      select: { audioHash: true },
+    });
+    expect(locations.locations).toEqual([
+      {
+        id: 7,
+        name: 'Prague',
+        eventCount: null,
+        recordingCount: 1,
+      },
+    ]);
+    expect(recorders.recorders).toEqual([
+      { id: 3, name: 'Petr', recordingCount: 1 },
+    ]);
+  });
+
   it('treats event query metacharacters as literal text', async () => {
     await listMcpEvents('catalog-a', 'VIEWER', {
       limit: 25,
@@ -615,6 +664,11 @@ describe('MCP read service', () => {
   });
 
   it('returns a bounded page of compact recording summaries and links', async () => {
+    db.catalogEntry.findMany.mockResolvedValueOnce([
+      { audioHash: 'visible-recording' },
+      { audioHash: 'hidden-recording' },
+    ]);
+
     const result = await getMcpEvent('catalog-a', 42, 'VIEWER', {
       offset: 0,
       limit: 1,

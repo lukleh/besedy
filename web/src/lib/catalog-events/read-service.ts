@@ -97,9 +97,15 @@ export async function resolveReadableRecordingHashes(
   catalogGrant: AccessLevel | null,
   audioHashes: string[],
 ): Promise<Set<string>> {
-  return requiresReadyRecordingScope(catalogGrant)
-    ? getPublishedAccessibleRecordingHashes(prisma, catalogId, audioHashes)
-    : new Set(audioHashes);
+  if (audioHashes.length === 0) return new Set();
+  if (requiresReadyRecordingScope(catalogGrant)) {
+    return getPublishedAccessibleRecordingHashes(prisma, catalogId, audioHashes);
+  }
+  const rows = await prisma.catalogEntry.findMany({
+    where: { workflowGroupId: catalogId, audioHash: { in: audioHashes } },
+    select: { audioHash: true },
+  });
+  return new Set(rows.map((row) => row.audioHash));
 }
 
 export async function loadReadableCatalogEvent(
