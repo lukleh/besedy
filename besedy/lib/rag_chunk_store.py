@@ -23,6 +23,10 @@ CHUNK_SELECT_COLUMNS = """
     source_path
 """
 
+CHUNK_FTS_TABLE = "chunks_fts"
+CHUNK_FTS_BACKFILL_KEY = "chunks_fts_backfill_version"
+CHUNK_FTS_BACKFILL_VERSION = "1"
+
 
 @dataclass(frozen=True)
 class ChunkNeighbors:
@@ -44,6 +48,10 @@ def _connect(path: Path) -> sqlite3.Connection:
 
 
 def _initialize_schema(connection: sqlite3.Connection) -> None:
+    fts_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (CHUNK_FTS_TABLE,),
+    ).fetchone()
     connection.executescript(
         """
         PRAGMA journal_mode = DELETE;
@@ -71,8 +79,69 @@ def _initialize_schema(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS chunks_audio_time_idx
           ON chunks(audio_hash, start_sec, end_sec);
+
+        CREATE TABLE IF NOT EXISTS chunk_store_metadata (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+          text,
+          content = 'chunks',
+          content_rowid = 'rowid',
+          tokenize = 'unicode61 remove_diacritics 2'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_after_insert
+        AFTER INSERT ON chunks BEGIN
+          INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_after_delete
+        AFTER DELETE ON chunks BEGIN
+          INSERT INTO chunks_fts(chunks_fts, rowid, text)
+          VALUES ('delete', old.rowid, old.text);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_after_update
+        AFTER UPDATE ON chunks BEGIN
+          INSERT INTO chunks_fts(chunks_fts, rowid, text)
+          VALUES ('delete', old.rowid, old.text);
+          INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+        END;
         """
     )
+    backfill_version = connection.execute(
+        "SELECT value FROM chunk_store_metadata WHERE key = ?",
+        (CHUNK_FTS_BACKFILL_KEY,),
+    ).fetchone()
+    if (
+        fts_exists is None
+        or backfill_version is None
+        or str(backfill_version["value"]) != CHUNK_FTS_BACKFILL_VERSION
+    ):
+        # CREATE VIRTUAL TABLE does not backfill an external-content FTS index.
+        # Record completion only after rebuilding so an interrupted migration is
+        # retried instead of mistaking the virtual table's presence for success.
+        connection.execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')")
+        connection.execute(
+            """
+            INSERT INTO chunk_store_metadata (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (CHUNK_FTS_BACKFILL_KEY, CHUNK_FTS_BACKFILL_VERSION),
+        )
+
+
+def ensure_chunk_store_fts(*, path: Path | str) -> Path:
+    """Create and backfill the FTS5 index for a new or existing chunk store."""
+
+    store_path = Path(path)
+    with _connect(store_path) as connection:
+        _initialize_schema(connection)
+        connection.commit()
+    return store_path
 
 
 def _chunk_row(chunk: RagChunk) -> tuple[object, ...]:
@@ -357,6 +426,7 @@ __all__ = [
     "ChunkNeighbors",
     "count_chunks_by_audio_hash",
     "delete_chunks_for_audio_hashes",
+    "ensure_chunk_store_fts",
     "lookup_chunk_neighbors",
     "lookup_chunks",
     "list_chunk_ids_by_audio_hashes",
