@@ -344,6 +344,8 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     for (const toolName of [
       'who_am_i',
       'list_catalogs',
+      'list_locations',
+      'list_recorders',
       'list_events',
       'get_event',
       'get_recording',
@@ -386,6 +388,8 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(toolsBody.result?.tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
       'list_catalogs',
+      'list_locations',
+      'list_recorders',
       'list_events',
       'get_event',
       'get_recording',
@@ -485,6 +489,43 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         canSeeUnreleasedEvents: true,
       },
     });
+
+    for (const lookup of [
+      { tool: 'list_locations', field: 'locations' },
+      { tool: 'list_recorders', field: 'recorders' },
+    ] as const) {
+      const lookupResponse = await request.post(MCP_RESOURCE, {
+        headers: {
+          ...mcpHeaders,
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': lookup.tool,
+        },
+        data: {
+          jsonrpc: '2.0',
+          id: lookup.tool === 'list_locations' ? 20 : 21,
+          method: 'tools/call',
+          params: {
+            name: lookup.tool,
+            arguments: { limit: 10 },
+            _meta: envelope,
+          },
+        },
+      });
+      expect(lookupResponse.ok()).toBe(true);
+      const lookupBody = (await lookupResponse.json()) as McpResponse<
+        McpToolResult<{
+          catalogId: string;
+          locations?: Array<{ id: number; name: string }>;
+          recorders?: Array<{ id: number; name: string }>;
+          nextCursor: string | null;
+        }>
+      >;
+      expect(lookupBody.error).toBeUndefined();
+      expect(lookupBody.result?.isError).not.toBe(true);
+      const lookupResult = lookupBody.result?.structuredContent;
+      expect(lookupResult?.catalogId).toBe(result?.defaultCatalogId);
+      expect(lookupResult?.[lookup.field]?.length).toBeGreaterThan(0);
+    }
 
     const expectedEvents = TEST_EVENTS.filter(
       (event) => event.dateYear === 2024,

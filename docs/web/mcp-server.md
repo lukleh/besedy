@@ -14,7 +14,7 @@ just mcp-smoke
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
-all seven tools. It verifies default-catalog resolution, the owner's live
+all nine tools. It verifies default-catalog resolution, the owner's live
 capability flags, metadata reads, complete transcript retrieval, and a grounded
 RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
 not supply `catalogId`, so the same run covers default selection. The test keeps
@@ -258,14 +258,14 @@ that an omitted `catalogId` will resolve.
 
 ## Tool reference
 
-All seven tools are read-only, idempotent, and limited to Besedy data rather
+All nine tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
 `structuredContent`. The `content` field contains a concise summary; transcript
 and search calls additionally render their evidence text there for clients that
 do not consume structured results. Responses may contain stable Besedy IDs and
 authenticated web links, but never audio URLs or filesystem paths.
 
-Catalog and event collections remain paginated. Transcript reads deliberately
+Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
 every matching segment in one response.
 
@@ -273,6 +273,8 @@ every matching segment in one response.
 | -------------------- | ------------------------------------------------------------- | --------------------------------------------- |
 | `who_am_i`           | Inspect the account, OAuth client, scopes, and access summary | Active portal user                            |
 | `list_catalogs`      | Discover accessible catalogs and per-catalog capabilities     | Active portal user                            |
+| `list_locations`     | Discover location IDs used by visible events or recordings    | `canGetRecordings`                            |
+| `list_recorders`     | Discover recorder IDs used by visible recordings              | `canGetRecordings`                            |
 | `list_events`        | Page and filter visible events                                | `canListEvents`                               |
 | `get_event`          | Read one event and its visible recording summaries            | `canListEvents` and event visibility          |
 | `get_recording`      | Read one recording's metadata and linked events               | `canGetRecordings` and recording visibility   |
@@ -371,10 +373,82 @@ Example return value:
 }
 ```
 
+### `list_locations`
+
+Use this tool to resolve a location name to the stable ID accepted by
+`list_events.locationId` and `search_transcripts.filters.locationIds`. Results
+contain only locations used by recordings the caller can read or, when event
+browsing is enabled for the catalog, by events the caller can read.
+
+| Argument    | Type                                     | Default           | Meaning                                                          |
+| ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------- |
+| `catalogId` | string                                   | effective default | Catalog whose visible location usage is counted                  |
+| `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive substring match against the location name       |
+| `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page |
+| `limit`     | integer from 1 to 100                    | `50`              | Maximum locations in the page                                    |
+
+Locations are ordered by name and ID. `recordingCount` counts readable
+recordings with that curated recording location. `eventCount` counts readable
+events whose event location matches; it is `null` when event browsing is not
+enabled for the selected catalog. The two counts are intentionally distinct:
+an event can contain recordings whose curated locations differ from the event
+location.
+
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "locations": [
+    {
+      "id": 999,
+      "name": "Example Hall",
+      "eventCount": 12,
+      "recordingCount": 18
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+Pass `nextCursor` unchanged with the same catalog and query to continue. A
+malformed or mismatched cursor returns `invalid_cursor`.
+
+### `list_recorders`
+
+Use this tool to resolve a recorder name to the stable ID accepted by
+`search_transcripts.filters.recorderIds`. Results contain only recorders used
+by recordings the caller can read.
+
+| Argument    | Type                                     | Default           | Meaning                                                          |
+| ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------- |
+| `catalogId` | string                                   | effective default | Catalog whose visible recorder usage is counted                  |
+| `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive substring match against the recorder name       |
+| `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page |
+| `limit`     | integer from 1 to 100                    | `50`              | Maximum recorders in the page                                    |
+
+Recorders are ordered by name and ID. `recordingCount` counts readable
+recordings with that curated recorder.
+
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "recorders": [
+    { "id": 998, "name": "Example Recorder", "recordingCount": 27 }
+  ],
+  "nextCursor": null
+}
+```
+
+Pass `nextCursor` unchanged with the same catalog and query to continue. A
+malformed or mismatched cursor returns `invalid_cursor`.
+
 ### `list_events`
 
 Use this tool to browse events or resolve an event ID before calling
-`get_event`.
+`get_event`. Call `list_locations` first when an exact location ID is needed.
 
 | Argument     | Type                                     | Default           | Meaning                                                                |
 | ------------ | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------- |

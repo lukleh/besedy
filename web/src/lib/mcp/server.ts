@@ -5,6 +5,8 @@ import {
   registerGetTranscriptTool,
   registerListCatalogsTool,
   registerListEventsTool,
+  registerListLocationsTool,
+  registerListRecordersTool,
   registerSearchTranscriptsTool,
   registerWhoAmITool,
   type BesedyMcpRequestContext,
@@ -28,6 +30,11 @@ export function createBesedyMcpServer(
 
   registerWhoAmITool(server, context);
   registerListCatalogsTool(server, context);
+
+  if (profile.aggregate.canGetRecordings) {
+    registerListLocationsTool(server, context);
+    registerListRecordersTool(server, context);
+  }
 
   if (profile.aggregate.canListEvents) {
     registerListEventsTool(server, context);

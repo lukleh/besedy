@@ -6,6 +6,8 @@ export {
   registerListCatalogsTool,
 } from '@/lib/mcp/tools/list-catalogs';
 export { registerListEventsTool } from '@/lib/mcp/tools/list-events';
+export { registerListLocationsTool } from '@/lib/mcp/tools/list-locations';
+export { registerListRecordersTool } from '@/lib/mcp/tools/list-recorders';
 export { registerSearchTranscriptsTool } from '@/lib/mcp/tools/search-transcripts';
 export { registerWhoAmITool } from '@/lib/mcp/tools/who-am-i';
 export type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';

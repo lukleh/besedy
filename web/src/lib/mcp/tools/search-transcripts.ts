@@ -95,7 +95,7 @@ export function registerSearchTranscriptsTool(
             'Maximum matches per recording/audio hash. A low value such as 1 favors discovery across recordings; a higher value can return several related passages from one recording.',
           ),
         filters: SearchMetadataFiltersSchema.optional().describe(
-          'Optional constraints. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
+          'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
         ),
       }),
       annotations: READ_ONLY_TOOL_ANNOTATIONS,

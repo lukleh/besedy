@@ -2,7 +2,39 @@ import type {
   McpAccessProfile,
   McpCatalogAccess,
 } from '@/lib/mcp/access-profile';
+import { z } from 'zod';
 import { McpReadError } from '@/lib/mcp/read-service';
+
+const DEFAULT_LOOKUP_PAGE_SIZE = 50;
+const MAX_LOOKUP_PAGE_SIZE = 100;
+
+export function createLookupListInputSchema(itemName: string) {
+  return z.object({
+    catalogId: z.string().min(1).optional(),
+    query: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        `Case-insensitive substring match against the ${itemName} name.`,
+      ),
+    cursor: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same catalog and query.',
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_LOOKUP_PAGE_SIZE)
+      .default(DEFAULT_LOOKUP_PAGE_SIZE),
+  });
+}
 
 export const READ_ONLY_TOOL_ANNOTATIONS = {
   readOnlyHint: true,

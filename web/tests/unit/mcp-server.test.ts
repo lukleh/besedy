@@ -10,6 +10,8 @@ import {
   getMcpEvent,
   getMcpRecording,
   getMcpTranscript,
+  listMcpLocations,
+  listMcpRecorders,
   listMcpEvents,
   McpReadError,
   searchMcpTranscripts,
@@ -32,6 +34,8 @@ vi.mock('@/lib/mcp/read-service', () => ({
     }
   },
   listMcpEvents: vi.fn(),
+  listMcpLocations: vi.fn(),
+  listMcpRecorders: vi.fn(),
   getMcpEvent: vi.fn(),
   getMcpRecording: vi.fn(),
   getMcpTranscript: vi.fn(),
@@ -128,6 +132,8 @@ function catalog(
 
 function catalogToolCalls(catalogId: string) {
   return [
+    { name: 'list_locations', arguments: { catalogId } },
+    { name: 'list_recorders', arguments: { catalogId } },
     { name: 'list_events', arguments: { catalogId } },
     { name: 'get_event', arguments: { catalogId, eventId: 42 } },
     {
@@ -377,6 +383,8 @@ describe('MCP personalized tool surface', () => {
     expect(tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
       'list_catalogs',
+      'list_locations',
+      'list_recorders',
       'list_events',
       'get_event',
       'get_recording',
@@ -408,6 +416,8 @@ describe('MCP personalized tool surface', () => {
     expect(tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
       'list_catalogs',
+      'list_locations',
+      'list_recorders',
       'list_events',
       'get_event',
       'get_recording',
@@ -450,6 +460,8 @@ describe('MCP personalized tool surface', () => {
     const searchTool = tools.find((tool) => tool.name === 'search_transcripts');
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
     const eventsTool = tools.find((tool) => tool.name === 'list_events');
+    const locationsTool = tools.find((tool) => tool.name === 'list_locations');
+    const recordersTool = tools.find((tool) => tool.name === 'list_recorders');
 
     expect(searchTool?.description).toContain('filters.eventIds');
     expect(searchTool?.description).toContain('filters.audioHashes');
@@ -470,6 +482,12 @@ describe('MCP personalized tool surface', () => {
       searchTool?.inputSchema.properties.filters.properties?.eventIds
         ?.description,
     ).toContain('linked recordings');
+    expect(searchTool?.inputSchema.properties.filters.description).toContain(
+      'list_locations',
+    );
+    expect(locationsTool?.description).toContain('list_events');
+    expect(locationsTool?.description).toContain('search_transcripts');
+    expect(recordersTool?.description).toContain('search_transcripts');
     expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain('complete stored transcript');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
@@ -554,6 +572,54 @@ describe('MCP personalized tool surface', () => {
       query: undefined,
       date: { year: 2026, month: 8 },
       locationId: 7,
+    });
+  });
+
+  it('uses recording access for metadata lookup tools', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      aggregate: {
+        canListEvents: true,
+        canGetRecordings: true,
+        canViewTranscripts: true,
+        canSearchTranscripts: true,
+      },
+    };
+    vi.mocked(listMcpLocations).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      locations: [],
+      nextCursor: null,
+    });
+    vi.mocked(listMcpRecorders).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      recorders: [],
+      nextCursor: null,
+    });
+
+    await invokeMcp('tools/call', {
+      name: 'list_locations',
+      arguments: { query: 'Prague', limit: 10 },
+    });
+    expect(listMcpLocations).toHaveBeenCalledWith(
+      'viewer-catalog',
+      'VIEWER',
+      true,
+      { query: 'Prague', cursor: undefined, limit: 10 },
+    );
+
+    await invokeMcp('tools/call', {
+      name: 'list_recorders',
+      arguments: { query: 'Petr', cursor: 'cursor' },
+    });
+    expect(listMcpRecorders).toHaveBeenCalledWith('viewer-catalog', 'VIEWER', {
+      query: 'Petr',
+      cursor: 'cursor',
+      limit: 50,
     });
   });
 
@@ -852,6 +918,8 @@ describe('MCP personalized tool surface', () => {
       });
     }
     expect(listMcpEvents).not.toHaveBeenCalled();
+    expect(listMcpLocations).not.toHaveBeenCalled();
+    expect(listMcpRecorders).not.toHaveBeenCalled();
     expect(getMcpEvent).not.toHaveBeenCalled();
     expect(getMcpRecording).not.toHaveBeenCalled();
     expect(getMcpTranscript).not.toHaveBeenCalled();
@@ -889,6 +957,8 @@ describe('MCP personalized tool surface', () => {
       });
     }
     expect(listMcpEvents).not.toHaveBeenCalled();
+    expect(listMcpLocations).not.toHaveBeenCalled();
+    expect(listMcpRecorders).not.toHaveBeenCalled();
     expect(getMcpEvent).not.toHaveBeenCalled();
     expect(getMcpRecording).not.toHaveBeenCalled();
     expect(getMcpTranscript).not.toHaveBeenCalled();

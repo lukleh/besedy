@@ -3,6 +3,7 @@ import prisma from '@/lib/db';
 import { getRecordingCapability } from '@/lib/access/capabilities';
 import { TRANSCRIPT_ACCESS_DENIED_MESSAGE } from '@/lib/access/messages';
 import {
+  catalogEventVisibilityWhere,
   catalogEventRecordingVisibilityWhere,
   listReadableCatalogEvents,
   loadReadableCatalogEvent,
@@ -41,6 +42,12 @@ export interface McpEventListInput {
     day?: number;
   };
   locationId?: number;
+}
+
+export interface McpLookupListInput {
+  cursor?: string;
+  limit: number;
+  query?: string;
 }
 
 interface McpTranscriptCommonInput {
@@ -114,6 +121,17 @@ interface McpEventCursor {
   eventId: number;
 }
 
+type McpLookupKind = 'location' | 'recorder';
+
+interface McpLookupCursor {
+  version: 1;
+  catalogId: string;
+  kind: McpLookupKind;
+  query: string | null;
+  id: number;
+  name: string;
+}
+
 function isIntegerInRange(
   value: unknown,
   minimum: number,
@@ -149,6 +167,53 @@ function encodeMcpEventCursor(
     eventId: event.id,
   };
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function encodeMcpLookupCursor(
+  catalogId: string,
+  kind: McpLookupKind,
+  query: string | undefined,
+  item: { id: number; name: string },
+): string {
+  const cursor: McpLookupCursor = {
+    version: 1,
+    catalogId,
+    kind,
+    query: query ?? null,
+    id: item.id,
+    name: item.name,
+  };
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeMcpLookupCursor(
+  encoded: string,
+  catalogId: string,
+  kind: McpLookupKind,
+  query: string | undefined,
+): McpLookupCursor {
+  try {
+    const value = JSON.parse(
+      Buffer.from(encoded, 'base64url').toString('utf8'),
+    ) as Partial<McpLookupCursor>;
+    if (
+      value.version !== 1 ||
+      value.catalogId !== catalogId ||
+      value.kind !== kind ||
+      value.query !== (query ?? null) ||
+      !isIntegerInRange(value.id, 1, Number.MAX_SAFE_INTEGER) ||
+      typeof value.name !== 'string' ||
+      value.name.length === 0
+    ) {
+      throw new Error('Invalid lookup cursor payload');
+    }
+    return value as McpLookupCursor;
+  } catch {
+    throw new McpReadError(
+      'invalid_cursor',
+      `Invalid ${kind} cursor for the selected catalog or query`,
+    );
+  }
 }
 
 function decodeMcpEventCursor(
@@ -341,6 +406,162 @@ function buildRecordingSeekWebUrl(
   const url = new URL(buildRecordingWebUrl(catalogId, audioHash));
   url.searchParams.set('seek', String(startSec));
   return url.toString();
+}
+
+function incrementCount(counts: Map<number, number>, id: number | null): void {
+  if (id !== null) counts.set(id, (counts.get(id) ?? 0) + 1);
+}
+
+function paginateLookupItems<T extends { id: number; name: string }>(
+  catalogId: string,
+  kind: McpLookupKind,
+  input: McpLookupListInput,
+  items: T[],
+) {
+  const normalizedQuery = input.query?.toLocaleLowerCase();
+  const filtered = items
+    .filter(
+      (item) =>
+        normalizedQuery === undefined ||
+        item.name.toLocaleLowerCase().includes(normalizedQuery),
+    )
+    .sort(
+      (left, right) =>
+        left.name.localeCompare(right.name, undefined, {
+          sensitivity: 'base',
+        }) || left.id - right.id,
+    );
+  const cursor = input.cursor
+    ? decodeMcpLookupCursor(input.cursor, catalogId, kind, input.query)
+    : null;
+  const startIndex = cursor
+    ? filtered.findIndex(
+        (item) => item.id === cursor.id && item.name === cursor.name,
+      ) + 1
+    : 0;
+  if (cursor && startIndex === 0) {
+    throw new McpReadError(
+      'invalid_cursor',
+      `Invalid ${kind} cursor for the selected catalog or query`,
+    );
+  }
+  const page = filtered.slice(startIndex, startIndex + input.limit);
+  const hasMore = startIndex + page.length < filtered.length;
+  return {
+    items: page,
+    nextCursor:
+      hasMore && page.length > 0
+        ? encodeMcpLookupCursor(catalogId, kind, input.query, page.at(-1)!)
+        : null,
+  };
+}
+
+export async function listMcpLocations(
+  catalogId: string,
+  catalogGrant: AccessLevel | null,
+  canListEvents: boolean,
+  input: McpLookupListInput,
+) {
+  const [recordingRows, visibleEventIds] = await Promise.all([
+    prisma.audioMetadata.findMany({
+      where: { workflowGroupId: catalogId, locationId: { not: null } },
+      select: { audioHash: true, locationId: true },
+    }),
+    canListEvents
+      ? resolveReadableEventIds(catalogId, catalogGrant)
+      : Promise.resolve(null),
+  ]);
+  const [visibleHashes, eventRows] = await Promise.all([
+    resolveReadableRecordingHashes(
+      catalogId,
+      catalogGrant,
+      recordingRows.map((row) => row.audioHash),
+    ),
+    canListEvents
+      ? prisma.catalogEvent.findMany({
+          where: {
+            workflowGroupId: catalogId,
+            ...catalogEventVisibilityWhere(visibleEventIds),
+          },
+          select: { locationId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const recordingCounts = new Map<number, number>();
+  const eventCounts = new Map<number, number>();
+  for (const row of recordingRows) {
+    if (visibleHashes.has(row.audioHash)) {
+      incrementCount(recordingCounts, row.locationId);
+    }
+  }
+  for (const row of eventRows) incrementCount(eventCounts, row.locationId);
+  const ids = [...new Set([...recordingCounts.keys(), ...eventCounts.keys()])];
+  const locations =
+    ids.length === 0
+      ? []
+      : await prisma.location.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true },
+        });
+  const page = paginateLookupItems(
+    catalogId,
+    'location',
+    input,
+    locations.map((location) => ({
+      ...location,
+      eventCount: canListEvents ? (eventCounts.get(location.id) ?? 0) : null,
+      recordingCount: recordingCounts.get(location.id) ?? 0,
+    })),
+  );
+  return {
+    catalogId,
+    locations: page.items,
+    nextCursor: page.nextCursor,
+  };
+}
+
+export async function listMcpRecorders(
+  catalogId: string,
+  catalogGrant: AccessLevel | null,
+  input: McpLookupListInput,
+) {
+  const recordingRows = await prisma.audioMetadata.findMany({
+    where: { workflowGroupId: catalogId, recorderId: { not: null } },
+    select: { audioHash: true, recorderId: true },
+  });
+  const visibleHashes = await resolveReadableRecordingHashes(
+    catalogId,
+    catalogGrant,
+    recordingRows.map((row) => row.audioHash),
+  );
+  const recordingCounts = new Map<number, number>();
+  for (const row of recordingRows) {
+    if (visibleHashes.has(row.audioHash)) {
+      incrementCount(recordingCounts, row.recorderId);
+    }
+  }
+  const ids = [...recordingCounts.keys()];
+  const recorders =
+    ids.length === 0
+      ? []
+      : await prisma.recorder.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true },
+        });
+  const page = paginateLookupItems(
+    catalogId,
+    'recorder',
+    input,
+    recorders.map((recorder) => ({
+      ...recorder,
+      recordingCount: recordingCounts.get(recorder.id) ?? 0,
+    })),
+  );
+  return {
+    catalogId,
+    recorders: page.items,
+    nextCursor: page.nextCursor,
+  };
 }
 
 export async function listMcpEvents(
