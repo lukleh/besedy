@@ -1,0 +1,12 @@
+interface:
+  display_name: "Besedy Sources"
+  short_description: "Explore recordings with grounded source links"
+  default_prompt: "Use $besedy-sources to explore this topic and ground the answer in timestamped Besedy recording links."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "besedy"
+      description: "Besedy transcript corpus and recording metadata"
+      transport: "streamable_http"
+      url: "https://besedy.org/api/mcp"
