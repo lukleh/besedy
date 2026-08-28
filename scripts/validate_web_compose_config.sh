@@ -58,31 +58,28 @@ db_volume_key="$(
 db_volume_target="$(
   jq -r '.services.db.volumes[] | select(.type == "volume") | .target' <<<"$config"
 )"
+db_image="$(jq -r '.services.db.image // empty' <<<"$config")"
+
+[[ "$db_image" == "pgvector/pgvector:pg18" ]] \
+  || fail "database image is '$db_image', expected 'pgvector/pgvector:pg18'"
+[[ "$db_volume_key" == "postgres_data" ]] \
+  || fail "database volume key is '$db_volume_key', expected 'postgres_data'"
+[[ "$db_volume_target" == "/var/lib/postgresql" ]] \
+  || fail "PostgreSQL 18 volume target is '$db_volume_target', expected '/var/lib/postgresql'"
 
 if [[ "$mode" == "production" ]]; then
   [[ "$instance" == "production" ]] \
     || fail "production must use the 'production' Compose instance"
-  db_image="$(jq -r '.services.db.image // empty' <<<"$config")"
-  [[ "$db_image" == "pgvector/pgvector:pg18" ]] \
-    || fail "production database image is '$db_image', expected 'pgvector/pgvector:pg18'"
-  [[ "$db_volume_key" == "postgres_data" ]] \
-    || fail "database volume key is '$db_volume_key', expected 'postgres_data'"
   actual_volume_name="$(jq -r '.volumes.postgres_data.name // empty' <<<"$config")"
   [[ "$actual_volume_name" == "besedy_production_postgres" ]] \
     || fail "database volume is '$actual_volume_name', expected 'besedy_production_postgres'"
-  [[ "$db_volume_target" == "/var/lib/postgresql" ]] \
-    || fail "PostgreSQL 18 volume target is '$db_volume_target', expected '/var/lib/postgresql'"
   jq -e '.volumes.postgres_data.external == true' <<<"$config" >/dev/null \
     || fail "production database volume must be external"
 else
   expected_volume="besedy_${instance}_postgres"
-  [[ "$db_volume_key" == "postgres_data" ]] \
-    || fail "database volume key is '$db_volume_key', expected 'postgres_data'"
   actual_volume_name="$(jq -r '.volumes.postgres_data.name // empty' <<<"$config")"
   [[ "$actual_volume_name" == "$expected_volume" ]] \
     || fail "database volume is '$actual_volume_name', expected '$expected_volume'"
-  [[ "$db_volume_target" == "/var/lib/postgresql/data" ]] \
-    || fail "database volume target is '$db_volume_target', expected '/var/lib/postgresql/data'"
   if grep -qE 'besedy-production|besedy_production_postgres' <<<"$config"; then
     fail "non-production config references a production Docker resource"
   fi

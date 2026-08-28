@@ -20,7 +20,9 @@ services:
     restart: unless-stopped
 
   db:
-    image: pgvector/pgvector:pg${POSTGRES_VERSION:-18}
+    # Keep the database major version and its storage layout coupled in source.
+    # PostgreSQL 18 stores versioned clusters below /var/lib/postgresql.
+    image: pgvector/pgvector:pg18
     container_name: besedy-${BESEDY_COMPOSE_INSTANCE:-unmanaged}-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-besedy}
@@ -30,7 +32,7 @@ services:
       MIGRATE_PASSWORD: ${MIGRATE_PASSWORD:-}
       APP_PASSWORD: ${APP_PASSWORD:-}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       # Prod only: init script for separate DB users (empty file in dev/test)
       - ${DB_INIT_SCRIPT:-/dev/null}:/docker-entrypoint-initdb.d/init-users.sh:ro
     ports:
@@ -150,7 +152,7 @@ services:
 
   backup:
     profiles: [backup]
-    image: postgres:${POSTGRES_VERSION:-18}-alpine
+    image: postgres:18-alpine
     container_name: besedy-${BESEDY_COMPOSE_INSTANCE:-unmanaged}-backup
     # Match host ownership for BACKUP_DIR writes when hardening drops CAP_DAC_OVERRIDE.
     user: '${BACKUP_UID:-1000}:${BACKUP_GID:-1000}'

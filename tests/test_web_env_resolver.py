@@ -123,13 +123,12 @@ set -euo pipefail
 if [[ " $* " == *" config --format json "* ]]; then
   if [[ "$APP_ENV" == "production" ]]; then
     volume_source="besedy_production_postgres"
-    volume_target="/var/lib/postgresql"
     external=true
   else
     volume_source="besedy_${BESEDY_COMPOSE_INSTANCE}_postgres"
-    volume_target="/var/lib/postgresql/data"
     external=false
   fi
+  volume_target="/var/lib/postgresql"
   printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"}}},"volumes":{"postgres_data":{"name":"%s","external":%s}}}\n' \
     "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
     "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external"

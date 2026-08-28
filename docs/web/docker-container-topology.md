@@ -122,9 +122,9 @@ cannot redirect a test command to production resources.
 | Test | `besedy-test-web`, `besedy-test-db`, `besedy-test-oauth` | `besedy-test_default` | web `3002`, DB `5434` | `besedy_test_postgres` |
 | Production | `besedy-production-web`, `besedy-production-db`, `besedy-production-backup` | `besedy-production_default` | web `127.0.0.1:3000`, DB `127.0.0.1:5432` | `besedy_production_postgres` |
 
-The production database volume is external and is mounted at
-`/var/lib/postgresql`, the PostgreSQL 18 parent data directory. Development and
-test volumes remain Compose-managed and mount at `/var/lib/postgresql/data`.
+All web database volumes mount at `/var/lib/postgresql`, the PostgreSQL 18 parent
+data directory. The production volume is external; development and test volumes
+remain Compose-managed.
 
 The web containers should also join `besedy-internal` when they need to call
 or be called by their Deep Search runtime. For the first production Deep Search

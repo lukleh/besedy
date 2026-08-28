@@ -1,14 +1,8 @@
 # Production-only PostgreSQL storage layout.
 #
-# PostgreSQL 18 stores versioned clusters below /var/lib/postgresql. Mounting
-# the external volume at the parent keeps upgrades compatible and prevents
-# `docker compose down -v` from deleting production data.
-
-services:
-  db:
-    volumes: !override
-      - postgres_data:/var/lib/postgresql
-      - ${DB_INIT_SCRIPT:-/dev/null}:/docker-entrypoint-initdb.d/init-users.sh:ro
+# The base Compose file owns the PostgreSQL 18 parent-directory mount. This
+# overlay only makes the production volume external so `docker compose down -v`
+# cannot delete it.
 
 volumes:
   postgres_data:
