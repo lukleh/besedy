@@ -575,10 +575,11 @@ export function useCatalogListController({
       }
 
       const seek = result.startSec ?? 0;
+      const end = result.endSec;
       router.push(
         `/catalog/${activeCatalogId}/recording/${result.audioHash}?seek=${encodeURIComponent(
           String(seek)
-        )}&fromSearch=1`
+        )}${end > seek ? `&end=${encodeURIComponent(String(end))}` : ""}&fromSearch=1`
       );
     },
     [

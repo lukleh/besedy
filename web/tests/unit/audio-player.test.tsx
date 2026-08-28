@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { render, act, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
 
@@ -43,18 +43,20 @@ interface RenderPlayerOptions {
   src?: string;
   seekTo?: number;
   seekKey?: number;
+  playbackEnd?: number;
   autoPlayOnSeek?: boolean;
   onTimeUpdate?: (time: number) => void;
 }
 
 function renderPlayer(options: RenderPlayerOptions = {}) {
-  const { src = "https://example.com/audio.mp3", seekTo, seekKey, autoPlayOnSeek, onTimeUpdate } = options;
+  const { src = "https://example.com/audio.mp3", seekTo, seekKey, playbackEnd, autoPlayOnSeek, onTimeUpdate } = options;
   const utils = render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <AudioPlayer
         src={src}
         seekTo={seekTo}
         seekKey={seekKey}
+        playbackEnd={playbackEnd}
         autoPlayOnSeek={autoPlayOnSeek}
         onTimeUpdate={onTimeUpdate}
       />
@@ -272,6 +274,52 @@ describe("AudioPlayer skip controls", () => {
     });
 
     expect(audio.currentTime).toBe(100);
+  });
+});
+
+describe("AudioPlayer bounded playback", () => {
+  it("stops at the linked end once and allows continued playback", () => {
+    const onTimeUpdate = vi.fn();
+    const { audio } = renderPlayer({ playbackEnd: 20, onTimeUpdate });
+    const pauseMock = vi.fn();
+    audio.pause = pauseMock;
+
+    audio.currentTime = 20.4;
+    fireEvent.timeUpdate(audio);
+
+    expect(pauseMock).toHaveBeenCalledTimes(1);
+    expect(audio.currentTime).toBe(20);
+    expect(onTimeUpdate).toHaveBeenCalledWith(20);
+
+    audio.currentTime = 21;
+    fireEvent.timeUpdate(audio);
+
+    expect(pauseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("disarms the linked end after a manual skip", async () => {
+    const { audio, container } = renderPlayer({ playbackEnd: 20 });
+    const pauseMock = vi.fn();
+    audio.pause = pauseMock;
+    Object.defineProperty(audio, "duration", { value: 100, configurable: true });
+
+    await act(async () => {
+      audio.dispatchEvent(new Event("loadedmetadata"));
+    });
+
+    audio.currentTime = 10;
+    const skipForwardButton = container.querySelector(
+      '[data-testid="audio-skip-forward"]'
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      skipForwardButton.click();
+    });
+
+    audio.currentTime = 25;
+    fireEvent.timeUpdate(audio);
+
+    expect(pauseMock).not.toHaveBeenCalled();
   });
 });
 

@@ -466,6 +466,10 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.description).toContain('filters.eventIds');
     expect(searchTool?.description).toContain('filters.audioHashes');
     expect(searchTool?.description).toContain('get_transcript');
+    expect(searchTool?.description).toContain('match webUrl is bounded');
+    expect(searchTool?.description).toContain(
+      'recording summary webUrl remains unbounded',
+    );
     expect(searchTool?.inputSchema.properties.limit.description).toContain(
       'default is 100',
     );
@@ -490,6 +494,8 @@ describe('MCP personalized tool surface', () => {
     expect(recordersTool?.description).toContain('search_transcripts');
     expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain('complete stored transcript');
+    expect(transcriptTool?.description).toContain('unbounded recordingWebUrl');
+    expect(transcriptTool?.description).toContain('bounded webUrl');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
       'every segment',
     );
