@@ -120,6 +120,31 @@ See the [MCP server reference](docs/web/mcp-server.md) for the tool contracts,
 access matrix, authentication design, self-hosted enablement, and local smoke
 test.
 
+### Besedy transcript research skill
+
+The public [`besedy-sources`](.agents/skills/besedy-sources) skill helps AI
+assistants explore recordings, verify transcript context, and cite timestamped
+sources. Its metadata declares the production Besedy MCP dependency, but skill
+installation does not configure or authenticate the MCP connection.
+
+In Codex, users can request both setup steps in one prompt:
+
+```text
+$skill-installer Install the skill from https://github.com/lukleh/besedy/tree/main/.agents/skills/besedy-sources. Then add the Besedy MCP server at https://besedy.org/api/mcp and start its OAuth login.
+```
+
+The equivalent MCP setup commands are:
+
+```bash
+codex mcp add besedy --url https://besedy.org/api/mcp
+codex mcp login besedy
+```
+
+The connection uses the same Besedy OAuth flow described above. Each user sees
+only the catalogs and tools allowed by their live Besedy permissions. Standalone
+skills are supported in the ChatGPT desktop app, Codex CLI, and the Codex IDE
+extension.
+
 ## Get started
 
 ### Prerequisites

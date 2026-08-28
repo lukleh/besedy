@@ -3,10 +3,12 @@ import { z } from 'zod';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderStructuredResult,
   toolError,
   toolSuccess,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
+import { ListCatalogsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_CATALOG_PAGE_SIZE = 50;
 const MAX_CATALOG_PAGE_SIZE = 100;
@@ -44,14 +46,22 @@ export function registerListCatalogsTool(
       description:
         'List the catalogs available to the current user and the read capabilities allowed in each catalog.',
       inputSchema: z.object({
-        cursor: z.string().min(1).optional(),
+        cursor: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Catalog ID returned as nextCursor by the previous page. Pass it back unchanged.',
+          ),
         limit: z
           .number()
           .int()
           .min(1)
           .max(MAX_CATALOG_PAGE_SIZE)
-          .default(DEFAULT_CATALOG_PAGE_SIZE),
+          .default(DEFAULT_CATALOG_PAGE_SIZE)
+          .describe('Maximum catalogs to return; defaults to 50.'),
       }),
+      outputSchema: ListCatalogsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({ cursor, limit }) => {
@@ -66,10 +76,8 @@ export function registerListCatalogsTool(
         defaultCatalogSource: profile.defaultCatalogSource,
         nextCursor: page.nextCursor,
       };
-      return toolSuccess(
-        result,
-        `Listed ${page.items.length} accessible Besedy catalog(s).`,
-      );
+      const summary = `Listed ${page.items.length} accessible Besedy catalog(s).`;
+      return toolSuccess(result, renderStructuredResult(summary, result));
     },
   );
 }

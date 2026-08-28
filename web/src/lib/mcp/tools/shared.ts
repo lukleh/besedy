@@ -20,7 +20,13 @@ const MAX_LOOKUP_PAGE_SIZE = 100;
 
 export function createLookupListInputSchema(itemName: string) {
   return z.object({
-    catalogId: z.string().min(1).optional(),
+    catalogId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Accessible Besedy catalog to inspect. Omit it to use the effective default catalog.',
+      ),
     query: z
       .string()
       .trim()
@@ -42,7 +48,8 @@ export function createLookupListInputSchema(itemName: string) {
       .int()
       .min(1)
       .max(MAX_LOOKUP_PAGE_SIZE)
-      .default(DEFAULT_LOOKUP_PAGE_SIZE),
+      .default(DEFAULT_LOOKUP_PAGE_SIZE)
+      .describe(`Maximum ${itemName}s to return; defaults to 50.`),
   });
 }
 
@@ -55,20 +62,27 @@ export const READ_ONLY_TOOL_ANNOTATIONS = {
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
 
-interface BesedyToolConfig<InputArgs extends StandardSchemaWithJSON> {
+interface BesedyToolConfig<
+  InputArgs extends StandardSchemaWithJSON,
+  OutputArgs extends StandardSchemaWithJSON,
+> {
   title?: string;
   description?: string;
   inputSchema: InputArgs;
+  outputSchema: OutputArgs;
   annotations?: ToolAnnotations;
   icons?: Icon[];
   _meta?: Record<string, unknown>;
 }
 
-export function registerBesedyTool<InputArgs extends StandardSchemaWithJSON>(
+export function registerBesedyTool<
+  OutputArgs extends StandardSchemaWithJSON,
+  InputArgs extends StandardSchemaWithJSON,
+>(
   server: McpServer,
   context: BesedyMcpRequestContext,
   name: string,
-  config: BesedyToolConfig<InputArgs>,
+  config: BesedyToolConfig<InputArgs, OutputArgs>,
   callback: ToolCallback<InputArgs>,
 ): RegisteredTool {
   const trackedCallback = (async (args, serverContext) =>
@@ -118,6 +132,13 @@ export function toolSuccess(
   };
 }
 
+export function renderStructuredResult(
+  summary: string,
+  result: Record<string, unknown>,
+): string {
+  return `${summary}\nStructured result: ${JSON.stringify(result)}`;
+}
+
 export function toolError(code: string, message: string, retryable = false) {
   const result = { error: { code, message, retryable } };
   return {
@@ -134,7 +155,11 @@ export async function runReadTool<T extends Record<string, unknown>>(
 ) {
   try {
     const result = await operation();
-    return toolSuccess(result, renderContent?.(result) ?? summarize(result));
+    const summary = summarize(result);
+    return toolSuccess(
+      result,
+      renderContent?.(result) ?? renderStructuredResult(summary, result),
+    );
   } catch (error) {
     if (error instanceof McpReadError) {
       return toolError(error.code, error.message, error.retryable);

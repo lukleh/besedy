@@ -65,6 +65,12 @@ import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
 import { useContentCache } from '@/hooks/use-content-cache';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
+function resolvePlaybackEnd(value: number | undefined): number | null {
+  return value !== undefined && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
 export function AudioPlayer({
   src,
   catalogId,
@@ -74,6 +80,7 @@ export function AudioPlayer({
   onEnded,
   seekTo,
   seekKey,
+  playbackEnd,
   autoPlayOnSeek,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -101,6 +108,13 @@ export function AudioPlayer({
     updateDebugInfo,
   } = useAudioBufferDiagnostics({ audioRef, debugEnabled: showDebug, src });
   const userInitiatedRef = useRef(false);
+  const playbackEndRef = useRef<number | null>(
+    resolvePlaybackEnd(playbackEnd),
+  );
+
+  useEffect(() => {
+    playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
+  }, [playbackEnd]);
 
   // Background event log - always collects events even when debug is off
   const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
@@ -531,6 +545,23 @@ export function AudioPlayer({
     if (!audio) return;
 
     const handleTimeUpdate = () => {
+      const linkedPlaybackEnd = playbackEndRef.current;
+      if (
+        linkedPlaybackEnd !== null &&
+        audio.currentTime >= linkedPlaybackEnd
+      ) {
+        playbackEndRef.current = null;
+        audio.currentTime = linkedPlaybackEnd;
+        setCurrentTime(linkedPlaybackEnd);
+        onTimeUpdate?.(linkedPlaybackEnd);
+        audio.pause();
+        logDebugEvent(
+          'pause',
+          'Linked excerpt ended',
+          `At ${linkedPlaybackEnd.toFixed(1)}s`,
+        );
+        return;
+      }
       setCurrentTime(audio.currentTime);
       onTimeUpdate?.(audio.currentTime);
       // If timeupdate fires, audio is actually playing - clear buffering state
@@ -786,6 +817,7 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
+    playbackEndRef.current = null;
     audio.currentTime = value[0];
     setCurrentTime(value[0]);
   };
@@ -816,12 +848,14 @@ export function AudioPlayer({
   const skipBackward = () => {
     const audio = audioRef.current;
     if (!audio) return;
+    playbackEndRef.current = null;
     audio.currentTime = Math.max(0, audio.currentTime - 10);
   };
 
   const skipForward = () => {
     const audio = audioRef.current;
     if (!audio) return;
+    playbackEndRef.current = null;
     audio.currentTime = Math.min(duration, audio.currentTime + 10);
   };
 
@@ -853,10 +887,12 @@ export function AudioPlayer({
           break;
         case 'ArrowLeft':
           e.preventDefault();
+          playbackEndRef.current = null;
           audio.currentTime = Math.max(0, audio.currentTime - 5);
           break;
         case 'ArrowRight':
           e.preventDefault();
+          playbackEndRef.current = null;
           audio.currentTime = Math.min(duration, audio.currentTime + 5);
           break;
         case 'ArrowUp':

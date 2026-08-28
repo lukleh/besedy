@@ -9,6 +9,7 @@ import {
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
+import { ListLocationsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 export function registerListLocationsTool(
   server: McpServer,
@@ -24,6 +25,7 @@ export function registerListLocationsTool(
       description:
         'Discover location IDs used by visible recordings or events before filtering list_events or search_transcripts. Uses the current user default catalog when catalogId is omitted.',
       inputSchema: createLookupListInputSchema('location'),
+      outputSchema: ListLocationsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({ catalogId, query, cursor, limit }) => {

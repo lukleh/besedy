@@ -804,7 +804,7 @@ describe('MCP read service', () => {
       recordingWebUrl:
         'https://besedy.example/catalog/catalog-a/recording/visible-recording',
       seekWebUrl:
-        'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5',
+        'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5&end=10',
       backend: 'whisperx/model',
       availableBackends: ['whisperx/model'],
       language: 'cs',
@@ -821,7 +821,7 @@ describe('MCP read service', () => {
             endSec: 10,
             speaker: 'SPEAKER_00',
             webUrl:
-              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5',
+              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5&end=10',
           },
         ],
         offset: 0,
@@ -913,14 +913,14 @@ describe('MCP read service', () => {
     );
 
     expect(result.seekWebUrl).toBe(
-      'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10',
+      'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10&end=15',
     );
     expect(result.segments.items).toEqual([
       expect.objectContaining({
         segmentIndex: 2,
         startSec: 10,
         webUrl:
-          'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10',
+          'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10&end=15',
       }),
     ]);
   });
@@ -992,7 +992,7 @@ describe('MCP read service', () => {
             endSec: 90,
             text: 'Matching evidence',
             webUrl:
-              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=60',
+              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=60&end=90',
           },
           context: {
             startSec: 30,

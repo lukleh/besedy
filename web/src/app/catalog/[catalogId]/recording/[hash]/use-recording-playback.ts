@@ -14,6 +14,7 @@ import {
 
 export interface RecordingSeekRequest {
   time: number;
+  end?: number;
   key: number;
 }
 
@@ -44,6 +45,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const { setRecordingPlaying } = useAudioPlayback();
   const fromRadio = searchParams.get("fromRadio") === "true";
   const seekParam = searchParams.get("seek");
+  const endParam = searchParams.get("end");
   const radioHandoffDone = useRef(false);
   const radioHandoffSucceeded = useRef(false);
   const positionRestoredRef = useRef(false);
@@ -212,8 +214,15 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     /* eslint-disable react-hooks/set-state-in-effect -- one-shot position restore; must stay synchronous (see above) */
     const parsedSeek = seekParam ? Number.parseFloat(seekParam) : Number.NaN;
     if (Number.isFinite(parsedSeek) && parsedSeek >= 0) {
+      const parsedEnd = endParam ? Number.parseFloat(endParam) : Number.NaN;
       positionRestoredRef.current = true;
-      setSeekRequest({ time: parsedSeek, key: Date.now() });
+      setSeekRequest({
+        time: parsedSeek,
+        ...(Number.isFinite(parsedEnd) && parsedEnd > parsedSeek
+          ? { end: parsedEnd }
+          : {}),
+        key: Date.now(),
+      });
       return;
     }
 
@@ -224,7 +233,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
       setSeekRequest({ time: savedPosition, key: Date.now() });
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [hash, fromRadio, radio.isActive, seekParam]);
+  }, [hash, endParam, fromRadio, radio.isActive, seekParam]);
 
   useEffect(() => {
     if (

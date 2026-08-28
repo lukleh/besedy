@@ -13,6 +13,7 @@ import {
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
+import { SearchTranscriptsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_SEARCH_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 100;
@@ -54,7 +55,7 @@ export function registerSearchTranscriptsTool(
     {
       title: 'Search Besedy transcripts',
       description:
-        'Discover candidate passages with a broad, semantic, non-exhaustive search of accessible Besedy transcripts. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Results are ordered by relevance and expose rank, not an internal retrieval score.',
+        'Discover candidate passages with a broad, semantic, non-exhaustive search of accessible Besedy transcripts. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -102,6 +103,7 @@ export function registerSearchTranscriptsTool(
           'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
         ),
       }),
+      outputSchema: SearchTranscriptsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({

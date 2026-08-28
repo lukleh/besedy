@@ -263,6 +263,7 @@ export function RecordingAudioSection({
         onEnded={onAudioEnded}
         seekTo={seekRequest?.time}
         seekKey={seekRequest?.key}
+        playbackEnd={seekRequest?.end}
         autoPlayOnSeek={autoPlayOnSeek}
       />
 
