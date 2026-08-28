@@ -118,7 +118,9 @@ only in an explicit, backed-up maintenance procedure.
       preflight requires a regular file readable by the unprivileged web container
 - [ ] Record current deployed version: `curl -s https://besedy.org/api/version | jq`
 - [ ] `just web-check` on the release candidate
-- [ ] `cd web && npm run test:e2e:smoke` for production smoke coverage
+- [ ] `just test-up && just test-rebuild`, then
+      `cd web && npm run test:e2e:smoke` for production smoke coverage
+- [ ] `just mcp-smoke` for authenticated MCP coverage in its isolated fixture stack
 - [ ] For broad or auth-sensitive releases: `cd web && npm run test:e2e`
 - [ ] Check whether `web/prisma/migrations/` changed
 - [ ] Verify `AUTH_URL` still matches `NEXT_PUBLIC_APP_URL`

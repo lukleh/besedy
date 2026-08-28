@@ -34,6 +34,10 @@ const testOutputDir = path.join(
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // MCP exercises a dedicated transcript fixture and RAG mock. Run it through
+  // `just mcp-smoke`, which selects playwright.mcp.config.ts in an isolated
+  // Compose project instead of the shared E2E stack.
+  testIgnore: "mcp.spec.ts",
   /* Timeouts for cold start + navigation */
   timeout: 45000, // 45s per test (allows for cold start + navigation)
   expect: {
