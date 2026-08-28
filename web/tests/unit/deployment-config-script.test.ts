@@ -32,6 +32,7 @@ describe("validate_web_config_mount.sh", () => {
     writeFileSync(
       resolve(configHome, "web.env.prod"),
       [
+        "APP_ENV=production",
         `CONFIG_FILE=${configFile}`,
         "CONFIG_MOUNT=/data/config/besedy.toml",
         "BESEDY_CONFIG=/data/config/besedy.toml",
@@ -82,6 +83,7 @@ describe("validate_web_config_mount.sh", () => {
     writeFileSync(
       resolve(configHome, "web.env.prod"),
       [
+        "APP_ENV=production",
         `CONFIG_FILE=${missingConfig}`,
         "CONFIG_MOUNT=/data/config/besedy.toml",
         "BESEDY_CONFIG=/data/config/besedy.toml",

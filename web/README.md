@@ -32,16 +32,16 @@ checkout does not need to carry generated files.
 
 ```bash
 # Start development environment
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" --profile mock-oauth up -d
+bash ../scripts/run_web_compose.sh development up -d
 
 # View logs
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" --profile mock-oauth logs -f web
+bash ../scripts/run_web_compose.sh development logs -f web
 
 # Shell into container
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" --profile mock-oauth exec web sh
+bash ../scripts/run_web_compose.sh development exec web sh
 
 # Stop (keeps data)
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" --profile mock-oauth down
+bash ../scripts/run_web_compose.sh development down
 ```
 
 Or use just commands:
@@ -56,16 +56,16 @@ just dev-down        # Stop
 
 ```bash
 # Open Prisma Studio (DB GUI on port 5555)
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" exec web npx prisma studio
+bash ../scripts/run_web_compose.sh development exec web npx prisma studio
 
 # Run pending migrations
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" exec web npx prisma migrate deploy
+bash ../scripts/run_web_compose.sh development exec web npx prisma migrate deploy
 
 # Create new migration after schema changes
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" exec web npx prisma migrate dev --name <migration_name>
+bash ../scripts/run_web_compose.sh development exec web npx prisma migrate dev --name <migration_name>
 
 # Reset database (WARNING: deletes all data)
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" exec web npx prisma migrate reset --force
+bash ../scripts/run_web_compose.sh development exec web npx prisma migrate reset --force
 ```
 
 ### Database Migrations Workflow
@@ -80,11 +80,11 @@ All schema changes go through Prisma migrations:
 **Production migrations** require the migrator user credentials:
 ```bash
 # Apply migrations to production
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" exec -T db \
+bash ../scripts/run_web_compose.sh production exec -T db \
   psql -U besedy_migrator -d besedy < prisma/migrations/<migration_dir>/migration.sql
 
 # Then register in migrations table
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" exec db \
+bash ../scripts/run_web_compose.sh production exec db \
   psql -U besedy_migrator -d besedy -c "INSERT INTO _prisma_migrations ..."
 ```
 
@@ -156,19 +156,19 @@ clients to update.
 
 ```bash
 # View logs
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" logs -f web
+bash ../scripts/run_web_compose.sh production logs -f web
 
 # View persisted daily web logs (host bind mount)
 tail -F "${WEB_LOGS_DIR}/web-$(date +%F).log"
 
 # Restart after config changes
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" restart web
+bash ../scripts/run_web_compose.sh production restart web
 
 # Access database directly
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" exec db psql -U besedy
+bash ../scripts/run_web_compose.sh production exec db psql -U besedy
 
 # Stop production
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" down
+bash ../scripts/run_web_compose.sh production down
 ```
 
 Or use just commands:
@@ -200,7 +200,7 @@ sudo chown -R 1001:1001 /path/to/web/logs
 To restore:
 ```bash
 gunzip -c backups/besedy_YYYYMMDD_HHMMSS.sql.gz | \
-  docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" exec -T db psql -U besedy
+  bash ../scripts/run_web_compose.sh production exec -T db psql -U besedy
 ```
 
 ## Running Both Environments
@@ -264,17 +264,17 @@ CONFIG_MOUNT=/data/config/besedy.docker.toml
 
 ## Docker Compose Structure
 
-The app uses a unified `docker-compose.yml` with profiles:
+The app uses a unified `docker-compose.yml` through its validating wrapper:
 
 ```bash
 # Development (hot reload)
-docker compose --env-file "$(../scripts/resolve_web_env_file.sh development)" --profile mock-oauth up -d
+bash ../scripts/run_web_compose.sh development up -d
 
 # Test (security hardening)
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh test)" --profile mock-oauth up -d
+bash ../scripts/run_web_compose.sh test up -d
 
 # Production (real OAuth, full security, backup services)
-docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "$(../scripts/resolve_web_env_file.sh production)" --profile backup up -d
+bash ../scripts/run_web_compose.sh production up -d
 ```
 
 ### Profiles

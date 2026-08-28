@@ -1,5 +1,5 @@
 # Development overlay - mounts source for hot reloading
-# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file "$(../scripts/resolve_web_env_file.sh development)" up -d
+# Usage: ../scripts/run_web_compose.sh development up -d
 
 services:
   web:

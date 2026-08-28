@@ -18,16 +18,14 @@ set -euo pipefail
 
 COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
-ENV_FILE="$("$PROJECT_DIR/scripts/resolve_web_env_file.sh" production)"
 REPORT_EMAIL="${REPORT_EMAIL:-}"
 TAG="${REPORT_LOG_TAG:-besedy-weekly}"
 REPORT_WINDOW_DAYS="${REPORT_WINDOW_DAYS:-7}"
 PER_USER_BREAKDOWN_LIMIT="${PER_USER_BREAKDOWN_LIMIT:-20}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Compose command for production (base + security overlay)
 compose_cmd() {
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" -f "$COMPOSE_DIR/docker-compose.secure.yml" --env-file "$ENV_FILE" "$@"
+    "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
 }
 OPS_ENV_FILE="$("$PROJECT_DIR/scripts/resolve_ops_env_file.sh")"
 if [ -f "$OPS_ENV_FILE" ]; then

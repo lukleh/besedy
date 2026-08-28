@@ -14,7 +14,6 @@ set -euo pipefail
 
 COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
-ENV_FILE="$("$PROJECT_DIR/scripts/resolve_web_env_file.sh" production)"
 REPORT_EMAIL="${REPORT_EMAIL:-}"
 BASE_IMAGE_MAX_AGE_DAYS="${BASE_IMAGE_MAX_AGE_DAYS:-30}"
 CONTAINER_NAME="${BESEDY_CONTAINER_NAME:-besedy-production-web}"
@@ -28,9 +27,8 @@ if [ -z "$BASE_IMAGE_REF" ]; then
     BASE_IMAGE_REF="node:24-alpine"
 fi
 
-# Compose command for production (base + security overlay)
 compose_cmd() {
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" -f "$COMPOSE_DIR/docker-compose.secure.yml" --env-file "$ENV_FILE" "$@"
+    "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
 }
 
 echo "=== Besedy Security Update Check ==="

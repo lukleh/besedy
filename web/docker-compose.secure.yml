@@ -1,5 +1,5 @@
 # Security hardening overlay for test and production
-# Usage: docker compose -f docker-compose.yml -f docker-compose.secure.yml ...
+# Selected automatically by scripts/run_web_compose.sh for test and production.
 
 services:
   web:

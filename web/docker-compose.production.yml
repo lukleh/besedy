@@ -1,0 +1,10 @@
+# Production-only PostgreSQL storage layout.
+#
+# The base Compose file owns the PostgreSQL 18 parent-directory mount. This
+# overlay only makes the production volume external so `docker compose down -v`
+# cannot delete it.
+
+volumes:
+  postgres_data:
+    name: besedy_production_postgres
+    external: true

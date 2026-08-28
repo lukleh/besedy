@@ -9,18 +9,6 @@
 import { execSync } from "child_process";
 import path from "path";
 import fs from "fs/promises";
-import { resolveScriptEnvFilePath } from "../../src/lib/script-env";
-
-const TEST_ENV_FILE = resolveScriptEnvFilePath("test");
-
-function requireTestEnvFile(): string {
-  if (!TEST_ENV_FILE) {
-    throw new Error(
-      "Test env file not found. Set BESEDY_WEB_ENV_TEST or copy web/.env.test.example to ~/.config/lukleh/besedy/web.env.test."
-    );
-  }
-  return TEST_ENV_FILE;
-}
 
 async function cleanupFixtures(): Promise<void> {
   // Optionally clean up generated fixtures
@@ -39,7 +27,7 @@ async function cleanupFixtures(): Promise<void> {
 async function stopContainers(): Promise<void> {
   if (process.env.TEARDOWN_CONTAINERS === "true") {
     console.log("Stopping Docker containers...");
-    execSync(`docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "${requireTestEnvFile()}" down`, {
+    execSync("bash ../scripts/run_web_compose.sh test down", {
       stdio: "inherit",
       cwd: process.cwd(),
     });
@@ -47,7 +35,7 @@ async function stopContainers(): Promise<void> {
 
   if (process.env.TEARDOWN_VOLUMES === "true") {
     console.log("Removing Docker volumes...");
-    execSync(`docker compose -f docker-compose.yml -f docker-compose.secure.yml --env-file "${requireTestEnvFile()}" down -v`, {
+    execSync("bash ../scripts/run_web_compose.sh test down -v", {
       stdio: "inherit",
       cwd: process.cwd(),
     });

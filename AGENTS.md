@@ -58,7 +58,12 @@ Keep shared operational facts here and have provider-specific files such as
 - Prefer `just dev-up`/`dev-down`, `just prod-up`/`prod-deploy`, and `just test-up`/`test-reset`/`test-fixtures`.
 - Those wrap `scripts/run_web_compose.sh <development|production|test> [docker compose args…]`,
   which is the single source of truth for the compose overlays, profile, and resolved
-  env file per mode. Use it directly for anything the Justfile does not wrap:
+  env file per mode. It also sanitizes inherited shell variables and validates the
+  rendered project, container names, networks, runtime `APP_ENV`, and database
+  volume before every command. Resource-shaping Compose global options are
+  rejected; only
+  `--profile` may precede the Compose command. Use it directly for anything the
+  Justfile does not wrap:
   - Dev (port 3001): `bash scripts/run_web_compose.sh development up -d`
   - Prod (port 3000): `bash scripts/run_web_compose.sh production up -d`
   - Test (port 3002): `bash scripts/run_web_compose.sh test up -d`
@@ -164,7 +169,7 @@ manages workflow-group records themselves.
 - **How to connect to prod DB (local host → prod container):**
   - Prefer service-based exec (no container-name assumptions):
     `bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d besedy`
-  - Container names follow `besedy-${APP_ENV}-db` from `web/docker-compose.yml` (default prod: `APP_ENV=production` → `besedy-production-db`).
+  - Container names follow the wrapper-controlled Compose instance (production DB: `besedy-production-db`); runtime `APP_ENV` does not select Docker resources.
   - Migrations use `besedy_migrator` instead of `besedy_app` (see `docs/web/data-and-database.md`).
 - **App DB connection string:** `DATABASE_URL` in the resolved production env file (app user `besedy_app`).
 
