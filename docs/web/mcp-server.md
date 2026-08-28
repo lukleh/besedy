@@ -260,10 +260,22 @@ that an omitted `catalogId` will resolve.
 
 All nine tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
-`structuredContent`. The `content` field contains a concise summary; transcript
-and search calls additionally render their evidence text there for clients that
-do not consume structured results. Responses may contain stable Besedy IDs and
+`structuredContent`. Every tool advertises an `outputSchema` through
+`tools/list`, so an agent can understand the success response before its first
+call and the server can validate the returned structure. The `content` field
+contains a concise summary plus compact JSON for metadata tools; transcript and
+search calls instead render their evidence text there for clients that do not
+consume structured results. Responses may contain stable Besedy IDs and
 authenticated web links, but never audio URLs or filesystem paths.
+
+The MCP initialization response also includes concise server instructions for
+agents that connect without the optional Besedy skill. They describe the
+cross-tool discovery and evidence workflow: semantic search is non-exhaustive,
+important passages should be verified through `transcriptRequest` and
+`get_transcript`, recorder variants of one event are not independent evidence,
+recurring themes require support from distinct events, and bounded segment
+links are preferred for citations. Tool descriptions and schemas remain
+authoritative for individual calls and their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need

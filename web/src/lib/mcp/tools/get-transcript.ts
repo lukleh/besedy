@@ -9,6 +9,7 @@ import {
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { HashSchema, TranscriptBackendSchema } from '@/lib/validation/schemas';
+import { GetTranscriptOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_TRANSCRIPT_SEGMENT_LIMIT = 50;
 const MAX_TRANSCRIPT_SEGMENT_LIMIT = 200;
@@ -129,6 +130,7 @@ export function registerGetTranscriptTool(
             }
           }
         }),
+      outputSchema: GetTranscriptOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({

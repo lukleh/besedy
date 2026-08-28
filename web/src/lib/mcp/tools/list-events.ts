@@ -8,6 +8,7 @@ import {
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
+import { ListEventsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_EVENT_PAGE_SIZE = 25;
 const MAX_EVENT_PAGE_SIZE = 100;
@@ -33,7 +34,13 @@ export function registerListEventsTool(
       description:
         'List visible events in chronological date order. Uses the current user default catalog when catalogId is omitted.',
       inputSchema: z.object({
-        catalogId: z.string().min(1).optional(),
+        catalogId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Accessible Besedy catalog to browse. Omit it to use the effective default catalog.',
+          ),
         cursor: z
           .string()
           .min(1)
@@ -46,15 +53,29 @@ export function registerListEventsTool(
           .int()
           .min(1)
           .max(MAX_EVENT_PAGE_SIZE)
-          .default(DEFAULT_EVENT_PAGE_SIZE),
+          .default(DEFAULT_EVENT_PAGE_SIZE)
+          .describe('Maximum events to return; defaults to 25.'),
         order: z
           .enum(['asc', 'desc'])
           .default('desc')
           .describe(
             'Chronological event-date order. Use asc for oldest events first and desc for newest events first.',
           ),
-        released: z.boolean().optional(),
-        query: z.string().trim().min(1).max(200).optional(),
+        released: z
+          .boolean()
+          .optional()
+          .describe(
+            'When supplied, include only released or only unreleased events.',
+          ),
+        query: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            'Case-insensitive literal match against event title, description, or location name.',
+          ),
         date: PartialEventDateSchema.optional().describe(
           'Structured event date prefix. Supply only year for a year, add month for a month, or add day for an exact date.',
         ),
@@ -67,6 +88,7 @@ export function registerListEventsTool(
             'Exact event location ID. Use query instead when only a location name is known.',
           ),
       }),
+      outputSchema: ListEventsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({
