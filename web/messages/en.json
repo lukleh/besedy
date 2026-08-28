@@ -546,7 +546,6 @@
         "duration": "Duration",
         "success": "Success",
         "average": "Average",
-        "p95": "p95",
         "lastUsed": "Last used"
       }
     },

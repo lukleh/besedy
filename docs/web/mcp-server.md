@@ -961,12 +961,12 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 
 Every authenticated tool handler is registered through the shared tracked-tool
 wrapper. It writes one `mcp_tool_invocation` row with the user, OAuth client,
-tool, resolved catalog/target where applicable, outcome, duration, result count,
-and returned transcript character count. The admin view at `/admin/mcp` shows
+tool, resolved catalog where applicable, outcome, duration, and returned
+transcript character count. The admin view at `/admin/mcp` shows
 these calls by time, tool, user, client, and catalog. The weekly operator email
 contains the same high-level MCP activity summary.
 
-Raw invocations are retained for 180 days (and never fewer than 30 days) by
+Raw invocations are retained for 180 days by
 `mcp-usage-retention.sh`. Before deletion they are merged into daily aggregate
 rows. The aggregates are retained for 400 days, keeping the 12-month dashboard
 complete while bounding actor and tool usage data retention. The immutable actor
@@ -975,8 +975,8 @@ relation may be cleared by account deletion.
 
 Telemetry must never contain bearer or refresh tokens, raw search queries,
 transcript text, complete tool arguments, or response content. Search usage
-records only query length and filter names; transcript reads record only segment
-and character counts. Permission denials are also mirrored into `audit_log` as
+records no query or filter details; transcript reads record only returned
+character counts. Permission denials are also mirrored into `audit_log` as
 security events with `resource = 'mcp'`. A telemetry-write failure is logged but
 must not change the MCP tool result.
 

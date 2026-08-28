@@ -7,7 +7,6 @@ COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && p
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
 MCP_RAW_RETENTION_DAYS="${MCP_RAW_RETENTION_DAYS:-180}"
 MCP_ROLLUP_RETENTION_DAYS="${MCP_ROLLUP_RETENTION_DAYS:-400}"
-MIN_MCP_RAW_RETENTION_DAYS=30
 MIN_MCP_ROLLUP_RETENTION_DAYS=366
 TAG="${REPORT_LOG_TAG:-besedy-mcp-retention}"
 
@@ -17,11 +16,6 @@ case "$MCP_RAW_RETENTION_DAYS" in
         exit 1
         ;;
 esac
-
-if (( MCP_RAW_RETENTION_DAYS < MIN_MCP_RAW_RETENTION_DAYS )); then
-    echo "MCP_RAW_RETENTION_DAYS must be at least $MIN_MCP_RAW_RETENTION_DAYS to preserve exact 30-day analytics" >&2
-    exit 1
-fi
 
 case "$MCP_ROLLUP_RETENTION_DAYS" in
     ''|*[!0-9]*|0)
@@ -69,7 +63,6 @@ WITH rolled_up AS (
         outcome,
         calls,
         total_duration_ms,
-        result_count,
         returned_text_chars,
         first_used_at,
         last_used_at
@@ -93,7 +86,6 @@ WITH rolled_up AS (
         outcome,
         COUNT(*)::integer,
         SUM(duration_ms)::bigint,
-        SUM(COALESCE(result_count, 0))::bigint,
         SUM(COALESCE(returned_text_chars, 0))::bigint,
         MIN(created_at),
         MAX(created_at)
@@ -111,7 +103,6 @@ WITH rolled_up AS (
         client_name = COALESCE(EXCLUDED.client_name, mcp_tool_usage_daily.client_name),
         calls = mcp_tool_usage_daily.calls + EXCLUDED.calls,
         total_duration_ms = mcp_tool_usage_daily.total_duration_ms + EXCLUDED.total_duration_ms,
-        result_count = mcp_tool_usage_daily.result_count + EXCLUDED.result_count,
         returned_text_chars = mcp_tool_usage_daily.returned_text_chars + EXCLUDED.returned_text_chars,
         first_used_at = LEAST(mcp_tool_usage_daily.first_used_at, EXCLUDED.first_used_at),
         last_used_at = GREATEST(mcp_tool_usage_daily.last_used_at, EXCLUDED.last_used_at)

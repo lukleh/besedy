@@ -899,7 +899,7 @@ enum McpToolOutcome {
 }
 
 /// One authenticated MCP tool invocation. Arguments and response content are
-/// intentionally excluded; only operational and aggregate-safe metadata lives here.
+/// intentionally excluded; only operational counters and attribution live here.
 model McpToolInvocation {
   id                String         @id @default(cuid())
   /// Immutable actor identifier retained after the related user is deleted.
@@ -909,14 +909,10 @@ model McpToolInvocation {
   clientName        String?        @map("client_name") @db.VarChar(255)
   toolName          String         @map("tool_name") @db.VarChar(64)
   catalogId         String?        @map("catalog_id") @db.VarChar(191)
-  targetType        String?        @map("target_type") @db.VarChar(50)
-  targetId          String?        @map("target_id") @db.VarChar(191)
   outcome           McpToolOutcome
   errorCode         String?        @map("error_code") @db.VarChar(100)
   durationMs        Int            @map("duration_ms")
-  resultCount       Int?           @map("result_count")
   returnedTextChars Int?           @map("returned_text_chars")
-  metadata          Json?
   createdAt         DateTime       @default(now()) @map("created_at")
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -944,7 +940,6 @@ model McpToolUsageDaily {
   outcome           McpToolOutcome
   calls             Int
   totalDurationMs   BigInt         @map("total_duration_ms")
-  resultCount       BigInt         @map("result_count")
   returnedTextChars BigInt         @map("returned_text_chars")
   firstUsedAt       DateTime       @map("first_used_at")
   lastUsedAt        DateTime       @map("last_used_at")

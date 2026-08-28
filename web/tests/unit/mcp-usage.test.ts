@@ -56,7 +56,7 @@ describe('MCP usage telemetry', () => {
     mocks.logAccessDenied.mockResolvedValue(undefined);
   });
 
-  it('keeps only allow-listed input metadata and never stores query text', () => {
+  it('extracts only the catalog ID from tool arguments', () => {
     const summary = summarizeMcpInvocationInput({
       catalogId: 'catalog-1',
       audioHash: 'a'.repeat(64),
@@ -67,19 +67,7 @@ describe('MCP usage telemetry', () => {
       unknownField: 'must not be stored',
     });
 
-    expect(summary).toEqual({
-      catalogId: 'catalog-1',
-      targetType: 'recording',
-      targetId: 'a'.repeat(64),
-      metadata: {
-        limit: 10,
-        contextChunks: 2,
-        queryChars: 20,
-        filterKeys: ['audioHashes', 'eventIds'],
-      },
-    });
-    expect(JSON.stringify(summary)).not.toContain('private search terms');
-    expect(JSON.stringify(summary)).not.toContain('secret');
+    expect(summary).toEqual({ catalogId: 'catalog-1' });
   });
 
   it('extracts transcript volume without retaining transcript content', () => {
@@ -94,11 +82,10 @@ describe('MCP usage telemetry', () => {
       },
     } satisfies CallToolResult;
 
-    expect(summarizeMcpInvocationResult('get_transcript', result)).toEqual({
+    expect(summarizeMcpInvocationResult(result)).toEqual({
       outcome: McpToolOutcome.SUCCESS,
       errorCode: null,
       catalogId: 'catalog-1',
-      resultCount: 1,
       returnedTextChars: 23,
     });
   });
@@ -130,8 +117,6 @@ describe('MCP usage telemetry', () => {
         toolName: 'search_transcripts',
         catalogId: 'catalog-1',
         outcome: McpToolOutcome.SUCCESS,
-        resultCount: 2,
-        metadata: { queryChars: 7, limit: 10 },
       }),
     });
     expect(mocks.logAccessDenied).not.toHaveBeenCalled();
@@ -198,7 +183,6 @@ describe('MCP usage telemetry', () => {
       data: expect.objectContaining({
         outcome: McpToolOutcome.DENIED,
         errorCode: 'permission_denied',
-        targetType: 'recording',
       }),
     });
     expect(mocks.logAccessDenied).toHaveBeenCalledWith(

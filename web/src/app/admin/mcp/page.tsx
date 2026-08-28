@@ -233,7 +233,6 @@ export default function McpUsagePage() {
                 <TableHead className="text-right">
                   {t('columns.average')}
                 </TableHead>
-                <TableHead className="text-right">{t('columns.p95')}</TableHead>
                 <TableHead>{t('columns.lastUsed')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -255,11 +254,6 @@ export default function McpUsagePage() {
                   <TableCell className="text-right">
                     {tool.averageDurationMs} ms
                   </TableCell>
-                  <TableCell className="text-right">
-                    {tool.p95DurationMs === null
-                      ? '—'
-                      : `${tool.p95DurationMs} ms`}
-                  </TableCell>
                   <TableCell>
                     {formatRelativeTime(tool.lastUsedAt, locale)}
                   </TableCell>
@@ -268,7 +262,7 @@ export default function McpUsagePage() {
               {!isLoading && data?.tools.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={6}
                     className="py-8 text-center text-muted-foreground"
                   >
                     {t('empty')}

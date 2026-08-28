@@ -9,10 +9,7 @@ interface SummaryRow {
   unique_users: bigint;
   unique_clients: bigint;
   successes: bigint;
-  errors: bigint;
-  denials: bigint;
   average_duration_ms: number | bigint | string | null;
-  returned_items: bigint;
   returned_text_chars: bigint;
 }
 
@@ -21,10 +18,7 @@ interface ToolRow {
   calls: bigint;
   unique_users: bigint;
   successes: bigint;
-  errors: bigint;
-  denials: bigint;
   average_duration_ms: number | bigint | string;
-  p95_duration_ms: number | bigint | string | null;
   last_used_at: Date;
 }
 
@@ -55,8 +49,6 @@ interface CatalogRow {
 interface BucketRow {
   bucket: Date;
   calls: bigint;
-  unique_users: bigint;
-  errors: bigint;
 }
 
 function toNumber(value: number | bigint | string | null | undefined): number {
@@ -93,9 +85,7 @@ function bucketQuery(range: McpUsageRange, periodStart: Date) {
   const bucket = range === '24h' ? 'hour' : range === '12m' ? 'month' : 'day';
   return prisma.$queryRaw<BucketRow[]>(Prisma.sql`
     SELECT date_trunc(${bucket}, occurred_at) AS bucket,
-           SUM(calls)::bigint AS calls,
-           COUNT(DISTINCT actor_user_id)::bigint AS unique_users,
-           COALESCE(SUM(calls) FILTER (WHERE outcome != 'SUCCESS'), 0)::bigint AS errors
+           SUM(calls)::bigint AS calls
     FROM mcp_tool_usage
     WHERE occurred_at >= ${periodStart}
     GROUP BY bucket
@@ -105,9 +95,6 @@ function bucketQuery(range: McpUsageRange, periodStart: Date) {
 
 export async function getMcpUsageAnalytics(range: McpUsageRange) {
   const periodStart = getMcpUsagePeriodStart(range);
-  // The retention job preserves at least 30 raw days, so these ranges have
-  // exact per-invocation latency data. Yearly rollups cannot provide a p95.
-  const includeRawP95 = range !== '12m';
   const [
     summaryRows,
     toolRows,
@@ -122,37 +109,22 @@ export async function getMcpUsageAnalytics(range: McpUsageRange) {
              COUNT(DISTINCT actor_user_id)::bigint AS unique_users,
              COUNT(DISTINCT client_id)::bigint AS unique_clients,
              COALESCE(SUM(calls) FILTER (WHERE outcome = 'SUCCESS'), 0)::bigint AS successes,
-             COALESCE(SUM(calls) FILTER (WHERE outcome = 'ERROR'), 0)::bigint AS errors,
-             COALESCE(SUM(calls) FILTER (WHERE outcome = 'DENIED'), 0)::bigint AS denials,
              COALESCE(SUM(total_duration_ms)::numeric / NULLIF(SUM(calls), 0), 0) AS average_duration_ms,
-             COALESCE(SUM(result_count), 0)::bigint AS returned_items,
              COALESCE(SUM(returned_text_chars), 0)::bigint AS returned_text_chars
       FROM mcp_tool_usage
       WHERE occurred_at >= ${periodStart}
     `),
     prisma.$queryRaw<ToolRow[]>(Prisma.sql`
-      WITH raw_p95 AS (
-        SELECT tool_name,
-               ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms))::integer AS duration_ms
-        FROM mcp_tool_invocation
-        WHERE created_at >= ${periodStart}
-          AND ${includeRawP95}
-        GROUP BY tool_name
-      )
-      SELECT usage.tool_name,
-             SUM(usage.calls)::bigint AS calls,
-             COUNT(DISTINCT usage.actor_user_id)::bigint AS unique_users,
-             COALESCE(SUM(usage.calls) FILTER (WHERE usage.outcome = 'SUCCESS'), 0)::bigint AS successes,
-             COALESCE(SUM(usage.calls) FILTER (WHERE usage.outcome = 'ERROR'), 0)::bigint AS errors,
-             COALESCE(SUM(usage.calls) FILTER (WHERE usage.outcome = 'DENIED'), 0)::bigint AS denials,
-             ROUND(SUM(usage.total_duration_ms)::numeric / NULLIF(SUM(usage.calls), 0))::integer AS average_duration_ms,
-             raw_p95.duration_ms AS p95_duration_ms,
-             MAX(usage.last_used_at) AS last_used_at
-      FROM mcp_tool_usage usage
-      LEFT JOIN raw_p95 ON raw_p95.tool_name = usage.tool_name
-      WHERE usage.occurred_at >= ${periodStart}
-      GROUP BY usage.tool_name, raw_p95.duration_ms
-      ORDER BY calls DESC, usage.tool_name ASC
+      SELECT tool_name,
+             SUM(calls)::bigint AS calls,
+             COUNT(DISTINCT actor_user_id)::bigint AS unique_users,
+             COALESCE(SUM(calls) FILTER (WHERE outcome = 'SUCCESS'), 0)::bigint AS successes,
+             ROUND(SUM(total_duration_ms)::numeric / NULLIF(SUM(calls), 0))::integer AS average_duration_ms,
+             MAX(last_used_at) AS last_used_at
+      FROM mcp_tool_usage
+      WHERE occurred_at >= ${periodStart}
+      GROUP BY tool_name
+      ORDER BY calls DESC, tool_name ASC
     `),
     prisma.$queryRaw<UserRow[]>(Prisma.sql`
       SELECT usage.actor_user_id,
@@ -214,28 +186,19 @@ export async function getMcpUsageAnalytics(range: McpUsageRange) {
       uniqueUsers: toNumber(summary?.unique_users),
       uniqueClients: toNumber(summary?.unique_clients),
       successes: toNumber(summary?.successes),
-      errors: toNumber(summary?.errors),
-      denials: toNumber(summary?.denials),
       averageDurationMs: Math.round(toNumber(summary?.average_duration_ms)),
-      returnedItems: toNumber(summary?.returned_items),
       returnedTextChars: toNumber(summary?.returned_text_chars),
     },
     buckets: buckets.map((row) => ({
       timestamp: row.bucket.toISOString(),
       calls: toNumber(row.calls),
-      uniqueUsers: toNumber(row.unique_users),
-      errors: toNumber(row.errors),
     })),
     tools: toolRows.map((row) => ({
       toolName: row.tool_name,
       calls: toNumber(row.calls),
       uniqueUsers: toNumber(row.unique_users),
       successes: toNumber(row.successes),
-      errors: toNumber(row.errors),
-      denials: toNumber(row.denials),
       averageDurationMs: toNumber(row.average_duration_ms),
-      p95DurationMs:
-        row.p95_duration_ms === null ? null : toNumber(row.p95_duration_ms),
       lastUsedAt: row.last_used_at.toISOString(),
     })),
     users: userRows.map((row) => ({
@@ -262,19 +225,14 @@ export async function getMcpUsageAnalytics(range: McpUsageRange) {
     recent: recent.map((row) => ({
       id: row.id,
       actorUserId: row.actorUserId,
-      userId: row.userId,
       user: row.user,
       clientId: row.clientId,
       clientName: row.clientName,
       toolName: row.toolName,
       catalogId: row.catalogId,
-      targetType: row.targetType,
-      targetId: row.targetId,
       outcome: row.outcome as McpToolOutcome,
       errorCode: row.errorCode,
       durationMs: row.durationMs,
-      resultCount: row.resultCount,
-      returnedTextChars: row.returnedTextChars,
       createdAt: row.createdAt.toISOString(),
     })),
   };

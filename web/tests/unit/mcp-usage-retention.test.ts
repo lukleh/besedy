@@ -40,7 +40,6 @@ describe('MCP usage retention', () => {
 
     expect(retentionScript).toContain('MCP_RAW_RETENTION_DAYS:-180');
     expect(retentionScript).toContain('MCP_ROLLUP_RETENTION_DAYS:-400');
-    expect(retentionScript).toContain('MIN_MCP_RAW_RETENTION_DAYS=30');
     expect(retentionScript).toContain('MIN_MCP_ROLLUP_RETENTION_DAYS=366');
     expect(retentionScript).toContain(
       '-v rollup_retention_days="$MCP_ROLLUP_RETENTION_DAYS"',
@@ -54,19 +53,19 @@ describe('MCP usage retention', () => {
     expect(retentionScript).toContain('COMMIT;');
   });
 
-  it('rejects raw retention that cannot support exact 30-day analytics', () => {
+  it('rejects a non-positive raw retention period', () => {
     const result = spawnSync('bash', [retentionScriptPath], {
       encoding: 'utf8',
       env: {
         ...process.env,
-        MCP_RAW_RETENTION_DAYS: '29',
+        MCP_RAW_RETENTION_DAYS: '0',
         MCP_ROLLUP_RETENTION_DAYS: '400',
       },
     });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      'MCP_RAW_RETENTION_DAYS must be at least 30',
+      'MCP_RAW_RETENTION_DAYS must be a positive integer',
     );
   });
 });

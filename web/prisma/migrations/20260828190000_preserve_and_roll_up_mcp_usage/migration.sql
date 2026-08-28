@@ -21,7 +21,6 @@ CREATE TABLE "mcp_tool_usage_daily" (
     "outcome" "McpToolOutcome" NOT NULL,
     "calls" INTEGER NOT NULL,
     "total_duration_ms" BIGINT NOT NULL,
-    "result_count" BIGINT NOT NULL,
     "returned_text_chars" BIGINT NOT NULL,
     "first_used_at" TIMESTAMP(3) NOT NULL,
     "last_used_at" TIMESTAMP(3) NOT NULL,
@@ -29,7 +28,6 @@ CREATE TABLE "mcp_tool_usage_daily" (
     CONSTRAINT "mcp_tool_usage_daily_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "mcp_tool_usage_daily_calls_check" CHECK ("calls" > 0),
     CONSTRAINT "mcp_tool_usage_daily_duration_check" CHECK ("total_duration_ms" >= 0),
-    CONSTRAINT "mcp_tool_usage_daily_result_count_check" CHECK ("result_count" >= 0),
     CONSTRAINT "mcp_tool_usage_daily_text_chars_check" CHECK ("returned_text_chars" >= 0)
 );
 
@@ -53,7 +51,6 @@ SELECT
     "outcome",
     1::bigint AS "calls",
     "duration_ms"::bigint AS "total_duration_ms",
-    COALESCE("result_count", 0)::bigint AS "result_count",
     COALESCE("returned_text_chars", 0)::bigint AS "returned_text_chars"
 FROM "mcp_tool_invocation"
 
@@ -70,6 +67,5 @@ SELECT
     "outcome",
     "calls"::bigint,
     "total_duration_ms",
-    "result_count",
     "returned_text_chars"
 FROM "mcp_tool_usage_daily";

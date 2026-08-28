@@ -6,7 +6,6 @@ import { McpToolOutcome } from '@/generated/prisma/enums';
 import { logAccessDenied } from '@/lib/audit/logger';
 import prisma from '@/lib/db';
 import { createServerLogger } from '@/lib/log/server';
-import { toPrismaJson } from '@/lib/prisma-json';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 
 const logger = createServerLogger('mcp-usage');
@@ -25,16 +24,12 @@ type ToolResult = CallToolResult | InputRequiredResult;
 
 interface InvocationInputSummary {
   catalogId: string | null;
-  targetType: string | null;
-  targetId: string | null;
-  metadata: Record<string, unknown> | null;
 }
 
 interface InvocationResultSummary {
   outcome: McpToolOutcome;
   errorCode: string | null;
   catalogId: string | null;
-  resultCount: number | null;
   returnedTextChars: number | null;
 }
 
@@ -50,10 +45,6 @@ function nonEmptyString(value: unknown): string | null {
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function arrayLength(value: unknown): number | null {
-  return Array.isArray(value) ? value.length : null;
 }
 
 function sanitizeTelemetryLabel(value: string | null): string | null {
@@ -72,54 +63,10 @@ function sanitizeTelemetryLabel(value: string | null): string | null {
 export function summarizeMcpInvocationInput(
   input: unknown,
 ): InvocationInputSummary {
-  const args = asRecord(input) ?? {};
-  const metadata: Record<string, unknown> = {};
-  const numericKeys = [
-    'limit',
-    'contextChunks',
-    'maxPerRecording',
-    'recordingOffset',
-    'recordingLimit',
-    'eventOffset',
-    'eventLimit',
-    'segmentOffset',
-    'segmentLimit',
-    'maxTextChars',
-    'startSec',
-    'endSec',
-  ] as const;
-
-  for (const key of numericKeys) {
-    const value = finiteNumber(args[key]);
-    if (value !== null) metadata[key] = value;
-  }
-
-  for (const key of ['backend', 'mode'] as const) {
-    const value = nonEmptyString(args[key]);
-    if (value !== null) metadata[key] = value;
-  }
-
-  if (typeof args.query === 'string') {
-    metadata.queryChars = args.query.length;
-  }
-  const filters = asRecord(args.filters);
-  if (filters) {
-    metadata.filterKeys = Object.keys(filters).sort();
-  }
-
-  const audioHash = nonEmptyString(args.audioHash);
-  const eventId = finiteNumber(args.eventId);
-
-  return {
-    catalogId: nonEmptyString(args.catalogId),
-    targetType: audioHash ? 'recording' : eventId !== null ? 'event' : null,
-    targetId: audioHash ?? (eventId !== null ? String(eventId) : null),
-    metadata: Object.keys(metadata).length > 0 ? metadata : null,
-  };
+  return { catalogId: nonEmptyString(asRecord(input)?.catalogId) };
 }
 
 export function summarizeMcpInvocationResult(
-  toolName: string,
   result: ToolResult,
 ): InvocationResultSummary {
   const resultRecord = asRecord(result);
@@ -129,31 +76,6 @@ export function summarizeMcpInvocationResult(
   const isError = resultRecord?.isError === true || errorCode !== null;
   const denied = errorCode === 'permission_denied';
   const segments = asRecord(structured?.segments);
-  const retrieval = asRecord(structured?.retrieval);
-
-  let resultCount: number | null = null;
-  for (const key of [
-    'catalogs',
-    'locations',
-    'recorders',
-    'events',
-    'results',
-  ]) {
-    const count = arrayLength(structured?.[key]);
-    if (count !== null) {
-      resultCount = count;
-      break;
-    }
-  }
-  resultCount ??= arrayLength(segments?.items);
-  resultCount ??= finiteNumber(retrieval?.returnedCount);
-  if (
-    resultCount === null &&
-    !isError &&
-    ['who_am_i', 'get_event', 'get_recording'].includes(toolName)
-  ) {
-    resultCount = 1;
-  }
 
   return {
     outcome: denied
@@ -163,7 +85,6 @@ export function summarizeMcpInvocationResult(
         : McpToolOutcome.SUCCESS,
     errorCode,
     catalogId: nonEmptyString(structured?.catalogId),
-    resultCount,
     returnedTextChars: finiteNumber(segments?.returnedTextChars),
   };
 }
@@ -191,14 +112,10 @@ async function writeInvocation(params: {
         clientName,
         toolName: params.toolName,
         catalogId,
-        targetType: params.input.targetType,
-        targetId: params.input.targetId,
         outcome: params.result.outcome,
         errorCode: params.result.errorCode,
         durationMs: params.durationMs,
-        resultCount: params.result.resultCount,
         returnedTextChars: params.result.returnedTextChars,
-        metadata: toPrismaJson(params.input.metadata),
       },
     });
   } catch (error) {
@@ -237,7 +154,7 @@ export async function trackMcpToolInvocation<T extends ToolResult>(
       toolName,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
       input: inputSummary,
-      result: summarizeMcpInvocationResult(toolName, result),
+      result: summarizeMcpInvocationResult(result),
     });
     return result;
   } catch (error) {
@@ -250,7 +167,6 @@ export async function trackMcpToolInvocation<T extends ToolResult>(
         outcome: McpToolOutcome.ERROR,
         errorCode: 'internal_error',
         catalogId: null,
-        resultCount: null,
         returnedTextChars: null,
       },
     });
