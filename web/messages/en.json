@@ -489,8 +489,65 @@
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
       "auditLog": "Audit Log",
+      "mcpUsage": "MCP Usage",
       "clientErrors": "Client Errors",
       "webUpdates": "Web Updates"
+    },
+    "mcp": {
+      "title": "MCP Usage",
+      "description": "Authenticated MCP tool activity by user, OAuth client, tool, and catalog. Search text, transcript content, tokens, and complete arguments are never stored.",
+      "error": "MCP usage analytics could not be loaded.",
+      "empty": "No MCP tool calls were recorded in this period.",
+      "ranges": {
+        "24h": "24h",
+        "7d": "7d",
+        "30d": "30d",
+        "12m": "12m"
+      },
+      "metrics": {
+        "calls": "Tool calls",
+        "users": "Users",
+        "clients": "OAuth clients",
+        "successRate": "Success rate",
+        "averageDuration": "Average duration",
+        "returnedText": "Transcript characters"
+      },
+      "activity": {
+        "title": "Activity over time",
+        "description": "Completed MCP tool calls in the selected period."
+      },
+      "tools": {
+        "title": "Tool usage",
+        "description": "Volume, users, reliability, and latency for each MCP tool."
+      },
+      "users": {
+        "title": "Top users"
+      },
+      "clients": {
+        "title": "OAuth clients"
+      },
+      "catalogs": {
+        "title": "Catalogs"
+      },
+      "recent": {
+        "title": "Recent invocations",
+        "description": "The 50 most recent calls without argument or response content."
+      },
+      "columns": {
+        "time": "Time",
+        "tool": "Tool",
+        "calls": "Calls",
+        "users": "Users",
+        "user": "User",
+        "tools": "Tools",
+        "client": "Client",
+        "catalog": "Catalog",
+        "outcome": "Outcome",
+        "duration": "Duration",
+        "success": "Success",
+        "average": "Average",
+        "lastUsed": "Last used"
+      }
     },
     "webUpdates": {
       "title": "Web client updates",

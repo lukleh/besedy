@@ -3,6 +3,7 @@ import { listMcpLocations } from '@/lib/mcp/read-service';
 import {
   createLookupListInputSchema,
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -12,9 +13,12 @@ import { ListLocationsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 export function registerListLocationsTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'list_locations',
     {
       title: 'List Besedy locations',

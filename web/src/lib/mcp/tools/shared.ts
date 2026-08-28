@@ -1,9 +1,19 @@
 import type {
+  Icon,
+  McpServer,
+  RegisteredTool,
+  StandardSchemaWithJSON,
+  ToolAnnotations,
+  ToolCallback,
+} from '@modelcontextprotocol/server';
+import { z } from 'zod';
+import type {
   McpAccessProfile,
   McpCatalogAccess,
 } from '@/lib/mcp/access-profile';
-import { z } from 'zod';
 import { McpReadError } from '@/lib/mcp/read-service';
+import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
+import { trackMcpToolInvocation } from '@/lib/mcp/usage';
 
 const DEFAULT_LOOKUP_PAGE_SIZE = 50;
 const MAX_LOOKUP_PAGE_SIZE = 100;
@@ -51,6 +61,37 @@ export const READ_ONLY_TOOL_ANNOTATIONS = {
 } as const;
 
 type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
+
+interface BesedyToolConfig<
+  InputArgs extends StandardSchemaWithJSON,
+  OutputArgs extends StandardSchemaWithJSON,
+> {
+  title?: string;
+  description?: string;
+  inputSchema: InputArgs;
+  outputSchema: OutputArgs;
+  annotations?: ToolAnnotations;
+  icons?: Icon[];
+  _meta?: Record<string, unknown>;
+}
+
+export function registerBesedyTool<
+  OutputArgs extends StandardSchemaWithJSON,
+  InputArgs extends StandardSchemaWithJSON,
+>(
+  server: McpServer,
+  context: BesedyMcpRequestContext,
+  name: string,
+  config: BesedyToolConfig<InputArgs, OutputArgs>,
+  callback: ToolCallback<InputArgs>,
+): RegisteredTool {
+  const trackedCallback = (async (args, serverContext) =>
+    trackMcpToolInvocation(context, name, args, () =>
+      callback(args, serverContext),
+    )) as ToolCallback<InputArgs>;
+
+  return server.registerTool(name, config, trackedCallback);
+}
 
 export function resolveToolCatalog(
   profile: McpAccessProfile,

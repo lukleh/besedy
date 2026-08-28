@@ -165,6 +165,79 @@ AUDIO_UNIQUE_USERS=$(db_query "SELECT COUNT(DISTINCT user_id) FROM audit_log WHE
 AUDIO_DOWNLOADS=$(db_query "SELECT COUNT(*) FROM audit_log WHERE action = 'AUDIO_DOWNLOADED' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
 TRANSCRIPT_DOWNLOADS=$(db_query "SELECT COUNT(*) FROM audit_log WHERE action = 'TRANSCRIPT_DOWNLOADED' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
 
+# MCP tool activity. The usage table intentionally contains no raw search text,
+# transcript content, bearer tokens, or complete tool arguments/responses.
+MCP_SUMMARY=$(db_query "
+SELECT COALESCE(SUM(calls), 0),
+       COUNT(DISTINCT actor_user_id),
+       COUNT(DISTINCT client_id),
+       COALESCE(SUM(calls) FILTER (WHERE outcome = 'SUCCESS'), 0),
+       COALESCE(SUM(calls) FILTER (WHERE outcome = 'ERROR'), 0),
+       COALESCE(SUM(calls) FILTER (WHERE outcome = 'DENIED'), 0),
+       COALESCE(SUM(returned_text_chars), 0)
+FROM mcp_tool_usage
+WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+")
+IFS='|' read -r \
+    MCP_CALLS \
+    MCP_UNIQUE_USERS \
+    MCP_UNIQUE_CLIENTS \
+    MCP_SUCCESSES \
+    MCP_ERRORS \
+    MCP_DENIALS \
+    MCP_RETURNED_TEXT_CHARS <<< "$MCP_SUMMARY"
+MCP_CALLS="${MCP_CALLS:-0}"
+MCP_UNIQUE_USERS="${MCP_UNIQUE_USERS:-0}"
+MCP_UNIQUE_CLIENTS="${MCP_UNIQUE_CLIENTS:-0}"
+MCP_SUCCESSES="${MCP_SUCCESSES:-0}"
+MCP_ERRORS="${MCP_ERRORS:-0}"
+MCP_DENIALS="${MCP_DENIALS:-0}"
+MCP_RETURNED_TEXT_CHARS="${MCP_RETURNED_TEXT_CHARS:-0}"
+
+MCP_BY_TOOL=$(db_query "
+SELECT tool_name || ': ' || SUM(calls) ||
+       CASE WHEN SUM(calls) = 1 THEN ' call' ELSE ' calls' END ||
+       ' by ' || COUNT(DISTINCT actor_user_id) ||
+       CASE WHEN COUNT(DISTINCT actor_user_id) = 1 THEN ' user' ELSE ' users' END ||
+       CASE WHEN COALESCE(SUM(calls) FILTER (WHERE outcome != 'SUCCESS'), 0) > 0
+         THEN ' (' || SUM(calls) FILTER (WHERE outcome != 'SUCCESS') || ' unsuccessful)'
+         ELSE ''
+       END
+FROM mcp_tool_usage
+WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY tool_name
+ORDER BY SUM(calls) DESC, tool_name ASC
+" | sed 's/^/  • /')
+
+MCP_BY_USER=$(db_query "
+SELECT COALESCE(u.email, invocation.actor_user_id) || ': ' ||
+       SUM(invocation.calls) || CASE WHEN SUM(invocation.calls) = 1 THEN ' call' ELSE ' calls' END ||
+       ' across ' || COUNT(DISTINCT tool_name) ||
+       CASE WHEN COUNT(DISTINCT tool_name) = 1 THEN ' tool' ELSE ' tools' END
+FROM mcp_tool_usage invocation
+LEFT JOIN users u ON u.id = invocation.actor_user_id
+WHERE invocation.occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY invocation.actor_user_id, u.email
+ORDER BY SUM(invocation.calls) DESC, COALESCE(LOWER(u.email), invocation.actor_user_id) ASC
+LIMIT $PER_USER_BREAKDOWN_LIMIT
+" | sed 's/^/  • /')
+
+MCP_BY_CLIENT=$(db_query "
+SELECT COALESCE(
+         (ARRAY_AGG(client_name ORDER BY last_used_at DESC)
+            FILTER (WHERE client_name IS NOT NULL))[1],
+         client_id
+       ) || ': ' || SUM(calls) ||
+       CASE WHEN SUM(calls) = 1 THEN ' call' ELSE ' calls' END ||
+       ' by ' || COUNT(DISTINCT actor_user_id) ||
+       CASE WHEN COUNT(DISTINCT actor_user_id) = 1 THEN ' user' ELSE ' users' END
+FROM mcp_tool_usage
+WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY client_id
+ORDER BY SUM(calls) DESC, client_id ASC
+LIMIT $PER_USER_BREAKDOWN_LIMIT
+" | sed 's/^/  • /')
+
 # Per-user audio breakdown (top N users by plays)
 AUDIO_PER_USER=$(db_query "
 WITH ordered_events AS (
@@ -294,6 +367,23 @@ Transcript exports: $TRANSCRIPT_DOWNLOADS
 ${AUDIO_PER_USER:+
 Per-user breakdown:
 $AUDIO_PER_USER}
+
+MCP ACTIVITY
+------------
+Tool calls:          $MCP_CALLS by $MCP_UNIQUE_USERS users
+OAuth clients:       $MCP_UNIQUE_CLIENTS
+Successful:          $MCP_SUCCESSES
+Errors / denials:    $MCP_ERRORS / $MCP_DENIALS
+Transcript chars:    $MCP_RETURNED_TEXT_CHARS
+${MCP_BY_TOOL:+
+Tools:
+$MCP_BY_TOOL}
+${MCP_BY_USER:+
+Top users:
+$MCP_BY_USER}
+${MCP_BY_CLIENT:+
+Clients:
+$MCP_BY_CLIENT}
 
 ADMIN ACTIVITY
 --------------

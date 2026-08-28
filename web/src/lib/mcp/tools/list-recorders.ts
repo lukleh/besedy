@@ -3,6 +3,7 @@ import { listMcpRecorders } from '@/lib/mcp/read-service';
 import {
   createLookupListInputSchema,
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -12,9 +13,12 @@ import { ListRecordersOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 export function registerListRecordersTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'list_recorders',
     {
       title: 'List Besedy recorders',

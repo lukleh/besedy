@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getMcpEvent } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -15,9 +16,12 @@ const MAX_EVENT_RECORDING_LIMIT = 100;
 
 export function registerGetEventTool(
   server: McpServer,
-  { accessProfile: profile }: BesedyMcpRequestContext,
+  context: BesedyMcpRequestContext,
 ): void {
-  server.registerTool(
+  const { accessProfile: profile } = context;
+  registerBesedyTool(
+    server,
+    context,
     'get_event',
     {
       title: 'Get a Besedy event',

@@ -18,6 +18,7 @@ import {
   ListPlus,
   ListOrdered,
   RefreshCw,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,11 @@ const navItems = [
     titleKey: "nav.auditLog" as const,
     href: "/admin/audit",
     icon: ScrollText,
+  },
+  {
+    titleKey: "nav.mcpUsage" as const,
+    href: "/admin/mcp",
+    icon: Bot,
   },
   {
     titleKey: "nav.clientErrors" as const,
@@ -147,6 +153,7 @@ function Breadcrumb() {
       metadata: t("nav.metadata"),
       "transcript-order": t("nav.transcripts"),
       audit: t("nav.auditLog"),
+      mcp: t("nav.mcpUsage"),
       "client-errors": t("nav.clientErrors"),
     };
     return segmentMap[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
