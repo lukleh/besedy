@@ -511,6 +511,9 @@ describe('MCP personalized tool surface', () => {
     expect(
       searchTool?.inputSchema.properties.maxPerRecording.description,
     ).toContain('recording/audio hash');
+    expect(searchTool?.inputSchema.properties.maxPerRecording.default).toBe(
+      10,
+    );
     expect(searchTool?.inputSchema.properties.maxPerRecording.maximum).toBe(
       100,
     );
@@ -911,7 +914,7 @@ describe('MCP personalized tool surface', () => {
         exhaustive: false,
         requestedLimit: 100,
         returnedCount: 1,
-        maxPerRecording: 3,
+        maxPerRecording: 10,
       },
       results: [
         {
@@ -985,7 +988,7 @@ describe('MCP personalized tool surface', () => {
         query: 'search phrase',
         limit: 100,
         contextChunks: 1,
-        maxPerRecording: 3,
+        maxPerRecording: 10,
         filters: undefined,
       },
     );
