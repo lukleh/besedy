@@ -30,6 +30,7 @@ const MCP_RATE_WINDOW_MS = 60_000;
 const MCP_GLOBAL_RATE_LIMIT = 600;
 const MCP_CLIENT_RATE_LIMIT = 300;
 const MCP_USER_RATE_LIMIT = 120;
+const MCP_DENIAL_AUDIT_RATE_LIMIT = 1;
 
 function readScopes(claims: unknown): string[] {
   if (typeof claims !== 'object' || claims === null) {
@@ -79,6 +80,22 @@ async function auditMcpRequestDenied(
   clientId: string | null,
   reason: string,
 ): Promise<void> {
+  const auditKey = [
+    reason,
+    userId ?? 'unknown-user',
+    clientId ?? 'unknown-client',
+  ]
+    .map(encodeURIComponent)
+    .join(':');
+  if (
+    !checkRateLimit(
+      `mcp:audit-denial:${auditKey}`,
+      MCP_DENIAL_AUDIT_RATE_LIMIT,
+      MCP_RATE_WINDOW_MS,
+    )
+  ) {
+    return;
+  }
   await logAccessDenied(userId, 'mcp', 'request', {
     clientId,
     reason,

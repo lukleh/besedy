@@ -175,7 +175,7 @@ describe('MCP route hardening', () => {
   });
 
   it('applies the global limit after token verification', async () => {
-    mocks.checkRateLimit.mockReturnValue(false);
+    mocks.checkRateLimit.mockReturnValueOnce(false).mockReturnValueOnce(true);
     const { POST } = await import('@/app/api/mcp/route');
 
     const response = await POST(request());
@@ -194,6 +194,25 @@ describe('MCP route hardening', () => {
       'request',
       { clientId: 'client-1', reason: 'rate_limited' },
     );
+  });
+
+  it('writes at most one rate-limit audit event per actor and window', async () => {
+    mocks.checkRateLimit
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+    const { POST } = await import('@/app/api/mcp/route');
+
+    await POST(request());
+    await POST(request());
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      'mcp:audit-denial:rate_limited:user-1:client-1',
+      1,
+      60_000,
+    );
+    expect(mocks.logAccessDenied).toHaveBeenCalledOnce();
   });
 
   it('applies authenticated user and client limits before policy queries', async () => {

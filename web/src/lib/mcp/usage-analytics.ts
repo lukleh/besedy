@@ -24,12 +24,12 @@ interface ToolRow {
   errors: bigint;
   denials: bigint;
   average_duration_ms: number | bigint | string;
-  p95_duration_ms: number | bigint | string;
+  p95_duration_ms: number | bigint | string | null;
   last_used_at: Date;
 }
 
 interface UserRow {
-  user_id: string;
+  actor_user_id: string;
   name: string | null;
   email: string | null;
   calls: bigint;
@@ -81,37 +81,14 @@ export function getMcpUsagePeriodStart(
 }
 
 function bucketQuery(range: McpUsageRange, periodStart: Date) {
-  if (range === '24h') {
-    return prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-      SELECT date_trunc('hour', created_at) AS bucket,
-             COUNT(*)::bigint AS calls,
-             COUNT(DISTINCT user_id)::bigint AS unique_users,
-             COUNT(*) FILTER (WHERE outcome != 'SUCCESS')::bigint AS errors
-      FROM mcp_tool_invocation
-      WHERE created_at >= ${periodStart}
-      GROUP BY bucket
-      ORDER BY bucket
-    `);
-  }
-  if (range === '12m') {
-    return prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-      SELECT date_trunc('month', created_at) AS bucket,
-             COUNT(*)::bigint AS calls,
-             COUNT(DISTINCT user_id)::bigint AS unique_users,
-             COUNT(*) FILTER (WHERE outcome != 'SUCCESS')::bigint AS errors
-      FROM mcp_tool_invocation
-      WHERE created_at >= ${periodStart}
-      GROUP BY bucket
-      ORDER BY bucket
-    `);
-  }
+  const bucket = range === '24h' ? 'hour' : range === '12m' ? 'month' : 'day';
   return prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-    SELECT date_trunc('day', created_at) AS bucket,
-           COUNT(*)::bigint AS calls,
-           COUNT(DISTINCT user_id)::bigint AS unique_users,
-           COUNT(*) FILTER (WHERE outcome != 'SUCCESS')::bigint AS errors
-    FROM mcp_tool_invocation
-    WHERE created_at >= ${periodStart}
+    SELECT date_trunc(${bucket}, occurred_at) AS bucket,
+           SUM(calls)::bigint AS calls,
+           COUNT(DISTINCT actor_user_id)::bigint AS unique_users,
+           COALESCE(SUM(calls) FILTER (WHERE outcome != 'SUCCESS'), 0)::bigint AS errors
+    FROM mcp_tool_usage
+    WHERE occurred_at >= ${periodStart}
     GROUP BY bucket
     ORDER BY bucket
   `);
@@ -119,6 +96,7 @@ function bucketQuery(range: McpUsageRange, periodStart: Date) {
 
 export async function getMcpUsageAnalytics(range: McpUsageRange) {
   const periodStart = getMcpUsagePeriodStart(range);
+  const includeRawP95 = range !== '12m';
   const [
     summaryRows,
     toolRows,
@@ -129,73 +107,82 @@ export async function getMcpUsageAnalytics(range: McpUsageRange) {
     recent,
   ] = await Promise.all([
     prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
-        SELECT COUNT(*)::bigint AS total_calls,
-               COUNT(DISTINCT user_id)::bigint AS unique_users,
-               COUNT(DISTINCT client_id)::bigint AS unique_clients,
-               COUNT(*) FILTER (WHERE outcome = 'SUCCESS')::bigint AS successes,
-               COUNT(*) FILTER (WHERE outcome = 'ERROR')::bigint AS errors,
-               COUNT(*) FILTER (WHERE outcome = 'DENIED')::bigint AS denials,
-               COALESCE(AVG(duration_ms), 0) AS average_duration_ms,
-               COALESCE(SUM(result_count), 0)::bigint AS returned_items,
-               COALESCE(SUM(returned_text_chars), 0)::bigint AS returned_text_chars
-        FROM mcp_tool_invocation
-        WHERE created_at >= ${periodStart}
-      `),
+      SELECT COALESCE(SUM(calls), 0)::bigint AS total_calls,
+             COUNT(DISTINCT actor_user_id)::bigint AS unique_users,
+             COUNT(DISTINCT client_id)::bigint AS unique_clients,
+             COALESCE(SUM(calls) FILTER (WHERE outcome = 'SUCCESS'), 0)::bigint AS successes,
+             COALESCE(SUM(calls) FILTER (WHERE outcome = 'ERROR'), 0)::bigint AS errors,
+             COALESCE(SUM(calls) FILTER (WHERE outcome = 'DENIED'), 0)::bigint AS denials,
+             COALESCE(SUM(total_duration_ms)::numeric / NULLIF(SUM(calls), 0), 0) AS average_duration_ms,
+             COALESCE(SUM(result_count), 0)::bigint AS returned_items,
+             COALESCE(SUM(returned_text_chars), 0)::bigint AS returned_text_chars
+      FROM mcp_tool_usage
+      WHERE occurred_at >= ${periodStart}
+    `),
     prisma.$queryRaw<ToolRow[]>(Prisma.sql`
+      WITH raw_p95 AS (
         SELECT tool_name,
-               COUNT(*)::bigint AS calls,
-               COUNT(DISTINCT user_id)::bigint AS unique_users,
-               COUNT(*) FILTER (WHERE outcome = 'SUCCESS')::bigint AS successes,
-               COUNT(*) FILTER (WHERE outcome = 'ERROR')::bigint AS errors,
-               COUNT(*) FILTER (WHERE outcome = 'DENIED')::bigint AS denials,
-               ROUND(AVG(duration_ms))::integer AS average_duration_ms,
-               ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms))::integer AS p95_duration_ms,
-               MAX(created_at) AS last_used_at
+               ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms))::integer AS duration_ms
         FROM mcp_tool_invocation
         WHERE created_at >= ${periodStart}
+          AND ${includeRawP95}
         GROUP BY tool_name
-        ORDER BY calls DESC, tool_name ASC
-      `),
+      )
+      SELECT usage.tool_name,
+             SUM(usage.calls)::bigint AS calls,
+             COUNT(DISTINCT usage.actor_user_id)::bigint AS unique_users,
+             COALESCE(SUM(usage.calls) FILTER (WHERE usage.outcome = 'SUCCESS'), 0)::bigint AS successes,
+             COALESCE(SUM(usage.calls) FILTER (WHERE usage.outcome = 'ERROR'), 0)::bigint AS errors,
+             COALESCE(SUM(usage.calls) FILTER (WHERE usage.outcome = 'DENIED'), 0)::bigint AS denials,
+             ROUND(SUM(usage.total_duration_ms)::numeric / NULLIF(SUM(usage.calls), 0))::integer AS average_duration_ms,
+             raw_p95.duration_ms AS p95_duration_ms,
+             MAX(usage.last_used_at) AS last_used_at
+      FROM mcp_tool_usage usage
+      LEFT JOIN raw_p95 ON raw_p95.tool_name = usage.tool_name
+      WHERE usage.occurred_at >= ${periodStart}
+      GROUP BY usage.tool_name, raw_p95.duration_ms
+      ORDER BY calls DESC, usage.tool_name ASC
+    `),
     prisma.$queryRaw<UserRow[]>(Prisma.sql`
-        SELECT invocation.user_id,
-               users.name,
-               users.email,
-               COUNT(*)::bigint AS calls,
-               COUNT(DISTINCT invocation.tool_name)::bigint AS tools_used,
-               MAX(invocation.created_at) AS last_used_at
-        FROM mcp_tool_invocation invocation
-        LEFT JOIN users ON users.id = invocation.user_id
-        WHERE invocation.created_at >= ${periodStart}
-          AND invocation.user_id IS NOT NULL
-        GROUP BY invocation.user_id, users.name, users.email
-        ORDER BY calls DESC, last_used_at DESC
-        LIMIT 20
-      `),
+      SELECT usage.actor_user_id,
+             users.name,
+             users.email,
+             SUM(usage.calls)::bigint AS calls,
+             COUNT(DISTINCT usage.tool_name)::bigint AS tools_used,
+             MAX(usage.last_used_at) AS last_used_at
+      FROM mcp_tool_usage usage
+      LEFT JOIN users ON users.id = usage.actor_user_id
+      WHERE usage.occurred_at >= ${periodStart}
+      GROUP BY usage.actor_user_id, users.name, users.email
+      ORDER BY calls DESC, last_used_at DESC
+      LIMIT 20
+    `),
     prisma.$queryRaw<ClientRow[]>(Prisma.sql`
-        SELECT client_id,
-               MAX(client_name) AS client_name,
-               COUNT(*)::bigint AS calls,
-               COUNT(DISTINCT user_id)::bigint AS unique_users,
-               MAX(created_at) AS last_used_at
-        FROM mcp_tool_invocation
-        WHERE created_at >= ${periodStart}
-        GROUP BY client_id
-        ORDER BY calls DESC, client_id ASC
-        LIMIT 20
-      `),
+      SELECT client_id,
+             (ARRAY_AGG(client_name ORDER BY last_used_at DESC)
+                FILTER (WHERE client_name IS NOT NULL))[1] AS client_name,
+             SUM(calls)::bigint AS calls,
+             COUNT(DISTINCT actor_user_id)::bigint AS unique_users,
+             MAX(last_used_at) AS last_used_at
+      FROM mcp_tool_usage
+      WHERE occurred_at >= ${periodStart}
+      GROUP BY client_id
+      ORDER BY calls DESC, client_id ASC
+      LIMIT 20
+    `),
     prisma.$queryRaw<CatalogRow[]>(Prisma.sql`
-        SELECT invocation.catalog_id,
-               MAX(workflow_group.label) AS catalog_label,
-               COUNT(*)::bigint AS calls,
-               COUNT(DISTINCT invocation.user_id)::bigint AS unique_users
-        FROM mcp_tool_invocation invocation
-        LEFT JOIN workflow_group ON workflow_group.id = invocation.catalog_id
-        WHERE invocation.created_at >= ${periodStart}
-          AND invocation.catalog_id IS NOT NULL
-        GROUP BY invocation.catalog_id
-        ORDER BY calls DESC, invocation.catalog_id ASC
-        LIMIT 20
-      `),
+      SELECT usage.catalog_id,
+             MAX(workflow_group.label) AS catalog_label,
+             SUM(usage.calls)::bigint AS calls,
+             COUNT(DISTINCT usage.actor_user_id)::bigint AS unique_users
+      FROM mcp_tool_usage usage
+      LEFT JOIN workflow_group ON workflow_group.id = usage.catalog_id
+      WHERE usage.occurred_at >= ${periodStart}
+        AND usage.catalog_id IS NOT NULL
+      GROUP BY usage.catalog_id
+      ORDER BY calls DESC, usage.catalog_id ASC
+      LIMIT 20
+    `),
     bucketQuery(range, periodStart),
     prisma.mcpToolInvocation.findMany({
       where: { createdAt: { gte: periodStart } },
@@ -236,11 +223,12 @@ export async function getMcpUsageAnalytics(range: McpUsageRange) {
       errors: toNumber(row.errors),
       denials: toNumber(row.denials),
       averageDurationMs: toNumber(row.average_duration_ms),
-      p95DurationMs: toNumber(row.p95_duration_ms),
+      p95DurationMs:
+        row.p95_duration_ms === null ? null : toNumber(row.p95_duration_ms),
       lastUsedAt: row.last_used_at.toISOString(),
     })),
     users: userRows.map((row) => ({
-      userId: row.user_id,
+      userId: row.actor_user_id,
       name: row.name,
       email: row.email,
       calls: toNumber(row.calls),
@@ -262,6 +250,7 @@ export async function getMcpUsageAnalytics(range: McpUsageRange) {
     })),
     recent: recent.map((row) => ({
       id: row.id,
+      actorUserId: row.actorUserId,
       userId: row.userId,
       user: row.user,
       clientId: row.clientId,

@@ -387,15 +387,17 @@ hardening) live in `web/setup/`.
 
 | Script | Schedule | Alerts When | Logger Tag |
 |--------|----------|-------------|------------|
+| `mcp-usage-retention.sh` | Daily 05:50 | N/A; rolls up and prunes raw MCP telemetry | `besedy-mcp-retention` |
 | `audit-check.sh` | Daily 06:00 | Failed logins or access denials exceed thresholds; admin role changes | `besedy-audit` |
 | `weekly-report.sh` | Weekly Sun 06:30 | Every run (full 7-day activity summary) | `besedy-weekly` |
 | `backup-health-check.sh` | Daily 06:45 | Any backup health check fails | `besedy-backup` |
 | `host-backup-health-check.sh` | Daily 07:05 | Any required project/extra snapshot coverage check fails | `besedy-host-backup` |
 | `security-update-check.sh` | Monthly 1st 07:00 | Every run (subject varies by findings) | `besedy-security` |
 
-All scripts require: Docker access, production compose files, resolved
-production env file via `scripts/resolve_web_env_file.sh production`, `sendmail`
-for email delivery, `logger` for syslog tagging.
+All scripts require Docker access, production compose files, and the resolved
+production env file via `scripts/resolve_web_env_file.sh production`. Reporting
+and alert scripts additionally require `sendmail`; scheduled commands use
+`logger` for syslog tagging.
 
 ### Alert Mechanisms
 
@@ -412,6 +414,10 @@ for email delivery, `logger` for syslog tagging.
 Checks `LOGIN_FAILED` count (threshold default 5), `ACCESS_DENIED` count
 (threshold default 10), superadmin count, admin role changes. Emails only on
 anomalies.
+
+**`mcp-usage-retention.sh`** -- Aggregates raw MCP invocations older than 180
+days into privacy-safe daily rows and deletes the raw rows in the same database
+transaction. Set `MCP_RAW_RETENTION_DAYS` to change the raw retention window.
 
 **`weekly-report.sh`** -- Broad operator summary for the last seven days:
 logins, active users, audio activity, MCP tool calls by tool/user/OAuth client,
@@ -449,6 +455,7 @@ action-needed or all-clear subject.
 ### Host Crontab Form
 
 ```cron
+50 5 * * *   BESEDY_COMPOSE_DIR=".../web" .../web/scripts/mcp-usage-retention.sh                         2>&1 | logger -t besedy-mcp-retention
 0 6 * * *   ALERT_EMAIL="..."  BESEDY_COMPOSE_DIR=".../web" .../web/scripts/audit-check.sh          2>&1 | logger -t besedy-audit
 30 6 * * 0  REPORT_EMAIL="..." BESEDY_COMPOSE_DIR=".../web" .../web/scripts/weekly-report.sh         2>&1 | logger -t besedy-weekly
 45 6 * * *  ALERT_EMAIL="..."  BESEDY_COMPOSE_DIR=".../web" .../web/scripts/backup-health-check.sh   2>&1 | logger -t besedy-backup

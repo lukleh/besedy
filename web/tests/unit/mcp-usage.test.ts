@@ -123,6 +123,7 @@ describe('MCP usage telemetry', () => {
 
     expect(mocks.createInvocation).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        actorUserId: 'user-1',
         userId: 'user-1',
         clientId: 'client-1',
         clientName: 'Codex',

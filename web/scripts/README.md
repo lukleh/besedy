@@ -14,8 +14,9 @@ require an ops env file for their filesystem paths: copy
 `web/setup/backup/ops.env.example` to `~/.config/lukleh/besedy/ops.env` (or set
 `BESEDY_OPS_ENV`). They exit with an error if a required path is unset.
 
-Current host schedule was verified on 2026-04-22:
+Recommended host schedule:
 
+- `mcp-usage-retention.sh` at `05:50` daily
 - `audit-check.sh` at `06:00` daily
 - `weekly-report.sh` at `06:30` on Sunday
 - `backup-health-check.sh` at `06:45` daily
@@ -26,6 +27,7 @@ What belongs here:
 
 - scripts intended to run from cron or a user crontab
 - scripts that send recurring emails or write recurring monitoring logs
+- scripts that enforce retention for operational telemetry
 
 What does not belong here:
 

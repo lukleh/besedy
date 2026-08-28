@@ -167,51 +167,51 @@ TRANSCRIPT_DOWNLOADS=$(db_query "SELECT COUNT(*) FROM audit_log WHERE action = '
 
 # MCP tool activity. The usage table intentionally contains no raw search text,
 # transcript content, bearer tokens, or complete tool arguments/responses.
-MCP_CALLS=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_UNIQUE_USERS=$(db_query "SELECT COUNT(DISTINCT user_id) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_UNIQUE_CLIENTS=$(db_query "SELECT COUNT(DISTINCT client_id) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_SUCCESSES=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE outcome = 'SUCCESS' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_ERRORS=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE outcome = 'ERROR' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_DENIALS=$(db_query "SELECT COUNT(*) FROM mcp_tool_invocation WHERE outcome = 'DENIED' AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
-MCP_RETURNED_TEXT_CHARS=$(db_query "SELECT COALESCE(SUM(returned_text_chars), 0) FROM mcp_tool_invocation WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_CALLS=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_UNIQUE_USERS=$(db_query "SELECT COUNT(DISTINCT actor_user_id) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_UNIQUE_CLIENTS=$(db_query "SELECT COUNT(DISTINCT client_id) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_SUCCESSES=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE outcome = 'SUCCESS' AND occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_ERRORS=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE outcome = 'ERROR' AND occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_DENIALS=$(db_query "SELECT COALESCE(SUM(calls), 0) FROM mcp_tool_usage WHERE outcome = 'DENIED' AND occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
+MCP_RETURNED_TEXT_CHARS=$(db_query "SELECT COALESCE(SUM(returned_text_chars), 0) FROM mcp_tool_usage WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'")
 
 MCP_BY_TOOL=$(db_query "
-SELECT tool_name || ': ' || COUNT(*) ||
-       CASE WHEN COUNT(*) = 1 THEN ' call' ELSE ' calls' END ||
-       ' by ' || COUNT(DISTINCT user_id) ||
-       CASE WHEN COUNT(DISTINCT user_id) = 1 THEN ' user' ELSE ' users' END ||
-       CASE WHEN COUNT(*) FILTER (WHERE outcome != 'SUCCESS') > 0
-         THEN ' (' || COUNT(*) FILTER (WHERE outcome != 'SUCCESS') || ' unsuccessful)'
+SELECT tool_name || ': ' || SUM(calls) ||
+       CASE WHEN SUM(calls) = 1 THEN ' call' ELSE ' calls' END ||
+       ' by ' || COUNT(DISTINCT actor_user_id) ||
+       CASE WHEN COUNT(DISTINCT actor_user_id) = 1 THEN ' user' ELSE ' users' END ||
+       CASE WHEN COALESCE(SUM(calls) FILTER (WHERE outcome != 'SUCCESS'), 0) > 0
+         THEN ' (' || SUM(calls) FILTER (WHERE outcome != 'SUCCESS') || ' unsuccessful)'
          ELSE ''
        END
-FROM mcp_tool_invocation
-WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+FROM mcp_tool_usage
+WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
 GROUP BY tool_name
-ORDER BY COUNT(*) DESC, tool_name ASC
+ORDER BY SUM(calls) DESC, tool_name ASC
 " | sed 's/^/  • /')
 
 MCP_BY_USER=$(db_query "
-SELECT COALESCE(u.email, invocation.user_id, 'deleted user') || ': ' ||
-       COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' call' ELSE ' calls' END ||
+SELECT COALESCE(u.email, invocation.actor_user_id) || ': ' ||
+       SUM(invocation.calls) || CASE WHEN SUM(invocation.calls) = 1 THEN ' call' ELSE ' calls' END ||
        ' across ' || COUNT(DISTINCT tool_name) ||
        CASE WHEN COUNT(DISTINCT tool_name) = 1 THEN ' tool' ELSE ' tools' END
-FROM mcp_tool_invocation invocation
-LEFT JOIN users u ON u.id = invocation.user_id
-WHERE invocation.created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
-GROUP BY invocation.user_id, u.email
-ORDER BY COUNT(*) DESC, COALESCE(LOWER(u.email), invocation.user_id, 'deleted user') ASC
+FROM mcp_tool_usage invocation
+LEFT JOIN users u ON u.id = invocation.actor_user_id
+WHERE invocation.occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+GROUP BY invocation.actor_user_id, u.email
+ORDER BY SUM(invocation.calls) DESC, COALESCE(LOWER(u.email), invocation.actor_user_id) ASC
 LIMIT $PER_USER_BREAKDOWN_LIMIT
 " | sed 's/^/  • /')
 
 MCP_BY_CLIENT=$(db_query "
-SELECT COALESCE(MAX(client_name), client_id) || ': ' || COUNT(*) ||
-       CASE WHEN COUNT(*) = 1 THEN ' call' ELSE ' calls' END ||
-       ' by ' || COUNT(DISTINCT user_id) ||
-       CASE WHEN COUNT(DISTINCT user_id) = 1 THEN ' user' ELSE ' users' END
-FROM mcp_tool_invocation
-WHERE created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+SELECT COALESCE(MAX(client_name), client_id) || ': ' || SUM(calls) ||
+       CASE WHEN SUM(calls) = 1 THEN ' call' ELSE ' calls' END ||
+       ' by ' || COUNT(DISTINCT actor_user_id) ||
+       CASE WHEN COUNT(DISTINCT actor_user_id) = 1 THEN ' user' ELSE ' users' END
+FROM mcp_tool_usage
+WHERE occurred_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
 GROUP BY client_id
-ORDER BY COUNT(*) DESC, client_id ASC
+ORDER BY SUM(calls) DESC, client_id ASC
 LIMIT $PER_USER_BREAKDOWN_LIMIT
 " | sed 's/^/  • /')
 

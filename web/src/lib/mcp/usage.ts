@@ -170,6 +170,7 @@ async function writeInvocation(params: {
   try {
     await prisma.mcpToolInvocation.create({
       data: {
+        actorUserId: params.context.accessProfile.userId,
         userId: params.context.accessProfile.userId,
         clientId: params.context.clientId,
         clientName: params.context.clientName,

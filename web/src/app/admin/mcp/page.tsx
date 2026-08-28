@@ -250,7 +250,9 @@ export default function McpUsagePage() {
                     {tool.averageDurationMs} ms
                   </TableCell>
                   <TableCell className="text-right">
-                    {tool.p95DurationMs} ms
+                    {tool.p95DurationMs === null
+                      ? '—'
+                      : `${tool.p95DurationMs} ms`}
                   </TableCell>
                   <TableCell>
                     {formatRelativeTime(tool.lastUsedAt, locale)}
@@ -434,9 +436,11 @@ export default function McpUsagePage() {
                     {formatRelativeTime(invocation.createdAt, locale)}
                   </TableCell>
                   <TableCell>
-                    {invocation.user?.name ??
-                      invocation.user?.email ??
-                      t('deletedUser')}
+                    {invocation.user?.name ?? invocation.user?.email ?? (
+                      <span className="font-mono text-xs">
+                        {invocation.actorUserId}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {invocation.clientName ?? invocation.clientId}

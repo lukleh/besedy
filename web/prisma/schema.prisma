@@ -902,6 +902,8 @@ enum McpToolOutcome {
 /// intentionally excluded; only operational and aggregate-safe metadata lives here.
 model McpToolInvocation {
   id                String         @id @default(cuid())
+  /// Immutable actor identifier retained after the related user is deleted.
+  actorUserId       String         @map("actor_user_id")
   userId            String?        @map("user_id")
   clientId          String         @map("client_id")
   clientName        String?        @map("client_name")
@@ -920,12 +922,40 @@ model McpToolInvocation {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
+  @@index([actorUserId, createdAt])
   @@index([userId, createdAt])
   @@index([clientId, createdAt])
   @@index([toolName, createdAt])
   @@index([catalogId, createdAt])
   @@index([outcome, createdAt])
   @@map("mcp_tool_invocation")
+}
+
+/// Privacy-safe daily MCP rollup retained after raw invocations expire.
+model McpToolUsageDaily {
+  id                String         @id @default(cuid())
+  usageDate         DateTime       @map("usage_date") @db.Date
+  actorUserId       String         @map("actor_user_id")
+  clientId          String         @map("client_id")
+  clientName        String?        @map("client_name")
+  toolName          String         @map("tool_name") @db.VarChar(64)
+  /// Empty string represents calls without a catalog, keeping the rollup key non-null.
+  catalogId         String         @default("") @map("catalog_id") @db.VarChar(191)
+  outcome           McpToolOutcome
+  calls             Int
+  totalDurationMs   BigInt         @map("total_duration_ms")
+  resultCount       BigInt         @map("result_count")
+  returnedTextChars BigInt         @map("returned_text_chars")
+  firstUsedAt       DateTime       @map("first_used_at")
+  lastUsedAt        DateTime       @map("last_used_at")
+
+  @@unique([usageDate, actorUserId, clientId, toolName, catalogId, outcome], map: "mcp_tool_usage_daily_dimensions_key")
+  @@index([usageDate])
+  @@index([actorUserId, usageDate])
+  @@index([clientId, usageDate])
+  @@index([toolName, usageDate])
+  @@index([catalogId, usageDate])
+  @@map("mcp_tool_usage_daily")
 }
 
 /// Audit log entry for tracking security-relevant events
