@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -221,6 +222,53 @@ def test_sync_colbert_index_updates_one_audio_hash_incrementally(
     )
     staged_chunks = list_chunks(path=bundle_dir / "chunk_store.sqlite")
     assert staged_chunks[0].text == "zmeneny text s vice slovy"
+
+
+def test_sync_colbert_index_addition_backfills_fts_for_legacy_bundle(
+    tmp_path: Path,
+    fake_colbert_worker,
+) -> None:
+    transcripts_root = tmp_path / "transcripts_20260206_120005"
+    backend_root = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    first_audio_hash = "f" * 64
+    second_audio_hash = "1" * 64
+    _write_transcript(
+        backend_root / first_audio_hash / "transcript.json",
+        [{"start": 0.0, "end": 1.0, "text": "puvodni hledatelny zaznam"}],
+    )
+
+    bundle_dir = tmp_path / "bundle"
+    sync_colbert_index(
+        workflow_group_id="wg-legacy-fts",
+        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        transcripts_root=transcripts_root,
+        index_dir=bundle_dir,
+    )
+    with sqlite3.connect(bundle_dir / "chunk_store.sqlite") as connection:
+        connection.execute("DROP TABLE chunks_fts")
+        connection.execute("DROP TABLE chunk_store_metadata")
+
+    _write_transcript(
+        backend_root / second_audio_hash / "transcript.json",
+        [{"start": 0.0, "end": 1.0, "text": "nove pridany rozhovor"}],
+    )
+
+    result = sync_colbert_index(
+        workflow_group_id="wg-legacy-fts",
+        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        transcripts_root=transcripts_root,
+        index_dir=bundle_dir,
+    )
+
+    assert result.hashes_added == 1
+    with sqlite3.connect(bundle_dir / "chunk_store.sqlite") as connection:
+        old_matches = connection.execute(
+            "SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH 'puvodni'"
+        ).fetchone()[0]
+        new_matches = connection.execute(
+            "SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH 'pridany'"
+        ).fetchone()[0]
+    assert (old_matches, new_matches) == (1, 1)
 
 
 def test_sync_colbert_index_passes_runtime_override_to_final_token_audit(
