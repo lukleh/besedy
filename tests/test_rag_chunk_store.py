@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from besedy.lib.rag_chunk_store import (
+    build_fts_query,
     count_chunks_by_audio_hash,
     delete_chunks_for_audio_hashes,
     ensure_chunk_store_fts,
@@ -14,6 +15,7 @@ from besedy.lib.rag_chunk_store import (
     lookup_chunk_neighbors,
     lookup_chunks,
     replace_chunks_for_audio_hash,
+    search_chunks_fts,
     write_chunk_store,
 )
 from besedy.lib.rag_retrieval_types import RagChunk
@@ -88,6 +90,110 @@ def test_write_chunk_store_builds_accent_insensitive_fts_index(tmp_path: Path) -
     )
 
     assert _fts_matches(store_path, '"zlutoucky kun"') == ["chunk-0"]
+
+
+def test_search_chunks_fts_supports_safe_match_modes_and_accents(tmp_path: Path) -> None:
+    store_path = tmp_path / "chunk_store.sqlite"
+    write_chunk_store(
+        path=store_path,
+        chunks=[
+            _chunk(
+                chunk_id="exact",
+                audio_hash="a" * 64,
+                chunk_ordinal=0,
+                text="Příliš žluťoučký kůň běží",
+            ),
+            _chunk(
+                chunk_id="separated",
+                audio_hash="b" * 64,
+                chunk_ordinal=0,
+                text="Žluťoučký veselý kůň stojí",
+            ),
+            _chunk(
+                chunk_id="one-term",
+                audio_hash="c" * 64,
+                chunk_ordinal=0,
+                text="Samotný kůň",
+            ),
+        ],
+    )
+    allowed = ["a" * 64, "b" * 64, "c" * 64]
+
+    all_terms = search_chunks_fts(
+        path=store_path,
+        query="zlutoucky kun",
+        match_mode="all_terms",
+        limit=10,
+        max_per_audio=10,
+        allowed_audio_hashes=allowed,
+    )
+    phrase = search_chunks_fts(
+        path=store_path,
+        query="zlutoucky kun",
+        match_mode="phrase",
+        limit=10,
+        max_per_audio=10,
+        allowed_audio_hashes=allowed,
+    )
+    any_term = search_chunks_fts(
+        path=store_path,
+        query="zlutoucky kun",
+        match_mode="any_term",
+        limit=10,
+        max_per_audio=10,
+        allowed_audio_hashes=allowed,
+    )
+    prefix = search_chunks_fts(
+        path=store_path,
+        query="zlut kun",
+        match_mode="prefix",
+        limit=10,
+        max_per_audio=10,
+        allowed_audio_hashes=allowed,
+    )
+
+    assert {match.chunk.chunk_id for match in all_terms.matches} == {"exact", "separated"}
+    assert [match.chunk.chunk_id for match in phrase.matches] == ["exact"]
+    assert {match.chunk.chunk_id for match in any_term.matches} == {
+        "exact",
+        "separated",
+        "one-term",
+    }
+    assert {match.chunk.chunk_id for match in prefix.matches} == {"exact", "separated"}
+
+
+def test_search_chunks_fts_applies_authorization_before_count_and_per_audio_cap(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "chunk_store.sqlite"
+    write_chunk_store(
+        path=store_path,
+        chunks=[
+            _chunk(chunk_id="a-0", audio_hash="a" * 64, chunk_ordinal=0, text="hledany pojem"),
+            _chunk(chunk_id="a-1", audio_hash="a" * 64, chunk_ordinal=1, text="hledany pojem"),
+            _chunk(chunk_id="b-0", audio_hash="b" * 64, chunk_ordinal=0, text="hledany pojem"),
+        ],
+    )
+
+    result = search_chunks_fts(
+        path=store_path,
+        query="hledany",
+        match_mode="all_terms",
+        limit=10,
+        max_per_audio=1,
+        allowed_audio_hashes=["a" * 64],
+    )
+
+    assert result.total_matches == 2
+    assert [match.chunk.chunk_id for match in result.matches] == ["a-0"]
+
+
+def test_build_fts_query_does_not_expose_raw_match_syntax() -> None:
+    assert build_fts_query('alpha OR beta "gamma"', match_mode="all_terms") == (
+        '"alpha" AND "OR" AND "beta" AND "gamma"'
+    )
+    with pytest.raises(ValueError, match="searchable"):
+        build_fts_query('"***"', match_mode="all_terms")
 
 
 def test_ensure_chunk_store_fts_recovers_partial_existing_backfill(tmp_path: Path) -> None:

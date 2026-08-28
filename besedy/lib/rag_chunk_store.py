@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Literal, Sequence
 
 from besedy.lib.rag_retrieval_types import RagChunk
 
@@ -34,6 +35,21 @@ class ChunkNeighbors:
     after: list[RagChunk]
 
 
+LexicalMatchMode = Literal["all_terms", "phrase", "any_term", "prefix"]
+
+
+@dataclass(frozen=True)
+class LexicalChunkMatch:
+    chunk: RagChunk
+    score: float
+
+
+@dataclass(frozen=True)
+class LexicalChunkSearchResult:
+    matches: list[LexicalChunkMatch]
+    total_matches: int
+
+
 def _chunk_select_columns(*, table_alias: str = "") -> str:
     prefix = f"{table_alias}." if table_alias else ""
     return ",\n              ".join(
@@ -43,6 +59,12 @@ def _chunk_select_columns(*, table_alias: str = "") -> str:
 
 def _connect(path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(path)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def _connect_read_only(path: Path) -> sqlite3.Connection:
+    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -175,6 +197,125 @@ def _row_to_chunk(row: sqlite3.Row) -> RagChunk:
         token_count=int(row["token_count"]),
         text=str(row["text"]),
         chunk_ordinal=int(row["chunk_ordinal"]),
+    )
+
+
+def _fts_query_tokens(query: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", query)
+    tokens: list[str] = []
+    current: list[str] = []
+    for character in normalized:
+        category = unicodedata.category(character)
+        is_token_character = category[0] in {"L", "N"} or category == "Co"
+        if category[0] == "M" and current:
+            is_token_character = True
+        if is_token_character:
+            current.append(character)
+        elif current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
+def build_fts_query(query: str, *, match_mode: LexicalMatchMode) -> str:
+    """Build an FTS expression without accepting raw MATCH syntax from callers."""
+
+    tokens = _fts_query_tokens(query)
+    if not tokens:
+        raise ValueError("Query must contain at least one searchable letter or number.")
+
+    # Tokens contain only Unicode letters, numbers, combining marks, or private-use
+    # characters, so quoting them is sufficient to neutralize MATCH operators.
+    quoted = [f'"{token}"' for token in tokens]
+    if match_mode == "all_terms":
+        return " AND ".join(quoted)
+    if match_mode == "phrase":
+        return f'"{" ".join(tokens)}"'
+    if match_mode == "any_term":
+        return " OR ".join(quoted)
+    if match_mode == "prefix":
+        return " AND ".join(f"{token}*" for token in quoted)
+    raise ValueError(f"Unsupported lexical match mode: {match_mode}")
+
+
+def search_chunks_fts(
+    *,
+    path: Path | str,
+    query: str,
+    match_mode: LexicalMatchMode,
+    limit: int,
+    max_per_audio: int,
+    allowed_audio_hashes: Sequence[str],
+) -> LexicalChunkSearchResult:
+    """Search authorized chunk text with FTS5 and stable BM25 ordering."""
+
+    if limit <= 0:
+        raise ValueError("limit must be positive.")
+    if max_per_audio <= 0:
+        raise ValueError("max_per_audio must be positive.")
+    fts_query = build_fts_query(query, match_mode=match_mode)
+    allowed_hashes = sorted(set(allowed_audio_hashes))
+    if not allowed_hashes:
+        return LexicalChunkSearchResult(matches=[], total_matches=0)
+
+    store_path = Path(path)
+    with _connect_read_only(store_path) as connection:
+        connection.execute("PRAGMA temp_store = MEMORY")
+        connection.execute(
+            "CREATE TEMP TABLE allowed_audio_hashes (audio_hash TEXT PRIMARY KEY) WITHOUT ROWID"
+        )
+        connection.executemany(
+            "INSERT INTO allowed_audio_hashes (audio_hash) VALUES (?)",
+            ((audio_hash,) for audio_hash in allowed_hashes),
+        )
+        total_matches = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM chunks_fts
+                JOIN chunks c ON c.rowid = chunks_fts.rowid
+                JOIN allowed_audio_hashes allowed ON allowed.audio_hash = c.audio_hash
+                WHERE chunks_fts MATCH ?
+                """,
+                (fts_query,),
+            ).fetchone()[0]
+        )
+        rows = connection.execute(
+            f"""
+            WITH matches AS (
+              SELECT
+                c.rowid AS chunk_rowid,
+                {_chunk_select_columns(table_alias="c")},
+                bm25(chunks_fts) AS score
+              FROM chunks_fts
+              JOIN chunks c ON c.rowid = chunks_fts.rowid
+              JOIN allowed_audio_hashes allowed ON allowed.audio_hash = c.audio_hash
+              WHERE chunks_fts MATCH ?
+            ), ranked AS (
+              SELECT
+                matches.*,
+                ROW_NUMBER() OVER (
+                  PARTITION BY audio_hash
+                  ORDER BY score, chunk_rowid
+                ) AS per_audio_rank
+              FROM matches
+            )
+            SELECT *
+            FROM ranked
+            WHERE per_audio_rank <= ?
+            ORDER BY score, chunk_rowid
+            LIMIT ?
+            """,
+            (fts_query, max_per_audio, limit),
+        ).fetchall()
+
+    return LexicalChunkSearchResult(
+        matches=[
+            LexicalChunkMatch(chunk=_row_to_chunk(row), score=float(row["score"])) for row in rows
+        ],
+        total_matches=total_matches,
     )
 
 
@@ -424,6 +565,10 @@ def lookup_chunk_neighbors(
 
 __all__ = [
     "ChunkNeighbors",
+    "LexicalChunkMatch",
+    "LexicalChunkSearchResult",
+    "LexicalMatchMode",
+    "build_fts_query",
     "count_chunks_by_audio_hash",
     "delete_chunks_for_audio_hashes",
     "ensure_chunk_store_fts",
@@ -432,5 +577,6 @@ __all__ = [
     "list_chunk_ids_by_audio_hashes",
     "list_chunks",
     "replace_chunks_for_audio_hash",
+    "search_chunks_fts",
     "write_chunk_store",
 ]

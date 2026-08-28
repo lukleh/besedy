@@ -87,6 +87,25 @@ def test_lookup_neighbors_reads_from_bundle_chunk_store(tmp_path: Path) -> None:
     assert [chunk["chunk_id"] for chunk in neighbors["after"]] == ["chunk-2"]
 
 
+def test_lexical_search_reads_only_allowed_bundle_chunks(tmp_path: Path) -> None:
+    bundle_dir = _write_bundle(tmp_path)
+
+    result = rag_colbert_worker._search_chunks_lexical(
+        {
+            "colbert_index_dir": str(bundle_dir / "colbert_index"),
+            "query": "druhy",
+            "match_mode": "all_terms",
+            "allowed_audio_hashes": ["a" * 64],
+            "limit": 10,
+            "max_per_audio": 10,
+        }
+    )
+
+    assert result["total_matches"] == 1
+    assert [match["chunk_id"] for match in result["matches"]] == ["chunk-1"]
+    assert isinstance(result["matches"][0]["score"], float)
+
+
 def test_build_index_uses_pylate_model_and_index(
     monkeypatch,
     tmp_path: Path,

@@ -5,8 +5,10 @@ import {
   applyMaxPerAudio,
   assembleContextText,
   buildAllowedAudioHashesQuery,
+  buildEligibleAudioHashesQuery,
   collectRerankCandidates,
   getSearchConfig,
+  queryLexicalService,
   resolveColbertFetchLimit,
   resolveColbertIndexDir,
   resolveRerankCandidateLimit,
@@ -73,14 +75,87 @@ describe("catalog search route helpers", () => {
   });
 
   it("restricts allowed recording hashes to linked events", () => {
-    const query = buildAllowedAudioHashesQuery("catalog-a", ["audio-a", "audio-b"], "VIEWER", { eventIds: [42, 57] });
+    const query = buildAllowedAudioHashesQuery("catalog-a", ["audio-a", "audio-b"], "VIEWER", {
+      eventIds: [42, 57],
+    });
     const sql = query?.strings.join(" ? ") ?? "";
 
     expect(sql).toContain("FROM catalog_event_recording cer");
     expect(sql).toContain("cer.workflow_group_id = ce.workflow_group_id");
     expect(sql).toContain("cer.audio_hash = ce.audio_hash");
     expect(sql).toContain("cer.event_id IN");
-    expect(query?.values).toEqual(expect.arrayContaining([42, 57, "catalog-a", "audio-a", "audio-b"]));
+    expect(query?.values).toEqual(
+      expect.arrayContaining([42, 57, "catalog-a", "audio-a", "audio-b"]),
+    );
+  });
+
+  it("builds a complete eligible-recording query with the same metadata filters", () => {
+    const query = buildEligibleAudioHashesQuery("catalog-a", "LISTENER", {
+      eventIds: [42],
+      locationIds: [7],
+      recorderIds: [3],
+      dateYears: [2026],
+      verified: true,
+    });
+    const sql = query.strings.join(" ? ");
+
+    expect(sql).not.toContain("ce.audio_hash IN");
+    expect(sql).toContain("ce.is_actionable = true");
+    expect(sql).toContain("ce.is_published = true");
+    expect(sql).toContain("FROM catalog_event_recording cer");
+    expect(sql).toContain("INNER JOIN audio_metadata am");
+    expect(query.values).toEqual(expect.arrayContaining([42, 7, 3, 2026, true, "catalog-a"]));
+  });
+
+  it("sends authorization scope and lexical controls to the FTS sidecar", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({
+        total_matches: 4,
+        matches: [
+          {
+            chunk_id: "chunk-1",
+            audio_hash: "a".repeat(64),
+            start_sec: 5,
+            end_sec: 10,
+            text: "literal evidence",
+            run_id: "run-1",
+            chunk_version: "v2",
+            score: -1.25,
+          },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      queryLexicalService(
+        "literal phrase",
+        "phrase",
+        "http://localhost:8192/query",
+        "/bundle/colbert_index",
+        ["a".repeat(64)],
+        50,
+        10,
+        5_000,
+      ),
+    ).resolves.toMatchObject({
+      totalMatches: 4,
+      matches: [{ chunkId: "chunk-1", score: -1.25 }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8192/lexical-search",
+      expect.objectContaining({
+        body: JSON.stringify({
+          colbert_index_dir: "/bundle/colbert_index",
+          query: "literal phrase",
+          match_mode: "phrase",
+          allowed_audio_hashes: ["a".repeat(64)],
+          limit: 50,
+          max_per_audio: 10,
+        }),
+      }),
+    );
   });
 
   it("prefers the legacy TEI rerank URL and exposes the rerank model", () => {

@@ -18,6 +18,7 @@ from besedy.lib.rag_colbert_runtime.worker import (
     _call_with_supported_kwargs,
     _lookup_chunks,
     _lookup_neighbors,
+    _search_chunks_lexical,
 )
 
 PRELOAD_INDEX_ENV_VAR = "COLBERT_PRELOAD_INDEX_DIR"
@@ -136,6 +137,9 @@ class ColbertQueryService:
     def neighbors(self, payload: dict[str, Any]) -> dict[str, Any]:
         return _lookup_neighbors(payload)
 
+    def lexical_search(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return _search_chunks_lexical(payload)
+
     def preload(self, raw_index_dir: str) -> None:
         resolved_index_dir = Path(raw_index_dir).resolve()
         if not resolved_index_dir.exists():
@@ -196,7 +200,7 @@ class ColbertQueryHandler(JsonApiHandler):
         self._write_json(HTTPStatus.OK, SERVICE.health())
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in {"/query", "/resolve", "/lookup", "/neighbors"}:
+        if self.path not in {"/query", "/resolve", "/lookup", "/neighbors", "/lexical-search"}:
             self._write_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
 
@@ -210,6 +214,8 @@ class ColbertQueryHandler(JsonApiHandler):
             return SERVICE.resolve(payload)
         if self.path == "/lookup":
             return SERVICE.lookup(payload)
+        if self.path == "/lexical-search":
+            return SERVICE.lexical_search(payload)
         return SERVICE.neighbors(payload)
 
 

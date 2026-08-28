@@ -23,7 +23,7 @@ export function registerListRecordersTool(
     {
       title: 'List Besedy recorders',
       description:
-        'Discover recorder IDs used by visible recordings before filtering search_transcripts. Uses the current user default catalog when catalogId is omitted.',
+        'Discover recorder IDs used by visible recordings before filtering search_transcripts or find_transcript_mentions. Uses the current user default catalog when catalogId is omitted.',
       inputSchema: createLookupListInputSchema('recorder'),
       outputSchema: ListRecordersOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,

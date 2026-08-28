@@ -11,11 +11,17 @@ import sys
 import time
 from itertools import chain
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, cast
 
 from besedy.lib import rag_pylate
 from besedy.lib.rag_bundle import resolve_colbert_bundle_artifacts
-from besedy.lib.rag_chunk_store import ChunkNeighbors, lookup_chunk_neighbors, lookup_chunks
+from besedy.lib.rag_chunk_store import (
+    ChunkNeighbors,
+    LexicalMatchMode,
+    lookup_chunk_neighbors,
+    lookup_chunks,
+    search_chunks_fts,
+)
 from besedy.lib.rag_retrieval_types import RagChunk
 
 PYLATE_TOKEN_AUDIT_BATCH_SIZE = 512
@@ -576,12 +582,46 @@ def _lookup_neighbors(payload: dict[str, Any]) -> dict[str, Any]:
     return {"neighbors": _serialize_neighbors(neighbors)}
 
 
+def _search_chunks_lexical(payload: dict[str, Any]) -> dict[str, Any]:
+    chunk_store_path = _resolve_chunk_store_path(payload)
+    raw_query = payload.get("query")
+    if not isinstance(raw_query, str) or not raw_query.strip():
+        raise ValueError("query must be a non-empty string.")
+    raw_allowed_hashes = payload.get("allowed_audio_hashes")
+    if not isinstance(raw_allowed_hashes, list):
+        raise ValueError("allowed_audio_hashes must be a JSON array.")
+    allowed_audio_hashes: list[str] = []
+    for value in raw_allowed_hashes:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("allowed_audio_hashes must contain non-empty strings.")
+        allowed_audio_hashes.append(value)
+
+    raw_match_mode = payload.get("match_mode", "all_terms")
+    if raw_match_mode not in {"all_terms", "phrase", "any_term", "prefix"}:
+        raise ValueError(f"Unsupported lexical match mode: {raw_match_mode}")
+
+    result = search_chunks_fts(
+        path=chunk_store_path,
+        query=raw_query,
+        match_mode=cast(LexicalMatchMode, raw_match_mode),
+        limit=int(payload.get("limit", 50)),
+        max_per_audio=int(payload.get("max_per_audio", 10)),
+        allowed_audio_hashes=allowed_audio_hashes,
+    )
+    return {
+        "matches": [
+            {**_serialize_chunk(match.chunk), "score": match.score} for match in result.matches
+        ],
+        "total_matches": result.total_matches,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = argv or sys.argv[1:]
     if not args:
         raise SystemExit(
             "Usage: python -m besedy.lib.rag_colbert_runtime.worker "
-            "<audit-tokens|build-index|add-to-index|delete-from-index|query-index|lookup-chunks|lookup-neighbors>"
+            "<audit-tokens|build-index|add-to-index|delete-from-index|query-index|lookup-chunks|lookup-neighbors|lexical-search>"
         )
 
     command = args[0]
@@ -608,6 +648,8 @@ def main(argv: list[str] | None = None) -> int:
         result = _lookup_chunks(payload)
     elif command == "lookup-neighbors":
         result = _lookup_neighbors(payload)
+    elif command == "lexical-search":
+        result = _search_chunks_lexical(payload)
     else:
         raise SystemExit(f"Unknown worker command: {command}")
 

@@ -23,7 +23,7 @@ export function registerListLocationsTool(
     {
       title: 'List Besedy locations',
       description:
-        'Discover location IDs used by visible recordings or events before filtering list_events or search_transcripts. Uses the current user default catalog when catalogId is omitted.',
+        'Discover location IDs used by visible recordings or events before filtering list_events, search_transcripts, or find_transcript_mentions. Uses the current user default catalog when catalogId is omitted.',
       inputSchema: createLookupListInputSchema('location'),
       outputSchema: ListLocationsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,

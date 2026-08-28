@@ -25,7 +25,7 @@ so an existing test stack and concurrent smoke runs do not conflict. On a new
 machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 ## Purpose and scope
 
@@ -241,8 +241,8 @@ capabilities:
 - Every active user gets `list_catalogs`.
 - Event and recording tools are exposed if at least one accessible catalog
   permits that operation.
-- `get_transcript` and `search_transcripts` are omitted for a user who is only a
-  `LISTENER` everywhere.
+- `get_transcript`, `search_transcripts`, and `find_transcript_mentions` are
+  omitted for a user who is only a `LISTENER` everywhere.
 
 A user may be a listener in one catalog and a viewer in another. Tool discovery
 therefore cannot by itself authorize an invocation. Every tool still checks the
@@ -282,17 +282,18 @@ Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
 every matching segment in one response.
 
-| Tool                 | Use it to                                                     | Required access                               |
-| -------------------- | ------------------------------------------------------------- | --------------------------------------------- |
-| `who_am_i`           | Inspect the account, OAuth client, scopes, and access summary | Active portal user                            |
-| `list_catalogs`      | Discover accessible catalogs and per-catalog capabilities     | Active portal user                            |
-| `list_locations`     | Discover location IDs used by visible events or recordings    | `canGetRecordings`                            |
-| `list_recorders`     | Discover recorder IDs used by visible recordings              | `canGetRecordings`                            |
-| `list_events`        | Page and filter visible events                                | `canListEvents`                               |
-| `get_event`          | Read one event and its visible recording summaries            | `canListEvents` and event visibility          |
-| `get_recording`      | Read one recording's metadata and linked events               | `canGetRecordings` and recording visibility   |
-| `get_transcript`     | Read a bounded, continuous transcript window                  | `canViewTranscripts` and recording visibility |
-| `search_transcripts` | Find candidate passages with semantic transcript search       | `canSearchTranscripts`                        |
+| Tool                       | Use it to                                                     | Required access                               |
+| -------------------------- | ------------------------------------------------------------- | --------------------------------------------- |
+| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary | Active portal user                            |
+| `list_catalogs`            | Discover accessible catalogs and per-catalog capabilities     | Active portal user                            |
+| `list_locations`           | Discover location IDs used by visible events or recordings    | `canGetRecordings`                            |
+| `list_recorders`           | Discover recorder IDs used by visible recordings              | `canGetRecordings`                            |
+| `list_events`              | Page and filter visible events                                | `canListEvents`                               |
+| `get_event`                | Read one event and its visible recording summaries            | `canListEvents` and event visibility          |
+| `get_recording`            | Read one recording's metadata and linked events               | `canGetRecordings` and recording visibility   |
+| `get_transcript`           | Read a bounded, continuous transcript window                  | `canViewTranscripts` and recording visibility |
+| `search_transcripts`       | Find candidate passages with semantic transcript search       | `canSearchTranscripts`                        |
+| `find_transcript_mentions` | Exhaustively find literal token patterns with SQLite FTS5      | `canSearchTranscripts`                        |
 
 `who_am_i` and `list_catalogs` are always discoverable by an active portal
 user. The remaining tools are discoverable when the user has their required
@@ -636,9 +637,9 @@ Example return value:
 ### `get_transcript`
 
 Use this tool to read continuous source context, normally after
-`search_transcripts` identifies a candidate passage. Copy the candidate's
-`transcriptRequest` when it is available so the catalog, recording, backend,
-and relevant time window remain aligned.
+`search_transcripts` or `find_transcript_mentions` identifies a candidate
+passage. Copy the candidate's `transcriptRequest` when it is available so the
+catalog, recording, backend, and relevant time window remain aligned.
 
 | Argument        | Type                            | Default                            | Meaning                                                                    |
 | --------------- | ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
@@ -752,6 +753,36 @@ return a continuation descriptor:
 }
 ```
 
+### `find_transcript_mentions`
+
+Use this tool for literal words, proper names, quotations, fixed phrases, and
+prefixes. It searches every indexed chunk belonging to recordings authorized
+by the resolved catalog and filters. Its `totalMatches` is the complete count
+before `limit` and `maxPerRecording` reduce the returned list. Numeric FTS
+scores are not exposed.
+
+It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
+`filters` contract as `search_transcripts`, plus `matchMode`:
+
+| Mode        | Meaning                                                    |
+| ----------- | ---------------------------------------------------------- |
+| `all_terms` | Every query token must occur in the chunk; this is default |
+| `phrase`    | Tokens must be adjacent and in the given order             |
+| `any_term`  | At least one query token must occur                         |
+| `prefix`    | Every query token is matched as a token prefix              |
+
+The server tokenizes the query and constructs the FTS expression itself. Raw
+SQLite `MATCH` operators are therefore treated as ordinary query tokens rather
+than executable query syntax. Matching is Unicode-aware and accent-insensitive,
+but the current tokenizer does not perform stemming or lemmatization.
+
+The tool returns the same recording, match, context, metadata, citation, and
+`transcriptRequest` result shape as semantic search. Use `get_transcript` to
+verify important matches in continuous context. A zero result establishes only
+that the chosen literal token pattern is absent under the chosen catalog,
+authorization scope, filters, and match mode; it does not establish conceptual
+absence.
+
 ### `search_transcripts`
 
 Use this tool for semantic discovery, not as proof that the corpus does or does
@@ -777,7 +808,7 @@ scores are not exposed.
 - `verified`: a boolean.
 
 `eventIds` restricts matches to recordings linked to any selected event. This
-supports a direct `list_events` to `search_transcripts` workflow without making
+supports a direct `list_events` to either search tool workflow without making
 the caller expand each event into recording hashes. `locationIds`,
 `recorderIds`, `dateYears`, and `verified` refer to curated recording metadata.
 
