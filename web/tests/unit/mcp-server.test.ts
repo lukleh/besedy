@@ -482,6 +482,7 @@ describe('MCP personalized tool surface', () => {
         properties: Record<
           string,
           {
+            default?: number;
             description?: string;
             maximum?: number;
             properties?: Record<string, { description?: string }>;
