@@ -482,6 +482,7 @@ describe('MCP personalized tool surface', () => {
         properties: Record<
           string,
           {
+            default?: number;
             description?: string;
             maximum?: number;
             properties?: Record<string, { description?: string }>;
@@ -498,12 +499,19 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.description).toContain('filters.eventIds');
     expect(searchTool?.description).toContain('filters.audioHashes');
     expect(searchTool?.description).toContain('get_transcript');
+    expect(searchTool?.description).toContain('small first pass');
+    expect(searchTool?.description).toContain('precise broad searches');
     expect(searchTool?.description).toContain('match webUrl is bounded');
     expect(searchTool?.description).toContain(
       'recording summary webUrl remains unbounded',
     );
+    expect(searchTool?.inputSchema.properties.limit.default).toBe(50);
+    expect(searchTool?.inputSchema.properties.limit.maximum).toBe(200);
     expect(searchTool?.inputSchema.properties.limit.description).toContain(
-      'default is 100',
+      'default is 50',
+    );
+    expect(searchTool?.inputSchema.properties.limit.description).toContain(
+      'not as the final evidence base',
     );
     expect(
       searchTool?.inputSchema.properties.contextChunks.description,
@@ -511,6 +519,7 @@ describe('MCP personalized tool surface', () => {
     expect(
       searchTool?.inputSchema.properties.maxPerRecording.description,
     ).toContain('recording/audio hash');
+    expect(searchTool?.inputSchema.properties.maxPerRecording.default).toBe(10);
     expect(searchTool?.inputSchema.properties.maxPerRecording.maximum).toBe(
       100,
     );
@@ -555,6 +564,8 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('two stages');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('Do not wait for the user');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-exhaustive');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event');
@@ -909,9 +920,9 @@ describe('MCP personalized tool surface', () => {
       retrieval: {
         mode: 'semantic',
         exhaustive: false,
-        requestedLimit: 100,
+        requestedLimit: 50,
         returnedCount: 1,
-        maxPerRecording: 3,
+        maxPerRecording: 10,
       },
       results: [
         {
@@ -983,9 +994,9 @@ describe('MCP personalized tool surface', () => {
       'VIEWER',
       {
         query: 'search phrase',
-        limit: 100,
+        limit: 50,
         contextChunks: 1,
-        maxPerRecording: 3,
+        maxPerRecording: 10,
         filters: undefined,
       },
     );

@@ -40,6 +40,32 @@ related concepts, and useful terminology discovered in earlier results. Look for
 connections, explanatory models, analogies, practical suggestions, and
 materially different treatments of the topic.
 
+Use a two-stage workflow for ordinary content questions. First run a fast,
+deliberately small orientation search to learn the corpus vocabulary, likely
+recordings, dates, and useful reformulations. Then, before synthesizing the
+answer, always perform a precise broad search informed by that orientation: use
+the tool's broad default result limit or a larger allowed limit, allow multiple
+matches per recording when they may represent distinct passages, search several
+materially different formulations, and follow promising recordings or events
+where the discussion may continue. Do not wait for the user to ask for more
+precision. Skip the broad second stage only when the user explicitly requests a
+quick sample or the task is an exact, low-ambiguity lookup that has already been
+verified in continuous context.
+
+Do not lower retrieval limits merely to keep tool output or the final answer
+short. Run broad reformulations sequentially, compact and deduplicate each
+structured result set before starting the next search, and continue until the
+evidence base adequately covers the user's question. If execution or output
+limits prevent reviewing all returned candidates, say exactly what was and was
+not reviewed rather than presenting the sample as comprehensive.
+
+Treat semantic transcript search as non-exhaustive even at its maximum allowed
+limit. For requests such as "all mentions," explain that limitation and pursue
+the closest practical coverage through query variation, broader limits,
+multiple matches per recording, focused recording or event follow-ups, and
+continuous-context verification. Disclose any intentional sampling parameters
+that materially limit coverage.
+
 Use known dates, events, locations, recorders, and recordings to focus later
 searches when they materially narrow the question. Before relying on a
 shortlisted passage, verify it in continuous transcript context as directed by
