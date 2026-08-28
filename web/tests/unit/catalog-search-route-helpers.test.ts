@@ -4,6 +4,7 @@ import {
   SearchRequestSchema,
   applyMaxPerAudio,
   assembleContextText,
+  buildAllowedAudioHashesQuery,
   collectRerankCandidates,
   getSearchConfig,
   resolveColbertFetchLimit,
@@ -54,6 +55,32 @@ describe("catalog search route helpers", () => {
     expect(MAX_PER_AUDIO_LIMIT).toBe(100);
     expect(SearchRequestSchema.safeParse({ query: "topic", maxPerAudio: 100 }).success).toBe(true);
     expect(SearchRequestSchema.safeParse({ query: "topic", maxPerAudio: 101 }).success).toBe(false);
+  });
+
+  it("accepts bounded event ID metadata filters", () => {
+    expect(
+      SearchRequestSchema.safeParse({
+        query: "topic",
+        metadataFilters: { eventIds: [42, 57] },
+      }).success,
+    ).toBe(true);
+    expect(
+      SearchRequestSchema.safeParse({
+        query: "topic",
+        metadataFilters: { eventIds: [0] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("restricts allowed recording hashes to linked events", () => {
+    const query = buildAllowedAudioHashesQuery("catalog-a", ["audio-a", "audio-b"], "VIEWER", { eventIds: [42, 57] });
+    const sql = query?.strings.join(" ? ") ?? "";
+
+    expect(sql).toContain("FROM catalog_event_recording cer");
+    expect(sql).toContain("cer.workflow_group_id = ce.workflow_group_id");
+    expect(sql).toContain("cer.audio_hash = ce.audio_hash");
+    expect(sql).toContain("cer.event_id IN");
+    expect(query?.values).toEqual(expect.arrayContaining([42, 57, "catalog-a", "audio-a", "audio-b"]));
   });
 
   it("prefers the legacy TEI rerank URL and exposes the rerank model", () => {

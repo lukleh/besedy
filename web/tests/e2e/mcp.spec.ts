@@ -784,7 +784,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             limit: 5,
             contextChunks: 1,
             maxPerRecording: 2,
-            filters: { audioHashes: [audioHash] },
+            filters: { eventIds: [event!.id] },
           },
           _meta: envelope,
         },

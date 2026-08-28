@@ -775,7 +775,7 @@ describe('MCP read service', () => {
   });
 
   it('returns compact grounded search matches with seekable recording links', async () => {
-    const filters = { dateYears: [2026], verified: true };
+    const filters = { eventIds: [42], dateYears: [2026], verified: true };
     const result = await searchMcpTranscripts('catalog-a', 'VIEWER', {
       query: 'search phrase',
       limit: 10,

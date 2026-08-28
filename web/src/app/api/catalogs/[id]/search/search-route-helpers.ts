@@ -30,17 +30,38 @@ const AudioHashFilterSchema = z
   .regex(/^[a-f0-9]{64}$/i, "audioHashes must contain 64-char hex audio hashes")
   .transform((value) => value.toLowerCase());
 
+function positiveIdListFilter(description: string) {
+  return z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(MAX_METADATA_FILTER_VALUES)
+    .optional()
+    .describe(description);
+}
+
 export const SearchMetadataFiltersSchema = z
   .object({
-    audioHashes: z.array(AudioHashFilterSchema).min(1).max(MAX_METADATA_FILTER_VALUES).optional(),
-    locationIds: z.array(z.number().int().positive()).min(1).max(MAX_METADATA_FILTER_VALUES).optional(),
-    recorderIds: z.array(z.number().int().positive()).min(1).max(MAX_METADATA_FILTER_VALUES).optional(),
-    dateYears: z.array(z.number().int().min(1900).max(2100)).min(1).max(MAX_METADATA_FILTER_VALUES).optional(),
-    verified: z.boolean().optional(),
+    eventIds: positiveIdListFilter("Event IDs whose linked recordings may contribute search matches."),
+    audioHashes: z
+      .array(AudioHashFilterSchema)
+      .min(1)
+      .max(MAX_METADATA_FILTER_VALUES)
+      .optional()
+      .describe("Recording audio hashes that may contribute search matches."),
+    locationIds: positiveIdListFilter("Location IDs from curated recording metadata."),
+    recorderIds: positiveIdListFilter("Recorder IDs from curated recording metadata."),
+    dateYears: z
+      .array(z.number().int().min(1900).max(2100))
+      .min(1)
+      .max(MAX_METADATA_FILTER_VALUES)
+      .optional()
+      .describe("Years from curated recording metadata."),
+    verified: z.boolean().optional().describe("Whether curated recording metadata is verified."),
   })
   .strict()
   .refine(
     (value) =>
+      value.eventIds !== undefined ||
       value.audioHashes !== undefined ||
       value.locationIds !== undefined ||
       value.recorderIds !== undefined ||
@@ -213,6 +234,18 @@ export function buildAllowedAudioHashesQuery(
   if (metadataFilters?.audioHashes && metadataFilters.audioHashes.length > 0) {
     filters.push(Prisma.sql`
       AND ce.audio_hash IN (${Prisma.join(metadataFilters.audioHashes)})
+    `);
+  }
+
+  if (metadataFilters?.eventIds && metadataFilters.eventIds.length > 0) {
+    filters.push(Prisma.sql`
+      AND EXISTS (
+        SELECT 1
+        FROM catalog_event_recording cer
+        WHERE cer.workflow_group_id = ce.workflow_group_id
+          AND cer.audio_hash = ce.audio_hash
+          AND cer.event_id IN (${Prisma.join(metadataFilters.eventIds)})
+      )
     `);
   }
 
