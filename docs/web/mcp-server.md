@@ -681,10 +681,16 @@ scores are not exposed.
 
 `filters` is a strict object containing at least one of:
 
+- `eventIds`: 1 to 50 positive event IDs returned by `list_events`;
 - `audioHashes`: 1 to 50 stable 64-character audio hashes;
 - `locationIds` or `recorderIds`: 1 to 50 positive integer IDs;
 - `dateYears`: 1 to 50 years from 1900 through 2100; or
 - `verified`: a boolean.
+
+`eventIds` restricts matches to recordings linked to any selected event. This
+supports a direct `list_events` to `search_transcripts` workflow without making
+the caller expand each event into recording hashes. `locationIds`,
+`recorderIds`, `dateYears`, and `verified` refer to curated recording metadata.
 
 A low `maxPerRecording`, such as `1`, increases diversity across recordings. A
 higher value is useful after narrowing the search to one or more recordings.
@@ -724,7 +730,8 @@ The recommended evidence workflow is:
 
 1. Run a broad semantic search with a low `maxPerRecording`.
 2. Shortlist results from their exact match and adjacent context.
-3. If needed, run a smaller follow-up restricted with `filters.audioHashes`.
+3. If needed, run a smaller follow-up restricted with `filters.eventIds` or
+   `filters.audioHashes`.
 4. Call `get_transcript` with the chosen result's `transcriptRequest` and read
    the continuous source context before relying on the passage.
 

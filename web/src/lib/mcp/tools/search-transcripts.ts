@@ -50,7 +50,7 @@ export function registerSearchTranscriptsTool(
     {
       title: 'Search Besedy transcripts',
       description:
-        'Discover candidate passages with a broad, semantic, non-exhaustive search of accessible Besedy transcripts. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Results are ordered by relevance and expose rank, not an internal retrieval score.',
+        'Discover candidate passages with a broad, semantic, non-exhaustive search of accessible Besedy transcripts. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Results are ordered by relevance and expose rank, not an internal retrieval score.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -95,7 +95,7 @@ export function registerSearchTranscriptsTool(
             'Maximum matches per recording/audio hash. A low value such as 1 favors discovery across recordings; a higher value can return several related passages from one recording.',
           ),
         filters: SearchMetadataFiltersSchema.optional().describe(
-          'Optional metadata constraints. Use filters.audioHashes with a bounded limit to follow up within recordings shortlisted by an earlier broad search.',
+          'Optional constraints. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
         ),
       }),
       annotations: READ_ONLY_TOOL_ANNOTATIONS,

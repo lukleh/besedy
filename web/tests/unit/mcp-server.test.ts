@@ -437,13 +437,21 @@ describe('MCP personalized tool surface', () => {
       name: string;
       description: string;
       inputSchema: {
-        properties: Record<string, { description?: string; maximum?: number }>;
+        properties: Record<
+          string,
+          {
+            description?: string;
+            maximum?: number;
+            properties?: Record<string, { description?: string }>;
+          }
+        >;
       };
     }>;
     const searchTool = tools.find((tool) => tool.name === 'search_transcripts');
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
     const eventsTool = tools.find((tool) => tool.name === 'list_events');
 
+    expect(searchTool?.description).toContain('filters.eventIds');
     expect(searchTool?.description).toContain('filters.audioHashes');
     expect(searchTool?.description).toContain('get_transcript');
     expect(searchTool?.inputSchema.properties.limit.description).toContain(
@@ -458,6 +466,10 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.inputSchema.properties.maxPerRecording.maximum).toBe(
       100,
     );
+    expect(
+      searchTool?.inputSchema.properties.filters.properties?.eventIds
+        ?.description,
+    ).toContain('linked recordings');
     expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain('complete stored transcript');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
