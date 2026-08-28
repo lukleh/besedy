@@ -1,6 +1,10 @@
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createBesedyMcpServer, paginateCatalogs } from '@/lib/mcp/server';
+import {
+  BESEDY_MCP_INSTRUCTIONS,
+  createBesedyMcpServer,
+  paginateCatalogs,
+} from '@/lib/mcp/server';
 import type {
   McpAccessProfile,
   McpCatalogAccess,
@@ -412,7 +416,10 @@ describe('MCP personalized tool surface', () => {
     };
 
     const body = await invokeMcp('tools/list');
-    const tools = body.result?.tools as Array<{ name: string }>;
+    const tools = body.result?.tools as Array<{
+      name: string;
+      outputSchema?: { type?: string; properties?: Record<string, unknown> };
+    }>;
     expect(tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
       'list_catalogs',
@@ -424,6 +431,15 @@ describe('MCP personalized tool surface', () => {
       'get_transcript',
       'search_transcripts',
     ]);
+    for (const tool of tools) {
+      expect(tool.outputSchema, `${tool.name} output schema`).toMatchObject({
+        type: 'object',
+      });
+      expect(
+        Object.keys(tool.outputSchema?.properties ?? {}).length,
+        `${tool.name} documented output fields`,
+      ).toBeGreaterThan(0);
+    }
   });
 
   it('describes the transcript discovery and verification workflow in tool metadata', async () => {
@@ -514,6 +530,23 @@ describe('MCP personalized tool surface', () => {
     expect(eventsTool?.inputSchema.properties.cursor.description).toContain(
       'Opaque continuation cursor',
     );
+    expect(eventsTool?.inputSchema.properties.query.description).toContain(
+      'event title',
+    );
+    expect(eventsTool?.inputSchema.properties.released.description).toContain(
+      'released',
+    );
+  });
+
+  it('provides concise cross-tool instructions for clients without a skill', async () => {
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-exhaustive');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
+
+    const body = await invokeMcp('server/discover');
+    expect(body.error).toBeUndefined();
+    expect(body.result?.instructions).toBe(BESEDY_MCP_INSTRUCTIONS);
   });
 
   it('uses the effective default catalog when catalogId is omitted', async () => {
@@ -553,7 +586,12 @@ describe('MCP personalized tool surface', () => {
       locationId: undefined,
     });
     expect(body.result?.content).toEqual([
-      { type: 'text', text: 'Listed 0 visible Besedy event(s).' },
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /Listed 0 visible Besedy event\(s\)\.[\s\S]*"catalogId":"viewer-catalog"/,
+        ),
+      },
     ]);
     expect(body.result?.structuredContent).toEqual({
       catalogId: 'viewer-catalog',
@@ -646,8 +684,20 @@ describe('MCP personalized tool surface', () => {
     };
     vi.mocked(getMcpEvent).mockResolvedValue({
       catalogId: 'viewer-catalog',
-      event: { id: 42 },
-    } as Awaited<ReturnType<typeof getMcpEvent>>);
+      event: {
+        id: 42,
+        webUrl: 'https://besedy.example/event/42',
+        title: 'Event title',
+        description: null,
+        date: { year: 2026, month: 8, day: 28 },
+        sessionIndex: 1,
+        location: { id: 7, name: 'Prague' },
+        released: true,
+        recordings: { items: [], totalVisible: 0, nextOffset: null },
+        createdAt: '2026-08-28T10:00:00.000Z',
+        updatedAt: '2026-08-28T11:00:00.000Z',
+      },
+    });
 
     const body = await invokeMcp('tools/call', {
       name: 'get_event',
@@ -655,6 +705,7 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
+    expect(body.result?.isError).not.toBe(true);
     expect(getMcpEvent).toHaveBeenCalledWith('viewer-catalog', 42, 'VIEWER', {
       offset: 0,
       limit: 25,
@@ -678,9 +729,25 @@ describe('MCP personalized tool surface', () => {
     };
     vi.mocked(getMcpRecording).mockResolvedValue({
       catalogId: 'viewer-catalog',
-      recording: { audioHash: 'a'.repeat(64) },
+      recording: {
+        audioHash: 'a'.repeat(64),
+        title: 'Recording title',
+        artist: null,
+        album: null,
+        durationHms: '00:10:00',
+        sourceDate: null,
+        date: { year: 2026, month: 8, day: 28 },
+        location: { id: 7, name: 'Prague' },
+        recorder: null,
+        verified: true,
+        notes: null,
+        tags: [],
+        ready: true,
+        published: true,
+        webUrl: 'https://besedy.example/recording',
+      },
       events: { items: [], totalVisible: 0, nextOffset: null },
-    } as unknown as Awaited<ReturnType<typeof getMcpRecording>>);
+    });
 
     const body = await invokeMcp('tools/call', {
       name: 'get_recording',
@@ -688,6 +755,7 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
+    expect(body.result?.isError).not.toBe(true);
     expect(getMcpRecording).toHaveBeenCalledWith(
       'user-1',
       'viewer-catalog',
@@ -717,7 +785,11 @@ describe('MCP personalized tool surface', () => {
       recordingWebUrl: 'https://besedy.example/recording',
       seekWebUrl: 'https://besedy.example/recording?seek=0',
       backend: 'whisperx/model',
+      availableBackends: ['whisperx/model'],
       language: 'cs',
+      durationSec: 600,
+      mode: 'page',
+      timeWindow: { startSec: null, endSec: null },
       segments: {
         items: [
           {
@@ -730,11 +802,23 @@ describe('MCP personalized tool surface', () => {
             webUrl: 'https://besedy.example/recording?seek=0',
           },
         ],
+        offset: 0,
+        limit: 50,
+        maxTextChars: 20_000,
+        returnedTextChars: 19,
         totalMatching: 2,
         nextOffset: 1,
       },
-      continuation: { segmentOffset: 1 },
-    } as unknown as Awaited<ReturnType<typeof getMcpTranscript>>);
+      continuation: {
+        catalogId: 'viewer-catalog',
+        audioHash: 'a'.repeat(64),
+        backend: 'whisperx/model',
+        mode: 'page',
+        segmentOffset: 1,
+        segmentLimit: 50,
+        maxTextChars: 20_000,
+      },
+    });
 
     const body = await invokeMcp('tools/call', {
       name: 'get_transcript',
@@ -816,8 +900,17 @@ describe('MCP personalized tool surface', () => {
       results: [
         {
           rank: 1,
-          recording: { title: 'Recording title' },
+          recording: {
+            audioHash: 'a'.repeat(64),
+            title: 'Recording title',
+            artist: null,
+            durationHms: '00:10:00',
+            ready: true,
+            published: true,
+            webUrl: 'https://besedy.example/recording',
+          },
           match: {
+            chunkId: 'chunk-1',
             startSec: 5,
             endSec: 10,
             text: 'Search evidence',
@@ -829,9 +922,31 @@ describe('MCP personalized tool surface', () => {
             beforeText: 'Earlier context',
             afterText: 'Later context',
           },
+          metadata: {
+            date: { year: 2026, month: 8, day: 28 },
+            location: { id: 7, name: 'Prague' },
+            recorder: null,
+          },
+          citation: {
+            audioHash: 'a'.repeat(64),
+            chunkId: 'chunk-1',
+            startSec: 5,
+            endSec: 10,
+            workflowGroupId: 'viewer-catalog',
+            backendKey: 'whisperx/model',
+            chunkVersion: 'v1',
+          },
+          transcriptRequest: {
+            catalogId: 'viewer-catalog',
+            audioHash: 'a'.repeat(64),
+            backend: 'whisperx/model',
+            mode: 'page',
+            startSec: 0,
+            endSec: 15,
+          },
         },
       ],
-    } as unknown as Awaited<ReturnType<typeof searchMcpTranscripts>>);
+    });
 
     const body = await invokeMcp('tools/call', {
       name: 'search_transcripts',

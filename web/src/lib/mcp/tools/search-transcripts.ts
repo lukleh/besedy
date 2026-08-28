@@ -12,6 +12,7 @@ import {
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
+import { SearchTranscriptsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_SEARCH_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 100;
@@ -98,6 +99,7 @@ export function registerSearchTranscriptsTool(
           'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
         ),
       }),
+      outputSchema: SearchTranscriptsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({
