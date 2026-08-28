@@ -23,6 +23,7 @@ CHUNK_SELECT_COLUMNS = """
     source_path
 """
 
+CHUNK_FTS_TABLE = "chunks_fts"
 CHUNK_FTS_BACKFILL_KEY = "chunks_fts_backfill_version"
 CHUNK_FTS_BACKFILL_VERSION = "1"
 
@@ -47,6 +48,10 @@ def _connect(path: Path) -> sqlite3.Connection:
 
 
 def _initialize_schema(connection: sqlite3.Connection) -> None:
+    fts_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (CHUNK_FTS_TABLE,),
+    ).fetchone()
     connection.executescript(
         """
         PRAGMA journal_mode = DELETE;
@@ -110,7 +115,11 @@ def _initialize_schema(connection: sqlite3.Connection) -> None:
         "SELECT value FROM chunk_store_metadata WHERE key = ?",
         (CHUNK_FTS_BACKFILL_KEY,),
     ).fetchone()
-    if backfill_version is None or str(backfill_version["value"]) != CHUNK_FTS_BACKFILL_VERSION:
+    if (
+        fts_exists is None
+        or backfill_version is None
+        or str(backfill_version["value"]) != CHUNK_FTS_BACKFILL_VERSION
+    ):
         # CREATE VIRTUAL TABLE does not backfill an external-content FTS index.
         # Record completion only after rebuilding so an interrupted migration is
         # retried instead of mistaking the virtual table's presence for success.

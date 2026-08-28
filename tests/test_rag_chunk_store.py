@@ -135,6 +135,29 @@ def test_ensure_chunk_store_fts_recovers_partial_existing_backfill(tmp_path: Pat
     assert _fts_matches(store_path, "hledatelny") == ["legacy-chunk"]
 
 
+def test_ensure_chunk_store_fts_recovers_missing_index_with_completion_marker(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "missing_fts_chunk_store.sqlite"
+    write_chunk_store(
+        path=store_path,
+        chunks=[
+            _chunk(
+                chunk_id="chunk-0",
+                audio_hash="a" * 64,
+                chunk_ordinal=0,
+                text="obnovený hledatelný přepis",
+            )
+        ],
+    )
+    with sqlite3.connect(store_path) as connection:
+        connection.execute("DROP TABLE chunks_fts")
+
+    ensure_chunk_store_fts(path=store_path)
+
+    assert _fts_matches(store_path, "hledatelny") == ["chunk-0"]
+
+
 def test_lookup_chunk_neighbors_returns_before_and_after_chunks(tmp_path: Path) -> None:
     store_path = tmp_path / "chunk_store.sqlite"
     write_chunk_store(
