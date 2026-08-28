@@ -27,9 +27,12 @@ import {
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import { getMcpResourceUrl } from '@/lib/mcp/config';
 
+export type McpEventOrder = 'asc' | 'desc';
+
 export interface McpEventListInput {
-  cursor?: number;
+  cursor?: string;
   limit: number;
+  order: McpEventOrder;
   released?: boolean;
   query?: string;
   date?: {
@@ -68,6 +71,7 @@ export interface McpRecordingEventPageInput {
 }
 
 export type McpReadErrorCode =
+  | 'invalid_cursor'
   | 'not_found'
   | 'permission_denied'
   | 'transcript_not_found'
@@ -97,6 +101,176 @@ function serializeDate(year: number, month: number | null, day: number | null) {
 
 function escapePrismaContains(value: string): string {
   return value.replace(/[\\%_]/g, '\\$&');
+}
+
+interface McpEventCursor {
+  version: 1;
+  catalogId: string;
+  order: McpEventOrder;
+  dateYear: number;
+  dateMonth: number | null;
+  dateDay: number | null;
+  sessionIndex: number;
+  eventId: number;
+}
+
+function isIntegerInRange(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= minimum &&
+    value <= maximum
+  );
+}
+
+function encodeMcpEventCursor(
+  catalogId: string,
+  order: McpEventOrder,
+  event: {
+    id: number;
+    dateYear: number;
+    dateMonth: number | null;
+    dateDay: number | null;
+    sessionIndex: number;
+  },
+): string {
+  const cursor: McpEventCursor = {
+    version: 1,
+    catalogId,
+    order,
+    dateYear: event.dateYear,
+    dateMonth: event.dateMonth,
+    dateDay: event.dateDay,
+    sessionIndex: event.sessionIndex,
+    eventId: event.id,
+  };
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeMcpEventCursor(
+  encoded: string,
+  catalogId: string,
+  order: McpEventOrder,
+): McpEventCursor {
+  try {
+    const value = JSON.parse(
+      Buffer.from(encoded, 'base64url').toString('utf8'),
+    ) as Partial<McpEventCursor>;
+    const validMonth =
+      value.dateMonth === null ||
+      isIntegerInRange(value.dateMonth, 1, 12);
+    const validDay =
+      value.dateDay === null || isIntegerInRange(value.dateDay, 1, 31);
+    if (
+      value.version !== 1 ||
+      value.catalogId !== catalogId ||
+      value.order !== order ||
+      !isIntegerInRange(value.dateYear, 1900, 2100) ||
+      !validMonth ||
+      !validDay ||
+      !isIntegerInRange(value.sessionIndex, 1, Number.MAX_SAFE_INTEGER) ||
+      !isIntegerInRange(value.eventId, 1, Number.MAX_SAFE_INTEGER)
+    ) {
+      throw new Error('Invalid event cursor payload');
+    }
+    return value as McpEventCursor;
+  } catch {
+    throw new McpReadError(
+      'invalid_cursor',
+      'Invalid event cursor for the selected catalog or order',
+    );
+  }
+}
+
+function eventDateOrderBy(
+  order: McpEventOrder,
+): Prisma.CatalogEventOrderByWithRelationInput[] {
+  return [
+    { dateYear: order },
+    { dateMonth: { sort: order, nulls: 'last' } },
+    { dateDay: { sort: order, nulls: 'last' } },
+    { sessionIndex: order },
+    { id: order },
+  ];
+}
+
+function numericCursorComparison(value: number, order: McpEventOrder) {
+  return order === 'asc' ? { gt: value } : { lt: value };
+}
+
+function nullableDateCursorComparison(
+  field: 'dateMonth' | 'dateDay',
+  value: number | null,
+  order: McpEventOrder,
+): Prisma.CatalogEventWhereInput | null {
+  if (value === null) return null;
+  return {
+    OR: [
+      { [field]: numericCursorComparison(value, order) },
+      { [field]: null },
+    ],
+  };
+}
+
+function eventAfterCursorWhere(
+  cursor: McpEventCursor,
+): Prisma.CatalogEventWhereInput {
+  const monthComparison = nullableDateCursorComparison(
+    'dateMonth',
+    cursor.dateMonth,
+    cursor.order,
+  );
+  const dayComparison = nullableDateCursorComparison(
+    'dateDay',
+    cursor.dateDay,
+    cursor.order,
+  );
+  const alternatives: Prisma.CatalogEventWhereInput[] = [
+    { dateYear: numericCursorComparison(cursor.dateYear, cursor.order) },
+  ];
+  if (monthComparison) {
+    alternatives.push({
+      AND: [{ dateYear: cursor.dateYear }, monthComparison],
+    });
+  }
+  if (dayComparison) {
+    alternatives.push({
+      AND: [
+        { dateYear: cursor.dateYear },
+        { dateMonth: cursor.dateMonth },
+        dayComparison,
+      ],
+    });
+  }
+  alternatives.push(
+    {
+      AND: [
+        { dateYear: cursor.dateYear },
+        { dateMonth: cursor.dateMonth },
+        { dateDay: cursor.dateDay },
+        {
+          sessionIndex: numericCursorComparison(
+            cursor.sessionIndex,
+            cursor.order,
+          ),
+        },
+      ],
+    },
+    {
+      AND: [
+        { dateYear: cursor.dateYear },
+        { dateMonth: cursor.dateMonth },
+        { dateDay: cursor.dateDay },
+        { sessionIndex: cursor.sessionIndex },
+        { id: numericCursorComparison(cursor.eventId, cursor.order) },
+      ],
+    },
+  );
+  return { OR: alternatives };
 }
 
 function resolveSearchTranscriptBackend(
@@ -174,6 +348,9 @@ export async function listMcpEvents(
   catalogGrant: AccessLevel | null,
   input: McpEventListInput,
 ) {
+  const cursor = input.cursor
+    ? decodeMcpEventCursor(input.cursor, catalogId, input.order)
+    : null;
   const literalQuery = input.query
     ? escapePrismaContains(input.query)
     : undefined;
@@ -182,7 +359,7 @@ export async function listMcpEvents(
     catalogGrant,
   );
   const filters: Prisma.CatalogEventWhereInput = {
-    ...(input.cursor ? { AND: [{ id: { lt: input.cursor } }] } : {}),
+    ...(cursor ? { AND: [eventAfterCursorWhere(cursor)] } : {}),
     ...(input.released === undefined ? {} : { released: input.released }),
     ...(input.date
       ? {
@@ -213,7 +390,7 @@ export async function listMcpEvents(
     visibleEventIds,
     filters,
     {
-      orderBy: [{ id: 'desc' }],
+      orderBy: eventDateOrderBy(input.order),
       take: input.limit + 1,
     },
   );
@@ -259,7 +436,10 @@ export async function listMcpEvents(
         updatedAt: event.updatedAt.toISOString(),
       };
     }),
-    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+    nextCursor:
+      hasMore && page.length > 0
+        ? encodeMcpEventCursor(catalogId, input.order, page.at(-1)!)
+        : null,
   };
 }
 

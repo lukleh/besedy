@@ -31,16 +31,28 @@ export function registerListEventsTool(
     {
       title: 'List Besedy events',
       description:
-        'List visible events in a catalog. Uses the current user default catalog when catalogId is omitted.',
+        'List visible events in chronological date order. Uses the current user default catalog when catalogId is omitted.',
       inputSchema: z.object({
         catalogId: z.string().min(1).optional(),
-        cursor: z.number().int().positive().optional(),
+        cursor: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same catalog, order, and filters.',
+          ),
         limit: z
           .number()
           .int()
           .min(1)
           .max(MAX_EVENT_PAGE_SIZE)
           .default(DEFAULT_EVENT_PAGE_SIZE),
+        order: z
+          .enum(['asc', 'desc'])
+          .default('desc')
+          .describe(
+            'Chronological event-date order. Use asc for oldest events first and desc for newest events first.',
+          ),
         released: z.boolean().optional(),
         query: z.string().trim().min(1).max(200).optional(),
         date: PartialEventDateSchema.optional().describe(
@@ -57,7 +69,16 @@ export function registerListEventsTool(
       }),
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, cursor, limit, released, query, date, locationId }) => {
+    async ({
+      catalogId,
+      cursor,
+      limit,
+      order,
+      released,
+      query,
+      date,
+      locationId,
+    }) => {
       const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
@@ -65,6 +86,7 @@ export function registerListEventsTool(
           listMcpEvents(catalog.id, catalog.catalogGrant, {
             cursor,
             limit,
+            order,
             released,
             query,
             date,

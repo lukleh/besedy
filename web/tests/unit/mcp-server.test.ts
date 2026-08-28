@@ -472,6 +472,12 @@ describe('MCP personalized tool surface', () => {
     expect(eventsTool?.inputSchema.properties.locationId.description).toContain(
       'location ID',
     );
+    expect(eventsTool?.inputSchema.properties.order.description).toContain(
+      'oldest events first',
+    );
+    expect(eventsTool?.inputSchema.properties.cursor.description).toContain(
+      'Opaque continuation cursor',
+    );
   });
 
   it('uses the effective default catalog when catalogId is omitted', async () => {
@@ -504,6 +510,7 @@ describe('MCP personalized tool surface', () => {
     expect(listMcpEvents).toHaveBeenCalledWith('viewer-catalog', 'VIEWER', {
       cursor: undefined,
       limit: 25,
+      order: 'desc',
       released: undefined,
       query: undefined,
       date: undefined,
@@ -521,13 +528,16 @@ describe('MCP personalized tool surface', () => {
     await invokeMcp('tools/call', {
       name: 'list_events',
       arguments: {
+        cursor: 'event-cursor',
+        order: 'asc',
         date: { year: 2026, month: 8 },
         locationId: 7,
       },
     });
     expect(listMcpEvents).toHaveBeenLastCalledWith('viewer-catalog', 'VIEWER', {
-      cursor: undefined,
+      cursor: 'event-cursor',
       limit: 25,
+      order: 'asc',
       released: undefined,
       query: undefined,
       date: { year: 2026, month: 8 },

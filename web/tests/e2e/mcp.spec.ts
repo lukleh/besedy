@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
-import { TEST_AUDIO_FILES } from '../../prisma/test-data';
+import { TEST_AUDIO_FILES, TEST_EVENTS } from '../../prisma/test-data';
 import {
   MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
   MCP_AUTH_SCOPES,
@@ -59,6 +59,43 @@ interface McpToolResult<T> {
   isError?: boolean;
   content?: Array<{ type: string; text?: string }>;
   structuredContent: T;
+}
+
+interface McpListedEvent {
+  id: number;
+  webUrl: string;
+  date: { year: number; month: number | null; day: number | null };
+  sessionIndex: number;
+  released: boolean;
+  recordings: {
+    primaryAudioHash: string | null;
+    audioHashes: string[];
+  };
+}
+
+function compareMcpListedEvents(
+  left: McpListedEvent,
+  right: McpListedEvent,
+): number {
+  const leftKey = [
+    left.date.year,
+    left.date.month ?? 13,
+    left.date.day ?? 32,
+    left.sessionIndex,
+    left.id,
+  ];
+  const rightKey = [
+    right.date.year,
+    right.date.month ?? 13,
+    right.date.day ?? 32,
+    right.sessionIndex,
+    right.id,
+  ];
+  for (let index = 0; index < leftKey.length; index += 1) {
+    const difference = leftKey[index]! - rightKey[index]!;
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }
 
 async function removeLocalTestClient(clientId: string): Promise<void> {
@@ -449,46 +486,70 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       },
     });
 
-    const eventsResponse = await request.post(MCP_RESOURCE, {
-      headers: {
-        ...mcpHeaders,
-        'Mcp-Method': 'tools/call',
-        'Mcp-Name': 'list_events',
-      },
-      data: {
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'tools/call',
-        params: {
-          name: 'list_events',
-          arguments: { limit: 10, date: { year: 2024 } },
-          _meta: envelope,
+    const expectedEvents = TEST_EVENTS.filter(
+      (event) => event.dateYear === 2024,
+    );
+    const listedEvents: McpListedEvent[] = [];
+    let eventCursor: string | undefined;
+    let eventPagesExhausted = false;
+    for (
+      let pageIndex = 0;
+      pageIndex <= expectedEvents.length;
+      pageIndex += 1
+    ) {
+      const eventsResponse = await request.post(MCP_RESOURCE, {
+        headers: {
+          ...mcpHeaders,
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'list_events',
         },
-      },
-    });
-    expect(eventsResponse.ok()).toBe(true);
-    const eventsBody = (await eventsResponse.json()) as McpResponse<
-      McpToolResult<{
-        catalogId: string;
-        events: Array<{
-          id: number;
-          webUrl: string;
-          released: boolean;
-          recordings: {
-            primaryAudioHash: string | null;
-            audioHashes: string[];
-          };
-        }>;
-        nextCursor: number | null;
-      }>
-    >;
-    expect(eventsBody.error).toBeUndefined();
-    expect(eventsBody.result?.isError).not.toBe(true);
-    const eventResult = eventsBody.result?.structuredContent;
-    expect(eventResult?.catalogId).toBe(result?.defaultCatalogId);
-    expect(eventResult?.events).toHaveLength(3);
-    expect(eventResult?.events.some((event) => !event.released)).toBe(true);
-    const event = eventResult?.events.find(
+        data: {
+          jsonrpc: '2.0',
+          id: 30 + pageIndex,
+          method: 'tools/call',
+          params: {
+            name: 'list_events',
+            arguments: {
+              limit: 1,
+              order: 'asc',
+              date: { year: 2024 },
+              ...(eventCursor ? { cursor: eventCursor } : {}),
+            },
+            _meta: envelope,
+          },
+        },
+      });
+      expect(eventsResponse.ok()).toBe(true);
+      const eventsBody = (await eventsResponse.json()) as McpResponse<
+        McpToolResult<{
+          catalogId: string;
+          events: McpListedEvent[];
+          nextCursor: string | null;
+        }>
+      >;
+      expect(eventsBody.error).toBeUndefined();
+      expect(eventsBody.result?.isError).not.toBe(true);
+      const eventPage = eventsBody.result?.structuredContent;
+      expect(eventPage?.catalogId).toBe(result?.defaultCatalogId);
+      expect(eventPage?.events).toHaveLength(1);
+      listedEvents.push(...eventPage!.events);
+      if (eventPage!.nextCursor === null) {
+        eventPagesExhausted = true;
+        break;
+      }
+      eventCursor = eventPage!.nextCursor;
+    }
+
+    expect(eventPagesExhausted).toBe(true);
+    expect(listedEvents).toHaveLength(expectedEvents.length);
+    expect(new Set(listedEvents.map((event) => event.id)).size).toBe(
+      listedEvents.length,
+    );
+    expect(listedEvents).toEqual(
+      [...listedEvents].sort(compareMcpListedEvents),
+    );
+    expect(listedEvents.some((event) => !event.released)).toBe(true);
+    const event = listedEvents.find(
       (candidate) =>
         candidate.recordings.primaryAudioHash === MCP_FIXTURE_RECORDING.hash,
     );

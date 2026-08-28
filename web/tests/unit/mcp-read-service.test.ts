@@ -258,6 +258,7 @@ describe('MCP read service', () => {
   it('filters events by partial date and location and returns visible hashes', async () => {
     const result = await listMcpEvents('catalog-a', 'LISTENER', {
       limit: 25,
+      order: 'desc',
       query: 'subject',
       date: { year: 2026, month: 8 },
       locationId: 7,
@@ -278,6 +279,13 @@ describe('MCP read service', () => {
             },
           ]),
         }),
+        orderBy: [
+          { dateYear: 'desc' },
+          { dateMonth: { sort: 'desc', nulls: 'last' } },
+          { dateDay: { sort: 'desc', nulls: 'last' } },
+          { sessionIndex: 'desc' },
+          { id: 'desc' },
+        ],
       }),
     );
     expect(getPublishedAccessibleRecordingHashes).toHaveBeenCalledWith(
@@ -313,6 +321,7 @@ describe('MCP read service', () => {
   it('treats event query metacharacters as literal text', async () => {
     await listMcpEvents('catalog-a', 'VIEWER', {
       limit: 25,
+      order: 'desc',
       query: String.raw`100%_done\today`,
     });
 
@@ -330,6 +339,165 @@ describe('MCP read service', () => {
         }),
       }),
     );
+  });
+
+  it('paginates ascending event dates with an opaque cursor', async () => {
+    const event = {
+      id: 42,
+      title: 'Visible event',
+      description: null,
+      dateYear: 2026,
+      dateMonth: 8,
+      dateDay: 26,
+      sessionIndex: 1,
+      location: { id: 7, name: 'Prague' },
+      released: true,
+      recordings: [],
+      updatedAt: new Date('2026-08-26T10:00:00.000Z'),
+    };
+    db.catalogEvent.findMany.mockResolvedValueOnce([
+      event,
+      { ...event, id: 43, sessionIndex: 2 },
+    ]);
+
+    const firstPage = await listMcpEvents('catalog-a', 'VIEWER', {
+      limit: 1,
+      order: 'asc',
+    });
+
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+    expect(db.catalogEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        orderBy: [
+          { dateYear: 'asc' },
+          { dateMonth: { sort: 'asc', nulls: 'last' } },
+          { dateDay: { sort: 'asc', nulls: 'last' } },
+          { sessionIndex: 'asc' },
+          { id: 'asc' },
+        ],
+      }),
+    );
+
+    db.catalogEvent.findMany.mockResolvedValueOnce([]);
+    await listMcpEvents('catalog-a', 'VIEWER', {
+      cursor: firstPage.nextCursor!,
+      limit: 1,
+      order: 'asc',
+    });
+
+    expect(db.catalogEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: [
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                {
+                  AND: [
+                    { dateYear: 2026 },
+                    { dateMonth: 8 },
+                    { dateDay: 26 },
+                    { sessionIndex: { gt: 1 } },
+                  ],
+                },
+              ]),
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('paginates partial dates without numeric comparisons against nulls', async () => {
+    const partialDateEvent = {
+      id: 42,
+      title: 'Year-only event',
+      description: null,
+      dateYear: 2026,
+      dateMonth: null,
+      dateDay: null,
+      sessionIndex: 1,
+      location: { id: 7, name: 'Prague' },
+      released: true,
+      recordings: [],
+      updatedAt: new Date('2026-08-26T10:00:00.000Z'),
+    };
+    db.catalogEvent.findMany.mockResolvedValueOnce([
+      partialDateEvent,
+      { ...partialDateEvent, id: 41 },
+    ]);
+    const firstPage = await listMcpEvents('catalog-a', 'VIEWER', {
+      limit: 1,
+      order: 'desc',
+    });
+
+    db.catalogEvent.findMany.mockResolvedValueOnce([]);
+    await listMcpEvents('catalog-a', 'VIEWER', {
+      cursor: firstPage.nextCursor!,
+      limit: 1,
+      order: 'desc',
+    });
+
+    expect(db.catalogEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: [
+            {
+              OR: [
+                { dateYear: { lt: 2026 } },
+                {
+                  AND: [
+                    { dateYear: 2026 },
+                    { dateMonth: null },
+                    { dateDay: null },
+                    { sessionIndex: { lt: 1 } },
+                  ],
+                },
+                {
+                  AND: [
+                    { dateYear: 2026 },
+                    { dateMonth: null },
+                    { dateDay: null },
+                    { sessionIndex: 1 },
+                    { id: { lt: 42 } },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('rejects malformed or mismatched event cursors', async () => {
+    await expect(
+      listMcpEvents('catalog-a', 'VIEWER', {
+        cursor: 'not-a-cursor',
+        limit: 25,
+        order: 'desc',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_cursor', retryable: false });
+
+    const cursor = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        catalogId: 'another-catalog',
+        order: 'desc',
+        dateYear: 2026,
+        dateMonth: 8,
+        dateDay: 26,
+        sessionIndex: 1,
+        eventId: 42,
+      }),
+      'utf8',
+    ).toString('base64url');
+    await expect(
+      listMcpEvents('catalog-a', 'VIEWER', {
+        cursor,
+        limit: 25,
+        order: 'desc',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_cursor', retryable: false });
   });
 
   it('returns a bounded page of compact recording summaries and links', async () => {
