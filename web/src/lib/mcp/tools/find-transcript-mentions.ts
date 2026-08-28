@@ -56,7 +56,7 @@ export function registerFindTranscriptMentionsTool(
     {
       title: 'Find exact transcript mentions',
       description:
-        'Find literal words, names, phrases, and prefixes across all accessible Besedy transcript chunks with SQLite FTS5. Use this for exact terminology, quotations, proper names, and complete-corpus literal checks; use search_transcripts for conceptual or paraphrased discovery. Filters, recording summaries, context, citations, and transcriptRequest behave like search_transcripts. Results are ordered by lexical relevance and expose rank, not an internal score.',
+        'Search the actual transcript wording across all accessible Besedy recordings. Use this for names, terminology, quotations, fixed phrases, prefixes, or a complete check for a literal token pattern. Use search_transcripts instead when you want passages related by meaning, including concepts, paraphrases, or different wording. Filters, recording summaries, context, citations, and transcriptRequest behave like search_transcripts. Results are ordered by text-match relevance and expose rank, not an internal score.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -75,7 +75,7 @@ export function registerFindTranscriptMentionsTool(
             'Query must contain a searchable letter or number.',
           )
           .describe(
-            'Literal words or phrase to find. Raw SQLite FTS operators are not accepted; punctuation is safely tokenized.',
+            'Literal words or phrase to find. Search operators are not accepted; punctuation is safely tokenized.',
           ),
         matchMode: LexicalMatchModeSchema.default('all_terms').describe(
           'How query tokens must match: all_terms requires every token in a chunk, phrase requires adjacency and order, any_term accepts any token, and prefix matches the beginning of every token.',

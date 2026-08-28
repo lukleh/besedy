@@ -14,7 +14,7 @@ just mcp-smoke
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
-all nine tools. It verifies default-catalog resolution, the owner's live
+all ten tools. It verifies default-catalog resolution, the owner's live
 capability flags, metadata reads, complete transcript retrieval, and a grounded
 RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
 not supply `catalogId`, so the same run covers default selection. The test keeps
@@ -258,7 +258,7 @@ that an omitted `catalogId` will resolve.
 
 ## Tool reference
 
-All nine tools are read-only, idempotent, and limited to Besedy data rather
+All ten tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
 `structuredContent`. Every tool advertises an `outputSchema` through
 `tools/list`, so an agent can understand the success response before its first
@@ -269,14 +269,19 @@ consume structured results. Responses may contain stable Besedy IDs and
 authenticated web links, but never audio URLs or filesystem paths.
 
 The MCP initialization response also includes concise server instructions for
-agents that connect without the optional Besedy skill. They describe the
-cross-tool discovery and evidence workflow: an initial small search provides
-orientation, a precise broad search must follow before synthesis, semantic
-search is non-exhaustive, important passages should be verified through
-`transcriptRequest` and `get_transcript`, recorder variants of one event are not
-independent evidence, recurring themes require support from distinct events,
-and bounded segment links are preferred for citations. Tool descriptions and
-schemas remain authoritative for individual calls and their current limits.
+agents that connect without the optional Besedy skill. They explain the search
+choice in user-facing terms: `search_transcripts` finds passages by meaning,
+including concepts, paraphrases, and different wording, while
+`find_transcript_mentions` searches the actual words for names, terminology,
+quotations, fixed phrases, prefixes, and complete literal checks. They also
+describe the cross-tool discovery and evidence workflow: an initial small
+meaning-based search provides orientation, a precise broad search must follow
+before synthesis, meaning-based search is non-exhaustive, important passages
+should be verified through `transcriptRequest` and `get_transcript`, recorder
+variants of one event are not independent evidence, recurring themes require
+support from distinct events, and bounded segment links are preferred for
+citations. Tool descriptions and schemas remain authoritative for individual
+calls and their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
@@ -292,8 +297,8 @@ every matching segment in one response.
 | `get_event`                | Read one event and its visible recording summaries            | `canListEvents` and event visibility          |
 | `get_recording`            | Read one recording's metadata and linked events               | `canGetRecordings` and recording visibility   |
 | `get_transcript`           | Read a bounded, continuous transcript window                  | `canViewTranscripts` and recording visibility |
-| `search_transcripts`       | Find candidate passages with semantic transcript search       | `canSearchTranscripts`                        |
-| `find_transcript_mentions` | Exhaustively find literal token patterns with SQLite FTS5      | `canSearchTranscripts`                        |
+| `search_transcripts`       | Find candidate passages by meaning, including different words | `canSearchTranscripts`                        |
+| `find_transcript_mentions` | Exhaustively find actual words, phrases, names, or prefixes    | `canSearchTranscripts`                        |
 
 `who_am_i` and `list_catalogs` are always discoverable by an active portal
 user. The remaining tools are discoverable when the user has their required
@@ -758,8 +763,8 @@ return a continuation descriptor:
 Use this tool for literal words, proper names, quotations, fixed phrases, and
 prefixes. It searches every indexed chunk belonging to recordings authorized
 by the resolved catalog and filters. Its `totalMatches` is the complete count
-before `limit` and `maxPerRecording` reduce the returned list. Numeric FTS
-scores are not exposed.
+before `limit` and `maxPerRecording` reduce the returned list. Numeric
+text-match scores are not exposed.
 
 It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
 `filters` contract as `search_transcripts`, plus `matchMode`:
@@ -777,7 +782,7 @@ than executable query syntax. Matching is Unicode-aware and accent-insensitive,
 but the current tokenizer does not perform stemming or lemmatization.
 
 The tool returns the same recording, match, context, metadata, citation, and
-`transcriptRequest` result shape as semantic search. Use `get_transcript` to
+`transcriptRequest` result shape as meaning-based search. Use `get_transcript` to
 verify important matches in continuous context. A zero result establishes only
 that the chosen literal token pattern is absent under the chosen catalog,
 authorization scope, filters, and match mode; it does not establish conceptual
@@ -785,15 +790,17 @@ absence.
 
 ### `search_transcripts`
 
-Use this tool for semantic discovery, not as proof that the corpus does or does
-not contain something. Retrieval is deliberately marked non-exhaustive, and
-results are ordered by relevance through `rank`; internal numeric retrieval
+Use this tool to find passages by meaning: questions, themes, related concepts,
+paraphrases, and different wording. It can find relevant passages even when the
+exact query words are absent. Do not use it as proof that the corpus does or
+does not contain something. Retrieval is deliberately marked non-exhaustive,
+and results are ordered by relevance through `rank`; internal numeric retrieval
 scores are not exposed.
 
 | Argument          | Type                                       | Default           | Meaning                                                                   |
 | ----------------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------- |
 | `catalogId`       | string                                     | effective default | Catalog to search                                                         |
-| `query`           | non-empty string, at most 1,000 characters | required          | Natural-language semantic query                                           |
+| `query`           | non-empty string, at most 1,000 characters | required          | Natural-language question or description of the meaning to find           |
 | `limit`           | integer from 1 to 200                      | `50`              | Maximum matches; smaller limits are for orientation or focused follow-ups |
 | `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match                 |
 | `maxPerRecording` | integer from 1 to 100                      | `10`              | Maximum matches from one audio hash                                       |
@@ -868,8 +875,9 @@ The recommended evidence workflow is:
 Run broad reformulations sequentially, compacting and deduplicating each
 structured response before requesting the next one. Use the maximum of `200`
 when the question requires wider coverage rather than lowering the limit merely
-to shorten tool output. Semantic retrieval remains non-exhaustive even at the
-maximum. `search_not_configured` means the catalog has no search bundle and is
+to shorten tool output. Meaning-based retrieval remains non-exhaustive even at
+the maximum.
+`search_not_configured` means the catalog has no search bundle and is
 not retryable. `search_unavailable` means the search service is temporarily
 unavailable and is retryable.
 

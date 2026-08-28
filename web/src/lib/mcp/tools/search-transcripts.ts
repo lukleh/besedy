@@ -25,7 +25,7 @@ function renderSearchContent(
   result: Awaited<ReturnType<typeof searchMcpTranscripts>>,
 ): string {
   const lines = [
-    `Semantic transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} non-exhaustive match(es).`,
+    `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} non-exhaustive match(es).`,
   ];
   for (const searchResult of result.results) {
     lines.push(
@@ -53,9 +53,9 @@ export function registerSearchTranscriptsTool(
     context,
     'search_transcripts',
     {
-      title: 'Search Besedy transcripts',
+      title: 'Search transcripts by meaning',
       description:
-        'Discover candidate passages with a semantic, non-exhaustive search of accessible Besedy transcripts. For ordinary content questions, use a small first pass only for orientation, then run precise broad searches before synthesizing. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
+        'Find candidate passages by meaning across accessible Besedy transcripts. Use this for questions, themes, related concepts, paraphrases, and different wording; it can find relevant passages even when the exact query words are absent. This search is ranked and non-exhaustive. When actual words matter—for names, terminology, quotations, fixed phrases, prefixes, or a complete literal check—use find_transcript_mentions instead. For ordinary content questions, use a small first pass only for orientation, then run precise broad searches before synthesizing. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -70,7 +70,7 @@ export function registerSearchTranscriptsTool(
           .min(1)
           .max(1_000)
           .describe(
-            'Natural-language semantic discovery query. Meaningfully different formulations may surface different candidate passages.',
+            'Natural-language question or description of the meaning to find. Meaningfully different formulations may surface different candidate passages.',
           ),
         limit: z
           .number()

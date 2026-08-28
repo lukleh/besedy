@@ -507,7 +507,8 @@ describe('MCP personalized tool surface', () => {
     const recordersTool = tools.find((tool) => tool.name === 'list_recorders');
 
     expect(searchTool?.description).toContain('filters.eventIds');
-    expect(lexicalTool?.description).toContain('SQLite FTS5');
+    expect(lexicalTool?.description).toContain('actual transcript wording');
+    expect(searchTool?.description).toContain('passages by meaning');
     expect(lexicalTool?.description).toContain('search_transcripts');
     expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
