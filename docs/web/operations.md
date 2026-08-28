@@ -108,6 +108,9 @@ Production mounts this external volume at `/var/lib/postgresql`, as required by
 the PostgreSQL 18 image layout. Because it is external, `just prod-down-clean`
 does not delete database data.
 
+Routine `just prod-up` uses `--no-recreate`; DB container replacement belongs
+only in an explicit, backed-up maintenance procedure.
+
 ### Release Preflight
 
 - [ ] Deploy from a clean checkout of the intended commit

@@ -59,8 +59,9 @@ Keep shared operational facts here and have provider-specific files such as
 - Those wrap `scripts/run_web_compose.sh <development|production|test> [docker compose args…]`,
   which is the single source of truth for the compose overlays, profile, and resolved
   env file per mode. It also sanitizes inherited shell variables and validates the
-  rendered project, container names, runtime `APP_ENV`, and database volume before
-  every command. Resource-shaping Compose global options are rejected; only
+  rendered project, container names, networks, runtime `APP_ENV`, and database
+  volume before every command. Resource-shaping Compose global options are
+  rejected; only
   `--profile` may precede the Compose command. Use it directly for anything the
   Justfile does not wrap:
   - Dev (port 3001): `bash scripts/run_web_compose.sh development up -d`

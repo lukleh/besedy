@@ -313,12 +313,10 @@ test_compose := "bash ../scripts/run_web_compose.sh test"
 
 # Start dev environment (detached)
 dev-up:
-    {{ ensure_internal_network }}
     cd web && {{ dev_compose }} up -d
 
 # Start dev with pgAdmin
 dev-up-tools:
-    {{ ensure_internal_network }}
     cd web && {{ dev_compose }} --profile tools up -d
 
 # Stop dev environment (keeps data)
@@ -373,7 +371,6 @@ dev-status:
 prod-up:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ ensure_internal_network }}
     cd web
     env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
     set -a
@@ -383,7 +380,7 @@ prod-up:
     WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-    {{ prod_compose }} up -d --remove-orphans
+    {{ prod_compose }} up -d --no-recreate --remove-orphans
 
 # Stop prod environment (keeps data)
 prod-down:
@@ -557,7 +554,6 @@ prod-monitor *args:
 test-up:
     #!/usr/bin/env bash
     set -e
-    {{ ensure_internal_network }}
     cd web
 
     # Start containers

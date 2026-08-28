@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "resolve_web_env_file.sh"
 COMPOSE_WRAPPER = REPO_ROOT / "scripts" / "run_web_compose.sh"
+COMPOSE_VALIDATOR = REPO_ROOT / "scripts" / "validate_web_compose_config.sh"
 
 
 @pytest.mark.parametrize(
@@ -129,9 +131,10 @@ if [[ " $* " == *" config --format json "* ]]; then
     external=false
   fi
   volume_target="/var/lib/postgresql"
-  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"}}},"volumes":{"postgres_data":{"name":"%s","external":%s}}}\n' \
+  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default"},"besedy_internal":{"name":"%s","external":true}}}\n' \
     "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
-    "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external"
+    "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external" \
+    "$COMPOSE_PROJECT_NAME" "$BESEDY_INTERNAL_NETWORK"
   exit 0
 fi
 printf 'APP_ENV=%s\n' "$APP_ENV"
@@ -254,3 +257,97 @@ def test_web_compose_wrapper_rejects_resource_shaping_global_options(
 
     assert result.returncode == 1
     assert "Unsafe Docker Compose option" in result.stderr
+
+
+def compose_config(
+    mode: str,
+    *,
+    internal_network: str = "besedy-internal",
+    db_networks: dict[str, None] | None = None,
+    config_file: str = "/safe/config.toml",
+) -> dict[str, object]:
+    instance = mode
+    volume_name = (
+        "besedy_production_postgres"
+        if mode == "production"
+        else f"besedy_{instance}_postgres"
+    )
+    return {
+        "name": f"besedy-{instance}",
+        "services": {
+            "db": {
+                "container_name": f"besedy-{instance}-db",
+                "image": "pgvector/pgvector:pg18",
+                "networks": db_networks or {"default": None},
+                "volumes": [
+                    {
+                        "type": "volume",
+                        "source": "postgres_data",
+                        "target": "/var/lib/postgresql",
+                    }
+                ],
+            },
+            "web": {
+                "container_name": f"besedy-{instance}-web",
+                "environment": {"APP_ENV": mode, "CONFIG_FILE": config_file},
+                "networks": {"besedy_internal": None, "default": None},
+            },
+        },
+        "volumes": {
+            "postgres_data": {
+                "name": volume_name,
+                "external": mode == "production",
+            }
+        },
+        "networks": {
+            "default": {"name": f"besedy-{instance}_default"},
+            "besedy_internal": {"name": internal_network, "external": True},
+        },
+    }
+
+
+def validate_compose_config(config: dict[str, object], mode: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(COMPOSE_VALIDATOR), mode, mode, "besedy-internal"],
+        cwd=REPO_ROOT,
+        input=json.dumps(config),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_compose_validator_allows_production_text_in_non_resource_paths() -> None:
+    config = compose_config(
+        "test", config_file="/tmp/besedy-production-fixtures/config.toml"
+    )
+
+    result = validate_compose_config(config, "test")
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("mode", "config", "message"),
+    [
+        (
+            "production",
+            compose_config("production", internal_network="besedy-test_default"),
+            "internal network is 'besedy-test_default'",
+        ),
+        (
+            "test",
+            compose_config(
+                "test", db_networks={"besedy_internal": None, "default": None}
+            ),
+            "database must only join the project default network",
+        ),
+    ],
+)
+def test_compose_validator_rejects_cross_environment_networks(
+    mode: str, config: dict[str, object], message: str
+) -> None:
+    result = validate_compose_config(config, mode)
+
+    assert result.returncode == 1
+    assert message in result.stderr

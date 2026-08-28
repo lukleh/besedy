@@ -28,6 +28,7 @@ def test_web_only_production_deploys_do_not_start_or_recreate_dependencies() -> 
 
     assert "{{ prod_compose }} up -d --no-deps web" in justfile
     assert "{{ prod_compose }} up -d --no-deps --no-build --remove-orphans web" in justfile
+    assert "{{ prod_compose }} up -d --no-recreate --remove-orphans" in justfile
 
 
 def test_postgres_18_uses_its_parent_data_volume_in_every_environment() -> None:

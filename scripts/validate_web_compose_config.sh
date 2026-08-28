@@ -4,9 +4,10 @@ set -euo pipefail
 
 mode="${1:-}"
 instance="${2:-}"
+expected_internal_network="${3:-}"
 
-if [[ -z "$mode" || -z "$instance" ]]; then
-  echo "Usage: $0 <development|production|test> <compose-instance>" >&2
+if [[ -z "$mode" || -z "$instance" || -z "$expected_internal_network" ]]; then
+  echo "Usage: $0 <development|production|test> <compose-instance> <internal-network>" >&2
   exit 1
 fi
 
@@ -38,6 +39,23 @@ actual_project="$(jq -r '.name // empty' <<<"$config")"
 actual_app_env="$(jq -r '.services.web.environment.APP_ENV // empty' <<<"$config")"
 [[ "$actual_app_env" == "$mode" ]] \
   || fail "web APP_ENV is '$actual_app_env', expected '$mode'"
+
+actual_default_network="$(jq -r '.networks.default.name // empty' <<<"$config")"
+[[ "$actual_default_network" == "${expected_project}_default" ]] \
+  || fail "default network is '$actual_default_network', expected '${expected_project}_default'"
+
+actual_internal_network="$(jq -r '.networks.besedy_internal.name // empty' <<<"$config")"
+[[ "$actual_internal_network" == "$expected_internal_network" ]] \
+  || fail "internal network is '$actual_internal_network', expected '$expected_internal_network'"
+jq -e '.networks.besedy_internal.external == true' <<<"$config" >/dev/null \
+  || fail "internal network must be external"
+
+db_networks="$(jq -c '.services.db.networks | keys | sort' <<<"$config")"
+[[ "$db_networks" == '["default"]' ]] \
+  || fail "database must only join the project default network; got $db_networks"
+web_networks="$(jq -c '.services.web.networks | keys | sort' <<<"$config")"
+[[ "$web_networks" == '["besedy_internal","default"]' ]] \
+  || fail "web must join only the project default and shared internal networks; got $web_networks"
 
 invalid_container_names="$(
   jq -r --arg project "$expected_project" '
@@ -80,7 +98,4 @@ else
   actual_volume_name="$(jq -r '.volumes.postgres_data.name // empty' <<<"$config")"
   [[ "$actual_volume_name" == "$expected_volume" ]] \
     || fail "database volume is '$actual_volume_name', expected '$expected_volume'"
-  if grep -qE 'besedy-production|besedy_production_postgres' <<<"$config"; then
-    fail "non-production config references a production Docker resource"
-  fi
 fi

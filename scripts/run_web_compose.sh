@@ -91,6 +91,14 @@ if (( ${#command_args[@]} == 0 )); then
   exit 1
 fi
 
+compose_command_name="${command_args[0]}"
+changes_resources=false
+case "$compose_command_name" in
+  up | create | run | scale | watch)
+    changes_resources=true
+    ;;
+esac
+
 env_file="$("$script_dir/resolve_web_env_file.sh" "$mode")"
 declared_app_env="$(
   awk -F= '
@@ -110,21 +118,33 @@ if [[ "$declared_app_env" != "$expected_app_env" ]]; then
   exit 1
 fi
 
-if [[ "$mode" == "production" ]]; then
-  for compose_arg in "${command_args[@]}"; do
-    case "$compose_arg" in
-      up | create | run)
-        "$script_dir/validate_web_config_mount.sh" production
-        break
-        ;;
-    esac
-  done
+if [[ "$mode" == "production" && "$changes_resources" == true ]]; then
+  "$script_dir/validate_web_config_mount.sh" production
 fi
+
+internal_network="${BESEDY_INTERNAL_NETWORK:-besedy-internal}"
+if [[ ! "$internal_network" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+  echo "Unsafe BESEDY_INTERNAL_NETWORK '$internal_network': expected a Docker network name" >&2
+  exit 1
+fi
+if [[ "$internal_network" == *_default ]]; then
+  echo "Unsafe BESEDY_INTERNAL_NETWORK '$internal_network': a Compose default network cannot be shared" >&2
+  exit 1
+fi
+
+dry_run=false
+for compose_arg in "${command_args[@]}"; do
+  if [[ "$compose_arg" == "--dry-run" ]]; then
+    dry_run=true
+    break
+  fi
+done
 
 clean_env=(
   env -i
   "APP_ENV=$expected_app_env"
   "BESEDY_COMPOSE_INSTANCE=$instance"
+  "BESEDY_INTERNAL_NETWORK=$internal_network"
   "COMPOSE_PROJECT_NAME=besedy-$instance"
   "HOME=${HOME:-}"
   "PATH=$PATH"
@@ -169,6 +189,13 @@ compose_command=(
 
 rendered_config="$("${compose_command[@]}" config --format json)"
 printf '%s\n' "$rendered_config" \
-  | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance"
+  | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network"
+
+if [[ "$changes_resources" == true ]]; then
+  if [[ "$dry_run" == false ]] && ! "${clean_env[@]}" docker network inspect "$internal_network" >/dev/null 2>&1; then
+    "${clean_env[@]}" docker network create --driver bridge "$internal_network" >/dev/null \
+      || "${clean_env[@]}" docker network inspect "$internal_network" >/dev/null
+  fi
+fi
 
 exec "${compose_command[@]}" "${command_args[@]}"
