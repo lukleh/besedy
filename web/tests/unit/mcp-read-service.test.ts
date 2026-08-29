@@ -1036,6 +1036,33 @@ describe('MCP read service', () => {
     });
   });
 
+  it('rejects hidden event filters before semantic or lexical search', async () => {
+    const filters = { eventIds: [99] };
+
+    await expect(
+      searchMcpTranscripts('catalog-a', {
+        query: 'search phrase',
+        limit: 10,
+        contextChunks: 0,
+        maxPerRecording: 2,
+        filters,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found', message: 'Event not found' });
+    expect(executeCatalogSearch).not.toHaveBeenCalled();
+
+    await expect(
+      findMcpTranscriptMentions('catalog-a', {
+        query: 'exact phrase',
+        matchMode: 'phrase',
+        limit: 10,
+        contextChunks: 0,
+        maxPerRecording: 2,
+        filters,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found', message: 'Event not found' });
+    expect(executeCatalogLexicalSearch).not.toHaveBeenCalled();
+  });
+
   it('returns a structured error when transcript search is unavailable', async () => {
     vi.mocked(executeCatalogSearch).mockRejectedValue(
       new RagServiceError('Model service request failed', 502),

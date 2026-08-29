@@ -919,6 +919,24 @@ export async function getMcpTranscript(
   };
 }
 
+async function assertMcpSearchEventsVisible(
+  catalogId: string,
+  filters?: SearchMetadataFilters,
+): Promise<void> {
+  const requestedEventIds = filters?.eventIds;
+  if (!requestedEventIds?.length) return;
+
+  const visibleEventIds = new Set(
+    (await resolveReadableEventIds(
+      catalogId,
+      MCP_VISIBILITY_ACCESS_LEVEL,
+    )) ?? [],
+  );
+  if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
+    throw new McpReadError('not_found', 'Event not found');
+  }
+}
+
 export async function searchMcpTranscripts(
   catalogId: string,
   input: {
@@ -929,6 +947,7 @@ export async function searchMcpTranscripts(
     filters?: SearchMetadataFilters;
   },
 ) {
+  await assertMcpSearchEventsVisible(catalogId, input.filters);
   let execution: Awaited<ReturnType<typeof executeCatalogSearch>>;
   try {
     execution = await executeCatalogSearch({
@@ -976,6 +995,7 @@ export async function findMcpTranscriptMentions(
     filters?: SearchMetadataFilters;
   },
 ) {
+  await assertMcpSearchEventsVisible(catalogId, input.filters);
   let execution: Awaited<ReturnType<typeof executeCatalogLexicalSearch>>;
   try {
     execution = await executeCatalogLexicalSearch({
