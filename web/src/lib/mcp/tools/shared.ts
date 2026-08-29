@@ -60,8 +60,6 @@ export const READ_ONLY_TOOL_ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
-type CatalogCapabilityName = keyof McpCatalogAccess['capabilities'];
-
 interface BesedyToolConfig<
   InputArgs extends StandardSchemaWithJSON,
   OutputArgs extends StandardSchemaWithJSON,
@@ -96,7 +94,6 @@ export function registerBesedyTool<
 export function resolveToolCatalog(
   profile: McpAccessProfile,
   catalogId: string | undefined,
-  requiredCapability: CatalogCapabilityName,
 ): McpCatalogAccess | { error: string; code: string } {
   const resolvedId = catalogId ?? profile.defaultCatalogId ?? undefined;
   if (!resolvedId) {
@@ -111,12 +108,6 @@ export function resolveToolCatalog(
     return {
       code: 'not_found',
       error: 'Catalog not found or inaccessible',
-    };
-  }
-  if (!catalog.capabilities[requiredCapability]) {
-    return {
-      code: 'permission_denied',
-      error: `Catalog permission does not allow ${requiredCapability}`,
     };
   }
   return catalog;

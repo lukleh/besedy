@@ -73,12 +73,6 @@ describe('MCP route hardening', () => {
     defaultCatalogId: null,
     defaultCatalogSource: null,
     catalogs: [],
-    aggregate: {
-      canListEvents: false,
-      canGetRecordings: false,
-      canViewTranscripts: false,
-      canSearchTranscripts: false,
-    },
   } as const;
 
   beforeEach(() => {

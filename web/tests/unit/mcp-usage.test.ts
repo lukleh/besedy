@@ -40,12 +40,6 @@ const context = {
     defaultCatalogId: 'catalog-1',
     defaultCatalogSource: 'user_preference' as const,
     catalogs: [],
-    aggregate: {
-      canListEvents: false,
-      canGetRecordings: false,
-      canViewTranscripts: false,
-      canSearchTranscripts: false,
-    },
   },
 };
 

@@ -13,8 +13,8 @@ presenting a single passage as a final verdict.
 
 Use the declared Besedy MCP tools as the source for claims about Besedy content.
 Before answering a content question, confirm that the tools needed for transcript
-search are available. When the connection is missing, authentication is required,
-or the user's permissions do not include transcript access, explain that plainly.
+search are available. When the connection is missing or authentication is
+required, explain that plainly.
 Do not replace missing Besedy evidence with general knowledge or imply that an
 ungrounded answer came from the recordings.
 
@@ -29,7 +29,7 @@ context. If relevant material is not found, say so and offer a narrower topic or
 different search terms.
 
 Follow the MCP server instructions and live tool descriptions and schemas for
-tool selection, permissions, exact arguments, pagination, evidence
+tool selection, catalog availability, exact arguments, pagination, evidence
 verification, source deduplication, and citation links.
 
 ## Search for meaning, then verify context

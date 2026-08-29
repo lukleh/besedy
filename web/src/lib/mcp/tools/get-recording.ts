@@ -61,15 +61,11 @@ export function registerGetRecordingTool(
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({ catalogId, audioHash, eventOffset, eventLimit }) => {
-      const catalog = resolveToolCatalog(
-        profile,
-        catalogId,
-        'canGetRecordings',
-      );
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          getMcpRecording(profile.userId, catalog.id, audioHash, {
+          getMcpRecording(catalog.id, audioHash, {
             offset: eventOffset,
             limit: eventLimit,
           }),

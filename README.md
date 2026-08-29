@@ -81,10 +81,12 @@ https://besedy.org/api/mcp
 ```
 
 Access uses the same Google sign-in and preallowed-user admission as the Besedy
-web app. Available tools and returned data are derived from the user's live
-catalog permissions. When no catalog is specified, catalog-scoped tools use the
-user's effective default catalog according to the resolution order described in
-the MCP server reference below.
+web app. Every active account receives the complete MCP tool set. Catalog grants
+still decide which catalogs can be read, and MCP data is limited to released
+events and published, ready recordings; transcript tools are available for those
+recordings at every catalog access level. When no catalog is specified,
+catalog-scoped tools use the user's effective default catalog according to the
+resolution order described in the MCP server reference below.
 
 Besedy is a standalone remote MCP server. Client machines do not need a Besedy
 package, plugin, repository checkout, or access to the deployment host.
@@ -140,10 +142,10 @@ codex mcp add besedy --url https://besedy.org/api/mcp
 codex mcp login besedy
 ```
 
-The connection uses the same Besedy OAuth flow described above. Each user sees
-only the catalogs and tools allowed by their live Besedy permissions. Standalone
-skills are supported in the ChatGPT desktop app, Codex CLI, and the Codex IDE
-extension.
+The connection uses the same Besedy OAuth flow described above. Each active user
+receives every MCP tool but sees data only from catalogs covered by their live
+catalog grants. Standalone skills are supported in the ChatGPT desktop app,
+Codex CLI, and the Codex IDE extension.
 
 ## Get started
 

@@ -90,12 +90,11 @@ export default function McpConsent() {
               <p>This client will be able to:</p>
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>
-                  List metadata for catalogs, events, and recordings you can
-                  access.
+                  List released events and published recordings in catalogs you
+                  can access.
                 </li>
                 <li>
-                  Read or search transcripts only where your Besedy role allows
-                  it.
+                  Read and search transcripts for those published recordings.
                 </li>
                 {scopes.map((scope) => (
                   <li key={scope}>Request scope: {scope}</li>

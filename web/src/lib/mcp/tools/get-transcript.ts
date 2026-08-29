@@ -148,15 +148,11 @@ export function registerGetTranscriptTool(
       segmentLimit,
       maxTextChars,
     }) => {
-      const catalog = resolveToolCatalog(
-        profile,
-        catalogId,
-        'canViewTranscripts',
-      );
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          getMcpTranscript(profile.userId, catalog.id, audioHash, {
+          getMcpTranscript(catalog.id, audioHash, {
             backend,
             startSec,
             endSec,

@@ -1,18 +1,13 @@
 import prisma from '@/lib/db';
 import type { AccessLevel, UserStatus } from '@/generated/prisma/client';
-import { buildCatalogCapability } from '@/lib/access/capabilities';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
-import {
-  getUserFeaturePreferences,
-  isFeatureEnabledForUser,
-} from '@/lib/features/capabilities';
+import { getUserFeaturePreferences } from '@/lib/features/capabilities';
 import {
   hasSystemCatalogAuthority,
   resolvePortalActorContext,
   type PortalActorContext,
   type SystemRole,
 } from '@/lib/policy/actor';
-import { canBrowseEvents, canViewUnreleasedEvents } from '@/lib/policy/event';
 import {
   selectDefaultReadableGroup,
   type ReadableGroupResolutionSource,
@@ -35,6 +30,14 @@ export interface McpCatalogAccess {
   };
 }
 
+const MCP_CATALOG_CAPABILITIES = {
+  canListEvents: true,
+  canGetRecordings: true,
+  canViewTranscripts: true,
+  canSearchTranscripts: true,
+  canSeeUnreleasedEvents: false,
+} as const;
+
 export type McpDefaultCatalogSource =
   'user_preference' | 'global_default' | 'most_recent';
 
@@ -46,12 +49,6 @@ export interface McpAccessProfile {
   defaultCatalogId: string | null;
   defaultCatalogSource: McpDefaultCatalogSource | null;
   catalogs: McpCatalogAccess[];
-  aggregate: {
-    canListEvents: boolean;
-    canGetRecordings: boolean;
-    canViewTranscripts: boolean;
-    canSearchTranscripts: boolean;
-  };
 }
 
 function serializeDefaultCatalogSource(
@@ -74,7 +71,9 @@ export async function getMcpAccessProfile(
   options: { actor?: PortalActorContext } = {},
 ): Promise<McpAccessProfile> {
   if (options.actor && options.actor.userId !== userId) {
-    throw new Error('MCP access profile actor does not match the requested user');
+    throw new Error(
+      'MCP access profile actor does not match the requested user',
+    );
   }
   const [actor, preferences] = await Promise.all([
     options.actor ?? resolvePortalActorContext(userId),
@@ -103,10 +102,6 @@ export async function getMcpAccessProfile(
     orderBy: { id: 'desc' },
   });
 
-  const eventsEnabled = isFeatureEnabledForUser(
-    'events',
-    preferences.labsPreference.enabled,
-  );
   const isCatalogAdmin = hasSystemCatalogAuthority(actor);
   const effectiveDefault = selectDefaultReadableGroup(
     groups,
@@ -115,25 +110,6 @@ export async function getMcpAccessProfile(
   const catalogs = groups.map((group): McpCatalogAccess => {
     const accessLevel = accessByCatalogId.get(group.id) ?? null;
     const catalogGrant = isCatalogAdmin ? null : accessLevel;
-    const capability = buildCatalogCapability(
-      {
-        userId: actor.userId,
-        isAuthenticated: actor.isAuthenticated,
-        userStatus: actor.userStatus,
-        canEnterPortal: actor.canEnterPortal,
-      },
-      group.id,
-      true,
-      catalogGrant,
-      accessLevel,
-      isCatalogAdmin,
-    );
-    const policyContext = {
-      catalogExists: capability.catalogExists,
-      canEnterPortal: capability.canEnterPortal,
-      catalogGrant: capability.catalogGrant,
-      isCatalogAdmin: capability.isCatalogAdmin,
-    };
 
     return {
       id: group.id,
@@ -143,16 +119,7 @@ export async function getMcpAccessProfile(
       isEffectiveDefault: effectiveDefault?.group.id === group.id,
       catalogGrant,
       isCatalogAdmin,
-      capabilities: {
-        canListEvents: canBrowseEvents({
-          ...policyContext,
-          featureEnabled: eventsEnabled,
-        }),
-        canGetRecordings: capability.canViewCatalog,
-        canViewTranscripts: capability.canViewTranscripts,
-        canSearchTranscripts: capability.canUseRagSearch,
-        canSeeUnreleasedEvents: canViewUnreleasedEvents(policyContext),
-      },
+      capabilities: MCP_CATALOG_CAPABILITIES,
     };
   });
 
@@ -166,20 +133,6 @@ export async function getMcpAccessProfile(
       effectiveDefault?.source,
     ),
     catalogs,
-    aggregate: {
-      canListEvents: catalogs.some(
-        (catalog) => catalog.capabilities.canListEvents,
-      ),
-      canGetRecordings: catalogs.some(
-        (catalog) => catalog.capabilities.canGetRecordings,
-      ),
-      canViewTranscripts: catalogs.some(
-        (catalog) => catalog.capabilities.canViewTranscripts,
-      ),
-      canSearchTranscripts: catalogs.some(
-        (catalog) => catalog.capabilities.canSearchTranscripts,
-      ),
-    },
   };
 }
 
@@ -196,11 +149,5 @@ function emptyProfile(
     defaultCatalogId: null,
     defaultCatalogSource: null,
     catalogs: [],
-    aggregate: {
-      canListEvents: false,
-      canGetRecordings: false,
-      canViewTranscripts: false,
-      canSearchTranscripts: false,
-    },
   };
 }

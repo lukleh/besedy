@@ -29,15 +29,11 @@ export function registerListRecordersTool(
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({ catalogId, query, cursor, limit }) => {
-      const catalog = resolveToolCatalog(
-        profile,
-        catalogId,
-        'canGetRecordings',
-      );
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          listMcpRecorders(catalog.id, catalog.catalogGrant, {
+          listMcpRecorders(catalog.id, {
             query,
             cursor,
             limit,
