@@ -462,6 +462,7 @@ describe('MCP personalized tool surface', () => {
             default?: number;
             description?: string;
             maximum?: number;
+            pattern?: string;
             properties?: Record<string, { description?: string }>;
           }
         >;
@@ -484,6 +485,7 @@ describe('MCP personalized tool surface', () => {
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
       10,
     );
+    expect(lexicalTool?.inputSchema.properties.query.pattern).toBeUndefined();
     expect(searchTool?.description).toContain('filters.audioHashes');
     expect(searchTool?.description).toContain('get_transcript');
     expect(searchTool?.description).toContain('small first pass');
@@ -984,6 +986,59 @@ describe('MCP personalized tool surface', () => {
       maxPerRecording: 10,
       filters: undefined,
     });
+  });
+
+  it('keeps lexical query validation Unicode-aware', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+    };
+
+    const invalidBody = await invokeMcp('tools/call', {
+      name: 'find_transcript_mentions',
+      arguments: { query: '!!!' },
+    });
+
+    expect(invalidBody.result).toMatchObject({ isError: true });
+    expect(invalidBody.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining(
+          'Query must contain a searchable letter or number.',
+        ),
+      },
+    ]);
+    expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
+
+    vi.mocked(findMcpTranscriptMentions).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      query: 'člověk',
+      retrieval: {
+        mode: 'lexical',
+        matchMode: 'all_terms',
+        corpusCoverage: 'complete',
+        totalMatches: 0,
+        requestedLimit: 50,
+        returnedCount: 0,
+        maxPerRecording: 10,
+      },
+      results: [],
+    });
+
+    const validBody = await invokeMcp('tools/call', {
+      name: 'find_transcript_mentions',
+      arguments: { query: 'člověk' },
+    });
+
+    expect(validBody.result?.isError).not.toBe(true);
+    expect(findMcpTranscriptMentions).toHaveBeenCalledWith(
+      'viewer-catalog',
+      expect.objectContaining({ query: 'člověk' }),
+    );
   });
 
   it('does not reveal inaccessible catalogs through any catalog tool', async () => {

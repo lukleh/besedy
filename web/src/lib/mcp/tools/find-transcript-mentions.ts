@@ -70,8 +70,8 @@ export function registerFindTranscriptMentionsTool(
           .trim()
           .min(1)
           .max(1_000)
-          .regex(
-            /[\p{L}\p{N}]/u,
+          .refine(
+            (value) => /[\p{L}\p{N}]/u.test(value),
             'Query must contain a searchable letter or number.',
           )
           .describe(
