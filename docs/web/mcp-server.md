@@ -14,14 +14,15 @@ just mcp-smoke
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
-all ten tools. It verifies default-catalog resolution, the owner's live
-capability flags, metadata reads, complete transcript retrieval, and a grounded
-RAG result from a deterministic test-only ColBERT mock. Catalog-scoped calls do
-not supply `catalogId`, so the same run covers default selection. The test keeps
-its own `test-mcp-*` Compose project and volume, then removes both on exit. It
-resolves the test env file itself; inherited production `APP_ENV`, config, and
-Compose project values are not used. Docker assigns run-specific loopback ports,
-so an existing test stack and concurrent smoke runs do not conflict. On a new
+all ten tools. It verifies default-catalog resolution, the uniform MCP
+capability flags, listener-scoped metadata reads, complete transcript retrieval,
+and a grounded RAG result from a deterministic test-only ColBERT mock.
+Catalog-scoped calls do not supply `catalogId`, so the same run covers default
+selection. The test keeps its own `test-mcp-*` Compose project and volume, then
+removes both on exit. It resolves the test env file itself; inherited production
+`APP_ENV`, config, and Compose project values are not used. Docker assigns
+run-specific loopback ports, so an existing test stack and concurrent smoke runs
+do not conflict. On a new
 machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
@@ -40,12 +41,14 @@ The implementation uses the stable `@modelcontextprotocol/server` **2.x** SDK
 and the MCP 2026-07-28 protocol. Do not replace it with the legacy
 `@modelcontextprotocol/sdk` package or the v1 compatibility server.
 
-## Architectural rule: one policy, two delivery surfaces
+## Architectural rule: shared visibility, surface-specific capabilities
 
-Web pages, web API routes, and MCP tools must all call the same policy and
-capability functions in `web/src/lib/policy` and `web/src/lib/access`. Role or
-release checks must not be reimplemented in MCP handlers, UI components, or
-database query fragments.
+Web pages, web API routes, and MCP tools share the canonical listener visibility
+rules in `web/src/lib/policy` and `web/src/lib/catalog-events`: released events
+and published, actionable recordings. Web roles continue to determine web
+capabilities. MCP applies a separate, uniform read capability after catalog
+membership is established, adding transcript reads and search without widening
+listener visibility.
 
 The boundary is:
 
@@ -63,10 +66,9 @@ shared event/recording/transcript/search read services
        +---- MCP tool discovery and agent-oriented serializers
 ```
 
-This makes a future policy change (for example, hiding unreleased events from
-VIEWER) apply to both surfaces. Tests must exercise the canonical policy and
-assert representative web and MCP behavior against it. Documentation describes
-the policy, but the policy code is authoritative.
+Tests must exercise the canonical listener visibility and assert representative
+web and MCP behavior against it. Documentation describes the policy, but the
+policy code is authoritative.
 
 ## Reference pattern for MCP tools
 
@@ -79,18 +81,18 @@ serialization:
    access. For consented clients, effective scopes are the intersection of the
    token claims and live consent, so an old token cannot preserve a scope the
    user has revoked. Current portal access is required for every client.
-2. **Use canonical policy state.** `getMcpAccessProfile` obtains the current
-   actor, system role, catalog grants, defaults, and capabilities through the
-   same policy functions used by the web application. A tool must not derive a
-   role or permission again from raw database flags.
+2. **Use canonical catalog membership.** `getMcpAccessProfile` obtains the
+   current actor, system role, catalog grants, and defaults through the same
+   access queries used by the web application. Every accessible catalog receives
+   the uniform MCP capability set.
 3. **Keep identity data separate from authorization.** `getMcpIdentity` loads
    only account and OAuth-client display data. `who_am_i` gets status and role
    from the access profile rather than treating identity fields as permission
    facts.
-4. **Gate both tools and returned fields.** Tool discovery is personalized for
-   usability, but each invocation must still authorize its resolved target.
-   Response serialization must also enforce OAuth scopes: `profile` controls
-   name, status, and role, while `email` controls email fields.
+4. **Gate catalogs and returned fields.** Every active account receives every
+   tool, but each invocation must still authorize its resolved catalog and apply
+   listener visibility. Response serialization must also enforce OAuth scopes:
+   `profile` controls name, status, and role, while `email` controls email fields.
 5. **Share one policy snapshot inside the tool request.** The transport is
    stateless, so the next HTTP request rebuilds current policy state. Within a
    request, `BesedyMcpRequestContext` carries the client, effective scopes, and
@@ -103,16 +105,16 @@ serialization:
    `identity_unavailable` and no partial identity.
 
 New tools should follow the same division: the route establishes live OAuth and
-portal authorization, shared policy code decides Besedy capabilities, shared
-read services retrieve only authorized domain data, and the MCP handler shapes
-the agent-facing result. Tests should cover discovery, direct invocation,
-scope-gated fields, a denied target, and the tool's structured failure paths.
+portal authorization, the access profile limits catalog membership, shared read
+services apply listener visibility, and the MCP handler shapes the agent-facing
+result. Tests should cover discovery, direct invocation, scope-gated fields, a
+denied catalog or hidden resource, and the tool's structured failure paths.
 
 Each tool lives in its own registrar module under
-`web/src/lib/mcp/tools/`. `server.ts` only creates the server and applies the
-personalized discovery gates before calling those registrars. Shared catalog
-resolution and structured success/error handling live in `tools/shared.ts` so
-tools cannot drift into different not-found, permission, or retry semantics.
+`web/src/lib/mcp/tools/`. `server.ts` only creates the server and registers the
+uniform tool set. Shared catalog resolution and structured success/error
+handling live in `tools/shared.ts` so tools cannot drift into different
+not-found or retry semantics.
 Keep tool-specific schemas, defaults, service calls, and response rendering in
 the tool's module; do not move policy derivation or raw database authorization
 queries there.
@@ -175,7 +177,8 @@ queries there.
 
 `PENDING`, `BLOCKED`, deleted, or otherwise inactive users cannot use MCP even
 if they previously obtained a token. Revoked catalog grants stop authorizing
-catalog data on the next call.
+catalog data on the next call. Web access levels and web UI behavior are not
+changed by the MCP policy.
 
 ### Remote client setup
 
@@ -205,18 +208,19 @@ token or Google credential is pasted into the client configuration.
 
 ## Access matrix
 
-The table is the intended read surface for an active user. `ADMIN` includes
-superadmins. A dash means the capability is not available.
+The table is the intended MCP read surface for an active user. `ADMIN` includes
+superadmins. Every active account receives all tools; catalog grants determine
+which catalogs contain readable data.
 
-| User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata | Get transcript | Search transcripts |
-| ------------------------- | ------------------: | ------------------: | -------------------: | ---------------------: | -------------: | -----------------: |
-| No grant                  |                  No |                  No |                   No |                     No |             No |                 No |
-| `LISTENER`                |                 Yes | Released/ready only |                   No |   Published/ready only |             No |                 No |
-| `VIEWER`                  |                 Yes |                 Yes |                  Yes |                    Yes |            Yes |                Yes |
-| `MEMBER`                  |                 Yes |                 Yes |                  Yes |                    Yes |            Yes |                Yes |
-| `EDITOR`                  |                 Yes |                 Yes |                  Yes |                    Yes |            Yes |                Yes |
-| `OWNER`                   |                 Yes |                 Yes |                  Yes |                    Yes |            Yes |                Yes |
-| `ADMIN`                   | All active catalogs |                 Yes |                  Yes |                    Yes |            Yes |                Yes |
+| User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata |             Get transcript |         Search transcripts |
+| ------------------------- | ------------------: | ------------------: | -------------------: | ---------------------: | -------------------------: | -------------------------: |
+| No grant                  |                  No |                  No |                   No |                     No |                         No |                         No |
+| `LISTENER`                |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
+| `VIEWER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
+| `MEMBER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
+| `EDITOR`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
+| `OWNER`                   |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
+| `ADMIN`                   | All active catalogs | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
 
 For a `LISTENER`, an event is visible only when all of these are true:
 
@@ -225,34 +229,25 @@ For a `LISTENER`, an event is visible only when all of these are true:
 3. its primary recording is published.
 
 Listener-visible attached recordings are likewise restricted to actionable,
-published recordings. `VIEWER` and higher currently see unreleased events. If
-that rule changes in the canonical event policy, both web and MCP inherit the
-new result.
+published recordings. MCP applies this visibility at every catalog access level;
+higher web roles do not expose unreleased data through MCP.
 
 Portal status is evaluated before catalog role. Unauthenticated, `PENDING`, and
 `BLOCKED` users receive no protected MCP tools or data. An active user with no
-catalog grants can authenticate but only gets an empty catalog list.
+catalog grants receives all tools but gets an empty catalog list and cannot read
+catalog-scoped data.
 
 ## Tool discovery and per-call authorization
 
-MCP tool discovery is personalized from the union of a user's live catalog
-capabilities:
+Every active user receives all ten tools. Tool discovery does not authorize an
+invocation: every catalog-scoped call still checks that the resolved target is
+in the user's live accessible catalog list. An inaccessible catalog uses
+not-found semantics.
 
-- Every active user gets `list_catalogs`.
-- Event and recording tools are exposed if at least one accessible catalog
-  permits that operation.
-- `get_transcript`, `search_transcripts`, and `find_transcript_mentions` are
-  omitted for a user who is only a `LISTENER` everywhere.
-
-A user may be a listener in one catalog and a viewer in another. Tool discovery
-therefore cannot by itself authorize an invocation. Every tool still checks the
-resolved target catalog and returns a permission error if that particular
-catalog does not allow the requested operation.
-
-`list_catalogs` includes the explicit `catalogGrant`, the `isCatalogAdmin`
-system-authority flag, and booleans such as `canViewTranscripts`,
-`canSearchTranscripts`, and `canSeeUnreleasedEvents`, so an agent can select
-valid operations without guessing from role names. It also distinguishes the
+`list_catalogs` includes the explicit web `catalogGrant`, the `isCatalogAdmin`
+system-authority flag, and the effective MCP capability flags. Transcript and
+search capabilities are true for every returned catalog, while
+`canSeeUnreleasedEvents` is false. It also distinguishes the
 user's saved default, the configured global default, and the effective default
 that an omitted `catalogId` will resolve.
 
@@ -287,23 +282,22 @@ Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
 every matching segment in one response.
 
-| Tool                       | Use it to                                                     | Required access                               |
-| -------------------------- | ------------------------------------------------------------- | --------------------------------------------- |
-| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary | Active portal user                            |
-| `list_catalogs`            | Discover accessible catalogs and per-catalog capabilities     | Active portal user                            |
-| `list_locations`           | Discover location IDs used by visible events or recordings    | `canGetRecordings`                            |
-| `list_recorders`           | Discover recorder IDs used by visible recordings              | `canGetRecordings`                            |
-| `list_events`              | Page and filter visible events                                | `canListEvents`                               |
-| `get_event`                | Read one event and its visible recording summaries            | `canListEvents` and event visibility          |
-| `get_recording`            | Read one recording's metadata and linked events               | `canGetRecordings` and recording visibility   |
-| `get_transcript`           | Read a bounded, continuous transcript window                  | `canViewTranscripts` and recording visibility |
-| `search_transcripts`       | Find candidate passages by meaning, including different words | `canSearchTranscripts`                        |
-| `find_transcript_mentions` | Exhaustively find actual words, phrases, names, or prefixes    | `canSearchTranscripts`                        |
+| Tool                       | Use it to                                                      | Required data access                       |
+| -------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
+| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary  | Active portal user                         |
+| `list_catalogs`            | Discover accessible catalogs and MCP capabilities              | Active portal user                         |
+| `list_locations`           | Discover location IDs used by listener-visible data            | Accessible catalog                         |
+| `list_recorders`           | Discover recorder IDs used by listener-visible recordings      | Accessible catalog                         |
+| `list_events`              | Page and filter released events                                | Accessible catalog                         |
+| `get_event`                | Read one released event and its visible recordings             | Accessible catalog and listener visibility |
+| `get_recording`            | Read one published, ready recording and linked released events | Accessible catalog and listener visibility |
+| `get_transcript`           | Read a transcript for a published, ready recording             | Accessible catalog and listener visibility |
+| `search_transcripts`       | Find candidate passages by meaning, including different words  | Accessible catalog and listener visibility |
+| `find_transcript_mentions` | Exhaustively find actual words, phrases, names, or prefixes    | Accessible catalog and listener visibility |
 
-`who_am_i` and `list_catalogs` are always discoverable by an active portal
-user. The remaining tools are discoverable when the user has their required
-capability in at least one catalog. Discovery is only a usability hint: every
-catalog-scoped call authorizes its resolved catalog and target again.
+All tools are discoverable by an active portal user. Discovery is only a
+usability surface: every catalog-scoped call authorizes its resolved catalog and
+applies listener visibility again.
 
 ### `who_am_i`
 
@@ -347,15 +341,15 @@ Example return value:
 ### `list_catalogs`
 
 Use this as the entry point when the catalog is unknown or when a later tool
-returns a catalog-related permission error.
+returns a catalog-related not-found error.
 
 | Argument | Type                  | Default | Meaning                                       |
 | -------- | --------------------- | ------- | --------------------------------------------- |
 | `cursor` | string                | omitted | ID of the last catalog from the previous page |
 | `limit`  | integer from 1 to 100 | `50`    | Maximum catalogs in the page                  |
 
-Each item in `catalogs` contains `id`, `label`, `catalogGrant`,
-`isCatalogAdmin`, and the capability flags used by the other tools. It also
+Each item in `catalogs` contains `id`, `label`, the web `catalogGrant`,
+`isCatalogAdmin`, and the uniform MCP capability flags. It also
 distinguishes `isUserDefault`, `isGlobalDefault`, and `isEffectiveDefault`.
 The top-level `defaultCatalogId` is the catalog selected when a catalog-scoped
 tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
@@ -382,7 +376,7 @@ Example return value:
         "canGetRecordings": true,
         "canViewTranscripts": true,
         "canSearchTranscripts": true,
-        "canSeeUnreleasedEvents": true
+        "canSeeUnreleasedEvents": false
       }
     }
   ],
@@ -475,7 +469,7 @@ Use this tool to browse events or resolve an event ID before calling
 | `cursor`     | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page       |
 | `limit`      | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
 | `order`      | `asc` or `desc`                          | `desc`            | Chronological date order; ascending returns oldest events first        |
-| `released`   | boolean                                  | omitted           | Include only released or only unreleased events                        |
+| `released`   | boolean                                  | omitted           | Restrict released results; `false` is empty under MCP visibility       |
 | `query`      | non-empty string, at most 200 characters | omitted           | Case-insensitive literal match against title, description, or location |
 | `date`       | partial date object                      | omitted           | Event date prefix: required `year`, optional `month`, optional `day`   |
 | `locationId` | positive integer                         | omitted           | Exact event location ID                                                |
@@ -487,8 +481,9 @@ is known.
 
 Events are ordered by event year, month, day, session index, and ID in the
 selected direction. Missing month or day values sort after known values. Each
-event includes its metadata, release state, last-updated timestamp, authenticated `webUrl`, and a
-permission-scoped `recordings` object. `recordings.audioHashes` contains every
+event includes its metadata, release state, last-updated timestamp,
+authenticated `webUrl`, and a listener-scoped `recordings` object.
+`recordings.audioHashes` contains every
 visible attached recording hash in event sort order.
 `recordings.primaryAudioHash` identifies the visible primary recording, falls
 back to the first visible recording when no primary is marked, and is `null`
@@ -954,8 +949,8 @@ Expected tool failures set `isError: true` and return the same object in
 ```json
 {
   "error": {
-    "code": "permission_denied",
-    "message": "Catalog permission does not allow canViewTranscripts",
+    "code": "not_found",
+    "message": "Catalog not found or inaccessible",
     "retryable": false
   }
 }
@@ -966,7 +961,6 @@ Expected tool failures set `isError: true` and return the same object in
 | `catalog_required`      | No effective default exists; supply `catalogId`                                    |
 | `invalid_cursor`        | The catalog cursor is not present in the accessible catalog list                   |
 | `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
-| `permission_denied`     | The catalog or recording is visible, but the requested capability is unavailable   |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
 | `transcript_not_found`  | The requested recording/backend has no readable stored transcript                  |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
@@ -996,13 +990,10 @@ catalog can be resolved, the tool returns a clear `catalog_required` error.
 
 - Use not-found semantics when revealing the existence of an inaccessible
   event or recording would leak information.
-- Use a permission error for an accessible catalog whose role does not allow a
-  known capability such as transcripts.
-- Keep error messages capability-oriented rather than naming a particular role;
-  canonical policy is the source of truth for which roles grant a capability.
 - Do not include transcript content in logs, metrics, OAuth claims, or errors.
 - Enforce server-side result limits even when a client supplies a larger value.
-- Search results must pass the same catalog and recording policy as direct reads.
+- Search results must pass the same catalog-membership and listener-visibility
+  policy as direct reads.
 - MCP code calls reusable application services; it must not call Besedy's own
   HTTP routes or duplicate their queries.
 
@@ -1025,17 +1016,18 @@ relation may be cleared by account deletion.
 Telemetry must never contain bearer or refresh tokens, raw search queries,
 transcript text, complete tool arguments, or response content. Search usage
 records no query or filter details; transcript reads record only returned
-character counts. Permission denials are also mirrored into `audit_log` as
+character counts. MCP request denials are also mirrored into `audit_log` as
 security events with `resource = 'mcp'`. A telemetry-write failure is logged but
 must not change the MCP tool result.
 
-## Change checklist for permissions
+## Change checklist for access
 
-Any access-level change is incomplete until all of these are true:
+An MCP access change is incomplete until all of these are true:
 
-1. change the canonical policy function;
-2. update its matrix/table-driven tests;
-3. verify the web API/UI consumes the resulting capability;
-4. verify MCP discovery and invocation consume the same capability;
+1. preserve active-account enforcement at the OAuth boundary;
+2. preserve live catalog membership during profile construction and invocation;
+3. preserve listener visibility for events, recordings, transcripts, and search;
+4. verify every active account receives the complete tool list;
 5. update this descriptive matrix; and
-6. run type checks and the web/MCP authorization suites.
+6. run type checks and the web/MCP authorization suites without changing web
+   access-level behavior.

@@ -69,7 +69,7 @@ export function registerListEventsTool(
           .boolean()
           .optional()
           .describe(
-            'When supplied, include only released or only unreleased events.',
+            'When true, include released events. False returns no results because MCP never exposes unreleased events.',
           ),
         query: z
           .string()
@@ -105,11 +105,11 @@ export function registerListEventsTool(
       date,
       locationId,
     }) => {
-      const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          listMcpEvents(catalog.id, catalog.catalogGrant, {
+          listMcpEvents(catalog.id, {
             cursor,
             limit,
             order,

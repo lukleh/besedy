@@ -126,9 +126,7 @@ function catalog(
   id: string,
   catalogGrant: 'LISTENER' | 'VIEWER',
   isEffectiveDefault: boolean,
-  capabilityOverrides: Partial<McpCatalogAccess['capabilities']> = {},
 ): McpCatalogAccess {
-  const elevated = catalogGrant === 'VIEWER';
   return {
     id,
     label: id,
@@ -140,10 +138,9 @@ function catalog(
     capabilities: {
       canListEvents: true,
       canGetRecordings: true,
-      canViewTranscripts: elevated,
-      canSearchTranscripts: elevated,
-      canSeeUnreleasedEvents: elevated,
-      ...capabilityOverrides,
+      canViewTranscripts: true,
+      canSearchTranscripts: true,
+      canSeeUnreleasedEvents: false,
     },
   };
 }
@@ -210,12 +207,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: null,
       defaultCatalogSource: null,
       catalogs: [],
-      aggregate: {
-        canListEvents: false,
-        canGetRecordings: false,
-        canViewTranscripts: false,
-        canSearchTranscripts: false,
-      },
     };
     vi.mocked(getMcpIdentity).mockResolvedValue({
       userId: 'user-1',
@@ -227,6 +218,24 @@ describe('MCP personalized tool surface', () => {
     });
   });
 
+  it('exposes every tool to an active user without catalog grants', async () => {
+    const body = await invokeMcp('tools/list');
+    const tools = body.result?.tools as Array<{ name: string }>;
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'who_am_i',
+      'list_catalogs',
+      'list_locations',
+      'list_recorders',
+      'list_events',
+      'get_event',
+      'get_recording',
+      'get_transcript',
+      'search_transcripts',
+      'find_transcript_mentions',
+    ]);
+  });
+
   it('reports the current account, client, scopes, and access summary', async () => {
     accessProfile = {
       userId: 'user-1',
@@ -235,12 +244,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
 
     const body = await invokeMcp('tools/call', {
@@ -277,12 +280,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: null,
       defaultCatalogSource: null,
       catalogs: [],
-      aggregate: {
-        canListEvents: false,
-        canGetRecordings: false,
-        canViewTranscripts: false,
-        canSearchTranscripts: false,
-      },
     };
 
     const body = await invokeMcp(
@@ -315,12 +312,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: null,
       defaultCatalogSource: null,
       catalogs: [],
-      aggregate: {
-        canListEvents: false,
-        canGetRecordings: false,
-        canViewTranscripts: false,
-        canSearchTranscripts: false,
-      },
     };
     vi.mocked(getMcpIdentity).mockResolvedValueOnce(null);
 
@@ -348,12 +339,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'global_default',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
 
     const successBody = await invokeMcp('tools/call', {
@@ -388,7 +373,7 @@ describe('MCP personalized tool surface', () => {
     });
   });
 
-  it('omits transcript-derived tools for a listener-only user', async () => {
+  it('exposes every tool to a listener-only user', async () => {
     accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
@@ -396,12 +381,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'listener-catalog',
       defaultCatalogSource: 'global_default',
       catalogs: [catalog('listener-catalog', 'LISTENER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: false,
-        canSearchTranscripts: false,
-      },
     };
 
     const body = await invokeMcp('tools/list');
@@ -414,6 +393,9 @@ describe('MCP personalized tool surface', () => {
       'list_events',
       'get_event',
       'get_recording',
+      'get_transcript',
+      'search_transcripts',
+      'find_transcript_mentions',
     ]);
     expect(getMcpIdentity).not.toHaveBeenCalled();
   });
@@ -429,12 +411,6 @@ describe('MCP personalized tool surface', () => {
         catalog('listener-catalog', 'LISTENER', false),
         catalog('viewer-catalog', 'VIEWER', true),
       ],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
 
     const body = await invokeMcp('tools/list');
@@ -473,12 +449,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
 
     const body = await invokeMcp('tools/list');
@@ -602,12 +572,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(listMcpEvents).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -621,7 +585,7 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
-    expect(listMcpEvents).toHaveBeenCalledWith('viewer-catalog', 'VIEWER', {
+    expect(listMcpEvents).toHaveBeenCalledWith('viewer-catalog', {
       cursor: undefined,
       limit: 25,
       order: 'desc',
@@ -653,7 +617,7 @@ describe('MCP personalized tool surface', () => {
         locationId: 7,
       },
     });
-    expect(listMcpEvents).toHaveBeenLastCalledWith('viewer-catalog', 'VIEWER', {
+    expect(listMcpEvents).toHaveBeenLastCalledWith('viewer-catalog', {
       cursor: 'event-cursor',
       limit: 25,
       order: 'asc',
@@ -672,12 +636,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(listMcpLocations).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -694,18 +652,17 @@ describe('MCP personalized tool surface', () => {
       name: 'list_locations',
       arguments: { query: 'Prague', limit: 10 },
     });
-    expect(listMcpLocations).toHaveBeenCalledWith(
-      'viewer-catalog',
-      'VIEWER',
-      true,
-      { query: 'Prague', cursor: undefined, limit: 10 },
-    );
+    expect(listMcpLocations).toHaveBeenCalledWith('viewer-catalog', {
+      query: 'Prague',
+      cursor: undefined,
+      limit: 10,
+    });
 
     await invokeMcp('tools/call', {
       name: 'list_recorders',
       arguments: { query: 'Petr', cursor: 'cursor' },
     });
-    expect(listMcpRecorders).toHaveBeenCalledWith('viewer-catalog', 'VIEWER', {
+    expect(listMcpRecorders).toHaveBeenCalledWith('viewer-catalog', {
       query: 'Petr',
       cursor: 'cursor',
       limit: 50,
@@ -720,12 +677,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(getMcpEvent).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -751,7 +702,7 @@ describe('MCP personalized tool surface', () => {
 
     expect(body.error).toBeUndefined();
     expect(body.result?.isError).not.toBe(true);
-    expect(getMcpEvent).toHaveBeenCalledWith('viewer-catalog', 42, 'VIEWER', {
+    expect(getMcpEvent).toHaveBeenCalledWith('viewer-catalog', 42, {
       offset: 0,
       limit: 25,
     });
@@ -765,12 +716,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(getMcpRecording).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -802,7 +747,6 @@ describe('MCP personalized tool surface', () => {
     expect(body.error).toBeUndefined();
     expect(body.result?.isError).not.toBe(true);
     expect(getMcpRecording).toHaveBeenCalledWith(
-      'user-1',
       'viewer-catalog',
       'a'.repeat(64),
       { offset: 0, limit: 25 },
@@ -817,12 +761,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(getMcpTranscript).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -886,7 +824,6 @@ describe('MCP personalized tool surface', () => {
       },
     });
     expect(getMcpTranscript).toHaveBeenCalledWith(
-      'user-1',
       'viewer-catalog',
       'a'.repeat(64),
       {
@@ -905,7 +842,6 @@ describe('MCP personalized tool surface', () => {
       arguments: { audioHash: 'a'.repeat(64), mode: 'full' },
     });
     expect(getMcpTranscript).toHaveBeenLastCalledWith(
-      'user-1',
       'viewer-catalog',
       'a'.repeat(64),
       {
@@ -925,12 +861,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(searchMcpTranscripts).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -1007,17 +937,13 @@ describe('MCP personalized tool surface', () => {
         ),
       },
     ]);
-    expect(searchMcpTranscripts).toHaveBeenCalledWith(
-      'viewer-catalog',
-      'VIEWER',
-      {
-        query: 'search phrase',
-        limit: 50,
-        contextChunks: 1,
-        maxPerRecording: 10,
-        filters: undefined,
-      },
-    );
+    expect(searchMcpTranscripts).toHaveBeenCalledWith('viewer-catalog', {
+      query: 'search phrase',
+      limit: 50,
+      contextChunks: 1,
+      maxPerRecording: 10,
+      filters: undefined,
+    });
   });
 
   it('applies symmetric lexical-search defaults and match mode', async () => {
@@ -1028,12 +954,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(findMcpTranscriptMentions).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -1056,53 +976,14 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
-    expect(findMcpTranscriptMentions).toHaveBeenCalledWith(
-      'viewer-catalog',
-      'VIEWER',
-      {
-        query: 'exact phrase',
-        matchMode: 'all_terms',
-        limit: 50,
-        contextChunks: 1,
-        maxPerRecording: 10,
-        filters: undefined,
-      },
-    );
-  });
-
-  it('still denies a transcript call against a listener catalog', async () => {
-    accessProfile = {
-      userId: 'user-1',
-      ...activeProfileFields,
-      canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [
-        catalog('listener-catalog', 'LISTENER', false),
-        catalog('viewer-catalog', 'VIEWER', true),
-      ],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
-    };
-
-    const body = await invokeMcp('tools/call', {
-      name: 'get_transcript',
-      arguments: {
-        catalogId: 'listener-catalog',
-        audioHash: 'a'.repeat(64),
-        mode: 'page',
-      },
+    expect(findMcpTranscriptMentions).toHaveBeenCalledWith('viewer-catalog', {
+      query: 'exact phrase',
+      matchMode: 'all_terms',
+      limit: 50,
+      contextChunks: 1,
+      maxPerRecording: 10,
+      filters: undefined,
     });
-    const structuredContent = body.result?.structuredContent as {
-      error: { code: string; retryable: boolean };
-    };
-    expect(structuredContent.error.code).toBe('permission_denied');
-    expect(structuredContent.error.retryable).toBe(false);
-    expect(getMcpTranscript).not.toHaveBeenCalled();
   });
 
   it('does not reveal inaccessible catalogs through any catalog tool', async () => {
@@ -1113,12 +994,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     for (const call of catalogToolCalls('missing-catalog')) {
       const body = await invokeMcp('tools/call', call);
@@ -1143,46 +1018,6 @@ describe('MCP personalized tool surface', () => {
     expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
   });
 
-  it('checks each resolved catalog capability at invocation time', async () => {
-    const deniedCatalog = catalog('denied-catalog', 'VIEWER', false, {
-      canListEvents: false,
-      canGetRecordings: false,
-      canViewTranscripts: false,
-      canSearchTranscripts: false,
-    });
-    accessProfile = {
-      userId: 'user-1',
-      ...activeProfileFields,
-      canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [deniedCatalog, catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
-    };
-    for (const call of catalogToolCalls('denied-catalog')) {
-      const body = await invokeMcp('tools/call', call);
-      expect(body.result).toMatchObject({
-        isError: true,
-        structuredContent: {
-          error: { code: 'permission_denied', retryable: false },
-        },
-      });
-    }
-    expect(listMcpEvents).not.toHaveBeenCalled();
-    expect(listMcpLocations).not.toHaveBeenCalled();
-    expect(listMcpRecorders).not.toHaveBeenCalled();
-    expect(getMcpEvent).not.toHaveBeenCalled();
-    expect(getMcpRecording).not.toHaveBeenCalled();
-    expect(getMcpTranscript).not.toHaveBeenCalled();
-    expect(searchMcpTranscripts).not.toHaveBeenCalled();
-    expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
-  });
-
   it('marks transient read failures as retryable', async () => {
     accessProfile = {
       userId: 'user-1',
@@ -1191,12 +1026,6 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
-      aggregate: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-      },
     };
     vi.mocked(searchMcpTranscripts).mockRejectedValue(
       new McpReadError(

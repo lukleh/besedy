@@ -38,25 +38,14 @@ export function createBesedyMcpServer(
   registerWhoAmITool(server, context);
   registerListCatalogsTool(server, context);
 
-  if (profile.aggregate.canGetRecordings) {
-    registerListLocationsTool(server, context);
-    registerListRecordersTool(server, context);
-  }
-
-  if (profile.aggregate.canListEvents) {
-    registerListEventsTool(server, context);
-    registerGetEventTool(server, context);
-  }
-  if (profile.aggregate.canGetRecordings) {
-    registerGetRecordingTool(server, context);
-  }
-  if (profile.aggregate.canViewTranscripts) {
-    registerGetTranscriptTool(server, context);
-  }
-  if (profile.aggregate.canSearchTranscripts) {
-    registerSearchTranscriptsTool(server, context);
-    registerFindTranscriptMentionsTool(server, context);
-  }
+  registerListLocationsTool(server, context);
+  registerListRecordersTool(server, context);
+  registerListEventsTool(server, context);
+  registerGetEventTool(server, context);
+  registerGetRecordingTool(server, context);
+  registerGetTranscriptTool(server, context);
+  registerSearchTranscriptsTool(server, context);
+  registerFindTranscriptMentionsTool(server, context);
 
   return server;
 }

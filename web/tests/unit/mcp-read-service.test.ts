@@ -3,8 +3,8 @@ import prisma from '@/lib/db';
 import {
   getPublishedAccessibleRecordingHashes,
   getPublishedVisibleEventIds,
+  isPublishedVisibleEvent,
 } from '@/lib/catalog-events/visibility';
-import { getRecordingCapability } from '@/lib/access/capabilities';
 import { getAvailableTranscripts, loadTranscript } from '@/lib/transcript';
 import {
   executeCatalogLexicalSearch,
@@ -31,10 +31,6 @@ vi.mock('@/lib/db', () => ({
     location: { findMany: vi.fn() },
     recorder: { findMany: vi.fn() },
   },
-}));
-
-vi.mock('@/lib/access/capabilities', () => ({
-  getRecordingCapability: vi.fn(),
 }));
 
 vi.mock('@/lib/transcript', () => ({
@@ -84,14 +80,10 @@ describe('MCP read service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getPublishedVisibleEventIds).mockResolvedValue([42]);
+    vi.mocked(isPublishedVisibleEvent).mockResolvedValue(true);
     vi.mocked(getPublishedAccessibleRecordingHashes).mockResolvedValue(
       new Set(['visible-recording']),
     );
-    vi.mocked(getRecordingCapability).mockResolvedValue({
-      canAccessRecording: true,
-      canViewRecordingTranscripts: true,
-      catalogGrant: 'VIEWER',
-    } as Awaited<ReturnType<typeof getRecordingCapability>>);
     vi.mocked(getAvailableTranscripts).mockResolvedValue({
       hash: 'visible-recording',
       backends: ['whisperx/model'],
@@ -267,7 +259,7 @@ describe('MCP read service', () => {
   });
 
   it('filters events by partial date and location and returns visible hashes', async () => {
-    const result = await listMcpEvents('catalog-a', 'LISTENER', {
+    const result = await listMcpEvents('catalog-a', {
       limit: 25,
       order: 'desc',
       query: 'subject',
@@ -352,7 +344,7 @@ describe('MCP read service', () => {
     ]);
     db.recorder.findMany.mockResolvedValue([{ id: 3, name: 'Petr' }]);
 
-    const locations = await listMcpLocations('catalog-a', 'LISTENER', true, {
+    const locations = await listMcpLocations('catalog-a', {
       limit: 1,
     });
 
@@ -374,26 +366,24 @@ describe('MCP read service', () => {
       nextCursor: expect.any(String),
     });
 
-    const nextLocations = await listMcpLocations(
-      'catalog-a',
-      'LISTENER',
-      true,
-      { cursor: locations.nextCursor!, limit: 1 },
-    );
+    const nextLocations = await listMcpLocations('catalog-a', {
+      cursor: locations.nextCursor!,
+      limit: 1,
+    });
     expect(nextLocations).toEqual({
       catalogId: 'catalog-a',
       locations: [{ id: 9, name: 'Vienna', eventCount: 1, recordingCount: 0 }],
       nextCursor: null,
     });
     await expect(
-      listMcpLocations('catalog-a', 'LISTENER', true, {
+      listMcpLocations('catalog-a', {
         cursor: locations.nextCursor!,
         limit: 1,
         query: 'Vienna',
       }),
     ).rejects.toMatchObject({ code: 'invalid_cursor', retryable: false });
 
-    const recorders = await listMcpRecorders('catalog-a', 'LISTENER', {
+    const recorders = await listMcpRecorders('catalog-a', {
       limit: 50,
       query: 'pet',
     });
@@ -412,7 +402,7 @@ describe('MCP read service', () => {
     });
   });
 
-  it('does not expose event-only locations when event browsing is unavailable', async () => {
+  it('includes locations from released events', async () => {
     db.audioMetadata.findMany.mockResolvedValue([
       {
         audioHash: 'visible-recording',
@@ -421,23 +411,24 @@ describe('MCP read service', () => {
       },
     ]);
     db.location.findMany.mockResolvedValue([{ id: 7, name: 'Prague' }]);
+    db.catalogEvent.findMany.mockResolvedValue([{ locationId: 7 }]);
 
-    const result = await listMcpLocations('catalog-a', 'LISTENER', false, {
+    const result = await listMcpLocations('catalog-a', {
       limit: 50,
     });
 
-    expect(db.catalogEvent.findMany).not.toHaveBeenCalled();
+    expect(db.catalogEvent.findMany).toHaveBeenCalled();
     expect(result.locations).toEqual([
       {
         id: 7,
         name: 'Prague',
-        eventCount: null,
+        eventCount: 1,
         recordingCount: 1,
       },
     ]);
   });
 
-  it('excludes orphaned curated metadata from elevated-reader lookups', async () => {
+  it('excludes recordings outside listener visibility from lookups', async () => {
     db.audioMetadata.findMany.mockResolvedValue([
       {
         audioHash: 'visible-recording',
@@ -450,34 +441,24 @@ describe('MCP read service', () => {
         recorderId: 4,
       },
     ]);
-    db.catalogEntry.findMany.mockResolvedValue([
-      { audioHash: 'visible-recording' },
-    ]);
     db.location.findMany.mockResolvedValue([{ id: 7, name: 'Prague' }]);
     db.recorder.findMany.mockResolvedValue([{ id: 3, name: 'Petr' }]);
 
-    const locations = await listMcpLocations(
-      'catalog-a',
-      'VIEWER',
-      false,
-      { limit: 50 },
-    );
-    const recorders = await listMcpRecorders('catalog-a', 'VIEWER', {
+    const locations = await listMcpLocations('catalog-a', { limit: 50 });
+    const recorders = await listMcpRecorders('catalog-a', {
       limit: 50,
     });
 
-    expect(db.catalogEntry.findMany).toHaveBeenCalledWith({
-      where: {
-        workflowGroupId: 'catalog-a',
-        audioHash: { in: ['visible-recording', 'orphaned-recording'] },
-      },
-      select: { audioHash: true },
-    });
+    expect(getPublishedAccessibleRecordingHashes).toHaveBeenCalledWith(
+      prisma,
+      'catalog-a',
+      ['visible-recording', 'orphaned-recording'],
+    );
     expect(locations.locations).toEqual([
       {
         id: 7,
         name: 'Prague',
-        eventCount: null,
+        eventCount: 0,
         recordingCount: 1,
       },
     ]);
@@ -487,7 +468,7 @@ describe('MCP read service', () => {
   });
 
   it('treats event query metacharacters as literal text', async () => {
-    await listMcpEvents('catalog-a', 'VIEWER', {
+    await listMcpEvents('catalog-a', {
       limit: 25,
       order: 'desc',
       query: String.raw`100%_done\today`,
@@ -528,7 +509,7 @@ describe('MCP read service', () => {
       { ...event, id: 43, sessionIndex: 2 },
     ]);
 
-    const firstPage = await listMcpEvents('catalog-a', 'VIEWER', {
+    const firstPage = await listMcpEvents('catalog-a', {
       limit: 1,
       order: 'asc',
     });
@@ -547,7 +528,7 @@ describe('MCP read service', () => {
     );
 
     db.catalogEvent.findMany.mockResolvedValueOnce([]);
-    await listMcpEvents('catalog-a', 'VIEWER', {
+    await listMcpEvents('catalog-a', {
       cursor: firstPage.nextCursor!,
       limit: 1,
       order: 'asc',
@@ -593,13 +574,13 @@ describe('MCP read service', () => {
       partialDateEvent,
       { ...partialDateEvent, id: 41 },
     ]);
-    const firstPage = await listMcpEvents('catalog-a', 'VIEWER', {
+    const firstPage = await listMcpEvents('catalog-a', {
       limit: 1,
       order: 'desc',
     });
 
     db.catalogEvent.findMany.mockResolvedValueOnce([]);
-    await listMcpEvents('catalog-a', 'VIEWER', {
+    await listMcpEvents('catalog-a', {
       cursor: firstPage.nextCursor!,
       limit: 1,
       order: 'desc',
@@ -639,7 +620,7 @@ describe('MCP read service', () => {
 
   it('rejects malformed or mismatched event cursors', async () => {
     await expect(
-      listMcpEvents('catalog-a', 'VIEWER', {
+      listMcpEvents('catalog-a', {
         cursor: 'not-a-cursor',
         limit: 25,
         order: 'desc',
@@ -660,7 +641,7 @@ describe('MCP read service', () => {
       'utf8',
     ).toString('base64url');
     await expect(
-      listMcpEvents('catalog-a', 'VIEWER', {
+      listMcpEvents('catalog-a', {
         cursor,
         limit: 25,
         order: 'desc',
@@ -669,12 +650,7 @@ describe('MCP read service', () => {
   });
 
   it('returns a bounded page of compact recording summaries and links', async () => {
-    db.catalogEntry.findMany.mockResolvedValueOnce([
-      { audioHash: 'visible-recording' },
-      { audioHash: 'hidden-recording' },
-    ]);
-
-    const result = await getMcpEvent('catalog-a', 42, 'VIEWER', {
+    const result = await getMcpEvent('catalog-a', 42, {
       offset: 0,
       limit: 1,
     });
@@ -707,26 +683,25 @@ describe('MCP read service', () => {
               sortOrder: 0,
             },
           ],
-          totalVisible: 2,
-          nextOffset: 1,
+          totalVisible: 1,
+          nextOffset: null,
         },
       },
     });
   });
 
   it('returns detailed recording metadata with a bounded visible event page', async () => {
-    const result = await getMcpRecording(
-      'user-1',
-      'catalog-a',
-      'visible-recording',
-      { offset: 0, limit: 1 },
-    );
+    const result = await getMcpRecording('catalog-a', 'visible-recording', {
+      offset: 0,
+      limit: 1,
+    });
 
     expect(db.catalogEventRecording.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           workflowGroupId: 'catalog-a',
           audioHash: 'visible-recording',
+          eventId: { in: [42] },
         },
         skip: 0,
         take: 1,
@@ -759,19 +734,13 @@ describe('MCP read service', () => {
     });
   });
 
-  it('scopes linked event pagination and totals for listeners', async () => {
-    vi.mocked(getRecordingCapability).mockResolvedValue({
-      canAccessRecording: true,
-      catalogGrant: 'LISTENER',
-    } as Awaited<ReturnType<typeof getRecordingCapability>>);
+  it('scopes linked event pagination and totals to released events', async () => {
     db.catalogEventRecording.count.mockResolvedValue(1);
 
-    const result = await getMcpRecording(
-      'listener-1',
-      'catalog-a',
-      'visible-recording',
-      { offset: 0, limit: 25 },
-    );
+    const result = await getMcpRecording('catalog-a', 'visible-recording', {
+      offset: 0,
+      limit: 25,
+    });
 
     const permissionScopedWhere = {
       workflowGroupId: 'catalog-a',
@@ -787,21 +756,36 @@ describe('MCP read service', () => {
     expect(result.events.totalVisible).toBe(1);
   });
 
-  it('returns a half-open time range bounded by transcript text size', async () => {
-    const result = await getMcpTranscript(
-      'user-1',
-      'catalog-a',
-      'visible-recording',
-      {
+  it('hides unpublished recordings from metadata and transcript reads', async () => {
+    await expect(
+      getMcpRecording('catalog-a', 'hidden-recording', {
+        offset: 0,
+        limit: 25,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found', retryable: false });
+
+    await expect(
+      getMcpTranscript('catalog-a', 'hidden-recording', {
         mode: 'page',
-        backend: 'whisperx/model',
-        startSec: 5,
-        endSec: 15,
         segmentOffset: 0,
         segmentLimit: 50,
-        maxTextChars: 1_000,
-      },
-    );
+        maxTextChars: 20_000,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found', retryable: false });
+
+    expect(getAvailableTranscripts).not.toHaveBeenCalled();
+  });
+
+  it('returns a half-open time range bounded by transcript text size', async () => {
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', {
+      mode: 'page',
+      backend: 'whisperx/model',
+      startSec: 5,
+      endSec: 15,
+      segmentOffset: 0,
+      segmentLimit: 50,
+      maxTextChars: 1_000,
+    });
 
     expect(result).toMatchObject({
       catalogId: 'catalog-a',
@@ -851,15 +835,10 @@ describe('MCP read service', () => {
   });
 
   it('returns every matching transcript segment in full mode', async () => {
-    const result = await getMcpTranscript(
-      'user-1',
-      'catalog-a',
-      'visible-recording',
-      {
-        mode: 'full',
-        startSec: 5,
-      },
-    );
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', {
+      mode: 'full',
+      startSec: 5,
+    });
 
     expect(result).toMatchObject({
       mode: 'full',
@@ -881,17 +860,12 @@ describe('MCP read service', () => {
   });
 
   it('omits absent time bounds from replayable page continuations', async () => {
-    const result = await getMcpTranscript(
-      'user-1',
-      'catalog-a',
-      'visible-recording',
-      {
-        mode: 'page',
-        segmentOffset: 0,
-        segmentLimit: 2,
-        maxTextChars: 1_000,
-      },
-    );
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', {
+      mode: 'page',
+      segmentOffset: 0,
+      segmentLimit: 2,
+      maxTextChars: 1_000,
+    });
 
     expect(result.continuation).toEqual({
       catalogId: 'catalog-a',
@@ -905,17 +879,12 @@ describe('MCP read service', () => {
   });
 
   it('builds seek links from the first segment actually returned after an offset', async () => {
-    const result = await getMcpTranscript(
-      'user-1',
-      'catalog-a',
-      'visible-recording',
-      {
-        mode: 'page',
-        segmentOffset: 2,
-        segmentLimit: 1,
-        maxTextChars: 1_000,
-      },
-    );
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', {
+      mode: 'page',
+      segmentOffset: 2,
+      segmentLimit: 1,
+      maxTextChars: 1_000,
+    });
 
     expect(result.seekWebUrl).toBe(
       'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10&end=15',
@@ -931,17 +900,12 @@ describe('MCP read service', () => {
   });
 
   it('returns a null seek link when the requested transcript page is empty', async () => {
-    const result = await getMcpTranscript(
-      'user-1',
-      'catalog-a',
-      'visible-recording',
-      {
-        mode: 'page',
-        segmentOffset: 10,
-        segmentLimit: 1,
-        maxTextChars: 1_000,
-      },
-    );
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', {
+      mode: 'page',
+      segmentOffset: 10,
+      segmentLimit: 1,
+      maxTextChars: 1_000,
+    });
 
     expect(result.seekWebUrl).toBeNull();
     expect(result.segments.items).toEqual([]);
@@ -949,7 +913,7 @@ describe('MCP read service', () => {
 
   it('returns compact grounded search matches with seekable recording links', async () => {
     const filters = { eventIds: [42], dateYears: [2026], verified: true };
-    const result = await searchMcpTranscripts('catalog-a', 'VIEWER', {
+    const result = await searchMcpTranscripts('catalog-a', {
       query: 'search phrase',
       limit: 10,
       contextChunks: 1,
@@ -965,7 +929,7 @@ describe('MCP read service', () => {
       neighborCount: 1,
       maxPerAudio: 2,
       metadataFilters: filters,
-      accessLevel: 'VIEWER',
+      accessLevel: 'LISTENER',
       failOnMissingBundle: true,
     });
     expect(result).toEqual({
@@ -1040,7 +1004,7 @@ describe('MCP read service', () => {
     } as unknown as Awaited<ReturnType<typeof executeCatalogLexicalSearch>>);
     const filters = { eventIds: [42], dateYears: [2026], verified: true };
 
-    const result = await findMcpTranscriptMentions('catalog-a', 'VIEWER', {
+    const result = await findMcpTranscriptMentions('catalog-a', {
       query: 'exact phrase',
       matchMode: 'phrase',
       limit: 10,
@@ -1058,7 +1022,7 @@ describe('MCP read service', () => {
       neighborCount: 1,
       maxPerAudio: 2,
       metadataFilters: filters,
-      accessLevel: 'VIEWER',
+      accessLevel: 'LISTENER',
       failOnMissingBundle: true,
     });
     expect(result.retrieval).toEqual({
@@ -1078,7 +1042,7 @@ describe('MCP read service', () => {
     );
 
     await expect(
-      searchMcpTranscripts('catalog-a', 'VIEWER', {
+      searchMcpTranscripts('catalog-a', {
         query: 'search phrase',
         limit: 10,
         contextChunks: 0,
@@ -1097,7 +1061,7 @@ describe('MCP read service', () => {
     );
 
     await expect(
-      searchMcpTranscripts('catalog-a', 'VIEWER', {
+      searchMcpTranscripts('catalog-a', {
         query: 'search phrase',
         limit: 10,
         contextChunks: 0,

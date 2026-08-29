@@ -119,15 +119,11 @@ export function registerFindTranscriptMentionsTool(
       maxPerRecording,
       filters,
     }) => {
-      const catalog = resolveToolCatalog(
-        profile,
-        catalogId,
-        'canSearchTranscripts',
-      );
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          findMcpTranscriptMentions(catalog.id, catalog.catalogGrant, {
+          findMcpTranscriptMentions(catalog.id, {
             query,
             matchMode,
             limit,

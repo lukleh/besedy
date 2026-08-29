@@ -44,7 +44,7 @@ export function registerListCatalogsTool(
     {
       title: 'List Besedy catalogs',
       description:
-        'List the catalogs available to the current user and the read capabilities allowed in each catalog.',
+        'List the catalogs available to the current user and their uniform MCP read capabilities.',
       inputSchema: z.object({
         cursor: z
           .string()

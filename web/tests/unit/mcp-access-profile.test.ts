@@ -64,7 +64,7 @@ describe('MCP access profile', () => {
     ]);
   });
 
-  it('derives listener and viewer MCP capabilities from canonical policy', async () => {
+  it('gives every accessible catalog the uniform MCP read surface', async () => {
     const profile = await getMcpAccessProfile('user-1');
 
     expect(profile).toMatchObject({
@@ -82,8 +82,8 @@ describe('MCP access profile', () => {
         capabilities: {
           canListEvents: true,
           canGetRecordings: true,
-          canViewTranscripts: false,
-          canSearchTranscripts: false,
+          canViewTranscripts: true,
+          canSearchTranscripts: true,
           canSeeUnreleasedEvents: false,
         },
       }),
@@ -99,18 +99,12 @@ describe('MCP access profile', () => {
           canGetRecordings: true,
           canViewTranscripts: true,
           canSearchTranscripts: true,
-          canSeeUnreleasedEvents: true,
+          canSeeUnreleasedEvents: false,
         },
       }),
     ]);
     expect(profile.defaultCatalogId).toBe('catalog-viewer');
     expect(profile.defaultCatalogSource).toBe('user_preference');
-    expect(profile.aggregate).toEqual({
-      canListEvents: true,
-      canGetRecordings: true,
-      canViewTranscripts: true,
-      canSearchTranscripts: true,
-    });
   });
 
   it('returns no MCP catalogs for a blocked user', async () => {
@@ -130,6 +124,17 @@ describe('MCP access profile', () => {
     });
     expect(prisma.workflowGroup.findMany).not.toHaveBeenCalled();
     expect(listUserCatalogAccessEntries).not.toHaveBeenCalled();
+  });
+
+  it('keeps an active user without grants eligible for MCP tools but no catalogs', async () => {
+    vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([]);
+    prisma.workflowGroup.findMany.mockResolvedValue([]);
+
+    await expect(getMcpAccessProfile('user-1')).resolves.toMatchObject({
+      canEnterPortal: true,
+      defaultCatalogId: null,
+      catalogs: [],
+    });
   });
 
   it('reuses a provided canonical actor', async () => {
@@ -168,7 +173,7 @@ describe('MCP access profile', () => {
     expect(getUserFeaturePreferences).not.toHaveBeenCalled();
   });
 
-  it('gives catalog admins the complete read surface', async () => {
+  it('keeps catalog admin discovery while applying listener visibility', async () => {
     vi.mocked(resolvePortalActorContext).mockResolvedValue({
       userId: 'admin-1',
       isAuthenticated: true,
@@ -197,7 +202,7 @@ describe('MCP access profile', () => {
         canGetRecordings: true,
         canViewTranscripts: true,
         canSearchTranscripts: true,
-        canSeeUnreleasedEvents: true,
+        canSeeUnreleasedEvents: false,
       },
     });
   });

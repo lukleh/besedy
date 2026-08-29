@@ -488,7 +488,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         canGetRecordings: true,
         canViewTranscripts: true,
         canSearchTranscripts: true,
-        canSeeUnreleasedEvents: true,
+        canSeeUnreleasedEvents: false,
       },
     });
 
@@ -530,7 +530,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     }
 
     const expectedEvents = TEST_EVENTS.filter(
-      (event) => event.dateYear === 2024,
+      (event) => event.dateYear === 2024 && event.released,
     );
     const listedEvents: McpListedEvent[] = [];
     let eventCursor: string | undefined;
@@ -591,7 +591,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(listedEvents).toEqual(
       [...listedEvents].sort(compareMcpListedEvents),
     );
-    expect(listedEvents.some((event) => !event.released)).toBe(true);
+    expect(listedEvents.every((event) => event.released)).toBe(true);
     const event = listedEvents.find(
       (candidate) =>
         candidate.recordings.primaryAudioHash === MCP_FIXTURE_RECORDING.hash,

@@ -60,11 +60,11 @@ export function registerGetEventTool(
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({ catalogId, eventId, recordingOffset, recordingLimit }) => {
-      const catalog = resolveToolCatalog(profile, catalogId, 'canListEvents');
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          getMcpEvent(catalog.id, eventId, catalog.catalogGrant, {
+          getMcpEvent(catalog.id, eventId, {
             offset: recordingOffset,
             limit: recordingLimit,
           }),

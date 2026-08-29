@@ -93,7 +93,7 @@ export const ListCatalogsOutputSchema = z.object({
       catalogGrant: AccessLevelSchema.nullable(),
       isCatalogAdmin: z.boolean(),
       capabilities: CatalogCapabilitiesSchema.describe(
-        'Per-catalog capabilities that determine which other tools can be used.',
+        'Effective MCP read capabilities for this accessible catalog.',
       ),
     }),
   ),

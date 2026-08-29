@@ -1,7 +1,5 @@
 import type { AccessLevel, Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
-import { getRecordingCapability } from '@/lib/access/capabilities';
-import { TRANSCRIPT_ACCESS_DENIED_MESSAGE } from '@/lib/access/messages';
 import {
   catalogEventVisibilityWhere,
   catalogEventRecordingVisibilityWhere,
@@ -34,6 +32,8 @@ import {
 import { getMcpResourceUrl } from '@/lib/mcp/config';
 
 export type McpEventOrder = 'asc' | 'desc';
+
+const MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER' as const satisfies AccessLevel;
 
 export interface McpEventListInput {
   cursor?: string;
@@ -85,7 +85,6 @@ export interface McpRecordingEventPageInput {
 export type McpReadErrorCode =
   | 'invalid_cursor'
   | 'not_found'
-  | 'permission_denied'
   | 'transcript_not_found'
   | 'invalid_window'
   | 'search_not_configured'
@@ -231,8 +230,7 @@ function decodeMcpEventCursor(
       Buffer.from(encoded, 'base64url').toString('utf8'),
     ) as Partial<McpEventCursor>;
     const validMonth =
-      value.dateMonth === null ||
-      isIntegerInRange(value.dateMonth, 1, 12);
+      value.dateMonth === null || isIntegerInRange(value.dateMonth, 1, 12);
     const validDay =
       value.dateDay === null || isIntegerInRange(value.dateDay, 1, 31);
     if (
@@ -279,10 +277,7 @@ function nullableDateCursorComparison(
 ): Prisma.CatalogEventWhereInput | null {
   if (value === null) return null;
   return {
-    OR: [
-      { [field]: numericCursorComparison(value, order) },
-      { [field]: null },
-    ],
+    OR: [{ [field]: numericCursorComparison(value, order) }, { [field]: null }],
   };
 }
 
@@ -467,8 +462,6 @@ function paginateLookupItems<T extends { id: number; name: string }>(
 
 export async function listMcpLocations(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
-  canListEvents: boolean,
   input: McpLookupListInput,
 ) {
   const [recordingRows, visibleEventIds] = await Promise.all([
@@ -476,25 +469,21 @@ export async function listMcpLocations(
       where: { workflowGroupId: catalogId, locationId: { not: null } },
       select: { audioHash: true, locationId: true },
     }),
-    canListEvents
-      ? resolveReadableEventIds(catalogId, catalogGrant)
-      : Promise.resolve(null),
+    resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL),
   ]);
   const [visibleHashes, eventRows] = await Promise.all([
     resolveReadableRecordingHashes(
       catalogId,
-      catalogGrant,
+      MCP_VISIBILITY_ACCESS_LEVEL,
       recordingRows.map((row) => row.audioHash),
     ),
-    canListEvents
-      ? prisma.catalogEvent.findMany({
-          where: {
-            workflowGroupId: catalogId,
-            ...catalogEventVisibilityWhere(visibleEventIds),
-          },
-          select: { locationId: true },
-        })
-      : Promise.resolve([]),
+    prisma.catalogEvent.findMany({
+      where: {
+        workflowGroupId: catalogId,
+        ...catalogEventVisibilityWhere(visibleEventIds),
+      },
+      select: { locationId: true },
+    }),
   ]);
   const recordingCounts = new Map<number, number>();
   const eventCounts = new Map<number, number>();
@@ -518,7 +507,7 @@ export async function listMcpLocations(
     input,
     locations.map((location) => ({
       ...location,
-      eventCount: canListEvents ? (eventCounts.get(location.id) ?? 0) : null,
+      eventCount: eventCounts.get(location.id) ?? 0,
       recordingCount: recordingCounts.get(location.id) ?? 0,
     })),
   );
@@ -531,7 +520,6 @@ export async function listMcpLocations(
 
 export async function listMcpRecorders(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
   input: McpLookupListInput,
 ) {
   const recordingRows = await prisma.audioMetadata.findMany({
@@ -540,7 +528,7 @@ export async function listMcpRecorders(
   });
   const visibleHashes = await resolveReadableRecordingHashes(
     catalogId,
-    catalogGrant,
+    MCP_VISIBILITY_ACCESS_LEVEL,
     recordingRows.map((row) => row.audioHash),
   );
   const recordingCounts = new Map<number, number>();
@@ -575,7 +563,6 @@ export async function listMcpRecorders(
 
 export async function listMcpEvents(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
   input: McpEventListInput,
 ) {
   const cursor = input.cursor
@@ -586,7 +573,7 @@ export async function listMcpEvents(
     : undefined;
   const visibleEventIds = await resolveReadableEventIds(
     catalogId,
-    catalogGrant,
+    MCP_VISIBILITY_ACCESS_LEVEL,
   );
   const filters: Prisma.CatalogEventWhereInput = {
     ...(cursor ? { AND: [eventAfterCursorWhere(cursor)] } : {}),
@@ -635,7 +622,7 @@ export async function listMcpEvents(
   ];
   const visibleHashes = await resolveReadableRecordingHashes(
     catalogId,
-    catalogGrant,
+    MCP_VISIBILITY_ACCESS_LEVEL,
     pageHashes,
   );
   return {
@@ -676,13 +663,12 @@ export async function listMcpEvents(
 export async function getMcpEvent(
   catalogId: string,
   eventId: number,
-  catalogGrant: AccessLevel | null,
   input: McpEventRecordingPageInput,
 ) {
   const readable = await loadReadableCatalogEvent(
     catalogId,
     eventId,
-    catalogGrant,
+    MCP_VISIBILITY_ACCESS_LEVEL,
   );
   if (!readable) throw new McpReadError('not_found', 'Event not found');
   const { event, recordings: visibleRecordings } = readable;
@@ -729,13 +715,16 @@ export async function getMcpEvent(
 }
 
 export async function getMcpRecording(
-  userId: string,
   catalogId: string,
   audioHash: string,
   input: McpRecordingEventPageInput,
 ) {
-  const capability = await getRecordingCapability(catalogId, audioHash, userId);
-  if (!capability.canAccessRecording) {
+  const visibleHashes = await resolveReadableRecordingHashes(
+    catalogId,
+    MCP_VISIBILITY_ACCESS_LEVEL,
+    [audioHash],
+  );
+  if (!visibleHashes.has(audioHash)) {
     throw new McpReadError('not_found', 'Recording not found');
   }
   const recordingByHash = await loadCatalogRecordingReadModels(catalogId, [
@@ -749,7 +738,7 @@ export async function getMcpRecording(
 
   const visibleEventIds = await resolveReadableEventIds(
     catalogId,
-    capability.catalogGrant,
+    MCP_VISIBILITY_ACCESS_LEVEL,
   );
   const eventWhere: Prisma.CatalogEventRecordingWhereInput = {
     workflowGroupId: catalogId,
@@ -805,20 +794,17 @@ export async function getMcpRecording(
 }
 
 export async function getMcpTranscript(
-  userId: string,
   catalogId: string,
   audioHash: string,
   input: McpTranscriptInput,
 ) {
-  const capability = await getRecordingCapability(catalogId, audioHash, userId);
-  if (!capability.canAccessRecording) {
+  const visibleHashes = await resolveReadableRecordingHashes(
+    catalogId,
+    MCP_VISIBILITY_ACCESS_LEVEL,
+    [audioHash],
+  );
+  if (!visibleHashes.has(audioHash)) {
     throw new McpReadError('not_found', 'Recording not found');
-  }
-  if (!capability.canViewRecordingTranscripts) {
-    throw new McpReadError(
-      'permission_denied',
-      TRANSCRIPT_ACCESS_DENIED_MESSAGE,
-    );
   }
   if (
     input.startSec !== undefined &&
@@ -899,9 +885,7 @@ export async function getMcpTranscript(
           audioHash,
           backend,
           mode: 'page' as const,
-          ...(input.startSec === undefined
-            ? {}
-            : { startSec: input.startSec }),
+          ...(input.startSec === undefined ? {} : { startSec: input.startSec }),
           ...(input.endSec === undefined ? {} : { endSec: input.endSec }),
           segmentOffset: nextOffset,
           segmentLimit: input.segmentLimit,
@@ -937,7 +921,6 @@ export async function getMcpTranscript(
 
 export async function searchMcpTranscripts(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
   input: {
     query: string;
     limit: number;
@@ -956,7 +939,7 @@ export async function searchMcpTranscripts(
       neighborCount: input.contextChunks,
       maxPerAudio: input.maxPerRecording,
       metadataFilters: input.filters ?? null,
-      accessLevel: catalogGrant,
+      accessLevel: MCP_VISIBILITY_ACCESS_LEVEL,
       failOnMissingBundle: true,
     });
   } catch (error) {
@@ -984,7 +967,6 @@ export async function searchMcpTranscripts(
 
 export async function findMcpTranscriptMentions(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
   input: {
     query: string;
     matchMode: LexicalMatchMode;
@@ -1005,7 +987,7 @@ export async function findMcpTranscriptMentions(
       neighborCount: input.contextChunks,
       maxPerAudio: input.maxPerRecording,
       metadataFilters: input.filters ?? null,
-      accessLevel: catalogGrant,
+      accessLevel: MCP_VISIBILITY_ACCESS_LEVEL,
       failOnMissingBundle: true,
     });
   } catch (error) {

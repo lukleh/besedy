@@ -114,15 +114,11 @@ export function registerSearchTranscriptsTool(
       maxPerRecording,
       filters,
     }) => {
-      const catalog = resolveToolCatalog(
-        profile,
-        catalogId,
-        'canSearchTranscripts',
-      );
+      const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () =>
-          searchMcpTranscripts(catalog.id, catalog.catalogGrant, {
+          searchMcpTranscripts(catalog.id, {
             query,
             limit,
             contextChunks,
