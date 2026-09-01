@@ -56,6 +56,15 @@ export interface CatalogSearchResult {
       text: string;
     }>;
   };
+  event: {
+    id: number;
+    date: {
+      year: number;
+      month: number | null;
+      day: number | null;
+    };
+    location: { id: number; name: string };
+  } | null;
   metadata: {
     date: {
       year: number | null;
@@ -407,12 +416,27 @@ async function materializeSearchResults({
 }): Promise<{ results: CatalogSearchResult[]; metadataMs: number }> {
   const audioHashes = Array.from(new Set(selected.map((item) => item.audioHash)));
   const metadataStartedAt = performance.now();
-  const [metadataRows, neighborsByChunkId] = await Promise.all([
+  const [metadataRows, eventRows, neighborsByChunkId] = await Promise.all([
     prisma.audioMetadata.findMany({
       where: { workflowGroupId: catalogId, audioHash: { in: audioHashes } },
-      include: {
-        location: { select: { id: true, name: true } },
+      select: {
+        audioHash: true,
         recorder: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.catalogEventRecording.findMany({
+      where: { workflowGroupId: catalogId, audioHash: { in: audioHashes } },
+      select: {
+        audioHash: true,
+        event: {
+          select: {
+            id: true,
+            dateYear: true,
+            dateMonth: true,
+            dateDay: true,
+            location: { select: { id: true, name: true } },
+          },
+        },
       },
     }),
     lookupColbertNeighbors(
@@ -425,10 +449,23 @@ async function materializeSearchResults({
   ]);
   const metadataMs = elapsedMs(metadataStartedAt);
   const metadataByHash = new Map(metadataRows.map((row) => [row.audioHash, row]));
+  const eventByHash = new Map(eventRows.map((row) => [row.audioHash, row.event]));
   return {
     metadataMs,
     results: selected.map((item, index) => {
       const metadata = metadataByHash.get(item.audioHash);
+      const linkedEvent = eventByHash.get(item.audioHash);
+      const event = linkedEvent
+        ? {
+            id: linkedEvent.id,
+            date: {
+              year: linkedEvent.dateYear,
+              month: linkedEvent.dateMonth,
+              day: linkedEvent.dateDay,
+            },
+            location: linkedEvent.location,
+          }
+        : null;
       const neighbors = neighborsByChunkId.get(item.chunkId) ?? {
         before: [],
         after: [],
@@ -447,15 +484,10 @@ async function materializeSearchResults({
         contextStartSec,
         contextEndSec,
         neighbors,
+        event,
         metadata: {
-          date: {
-            year: metadata?.dateYear ?? null,
-            month: metadata?.dateMonth ?? null,
-            day: metadata?.dateDay ?? null,
-          },
-          location: metadata?.location
-            ? { id: metadata.location.id, name: metadata.location.name }
-            : null,
+          date: event?.date ?? { year: null, month: null, day: null },
+          location: event?.location ?? null,
           recorder: metadata?.recorder
             ? { id: metadata.recorder.id, name: metadata.recorder.name }
             : null,

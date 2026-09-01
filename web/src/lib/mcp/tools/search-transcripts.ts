@@ -8,7 +8,7 @@ import { searchMcpTranscripts } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
-  renderTranscriptVerificationHandoff,
+  renderTranscriptSearchResult,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -28,23 +28,10 @@ function renderSearchContent(
   const lines = [
     `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} ranked, non-exhaustive candidate(s).`,
     'A zero result does not establish conceptual absence. Verify important candidates by passing a non-null transcriptRequest to get_transcript; do not rely on candidates whose verification request is unavailable.',
-    'For claims spanning recordings, call get_recording on shortlisted audio hashes and compare their event IDs; recordings assigned to the same event are variants, not independent evidence.',
+    'Each candidate includes its authoritative event date, location, and ID. Group candidates by event ID because recordings from the same event are variants, not independent evidence.',
   ];
   for (const searchResult of result.results) {
-    lines.push(
-      `${searchResult.rank}. ${searchResult.recording.title} [${searchResult.match.startSec}-${searchResult.match.endSec}s]`,
-      searchResult.match.text,
-    );
-    if (searchResult.context?.beforeText) {
-      lines.push(`Before: ${searchResult.context.beforeText}`);
-    }
-    if (searchResult.context?.afterText) {
-      lines.push(`After: ${searchResult.context.afterText}`);
-    }
-    lines.push(
-      `Source: ${searchResult.match.webUrl}`,
-      renderTranscriptVerificationHandoff(searchResult.transcriptRequest),
-    );
+    lines.push(...renderTranscriptSearchResult(searchResult));
   }
   return lines.join('\n');
 }
@@ -61,7 +48,7 @@ export function registerSearchTranscriptsTool(
     {
       title: 'Search transcripts by meaning',
       description:
-        'Find candidate passages by meaning across accessible Besedy transcripts. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage: verify important evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on an important candidate when that request is unavailable. For cross-recording claims, call get_recording on shortlisted audio hashes and compare their event IDs; recordings assigned to the same event are variants, not independent evidence. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is relevance within this query, not confidence.',
+        'Find candidate passages by meaning across transcripts from visible released Besedy events. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage: verify important evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on an important candidate when that request is unavailable. Every candidate directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group candidates by event ID because recordings from the same event are variants, not independent evidence. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation. Rank is relevance within this query, not confidence.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -106,7 +93,7 @@ export function registerSearchTranscriptsTool(
             'Maximum matches per recording/audio hash. A low value such as 1 favors diversity during initial orientation; for precise broad searches, keep the default or raise it when distinct passages from one recording may matter.',
           ),
         filters: SearchMetadataFiltersSchema.optional().describe(
-          'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for recordings shortlisted by an earlier broad search.',
+          'Optional constraints. eventIds, locationIds, and dateYears apply to linked events; resolve event and location IDs with list_events and list_locations. audioHashes identify recordings. recorderIds and verified remain optional curated-recording constraints.',
         ),
       }),
       outputSchema: SearchTranscriptsOutputSchema,

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   queryRaw: vi.fn(),
   findAudioMetadata: vi.fn(),
+  findEventRecordings: vi.fn(),
   buildEligibleAudioHashesQuery: vi.fn(),
   lookupColbertNeighbors: vi.fn(),
   queryLexicalService: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('@/lib/db', () => ({
   default: {
     $queryRaw: mocks.queryRaw,
     audioMetadata: { findMany: mocks.findAudioMetadata },
+    catalogEventRecording: { findMany: mocks.findEventRecordings },
   },
 }));
 
@@ -57,6 +59,18 @@ describe('catalog lexical search service', () => {
       ],
     });
     mocks.findAudioMetadata.mockResolvedValue([]);
+    mocks.findEventRecordings.mockResolvedValue([
+      {
+        audioHash: 'a'.repeat(64),
+        event: {
+          id: 42,
+          dateYear: 2026,
+          dateMonth: 8,
+          dateDay: 26,
+          location: { id: 7, name: 'Prague' },
+        },
+      },
+    ]);
     mocks.lookupColbertNeighbors.mockResolvedValue(new Map());
   });
 
@@ -96,6 +110,15 @@ describe('catalog lexical search service', () => {
       {
         rank: 1,
         chunkId: 'chunk-1',
+        event: {
+          id: 42,
+          date: { year: 2026, month: 8, day: 26 },
+          location: { id: 7, name: 'Prague' },
+        },
+        metadata: {
+          date: { year: 2026, month: 8, day: 26 },
+          location: { id: 7, name: 'Prague' },
+        },
         citation: { workflowGroupId: 'catalog-a' },
       },
     ]);

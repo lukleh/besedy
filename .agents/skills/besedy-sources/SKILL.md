@@ -32,9 +32,10 @@ claim than the MCP results support.
 
 For broad questions, look beyond the first useful passage for connections,
 explanatory models, analogies, practical suggestions, and materially different
-treatments of the topic. Use dates, events, locations, recorders, and recordings
-to focus exploration when they help. Stop when the returned and verified evidence
-adequately covers the user's request; disclose material coverage limits.
+treatments of the topic. Use the event IDs, dates, and locations returned with
+search results to focus exploration and distinguish independent discussions. Stop
+when the returned and verified evidence adequately covers the user's request;
+disclose material coverage limits.
 
 Prefer the clearest recording when the MCP results identify variants. Preserve
 differences and tensions between distinct discussions instead of flattening them

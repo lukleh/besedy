@@ -31,6 +31,9 @@ vi.mock("@/lib/db", () => ({
     audioMetadata: {
       findMany: vi.fn(),
     },
+    catalogEventRecording: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -151,11 +154,23 @@ describe("internal deep-search search route", () => {
     vi.mocked(prisma.audioMetadata.findMany).mockResolvedValue([
       {
         audioHash: "hash-1",
-        dateYear: 1981,
-        dateMonth: 6,
-        dateDay: 14,
-        location: { id: 1, name: "Brno" },
+        dateYear: 1900,
+        dateMonth: 1,
+        dateDay: 1,
+        location: { id: 99, name: "Recording location" },
         recorder: { id: 2, name: "Archivist" },
+      },
+    ] as never);
+    vi.mocked(prisma.catalogEventRecording.findMany).mockResolvedValue([
+      {
+        audioHash: "hash-1",
+        event: {
+          id: 42,
+          dateYear: 1981,
+          dateMonth: 6,
+          dateDay: 14,
+          location: { id: 1, name: "Brno" },
+        },
       },
     ] as never);
 
@@ -242,7 +257,13 @@ describe("internal deep-search search route", () => {
       audioHash: "hash-1",
       text: "primary evidence",
       contextText: "before\n\nprimary evidence",
+      event: {
+        id: 42,
+        date: { year: 1981, month: 6, day: 14 },
+        location: { id: 1, name: "Brno" },
+      },
       metadata: {
+        date: { year: 1981, month: 6, day: 14 },
         location: { id: 1, name: "Brno" },
         recorder: { id: 2, name: "Archivist" },
       },

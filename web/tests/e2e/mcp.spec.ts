@@ -65,6 +65,7 @@ interface McpListedEvent {
   id: number;
   webUrl: string;
   date: { year: number; month: number | null; day: number | null };
+  location: { id: number; name: string };
   sessionIndex: number;
   released: boolean;
   recordings: {
@@ -834,7 +835,13 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         };
         results: Array<{
           rank: number;
-          recording: { audioHash: string; webUrl: string };
+          event: {
+            id: number;
+            webUrl: string;
+            date: { year: number; month: number | null; day: number | null };
+            location: { id: number; name: string };
+          };
+          recording: { audioHash: string };
           match: { chunkId: string; text: string; webUrl: string };
           context: { beforeText: string | null; afterText: string | null };
           citation: { workflowGroupId: string; chunkVersion: string };
@@ -863,9 +870,14 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       results: [
         {
           rank: 1,
+          event: {
+            id: event!.id,
+            webUrl: event!.webUrl,
+            date: event!.date,
+            location: event!.location,
+          },
           recording: {
             audioHash,
-            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
           },
           match: {
             chunkId: 'mcp-smoke-chunk-1',
@@ -897,11 +909,23 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'ranked, non-exhaustive candidate',
     );
     expect(searchBody.result?.content?.[0]?.text).toContain(
+      event!.location.name,
+    );
+    expect(searchBody.result?.content?.[0]?.text).toContain(
+      `Event: ${event!.id} ${event!.webUrl}`,
+    );
+    expect(searchBody.result?.content?.[0]?.text).toContain(
+      `Recording: ${audioHash}`,
+    );
+    expect(searchBody.result?.content?.[0]?.text).toContain(
       'Transcript request:',
     );
     expect(searchBody.result?.structuredContent.results[0]).not.toHaveProperty(
       'score',
     );
+    expect(
+      Object.keys(searchBody.result!.structuredContent.results[0]!.recording),
+    ).toEqual(['audioHash']);
 
     const lexicalResponse = await request.post(MCP_RESOURCE, {
       headers: {
@@ -936,7 +960,16 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           corpusCoverage: string;
           totalMatches: number;
         };
-        results: Array<{ match: { chunkId: string }; score?: number }>;
+        results: Array<{
+          event: {
+            id: number;
+            date: { year: number; month: number | null; day: number | null };
+            location: { id: number; name: string };
+          };
+          recording: { audioHash: string };
+          match: { chunkId: string };
+          score?: number;
+        }>;
       }>
     >;
     expect(lexicalBody.error).toBeUndefined();
@@ -947,10 +980,20 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         corpusCoverage: 'complete',
         totalMatches: 1,
       },
-      results: [{ match: { chunkId: 'mcp-smoke-chunk-1' } }],
+      results: [
+        {
+          event: {
+            id: event!.id,
+            date: event!.date,
+            location: event!.location,
+          },
+          recording: { audioHash },
+          match: { chunkId: 'mcp-smoke-chunk-1' },
+        },
+      ],
     });
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
-      'complete count covers all authorized indexed chunks',
+      'complete count is a chunk-match count, not a distinct-event count',
     );
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
       'backend variants outside the active index',

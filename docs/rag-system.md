@@ -1,6 +1,6 @@
 # RAG System
 
-> **Last Updated:** 2026-04-04
+> **Last Updated:** 2026-09-01
 
 ## Decision Summary
 
@@ -27,7 +27,7 @@ Search entrypoint: `POST /api/catalogs/:id/search`.
 
 1. The web route asks the ColBERT sidecar to resolve the active validated bundle for the current `(workflow_group_id, backend_key, colbert_model)` scope.
 2. The route queries the sidecar with that bundle.
-3. Candidate `audio_hash` values are filtered through PostgreSQL using recording visibility and metadata constraints.
+3. Candidate `audio_hash` values are filtered through PostgreSQL using recording visibility, linked-event visibility and date/location, and any remaining recording-specific constraints.
 4. Surviving chunks and their neighbors are hydrated from the sidecar bundle's `chunk_store.sqlite`.
 5. Results are optionally reranked with TEI if `RAG_COLBERT_RERANK_ENABLED=true`.
 

@@ -137,9 +137,14 @@ describe('MCP read service', () => {
             ],
             after: [],
           },
-          metadata: {
+          event: {
+            id: 42,
             date: { year: 2026, month: 8, day: 26 },
             location: { id: 7, name: 'Prague' },
+          },
+          metadata: {
+            date: { year: 1999, month: 1, day: 2 },
+            location: { id: 8, name: 'Recording location' },
             recorder: { id: 3, name: 'Recorder' },
           },
           citation: {
@@ -921,15 +926,14 @@ describe('MCP read service', () => {
       results: [
         {
           rank: 1,
+          event: {
+            id: 42,
+            webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
+            date: { year: 2026, month: 8, day: 26 },
+            location: { id: 7, name: 'Prague' },
+          },
           recording: {
             audioHash: 'visible-recording',
-            title: 'Recording title',
-            artist: 'Speaker',
-            durationHms: '00:42:00',
-            ready: true,
-            published: true,
-            webUrl:
-              'https://besedy.example/catalog/catalog-a/recording/visible-recording',
           },
           match: {
             chunkId: 'chunk-1',
@@ -944,11 +948,6 @@ describe('MCP read service', () => {
             endSec: 90,
             beforeText: 'Context before',
             afterText: null,
-          },
-          metadata: {
-            date: { year: 2026, month: 8, day: 26 },
-            location: { id: 7, name: 'Prague' },
-            recorder: { id: 3, name: 'Recorder' },
           },
           citation: {
             audioHash: 'visible-recording',

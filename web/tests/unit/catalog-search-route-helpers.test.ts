@@ -80,13 +80,26 @@ describe("catalog search route helpers", () => {
     });
     const sql = query?.strings.join(" ? ") ?? "";
 
-    expect(sql).toContain("FROM catalog_event_recording cer");
-    expect(sql).toContain("cer.workflow_group_id = ce.workflow_group_id");
-    expect(sql).toContain("cer.audio_hash = ce.audio_hash");
-    expect(sql).toContain("cer.event_id IN");
+    expect(sql).toContain("INNER JOIN catalog_event_recording event_recording");
+    expect(sql).toContain("event_recording.workflow_group_id = ce.workflow_group_id");
+    expect(sql).toContain("event_recording.audio_hash = ce.audio_hash");
+    expect(sql).toContain("event_recording.event_id IN");
     expect(query?.values).toEqual(
       expect.arrayContaining([42, 57, "catalog-a", "audio-a", "audio-b"]),
     );
+  });
+
+  it("restricts listener search to recordings under visible released events", () => {
+    const query = buildEligibleAudioHashesQuery("catalog-a", "LISTENER", null);
+    const sql = query.strings.join(" ? ");
+
+    expect(sql).toContain("INNER JOIN catalog_event_recording event_recording");
+    expect(sql).toContain("INNER JOIN catalog_event linked_event");
+    expect(sql).toContain("INNER JOIN catalog_event_recording primary_recording");
+    expect(sql).toContain("INNER JOIN catalog_entry primary_entry");
+    expect(sql).toContain("linked_event.released = true");
+    expect(sql).toContain("primary_entry.is_actionable = true");
+    expect(sql).toContain("primary_entry.is_published = true");
   });
 
   it("builds a complete eligible-recording query with the same metadata filters", () => {
@@ -102,7 +115,14 @@ describe("catalog search route helpers", () => {
     expect(sql).not.toContain("ce.audio_hash IN");
     expect(sql).toContain("ce.is_actionable = true");
     expect(sql).toContain("ce.is_published = true");
-    expect(sql).toContain("FROM catalog_event_recording cer");
+    expect(sql).toContain("INNER JOIN catalog_event_recording event_recording");
+    expect(sql).toContain("INNER JOIN catalog_event linked_event");
+    expect(sql).toContain("linked_event.released = true");
+    expect(sql).toContain("primary_entry.is_actionable = true");
+    expect(sql).toContain("linked_event.location_id IN");
+    expect(sql).toContain("linked_event.date_year IN");
+    expect(sql).not.toContain("am.location_id IN");
+    expect(sql).not.toContain("am.date_year IN");
     expect(sql).toContain("INNER JOIN audio_metadata am");
     expect(query.values).toEqual(expect.arrayContaining([42, 7, 3, 2026, true, "catalog-a"]));
   });

@@ -250,7 +250,21 @@ export const GetTranscriptOutputSchema = z.object({
 
 const TranscriptSearchResultSchema = z.object({
   rank: z.number().int().positive(),
-  recording: RecordingSummarySchema,
+  event: z.object({
+    id: z.number().int().positive(),
+    webUrl: WebUrlSchema.describe(
+      'Authenticated page for the event that provides this result context.',
+    ),
+    date: EventDateSchema.describe(
+      'Authoritative event date; the year is always known while month or day may be unknown.',
+    ),
+    location: NamedEntitySchema.describe('Authoritative event location.'),
+  }),
+  recording: z.object({
+    audioHash: HashSchema.describe(
+      'Stable SHA-256 identifier of the recording that owns this transcript match.',
+    ),
+  }),
   match: z.object({
     chunkId: z.string(),
     startSec: z.number().nonnegative(),
@@ -268,11 +282,6 @@ const TranscriptSearchResultSchema = z.object({
       afterText: z.string().nullable(),
     })
     .nullable(),
-  metadata: z.object({
-    date: RecordingDateSchema,
-    location: NamedEntitySchema.nullable(),
-    recorder: NamedEntitySchema.nullable(),
-  }),
   citation: z.object({
     audioHash: HashSchema,
     chunkId: z.string(),
@@ -321,7 +330,13 @@ export const FindTranscriptMentionsOutputSchema = z.object({
       .describe(
         'Complete over authorized indexed chunks under the selected filters and match mode; does not cover stored backend variants outside the active index.',
       ),
-    totalMatches: z.number().int().nonnegative(),
+    totalMatches: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe(
+        'Number of matching authorized indexed chunks before returned-result caps; not a count of distinct events.',
+      ),
     requestedLimit: z.number().int().positive(),
     returnedCount: z.number().int().nonnegative(),
     maxPerRecording: z.number().int().positive(),
