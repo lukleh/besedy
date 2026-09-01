@@ -4,12 +4,27 @@ import {
   createLookupListInputSchema,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderMcpListContent,
   resolveToolCatalog,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { ListRecordersOutputSchema } from '@/lib/mcp/tools/output-schemas';
+
+function renderRecorderListContent(
+  result: Awaited<ReturnType<typeof listMcpRecorders>>,
+  summary: string,
+): string {
+  return renderMcpListContent(
+    summary,
+    result.recorders.map(
+      (recorder) =>
+        `${recorder.id} · ${recorder.name} · ${recorder.recordingCount} recording(s)`,
+    ),
+    result.nextCursor,
+  );
+}
 
 export function registerListRecordersTool(
   server: McpServer,
@@ -39,6 +54,7 @@ export function registerListRecordersTool(
           }),
         (result) =>
           `Listed ${Array.isArray(result.recorders) ? result.recorders.length : 0} recorder(s).`,
+        renderRecorderListContent,
       );
     },
   );

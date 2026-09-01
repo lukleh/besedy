@@ -4,12 +4,27 @@ import {
   createLookupListInputSchema,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderMcpListContent,
   resolveToolCatalog,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { ListLocationsOutputSchema } from '@/lib/mcp/tools/output-schemas';
+
+function renderLocationListContent(
+  result: Awaited<ReturnType<typeof listMcpLocations>>,
+  summary: string,
+): string {
+  return renderMcpListContent(
+    summary,
+    result.locations.map(
+      (location) =>
+        `${location.id} · ${location.name} · ${location.eventCount} event(s)`,
+    ),
+    result.nextCursor,
+  );
+}
 
 export function registerListLocationsTool(
   server: McpServer,
@@ -35,6 +50,7 @@ export function registerListLocationsTool(
         () => listMcpLocations(catalog.id, { query, cursor, limit }),
         (result) =>
           `Listed ${Array.isArray(result.locations) ? result.locations.length : 0} event location(s).`,
+        renderLocationListContent,
       );
     },
   );

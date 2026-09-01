@@ -2,8 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { listMcpEvents } from '@/lib/mcp/read-service';
 import {
+  formatMcpDate,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderMcpListContent,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -23,6 +25,20 @@ const PartialEventDateSchema = z
     message: 'day requires month',
     path: ['day'],
   });
+
+function renderEventListContent(
+  result: Awaited<ReturnType<typeof listMcpEvents>>,
+  summary: string,
+): string {
+  return renderMcpListContent(
+    summary,
+    result.events.map(
+      (event) =>
+        `${formatMcpDate(event.date)} · ${event.location.name} · Event ${event.id}: ${event.webUrl}`,
+    ),
+    result.nextCursor,
+  );
+}
 
 export function registerListEventsTool(
   server: McpServer,
@@ -104,6 +120,7 @@ export function registerListEventsTool(
           }),
         (result) =>
           `Listed ${Array.isArray(result.events) ? result.events.length : 0} event(s).`,
+        renderEventListContent,
       );
     },
   );

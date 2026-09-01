@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { getMcpEvent } from '@/lib/mcp/read-service';
 import {
+  formatMcpDate,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
   resolveToolCatalog,
@@ -13,6 +14,29 @@ import { GetEventOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_EVENT_RECORDING_LIMIT = 25;
 const MAX_EVENT_RECORDING_LIMIT = 100;
+
+function renderEventContent(
+  result: Awaited<ReturnType<typeof getMcpEvent>>,
+): string {
+  const { event } = result;
+  const lines = [
+    `${formatMcpDate(event.date)} · ${event.location.name} · Event ${event.id}`,
+    `Event: ${event.webUrl}`,
+  ];
+  if (event.title) lines.push(`Title: ${event.title}`);
+  if (event.description) lines.push(`Description: ${event.description}`);
+  lines.push(
+    ...event.recordings.items.map(
+      (recording) =>
+        `${recording.isPrimary ? 'Primary recording' : 'Recording'}: ${recording.audioHash} ${recording.webUrl}`,
+    ),
+    `Visible recordings: ${event.recordings.totalVisible}.`,
+  );
+  if (event.recordings.nextOffset !== null) {
+    lines.push(`Continue with recordingOffset ${event.recordings.nextOffset}.`);
+  }
+  return lines.join('\n');
+}
 
 export function registerGetEventTool(
   server: McpServer,
@@ -68,6 +92,7 @@ export function registerGetEventTool(
             limit: recordingLimit,
           }),
         () => `Returned event ${eventId}.`,
+        renderEventContent,
       );
     },
   );

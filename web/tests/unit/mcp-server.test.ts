@@ -262,6 +262,14 @@ describe('MCP personalized tool surface', () => {
         defaultCatalogId: 'viewer-catalog',
       },
     });
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /Account ID: user-1[\s\S]*Default catalog: viewer-catalog[\s\S]*Scopes: openid, profile, email, besedy:read/,
+        ),
+      },
+    ]);
   });
 
   it('withholds profile fields that were not granted to the client', async () => {
@@ -351,6 +359,14 @@ describe('MCP personalized tool surface', () => {
       defaultCatalogSource: 'global_default',
       nextCursor: null,
     });
+    expect(successBody.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /viewer-catalog · viewer-catalog · default · VIEWER/,
+        ),
+      },
+    ]);
 
     const errorBody = await invokeMcp('tools/call', {
       name: 'list_catalogs',
@@ -619,8 +635,15 @@ describe('MCP personalized tool surface', () => {
     };
     vi.mocked(listMcpEvents).mockResolvedValue({
       catalogId: 'viewer-catalog',
-      events: [],
-      nextCursor: null,
+      events: [
+        {
+          id: 42,
+          webUrl: 'https://besedy.example/event/42',
+          date: { year: 2026, month: 8, day: 28 },
+          location: { id: 7, name: 'Prague' },
+        },
+      ],
+      nextCursor: 'next-events',
     });
 
     const body = await invokeMcp('tools/call', {
@@ -640,13 +663,20 @@ describe('MCP personalized tool surface', () => {
     expect(body.result?.content).toEqual([
       {
         type: 'text',
-        text: 'Listed 0 event(s).',
+        text: 'Listed 1 event(s).\n2026-08-28 · Prague · Event 42: https://besedy.example/event/42\nNext cursor: next-events',
       },
     ]);
     expect(body.result?.structuredContent).toEqual({
       catalogId: 'viewer-catalog',
-      events: [],
-      nextCursor: null,
+      events: [
+        {
+          id: 42,
+          webUrl: 'https://besedy.example/event/42',
+          date: { year: 2026, month: 8, day: 28 },
+          location: { id: 7, name: 'Prague' },
+        },
+      ],
+      nextCursor: 'next-events',
     });
 
     await invokeMcp('tools/call', {
@@ -679,16 +709,16 @@ describe('MCP personalized tool surface', () => {
     };
     vi.mocked(listMcpLocations).mockResolvedValue({
       catalogId: 'viewer-catalog',
-      locations: [],
-      nextCursor: null,
+      locations: [{ id: 7, name: 'Prague', eventCount: 2 }],
+      nextCursor: 'next-locations',
     });
     vi.mocked(listMcpRecorders).mockResolvedValue({
       catalogId: 'viewer-catalog',
-      recorders: [],
+      recorders: [{ id: 3, name: 'Petr', recordingCount: 4 }],
       nextCursor: null,
     });
 
-    await invokeMcp('tools/call', {
+    const locationsBody = await invokeMcp('tools/call', {
       name: 'list_locations',
       arguments: { query: 'Prague', limit: 10 },
     });
@@ -697,8 +727,14 @@ describe('MCP personalized tool surface', () => {
       cursor: undefined,
       limit: 10,
     });
+    expect(locationsBody.result?.content).toEqual([
+      {
+        type: 'text',
+        text: 'Listed 1 event location(s).\n7 · Prague · 2 event(s)\nNext cursor: next-locations',
+      },
+    ]);
 
-    await invokeMcp('tools/call', {
+    const recordersBody = await invokeMcp('tools/call', {
       name: 'list_recorders',
       arguments: { query: 'Petr', cursor: 'cursor' },
     });
@@ -707,6 +743,12 @@ describe('MCP personalized tool surface', () => {
       cursor: 'cursor',
       limit: 50,
     });
+    expect(recordersBody.result?.content).toEqual([
+      {
+        type: 'text',
+        text: 'Listed 1 recorder(s).\n3 · Petr · 4 recording(s)',
+      },
+    ]);
   });
 
   it('applies bounded recording pagination defaults to get_event', async () => {
@@ -728,7 +770,17 @@ describe('MCP personalized tool surface', () => {
         date: { year: 2026, month: 8, day: 28 },
         sessionIndex: 1,
         location: { id: 7, name: 'Prague' },
-        recordings: { items: [], totalVisible: 0, nextOffset: null },
+        recordings: {
+          items: [
+            {
+              audioHash: 'a'.repeat(64),
+              webUrl: 'https://besedy.example/recording',
+              isPrimary: true,
+            },
+          ],
+          totalVisible: 2,
+          nextOffset: 1,
+        },
       },
     });
 
@@ -743,6 +795,14 @@ describe('MCP personalized tool surface', () => {
       offset: 0,
       limit: 25,
     });
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /2026-08-28 · Prague · Event 42[\s\S]*Primary recording: a{64} https:\/\/besedy\.example\/recording[\s\S]*Continue with recordingOffset 1\./,
+        ),
+      },
+    ]);
   });
 
   it('gets recording metadata without event pagination', async () => {
@@ -759,19 +819,25 @@ describe('MCP personalized tool surface', () => {
       recording: {
         audioHash: 'a'.repeat(64),
         title: 'Recording title',
-        artist: null,
+        artist: 'Speaker',
         album: null,
         durationHms: '00:10:00',
         sourceDate: null,
         date: { year: 2026, month: 8, day: 28 },
         location: { id: 7, name: 'Prague' },
-        recorder: null,
+        recorder: { id: 3, name: 'Petr' },
         verified: true,
         notes: null,
         tags: [],
         webUrl: 'https://besedy.example/recording',
       },
-      event: null,
+      event: {
+        id: 42,
+        webUrl: 'https://besedy.example/event/42',
+        date: { year: 2026, month: 8, day: 28 },
+        location: { id: 7, name: 'Prague' },
+        isPrimary: true,
+      },
     });
 
     const body = await invokeMcp('tools/call', {
@@ -785,6 +851,14 @@ describe('MCP personalized tool surface', () => {
       'viewer-catalog',
       'a'.repeat(64),
     );
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /Recording: a{64} https:\/\/besedy\.example\/recording[\s\S]*Event: 2026-08-28 · Prague · 42 https:\/\/besedy\.example\/event\/42 · primary recording[\s\S]*artist=Speaker[\s\S]*recorder=Petr/,
+        ),
+      },
+    ]);
   });
 
   it('supports compact transcript defaults and explicit full mode', async () => {

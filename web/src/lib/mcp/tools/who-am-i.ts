@@ -59,8 +59,15 @@ export function registerWhoAmITool(
       const accountLabel =
         result.account.email ?? result.account.name ?? identity.userId;
       const roleLabel = canReadProfile ? ` (${profile.systemRole})` : '';
-      const summary = `Connected to Besedy as ${accountLabel}${roleLabel} via ${identity.clientName ?? identity.clientId}.`;
-      return toolSuccess(result, summary);
+      const lines = [
+        `Connected to Besedy as ${accountLabel}${roleLabel} via ${identity.clientName ?? identity.clientId}.`,
+        `Account ID: ${identity.userId}`,
+        `Client ID: ${identity.clientId}`,
+        `Default catalog: ${profile.defaultCatalogId ?? 'none'}`,
+        `Accessible catalogs: ${profile.catalogs.length}`,
+        `Scopes: ${scopes.join(', ') || 'none'}`,
+      ];
+      return toolSuccess(result, lines.join('\n'));
     },
   );
 }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderMcpListContent,
   toolError,
   toolSuccess,
 } from '@/lib/mcp/tools/shared';
@@ -81,10 +82,18 @@ export function registerListCatalogsTool(
         defaultCatalogSource: profile.defaultCatalogSource,
         nextCursor: page.nextCursor,
       };
-      return toolSuccess(
-        result,
-        `Listed ${page.items.length} accessible catalog(s).`,
+      const content = renderMcpListContent(
+        `Listed ${result.catalogs.length} accessible catalog(s).`,
+        result.catalogs.map((catalog) => {
+          const label = catalog.label ? ` · ${catalog.label}` : '';
+          const authority = catalog.isCatalogAdmin
+            ? 'catalog admin'
+            : (catalog.catalogGrant ?? 'catalog access');
+          return `${catalog.id}${label}${catalog.isDefault ? ' · default' : ''} · ${authority}`;
+        }),
+        result.nextCursor,
       );
+      return toolSuccess(result, content);
     },
   );
 }

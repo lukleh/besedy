@@ -255,11 +255,12 @@ All ten tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
 `structuredContent`. Every tool advertises an `outputSchema` through
 `tools/list`, so an agent can understand the success response before its first
-call and the server can validate the returned structure. Metadata tools use a
-short human-readable summary in `content` without duplicating their JSON.
-Transcript and search calls render evidence text there for clients that do not
-consume structured results. Responses may contain stable Besedy IDs and
-authenticated web links, but never audio URLs or filesystem paths.
+call and the server can validate the returned structure. Metadata tools render
+short actionable lines in `content` without duplicating their full JSON.
+Transcript and search calls render evidence text there too, so clients that do
+not consume structured results can still use every tool. Responses may contain
+stable Besedy IDs and authenticated web links, but never audio URLs or
+filesystem paths.
 
 The MCP interface is self-contained and does not require the optional Besedy
 skill. Each tool description explains when to use that tool, its scope, limits,
