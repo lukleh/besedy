@@ -12,9 +12,6 @@ import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { HashSchema } from '@/lib/validation/schemas';
 import { GetRecordingOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
-const DEFAULT_RECORDING_EVENT_LIMIT = 25;
-const MAX_RECORDING_EVENT_LIMIT = 100;
-
 export function registerGetRecordingTool(
   server: McpServer,
   context: BesedyMcpRequestContext,
@@ -27,7 +24,7 @@ export function registerGetRecordingTool(
     {
       title: 'Get Besedy recording metadata',
       description:
-        'Get metadata for one visible recording and a bounded page of its visible events, without returning audio or filesystem paths. After transcript search, use this on shortlisted audio hashes to compare linked event IDs; recordings linked to the same event are variants, not independent evidence.',
+        'Get metadata for one visible recording and its visible event, without returning audio or filesystem paths. After transcript search, use this on shortlisted audio hashes to compare their event IDs; recordings assigned to the same event are variants, not independent evidence.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -39,36 +36,15 @@ export function registerGetRecordingTool(
         audioHash: HashSchema.describe(
           'Stable recording hash returned by an event, search, or transcript response.',
         ),
-        eventOffset: z
-          .number()
-          .int()
-          .min(0)
-          .default(0)
-          .describe(
-            'Offset into visible linked events; use the previous nextOffset to continue.',
-          ),
-        eventLimit: z
-          .number()
-          .int()
-          .min(1)
-          .max(MAX_RECORDING_EVENT_LIMIT)
-          .default(DEFAULT_RECORDING_EVENT_LIMIT)
-          .describe(
-            'Maximum linked event summaries to return; defaults to 25.',
-          ),
       }),
       outputSchema: GetRecordingOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, audioHash, eventOffset, eventLimit }) => {
+    async ({ catalogId, audioHash }) => {
       const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
-        () =>
-          getMcpRecording(catalog.id, audioHash, {
-            offset: eventOffset,
-            limit: eventLimit,
-          }),
+        () => getMcpRecording(catalog.id, audioHash),
         () => `Returned metadata for Besedy recording ${audioHash}.`,
       );
     },

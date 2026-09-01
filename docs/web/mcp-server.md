@@ -273,7 +273,7 @@ that ignore `structuredContent` can still make a correct verification decision.
 The initialization response adds only cross-tool and corpus-wide rules: ground
 Besedy claims in returned evidence, distinguish meaning from literal wording,
 verify important candidates with `get_transcript`, do not count recorder variants
-of one event as independent evidence, resolve linked events with `get_recording`,
+of one event as independent evidence, resolve each recording's event with `get_recording`,
 support recurring themes with distinct events, and cite bounded segment links.
 Tool descriptions and schemas remain authoritative for individual calls and
 their current limits.
@@ -282,18 +282,18 @@ Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
 every matching segment in one response.
 
-| Tool                       | Use it to                                                      | Required data access                       |
-| -------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
-| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary  | Active portal user                         |
-| `list_catalogs`            | Discover accessible catalogs and MCP capabilities              | Active portal user                         |
-| `list_locations`           | Discover location IDs used by listener-visible data            | Accessible catalog                         |
-| `list_recorders`           | Discover recorder IDs used by listener-visible recordings      | Accessible catalog                         |
-| `list_events`              | Page and filter released events                                | Accessible catalog                         |
-| `get_event`                | Read one released event and its visible recordings             | Accessible catalog and listener visibility |
-| `get_recording`            | Read one published, ready recording and linked released events | Accessible catalog and listener visibility |
-| `get_transcript`           | Read a transcript for a published, ready recording             | Accessible catalog and listener visibility |
-| `search_transcripts`       | Find candidate passages by meaning, including different words  | Accessible catalog and listener visibility |
-| `find_transcript_mentions` | Exhaustively find indexed words, phrases, names, or prefixes   | Accessible catalog and listener visibility |
+| Tool                       | Use it to                                                     | Required data access                       |
+| -------------------------- | ------------------------------------------------------------- | ------------------------------------------ |
+| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary | Active portal user                         |
+| `list_catalogs`            | Discover accessible catalogs and MCP capabilities             | Active portal user                         |
+| `list_locations`           | Discover location IDs used by listener-visible data           | Accessible catalog                         |
+| `list_recorders`           | Discover recorder IDs used by listener-visible recordings     | Accessible catalog                         |
+| `list_events`              | Page and filter released events                               | Accessible catalog                         |
+| `get_event`                | Read one released event and its visible recordings            | Accessible catalog and listener visibility |
+| `get_recording`            | Read one published, ready recording and its released event    | Accessible catalog and listener visibility |
+| `get_transcript`           | Read a transcript for a published, ready recording            | Accessible catalog and listener visibility |
+| `search_transcripts`       | Find candidate passages by meaning, including different words | Accessible catalog and listener visibility |
+| `find_transcript_mentions` | Exhaustively find indexed words, phrases, names, or prefixes  | Accessible catalog and listener visibility |
 
 All tools are discoverable by an active portal user. Discovery is only a
 usability surface: every catalog-scoped call authorizes its resolved catalog and
@@ -582,21 +582,19 @@ Example return value:
 Use this tool to inspect one recording identified by the stable SHA-256 audio
 hash returned by an event, search, or transcript response.
 
-| Argument      | Type                            | Default           | Meaning                           |
-| ------------- | ------------------------------- | ----------------- | --------------------------------- |
-| `catalogId`   | string                          | effective default | Catalog containing the recording  |
-| `audioHash`   | 64-character hexadecimal string | required          | Stable recording identifier       |
-| `eventOffset` | non-negative integer            | `0`               | Offset into visible linked events |
-| `eventLimit`  | integer from 1 to 100           | `25`              | Maximum linked events in the page |
+| Argument    | Type                            | Default           | Meaning                          |
+| ----------- | ------------------------------- | ----------------- | -------------------------------- |
+| `catalogId` | string                          | effective default | Catalog containing the recording |
+| `audioHash` | 64-character hexadecimal string | required          | Stable recording identifier      |
 
 `recording` contains the descriptive metadata, readiness and publication
 flags, and authenticated `webUrl`; it deliberately omits audio and storage
-locations. The `events` page contains compact visible event summaries and
-whether the recording is primary for each event. Continue with `nextOffset` as
-`eventOffset`; `null` marks the final page. After transcript search, call this
-tool for shortlisted audio hashes when a cross-recording claim requires
-independent evidence. Recordings linked to the same event are variants rather
-than independent discussions.
+locations. `event` contains the recording's compact event summary and whether
+the recording is primary, or `null` when its event is not visible to the caller.
+After transcript search, call this tool for shortlisted audio hashes when a
+cross-recording claim requires independent evidence. Compare their event IDs:
+recordings assigned to the same event are variants rather than independent
+discussions.
 
 Example return value:
 
@@ -620,19 +618,13 @@ Example return value:
     "published": true,
     "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
-  "events": {
-    "items": [
-      {
-        "id": 4242,
-        "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
-        "title": "Example Hall, 12 Apr 2099",
-        "released": true,
-        "date": { "year": 2099, "month": 4, "day": 12 },
-        "isPrimary": true
-      }
-    ],
-    "totalVisible": 1,
-    "nextOffset": null
+  "event": {
+    "id": 4242,
+    "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+    "title": "Example Hall, 12 Apr 2099",
+    "released": true,
+    "date": { "year": 2099, "month": 4, "day": 12 },
+    "isPrimary": true
   }
 }
 ```
@@ -876,7 +868,7 @@ The recommended evidence workflow is:
    recording when useful. Do not wait for the user to request more precision.
 3. Shortlist results from their exact match, adjacent context, and recording.
    For cross-recording claims, call `get_recording` on the shortlisted audio
-   hashes and compare linked event IDs; recordings sharing an event are variants,
+   hashes and compare their event IDs; recordings sharing an event are variants,
    not independent evidence.
 4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.

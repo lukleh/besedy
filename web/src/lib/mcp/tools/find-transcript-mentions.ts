@@ -29,7 +29,7 @@ function renderSearchContent(
   const lines = [
     `Lexical transcript search for ${JSON.stringify(result.query)} found ${result.retrieval.totalMatches} match(es) across the complete authorized indexed transcript corpus and returned ${result.results.length}.`,
     'The complete count covers all authorized indexed chunks under the selected filters and match mode before limit and maxPerRecording cap returned passages. It does not cover stored transcript backend variants outside the active index. A zero count establishes only indexed literal-pattern absence, not conceptual absence.',
-    'For claims spanning recordings, call get_recording on shortlisted audio hashes and compare linked event IDs; recordings linked to the same event are variants, not independent evidence.',
+    'For claims spanning recordings, call get_recording on shortlisted audio hashes and compare their event IDs; recordings assigned to the same event are variants, not independent evidence.',
   ];
   for (const searchResult of result.results) {
     lines.push(
@@ -62,7 +62,7 @@ export function registerFindTranscriptMentionsTool(
     {
       title: 'Find exact transcript mentions',
       description:
-        'Search actual wording in the authorized indexed Besedy transcript corpus. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches is complete over all authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it does not cover stored transcript backend variants outside the active index. A zero count establishes only indexed literal-pattern absence, not conceptual absence. Verify important returned passages by passing a non-null transcriptRequest to get_transcript and reading continuous context; do not rely on an important candidate when that request is unavailable. For cross-recording claims, call get_recording on shortlisted audio hashes and compare linked event IDs; recordings linked to the same event are variants, not independent evidence. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is text-match relevance, not confidence.',
+        'Search actual wording in the authorized indexed Besedy transcript corpus. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches is complete over all authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it does not cover stored transcript backend variants outside the active index. A zero count establishes only indexed literal-pattern absence, not conceptual absence. Verify important returned passages by passing a non-null transcriptRequest to get_transcript and reading continuous context; do not rely on an important candidate when that request is unavailable. For cross-recording claims, call get_recording on shortlisted audio hashes and compare their event IDs; recordings assigned to the same event are variants, not independent evidence. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is text-match relevance, not confidence.',
       inputSchema: z.object({
         catalogId: z
           .string()

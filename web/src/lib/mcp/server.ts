@@ -21,7 +21,7 @@ export const BESEDY_MCP_INSTRUCTIONS = [
   'Tool descriptions and schemas define individual calls. Use search_transcripts for meaning and find_transcript_mentions for actual wording.',
   'Meaning-based search is ranked and non-exhaustive. Literal totalMatches is complete over authorized indexed chunks under the selected filters and match mode before result caps, but not over stored backend variants outside the active index.',
   'Verify important search evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on it when that request is unavailable.',
-  'For cross-recording claims, use get_recording to compare linked event IDs. Recordings linked to the same event are variants, not independent evidence; support recurring themes with distinct events.',
+  'For cross-recording claims, use get_recording to compare their event IDs. Recordings assigned to the same event are variants, not independent evidence; support recurring themes with distinct events.',
   'Cite bounded segment webUrl values. Use who_am_i or list_catalogs only when identity, catalog selection, or permissions are unclear.',
 ].join(' ');
 
