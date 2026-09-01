@@ -3,6 +3,7 @@ import { requireMcpAuth } from '@better-auth/mcp';
 import { auth } from '@/lib/auth';
 import { logAccessDenied } from '@/lib/audit/logger';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
+import { getActiveStoredMcpAccessToken } from '@/lib/mcp/access-token-state';
 import { getActiveMcpAuthorization } from '@/lib/mcp/authorization';
 import { createBesedyMcpServer } from '@/lib/mcp/server';
 import {
@@ -46,9 +47,9 @@ function readScopes(claims: unknown): string[] {
   return [];
 }
 
-function readBearerToken(request: Request): string {
+function readAccessToken(request: Request): string {
   const header = request.headers.get('authorization') ?? '';
-  return header.replace(/^Bearer\s+/i, '');
+  return header.match(/^(?:Bearer|DPoP)\s+(.+)$/i)?.[1] ?? '';
 }
 
 function jsonRpcAccessDenied(message: string): Response {
@@ -59,6 +60,26 @@ function jsonRpcAccessDenied(message: string): Response {
       id: null,
     },
     { status: 403 },
+  );
+}
+
+function jsonRpcInvalidToken(): Response {
+  const metadataUrl = new URL(
+    `/.well-known/oauth-protected-resource${new URL(resourceUrl!).pathname}`,
+    resourceUrl!,
+  );
+  return Response.json(
+    {
+      jsonrpc: '2.0',
+      error: { code: -32_000, message: 'The access token is inactive' },
+      id: null,
+    },
+    {
+      status: 401,
+      headers: {
+        'WWW-Authenticate': `Bearer error="invalid_token", resource_metadata="${metadataUrl}"`,
+      },
+    },
   );
 }
 
@@ -169,7 +190,25 @@ const protectedMcpHandler = resourceUrl
           return jsonRpcRateLimited();
         }
 
-        const tokenScopes = readScopes(claims);
+        const accessToken = readAccessToken(request);
+        const storedAccessToken = await getActiveStoredMcpAccessToken({
+          accessToken,
+          clientId,
+          resourceUrl,
+          userId,
+        });
+        if (!storedAccessToken) {
+          await auditMcpRequestDenied(
+            userId,
+            clientId,
+            'stored_access_token_inactive',
+          );
+          return jsonRpcInvalidToken();
+        }
+
+        const tokenScopes = readScopes(claims).filter((scope) =>
+          storedAccessToken.scopes.includes(scope),
+        );
         const authorization = await getActiveMcpAuthorization({
           clientId,
           resourceUrl,
@@ -198,7 +237,7 @@ const protectedMcpHandler = resourceUrl
         }
 
         const authInfo: AuthInfo = {
-          token: readBearerToken(request),
+          token: accessToken,
           clientId,
           scopes: authorization.scopes,
           expiresAt: claims.exp,

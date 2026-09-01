@@ -139,7 +139,13 @@ queries there.
   Blocking a user from Besedy therefore also blocks MCP access; an old OAuth
   token does not bypass that check.
 - Tokens: short-lived, audience-bound JWT access tokens validated by the MCP
-  endpoint.
+  endpoint. The authorization server stores a hash of every issued MCP access
+  token, links it to its refresh family, and requires that live row on every MCP
+  request. Explicit token revocation and refresh-family invalidation therefore
+  take effect immediately rather than waiting for JWT expiry. Access tokens
+  issued before this stored-token enforcement was deployed have no registry row
+  and receive an `invalid_token` challenge; clients must refresh or reconnect
+  once during the rollout.
 - Deleting an OAuth consent also revokes every refresh token for that user and
   client, so authorizing the client again cannot revive an older connection.
 - OAuth client registration supports both mechanisms needed by remote clients:

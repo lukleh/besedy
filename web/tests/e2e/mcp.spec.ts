@@ -31,6 +31,7 @@ interface TokenResponse {
 interface AccessTokenClaims {
   aud?: string | string[];
   iss?: string;
+  jti?: string;
   scope?: string;
   sub?: string;
 }
@@ -267,9 +268,31 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     ).toContain(MCP_RESOURCE);
     expect(accessTokenClaims).toMatchObject({
       iss: `${BASE_URL}/api/auth`,
+      jti: expect.any(String),
       scope: expect.stringContaining('besedy:read'),
       sub: expect.any(String),
     });
+    const storedAccessToken = await pool.query<{
+      id: string;
+      refreshId: string | null;
+      revoked: Date | null;
+    }>(
+      `SELECT "id", "refreshId", "revoked"
+       FROM "oauthAccessToken"
+       WHERE "token" = $1`,
+      [
+        createHash('sha256')
+          .update(token.access_token!)
+          .digest('base64url'),
+      ],
+    );
+    expect(storedAccessToken.rows).toEqual([
+      {
+        id: accessTokenClaims.jti,
+        refreshId: expect.any(String),
+        revoked: null,
+      },
+    ]);
 
     const legacyHeaders = {
       Authorization: `Bearer ${token.access_token}`,
@@ -988,6 +1011,36 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(lexicalBody.result?.structuredContent.results[0]).not.toHaveProperty(
       'score',
     );
+
+    const revocationResponse = await request.post(
+      `${BASE_URL}/api/auth/oauth2/revoke`,
+      {
+        headers: { Origin: BASE_URL },
+        form: {
+          client_id: clientId,
+          token: token.access_token!,
+          token_type_hint: 'access_token',
+        },
+      },
+    );
+    expect(revocationResponse.ok(), await revocationResponse.text()).toBe(true);
+
+    const revokedTokenResponse = await request.post(MCP_RESOURCE, {
+      headers: { ...mcpHeaders, 'Mcp-Method': 'tools/list' },
+      data: {
+        jsonrpc: '2.0',
+        id: 200,
+        method: 'tools/list',
+        params: { _meta: envelope },
+      },
+    });
+    expect(revokedTokenResponse.status()).toBe(401);
+    expect(revokedTokenResponse.headers()['www-authenticate']).toContain(
+      'error="invalid_token"',
+    );
+    expect(await revokedTokenResponse.json()).toMatchObject({
+      error: { message: 'The access token is inactive' },
+    });
   } finally {
     await removeLocalTestClient(clientId);
   }
