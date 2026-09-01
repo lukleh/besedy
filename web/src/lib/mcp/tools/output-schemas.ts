@@ -38,22 +38,22 @@ const RecordingDateSchema = z.object({
   month: z.number().int().nullable(),
   day: z.number().int().nullable(),
 });
-const RecordingSummarySchema = z.object({
+const RecordingMetadataSchema = z.object({
   audioHash: HashSchema.describe('Stable SHA-256 recording identifier.'),
   title: z.string(),
   artist: z.string().nullable(),
   durationHms: z.string().nullable(),
-  ready: z.boolean(),
-  published: z.boolean(),
   webUrl: WebUrlSchema,
 });
-const CompactEventSchema = z.object({
+const EventRefSchema = z.object({
   id: z.number().int().positive(),
-  webUrl: WebUrlSchema,
-  title: z.string().nullable(),
-  released: z.boolean(),
-  date: EventDateSchema,
-  isPrimary: z.boolean(),
+  webUrl: WebUrlSchema.describe(
+    'Authenticated page for the event that provides this result context.',
+  ),
+  date: EventDateSchema.describe(
+    'Authoritative event date; the year is always known while month or day may be unknown.',
+  ),
+  location: NamedEntitySchema.describe('Authoritative event location.'),
 });
 
 export const WhoAmIOutputSchema = z.object({
@@ -74,27 +74,14 @@ export const WhoAmIOutputSchema = z.object({
   }),
 });
 
-const CatalogCapabilitiesSchema = z.object({
-  canListEvents: z.boolean(),
-  canGetRecordings: z.boolean(),
-  canViewTranscripts: z.boolean(),
-  canSearchTranscripts: z.boolean(),
-  canSeeUnreleasedEvents: z.boolean(),
-});
-
 export const ListCatalogsOutputSchema = z.object({
   catalogs: z.array(
     z.object({
       id: CatalogIdSchema,
       label: z.string().nullable(),
-      isUserDefault: z.boolean(),
-      isGlobalDefault: z.boolean(),
-      isEffectiveDefault: z.boolean(),
+      isDefault: z.boolean(),
       catalogGrant: AccessLevelSchema.nullable(),
       isCatalogAdmin: z.boolean(),
-      capabilities: CatalogCapabilitiesSchema.describe(
-        'Effective MCP read capabilities for this accessible catalog.',
-      ),
     }),
   ),
   defaultCatalogId: CatalogIdSchema.nullable(),
@@ -108,8 +95,7 @@ export const ListLocationsOutputSchema = z.object({
   catalogId: CatalogIdSchema,
   locations: z.array(
     NamedEntitySchema.extend({
-      eventCount: z.number().int().nonnegative().nullable(),
-      recordingCount: z.number().int().nonnegative(),
+      eventCount: z.number().int().nonnegative(),
     }),
   ),
   nextCursor: NullableCursorSchema,
@@ -127,55 +113,35 @@ export const ListRecordersOutputSchema = z.object({
 
 export const ListEventsOutputSchema = z.object({
   catalogId: CatalogIdSchema,
-  events: z.array(
-    z.object({
-      id: z.number().int().positive(),
-      webUrl: WebUrlSchema,
-      title: z.string().nullable(),
-      description: z.string().nullable(),
-      date: EventDateSchema,
-      sessionIndex: z.number().int().positive(),
-      location: NamedEntitySchema,
-      released: z.boolean(),
-      recordings: z.object({
-        primaryAudioHash: HashSchema.nullable(),
-        audioHashes: z.array(HashSchema),
-      }),
-      updatedAt: z.string().datetime(),
-    }),
-  ),
+  events: z.array(EventRefSchema),
   nextCursor: NullableCursorSchema,
 });
 
 export const GetEventOutputSchema = z.object({
   catalogId: CatalogIdSchema,
-  event: z.object({
-    id: z.number().int().positive(),
-    webUrl: WebUrlSchema,
+  event: EventRefSchema.extend({
     title: z.string().nullable(),
     description: z.string().nullable(),
-    date: EventDateSchema,
     sessionIndex: z.number().int().positive(),
-    location: NamedEntitySchema,
-    released: z.boolean(),
     recordings: z.object({
       items: z.array(
-        RecordingSummarySchema.extend({
+        z.object({
+          audioHash: HashSchema.describe(
+            'Stable SHA-256 recording identifier.',
+          ),
+          webUrl: WebUrlSchema,
           isPrimary: z.boolean(),
-          sortOrder: z.number().int(),
         }),
       ),
       totalVisible: z.number().int().nonnegative(),
       nextOffset: NullableOffsetSchema,
     }),
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
   }),
 });
 
 export const GetRecordingOutputSchema = z.object({
   catalogId: CatalogIdSchema,
-  recording: RecordingSummarySchema.extend({
+  recording: RecordingMetadataSchema.extend({
     album: z
       .object({ id: z.number().int().positive().nullable(), name: z.string() })
       .nullable(),
@@ -187,9 +153,11 @@ export const GetRecordingOutputSchema = z.object({
     notes: z.string().nullable(),
     tags: z.array(z.string()),
   }),
-  event: CompactEventSchema.nullable().describe(
-    'The recording event when it is visible to the caller, otherwise null.',
-  ),
+  event: EventRefSchema.extend({ isPrimary: z.boolean() })
+    .nullable()
+    .describe(
+      'The recording event when it is visible to the caller, otherwise null.',
+    ),
 });
 
 const TranscriptContinuationSchema = z.object({
@@ -210,18 +178,9 @@ export const GetTranscriptOutputSchema = z.object({
   recordingWebUrl: WebUrlSchema.describe(
     'Unbounded recording page URL without a stop time.',
   ),
-  seekWebUrl: WebUrlSchema.nullable().describe(
-    'Bounded link for the first returned segment, or null for an empty page.',
-  ),
   backend: TranscriptBackendSchema,
-  availableBackends: z.array(TranscriptBackendSchema),
   language: z.string().nullable(),
   durationSec: z.number().nonnegative().nullable(),
-  mode: z.enum(['full', 'page']),
-  timeWindow: z.object({
-    startSec: z.number().nonnegative().nullable(),
-    endSec: z.number().positive().nullable(),
-  }),
   segments: z.object({
     items: z.array(
       z.object({
@@ -236,12 +195,7 @@ export const GetTranscriptOutputSchema = z.object({
         ),
       }),
     ),
-    offset: z.number().int().nonnegative(),
-    limit: z.number().int().positive().nullable(),
-    maxTextChars: z.number().int().positive().nullable(),
-    returnedTextChars: z.number().int().nonnegative(),
     totalMatching: z.number().int().nonnegative(),
-    nextOffset: NullableOffsetSchema,
   }),
   continuation: TranscriptContinuationSchema.nullable().describe(
     'Arguments for the next page, or null when no more matching segments remain.',
@@ -250,16 +204,7 @@ export const GetTranscriptOutputSchema = z.object({
 
 const TranscriptSearchResultSchema = z.object({
   rank: z.number().int().positive(),
-  event: z.object({
-    id: z.number().int().positive(),
-    webUrl: WebUrlSchema.describe(
-      'Authenticated page for the event that provides this result context.',
-    ),
-    date: EventDateSchema.describe(
-      'Authoritative event date; the year is always known while month or day may be unknown.',
-    ),
-    location: NamedEntitySchema.describe('Authoritative event location.'),
-  }),
+  event: EventRefSchema,
   recording: z.object({
     audioHash: HashSchema.describe(
       'Stable SHA-256 identifier of the recording that owns this transcript match.',

@@ -74,33 +74,15 @@ describe('MCP access profile', () => {
     expect(profile.catalogs).toEqual([
       expect.objectContaining({
         id: 'catalog-listener',
-        isUserDefault: false,
-        isGlobalDefault: true,
-        isEffectiveDefault: false,
+        isDefault: false,
         catalogGrant: 'LISTENER',
         isCatalogAdmin: false,
-        capabilities: {
-          canListEvents: true,
-          canGetRecordings: true,
-          canViewTranscripts: true,
-          canSearchTranscripts: true,
-          canSeeUnreleasedEvents: false,
-        },
       }),
       expect.objectContaining({
         id: 'catalog-viewer',
-        isUserDefault: true,
-        isGlobalDefault: false,
-        isEffectiveDefault: true,
+        isDefault: true,
         catalogGrant: 'VIEWER',
         isCatalogAdmin: false,
-        capabilities: {
-          canListEvents: true,
-          canGetRecordings: true,
-          canViewTranscripts: true,
-          canSearchTranscripts: true,
-          canSeeUnreleasedEvents: false,
-        },
       }),
     ]);
     expect(profile.defaultCatalogId).toBe('catalog-viewer');
@@ -197,13 +179,6 @@ describe('MCP access profile', () => {
     expect(profile.catalogs[0]).toMatchObject({
       catalogGrant: null,
       isCatalogAdmin: true,
-      capabilities: {
-        canListEvents: true,
-        canGetRecordings: true,
-        canViewTranscripts: true,
-        canSearchTranscripts: true,
-        canSeeUnreleasedEvents: false,
-      },
     });
   });
 });

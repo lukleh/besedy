@@ -126,23 +126,14 @@ async function invokeMcp(
 function catalog(
   id: string,
   catalogGrant: 'LISTENER' | 'VIEWER',
-  isEffectiveDefault: boolean,
+  isDefault: boolean,
 ): McpCatalogAccess {
   return {
     id,
     label: id,
-    isUserDefault: isEffectiveDefault,
-    isGlobalDefault: false,
-    isEffectiveDefault,
+    isDefault,
     catalogGrant,
     isCatalogAdmin: false,
-    capabilities: {
-      canListEvents: true,
-      canGetRecordings: true,
-      canViewTranscripts: true,
-      canSearchTranscripts: true,
-      canSeeUnreleasedEvents: false,
-    },
   };
 }
 
@@ -346,10 +337,12 @@ describe('MCP personalized tool surface', () => {
       name: 'list_catalogs',
       arguments: {},
     });
-    expect(successBody.result?.structuredContent).toMatchObject({
+    expect(successBody.result?.structuredContent).toEqual({
       catalogs: [
         {
           id: 'viewer-catalog',
+          label: 'viewer-catalog',
+          isDefault: true,
           catalogGrant: 'VIEWER',
           isCatalogAdmin: false,
         },
@@ -532,21 +525,17 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.inputSchema.properties.filters.description).toContain(
       'list_locations',
     );
-    expect(locationsTool?.description).toContain('list_events');
-    expect(locationsTool?.description).toContain('search_transcripts');
-    expect(recordersTool?.description).toContain('search_transcripts');
-    expect(recordingTool?.description).toContain(
-      'Search results already include event identity',
-    );
+    expect(locationsTool?.description).toContain('visible events');
+    expect(locationsTool?.description).toContain('locationId');
+    expect(recordersTool?.description).toContain('transcript search filters');
+    expect(recordingTool?.description).toContain('event context');
     expect(recordingTool?.inputSchema.properties.eventOffset).toBeUndefined();
     expect(recordingTool?.inputSchema.properties.eventLimit).toBeUndefined();
-    expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain(
-      'pass its non-null transcriptRequest here unchanged',
+      'transcriptRequest unchanged',
     );
-    expect(transcriptTool?.description).toContain('complete stored transcript');
-    expect(transcriptTool?.description).toContain('unbounded recordingWebUrl');
-    expect(transcriptTool?.description).toContain('bounded citation webUrl');
+    expect(transcriptTool?.description).toContain('complete selected window');
+    expect(transcriptTool?.description).toContain('bounded citation URL');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
       'every segment',
     );
@@ -568,15 +557,9 @@ describe('MCP personalized tool surface', () => {
     expect(eventsTool?.inputSchema.properties.query.description).toContain(
       'event title',
     );
-    expect(eventsTool?.inputSchema.properties.released.description).toContain(
-      'released',
-    );
-    expect(identityTool?.description).toContain(
-      'not needed before routine content calls',
-    );
-    expect(catalogsTool?.description).toContain(
-      'omit catalogId on routine content calls',
-    );
+    expect(eventsTool?.inputSchema.properties.released).toBeUndefined();
+    expect(identityTool?.description).toContain('diagnose identity or access');
+    expect(catalogsTool?.description).toContain('effective default');
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
@@ -650,7 +633,6 @@ describe('MCP personalized tool surface', () => {
       cursor: undefined,
       limit: 25,
       order: 'desc',
-      released: undefined,
       query: undefined,
       date: undefined,
       locationId: undefined,
@@ -658,9 +640,7 @@ describe('MCP personalized tool surface', () => {
     expect(body.result?.content).toEqual([
       {
         type: 'text',
-        text: expect.stringMatching(
-          /Listed 0 visible Besedy event\(s\)\.[\s\S]*"catalogId":"viewer-catalog"/,
-        ),
+        text: 'Listed 0 event(s).',
       },
     ]);
     expect(body.result?.structuredContent).toEqual({
@@ -682,7 +662,6 @@ describe('MCP personalized tool surface', () => {
       cursor: 'event-cursor',
       limit: 25,
       order: 'asc',
-      released: undefined,
       query: undefined,
       date: { year: 2026, month: 8 },
       locationId: 7,
@@ -749,10 +728,7 @@ describe('MCP personalized tool surface', () => {
         date: { year: 2026, month: 8, day: 28 },
         sessionIndex: 1,
         location: { id: 7, name: 'Prague' },
-        released: true,
         recordings: { items: [], totalVisible: 0, nextOffset: null },
-        createdAt: '2026-08-28T10:00:00.000Z',
-        updatedAt: '2026-08-28T11:00:00.000Z',
       },
     });
 
@@ -793,8 +769,6 @@ describe('MCP personalized tool surface', () => {
         verified: true,
         notes: null,
         tags: [],
-        ready: true,
-        published: true,
         webUrl: 'https://besedy.example/recording',
       },
       event: null,
@@ -826,13 +800,9 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
       recordingWebUrl: 'https://besedy.example/recording',
-      seekWebUrl: 'https://besedy.example/recording?seek=0',
       backend: 'whisperx/model',
-      availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 600,
-      mode: 'page',
-      timeWindow: { startSec: null, endSec: null },
       segments: {
         items: [
           {
@@ -845,12 +815,7 @@ describe('MCP personalized tool surface', () => {
             webUrl: 'https://besedy.example/recording?seek=0',
           },
         ],
-        offset: 0,
-        limit: 50,
-        maxTextChars: 20_000,
-        returnedTextChars: 19,
         totalMatching: 2,
-        nextOffset: 1,
       },
       continuation: {
         catalogId: 'viewer-catalog',
@@ -878,11 +843,11 @@ describe('MCP personalized tool surface', () => {
       },
     ]);
     expect(body.result?.structuredContent).toMatchObject({
-      seekWebUrl: 'https://besedy.example/recording?seek=0',
       segments: {
         items: [{ webUrl: 'https://besedy.example/recording?seek=0' }],
       },
     });
+    expect(body.result?.structuredContent).not.toHaveProperty('seekWebUrl');
     expect(getMcpTranscript).toHaveBeenCalledWith(
       'viewer-catalog',
       'a'.repeat(64),

@@ -39,7 +39,6 @@ export interface McpEventListInput {
   cursor?: string;
   limit: number;
   order: McpEventOrder;
-  released?: boolean;
   query?: string;
   date?: {
     year: number;
@@ -363,19 +362,6 @@ function serializeRecording(recording: CatalogRecordingReadModel) {
     verified: recording.verified,
     notes: recording.notes,
     tags: recording.tags,
-    ready: recording.ready,
-    published: recording.published,
-  };
-}
-
-function serializeRecordingSummary(recording: CatalogRecordingReadModel) {
-  return {
-    audioHash: recording.audioHash,
-    title: recording.title,
-    artist: recording.artist,
-    durationHms: recording.durationHms,
-    ready: recording.ready,
-    published: recording.published,
   };
 }
 
@@ -459,36 +445,20 @@ export async function listMcpLocations(
   catalogId: string,
   input: McpLookupListInput,
 ) {
-  const [recordingRows, visibleEventIds] = await Promise.all([
-    prisma.audioMetadata.findMany({
-      where: { workflowGroupId: catalogId, locationId: { not: null } },
-      select: { audioHash: true, locationId: true },
-    }),
-    resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL),
-  ]);
-  const [visibleHashes, eventRows] = await Promise.all([
-    resolveReadableRecordingHashes(
-      catalogId,
-      MCP_VISIBILITY_ACCESS_LEVEL,
-      recordingRows.map((row) => row.audioHash),
-    ),
-    prisma.catalogEvent.findMany({
-      where: {
-        workflowGroupId: catalogId,
-        ...catalogEventVisibilityWhere(visibleEventIds),
-      },
-      select: { locationId: true },
-    }),
-  ]);
-  const recordingCounts = new Map<number, number>();
+  const visibleEventIds = await resolveReadableEventIds(
+    catalogId,
+    MCP_VISIBILITY_ACCESS_LEVEL,
+  );
+  const eventRows = await prisma.catalogEvent.findMany({
+    where: {
+      workflowGroupId: catalogId,
+      ...catalogEventVisibilityWhere(visibleEventIds),
+    },
+    select: { locationId: true },
+  });
   const eventCounts = new Map<number, number>();
-  for (const row of recordingRows) {
-    if (visibleHashes.has(row.audioHash)) {
-      incrementCount(recordingCounts, row.locationId);
-    }
-  }
   for (const row of eventRows) incrementCount(eventCounts, row.locationId);
-  const ids = [...new Set([...recordingCounts.keys(), ...eventCounts.keys()])];
+  const ids = [...eventCounts.keys()];
   const locations =
     ids.length === 0
       ? []
@@ -503,7 +473,6 @@ export async function listMcpLocations(
     locations.map((location) => ({
       ...location,
       eventCount: eventCounts.get(location.id) ?? 0,
-      recordingCount: recordingCounts.get(location.id) ?? 0,
     })),
   );
   return {
@@ -572,7 +541,6 @@ export async function listMcpEvents(
   );
   const filters: Prisma.CatalogEventWhereInput = {
     ...(cursor ? { AND: [eventAfterCursorWhere(cursor)] } : {}),
-    ...(input.released === undefined ? {} : { released: input.released }),
     ...(input.date
       ? {
           dateYear: input.date.year,
@@ -608,46 +576,14 @@ export async function listMcpEvents(
   );
   const hasMore = events.length > input.limit;
   const page = hasMore ? events.slice(0, input.limit) : events;
-  const pageHashes = [
-    ...new Set(
-      page.flatMap((event) =>
-        event.recordings.map((recording) => recording.audioHash),
-      ),
-    ),
-  ];
-  const visibleHashes = await resolveReadableRecordingHashes(
-    catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
-    pageHashes,
-  );
   return {
     catalogId,
-    events: page.map((event) => {
-      const visibleRecordings = event.recordings.filter((recording) =>
-        visibleHashes.has(recording.audioHash),
-      );
-      const primaryAudioHash =
-        visibleRecordings.find((recording) => recording.isPrimary)?.audioHash ??
-        visibleRecordings[0]?.audioHash ??
-        null;
-      return {
-        id: event.id,
-        webUrl: buildEventWebUrl(catalogId, event.id),
-        title: event.title,
-        description: event.description,
-        date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
-        sessionIndex: event.sessionIndex,
-        location: event.location,
-        released: event.released,
-        recordings: {
-          primaryAudioHash,
-          audioHashes: visibleRecordings.map(
-            (recording) => recording.audioHash,
-          ),
-        },
-        updatedAt: event.updatedAt.toISOString(),
-      };
-    }),
+    events: page.map((event) => ({
+      id: event.id,
+      webUrl: buildEventWebUrl(catalogId, event.id),
+      date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
+      location: event.location,
+    })),
     nextCursor:
       hasMore && page.length > 0
         ? encodeMcpEventCursor(catalogId, input.order, page.at(-1)!)
@@ -671,10 +607,6 @@ export async function getMcpEvent(
     input.offset,
     input.offset + input.limit,
   );
-  const recordingByHash = await loadCatalogRecordingReadModels(
-    catalogId,
-    recordingPage.map((recording) => recording.audioHash),
-  );
   const nextOffset =
     input.offset + recordingPage.length < visibleRecordings.length
       ? input.offset + recordingPage.length
@@ -690,21 +622,15 @@ export async function getMcpEvent(
       date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
       sessionIndex: event.sessionIndex,
       location: event.location,
-      released: event.released,
       recordings: {
         items: recordingPage.map((recording) => ({
-          ...serializeRecordingSummary(
-            recordingByHash.get(recording.audioHash)!,
-          ),
+          audioHash: recording.audioHash,
           webUrl: buildRecordingWebUrl(catalogId, recording.audioHash),
           isPrimary: recording.isPrimary,
-          sortOrder: recording.sortOrder,
         })),
         totalVisible: visibleRecordings.length,
         nextOffset,
       },
-      createdAt: event.createdAt.toISOString(),
-      updatedAt: event.updatedAt.toISOString(),
     },
   };
 }
@@ -743,11 +669,10 @@ export async function getMcpRecording(catalogId: string, audioHash: string) {
       event: {
         select: {
           id: true,
-          title: true,
-          released: true,
           dateYear: true,
           dateMonth: true,
           dateDay: true,
+          location: { select: { id: true, name: true } },
         },
       },
     },
@@ -763,13 +688,12 @@ export async function getMcpRecording(catalogId: string, audioHash: string) {
       ? {
           id: eventLink.event.id,
           webUrl: buildEventWebUrl(catalogId, eventLink.event.id),
-          title: eventLink.event.title,
-          released: eventLink.event.released,
           date: serializeDate(
             eventLink.event.dateYear,
             eventLink.event.dateMonth,
             eventLink.event.dateDay,
           ),
+          location: eventLink.event.location,
           isPrimary: eventLink.isPrimary,
         }
       : null,
@@ -879,24 +803,12 @@ export async function getMcpTranscript(
     catalogId,
     audioHash,
     recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
-    seekWebUrl: segments[0]?.webUrl ?? null,
     backend,
-    availableBackends: available.backends,
     language: transcript.language ?? null,
     durationSec: transcript.duration ?? null,
-    mode: input.mode,
-    timeWindow: {
-      startSec: input.startSec ?? null,
-      endSec: input.endSec ?? null,
-    },
     segments: {
       items: segments,
-      offset: input.mode === 'page' ? input.segmentOffset : 0,
-      limit: input.mode === 'page' ? input.segmentLimit : null,
-      maxTextChars: input.mode === 'page' ? input.maxTextChars : null,
-      returnedTextChars,
       totalMatching: matchingSegments.length,
-      nextOffset,
     },
     continuation,
   };

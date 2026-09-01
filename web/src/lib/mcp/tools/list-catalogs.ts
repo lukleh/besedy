@@ -3,7 +3,6 @@ import { z } from 'zod';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
-  renderStructuredResult,
   toolError,
   toolSuccess,
 } from '@/lib/mcp/tools/shared';
@@ -44,7 +43,7 @@ export function registerListCatalogsTool(
     {
       title: 'List Besedy catalogs',
       description:
-        'List the catalogs available to the current user, the effective default, and their uniform MCP read capabilities. Use this when catalog selection or permissions are unclear; omit catalogId on routine content calls to use the effective default.',
+        'List accessible catalogs and identify the effective default. Use this when catalog selection or permissions are unclear.',
       inputSchema: z.object({
         cursor: z
           .string()
@@ -71,13 +70,21 @@ export function registerListCatalogsTool(
       }
 
       const result = {
-        catalogs: page.items,
+        catalogs: page.items.map((catalog) => ({
+          id: catalog.id,
+          label: catalog.label,
+          isDefault: catalog.isDefault,
+          catalogGrant: catalog.catalogGrant,
+          isCatalogAdmin: catalog.isCatalogAdmin,
+        })),
         defaultCatalogId: profile.defaultCatalogId,
         defaultCatalogSource: profile.defaultCatalogSource,
         nextCursor: page.nextCursor,
       };
-      const summary = `Listed ${page.items.length} accessible Besedy catalog(s).`;
-      return toolSuccess(result, renderStructuredResult(summary, result));
+      return toolSuccess(
+        result,
+        `Listed ${page.items.length} accessible catalog(s).`,
+      );
     },
   );
 }

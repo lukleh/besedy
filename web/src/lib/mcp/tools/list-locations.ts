@@ -23,7 +23,7 @@ export function registerListLocationsTool(
     {
       title: 'List Besedy locations',
       description:
-        'Discover location IDs used by visible Besedy data. list_events, search_transcripts, and find_transcript_mentions apply location IDs to events, so use eventCount to identify event locations; recordingCount describes curated recording metadata only. Uses the current user default catalog when catalogId is omitted.',
+        'List locations used by visible events for locationId filters.',
       inputSchema: createLookupListInputSchema('location'),
       outputSchema: ListLocationsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -34,7 +34,7 @@ export function registerListLocationsTool(
       return runReadTool(
         () => listMcpLocations(catalog.id, { query, cursor, limit }),
         (result) =>
-          `Listed ${Array.isArray(result.locations) ? result.locations.length : 0} visible Besedy location(s).`,
+          `Listed ${Array.isArray(result.locations) ? result.locations.length : 0} event location(s).`,
       );
     },
   );

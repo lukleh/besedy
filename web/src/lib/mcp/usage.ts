@@ -44,8 +44,15 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function transcriptTextChars(
+  segments: Record<string, unknown> | null,
+): number | null {
+  const items = segments?.items;
+  if (!Array.isArray(items)) return null;
+  return items.reduce((total, item) => {
+    const text = asRecord(item)?.text;
+    return total + (typeof text === 'string' ? text.length : 0);
+  }, 0);
 }
 
 function sanitizeTelemetryLabel(value: string | null): string | null {
@@ -86,7 +93,7 @@ export function summarizeMcpInvocationResult(
         : McpToolOutcome.SUCCESS,
     errorCode,
     catalogId: nonEmptyString(structured?.catalogId),
-    returnedTextChars: finiteNumber(segments?.returnedTextChars),
+    returnedTextChars: transcriptTextChars(segments),
   };
 }
 

@@ -36,7 +36,7 @@ export function registerListEventsTool(
     {
       title: 'List Besedy events',
       description:
-        'List visible events in chronological date order. Uses the current user default catalog when catalogId is omitted.',
+        'List visible events with their authoritative date and location.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -65,12 +65,6 @@ export function registerListEventsTool(
           .describe(
             'Chronological event-date order. Use asc for oldest events first and desc for newest events first.',
           ),
-        released: z
-          .boolean()
-          .optional()
-          .describe(
-            'When true, include released events. False returns no results because MCP never exposes unreleased events.',
-          ),
         query: z
           .string()
           .trim()
@@ -95,16 +89,7 @@ export function registerListEventsTool(
       outputSchema: ListEventsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({
-      catalogId,
-      cursor,
-      limit,
-      order,
-      released,
-      query,
-      date,
-      locationId,
-    }) => {
+    async ({ catalogId, cursor, limit, order, query, date, locationId }) => {
       const catalog = resolveToolCatalog(profile, catalogId);
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
@@ -113,13 +98,12 @@ export function registerListEventsTool(
             cursor,
             limit,
             order,
-            released,
             query,
             date,
             locationId,
           }),
         (result) =>
-          `Listed ${Array.isArray(result.events) ? result.events.length : 0} visible Besedy event(s).`,
+          `Listed ${Array.isArray(result.events) ? result.events.length : 0} event(s).`,
       );
     },
   );

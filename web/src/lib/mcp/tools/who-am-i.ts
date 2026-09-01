@@ -5,7 +5,6 @@ import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
-  renderStructuredResult,
   toolError,
   toolSuccess,
 } from '@/lib/mcp/tools/shared';
@@ -24,7 +23,7 @@ export function registerWhoAmITool(
     {
       title: 'Show current Besedy identity',
       description:
-        'Show which Besedy account and OAuth client this MCP connection is using, including its effective access summary. Use this when identity, scopes, or unexpected access are unclear; it is not needed before routine content calls.',
+        'Show the account, OAuth client, scopes, and default catalog for this connection. Use it only to diagnose identity or access.',
       inputSchema: z.object({}),
       outputSchema: WhoAmIOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -61,7 +60,7 @@ export function registerWhoAmITool(
         result.account.email ?? result.account.name ?? identity.userId;
       const roleLabel = canReadProfile ? ` (${profile.systemRole})` : '';
       const summary = `Connected to Besedy as ${accountLabel}${roleLabel} via ${identity.clientName ?? identity.clientId}.`;
-      return toolSuccess(result, renderStructuredResult(summary, result));
+      return toolSuccess(result, summary);
     },
   );
 }

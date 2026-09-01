@@ -16,27 +16,10 @@ import {
 export interface McpCatalogAccess {
   id: string;
   label: string | null;
-  isUserDefault: boolean;
-  isGlobalDefault: boolean;
-  isEffectiveDefault: boolean;
+  isDefault: boolean;
   catalogGrant: AccessLevel | null;
   isCatalogAdmin: boolean;
-  capabilities: {
-    canListEvents: boolean;
-    canGetRecordings: boolean;
-    canViewTranscripts: boolean;
-    canSearchTranscripts: boolean;
-    canSeeUnreleasedEvents: boolean;
-  };
 }
-
-const MCP_CATALOG_CAPABILITIES = {
-  canListEvents: true,
-  canGetRecordings: true,
-  canViewTranscripts: true,
-  canSearchTranscripts: true,
-  canSeeUnreleasedEvents: false,
-} as const;
 
 export type McpDefaultCatalogSource =
   'user_preference' | 'global_default' | 'most_recent';
@@ -114,12 +97,9 @@ export async function getMcpAccessProfile(
     return {
       id: group.id,
       label: group.label,
-      isUserDefault: preferences.activeGroupId === group.id,
-      isGlobalDefault: group.isDefault,
-      isEffectiveDefault: effectiveDefault?.group.id === group.id,
+      isDefault: effectiveDefault?.group.id === group.id,
       catalogGrant,
       isCatalogAdmin,
-      capabilities: MCP_CATALOG_CAPABILITIES,
     };
   });
 

@@ -37,9 +37,7 @@ function renderTranscriptContent(
     }),
   ];
   if (result.continuation) {
-    lines.push(
-      `Continue with segmentOffset ${result.continuation.segmentOffset}.`,
-    );
+    lines.push('Use continuation for the next page.');
   }
   return lines.join('\n');
 }
@@ -56,7 +54,7 @@ export function registerGetTranscriptTool(
     {
       title: 'Get a Besedy transcript',
       description:
-        'Read continuous source context or the complete stored transcript from an accessible Besedy recording. To verify important evidence from either search tool, pass its non-null transcriptRequest here unchanged so the catalog, recording, backend, and time window remain aligned; expand the window when needed until the question, answer, and qualifications are coherent. If the search result has no transcriptRequest, this tool cannot verify that candidate through the indexed transcript handoff. Use mode full for every segment in the optional time window, or mode page for a bounded read. The response preserves the unbounded recordingWebUrl, provides seekWebUrl for the first returned segment, and gives every segment a bounded citation webUrl.',
+        'Read transcript context for a visible recording. Pass a search result transcriptRequest unchanged, then expand its time window when more context is needed. Page mode is bounded; full mode returns the complete selected window. Each segment includes a bounded citation URL.',
       inputSchema: z
         .object({
           catalogId: z
@@ -168,7 +166,7 @@ export function registerGetTranscriptTool(
                 }),
           }),
         (result) =>
-          `Returned ${getPageItemCount(result.segments)} transcript segment(s) for Besedy recording ${audioHash}.`,
+          `Returned ${getPageItemCount(result.segments)} transcript segment(s) for ${audioHash}.`,
         renderTranscriptContent,
       );
     },

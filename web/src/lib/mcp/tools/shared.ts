@@ -123,13 +123,6 @@ export function toolSuccess(
   };
 }
 
-export function renderStructuredResult(
-  summary: string,
-  result: Record<string, unknown>,
-): string {
-  return `${summary}\nStructured result: ${JSON.stringify(result)}`;
-}
-
 export function renderTranscriptVerificationHandoff(
   transcriptRequest: unknown,
 ): string {
@@ -212,10 +205,7 @@ export async function runReadTool<T extends Record<string, unknown>>(
   try {
     const result = await operation();
     const summary = summarize(result);
-    return toolSuccess(
-      result,
-      renderContent?.(result) ?? renderStructuredResult(summary, result),
-    );
+    return toolSuccess(result, renderContent?.(result) ?? summary);
   } catch (error) {
     if (error instanceof McpReadError) {
       return toolError(error.code, error.message, error.retryable);

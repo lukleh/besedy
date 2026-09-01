@@ -14,8 +14,8 @@ just mcp-smoke
 The test signs in as the seeded catalog owner through the mock OAuth UI, accepts
 the MCP consent screen, exchanges an authorization code with PKCE, validates
 the audience-bound JWT, sends MCP 2026-07-28 `tools/list`, and calls
-all ten tools. It verifies default-catalog resolution, the uniform MCP
-capability flags, listener-scoped metadata reads, complete transcript retrieval,
+all ten tools. It verifies default-catalog resolution, uniform MCP tool
+availability, listener-scoped metadata reads, complete transcript retrieval,
 and a grounded RAG result from a deterministic test-only ColBERT mock.
 Catalog-scoped calls do not supply `catalogId`, so the same run covers default
 selection. The test keeps its own `test-mcp-*` Compose project and volume, then
@@ -245,11 +245,9 @@ in the user's live accessible catalog list. An inaccessible catalog uses
 not-found semantics.
 
 `list_catalogs` includes the explicit web `catalogGrant`, the `isCatalogAdmin`
-system-authority flag, and the effective MCP capability flags. Transcript and
-search capabilities are true for every returned catalog, while
-`canSeeUnreleasedEvents` is false. It also distinguishes the
-user's saved default, the configured global default, and the effective default
-that an omitted `catalogId` will resolve.
+system-authority flag, and `isDefault` for the effective default that an omitted
+`catalogId` will resolve. The uniform MCP capabilities are expressed by the
+discovered tool set and access rules rather than repeated on every catalog.
 
 ## Tool reference
 
@@ -257,9 +255,9 @@ All ten tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
 `structuredContent`. Every tool advertises an `outputSchema` through
 `tools/list`, so an agent can understand the success response before its first
-call and the server can validate the returned structure. The `content` field
-contains a concise summary plus compact JSON for metadata tools; transcript and
-search calls instead render their evidence text there for clients that do not
+call and the server can validate the returned structure. Metadata tools use a
+short human-readable summary in `content` without duplicating their JSON.
+Transcript and search calls render evidence text there for clients that do not
 consume structured results. Responses may contain stable Besedy IDs and
 authenticated web links, but never audio URLs or filesystem paths.
 
@@ -285,8 +283,8 @@ every matching segment in one response.
 | Tool                       | Use it to                                                        | Required data access                       |
 | -------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
 | `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary    | Active portal user                         |
-| `list_catalogs`            | Discover accessible catalogs and MCP capabilities                | Active portal user                         |
-| `list_locations`           | Discover location IDs used by listener-visible data              | Accessible catalog                         |
+| `list_catalogs`            | Discover accessible catalogs and the effective default           | Active portal user                         |
+| `list_locations`           | Discover location IDs used by listener-visible events            | Accessible catalog                         |
 | `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Accessible catalog                         |
 | `list_events`              | Page and filter released events                                  | Accessible catalog                         |
 | `get_event`                | Read one released event and its visible recordings               | Accessible catalog and listener visibility |
@@ -349,8 +347,7 @@ returns a catalog-related not-found error.
 | `limit`  | integer from 1 to 100 | `50`    | Maximum catalogs in the page                  |
 
 Each item in `catalogs` contains `id`, `label`, the web `catalogGrant`,
-`isCatalogAdmin`, and the uniform MCP capability flags. It also
-distinguishes `isUserDefault`, `isGlobalDefault`, and `isEffectiveDefault`.
+`isCatalogAdmin`, and `isDefault`, which marks the effective default.
 The top-level `defaultCatalogId` is the catalog selected when a catalog-scoped
 tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
 `global_default`, `most_recent`, or `null`.
@@ -366,18 +363,9 @@ Example return value:
     {
       "id": "20990101_000000",
       "label": "Example catalog",
-      "isUserDefault": true,
-      "isGlobalDefault": false,
-      "isEffectiveDefault": true,
+      "isDefault": true,
       "catalogGrant": "VIEWER",
-      "isCatalogAdmin": false,
-      "capabilities": {
-        "canListEvents": true,
-        "canGetRecordings": true,
-        "canViewTranscripts": true,
-        "canSearchTranscripts": true,
-        "canSeeUnreleasedEvents": false
-      }
+      "isCatalogAdmin": false
     }
   ],
   "defaultCatalogId": "20990101_000000",
@@ -389,10 +377,8 @@ Example return value:
 ### `list_locations`
 
 Use this tool to resolve a location name to the stable ID accepted by
-`list_events.locationId` and the search tools' `filters.locationIds`. Search
-filters apply to event locations. Results may also include locations used only
-by readable recording metadata; use a positive `eventCount` to identify IDs
-that can contribute event-scoped search results.
+`list_events.locationId` and the search tools' `filters.locationIds`. Results
+contain only locations used by visible events.
 
 | Argument    | Type                                     | Default           | Meaning                                                          |
 | ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------- |
@@ -401,12 +387,8 @@ that can contribute event-scoped search results.
 | `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page |
 | `limit`     | integer from 1 to 100                    | `50`              | Maximum locations in the page                                    |
 
-Locations are ordered by name and ID. `recordingCount` counts readable
-recordings with that curated recording location. `eventCount` counts readable
-events whose event location matches; it is `null` when event browsing is not
-enabled for the selected catalog. The two counts are intentionally distinct:
-an event can contain recordings whose curated locations differ from the event
-location.
+Locations are ordered by name and ID. `eventCount` counts visible events whose
+authoritative event location matches.
 
 Example return value:
 
@@ -417,8 +399,7 @@ Example return value:
     {
       "id": 999,
       "name": "Example Hall",
-      "eventCount": 12,
-      "recordingCount": 18
+      "eventCount": 12
     }
   ],
   "nextCursor": null
@@ -470,7 +451,6 @@ Use this tool to browse events or resolve an event ID before calling
 | `cursor`     | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page       |
 | `limit`      | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
 | `order`      | `asc` or `desc`                          | `desc`            | Chronological date order; ascending returns oldest events first        |
-| `released`   | boolean                                  | omitted           | Restrict released results; `false` is empty under MCP visibility       |
 | `query`      | non-empty string, at most 200 characters | omitted           | Case-insensitive literal match against title, description, or location |
 | `date`       | partial date object                      | omitted           | Event date prefix: required `year`, optional `month`, optional `day`   |
 | `locationId` | positive integer                         | omitted           | Exact event location ID                                                |
@@ -481,14 +461,10 @@ form matches that exact date prefix. A day without a month is invalid. Use
 is known.
 
 Events are ordered by event year, month, day, session index, and ID in the
-selected direction. Missing month or day values sort after known values. Each
-event includes its metadata, release state, last-updated timestamp,
-authenticated `webUrl`, and a listener-scoped `recordings` object.
-`recordings.audioHashes` contains every
-visible attached recording hash in event sort order.
-`recordings.primaryAudioHash` identifies the visible primary recording, falls
-back to the first visible recording when no primary is marked, and is `null`
-when no recording is visible.
+selected direction. Missing month or day values sort after known values. Every
+item uses the common event reference shape: `id`, authenticated `webUrl`,
+authoritative `date`, and authoritative `location`. Use `get_event` for event
+details and attached recording hashes.
 
 Example return value:
 
@@ -499,19 +475,8 @@ Example return value:
     {
       "id": 4242,
       "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
-      "title": "Example Hall, 12 Apr 2099",
-      "description": "Fictional event used only for documentation",
       "date": { "year": 2099, "month": 4, "day": 12 },
-      "sessionIndex": 1,
-      "location": { "id": 999, "name": "Example Hall" },
-      "released": true,
-      "recordings": {
-        "primaryAudioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "audioHashes": [
-          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        ]
-      },
-      "updatedAt": "2099-04-13T08:30:00.000Z"
+      "location": { "id": 999, "name": "Example Hall" }
     }
   ],
   "nextCursor": null
@@ -534,11 +499,11 @@ recordings are needed.
 | `recordingOffset` | non-negative integer  | `0`               | Offset into visible attached recordings |
 | `recordingLimit`  | integer from 1 to 100 | `25`              | Maximum recording summaries in the page |
 
-The response contains `catalogId` and an `event` with full event metadata,
-timestamps, authenticated `webUrl`, and a `recordings` page. Every recording
-item includes the stable `audioHash`, compact metadata, `isPrimary`,
-`sortOrder`, and its authenticated `webUrl`. `totalVisible` counts only
-recordings visible to the caller. Continue with `nextOffset` as
+The response contains `catalogId` and an `event` with its event reference,
+optional descriptive metadata, session index, and a `recordings` page. Every
+recording item contains only the stable `audioHash`, `isPrimary`, and its
+authenticated `webUrl`. `totalVisible` counts only recordings visible to the
+caller. Continue with `nextOffset` as
 `recordingOffset`; `null` marks the final page.
 
 Example return value:
@@ -554,26 +519,17 @@ Example return value:
     "date": { "year": 2099, "month": 4, "day": 12 },
     "sessionIndex": 1,
     "location": { "id": 999, "name": "Example Hall" },
-    "released": true,
     "recordings": {
       "items": [
         {
           "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "title": "Example recording",
-          "artist": "Example speaker",
-          "durationHms": "00:12:30",
-          "ready": true,
-          "published": true,
           "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "isPrimary": true,
-          "sortOrder": 0
+          "isPrimary": true
         }
       ],
       "totalVisible": 1,
       "nextOffset": null
-    },
-    "createdAt": "2099-04-12T18:00:00.000Z",
-    "updatedAt": "2099-04-13T08:30:00.000Z"
+    }
   }
 }
 ```
@@ -588,10 +544,10 @@ hash returned by an event, search, or transcript response.
 | `catalogId` | string                          | effective default | Catalog containing the recording |
 | `audioHash` | 64-character hexadecimal string | required          | Stable recording identifier      |
 
-`recording` contains the descriptive metadata, readiness and publication
-flags, and authenticated `webUrl`; it deliberately omits audio and storage
-locations. `event` contains the recording's compact event summary and whether
-the recording is primary, or `null` when its event is not visible to the caller.
+`recording` contains descriptive metadata and an authenticated `webUrl`; it
+deliberately omits guaranteed visibility flags, audio, and storage locations.
+`event` uses the common event reference shape plus whether the recording is
+primary, or is `null` when its event is not visible to the caller.
 Search results already include event identity, date, and location, so call this
 tool after search only when recording-specific descriptive metadata is needed.
 
@@ -613,16 +569,13 @@ Example return value:
     "verified": true,
     "notes": "Fictional recording used only for documentation",
     "tags": ["example"],
-    "ready": true,
-    "published": true,
     "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "event": {
     "id": 4242,
     "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
-    "title": "Example Hall, 12 Apr 2099",
-    "released": true,
     "date": { "year": 2099, "month": 4, "day": 12 },
+    "location": { "id": 999, "name": "Example Hall" },
     "isPrimary": true
   }
 }
@@ -658,17 +611,13 @@ segment may exceed `maxTextChars`. Segment items include their absolute
 `segmentIndex`, text, timestamps, optional speaker and source ID, and a
 timestamped `webUrl`.
 
-The response also reports the chosen `backend`, `availableBackends`, language,
-duration, normalized `timeWindow`, `recordingWebUrl`, and a `seekWebUrl` for
-the first returned segment. Segment and seek links include both `seek` and
-`end` timestamps. The player stops once at the linked end; pressing play again
-continues through the recording. An empty page has `seekWebUrl: null`. The
-`segments` object reports `returnedTextChars`, `totalMatching`, and
-`nextOffset`. Full mode reports `limit` and `maxTextChars` as `null` and always
-returns `nextOffset: null` and `continuation: null`. When more page-mode data
-exists, `continuation` preserves the catalog, recording, backend, mode, window,
-limits, and next offset and can be passed unchanged as the next call's
-arguments. Otherwise it is `null`.
+The response reports the chosen `backend`, language, duration, and unbounded
+`recordingWebUrl`. Each segment link includes both `seek` and `end` timestamps.
+The player stops once at the linked end; pressing play again continues through
+the recording. The `segments` object contains the items and `totalMatching`.
+When more page-mode data exists, `continuation` preserves the catalog,
+recording, backend, mode, window, limits, and next offset and can be passed
+unchanged as the next call's arguments. Otherwise it is `null`.
 
 Example full-mode return value:
 
@@ -677,16 +626,9 @@ Example full-mode return value:
   "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "seekWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5",
   "backend": "faster-whisper/large-v3@silero_vad_v6",
-  "availableBackends": [
-    "faster-whisper/large-v3@silero_vad_v6",
-    "whisperx/large-v3@silero"
-  ],
   "language": "en",
   "durationSec": 12.5,
-  "mode": "full",
-  "timeWindow": { "startSec": null, "endSec": null },
   "segments": {
     "items": [
       {
@@ -699,30 +641,18 @@ Example full-mode return value:
         "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5"
       }
     ],
-    "offset": 0,
-    "limit": null,
-    "maxTextChars": null,
-    "returnedTextChars": 27,
-    "totalMatching": 1,
-    "nextOffset": null
+    "totalMatching": 1
   },
   "continuation": null
 }
 ```
 
-Page mode has the same top-level shape, but reports numeric page limits and may
-return a continuation descriptor:
+Page mode has the same top-level shape and may return a continuation descriptor:
 
 ```json
 {
-  "mode": "page",
   "segments": {
-    "offset": 0,
-    "limit": 1,
-    "maxTextChars": 20000,
-    "returnedTextChars": 27,
     "totalMatching": 2,
-    "nextOffset": 1,
     "items": [
       {
         "segmentIndex": 0,

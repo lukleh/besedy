@@ -25,8 +25,7 @@ export function registerGetEventTool(
     'get_event',
     {
       title: 'Get a Besedy event',
-      description:
-        'Get one visible event and a bounded page of compact visible recording summaries.',
+      description: 'Get one visible event and its recording identifiers.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -68,7 +67,7 @@ export function registerGetEventTool(
             offset: recordingOffset,
             limit: recordingLimit,
           }),
-        () => `Returned Besedy event ${eventId}.`,
+        () => `Returned event ${eventId}.`,
       );
     },
   );

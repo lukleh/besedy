@@ -24,7 +24,7 @@ export function registerGetRecordingTool(
     {
       title: 'Get Besedy recording metadata',
       description:
-        'Get descriptive metadata for one visible recording and its visible event, without returning audio or filesystem paths. Search results already include event identity, date, and location; use this tool only when recording-specific details are needed.',
+        'Get recording-specific metadata. Search results already provide event context.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -45,7 +45,7 @@ export function registerGetRecordingTool(
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () => getMcpRecording(catalog.id, audioHash),
-        () => `Returned metadata for Besedy recording ${audioHash}.`,
+        () => `Returned recording ${audioHash}.`,
       );
     },
   );
