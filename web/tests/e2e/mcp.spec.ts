@@ -1004,7 +1004,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       ],
     });
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
-      'complete count covers all authorized indexed chunks',
+      'complete count is a chunk-match count, not a distinct-event count',
     );
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
       'backend variants outside the active index',
