@@ -24,7 +24,7 @@ export function registerWhoAmITool(
     {
       title: 'Show current Besedy identity',
       description:
-        'Show which Besedy account and OAuth client this MCP connection is using, including its effective access summary.',
+        'Show which Besedy account and OAuth client this MCP connection is using, including its effective access summary. Use this when identity, scopes, or unexpected access are unclear; it is not needed before routine content calls.',
       inputSchema: z.object({}),
       outputSchema: WhoAmIOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,

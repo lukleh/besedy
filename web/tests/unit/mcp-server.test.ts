@@ -5,6 +5,7 @@ import {
   createBesedyMcpServer,
   paginateCatalogs,
 } from '@/lib/mcp/server';
+import { renderTranscriptVerificationHandoff } from '@/lib/mcp/tools/shared';
 import type {
   McpAccessProfile,
   McpCatalogAccess,
@@ -473,14 +474,26 @@ describe('MCP personalized tool surface', () => {
       (tool) => tool.name === 'find_transcript_mentions',
     );
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
+    const recordingTool = tools.find((tool) => tool.name === 'get_recording');
+    const identityTool = tools.find((tool) => tool.name === 'who_am_i');
+    const catalogsTool = tools.find((tool) => tool.name === 'list_catalogs');
     const eventsTool = tools.find((tool) => tool.name === 'list_events');
     const locationsTool = tools.find((tool) => tool.name === 'list_locations');
     const recordersTool = tools.find((tool) => tool.name === 'list_recorders');
 
     expect(searchTool?.description).toContain('filters.eventIds');
-    expect(lexicalTool?.description).toContain('actual transcript wording');
+    expect(lexicalTool?.description).toContain(
+      'authorized indexed Besedy transcript corpus',
+    );
     expect(searchTool?.description).toContain('passages by meaning');
     expect(lexicalTool?.description).toContain('search_transcripts');
+    expect(lexicalTool?.description).toContain('totalMatches');
+    expect(lexicalTool?.description).toContain('returned passages');
+    expect(lexicalTool?.description).toContain('conceptual absence');
+    expect(lexicalTool?.description).toContain(
+      'backend variants outside the active index',
+    );
+    expect(lexicalTool?.description).toContain('get_transcript');
     expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
       10,
@@ -490,7 +503,9 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.description).toContain('get_transcript');
     expect(searchTool?.description).toContain('small first pass');
     expect(searchTool?.description).toContain('precise broad searches');
-    expect(searchTool?.description).toContain('match webUrl is bounded');
+    expect(searchTool?.description).toContain(
+      'match webUrl is a bounded citation',
+    );
     expect(searchTool?.description).toContain(
       'recording summary webUrl remains unbounded',
     );
@@ -522,10 +537,17 @@ describe('MCP personalized tool surface', () => {
     expect(locationsTool?.description).toContain('list_events');
     expect(locationsTool?.description).toContain('search_transcripts');
     expect(recordersTool?.description).toContain('search_transcripts');
+    expect(recordingTool?.description).toContain('compare linked event IDs');
+    expect(recordingTool?.description).toContain(
+      'variants, not independent evidence',
+    );
     expect(transcriptTool?.description).toContain('verify important evidence');
+    expect(transcriptTool?.description).toContain(
+      'pass its non-null transcriptRequest here unchanged',
+    );
     expect(transcriptTool?.description).toContain('complete stored transcript');
     expect(transcriptTool?.description).toContain('unbounded recordingWebUrl');
-    expect(transcriptTool?.description).toContain('bounded webUrl');
+    expect(transcriptTool?.description).toContain('bounded citation webUrl');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
       'every segment',
     );
@@ -550,20 +572,56 @@ describe('MCP personalized tool surface', () => {
     expect(eventsTool?.inputSchema.properties.released.description).toContain(
       'released',
     );
+    expect(identityTool?.description).toContain(
+      'not needed before routine content calls',
+    );
+    expect(catalogsTool?.description).toContain(
+      'omit catalogId on routine content calls',
+    );
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('two stages');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('Do not wait for the user');
+    expect(BESEDY_MCP_INSTRUCTIONS.length).toBeLessThan(1_600);
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'Tool descriptions and schemas define individual calls',
+    );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-exhaustive');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('Literal totalMatches');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('authorized indexed chunks');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'backend variants outside the active index',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-null transcriptRequest');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('use get_recording');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event are variants');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
 
     const body = await invokeMcp('server/discover');
     expect(body.error).toBeUndefined();
     expect(body.result?.instructions).toBe(BESEDY_MCP_INSTRUCTIONS);
+  });
+
+  it('renders usable and unavailable transcript verification handoffs', () => {
+    const request = {
+      catalogId: 'viewer-catalog',
+      audioHash: 'a'.repeat(64),
+      backend: 'whisperx/model',
+      mode: 'page',
+      startSec: 0,
+      endSec: 15,
+    };
+    expect(renderTranscriptVerificationHandoff(request)).toBe(
+      `Transcript request: ${JSON.stringify(request)}`,
+    );
+    expect(renderTranscriptVerificationHandoff(null)).toContain(
+      'Transcript request unavailable',
+    );
+    expect(renderTranscriptVerificationHandoff(null)).toContain(
+      'Do not rely on it as important evidence',
+    );
   });
 
   it('uses the effective default catalog when catalogId is omitted', async () => {
@@ -935,10 +993,24 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context/,
+          /ranked, non-exhaustive candidate[\s\S]*zero result does not establish conceptual absence[\s\S]*Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context[\s\S]*Transcript request: \{"catalogId":"viewer-catalog"/,
         ),
       },
     ]);
+    const renderedContent = body.result?.content as Array<{ text: string }>;
+    const transcriptRequestLine = renderedContent[0]?.text
+      .split('\n')
+      .find((line) => line.startsWith('Transcript request: '));
+    expect(transcriptRequestLine).toBeDefined();
+    const renderedTranscriptRequest = JSON.parse(
+      transcriptRequestLine!.slice('Transcript request: '.length),
+    );
+    const structuredContent = body.result?.structuredContent as {
+      results: Array<{ transcriptRequest: Record<string, unknown> }>;
+    };
+    expect(renderedTranscriptRequest).toEqual(
+      structuredContent.results[0]?.transcriptRequest,
+    );
     expect(searchMcpTranscripts).toHaveBeenCalledWith('viewer-catalog', {
       query: 'search phrase',
       limit: 50,
@@ -978,6 +1050,14 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /found 0 match\(es\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*complete count covers all authorized indexed chunks[\s\S]*does not cover stored transcript backend variants outside the active index[\s\S]*zero count establishes only indexed literal-pattern absence/,
+        ),
+      },
+    ]);
     expect(findMcpTranscriptMentions).toHaveBeenCalledWith('viewer-catalog', {
       query: 'exact phrase',
       matchMode: 'all_terms',

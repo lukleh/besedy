@@ -904,6 +904,12 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(searchBody.result?.content?.[0]?.text).toContain(
       'Deterministic Besedy MCP search evidence.',
     );
+    expect(searchBody.result?.content?.[0]?.text).toContain(
+      'ranked, non-exhaustive candidate',
+    );
+    expect(searchBody.result?.content?.[0]?.text).toContain(
+      'Transcript request:',
+    );
     expect(searchBody.result?.structuredContent.results[0]).not.toHaveProperty(
       'score',
     );
@@ -954,6 +960,15 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       },
       results: [{ match: { chunkId: 'mcp-smoke-chunk-1' } }],
     });
+    expect(lexicalBody.result?.content?.[0]?.text).toContain(
+      'complete count covers all authorized indexed chunks',
+    );
+    expect(lexicalBody.result?.content?.[0]?.text).toContain(
+      'backend variants outside the active index',
+    );
+    expect(lexicalBody.result?.content?.[0]?.text).toContain(
+      'Transcript request:',
+    );
     expect(lexicalBody.result?.structuredContent.results[0]).not.toHaveProperty(
       'score',
     );

@@ -295,7 +295,7 @@ const TranscriptSearchResultSchema = z.object({
     })
     .nullable()
     .describe(
-      'Ready-to-call get_transcript arguments for verifying this candidate in continuous context.',
+      'Ready-to-call get_transcript arguments for verifying this candidate in continuous context, or null when no compatible stored transcript is available.',
     ),
 });
 
@@ -318,7 +318,11 @@ export const FindTranscriptMentionsOutputSchema = z.object({
   retrieval: z.object({
     mode: z.literal('lexical'),
     matchMode: LexicalMatchModeSchema,
-    corpusCoverage: z.literal('complete'),
+    corpusCoverage: z
+      .literal('complete')
+      .describe(
+        'Complete over authorized indexed chunks under the selected filters and match mode; does not cover stored backend variants outside the active index.',
+      ),
     totalMatches: z.number().int().nonnegative(),
     requestedLimit: z.number().int().positive(),
     returnedCount: z.number().int().nonnegative(),

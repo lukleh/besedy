@@ -27,7 +27,7 @@ export function registerGetRecordingTool(
     {
       title: 'Get Besedy recording metadata',
       description:
-        'Get metadata for one visible recording and a bounded page of its visible events, without returning audio or filesystem paths.',
+        'Get metadata for one visible recording and a bounded page of its visible events, without returning audio or filesystem paths. After transcript search, use this on shortlisted audio hashes to compare linked event IDs; recordings linked to the same event are variants, not independent evidence.',
       inputSchema: z.object({
         catalogId: z
           .string()
