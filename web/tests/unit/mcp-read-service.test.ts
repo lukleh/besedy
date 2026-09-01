@@ -25,7 +25,7 @@ import {
 vi.mock('@/lib/db', () => ({
   default: {
     catalogEvent: { findMany: vi.fn(), findFirst: vi.fn() },
-    catalogEventRecording: { findMany: vi.fn(), count: vi.fn() },
+    catalogEventRecording: { findFirst: vi.fn() },
     catalogEntry: { findMany: vi.fn() },
     audioMetadata: { findMany: vi.fn() },
     location: { findMany: vi.fn() },
@@ -72,8 +72,7 @@ describe('MCP read service', () => {
     location: { findMany: ReturnType<typeof vi.fn> };
     recorder: { findMany: ReturnType<typeof vi.fn> };
     catalogEventRecording: {
-      findMany: ReturnType<typeof vi.fn>;
-      count: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
     };
   };
 
@@ -247,20 +246,17 @@ describe('MCP read service', () => {
         location: { id: 7, name: 'Prague' },
       },
     ]);
-    db.catalogEventRecording.findMany.mockResolvedValue([
-      {
-        isPrimary: true,
-        event: {
-          id: 42,
-          title: 'Visible event',
-          released: true,
-          dateYear: 2026,
-          dateMonth: 8,
-          dateDay: 26,
-        },
+    db.catalogEventRecording.findFirst.mockResolvedValue({
+      isPrimary: true,
+      event: {
+        id: 42,
+        title: 'Visible event',
+        released: true,
+        dateYear: 2026,
+        dateMonth: 8,
+        dateDay: 26,
       },
-    ]);
-    db.catalogEventRecording.count.mockResolvedValue(2);
+    });
   });
 
   it('filters events by partial date and location and returns visible hashes', async () => {
@@ -695,21 +691,16 @@ describe('MCP read service', () => {
     });
   });
 
-  it('returns detailed recording metadata with a bounded visible event page', async () => {
-    const result = await getMcpRecording('catalog-a', 'visible-recording', {
-      offset: 0,
-      limit: 1,
-    });
+  it('returns detailed recording metadata with its visible event', async () => {
+    const result = await getMcpRecording('catalog-a', 'visible-recording');
 
-    expect(db.catalogEventRecording.findMany).toHaveBeenCalledWith(
+    expect(db.catalogEventRecording.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           workflowGroupId: 'catalog-a',
           audioHash: 'visible-recording',
           eventId: { in: [42] },
         },
-        skip: 0,
-        take: 1,
       }),
     );
     expect(result).toMatchObject({
@@ -722,51 +713,36 @@ describe('MCP read service', () => {
         webUrl:
           'https://besedy.example/catalog/catalog-a/recording/visible-recording',
       },
-      events: {
-        items: [
-          {
-            id: 42,
-            webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
-            title: 'Visible event',
-            released: true,
-            date: { year: 2026, month: 8, day: 26 },
-            isPrimary: true,
-          },
-        ],
-        totalVisible: 2,
-        nextOffset: 1,
+      event: {
+        id: 42,
+        webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
+        title: 'Visible event',
+        released: true,
+        date: { year: 2026, month: 8, day: 26 },
+        isPrimary: true,
       },
     });
   });
 
-  it('scopes linked event pagination and totals to released events', async () => {
-    db.catalogEventRecording.count.mockResolvedValue(1);
+  it('returns null when the recording event is not visible', async () => {
+    db.catalogEventRecording.findFirst.mockResolvedValue(null);
 
-    const result = await getMcpRecording('catalog-a', 'visible-recording', {
-      offset: 0,
-      limit: 25,
-    });
+    const result = await getMcpRecording('catalog-a', 'visible-recording');
 
     const permissionScopedWhere = {
       workflowGroupId: 'catalog-a',
       audioHash: 'visible-recording',
       eventId: { in: [42] },
     };
-    expect(db.catalogEventRecording.findMany).toHaveBeenCalledWith(
+    expect(db.catalogEventRecording.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: permissionScopedWhere }),
     );
-    expect(db.catalogEventRecording.count).toHaveBeenCalledWith({
-      where: permissionScopedWhere,
-    });
-    expect(result.events.totalVisible).toBe(1);
+    expect(result.event).toBeNull();
   });
 
   it('hides unpublished recordings from metadata and transcript reads', async () => {
     await expect(
-      getMcpRecording('catalog-a', 'hidden-recording', {
-        offset: 0,
-        limit: 25,
-      }),
+      getMcpRecording('catalog-a', 'hidden-recording'),
     ).rejects.toMatchObject({ code: 'not_found', retryable: false });
 
     await expect(

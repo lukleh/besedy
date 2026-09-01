@@ -187,11 +187,9 @@ export const GetRecordingOutputSchema = z.object({
     notes: z.string().nullable(),
     tags: z.array(z.string()),
   }),
-  events: z.object({
-    items: z.array(CompactEventSchema),
-    totalVisible: z.number().int().nonnegative(),
-    nextOffset: NullableOffsetSchema,
-  }),
+  event: CompactEventSchema.nullable().describe(
+    'The recording event when it is visible to the caller, otherwise null.',
+  ),
 });
 
 const TranscriptContinuationSchema = z.object({

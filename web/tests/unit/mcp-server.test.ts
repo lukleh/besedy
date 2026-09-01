@@ -538,6 +538,8 @@ describe('MCP personalized tool surface', () => {
     expect(recordingTool?.description).toContain(
       'Search results already include event identity',
     );
+    expect(recordingTool?.inputSchema.properties.eventOffset).toBeUndefined();
+    expect(recordingTool?.inputSchema.properties.eventLimit).toBeUndefined();
     expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain(
       'pass its non-null transcriptRequest here unchanged',
@@ -767,7 +769,7 @@ describe('MCP personalized tool surface', () => {
     });
   });
 
-  it('applies bounded event pagination defaults to get_recording', async () => {
+  it('gets recording metadata without event pagination', async () => {
     accessProfile = {
       userId: 'user-1',
       ...activeProfileFields,
@@ -795,7 +797,7 @@ describe('MCP personalized tool surface', () => {
         published: true,
         webUrl: 'https://besedy.example/recording',
       },
-      events: { items: [], totalVisible: 0, nextOffset: null },
+      event: null,
     });
 
     const body = await invokeMcp('tools/call', {
@@ -808,7 +810,6 @@ describe('MCP personalized tool surface', () => {
     expect(getMcpRecording).toHaveBeenCalledWith(
       'viewer-catalog',
       'a'.repeat(64),
-      { offset: 0, limit: 25 },
     );
   });
 

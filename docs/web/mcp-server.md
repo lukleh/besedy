@@ -290,7 +290,7 @@ every matching segment in one response.
 | `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Accessible catalog                         |
 | `list_events`              | Page and filter released events                                  | Accessible catalog                         |
 | `get_event`                | Read one released event and its visible recordings               | Accessible catalog and listener visibility |
-| `get_recording`            | Read one published, ready recording and linked released events   | Accessible catalog and listener visibility |
+| `get_recording`            | Read one published, ready recording and its released event       | Accessible catalog and listener visibility |
 | `get_transcript`           | Read a transcript for a published, ready recording               | Accessible catalog and listener visibility |
 | `search_transcripts`       | Find event-scoped passages by meaning, including different words | Accessible catalog and listener visibility |
 | `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Accessible catalog and listener visibility |
@@ -583,20 +583,17 @@ Example return value:
 Use this tool to inspect one recording identified by the stable SHA-256 audio
 hash returned by an event, search, or transcript response.
 
-| Argument      | Type                            | Default           | Meaning                           |
-| ------------- | ------------------------------- | ----------------- | --------------------------------- |
-| `catalogId`   | string                          | effective default | Catalog containing the recording  |
-| `audioHash`   | 64-character hexadecimal string | required          | Stable recording identifier       |
-| `eventOffset` | non-negative integer            | `0`               | Offset into visible linked events |
-| `eventLimit`  | integer from 1 to 100           | `25`              | Maximum linked events in the page |
+| Argument    | Type                            | Default           | Meaning                          |
+| ----------- | ------------------------------- | ----------------- | -------------------------------- |
+| `catalogId` | string                          | effective default | Catalog containing the recording |
+| `audioHash` | 64-character hexadecimal string | required          | Stable recording identifier      |
 
 `recording` contains the descriptive metadata, readiness and publication
 flags, and authenticated `webUrl`; it deliberately omits audio and storage
-locations. The `events` page contains compact visible event summaries and
-whether the recording is primary for each event. Continue with `nextOffset` as
-`eventOffset`; `null` marks the final page. Search results already include their
-event identity, date, and location, so call this tool after search only when
-recording-specific descriptive metadata is needed.
+locations. `event` contains the recording's compact event summary and whether
+the recording is primary, or `null` when its event is not visible to the caller.
+Search results already include event identity, date, and location, so call this
+tool after search only when recording-specific descriptive metadata is needed.
 
 Example return value:
 
@@ -620,19 +617,13 @@ Example return value:
     "published": true,
     "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
-  "events": {
-    "items": [
-      {
-        "id": 4242,
-        "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
-        "title": "Example Hall, 12 Apr 2099",
-        "released": true,
-        "date": { "year": 2099, "month": 4, "day": 12 },
-        "isPrimary": true
-      }
-    ],
-    "totalVisible": 1,
-    "nextOffset": null
+  "event": {
+    "id": 4242,
+    "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+    "title": "Example Hall, 12 Apr 2099",
+    "released": true,
+    "date": { "year": 2099, "month": 4, "day": 12 },
+    "isPrimary": true
   }
 }
 ```
