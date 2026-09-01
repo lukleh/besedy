@@ -77,11 +77,6 @@ export interface McpEventRecordingPageInput {
   limit: number;
 }
 
-export interface McpRecordingEventPageInput {
-  offset: number;
-  limit: number;
-}
-
 export type McpReadErrorCode =
   | 'invalid_cursor'
   | 'not_found'
@@ -714,11 +709,7 @@ export async function getMcpEvent(
   };
 }
 
-export async function getMcpRecording(
-  catalogId: string,
-  audioHash: string,
-  input: McpRecordingEventPageInput,
-) {
+export async function getMcpRecording(catalogId: string, audioHash: string) {
   const visibleHashes = await resolveReadableRecordingHashes(
     catalogId,
     MCP_VISIBILITY_ACCESS_LEVEL,
@@ -745,32 +736,22 @@ export async function getMcpRecording(
     audioHash,
     ...catalogEventRecordingVisibilityWhere(visibleEventIds),
   };
-  const [eventLinks, totalVisible] = await Promise.all([
-    prisma.catalogEventRecording.findMany({
-      where: eventWhere,
-      select: {
-        isPrimary: true,
-        event: {
-          select: {
-            id: true,
-            title: true,
-            released: true,
-            dateYear: true,
-            dateMonth: true,
-            dateDay: true,
-          },
+  const eventLink = await prisma.catalogEventRecording.findFirst({
+    where: eventWhere,
+    select: {
+      isPrimary: true,
+      event: {
+        select: {
+          id: true,
+          title: true,
+          released: true,
+          dateYear: true,
+          dateMonth: true,
+          dateDay: true,
         },
       },
-      orderBy: { eventId: 'desc' },
-      skip: input.offset,
-      take: input.limit,
-    }),
-    prisma.catalogEventRecording.count({ where: eventWhere }),
-  ]);
-  const nextOffset =
-    input.offset + eventLinks.length < totalVisible
-      ? input.offset + eventLinks.length
-      : null;
+    },
+  });
 
   return {
     catalogId,
@@ -778,18 +759,20 @@ export async function getMcpRecording(
       ...recording,
       webUrl: buildRecordingWebUrl(catalogId, audioHash),
     },
-    events: {
-      items: eventLinks.map(({ event, isPrimary }) => ({
-        id: event.id,
-        webUrl: buildEventWebUrl(catalogId, event.id),
-        title: event.title,
-        released: event.released,
-        date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
-        isPrimary,
-      })),
-      totalVisible,
-      nextOffset,
-    },
+    event: eventLink
+      ? {
+          id: eventLink.event.id,
+          webUrl: buildEventWebUrl(catalogId, eventLink.event.id),
+          title: eventLink.event.title,
+          released: eventLink.event.released,
+          date: serializeDate(
+            eventLink.event.dateYear,
+            eventLink.event.dateMonth,
+            eventLink.event.dateDay,
+          ),
+          isPrimary: eventLink.isPrimary,
+        }
+      : null,
   };
 }
 
@@ -927,10 +910,8 @@ async function assertMcpSearchEventsVisible(
   if (!requestedEventIds?.length) return;
 
   const visibleEventIds = new Set(
-    (await resolveReadableEventIds(
-      catalogId,
-      MCP_VISIBILITY_ACCESS_LEVEL,
-    )) ?? [],
+    (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
+      [],
   );
   if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
     throw new McpReadError('not_found', 'Event not found');

@@ -688,7 +688,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         method: 'tools/call',
         params: {
           name: 'get_recording',
-          arguments: { audioHash, eventLimit: 1 },
+          arguments: { audioHash },
           _meta: envelope,
         },
       },
@@ -698,11 +698,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogId: string;
         recording: { audioHash: string; webUrl: string };
-        events: {
-          items: Array<{ id: number; webUrl: string }>;
-          totalVisible: number;
-          nextOffset: number | null;
-        };
+        event: { id: number; webUrl: string } | null;
       }>
     >;
     expect(recordingBody.error).toBeUndefined();
@@ -713,17 +709,10 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(recordingBody.result?.structuredContent.recording.webUrl).toBe(
       `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
     );
-    expect(
-      recordingBody.result?.structuredContent.events.items.some(
-        (linkedEvent) => linkedEvent.id === event!.id,
-      ),
-    ).toBe(true);
-    expect(
-      recordingBody.result?.structuredContent.events.items[0]?.webUrl,
-    ).toBe(event!.webUrl);
-    expect(
-      recordingBody.result?.structuredContent.events.totalVisible,
-    ).toBeGreaterThan(0);
+    expect(recordingBody.result?.structuredContent.event?.id).toBe(event!.id);
+    expect(recordingBody.result?.structuredContent.event?.webUrl).toBe(
+      event!.webUrl,
+    );
 
     const transcriptResponse = await request.post(MCP_RESOURCE, {
       headers: {
