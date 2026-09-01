@@ -270,7 +270,10 @@ def search_chunks_fts(
 
     store_path = Path(path)
     with _connect_read_only(store_path) as connection:
-        connection.execute("PRAGMA temp_store = MEMORY")
+        # Exact total counts and one FTS scan require retaining the authorized
+        # matches for ranking. Keep that corpus-sized table file-backed rather
+        # than making broad any-term searches consume proportional process RAM.
+        connection.execute("PRAGMA temp_store = FILE")
         connection.execute(
             "CREATE TEMP TABLE allowed_audio_hashes (audio_hash TEXT PRIMARY KEY) WITHOUT ROWID"
         )

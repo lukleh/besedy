@@ -816,6 +816,53 @@ describe('MCP read service', () => {
     });
   });
 
+  it('bounds full transcript responses with many empty segments', async () => {
+    vi.mocked(loadTranscript).mockResolvedValue({
+      hash: 'visible-recording',
+      backend: 'whisperx/model',
+      language: 'cs',
+      duration: 20,
+      segments: Array.from({ length: 2_001 }, (_, index) => ({
+        id: index,
+        text: '',
+        start: index,
+        end: index + 1,
+      })),
+    });
+
+    await expect(
+      getMcpTranscript('catalog-a', 'visible-recording', { mode: 'full' }),
+    ).rejects.toMatchObject({
+      code: 'response_too_large',
+      retryable: false,
+    });
+  });
+
+  it('counts non-text segment metadata toward the full response ceiling', async () => {
+    vi.mocked(loadTranscript).mockResolvedValue({
+      hash: 'visible-recording',
+      backend: 'whisperx/model',
+      language: 'cs',
+      duration: 20,
+      segments: [
+        {
+          id: 1,
+          text: 'short',
+          start: 0,
+          end: 1,
+          speaker: 's'.repeat(400_000),
+        },
+      ],
+    });
+
+    await expect(
+      getMcpTranscript('catalog-a', 'visible-recording', { mode: 'full' }),
+    ).rejects.toMatchObject({
+      code: 'response_too_large',
+      retryable: false,
+    });
+  });
+
   it('omits absent time bounds from replayable page continuations', async () => {
     const result = await getMcpTranscript('catalog-a', 'visible-recording', {
       mode: 'page',

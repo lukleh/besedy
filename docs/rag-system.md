@@ -78,8 +78,8 @@ bundle builds populate it automatically. SQLite triggers keep the index aligned
 with chunk inserts, updates, and deletes during incremental sync.
 
 Bundles created before the FTS5 schema was introduced need a one-time backfill.
-Run the idempotent maintenance command over the RAG root before enabling lexical
-retrieval for legacy bundles:
+Run the idempotent maintenance command against the active index path before
+enabling lexical retrieval for a legacy bundle:
 
 ```bash
 uv run python scripts/backfill_rag_chunk_store_fts.py \

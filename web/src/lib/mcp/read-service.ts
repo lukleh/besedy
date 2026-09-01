@@ -36,6 +36,8 @@ export type McpEventOrder = 'asc' | 'desc';
 
 const MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER' as const satisfies AccessLevel;
 const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
+const MAX_FULL_TRANSCRIPT_SEGMENTS = 2_000;
+const MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS = 400_000;
 const TRANSCRIPT_BACKEND_LOOKUP_CONCURRENCY = 8;
 
 export interface McpEventListInput {
@@ -742,17 +744,9 @@ export async function getMcpTranscript(
         );
   const segments = [];
   let returnedTextChars = 0;
+  let returnedSegmentJsonChars = 0;
   for (const { segment, segmentIndex } of candidates) {
     const textChars = segment.text.length;
-    if (
-      input.mode === 'full' &&
-      returnedTextChars + textChars > MAX_FULL_TRANSCRIPT_TEXT_CHARS
-    ) {
-      throw new McpReadError(
-        'response_too_large',
-        'Transcript window is too large for full mode; use page mode or a narrower time window',
-      );
-    }
     if (
       input.mode === 'page' &&
       segments.length > 0 &&
@@ -760,7 +754,7 @@ export async function getMcpTranscript(
     ) {
       break;
     }
-    segments.push({
+    const serializedSegment = {
       segmentIndex,
       id: segment.id ?? null,
       text: segment.text,
@@ -773,8 +767,24 @@ export async function getMcpTranscript(
         segment.start,
         segment.end,
       ),
-    });
+    };
+    const segmentJsonChars =
+      input.mode === 'full' ? JSON.stringify(serializedSegment).length : 0;
+    if (
+      input.mode === 'full' &&
+      (segments.length >= MAX_FULL_TRANSCRIPT_SEGMENTS ||
+        returnedTextChars + textChars > MAX_FULL_TRANSCRIPT_TEXT_CHARS ||
+        returnedSegmentJsonChars + segmentJsonChars >
+          MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS)
+    ) {
+      throw new McpReadError(
+        'response_too_large',
+        'Transcript window is too large for full mode; use page mode or a narrower time window',
+      );
+    }
+    segments.push(serializedSegment);
     returnedTextChars += textChars;
+    returnedSegmentJsonChars += segmentJsonChars;
   }
   const nextOffset =
     input.mode === 'page' &&
