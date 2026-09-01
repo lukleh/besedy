@@ -4,12 +4,27 @@ import {
   createLookupListInputSchema,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderMcpListContent,
   resolveToolCatalog,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { ListRecordersOutputSchema } from '@/lib/mcp/tools/output-schemas';
+
+function renderRecorderListContent(
+  result: Awaited<ReturnType<typeof listMcpRecorders>>,
+  summary: string,
+): string {
+  return renderMcpListContent(
+    summary,
+    result.recorders.map(
+      (recorder) =>
+        `${recorder.id} · ${recorder.name} · ${recorder.recordingCount} recording(s)`,
+    ),
+    result.nextCursor,
+  );
+}
 
 export function registerListRecordersTool(
   server: McpServer,
@@ -22,8 +37,7 @@ export function registerListRecordersTool(
     'list_recorders',
     {
       title: 'List Besedy recorders',
-      description:
-        'Discover recorder IDs used by visible recordings before filtering search_transcripts or find_transcript_mentions. Uses the current user default catalog when catalogId is omitted.',
+      description: 'List recorder IDs available for transcript search filters.',
       inputSchema: createLookupListInputSchema('recorder'),
       outputSchema: ListRecordersOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -39,7 +53,8 @@ export function registerListRecordersTool(
             limit,
           }),
         (result) =>
-          `Listed ${Array.isArray(result.recorders) ? result.recorders.length : 0} visible Besedy recorder(s).`,
+          `Listed ${Array.isArray(result.recorders) ? result.recorders.length : 0} recorder(s).`,
+        renderRecorderListContent,
       );
     },
   );

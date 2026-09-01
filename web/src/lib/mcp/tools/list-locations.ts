@@ -4,12 +4,27 @@ import {
   createLookupListInputSchema,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderMcpListContent,
   resolveToolCatalog,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { ListLocationsOutputSchema } from '@/lib/mcp/tools/output-schemas';
+
+function renderLocationListContent(
+  result: Awaited<ReturnType<typeof listMcpLocations>>,
+  summary: string,
+): string {
+  return renderMcpListContent(
+    summary,
+    result.locations.map(
+      (location) =>
+        `${location.id} · ${location.name} · ${location.eventCount} event(s)`,
+    ),
+    result.nextCursor,
+  );
+}
 
 export function registerListLocationsTool(
   server: McpServer,
@@ -23,7 +38,7 @@ export function registerListLocationsTool(
     {
       title: 'List Besedy locations',
       description:
-        'Discover location IDs used by visible Besedy data. list_events, search_transcripts, and find_transcript_mentions apply location IDs to events, so use eventCount to identify event locations; recordingCount describes curated recording metadata only. Uses the current user default catalog when catalogId is omitted.',
+        'List locations used by visible events for locationId filters.',
       inputSchema: createLookupListInputSchema('location'),
       outputSchema: ListLocationsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -34,7 +49,8 @@ export function registerListLocationsTool(
       return runReadTool(
         () => listMcpLocations(catalog.id, { query, cursor, limit }),
         (result) =>
-          `Listed ${Array.isArray(result.locations) ? result.locations.length : 0} visible Besedy location(s).`,
+          `Listed ${Array.isArray(result.locations) ? result.locations.length : 0} event location(s).`,
+        renderLocationListContent,
       );
     },
   );

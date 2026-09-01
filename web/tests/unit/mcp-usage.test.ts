@@ -71,7 +71,6 @@ describe('MCP usage telemetry', () => {
         catalogId: 'catalog-1',
         segments: {
           items: [{ text: 'private transcript text' }],
-          returnedTextChars: 23,
         },
       },
     } satisfies CallToolResult;

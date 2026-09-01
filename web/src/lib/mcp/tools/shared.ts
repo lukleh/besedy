@@ -123,13 +123,6 @@ export function toolSuccess(
   };
 }
 
-export function renderStructuredResult(
-  summary: string,
-  result: Record<string, unknown>,
-): string {
-  return `${summary}\nStructured result: ${JSON.stringify(result)}`;
-}
-
 export function renderTranscriptVerificationHandoff(
   transcriptRequest: unknown,
 ): string {
@@ -161,9 +154,12 @@ interface RenderableTranscriptSearchResult {
   transcriptRequest: unknown;
 }
 
-function formatEventDate(
-  date: RenderableTranscriptSearchResult['event']['date'],
-) {
+export function formatMcpDate(date: {
+  year: number | null;
+  month: number | null;
+  day: number | null;
+}) {
+  if (date.year === null) return 'unknown date';
   const month =
     date.month === null ? null : String(date.month).padStart(2, '0');
   const day = date.day === null ? null : String(date.day).padStart(2, '0');
@@ -173,11 +169,21 @@ function formatEventDate(
     : `${date.year}-${month}-${day}`;
 }
 
+export function renderMcpListContent(
+  summary: string,
+  items: string[],
+  nextCursor: string | null,
+): string {
+  const lines = [summary, ...items];
+  if (nextCursor) lines.push(`Next cursor: ${nextCursor}`);
+  return lines.join('\n');
+}
+
 export function renderTranscriptSearchResult(
   result: RenderableTranscriptSearchResult,
 ): string[] {
   const lines = [
-    `${result.rank}. ${formatEventDate(result.event.date)} · ${result.event.location.name} [${result.match.startSec}-${result.match.endSec}s]`,
+    `${result.rank}. ${formatMcpDate(result.event.date)} · ${result.event.location.name} [${result.match.startSec}-${result.match.endSec}s]`,
     `Event: ${result.event.id} ${result.event.webUrl}`,
     `Recording: ${result.recording.audioHash}`,
     result.match.text,
@@ -207,15 +213,12 @@ export function toolError(code: string, message: string, retryable = false) {
 export async function runReadTool<T extends Record<string, unknown>>(
   operation: () => Promise<T>,
   summarize: (result: T) => string,
-  renderContent?: (result: T) => string,
+  renderContent?: (result: T, summary: string) => string,
 ) {
   try {
     const result = await operation();
     const summary = summarize(result);
-    return toolSuccess(
-      result,
-      renderContent?.(result) ?? renderStructuredResult(summary, result),
-    );
+    return toolSuccess(result, renderContent?.(result, summary) ?? summary);
   } catch (error) {
     if (error instanceof McpReadError) {
       return toolError(error.code, error.message, error.retryable);

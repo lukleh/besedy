@@ -250,16 +250,15 @@ describe('MCP read service', () => {
       isPrimary: true,
       event: {
         id: 42,
-        title: 'Visible event',
-        released: true,
         dateYear: 2026,
         dateMonth: 8,
         dateDay: 26,
+        location: { id: 7, name: 'Prague' },
       },
     });
   });
 
-  it('filters events by partial date and location and returns visible hashes', async () => {
+  it('filters events and returns only authoritative event references', async () => {
     const result = await listMcpEvents('catalog-a', {
       limit: 25,
       order: 'desc',
@@ -292,11 +291,7 @@ describe('MCP read service', () => {
         ],
       }),
     );
-    expect(getPublishedAccessibleRecordingHashes).toHaveBeenCalledWith(
-      prisma,
-      'catalog-a',
-      ['visible-recording', 'hidden-recording'],
-    );
+    expect(getPublishedAccessibleRecordingHashes).not.toHaveBeenCalled();
     expect(db.catalogEntry.findMany).not.toHaveBeenCalled();
     expect(db.audioMetadata.findMany).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -305,17 +300,8 @@ describe('MCP read service', () => {
         {
           id: 42,
           webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
-          title: 'Visible event',
-          description: 'A searchable subject appears here',
           date: { year: 2026, month: 8, day: 26 },
-          sessionIndex: 1,
           location: { id: 7, name: 'Prague' },
-          released: true,
-          recordings: {
-            primaryAudioHash: 'visible-recording',
-            audioHashes: ['visible-recording'],
-          },
-          updatedAt: '2026-08-26T10:00:00.000Z',
         },
       ],
       nextCursor: null,
@@ -349,10 +335,7 @@ describe('MCP read service', () => {
       limit: 1,
     });
 
-    expect(db.audioMetadata.findMany).toHaveBeenCalledWith({
-      where: { workflowGroupId: 'catalog-a', locationId: { not: null } },
-      select: { audioHash: true, locationId: true },
-    });
+    expect(db.audioMetadata.findMany).not.toHaveBeenCalled();
     expect(db.catalogEvent.findMany).toHaveBeenCalledWith({
       where: { workflowGroupId: 'catalog-a', id: { in: [42] } },
       select: { locationId: true },
@@ -363,7 +346,7 @@ describe('MCP read service', () => {
     });
     expect(locations).toMatchObject({
       catalogId: 'catalog-a',
-      locations: [{ id: 7, name: 'Prague', eventCount: 1, recordingCount: 1 }],
+      locations: [{ id: 7, name: 'Prague', eventCount: 1 }],
       nextCursor: expect.any(String),
     });
 
@@ -373,7 +356,7 @@ describe('MCP read service', () => {
     });
     expect(nextLocations).toEqual({
       catalogId: 'catalog-a',
-      locations: [{ id: 9, name: 'Vienna', eventCount: 1, recordingCount: 0 }],
+      locations: [{ id: 9, name: 'Vienna', eventCount: 1 }],
       nextCursor: null,
     });
     await expect(
@@ -404,13 +387,6 @@ describe('MCP read service', () => {
   });
 
   it('includes locations from released events', async () => {
-    db.audioMetadata.findMany.mockResolvedValue([
-      {
-        audioHash: 'visible-recording',
-        locationId: 7,
-        recorderId: null,
-      },
-    ]);
     db.location.findMany.mockResolvedValue([{ id: 7, name: 'Prague' }]);
     db.catalogEvent.findMany.mockResolvedValue([{ locationId: 7 }]);
 
@@ -419,17 +395,17 @@ describe('MCP read service', () => {
     });
 
     expect(db.catalogEvent.findMany).toHaveBeenCalled();
+    expect(db.audioMetadata.findMany).not.toHaveBeenCalled();
     expect(result.locations).toEqual([
       {
         id: 7,
         name: 'Prague',
         eventCount: 1,
-        recordingCount: 1,
       },
     ]);
   });
 
-  it('excludes recordings outside listener visibility from lookups', async () => {
+  it('applies recording visibility only to recorder lookups', async () => {
     db.audioMetadata.findMany.mockResolvedValue([
       {
         audioHash: 'visible-recording',
@@ -444,6 +420,7 @@ describe('MCP read service', () => {
     ]);
     db.location.findMany.mockResolvedValue([{ id: 7, name: 'Prague' }]);
     db.recorder.findMany.mockResolvedValue([{ id: 3, name: 'Petr' }]);
+    db.catalogEvent.findMany.mockResolvedValue([]);
 
     const locations = await listMcpLocations('catalog-a', { limit: 50 });
     const recorders = await listMcpRecorders('catalog-a', {
@@ -455,14 +432,7 @@ describe('MCP read service', () => {
       'catalog-a',
       ['visible-recording', 'orphaned-recording'],
     );
-    expect(locations.locations).toEqual([
-      {
-        id: 7,
-        name: 'Prague',
-        eventCount: 0,
-        recordingCount: 1,
-      },
-    ]);
+    expect(locations.locations).toEqual([]);
     expect(recorders.recorders).toEqual([
       { id: 3, name: 'Petr', recordingCount: 1 },
     ]);
@@ -650,20 +620,14 @@ describe('MCP read service', () => {
     ).rejects.toMatchObject({ code: 'invalid_cursor', retryable: false });
   });
 
-  it('returns a bounded page of compact recording summaries and links', async () => {
+  it('returns a bounded page of recording references without metadata reads', async () => {
     const result = await getMcpEvent('catalog-a', 42, {
       offset: 0,
       limit: 1,
     });
 
-    expect(db.catalogEntry.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          workflowGroupId: 'catalog-a',
-          audioHash: { in: ['visible-recording'] },
-        },
-      }),
-    );
+    expect(db.catalogEntry.findMany).not.toHaveBeenCalled();
+    expect(db.audioMetadata.findMany).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       catalogId: 'catalog-a',
       event: {
@@ -673,15 +637,9 @@ describe('MCP read service', () => {
           items: [
             {
               audioHash: 'visible-recording',
-              title: 'Recording title',
-              artist: 'Speaker',
-              durationHms: '00:42:00',
-              ready: true,
-              published: true,
               webUrl:
                 'https://besedy.example/catalog/catalog-a/recording/visible-recording',
               isPrimary: true,
-              sortOrder: 0,
             },
           ],
           totalVisible: 1,
@@ -716,9 +674,8 @@ describe('MCP read service', () => {
       event: {
         id: 42,
         webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
-        title: 'Visible event',
-        released: true,
         date: { year: 2026, month: 8, day: 26 },
+        location: { id: 7, name: 'Prague' },
         isPrimary: true,
       },
     });
@@ -773,14 +730,9 @@ describe('MCP read service', () => {
       audioHash: 'visible-recording',
       recordingWebUrl:
         'https://besedy.example/catalog/catalog-a/recording/visible-recording',
-      seekWebUrl:
-        'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5&end=10',
       backend: 'whisperx/model',
-      availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 20,
-      mode: 'page',
-      timeWindow: { startSec: 5, endSec: 15 },
       segments: {
         items: [
           {
@@ -794,12 +746,7 @@ describe('MCP read service', () => {
               'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5&end=10',
           },
         ],
-        offset: 0,
-        limit: 50,
-        maxTextChars: 1_000,
-        returnedTextChars: 700,
         totalMatching: 2,
-        nextOffset: 1,
       },
       continuation: {
         catalogId: 'catalog-a',
@@ -822,14 +769,8 @@ describe('MCP read service', () => {
     });
 
     expect(result).toMatchObject({
-      mode: 'full',
-      timeWindow: { startSec: 5, endSec: null },
       segments: {
-        offset: 0,
-        limit: null,
-        maxTextChars: null,
         totalMatching: 3,
-        nextOffset: null,
         items: [
           { segmentIndex: 1, text: 'a'.repeat(700) },
           { segmentIndex: 2, text: 'b'.repeat(700) },
@@ -859,7 +800,7 @@ describe('MCP read service', () => {
     });
   });
 
-  it('builds seek links from the first segment actually returned after an offset', async () => {
+  it('builds bounded links for segments returned after an offset', async () => {
     const result = await getMcpTranscript('catalog-a', 'visible-recording', {
       mode: 'page',
       segmentOffset: 2,
@@ -867,9 +808,6 @@ describe('MCP read service', () => {
       maxTextChars: 1_000,
     });
 
-    expect(result.seekWebUrl).toBe(
-      'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=10&end=15',
-    );
     expect(result.segments.items).toEqual([
       expect.objectContaining({
         segmentIndex: 2,
@@ -880,7 +818,7 @@ describe('MCP read service', () => {
     ]);
   });
 
-  it('returns a null seek link when the requested transcript page is empty', async () => {
+  it('returns an empty segment list for an empty transcript page', async () => {
     const result = await getMcpTranscript('catalog-a', 'visible-recording', {
       mode: 'page',
       segmentOffset: 10,
@@ -888,7 +826,7 @@ describe('MCP read service', () => {
       maxTextChars: 1_000,
     });
 
-    expect(result.seekWebUrl).toBeNull();
+    expect(result).not.toHaveProperty('seekWebUrl');
     expect(result.segments.items).toEqual([]);
   });
 
