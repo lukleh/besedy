@@ -266,16 +266,17 @@ authenticated web links, but never audio URLs or filesystem paths.
 The MCP interface is self-contained and does not require the optional Besedy
 skill. Each tool description explains when to use that tool, its scope, limits,
 evidence handoff, and result semantics. Search responses repeat the essential
-coverage caveats and include each candidate's `transcriptRequest` in both
-`structuredContent` and rendered text so clients that ignore structured results
-can still verify evidence.
+coverage caveats and render each candidate's non-null `transcriptRequest`, or an
+explicit warning when no compatible stored transcript is available, so clients
+that ignore `structuredContent` can still make a correct verification decision.
 
 The initialization response adds only cross-tool and corpus-wide rules: ground
 Besedy claims in returned evidence, distinguish meaning from literal wording,
 verify important candidates with `get_transcript`, do not count recorder variants
-of one event as independent evidence, support recurring themes with distinct
-events, and cite bounded segment links. Tool descriptions and schemas remain
-authoritative for individual calls and their current limits.
+of one event as independent evidence, resolve linked events with `get_recording`,
+support recurring themes with distinct events, and cite bounded segment links.
+Tool descriptions and schemas remain authoritative for individual calls and
+their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
@@ -292,7 +293,7 @@ every matching segment in one response.
 | `get_recording`            | Read one published, ready recording and linked released events | Accessible catalog and listener visibility |
 | `get_transcript`           | Read a transcript for a published, ready recording             | Accessible catalog and listener visibility |
 | `search_transcripts`       | Find candidate passages by meaning, including different words  | Accessible catalog and listener visibility |
-| `find_transcript_mentions` | Exhaustively find actual words, phrases, names, or prefixes    | Accessible catalog and listener visibility |
+| `find_transcript_mentions` | Exhaustively find indexed words, phrases, names, or prefixes   | Accessible catalog and listener visibility |
 
 All tools are discoverable by an active portal user. Discovery is only a
 usability surface: every catalog-scoped call authorizes its resolved catalog and
@@ -592,7 +593,10 @@ hash returned by an event, search, or transcript response.
 flags, and authenticated `webUrl`; it deliberately omits audio and storage
 locations. The `events` page contains compact visible event summaries and
 whether the recording is primary for each event. Continue with `nextOffset` as
-`eventOffset`; `null` marks the final page.
+`eventOffset`; `null` marks the final page. After transcript search, call this
+tool for shortlisted audio hashes when a cross-recording claim requires
+independent evidence. Recordings linked to the same event are variants rather
+than independent discussions.
 
 Example return value:
 
@@ -756,9 +760,10 @@ return a continuation descriptor:
 
 Use this tool for literal words, proper names, quotations, fixed phrases, and
 prefixes. It searches every indexed chunk belonging to recordings authorized
-by the resolved catalog and filters. Its `totalMatches` is the complete count
-before `limit` and `maxPerRecording` reduce the returned list. Numeric
-text-match scores are not exposed.
+by the resolved catalog and filters. Its `totalMatches` is complete over those
+indexed chunks before `limit` and `maxPerRecording` reduce the returned list; it
+does not cover stored transcript backend variants outside the active index.
+Numeric text-match scores are not exposed.
 
 It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
 `filters` contract as `search_transcripts`, plus `matchMode`:
@@ -767,8 +772,8 @@ It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
 | ----------- | ---------------------------------------------------------- |
 | `all_terms` | Every query token must occur in the chunk; this is default |
 | `phrase`    | Tokens must be adjacent and in the given order             |
-| `any_term`  | At least one query token must occur                         |
-| `prefix`    | Every query token is matched as a token prefix              |
+| `any_term`  | At least one query token must occur                        |
+| `prefix`    | Every query token is matched as a token prefix             |
 
 The server tokenizes the query and constructs the FTS expression itself. Raw
 SQLite `MATCH` operators are therefore treated as ordinary query tokens rather
@@ -781,8 +786,10 @@ verify important matches in continuous context. A zero result establishes only
 that the chosen literal token pattern is absent under the chosen catalog,
 authorization scope, filters, and match mode; it does not establish conceptual
 absence. Rendered text repeats that scope, distinguishes the complete
-`totalMatches` count from capped returned passages, and includes each result's
-`transcriptRequest` for clients that do not consume `structuredContent`.
+indexed `totalMatches` count from capped returned passages, and includes each
+non-null `transcriptRequest` for clients that do not consume
+`structuredContent`. When the request is null, rendered text says that the
+candidate cannot be used as important evidence without another verified source.
 
 ### `search_transcripts`
 
@@ -825,9 +832,10 @@ Adjacent chunks are mechanical context for triage: they may not contain a
 complete question, answer, qualification, or discussion arc.
 
 Rendered text labels the candidates as ranked and non-exhaustive, warns that an
-empty result does not establish conceptual absence, and includes each result's
+empty result does not establish conceptual absence, and includes each non-null
 `transcriptRequest` so a client can pass it to `get_transcript` without consuming
-`structuredContent`.
+`structuredContent`. A null request instead produces an explicit unavailable
+verification warning.
 
 Every result contains:
 
@@ -866,12 +874,16 @@ The recommended evidence workflow is:
 2. Before synthesizing, run precise broad searches with the 50-result default,
    several materially different reformulations, and multiple matches per
    recording when useful. Do not wait for the user to request more precision.
-3. Shortlist and deduplicate results from their exact match, adjacent context,
-   recording, and linked event identity.
+3. Shortlist results from their exact match, adjacent context, and recording.
+   For cross-recording claims, call `get_recording` on the shortlisted audio
+   hashes and compare linked event IDs; recordings sharing an event are variants,
+   not independent evidence.
 4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.
-5. Call `get_transcript` with the chosen result's `transcriptRequest` and read
-   the continuous source context before relying on the passage.
+5. When the chosen result has a non-null `transcriptRequest`, pass it to
+   `get_transcript` and read the continuous source context before relying on the
+   passage. Do not use a candidate with a null request as important evidence
+   unless another source can be verified.
 
 Run broad reformulations sequentially, compacting and deduplicating each
 structured response before requesting the next one. Use the maximum of `200`

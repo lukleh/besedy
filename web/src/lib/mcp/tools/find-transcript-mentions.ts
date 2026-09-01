@@ -10,6 +10,7 @@ import { FindTranscriptMentionsOutputSchema } from '@/lib/mcp/tools/output-schem
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
+  renderTranscriptVerificationHandoff,
   resolveToolCatalog,
   runReadTool,
   toolError,
@@ -26,8 +27,9 @@ function renderSearchContent(
   result: Awaited<ReturnType<typeof findMcpTranscriptMentions>>,
 ): string {
   const lines = [
-    `Lexical transcript search for ${JSON.stringify(result.query)} found ${result.retrieval.totalMatches} complete-corpus match(es) and returned ${result.results.length}.`,
-    'The complete count covers the authorized catalog, filters, and match mode before limit and maxPerRecording cap returned passages. A zero count establishes only literal-pattern absence, not conceptual absence.',
+    `Lexical transcript search for ${JSON.stringify(result.query)} found ${result.retrieval.totalMatches} match(es) across the complete authorized indexed transcript corpus and returned ${result.results.length}.`,
+    'The complete count covers all authorized indexed chunks under the selected filters and match mode before limit and maxPerRecording cap returned passages. It does not cover stored transcript backend variants outside the active index. A zero count establishes only indexed literal-pattern absence, not conceptual absence.',
+    'For claims spanning recordings, call get_recording on shortlisted audio hashes and compare linked event IDs; recordings linked to the same event are variants, not independent evidence.',
   ];
   for (const searchResult of result.results) {
     lines.push(
@@ -42,7 +44,7 @@ function renderSearchContent(
     }
     lines.push(
       `Source: ${searchResult.match.webUrl}`,
-      `Transcript request: ${JSON.stringify(searchResult.transcriptRequest)}`,
+      renderTranscriptVerificationHandoff(searchResult.transcriptRequest),
     );
   }
   return lines.join('\n');
@@ -60,7 +62,7 @@ export function registerFindTranscriptMentionsTool(
     {
       title: 'Find exact transcript mentions',
       description:
-        'Search actual transcript wording across accessible Besedy recordings. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches is the complete count under the authorized catalog, selected filters, and match mode before limit or maxPerRecording caps the returned passages. A zero count establishes only that literal pattern is absent in that scope, not that the underlying concept is absent. Verify important returned passages by passing transcriptRequest to get_transcript and reading continuous context. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is text-match relevance, not confidence.',
+        'Search actual wording in the authorized indexed Besedy transcript corpus. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches is complete over all authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it does not cover stored transcript backend variants outside the active index. A zero count establishes only indexed literal-pattern absence, not conceptual absence. Verify important returned passages by passing a non-null transcriptRequest to get_transcript and reading continuous context; do not rely on an important candidate when that request is unavailable. For cross-recording claims, call get_recording on shortlisted audio hashes and compare linked event IDs; recordings linked to the same event are variants, not independent evidence. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is text-match relevance, not confidence.',
       inputSchema: z.object({
         catalogId: z
           .string()

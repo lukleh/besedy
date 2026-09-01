@@ -130,6 +130,15 @@ export function renderStructuredResult(
   return `${summary}\nStructured result: ${JSON.stringify(result)}`;
 }
 
+export function renderTranscriptVerificationHandoff(
+  transcriptRequest: unknown,
+): string {
+  if (transcriptRequest === null || transcriptRequest === undefined) {
+    return 'Transcript request unavailable: no compatible stored transcript was found for this indexed candidate. Do not rely on it as important evidence unless another source can be verified.';
+  }
+  return `Transcript request: ${JSON.stringify(transcriptRequest)}`;
+}
+
 export function toolError(code: string, message: string, retryable = false) {
   const result = { error: { code, message, retryable } };
   return {
