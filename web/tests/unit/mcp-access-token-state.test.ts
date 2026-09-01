@@ -117,6 +117,71 @@ describe('MCP stored access-token state', () => {
     });
   });
 
+  it('passes an opaque access token through without touching the registry', async () => {
+    const response = Response.json({
+      access_token: 'opaque-token-without-resource-binding',
+      refresh_token: 'refresh-token-1',
+      token_type: 'Bearer',
+    });
+
+    const result = await synchronizeMcpAccessTokenState(
+      tokenRequest(),
+      response,
+    );
+
+    expect(result).toBe(response);
+    expect(result.status).toBe(200);
+    expect(mocks.findRefreshToken).not.toHaveBeenCalled();
+    expect(mocks.upsertAccessToken).not.toHaveBeenCalled();
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('passes a JWT for another audience through unchanged', async () => {
+    const response = Response.json({
+      access_token: jwt({
+        aud: 'https://besedy.example/api/auth/oauth2/userinfo',
+        azp: 'client-1',
+        client_id: 'client-1',
+        exp: expiresAt,
+        iat: issuedAt,
+        jti: 'foreign-jti',
+        scope: 'openid',
+        sub: 'user-1',
+      }),
+      token_type: 'Bearer',
+    });
+
+    const result = await synchronizeMcpAccessTokenState(
+      tokenRequest(),
+      response,
+    );
+
+    expect(result).toBe(response);
+    expect(mocks.upsertAccessToken).not.toHaveBeenCalled();
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for an MCP JWT that lacks the persisted claims', async () => {
+    const response = Response.json({
+      access_token: jwt({
+        aud: resourceUrl,
+        client_id: 'client-1',
+        exp: expiresAt,
+        iat: issuedAt,
+        scope: 'besedy:read',
+        sub: 'user-1',
+      }),
+    });
+
+    const result = await synchronizeMcpAccessTokenState(
+      tokenRequest(),
+      response,
+    );
+
+    expect(result.status).toBe(503);
+    expect(mocks.upsertAccessToken).not.toHaveBeenCalled();
+  });
+
   it('fails the token response closed when its refresh family is missing', async () => {
     mocks.findRefreshToken.mockResolvedValue(null);
     const response = Response.json({

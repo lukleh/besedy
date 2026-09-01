@@ -49,30 +49,53 @@ function endpointPath(request: Request): string {
   return new URL(request.url).pathname.replace(/\/+$/, '');
 }
 
-function decodeJwtPayload(accessToken: string): Record<string, unknown> {
+/**
+ * Decodes a JWT payload without verifying it. The token comes from this
+ * server's own token response, so its signature has just been produced here.
+ * Returns null for opaque tokens and anything else that is not a JWT.
+ */
+function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
   const parts = accessToken.split('.');
-  if (parts.length !== 3 || !parts[1]) {
-    throw new Error('MCP access token response did not contain a JWT');
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    return asRecord(
+      JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')),
+    );
+  } catch {
+    return null;
   }
-  const payload = asRecord(
-    JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')),
-  );
-  if (!payload) throw new Error('MCP access token JWT payload is invalid');
-  return payload;
 }
 
-function readJwtClaims(accessToken: string, resourceUrl: string): JwtClaims {
+/**
+ * Reads the claims that must be persisted for an MCP access token.
+ *
+ * Returns null when the token is not an MCP JWT at all: Better Auth issues an
+ * opaque token when a client omits the RFC 8707 `resource` parameter, and a JWT
+ * whose audience excludes the MCP resource belongs to another audience. Both
+ * are legitimate token responses that the MCP endpoint will reject on its own;
+ * they must not be turned into a token-endpoint failure here.
+ *
+ * Throws only for a JWT that is bound to the MCP resource yet lacks the claims
+ * the stored-token registry depends on, which indicates a server-side bug.
+ */
+function readJwtClaims(
+  accessToken: string,
+  resourceUrl: string,
+): JwtClaims | null {
   const payload = decodeJwtPayload(accessToken);
-  const clientId = nonEmptyString(payload.client_id ?? payload.azp);
-  const jti = nonEmptyString(payload.jti);
-  const subject = nonEmptyString(payload.sub);
-  const issuedAt = payload.iat;
-  const expiresAt = payload.exp;
+  if (!payload) return null;
   const aud = Array.isArray(payload.aud)
     ? payload.aud.filter((value): value is string => typeof value === 'string')
     : typeof payload.aud === 'string'
       ? [payload.aud]
       : [];
+  if (!aud.includes(resourceUrl)) return null;
+
+  const clientId = nonEmptyString(payload.client_id ?? payload.azp);
+  const jti = nonEmptyString(payload.jti);
+  const subject = nonEmptyString(payload.sub);
+  const issuedAt = payload.iat;
+  const expiresAt = payload.exp;
   const scopes =
     typeof payload.scope === 'string'
       ? payload.scope.split(/\s+/).filter(Boolean)
@@ -85,10 +108,11 @@ function readJwtClaims(accessToken: string, resourceUrl: string): JwtClaims {
     !Number.isSafeInteger(issuedAt) ||
     !Number.isSafeInteger(expiresAt) ||
     (expiresAt as number) <= (issuedAt as number) ||
-    !aud.includes(resourceUrl) ||
     scopes.length === 0
   ) {
-    throw new Error('MCP access token JWT is missing required persisted claims');
+    throw new Error(
+      'MCP access token JWT is missing required persisted claims',
+    );
   }
 
   const confirmation = asRecord(payload.cnf);
@@ -142,6 +166,7 @@ async function persistIssuedAccessToken(response: Response): Promise<void> {
   }
 
   const claims = readJwtClaims(accessToken, getMcpResourceUrl());
+  if (!claims) return;
   const refreshToken = nonEmptyString(body.refresh_token);
   const refresh = refreshToken
     ? await prisma.oauthRefreshToken.findUnique({
