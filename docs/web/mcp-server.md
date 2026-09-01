@@ -26,7 +26,7 @@ do not conflict. On a new
 machine, install the Playwright browser once with
 `cd web && npx playwright install chromium`.
 
-> Last updated: 2026-08-28
+> Last updated: 2026-09-01
 
 ## Purpose and scope
 
@@ -212,15 +212,15 @@ The table is the intended MCP read surface for an active user. `ADMIN` includes
 superadmins. Every active account receives all tools; catalog grants determine
 which catalogs contain readable data.
 
-| User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata |             Get transcript |         Search transcripts |
-| ------------------------- | ------------------: | ------------------: | -------------------: | ---------------------: | -------------------------: | -------------------------: |
-| No grant                  |                  No |                  No |                   No |                     No |                         No |                         No |
-| `LISTENER`                |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
-| `VIEWER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
-| `MEMBER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
-| `EDITOR`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
-| `OWNER`                   |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
-| `ADMIN`                   | All active catalogs | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Published/ready recordings |
+| User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata |             Get transcript |                              Search transcripts |
+| ------------------------- | ------------------: | ------------------: | -------------------: | ---------------------: | -------------------------: | ----------------------------------------------: |
+| No grant                  |                  No |                  No |                   No |                     No |                         No |                                              No |
+| `LISTENER`                |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `VIEWER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `MEMBER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `EDITOR`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `OWNER`                   |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `ADMIN`                   | All active catalogs | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
 
 For a `LISTENER`, an event is visible only when all of these are true:
 
@@ -272,28 +272,28 @@ that ignore `structuredContent` can still make a correct verification decision.
 
 The initialization response adds only cross-tool and corpus-wide rules: ground
 Besedy claims in returned evidence, distinguish meaning from literal wording,
-verify important candidates with `get_transcript`, do not count recorder variants
-of one event as independent evidence, resolve linked events with `get_recording`,
-support recurring themes with distinct events, and cite bounded segment links.
-Tool descriptions and schemas remain authoritative for individual calls and
-their current limits.
+verify important candidates with `get_transcript`, do not count recording variants
+of one event as independent evidence, group search results directly by their
+returned event IDs, support recurring themes with distinct events, and cite
+bounded segment links. Tool descriptions and schemas remain authoritative for
+individual calls and their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
 every matching segment in one response.
 
-| Tool                       | Use it to                                                      | Required data access                       |
-| -------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
-| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary  | Active portal user                         |
-| `list_catalogs`            | Discover accessible catalogs and MCP capabilities              | Active portal user                         |
-| `list_locations`           | Discover location IDs used by listener-visible data            | Accessible catalog                         |
-| `list_recorders`           | Discover recorder IDs used by listener-visible recordings      | Accessible catalog                         |
-| `list_events`              | Page and filter released events                                | Accessible catalog                         |
-| `get_event`                | Read one released event and its visible recordings             | Accessible catalog and listener visibility |
-| `get_recording`            | Read one published, ready recording and linked released events | Accessible catalog and listener visibility |
-| `get_transcript`           | Read a transcript for a published, ready recording             | Accessible catalog and listener visibility |
-| `search_transcripts`       | Find candidate passages by meaning, including different words  | Accessible catalog and listener visibility |
-| `find_transcript_mentions` | Exhaustively find indexed words, phrases, names, or prefixes   | Accessible catalog and listener visibility |
+| Tool                       | Use it to                                                        | Required data access                       |
+| -------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
+| `who_am_i`                 | Inspect the account, OAuth client, scopes, and access summary    | Active portal user                         |
+| `list_catalogs`            | Discover accessible catalogs and MCP capabilities                | Active portal user                         |
+| `list_locations`           | Discover location IDs used by listener-visible data              | Accessible catalog                         |
+| `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Accessible catalog                         |
+| `list_events`              | Page and filter released events                                  | Accessible catalog                         |
+| `get_event`                | Read one released event and its visible recordings               | Accessible catalog and listener visibility |
+| `get_recording`            | Read one published, ready recording and linked released events   | Accessible catalog and listener visibility |
+| `get_transcript`           | Read a transcript for a published, ready recording               | Accessible catalog and listener visibility |
+| `search_transcripts`       | Find event-scoped passages by meaning, including different words | Accessible catalog and listener visibility |
+| `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Accessible catalog and listener visibility |
 
 All tools are discoverable by an active portal user. Discovery is only a
 usability surface: every catalog-scoped call authorizes its resolved catalog and
@@ -389,9 +389,10 @@ Example return value:
 ### `list_locations`
 
 Use this tool to resolve a location name to the stable ID accepted by
-`list_events.locationId` and `search_transcripts.filters.locationIds`. Results
-contain only locations used by recordings the caller can read or, when event
-browsing is enabled for the catalog, by events the caller can read.
+`list_events.locationId` and the search tools' `filters.locationIds`. Search
+filters apply to event locations. Results may also include locations used only
+by readable recording metadata; use a positive `eventCount` to identify IDs
+that can contribute event-scoped search results.
 
 | Argument    | Type                                     | Default           | Meaning                                                          |
 | ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------- |
@@ -593,10 +594,9 @@ hash returned by an event, search, or transcript response.
 flags, and authenticated `webUrl`; it deliberately omits audio and storage
 locations. The `events` page contains compact visible event summaries and
 whether the recording is primary for each event. Continue with `nextOffset` as
-`eventOffset`; `null` marks the final page. After transcript search, call this
-tool for shortlisted audio hashes when a cross-recording claim requires
-independent evidence. Recordings linked to the same event are variants rather
-than independent discussions.
+`eventOffset`; `null` marks the final page. Search results already include their
+event identity, date, and location, so call this tool after search only when
+recording-specific descriptive metadata is needed.
 
 Example return value:
 
@@ -759,10 +759,11 @@ return a continuation descriptor:
 ### `find_transcript_mentions`
 
 Use this tool for literal words, proper names, quotations, fixed phrases, and
-prefixes. It searches every indexed chunk belonging to recordings authorized
-by the resolved catalog and filters. Its `totalMatches` is complete over those
-indexed chunks before `limit` and `maxPerRecording` reduce the returned list; it
-does not cover stored transcript backend variants outside the active index.
+prefixes. It searches every indexed chunk belonging to visible recordings under
+released events authorized by the resolved catalog and filters. Its
+`totalMatches` is the number of matching indexed chunks before `limit` and
+`maxPerRecording` reduce the returned list; it is not a count of distinct events
+and does not cover stored transcript backend variants outside the active index.
 Numeric text-match scores are not exposed.
 
 It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
@@ -780,16 +781,17 @@ SQLite `MATCH` operators are therefore treated as ordinary query tokens rather
 than executable query syntax. Matching is Unicode-aware and accent-insensitive,
 but the current tokenizer does not perform stemming or lemmatization.
 
-The tool returns the same recording, match, context, metadata, citation, and
-`transcriptRequest` result shape as meaning-based search. Use `get_transcript` to
-verify important matches in continuous context. A zero result establishes only
-that the chosen literal token pattern is absent under the chosen catalog,
-authorization scope, filters, and match mode; it does not establish conceptual
-absence. Rendered text repeats that scope, distinguishes the complete
-indexed `totalMatches` count from capped returned passages, and includes each
-non-null `transcriptRequest` for clients that do not consume
-`structuredContent`. When the request is null, rendered text says that the
-candidate cannot be used as important evidence without another verified source.
+The tool returns the same event, recording identity, match, context, citation,
+and `transcriptRequest` result shape as meaning-based search. Use
+`get_transcript` to verify important matches in continuous context. A zero result
+establishes only that the chosen literal token pattern is absent under the
+chosen catalog, authorization scope, filters, and match mode; it does not
+establish conceptual absence. Rendered text repeats that scope, distinguishes
+the complete indexed `totalMatches` count from capped returned passages, and
+includes event date and location plus each non-null `transcriptRequest` for
+clients that do not consume `structuredContent`. When the request is null,
+rendered text says that the candidate cannot be used as important evidence
+without another verified source.
 
 ### `search_transcripts`
 
@@ -819,8 +821,10 @@ scores are not exposed.
 
 `eventIds` restricts matches to recordings linked to any selected event. This
 supports a direct `list_events` to either search tool workflow without making
-the caller expand each event into recording hashes. `locationIds`,
-`recorderIds`, `dateYears`, and `verified` refer to curated recording metadata.
+the caller expand each event into recording hashes. `locationIds` and
+`dateYears` refer to authoritative event metadata. `recorderIds` and `verified`
+remain optional curated-recording constraints; they are filters only and are not
+returned as search-result context.
 
 A low `maxPerRecording`, such as `1`, increases diversity across recordings and
 is useful for initial orientation. A precise broad search should keep the
@@ -832,27 +836,29 @@ Adjacent chunks are mechanical context for triage: they may not contain a
 complete question, answer, qualification, or discussion arc.
 
 Rendered text labels the candidates as ranked and non-exhaustive, warns that an
-empty result does not establish conceptual absence, and includes each non-null
-`transcriptRequest` so a client can pass it to `get_transcript` without consuming
-`structuredContent`. A null request instead produces an explicit unavailable
-verification warning.
+empty result does not establish conceptual absence, and leads each candidate
+with its event date and location. It includes the event ID, event URL, recording
+hash, and each non-null `transcriptRequest` so a client can group evidence and
+verify it without consuming `structuredContent`. A null request instead produces
+an explicit unavailable-verification warning.
 
 Every result contains:
 
-- a compact `recording` summary and authenticated recording `webUrl`;
+- the authoritative `event` ID, authenticated event `webUrl`, date, and
+  location;
+- a minimal `recording` identity containing only the stable `audioHash`;
 - the exact `match`, including chunk ID, time range, text, and seekable
   `webUrl`;
 - optional before/after `context` without duplicating the exact match;
-- date, location, and recorder `metadata`;
 - a stable `citation` naming the audio hash, chunk, time range, catalog, RAG
   backend, and chunk version; and
 - `transcriptRequest`, when a compatible stored transcript exists, with the
   actual transcript backend, `mode: "page"`, and the time range to verify. This
   may be `null`.
 
-The match `webUrl` is a bounded excerpt link: it seeks to `startSec`, stops
-once at `endSec`, and then permits ordinary continued playback when the user
-presses play again. The recording summary's `webUrl` remains unbounded.
+The match `webUrl` is a bounded excerpt link: it seeks to `startSec`, stops once
+at `endSec`, and then permits ordinary continued playback when the user presses
+play again. Use the returned event `webUrl` for unbounded event context.
 
 The generated request can be passed directly to `get_transcript`:
 
@@ -874,10 +880,9 @@ The recommended evidence workflow is:
 2. Before synthesizing, run precise broad searches with the 50-result default,
    several materially different reformulations, and multiple matches per
    recording when useful. Do not wait for the user to request more precision.
-3. Shortlist results from their exact match, adjacent context, and recording.
-   For cross-recording claims, call `get_recording` on the shortlisted audio
-   hashes and compare linked event IDs; recordings sharing an event are variants,
-   not independent evidence.
+3. Shortlist results from their exact match, adjacent context, and event. Group
+   them directly by the returned event ID; recordings sharing an event are
+   variants, not independent evidence.
 4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.
 5. When the chosen result has a non-null `transcriptRequest`, pass it to
@@ -910,14 +915,14 @@ Example return value:
   "results": [
     {
       "rank": 1,
+      "event": {
+        "id": 4242,
+        "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+        "date": { "year": 2099, "month": 4, "day": 12 },
+        "location": { "id": 999, "name": "Example Hall" }
+      },
       "recording": {
-        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "title": "Example recording",
-        "artist": "Example speaker",
-        "durationHms": "00:12:30",
-        "ready": true,
-        "published": true,
-        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "match": {
         "chunkId": "chunk-example-0001",
@@ -931,11 +936,6 @@ Example return value:
         "endSec": 640,
         "beforeText": "Example preceding context.",
         "afterText": "Example following context."
-      },
-      "metadata": {
-        "date": { "year": 2099, "month": 4, "day": 12 },
-        "location": { "id": 999, "name": "Example Hall" },
-        "recorder": { "id": 12, "name": "Example recorder" }
       },
       "citation": {
         "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

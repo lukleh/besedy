@@ -139,6 +139,62 @@ export function renderTranscriptVerificationHandoff(
   return `Transcript request: ${JSON.stringify(transcriptRequest)}`;
 }
 
+interface RenderableTranscriptSearchResult {
+  rank: number;
+  event: {
+    id: number;
+    webUrl: string;
+    date: { year: number; month: number | null; day: number | null };
+    location: { name: string };
+  };
+  recording: { audioHash: string };
+  match: {
+    startSec: number;
+    endSec: number;
+    text: string;
+    webUrl: string;
+  };
+  context: {
+    beforeText: string | null;
+    afterText: string | null;
+  } | null;
+  transcriptRequest: unknown;
+}
+
+function formatEventDate(
+  date: RenderableTranscriptSearchResult['event']['date'],
+) {
+  const month =
+    date.month === null ? null : String(date.month).padStart(2, '0');
+  const day = date.day === null ? null : String(date.day).padStart(2, '0');
+  if (month === null) return String(date.year);
+  return day === null
+    ? `${date.year}-${month}`
+    : `${date.year}-${month}-${day}`;
+}
+
+export function renderTranscriptSearchResult(
+  result: RenderableTranscriptSearchResult,
+): string[] {
+  const lines = [
+    `${result.rank}. ${formatEventDate(result.event.date)} · ${result.event.location.name} [${result.match.startSec}-${result.match.endSec}s]`,
+    `Event: ${result.event.id} ${result.event.webUrl}`,
+    `Recording: ${result.recording.audioHash}`,
+    result.match.text,
+  ];
+  if (result.context?.beforeText) {
+    lines.push(`Before: ${result.context.beforeText}`);
+  }
+  if (result.context?.afterText) {
+    lines.push(`After: ${result.context.afterText}`);
+  }
+  lines.push(
+    `Source: ${result.match.webUrl}`,
+    renderTranscriptVerificationHandoff(result.transcriptRequest),
+  );
+  return lines;
+}
+
 export function toolError(code: string, message: string, retryable = false) {
   const result = { error: { code, message, retryable } };
   return {

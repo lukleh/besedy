@@ -927,10 +927,8 @@ async function assertMcpSearchEventsVisible(
   if (!requestedEventIds?.length) return;
 
   const visibleEventIds = new Set(
-    (await resolveReadableEventIds(
-      catalogId,
-      MCP_VISIBILITY_ACCESS_LEVEL,
-    )) ?? [],
+    (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
+      [],
   );
   if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
     throw new McpReadError('not_found', 'Event not found');
@@ -1056,13 +1054,18 @@ async function serializeMcpSearchResults(
   searchResults: CatalogSearchResult[],
   contextChunks: number,
 ) {
+  const eventSearchResults = searchResults.filter(
+    (
+      result,
+    ): result is CatalogSearchResult & {
+      event: NonNullable<CatalogSearchResult['event']>;
+    } => result.event !== null && result.event !== undefined,
+  );
+  if (eventSearchResults.length === 0) return [];
   const audioHashes = [
-    ...new Set(searchResults.map((result) => result.audioHash)),
+    ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const [recordingByHash, priorities] = await Promise.all([
-    loadCatalogRecordingReadModels(catalogId, audioHashes),
-    listTranscriptBackendPriorities(),
-  ]);
+  const priorities = await listTranscriptBackendPriorities();
   const transcriptsPath = resolveTranscriptsPath(catalogId);
   const availableBackendsByHash = new Map(
     await Promise.all(
@@ -1077,16 +1080,19 @@ async function serializeMcpSearchResults(
     ),
   );
 
-  return searchResults.map((result) => {
+  return eventSearchResults.map((result) => {
     const transcriptBackend = resolveSearchTranscriptBackend(
       result.citation.backendKey,
       availableBackendsByHash.get(result.audioHash) ?? [],
     );
     return {
       rank: result.rank,
+      event: {
+        ...result.event,
+        webUrl: buildEventWebUrl(catalogId, result.event.id),
+      },
       recording: {
-        ...serializeRecordingSummary(recordingByHash.get(result.audioHash)!),
-        webUrl: buildRecordingWebUrl(catalogId, result.audioHash),
+        audioHash: result.audioHash,
       },
       match: {
         chunkId: result.chunkId,
@@ -1115,7 +1121,6 @@ async function serializeMcpSearchResults(
                   .join('\n\n') || null,
             }
           : null,
-      metadata: result.metadata,
       citation: result.citation,
       transcriptRequest: transcriptBackend
         ? {

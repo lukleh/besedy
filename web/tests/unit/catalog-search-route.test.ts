@@ -42,6 +42,9 @@ vi.mock("@/lib/db", () => ({
     audioMetadata: {
       findMany: vi.fn(),
     },
+    catalogEventRecording: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -74,6 +77,7 @@ describe("catalog search route", () => {
     process.env.RAG_COLBERT_INDEX_DIR = "/workspace/besedy/tmp/rag-colbert-test/index/colbert_index";
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(prisma.catalogEventRecording.findMany).mockResolvedValue([]);
 
     requireAuth = (await import("@/lib/auth/permissions")).requireAuth as ReturnType<
       typeof vi.fn
@@ -150,6 +154,7 @@ describe("catalog search route", () => {
   it("supports ColBERT retrieval mode while preserving the response contract", async () => {
     const queryRawMock = vi.mocked(prisma.$queryRaw);
     const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
+    const eventFindManyMock = vi.mocked(prisma.catalogEventRecording.findMany);
 
     process.env.RAG_COLBERT_RERANK_ENABLED = "true";
 
@@ -260,10 +265,10 @@ describe("catalog search route", () => {
     metadataFindManyMock.mockResolvedValue([
       {
         audioHash: "hash-1",
-        dateYear: 1975,
-        dateMonth: 3,
-        dateDay: 15,
-        location: { id: 7, name: "Brno" },
+        dateYear: 1900,
+        dateMonth: 1,
+        dateDay: 1,
+        location: { id: 99, name: "Recording location" },
         recorder: { id: 8, name: "Archiv" },
       },
       {
@@ -273,6 +278,18 @@ describe("catalog search route", () => {
         dateDay: null,
         location: null,
         recorder: null,
+      },
+    ] as never);
+    eventFindManyMock.mockResolvedValue([
+      {
+        audioHash: "hash-1",
+        event: {
+          id: 42,
+          dateYear: 1975,
+          dateMonth: 3,
+          dateDay: 15,
+          location: { id: 7, name: "Brno" },
+        },
       },
     ] as never);
 
@@ -326,6 +343,11 @@ describe("catalog search route", () => {
             ],
             after: [],
           },
+          event: {
+            id: 42,
+            date: { year: 1975, month: 3, day: 15 },
+            location: { id: 7, name: "Brno" },
+          },
           metadata: {
             date: {
               year: 1975,
@@ -368,6 +390,7 @@ describe("catalog search route", () => {
             before: [],
             after: [],
           },
+          event: null,
           metadata: {
             date: {
               year: null,

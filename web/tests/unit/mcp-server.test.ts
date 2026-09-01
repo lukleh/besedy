@@ -483,7 +483,7 @@ describe('MCP personalized tool surface', () => {
 
     expect(searchTool?.description).toContain('filters.eventIds');
     expect(lexicalTool?.description).toContain(
-      'authorized indexed Besedy transcript corpus',
+      'authorized indexed transcript corpus',
     );
     expect(searchTool?.description).toContain('passages by meaning');
     expect(lexicalTool?.description).toContain('search_transcripts');
@@ -506,9 +506,7 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.description).toContain(
       'match webUrl is a bounded citation',
     );
-    expect(searchTool?.description).toContain(
-      'recording summary webUrl remains unbounded',
-    );
+    expect(searchTool?.description).toContain('authoritative event ID');
     expect(searchTool?.inputSchema.properties.limit.default).toBe(50);
     expect(searchTool?.inputSchema.properties.limit.maximum).toBe(200);
     expect(searchTool?.inputSchema.properties.limit.description).toContain(
@@ -537,9 +535,8 @@ describe('MCP personalized tool surface', () => {
     expect(locationsTool?.description).toContain('list_events');
     expect(locationsTool?.description).toContain('search_transcripts');
     expect(recordersTool?.description).toContain('search_transcripts');
-    expect(recordingTool?.description).toContain('compare linked event IDs');
     expect(recordingTool?.description).toContain(
-      'variants, not independent evidence',
+      'Search results already include event identity',
     );
     expect(transcriptTool?.description).toContain('verify important evidence');
     expect(transcriptTool?.description).toContain(
@@ -593,7 +590,9 @@ describe('MCP personalized tool surface', () => {
       'backend variants outside the active index',
     );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-null transcriptRequest');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('use get_recording');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'authoritative event IDs, dates, and locations',
+    );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event are variants');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
@@ -935,14 +934,14 @@ describe('MCP personalized tool surface', () => {
       results: [
         {
           rank: 1,
+          event: {
+            id: 42,
+            webUrl: 'https://besedy.example/event/42',
+            date: { year: 2026, month: 8, day: 28 },
+            location: { id: 7, name: 'Prague' },
+          },
           recording: {
             audioHash: 'a'.repeat(64),
-            title: 'Recording title',
-            artist: null,
-            durationHms: '00:10:00',
-            ready: true,
-            published: true,
-            webUrl: 'https://besedy.example/recording',
           },
           match: {
             chunkId: 'chunk-1',
@@ -956,11 +955,6 @@ describe('MCP personalized tool surface', () => {
             endSec: 15,
             beforeText: 'Earlier context',
             afterText: 'Later context',
-          },
-          metadata: {
-            date: { year: 2026, month: 8, day: 28 },
-            location: { id: 7, name: 'Prague' },
-            recorder: null,
           },
           citation: {
             audioHash: 'a'.repeat(64),
@@ -993,7 +987,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /ranked, non-exhaustive candidate[\s\S]*zero result does not establish conceptual absence[\s\S]*Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context[\s\S]*Transcript request: \{"catalogId":"viewer-catalog"/,
+          /ranked, non-exhaustive candidate[\s\S]*2026-08-28 · Prague[\s\S]*Event: 42[\s\S]*Recording: a{64}[\s\S]*Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context[\s\S]*Transcript request: \{"catalogId":"viewer-catalog"/,
         ),
       },
     ]);
@@ -1006,8 +1000,22 @@ describe('MCP personalized tool surface', () => {
       transcriptRequestLine!.slice('Transcript request: '.length),
     );
     const structuredContent = body.result?.structuredContent as {
-      results: Array<{ transcriptRequest: Record<string, unknown> }>;
+      results: Array<{
+        event: Record<string, unknown>;
+        recording: Record<string, unknown>;
+        transcriptRequest: Record<string, unknown>;
+      }>;
     };
+    expect(structuredContent.results[0]?.event).toEqual({
+      id: 42,
+      webUrl: 'https://besedy.example/event/42',
+      date: { year: 2026, month: 8, day: 28 },
+      location: { id: 7, name: 'Prague' },
+    });
+    expect(structuredContent.results[0]?.recording).toEqual({
+      audioHash: 'a'.repeat(64),
+    });
+    expect(structuredContent.results[0]).not.toHaveProperty('metadata');
     expect(renderedTranscriptRequest).toEqual(
       structuredContent.results[0]?.transcriptRequest,
     );
@@ -1054,7 +1062,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /found 0 match\(es\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*complete count covers all authorized indexed chunks[\s\S]*does not cover stored transcript backend variants outside the active index[\s\S]*zero count establishes only indexed literal-pattern absence/,
+          /found 0 matching indexed chunk\(s\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*chunk-match count, not a distinct-event count[\s\S]*not stored transcript backend variants outside the active index[\s\S]*zero count establishes only indexed literal-pattern absence/,
         ),
       },
     ]);

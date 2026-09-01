@@ -51,14 +51,14 @@ export const SearchMetadataFiltersSchema = z
       .max(MAX_METADATA_FILTER_VALUES)
       .optional()
       .describe("Recording audio hashes that may contribute search matches."),
-    locationIds: positiveIdListFilter("Location IDs from curated recording metadata."),
+    locationIds: positiveIdListFilter("Location IDs from linked event metadata."),
     recorderIds: positiveIdListFilter("Recorder IDs from curated recording metadata."),
     dateYears: z
       .array(z.number().int().min(1900).max(2100))
       .min(1)
       .max(MAX_METADATA_FILTER_VALUES)
       .optional()
-      .describe("Years from curated recording metadata."),
+      .describe("Years from linked event metadata."),
     verified: z.boolean().optional().describe("Whether curated recording metadata is verified."),
   })
   .strict()
@@ -252,11 +252,43 @@ function buildAudioHashesQuery(
 ): Prisma.Sql {
   const joins: Prisma.Sql[] = [];
   const filters: Prisma.Sql[] = [];
+  const requiresVisibleEvent = requiresReadyRecordingScope(accessLevel);
+  const needsEventJoin =
+    requiresVisibleEvent ||
+    (metadataFilters?.eventIds?.length ?? 0) > 0 ||
+    (metadataFilters?.locationIds?.length ?? 0) > 0 ||
+    (metadataFilters?.dateYears?.length ?? 0) > 0;
 
-  if (requiresReadyRecordingScope(accessLevel)) {
+  if (requiresVisibleEvent) {
     filters.push(Prisma.sql`
       AND ce.is_actionable = true
       AND ce.is_published = true
+      AND linked_event.released = true
+      AND primary_entry.is_actionable = true
+      AND primary_entry.is_published = true
+    `);
+  }
+
+  if (needsEventJoin) {
+    joins.push(Prisma.sql`
+      INNER JOIN catalog_event_recording event_recording
+        ON event_recording.workflow_group_id = ce.workflow_group_id
+       AND event_recording.audio_hash = ce.audio_hash
+      INNER JOIN catalog_event linked_event
+        ON linked_event.id = event_recording.event_id
+       AND linked_event.workflow_group_id = event_recording.workflow_group_id
+    `);
+  }
+
+  if (requiresVisibleEvent) {
+    joins.push(Prisma.sql`
+      INNER JOIN catalog_event_recording primary_recording
+        ON primary_recording.workflow_group_id = linked_event.workflow_group_id
+       AND primary_recording.event_id = linked_event.id
+       AND primary_recording.is_primary = true
+      INNER JOIN catalog_entry primary_entry
+        ON primary_entry.workflow_group_id = primary_recording.workflow_group_id
+       AND primary_entry.audio_hash = primary_recording.audio_hash
     `);
   }
 
@@ -268,20 +300,12 @@ function buildAudioHashesQuery(
 
   if (metadataFilters?.eventIds && metadataFilters.eventIds.length > 0) {
     filters.push(Prisma.sql`
-      AND EXISTS (
-        SELECT 1
-        FROM catalog_event_recording cer
-        WHERE cer.workflow_group_id = ce.workflow_group_id
-          AND cer.audio_hash = ce.audio_hash
-          AND cer.event_id IN (${Prisma.join(metadataFilters.eventIds)})
-      )
+      AND event_recording.event_id IN (${Prisma.join(metadataFilters.eventIds)})
     `);
   }
 
   const needsMetadataJoin =
-    (metadataFilters?.locationIds && metadataFilters.locationIds.length > 0) ||
     (metadataFilters?.recorderIds && metadataFilters.recorderIds.length > 0) ||
-    (metadataFilters?.dateYears && metadataFilters.dateYears.length > 0) ||
     metadataFilters?.verified !== undefined;
 
   if (needsMetadataJoin) {
@@ -294,7 +318,7 @@ function buildAudioHashesQuery(
 
   if (metadataFilters?.locationIds && metadataFilters.locationIds.length > 0) {
     filters.push(Prisma.sql`
-      AND am.location_id IN (${Prisma.join(metadataFilters.locationIds)})
+      AND linked_event.location_id IN (${Prisma.join(metadataFilters.locationIds)})
     `);
   }
 
@@ -306,7 +330,7 @@ function buildAudioHashesQuery(
 
   if (metadataFilters?.dateYears && metadataFilters.dateYears.length > 0) {
     filters.push(Prisma.sql`
-      AND am.date_year IN (${Prisma.join(metadataFilters.dateYears)})
+      AND linked_event.date_year IN (${Prisma.join(metadataFilters.dateYears)})
     `);
   }
 
