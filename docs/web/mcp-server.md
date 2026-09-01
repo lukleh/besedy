@@ -269,14 +269,15 @@ choice in user-facing terms: `search_transcripts` finds passages by meaning,
 including concepts, paraphrases, and different wording, while
 `find_transcript_mentions` searches the actual words for names, terminology,
 quotations, fixed phrases, prefixes, and complete literal checks. They also
-describe the cross-tool discovery and evidence workflow: an initial small
-meaning-based search provides orientation, a precise broad search must follow
-before synthesis, meaning-based search is non-exhaustive, important passages
-should be verified through `transcriptRequest` and `get_transcript`, recorder
-variants of one event are not independent evidence, recurring themes require
-support from distinct events, and bounded segment links are preferred for
-citations. Tool descriptions and schemas remain authoritative for individual
-calls and their current limits.
+describe the cross-tool discovery and evidence workflow: for ordinary
+meaning-based or exploratory questions, an initial small search provides
+orientation and a precise broad search must follow before synthesis; exact,
+low-ambiguity literal lookups do not require semantic orientation.
+Meaning-based search is non-exhaustive, important passages should be verified
+through `transcriptRequest` and `get_transcript`, recorder variants of one event
+are not independent evidence, recurring themes require support from distinct
+events, and bounded segment links are preferred for citations. Tool descriptions
+and schemas remain authoritative for individual calls and their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need

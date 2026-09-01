@@ -60,11 +60,20 @@ limits prevent reviewing all returned candidates, say exactly what was and was
 not reviewed rather than presenting the sample as comprehensive.
 
 Treat semantic transcript search as non-exhaustive even at its maximum allowed
-limit. For requests such as "all mentions," explain that limitation and pursue
-the closest practical coverage through query variation, broader limits,
-multiple matches per recording, focused recording or event follow-ups, and
-continuous-context verification. Disclose any intentional sampling parameters
-that materially limit coverage.
+limit. For requests to find every discussion or passage about a concept, explain
+that limitation and pursue the closest practical coverage through query
+variation, broader limits, multiple matches per recording, focused recording or
+event follow-ups, and continuous-context verification. Disclose any intentional
+sampling parameters that materially limit coverage.
+
+When the user instead asks for all literal mentions of actual words, a phrase,
+or a name, use `find_transcript_mentions` with the appropriate match mode. Its
+`totalMatches` covers the complete authorized corpus under the selected catalog,
+filters, and match mode, even when `limit` or `maxPerRecording` caps the returned
+passages. Explain that cap when the user needs the individual occurrences. A
+zero result establishes absence only for that literal pattern and scope, not for
+the underlying concept. Verify important returned passages in continuous
+context.
 
 Use known dates, events, locations, recorders, and recordings to focus later
 searches when they materially narrow the question. Before relying on a

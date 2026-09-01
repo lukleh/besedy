@@ -554,6 +554,12 @@ describe('MCP personalized tool surface', () => {
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('two stages');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'meaning-based or exploratory content questions',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'literal lookups do not require semantic orientation',
+    );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('Do not wait for the user');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-exhaustive');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
