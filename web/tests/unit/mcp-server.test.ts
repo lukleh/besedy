@@ -473,6 +473,8 @@ describe('MCP personalized tool surface', () => {
       (tool) => tool.name === 'find_transcript_mentions',
     );
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
+    const identityTool = tools.find((tool) => tool.name === 'who_am_i');
+    const catalogsTool = tools.find((tool) => tool.name === 'list_catalogs');
     const eventsTool = tools.find((tool) => tool.name === 'list_events');
     const locationsTool = tools.find((tool) => tool.name === 'list_locations');
     const recordersTool = tools.find((tool) => tool.name === 'list_recorders');
@@ -481,6 +483,10 @@ describe('MCP personalized tool surface', () => {
     expect(lexicalTool?.description).toContain('actual transcript wording');
     expect(searchTool?.description).toContain('passages by meaning');
     expect(lexicalTool?.description).toContain('search_transcripts');
+    expect(lexicalTool?.description).toContain('totalMatches');
+    expect(lexicalTool?.description).toContain('returned passages');
+    expect(lexicalTool?.description).toContain('concept is absent');
+    expect(lexicalTool?.description).toContain('get_transcript');
     expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
       10,
@@ -490,7 +496,9 @@ describe('MCP personalized tool surface', () => {
     expect(searchTool?.description).toContain('get_transcript');
     expect(searchTool?.description).toContain('small first pass');
     expect(searchTool?.description).toContain('precise broad searches');
-    expect(searchTool?.description).toContain('match webUrl is bounded');
+    expect(searchTool?.description).toContain(
+      'match webUrl is a bounded citation',
+    );
     expect(searchTool?.description).toContain(
       'recording summary webUrl remains unbounded',
     );
@@ -523,9 +531,12 @@ describe('MCP personalized tool surface', () => {
     expect(locationsTool?.description).toContain('search_transcripts');
     expect(recordersTool?.description).toContain('search_transcripts');
     expect(transcriptTool?.description).toContain('verify important evidence');
+    expect(transcriptTool?.description).toContain(
+      'pass its transcriptRequest here unchanged',
+    );
     expect(transcriptTool?.description).toContain('complete stored transcript');
     expect(transcriptTool?.description).toContain('unbounded recordingWebUrl');
-    expect(transcriptTool?.description).toContain('bounded webUrl');
+    expect(transcriptTool?.description).toContain('bounded citation webUrl');
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
       'every segment',
     );
@@ -550,20 +561,24 @@ describe('MCP personalized tool surface', () => {
     expect(eventsTool?.inputSchema.properties.released.description).toContain(
       'released',
     );
+    expect(identityTool?.description).toContain(
+      'not needed before routine content calls',
+    );
+    expect(catalogsTool?.description).toContain(
+      'omit catalogId on routine content calls',
+    );
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('two stages');
+    expect(BESEDY_MCP_INSTRUCTIONS.length).toBeLessThan(1_200);
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
-      'meaning-based or exploratory content questions',
+      'Tool descriptions and schemas define individual calls',
     );
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
-      'literal lookups do not require semantic orientation',
-    );
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('Do not wait for the user');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-exhaustive');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('Literal totalMatches');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event are variants');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
 
@@ -941,10 +956,24 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context/,
+          /ranked, non-exhaustive candidate[\s\S]*zero result does not establish conceptual absence[\s\S]*Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context[\s\S]*Transcript request: \{"catalogId":"viewer-catalog"/,
         ),
       },
     ]);
+    const renderedContent = body.result?.content as Array<{ text: string }>;
+    const transcriptRequestLine = renderedContent[0]?.text
+      .split('\n')
+      .find((line) => line.startsWith('Transcript request: '));
+    expect(transcriptRequestLine).toBeDefined();
+    const renderedTranscriptRequest = JSON.parse(
+      transcriptRequestLine!.slice('Transcript request: '.length),
+    );
+    const structuredContent = body.result?.structuredContent as {
+      results: Array<{ transcriptRequest: Record<string, unknown> }>;
+    };
+    expect(renderedTranscriptRequest).toEqual(
+      structuredContent.results[0]?.transcriptRequest,
+    );
     expect(searchMcpTranscripts).toHaveBeenCalledWith('viewer-catalog', {
       query: 'search phrase',
       limit: 50,
@@ -984,6 +1013,14 @@ describe('MCP personalized tool surface', () => {
     });
 
     expect(body.error).toBeUndefined();
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringMatching(
+          /found 0 complete-corpus match\(es\) and returned 0[\s\S]*complete count covers the authorized catalog[\s\S]*zero count establishes only literal-pattern absence/,
+        ),
+      },
+    ]);
     expect(findMcpTranscriptMentions).toHaveBeenCalledWith('viewer-catalog', {
       query: 'exact phrase',
       matchMode: 'all_terms',

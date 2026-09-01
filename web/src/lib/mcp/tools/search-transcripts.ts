@@ -25,7 +25,8 @@ function renderSearchContent(
   result: Awaited<ReturnType<typeof searchMcpTranscripts>>,
 ): string {
   const lines = [
-    `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} non-exhaustive match(es).`,
+    `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} ranked, non-exhaustive candidate(s).`,
+    'A zero result does not establish conceptual absence. Verify important candidates by passing their transcriptRequest to get_transcript.',
   ];
   for (const searchResult of result.results) {
     lines.push(
@@ -38,7 +39,10 @@ function renderSearchContent(
     if (searchResult.context?.afterText) {
       lines.push(`After: ${searchResult.context.afterText}`);
     }
-    lines.push(`Source: ${searchResult.match.webUrl}`);
+    lines.push(
+      `Source: ${searchResult.match.webUrl}`,
+      `Transcript request: ${JSON.stringify(searchResult.transcriptRequest)}`,
+    );
   }
   return lines.join('\n');
 }
@@ -55,7 +59,7 @@ export function registerSearchTranscriptsTool(
     {
       title: 'Search transcripts by meaning',
       description:
-        'Find candidate passages by meaning across accessible Besedy transcripts. Use this for questions, themes, related concepts, paraphrases, and different wording; it can find relevant passages even when the exact query words are absent. This search is ranked and non-exhaustive. When actual words matter—for names, terminology, quotations, fixed phrases, prefixes, or a complete literal check—use find_transcript_mentions instead. For ordinary content questions, use a small first pass only for orientation, then run precise broad searches before synthesizing. Use adjacent chunk context only to shortlist candidates. For important evidence, optionally run a bounded event-focused follow-up with filters.eventIds or recording-focused follow-up with filters.audioHashes, then call get_transcript to verify the continuous source context before relying on the passage in a synthesis. Each match webUrl is bounded to the matched passage; each recording summary webUrl remains unbounded. Results are ordered by relevance and expose rank, not an internal retrieval score.',
+        'Find candidate passages by meaning across accessible Besedy transcripts. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage: verify important evidence by passing transcriptRequest to get_transcript and reading coherent continuous context. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is relevance within this query, not confidence.',
       inputSchema: z.object({
         catalogId: z
           .string()

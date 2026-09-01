@@ -124,10 +124,13 @@ test.
 
 ### Besedy transcript research skill
 
-The public [`besedy-sources`](.agents/skills/besedy-sources) skill helps AI
-assistants explore recordings, verify transcript context, and cite timestamped
-sources. Its metadata declares the production Besedy MCP dependency, but skill
-installation does not configure or authenticate the MCP connection.
+The Besedy MCP server is self-contained: its server instructions, tool
+descriptions, schemas, and results provide the complete evidence workflow for
+clients that do not support skills. The optional public
+[`besedy-sources`](.agents/skills/besedy-sources) skill adds automatic discovery,
+Codex setup help, and richer thematic presentation. Its metadata declares the
+production Besedy MCP dependency, but skill installation does not configure or
+authenticate the MCP connection.
 
 In Codex, users can request both setup steps in one prompt:
 

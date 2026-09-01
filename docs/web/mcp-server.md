@@ -263,21 +263,19 @@ search calls instead render their evidence text there for clients that do not
 consume structured results. Responses may contain stable Besedy IDs and
 authenticated web links, but never audio URLs or filesystem paths.
 
-The MCP initialization response also includes concise server instructions for
-agents that connect without the optional Besedy skill. They explain the search
-choice in user-facing terms: `search_transcripts` finds passages by meaning,
-including concepts, paraphrases, and different wording, while
-`find_transcript_mentions` searches the actual words for names, terminology,
-quotations, fixed phrases, prefixes, and complete literal checks. They also
-describe the cross-tool discovery and evidence workflow: for ordinary
-meaning-based or exploratory questions, an initial small search provides
-orientation and a precise broad search must follow before synthesis; exact,
-low-ambiguity literal lookups do not require semantic orientation.
-Meaning-based search is non-exhaustive, important passages should be verified
-through `transcriptRequest` and `get_transcript`, recorder variants of one event
-are not independent evidence, recurring themes require support from distinct
-events, and bounded segment links are preferred for citations. Tool descriptions
-and schemas remain authoritative for individual calls and their current limits.
+The MCP interface is self-contained and does not require the optional Besedy
+skill. Each tool description explains when to use that tool, its scope, limits,
+evidence handoff, and result semantics. Search responses repeat the essential
+coverage caveats and include each candidate's `transcriptRequest` in both
+`structuredContent` and rendered text so clients that ignore structured results
+can still verify evidence.
+
+The initialization response adds only cross-tool and corpus-wide rules: ground
+Besedy claims in returned evidence, distinguish meaning from literal wording,
+verify important candidates with `get_transcript`, do not count recorder variants
+of one event as independent evidence, support recurring themes with distinct
+events, and cite bounded segment links. Tool descriptions and schemas remain
+authoritative for individual calls and their current limits.
 
 Collection tools remain paginated. Transcript reads deliberately
 support either bounded page mode or an explicit full mode for callers that need
@@ -782,7 +780,9 @@ The tool returns the same recording, match, context, metadata, citation, and
 verify important matches in continuous context. A zero result establishes only
 that the chosen literal token pattern is absent under the chosen catalog,
 authorization scope, filters, and match mode; it does not establish conceptual
-absence.
+absence. Rendered text repeats that scope, distinguishes the complete
+`totalMatches` count from capped returned passages, and includes each result's
+`transcriptRequest` for clients that do not consume `structuredContent`.
 
 ### `search_transcripts`
 
@@ -823,6 +823,11 @@ while values up to `100` support deep recording-focused searches. The overall
 `limit` still bounds the number of returned matches.
 Adjacent chunks are mechanical context for triage: they may not contain a
 complete question, answer, qualification, or discussion arc.
+
+Rendered text labels the candidates as ranked and non-exhaustive, warns that an
+empty result does not establish conceptual absence, and includes each result's
+`transcriptRequest` so a client can pass it to `get_transcript` without consuming
+`structuredContent`.
 
 Every result contains:
 

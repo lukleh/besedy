@@ -27,6 +27,7 @@ function renderSearchContent(
 ): string {
   const lines = [
     `Lexical transcript search for ${JSON.stringify(result.query)} found ${result.retrieval.totalMatches} complete-corpus match(es) and returned ${result.results.length}.`,
+    'The complete count covers the authorized catalog, filters, and match mode before limit and maxPerRecording cap returned passages. A zero count establishes only literal-pattern absence, not conceptual absence.',
   ];
   for (const searchResult of result.results) {
     lines.push(
@@ -39,7 +40,10 @@ function renderSearchContent(
     if (searchResult.context?.afterText) {
       lines.push(`After: ${searchResult.context.afterText}`);
     }
-    lines.push(`Source: ${searchResult.match.webUrl}`);
+    lines.push(
+      `Source: ${searchResult.match.webUrl}`,
+      `Transcript request: ${JSON.stringify(searchResult.transcriptRequest)}`,
+    );
   }
   return lines.join('\n');
 }
@@ -56,7 +60,7 @@ export function registerFindTranscriptMentionsTool(
     {
       title: 'Find exact transcript mentions',
       description:
-        'Search the actual transcript wording across all accessible Besedy recordings. Use this for names, terminology, quotations, fixed phrases, prefixes, or a complete check for a literal token pattern. Use search_transcripts instead when you want passages related by meaning, including concepts, paraphrases, or different wording. Filters, recording summaries, context, citations, and transcriptRequest behave like search_transcripts. Results are ordered by text-match relevance and expose rank, not an internal score.',
+        'Search actual transcript wording across accessible Besedy recordings. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches is the complete count under the authorized catalog, selected filters, and match mode before limit or maxPerRecording caps the returned passages. A zero count establishes only that literal pattern is absent in that scope, not that the underlying concept is absent. Verify important returned passages by passing transcriptRequest to get_transcript and reading continuous context. Each match webUrl is a bounded citation; each recording summary webUrl remains unbounded. Rank is text-match relevance, not confidence.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -86,7 +90,9 @@ export function registerFindTranscriptMentionsTool(
           .min(1)
           .max(MAX_SEARCH_LIMIT)
           .default(DEFAULT_SEARCH_LIMIT)
-          .describe('Maximum number of matches to return, from 1 to 200.'),
+          .describe(
+            'Maximum returned matches, from 1 to 200. This does not limit the complete totalMatches count.',
+          ),
         contextChunks: z
           .number()
           .int()
@@ -102,7 +108,9 @@ export function registerFindTranscriptMentionsTool(
           .min(1)
           .max(MAX_PER_AUDIO_LIMIT)
           .default(DEFAULT_SEARCH_RESULTS_PER_RECORDING)
-          .describe('Maximum matches returned per recording/audio hash.'),
+          .describe(
+            'Maximum matches returned per recording/audio hash. This does not limit the complete totalMatches count.',
+          ),
         filters: SearchMetadataFiltersSchema.optional().describe(
           'Optional constraints. Resolve filters.locationIds and filters.recorderIds with list_locations and list_recorders. Use filters.eventIds for events selected with list_events, or filters.audioHashes for specific recordings.',
         ),

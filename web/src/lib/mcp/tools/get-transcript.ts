@@ -56,7 +56,7 @@ export function registerGetTranscriptTool(
     {
       title: 'Get a Besedy transcript',
       description:
-        'Read continuous source context or the complete stored transcript from an accessible Besedy recording. Use mode full for every segment in the optional time window, or mode page to verify important evidence with a bounded read. The response preserves the unbounded recordingWebUrl, provides seekWebUrl for the first segment actually returned (or null for an empty result), and gives every segment a bounded webUrl that seeks to its start and stops once at its end.',
+        'Read continuous source context or the complete stored transcript from an accessible Besedy recording. To verify important evidence from either search tool, pass its transcriptRequest here unchanged so the catalog, recording, backend, and time window remain aligned; expand the window when needed until the question, answer, and qualifications are coherent. Use mode full for every segment in the optional time window, or mode page for a bounded read. The response preserves the unbounded recordingWebUrl, provides seekWebUrl for the first returned segment, and gives every segment a bounded citation webUrl.',
       inputSchema: z
         .object({
           catalogId: z
