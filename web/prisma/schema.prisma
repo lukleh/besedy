@@ -727,7 +727,7 @@ model CatalogEvent {
   @@map("catalog_event")
 }
 
-/// Recording assignments for each event
+/// Recording-to-event assignments; each recording belongs to at most one event per catalog.
 model CatalogEventRecording {
   eventId         Int      @map("event_id")
   workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
