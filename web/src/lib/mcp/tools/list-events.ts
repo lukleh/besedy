@@ -118,8 +118,7 @@ export function registerListEventsTool(
             date,
             locationId,
           }),
-        (result) =>
-          `Listed ${Array.isArray(result.events) ? result.events.length : 0} event(s).`,
+        (result) => `Listed ${result.events.length} event(s).`,
         renderEventListContent,
       );
     },

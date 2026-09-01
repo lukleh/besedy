@@ -1,4 +1,4 @@
-import type { AccessLevel, Prisma } from '@/generated/prisma/client';
+import { Prisma, type AccessLevel } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
 import {
   catalogEventVisibilityWhere,
@@ -6,7 +6,6 @@ import {
   listReadableCatalogEvents,
   loadReadableCatalogEvent,
   resolveReadableEventIds,
-  resolveReadableRecordingHashes,
 } from '@/lib/catalog-events/read-service';
 import {
   loadCatalogRecordingReadModels,
@@ -26,6 +25,8 @@ import {
 } from '@/app/api/catalogs/[id]/search/search-service';
 import {
   RagServiceError,
+  buildAllowedAudioHashesQuery,
+  buildEligibleAudioHashesQuery,
   type LexicalMatchMode,
   type SearchMetadataFilters,
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
@@ -34,6 +35,8 @@ import { getMcpResourceUrl } from '@/lib/mcp/config';
 export type McpEventOrder = 'asc' | 'desc';
 
 const MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER' as const satisfies AccessLevel;
+const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
+const TRANSCRIPT_BACKEND_LOOKUP_CONCURRENCY = 8;
 
 export interface McpEventListInput {
   cursor?: string;
@@ -81,6 +84,7 @@ export type McpReadErrorCode =
   | 'not_found'
   | 'transcript_not_found'
   | 'invalid_window'
+  | 'response_too_large'
   | 'search_not_configured'
   | 'search_unavailable';
 
@@ -486,38 +490,26 @@ export async function listMcpRecorders(
   catalogId: string,
   input: McpLookupListInput,
 ) {
-  const recordingRows = await prisma.audioMetadata.findMany({
-    where: { workflowGroupId: catalogId, recorderId: { not: null } },
-    select: { audioHash: true, recorderId: true },
-  });
-  const visibleHashes = await resolveReadableRecordingHashes(
+  const eligibleHashesQuery = buildEligibleAudioHashesQuery(
     catalogId,
     MCP_VISIBILITY_ACCESS_LEVEL,
-    recordingRows.map((row) => row.audioHash),
+    null,
   );
-  const recordingCounts = new Map<number, number>();
-  for (const row of recordingRows) {
-    if (visibleHashes.has(row.audioHash)) {
-      incrementCount(recordingCounts, row.recorderId);
-    }
-  }
-  const ids = [...recordingCounts.keys()];
-  const recorders =
-    ids.length === 0
-      ? []
-      : await prisma.recorder.findMany({
-          where: { id: { in: ids } },
-          select: { id: true, name: true },
-        });
-  const page = paginateLookupItems(
-    catalogId,
-    'recorder',
-    input,
-    recorders.map((recorder) => ({
-      ...recorder,
-      recordingCount: recordingCounts.get(recorder.id) ?? 0,
-    })),
-  );
+  const recorders = await prisma.$queryRaw<
+    { id: number; name: string; recordingCount: number }[]
+  >(Prisma.sql`
+    SELECT
+      recorder.id,
+      recorder.name,
+      COUNT(*)::integer AS "recordingCount"
+    FROM (${eligibleHashesQuery}) AS eligible
+    JOIN audio_metadata metadata
+      ON metadata.workflow_group_id = ${catalogId}
+     AND metadata.audio_hash = eligible."audioHash"
+    JOIN recorders recorder ON recorder.id = metadata.recorder_id
+    GROUP BY recorder.id, recorder.name
+  `);
+  const page = paginateLookupItems(catalogId, 'recorder', input, recorders);
   return {
     catalogId,
     recorders: page.items,
@@ -636,11 +628,9 @@ export async function getMcpEvent(
 }
 
 export async function getMcpRecording(catalogId: string, audioHash: string) {
-  const visibleHashes = await resolveReadableRecordingHashes(
-    catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
-    [audioHash],
-  );
+  const visibleHashes = await resolveMcpReadableRecordingHashes(catalogId, [
+    audioHash,
+  ]);
   if (!visibleHashes.has(audioHash)) {
     throw new McpReadError('not_found', 'Recording not found');
   }
@@ -705,11 +695,9 @@ export async function getMcpTranscript(
   audioHash: string,
   input: McpTranscriptInput,
 ) {
-  const visibleHashes = await resolveReadableRecordingHashes(
-    catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
-    [audioHash],
-  );
+  const visibleHashes = await resolveMcpReadableRecordingHashes(catalogId, [
+    audioHash,
+  ]);
   if (!visibleHashes.has(audioHash)) {
     throw new McpReadError('not_found', 'Recording not found');
   }
@@ -756,6 +744,15 @@ export async function getMcpTranscript(
   let returnedTextChars = 0;
   for (const { segment, segmentIndex } of candidates) {
     const textChars = segment.text.length;
+    if (
+      input.mode === 'full' &&
+      returnedTextChars + textChars > MAX_FULL_TRANSCRIPT_TEXT_CHARS
+    ) {
+      throw new McpReadError(
+        'response_too_large',
+        'Transcript window is too large for full mode; use page mode or a narrower time window',
+      );
+    }
     if (
       input.mode === 'page' &&
       segments.length > 0 &&
@@ -804,6 +801,7 @@ export async function getMcpTranscript(
     audioHash,
     recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
     backend,
+    availableBackends: available.backends,
     language: transcript.language ?? null,
     durationSec: transcript.duration ?? null,
     segments: {
@@ -814,19 +812,44 @@ export async function getMcpTranscript(
   };
 }
 
-async function assertMcpSearchEventsVisible(
+async function resolveMcpReadableRecordingHashes(
+  catalogId: string,
+  audioHashes: string[],
+): Promise<Set<string>> {
+  const eligibleQuery = buildAllowedAudioHashesQuery(
+    catalogId,
+    audioHashes,
+    MCP_VISIBILITY_ACCESS_LEVEL,
+    null,
+  );
+  if (!eligibleQuery) return new Set();
+  const rows = await prisma.$queryRaw<{ audioHash: string }[]>(eligibleQuery);
+  return new Set(rows.map((row) => row.audioHash));
+}
+
+async function assertMcpSearchFiltersVisible(
   catalogId: string,
   filters?: SearchMetadataFilters,
 ): Promise<void> {
   const requestedEventIds = filters?.eventIds;
-  if (!requestedEventIds?.length) return;
+  if (requestedEventIds?.length) {
+    const visibleEventIds = new Set(
+      (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
+        [],
+    );
+    if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
+      throw new McpReadError('not_found', 'Event not found');
+    }
+  }
 
-  const visibleEventIds = new Set(
-    (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
-      [],
+  const requestedAudioHashes = filters?.audioHashes;
+  if (!requestedAudioHashes?.length) return;
+  const visibleHashes = await resolveMcpReadableRecordingHashes(
+    catalogId,
+    requestedAudioHashes,
   );
-  if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
-    throw new McpReadError('not_found', 'Event not found');
+  if (requestedAudioHashes.some((audioHash) => !visibleHashes.has(audioHash))) {
+    throw new McpReadError('not_found', 'Recording not found');
   }
 }
 
@@ -840,7 +863,7 @@ export async function searchMcpTranscripts(
     filters?: SearchMetadataFilters;
   },
 ) {
-  await assertMcpSearchEventsVisible(catalogId, input.filters);
+  await assertMcpSearchFiltersVisible(catalogId, input.filters);
   let execution: Awaited<ReturnType<typeof executeCatalogSearch>>;
   try {
     execution = await executeCatalogSearch({
@@ -888,7 +911,7 @@ export async function findMcpTranscriptMentions(
     filters?: SearchMetadataFilters;
   },
 ) {
-  await assertMcpSearchEventsVisible(catalogId, input.filters);
+  await assertMcpSearchFiltersVisible(catalogId, input.filters);
   let execution: Awaited<ReturnType<typeof executeCatalogLexicalSearch>>;
   try {
     execution = await executeCatalogLexicalSearch({
@@ -963,19 +986,25 @@ async function serializeMcpSearchResults(
   const priorities = await listTranscriptBackendPriorities();
   const transcriptsPath = resolveTranscriptsPath(catalogId);
   const availableBackendsByHash = new Map(
-    await Promise.all(
-      audioHashes.map(async (audioHash) => {
+    await mapWithConcurrency(
+      audioHashes,
+      TRANSCRIPT_BACKEND_LOOKUP_CONCURRENCY,
+      async (audioHash) => {
         const available = await getAvailableTranscripts(
           transcriptsPath,
           audioHash,
           { priorities },
         );
         return [audioHash, available.backends] as const;
-      }),
+      },
     ),
   );
 
   return eventSearchResults.map((result) => {
+    const transcriptStartSec =
+      contextChunks > 0 ? result.contextStartSec : result.startSec;
+    const transcriptEndSec =
+      contextChunks > 0 ? result.contextEndSec : result.endSec;
     const transcriptBackend = resolveSearchTranscriptBackend(
       result.citation.backendKey,
       availableBackendsByHash.get(result.audioHash) ?? [],
@@ -1017,17 +1046,39 @@ async function serializeMcpSearchResults(
             }
           : null,
       citation: result.citation,
-      transcriptRequest: transcriptBackend
-        ? {
-            catalogId,
-            audioHash: result.audioHash,
-            backend: transcriptBackend,
-            mode: 'page' as const,
-            startSec:
-              contextChunks > 0 ? result.contextStartSec : result.startSec,
-            endSec: contextChunks > 0 ? result.contextEndSec : result.endSec,
-          }
-        : null,
+      transcriptRequest:
+        transcriptBackend && transcriptEndSec > transcriptStartSec
+          ? {
+              catalogId,
+              audioHash: result.audioHash,
+              backend: transcriptBackend,
+              mode: 'page' as const,
+              startSec: transcriptStartSec,
+              endSec: transcriptEndSec,
+            }
+          : null,
     };
   });
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  operation: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await operation(items[index]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () =>
+      worker(),
+    ),
+  );
+  return results;
 }

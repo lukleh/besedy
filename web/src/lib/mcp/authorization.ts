@@ -24,7 +24,6 @@ export async function getActiveMcpAuthorization({
     select: {
       name: true,
       disabled: true,
-      skipConsent: true,
       resources: {
         where: { resourceId: resourceUrl },
         select: {
@@ -52,9 +51,9 @@ export async function getActiveMcpAuthorization({
   }
 
   const liveConsentScopes = client.consents[0]?.scopes ?? [];
-  const scopes = client.skipConsent
-    ? tokenScopes
-    : tokenScopes.filter((scope) => liveConsentScopes.includes(scope));
+  const scopes = tokenScopes.filter((scope) =>
+    liveConsentScopes.includes(scope),
+  );
 
   return scopes.includes(MCP_READ_SCOPE)
     ? { clientName: client.name, scopes }

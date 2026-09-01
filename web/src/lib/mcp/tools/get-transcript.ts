@@ -17,12 +17,6 @@ const MAX_TRANSCRIPT_SEGMENT_LIMIT = 200;
 const DEFAULT_TRANSCRIPT_TEXT_CHAR_LIMIT = 20_000;
 const MAX_TRANSCRIPT_TEXT_CHAR_LIMIT = 50_000;
 
-function getPageItemCount(page: unknown): number {
-  if (!page || typeof page !== 'object') return 0;
-  const items = (page as { items?: unknown }).items;
-  return Array.isArray(items) ? items.length : 0;
-}
-
 function renderTranscriptContent(
   result: Awaited<ReturnType<typeof getMcpTranscript>>,
 ): string {
@@ -37,7 +31,9 @@ function renderTranscriptContent(
     }),
   ];
   if (result.continuation) {
-    lines.push('Use continuation for the next page.');
+    lines.push(
+      `Continue with segmentOffset ${result.continuation.segmentOffset}.`,
+    );
   }
   return lines.join('\n');
 }
@@ -54,7 +50,7 @@ export function registerGetTranscriptTool(
     {
       title: 'Get a Besedy transcript',
       description:
-        'Read transcript context for a visible recording. Pass a search result transcriptRequest unchanged, then expand its time window when more context is needed. Page mode is bounded; full mode returns the complete selected window. Each segment includes a bounded citation URL.',
+        'Read transcript context for a visible recording linked to a released event. Pass a search result transcriptRequest unchanged, then expand its time window when more context is needed. Page mode is bounded; full mode returns the complete selected window up to a hard response ceiling. Each segment includes a bounded citation URL.',
       inputSchema: z
         .object({
           catalogId: z
@@ -64,7 +60,9 @@ export function registerGetTranscriptTool(
             .describe(
               'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
             ),
-          audioHash: HashSchema.describe(
+          audioHash: HashSchema.transform((value) =>
+            value.toLowerCase(),
+          ).describe(
             'Stable audio hash of the recording. Copy it from a search result or recording response.',
           ),
           backend: TranscriptBackendSchema.optional().describe(
@@ -166,7 +164,7 @@ export function registerGetTranscriptTool(
                 }),
           }),
         (result) =>
-          `Returned ${getPageItemCount(result.segments)} transcript segment(s) for ${audioHash}.`,
+          `Returned ${result.segments.items.length} transcript segment(s) for ${audioHash}.`,
         renderTranscriptContent,
       );
     },

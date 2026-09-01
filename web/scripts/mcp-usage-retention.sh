@@ -9,6 +9,25 @@ MCP_RAW_RETENTION_DAYS="${MCP_RAW_RETENTION_DAYS:-180}"
 MCP_ROLLUP_RETENTION_DAYS="${MCP_ROLLUP_RETENTION_DAYS:-400}"
 MIN_MCP_ROLLUP_RETENTION_DAYS=366
 TAG="${REPORT_LOG_TAG:-besedy-mcp-retention}"
+ALERT_EMAIL="${ALERT_EMAIL:-${REPORT_EMAIL:-}}"
+
+on_error() {
+    local status="$1"
+    local line="$2"
+    trap - ERR
+    local message="MCP usage retention failed at line $line with status $status."
+    logger -t "$TAG" "$message"
+    if [ -n "$ALERT_EMAIL" ] && command -v sendmail >/dev/null 2>&1; then
+        {
+            echo "Subject: [Besedy] MCP usage retention failed - $(date +%Y-%m-%d)"
+            echo "Content-Type: text/plain; charset=utf-8"
+            echo ""
+            echo "$message"
+        } | sendmail "$ALERT_EMAIL" || logger -t "$TAG" "Could not email retention failure to $ALERT_EMAIL"
+    fi
+    exit "$status"
+}
+trap 'on_error "$?" "$LINENO"' ERR
 
 case "$MCP_RAW_RETENTION_DAYS" in
     ''|*[!0-9]*|0)
@@ -33,7 +52,13 @@ compose_cmd() {
     "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
 }
 
-RESULT="$(compose_cmd exec -T db psql \
+DB_CONTAINER_ID="$(compose_cmd ps -q db)"
+if [ -z "$DB_CONTAINER_ID" ]; then
+    echo "Production database container is not running." >&2
+    false
+fi
+
+RESULT="$(docker exec -i "$DB_CONTAINER_ID" psql \
     -U besedy_app \
     -d besedy \
     -v ON_ERROR_STOP=1 \

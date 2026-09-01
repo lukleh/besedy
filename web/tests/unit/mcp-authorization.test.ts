@@ -45,7 +45,6 @@ describe('MCP authorization liveness', () => {
       select: {
         name: true,
         disabled: true,
-        skipConsent: true,
         resources: {
           where: { resourceId: 'https://besedy.example/api/mcp' },
           select: {
@@ -65,21 +64,17 @@ describe('MCP authorization liveness', () => {
     });
   });
 
-  it('supports consent-free clients and nullable enabled flags', async () => {
+  it('fails closed for consent-free clients and accepts nullable enabled flags', async () => {
     mocks.findClient.mockResolvedValue({
       name: null,
       disabled: null,
-      skipConsent: true,
       resources: [{ resource: { disabled: null } }],
       consents: [],
     });
 
     await expect(
       getActiveMcpAuthorization(authorizationRequest),
-    ).resolves.toEqual({
-      clientName: null,
-      scopes: authorizationRequest.tokenScopes,
-    });
+    ).resolves.toBeNull();
   });
 
   it('rejects consent that no longer grants MCP read access', async () => {

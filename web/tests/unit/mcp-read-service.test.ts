@@ -24,6 +24,7 @@ import {
 
 vi.mock('@/lib/db', () => ({
   default: {
+    $queryRaw: vi.fn(),
     catalogEvent: { findMany: vi.fn(), findFirst: vi.fn() },
     catalogEventRecording: { findFirst: vi.fn() },
     catalogEntry: { findMany: vi.fn() },
@@ -63,6 +64,7 @@ vi.mock('@/app/api/catalogs/[id]/search/search-service', () => ({
 
 describe('MCP read service', () => {
   const db = prisma as unknown as {
+    $queryRaw: ReturnType<typeof vi.fn>;
     catalogEvent: {
       findMany: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
@@ -83,6 +85,14 @@ describe('MCP read service', () => {
     vi.mocked(getPublishedAccessibleRecordingHashes).mockResolvedValue(
       new Set(['visible-recording']),
     );
+    db.$queryRaw.mockImplementation((query: { strings?: string[] }) => {
+      const sql = query.strings?.join(' ') ?? '';
+      return Promise.resolve(
+        sql.includes('COUNT(*)::integer')
+          ? [{ id: 3, name: 'Petr', recordingCount: 1 }]
+          : [{ audioHash: 'visible-recording' }],
+      );
+    });
     vi.mocked(getAvailableTranscripts).mockResolvedValue({
       hash: 'visible-recording',
       backends: ['whisperx/model'],
@@ -371,14 +381,7 @@ describe('MCP read service', () => {
       limit: 50,
       query: 'pet',
     });
-    expect(db.recorder.findMany).toHaveBeenCalledWith({
-      where: { id: { in: [3] } },
-      select: { id: true, name: true },
-    });
-    expect(db.audioMetadata.findMany).toHaveBeenLastCalledWith({
-      where: { workflowGroupId: 'catalog-a', recorderId: { not: null } },
-      select: { audioHash: true, recorderId: true },
-    });
+    expect(db.$queryRaw).toHaveBeenCalledOnce();
     expect(recorders).toEqual({
       catalogId: 'catalog-a',
       recorders: [{ id: 3, name: 'Petr', recordingCount: 1 }],
@@ -427,11 +430,6 @@ describe('MCP read service', () => {
       limit: 50,
     });
 
-    expect(getPublishedAccessibleRecordingHashes).toHaveBeenCalledWith(
-      prisma,
-      'catalog-a',
-      ['visible-recording', 'orphaned-recording'],
-    );
     expect(locations.locations).toEqual([]);
     expect(recorders.recorders).toEqual([
       { id: 3, name: 'Petr', recordingCount: 1 },
@@ -714,6 +712,22 @@ describe('MCP read service', () => {
     expect(getAvailableTranscripts).not.toHaveBeenCalled();
   });
 
+  it('hides ready recordings that are not linked to a released event', async () => {
+    db.$queryRaw.mockResolvedValue([]);
+
+    await expect(
+      getMcpTranscript('catalog-a', 'visible-recording', {
+        mode: 'page',
+        segmentOffset: 0,
+        segmentLimit: 50,
+        maxTextChars: 20_000,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found', retryable: false });
+
+    expect(db.$queryRaw).toHaveBeenCalledOnce();
+    expect(getAvailableTranscripts).not.toHaveBeenCalled();
+  });
+
   it('returns a half-open time range bounded by transcript text size', async () => {
     const result = await getMcpTranscript('catalog-a', 'visible-recording', {
       mode: 'page',
@@ -731,6 +745,7 @@ describe('MCP read service', () => {
       recordingWebUrl:
         'https://besedy.example/catalog/catalog-a/recording/visible-recording',
       backend: 'whisperx/model',
+      availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 20,
       segments: {
@@ -778,6 +793,26 @@ describe('MCP read service', () => {
         ],
       },
       continuation: null,
+    });
+  });
+
+  it('rejects full transcript windows above the hard response ceiling', async () => {
+    vi.mocked(loadTranscript).mockResolvedValue({
+      hash: 'visible-recording',
+      backend: 'whisperx/model',
+      language: 'cs',
+      duration: 20,
+      segments: [
+        { id: 1, text: 'a'.repeat(150_000), start: 0, end: 10 },
+        { id: 2, text: 'b'.repeat(60_000), start: 10, end: 20 },
+      ],
+    });
+
+    await expect(
+      getMcpTranscript('catalog-a', 'visible-recording', { mode: 'full' }),
+    ).rejects.toMatchObject({
+      code: 'response_too_large',
+      retryable: false,
     });
   });
 
@@ -973,6 +1008,39 @@ describe('MCP read service', () => {
         filters,
       }),
     ).rejects.toMatchObject({ code: 'not_found', message: 'Event not found' });
+    expect(executeCatalogLexicalSearch).not.toHaveBeenCalled();
+  });
+
+  it('rejects hidden recording filters before semantic or lexical search', async () => {
+    const filters = { audioHashes: ['hidden-recording'] };
+
+    await expect(
+      searchMcpTranscripts('catalog-a', {
+        query: 'search phrase',
+        limit: 10,
+        contextChunks: 0,
+        maxPerRecording: 2,
+        filters,
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Recording not found',
+    });
+    expect(executeCatalogSearch).not.toHaveBeenCalled();
+
+    await expect(
+      findMcpTranscriptMentions('catalog-a', {
+        query: 'exact phrase',
+        matchMode: 'phrase',
+        limit: 10,
+        contextChunks: 0,
+        maxPerRecording: 2,
+        filters,
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Recording not found',
+    });
     expect(executeCatalogLexicalSearch).not.toHaveBeenCalled();
   });
 

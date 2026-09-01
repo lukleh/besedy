@@ -128,7 +128,7 @@ queries there.
 - Authentication: OAuth 2.1 authorization through the existing Better Auth
   installation. A client authorization ultimately uses the same Google sign-in,
   Besedy admission, user status, and session rules as the web application.
-- MCP access is a strict subset of Besedy access. A person whose email is not on
+- MCP account admission is a strict subset of Besedy portal admission. A person whose email is not on
   the preallowed users list cannot create a Besedy account or session through the
   MCP authorization flow and therefore cannot authorize an MCP client. The
   configured superadmin bootstrap account is the same explicit exception used by
@@ -152,7 +152,11 @@ queries there.
   no Besedy access. Public clients must use S256 PKCE, redirect URIs are matched
   exactly, the client remains limited to configured scopes and the canonical
   MCP resource, the user must still sign in and consent, and the existing auth
-  endpoint rate limit applies.
+  endpoint rate limit applies. Redirect URIs are exact after the supported
+  loopback-host normalization required by compatible native clients.
+- Consent and sign-in pages show the client name and exact client ID. HTTPS
+  Client ID Metadata Documents also show their metadata origin; dynamically
+  registered clients are explicitly labeled as lacking a verified web origin.
 - Co-located Docker deployments validate JWT signatures through the
   process-local `BESEDY_MCP_JWKS_URL` (default
   `http://127.0.0.1:3000/api/auth/jwks`). The token issuer and audience remain
@@ -229,8 +233,10 @@ For a `LISTENER`, an event is visible only when all of these are true:
 3. its primary recording is published.
 
 Listener-visible attached recordings are likewise restricted to actionable,
-published recordings. MCP applies this visibility at every catalog access level;
-higher web roles do not expose unreleased data through MCP.
+published recordings. Direct recording metadata and transcript reads also
+require a link to at least one listener-visible released event. MCP applies this
+visibility at every catalog access level; higher web roles do not expose
+unreleased data through MCP.
 
 Portal status is evaluated before catalog role. Unauthenticated, `PENDING`, and
 `BLOCKED` users receive no protected MCP tools or data. An active user with no
@@ -289,8 +295,8 @@ every matching segment in one response.
 | `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Accessible catalog                         |
 | `list_events`              | Page and filter released events                                  | Accessible catalog                         |
 | `get_event`                | Read one released event and its visible recordings               | Accessible catalog and listener visibility |
-| `get_recording`            | Read one published, ready recording and its released event       | Accessible catalog and listener visibility |
-| `get_transcript`           | Read a transcript for a published, ready recording               | Accessible catalog and listener visibility |
+| `get_recording`            | Read one published, ready recording linked to a released event   | Accessible catalog and listener visibility |
+| `get_transcript`           | Read its transcript when linked to a released event              | Accessible catalog and listener visibility |
 | `search_transcripts`       | Find event-scoped passages by meaning, including different words | Accessible catalog and listener visibility |
 | `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Accessible catalog and listener visibility |
 
@@ -330,7 +336,7 @@ Example return value:
   "authorization": {
     "clientId": "client_example",
     "clientName": "Example MCP client",
-    "grantedScopes": ["openid", "profile", "email"],
+    "grantedScopes": ["openid", "profile", "email", "besedy:read"],
     "accessibleCatalogCount": 1,
     "defaultCatalogId": "20990101_000000"
   }
@@ -354,7 +360,8 @@ tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
 `global_default`, `most_recent`, or `null`.
 
 Pass `nextCursor` unchanged to fetch the next page. `nextCursor: null` means the
-list is complete. An unknown cursor returns `invalid_cursor`.
+list is complete. A malformed, stale, or request-mismatched cursor returns
+`invalid_cursor`.
 
 Example return value:
 
@@ -602,9 +609,10 @@ catalog, recording, backend, and relevant time window remain aligned.
 | `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode            | Page mode only: soft text-size target                                      |
 
 `mode: "full"` returns every segment overlapping the optional time window in a
-single response. With no time window it returns the complete stored transcript.
-Pagination arguments are invalid in full mode. `mode: "page"` retains bounded
-reading and continuation behavior.
+single response, up to a hard 200,000-character response ceiling. With no time
+window it returns the complete stored transcript only when it fits that ceiling;
+otherwise use page mode or a narrower window. Pagination arguments are invalid
+in full mode. `mode: "page"` retains bounded reading and continuation behavior.
 
 The time window is half-open, but whole segments are preserved: a segment is
 included when it overlaps the window. In page mode, one unusually large
@@ -612,8 +620,9 @@ segment may exceed `maxTextChars`. Segment items include their absolute
 `segmentIndex`, text, timestamps, optional speaker and source ID, and a
 timestamped `webUrl`.
 
-The response reports the chosen `backend`, language, duration, and unbounded
-`recordingWebUrl`. Each segment link includes both `seek` and `end` timestamps.
+The response reports the chosen `backend`, every `availableBackends` value,
+language, duration, and unbounded `recordingWebUrl`. Each segment link includes
+both `seek` and `end` timestamps.
 The player stops once at the linked end; pressing play again continues through
 the recording. The `segments` object contains the items and `totalMatching`.
 When more page-mode data exists, `continuation` preserves the catalog,
@@ -628,6 +637,7 @@ Example full-mode return value:
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "backend": "faster-whisper/large-v3@silero_vad_v6",
+  "availableBackends": ["faster-whisper/large-v3@silero_vad_v6"],
   "language": "en",
   "durationSec": 12.5,
   "segments": {
@@ -899,16 +909,18 @@ Expected tool failures set `isError: true` and return the same object in
 | Code                    | Meaning                                                                            |
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | `catalog_required`      | No effective default exists; supply `catalogId`                                    |
-| `invalid_cursor`        | The catalog cursor is not present in the accessible catalog list                   |
+| `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request            |
 | `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
 | `transcript_not_found`  | The requested recording/backend has no readable stored transcript                  |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
+| `response_too_large`    | A full transcript window exceeds the hard response ceiling                         |
 | `search_not_configured` | The catalog has no transcript search bundle                                        |
 | `search_unavailable`    | The transcript search service is temporarily unavailable                           |
+| `internal_error`        | An unexpected server failure was logged without exposing its details                |
 
 Clients may automatically retry only when `retryable` is `true`; currently
-that applies only to `search_unavailable`. Schema-validation and protocol
+that applies to `search_unavailable` and unexpected `internal_error` failures. Schema-validation and protocol
 errors are produced by the MCP SDK before a tool handler runs and therefore do
 not use this application error shape.
 
@@ -919,8 +931,7 @@ resolves a catalog without changing user preferences, in this order:
 
 1. the user's saved active/default catalog, if still accessible;
 2. the configured global default catalog, if accessible;
-3. the most recently accessible catalog; and
-4. for an administrator only, the administrator fallback catalog.
+3. the most recently accessible catalog.
 
 An explicit `catalogId` is checked for access and used only for that call. MCP
 reads never change the default catalog stored by the web UI. If no accessible

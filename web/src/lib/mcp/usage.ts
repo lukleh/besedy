@@ -10,6 +10,7 @@ import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 
 const logger = createServerLogger('mcp-usage');
 const MCP_TELEMETRY_LABEL_MAX_LENGTH = 255;
+const MCP_TELEMETRY_CATALOG_ID_MAX_LENGTH = 191;
 const CATALOG_SCOPED_TOOLS = new Set([
   'list_locations',
   'list_recorders',
@@ -55,17 +56,19 @@ function transcriptTextChars(
   }, 0);
 }
 
-function sanitizeTelemetryLabel(value: string | null): string | null {
+function sanitizeTelemetryLabel(
+  value: string | null,
+  maxLength = MCP_TELEMETRY_LABEL_MAX_LENGTH,
+): string | null {
   if (value === null) return null;
   const normalized = value
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
   if (normalized.length === 0) return null;
-  if (normalized.length <= MCP_TELEMETRY_LABEL_MAX_LENGTH) return normalized;
-  return Array.from(normalized)
-    .slice(0, MCP_TELEMETRY_LABEL_MAX_LENGTH)
-    .join('');
+  const characters = Array.from(normalized);
+  if (characters.length <= maxLength) return normalized;
+  return characters.slice(0, maxLength).join('');
 }
 
 export function summarizeMcpInvocationInput(
@@ -105,12 +108,14 @@ async function writeInvocation(params: {
   result: InvocationResultSummary;
 }): Promise<void> {
   const clientName = sanitizeTelemetryLabel(params.context.clientName);
-  const catalogId =
+  const catalogId = sanitizeTelemetryLabel(
     params.result.catalogId ??
-    params.input.catalogId ??
-    (CATALOG_SCOPED_TOOLS.has(params.toolName)
-      ? params.context.accessProfile.defaultCatalogId
-      : null);
+      params.input.catalogId ??
+      (CATALOG_SCOPED_TOOLS.has(params.toolName)
+        ? params.context.accessProfile.defaultCatalogId
+        : null),
+    MCP_TELEMETRY_CATALOG_ID_MAX_LENGTH,
+  );
   try {
     await prisma.mcpToolInvocation.create({
       data: {

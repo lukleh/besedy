@@ -4,7 +4,7 @@
 
 ## Decision Summary
 
-- ColBERT sidecar is the primary (and only) retrieval path. The web search route is ColBERT-only.
+- ColBERT is the primary semantic retrieval path. The sidecar also exposes exact lexical retrieval through the bundle-local FTS5 index.
 - Chunk hydration and neighbor lookup come from the ColBERT bundle, not PostgreSQL.
 - PostgreSQL is used only for ACL filtering, catalog visibility, and recording metadata. No chunk-level RAG state lives in Postgres.
 - TEI is optional and only used for ColBERT reranking when `RAG_COLBERT_RERANK_ENABLED=true` (default: `false`).
@@ -78,10 +78,19 @@ bundle builds populate it automatically. SQLite triggers keep the index aligned
 with chunk inserts, updates, and deletes during incremental sync.
 
 Bundles created before the FTS5 schema was introduced need a one-time backfill.
-The backfill happens automatically when the chunk-store schema is initialized,
-including on the first staged chunk mutation. A full `rag-colbert-index
---rebuild` also creates a populated FTS index. The web search route remains
-ColBERT-only until a lexical retrieval API is added.
+Run the idempotent maintenance command over the RAG root before enabling lexical
+retrieval for legacy bundles:
+
+```bash
+uv run python scripts/backfill_rag_chunk_store_fts.py \
+  tmp/rag_colbert/<catalog>/<backend>/<chunk-version>/<model>/index
+```
+
+Pass the active `index` symlink (or its exact `chunk_store.sqlite`), not the RAG
+root; the command deliberately refuses recursive historical-bundle backfills.
+The backfill also happens automatically when the chunk-store schema is
+initialized, including on the first staged chunk mutation. A full
+`rag-colbert-index --rebuild` creates a populated FTS index as well.
 
 ### Active bundle selection
 

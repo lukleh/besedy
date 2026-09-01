@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { respondToMcpConsent } from '@/lib/auth/client';
 import { useValidatedMcpAuthorizationRequest } from '@/app/auth/use-validated-mcp-authorization-request';
+import { McpClientIdentity } from '@/app/auth/mcp-client-identity';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,10 +56,8 @@ export default function McpConsent() {
       <Card className="w-full max-w-lg">
         <CardHeader>
           <CardTitle>Allow access to Besedy?</CardTitle>
-          <CardDescription className="break-all">
-            {validatedClient?.client_name ??
-              validatedClient?.client_id ??
-              'Validating MCP client'}
+          <CardDescription>
+            Review the requesting client identity.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -87,11 +86,14 @@ export default function McpConsent() {
           )}
           {requestValidation === 'valid' && (
             <div className="space-y-2 text-sm">
+              {validatedClient && (
+                <McpClientIdentity client={validatedClient} />
+              )}
               <p>This client will be able to:</p>
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>
-                  List released events and published recordings in catalogs you
-                  can access.
+                  List released events and published recordings linked to them
+                  in catalogs you can access.
                 </li>
                 <li>
                   Read and search transcripts for those published recordings.

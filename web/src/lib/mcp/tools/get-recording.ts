@@ -60,7 +60,7 @@ export function registerGetRecordingTool(
     {
       title: 'Get Besedy recording metadata',
       description:
-        'Get recording-specific metadata. Search results already provide event context.',
+        'Get recording-specific metadata for a published, ready recording linked to a released event. Search results already provide event context.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -69,7 +69,9 @@ export function registerGetRecordingTool(
           .describe(
             'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
           ),
-        audioHash: HashSchema.describe(
+        audioHash: HashSchema.transform((value) =>
+          value.toLowerCase(),
+        ).describe(
           'Stable recording hash returned by an event, search, or transcript response.',
         ),
       }),

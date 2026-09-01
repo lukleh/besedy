@@ -842,7 +842,7 @@ describe('MCP personalized tool surface', () => {
 
     const body = await invokeMcp('tools/call', {
       name: 'get_recording',
-      arguments: { audioHash: 'a'.repeat(64) },
+      arguments: { audioHash: 'A'.repeat(64) },
     });
 
     expect(body.error).toBeUndefined();
@@ -875,6 +875,7 @@ describe('MCP personalized tool surface', () => {
       audioHash: 'a'.repeat(64),
       recordingWebUrl: 'https://besedy.example/recording',
       backend: 'whisperx/model',
+      availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 600,
       segments: {
@@ -912,7 +913,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /Transcript evidence[\s\S]*Source: https:\/\/besedy\.example\/recording\?seek=0/,
+          /Transcript evidence[\s\S]*Source: https:\/\/besedy\.example\/recording\?seek=0[\s\S]*Continue with segmentOffset 1\./,
         ),
       },
     ]);
@@ -920,6 +921,7 @@ describe('MCP personalized tool surface', () => {
       segments: {
         items: [{ webUrl: 'https://besedy.example/recording?seek=0' }],
       },
+      availableBackends: ['whisperx/model'],
     });
     expect(body.result?.structuredContent).not.toHaveProperty('seekWebUrl');
     expect(getMcpTranscript).toHaveBeenCalledWith(
@@ -1167,6 +1169,20 @@ describe('MCP personalized tool surface', () => {
       'viewer-catalog',
       expect.objectContaining({ query: 'člověk' }),
     );
+
+    const shortPrefixBody = await invokeMcp('tools/call', {
+      name: 'find_transcript_mentions',
+      arguments: { query: 'a', matchMode: 'prefix' },
+    });
+    expect(shortPrefixBody.result).toMatchObject({ isError: true });
+    expect(shortPrefixBody.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining(
+          'Prefix query tokens must contain at least 2 characters.',
+        ),
+      },
+    ]);
   });
 
   it('does not reveal inaccessible catalogs through any catalog tool', async () => {
@@ -1229,5 +1245,33 @@ describe('MCP personalized tool surface', () => {
         retryable: true,
       },
     });
+  });
+
+  it('logs unexpected read failures without returning their details', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      ...activeProfileFields,
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+    };
+    vi.mocked(getMcpRecording).mockRejectedValue(
+      new Error('database host secret'),
+    );
+
+    const body = await invokeMcp('tools/call', {
+      name: 'get_recording',
+      arguments: { audioHash: 'a'.repeat(64) },
+    });
+
+    expect(body.result?.structuredContent).toEqual({
+      error: {
+        code: 'internal_error',
+        message: 'The tool could not complete because of an internal error',
+        retryable: true,
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('database host secret');
   });
 });

@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { signInForMcpAuthorization } from '@/lib/auth/client';
 import { useValidatedMcpAuthorizationRequest } from '@/app/auth/use-validated-mcp-authorization-request';
+import { McpClientIdentity } from '@/app/auth/mcp-client-identity';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,10 +51,7 @@ export default function McpSignIn({ hasMockOAuth }: { hasMockOAuth: boolean }) {
           <CardTitle>Connect to Besedy</CardTitle>
           <CardDescription>
             Sign in with your Besedy Google account to continue the MCP
-            connection
-            {validatedClient?.client_name
-              ? ` for ${validatedClient.client_name}.`
-              : '.'}
+            connection.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -64,6 +62,9 @@ export default function McpSignIn({ hasMockOAuth }: { hasMockOAuth: boolean }) {
                 Verifying the authorization request…
               </AlertDescription>
             </Alert>
+          )}
+          {requestValidation === 'valid' && validatedClient && (
+            <McpClientIdentity client={validatedClient} />
           )}
           {requestValidation === 'invalid' && (
             <Alert variant="destructive">

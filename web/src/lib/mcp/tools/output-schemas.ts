@@ -179,6 +179,9 @@ export const GetTranscriptOutputSchema = z.object({
     'Unbounded recording page URL without a stop time.',
   ),
   backend: TranscriptBackendSchema,
+  availableBackends: z
+    .array(TranscriptBackendSchema)
+    .describe('All stored transcript backends available for this recording.'),
   language: z.string().nullable(),
   durationSec: z.number().nonnegative().nullable(),
   segments: z.object({

@@ -135,6 +135,23 @@ describe('MCP usage telemetry', () => {
     expect(clientName).toMatch(/^Injected MCP ACTIVITY x+$/u);
   });
 
+  it('bounds untrusted catalog IDs to the database column width', async () => {
+    const result = {
+      content: [{ type: 'text' as const, text: 'ok' }],
+      structuredContent: { events: [] },
+    } satisfies CallToolResult;
+
+    await trackMcpToolInvocation(
+      context,
+      'list_events',
+      { catalogId: `catalog-${'x'.repeat(300)}` },
+      () => result,
+    );
+
+    const catalogId = mocks.createInvocation.mock.calls[0][0].data.catalogId;
+    expect(Array.from(catalogId)).toHaveLength(191);
+  });
+
   it('attributes default-catalog calls without assigning a catalog to global tools', async () => {
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],
