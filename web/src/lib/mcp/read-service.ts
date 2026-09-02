@@ -127,9 +127,12 @@ interface McpEventCursor {
 type McpLookupKind = 'location' | 'recorder';
 
 /**
- * Lookup cursors identify the last returned item by ID only. Matching on the
- * name as well would invalidate a cursor whenever a location or recorder is
- * renamed between pages, which is not a client error.
+ * Lookup cursors carry the sort key (name, id) of the last returned item as a
+ * boundary. The next page is every item that sorts after that boundary in the
+ * current list. The stored name is never required to match the item's current
+ * name: a rename between pages therefore cannot invalidate the cursor and
+ * cannot skip items. A renamed item that now sorts after the boundary is
+ * returned again, which is the safe direction.
  */
 interface McpLookupCursor {
   version: 1;
@@ -137,6 +140,17 @@ interface McpLookupCursor {
   kind: McpLookupKind;
   query: string | null;
   id: number;
+  name: string;
+}
+
+function compareLookupItems(
+  left: { id: number; name: string },
+  right: { id: number; name: string },
+): number {
+  return (
+    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) ||
+    left.id - right.id
+  );
 }
 
 function isIntegerInRange(
@@ -180,7 +194,7 @@ function encodeMcpLookupCursor(
   catalogId: string,
   kind: McpLookupKind,
   query: string | undefined,
-  item: { id: number },
+  item: { id: number; name: string },
 ): string {
   const cursor: McpLookupCursor = {
     version: 1,
@@ -188,6 +202,7 @@ function encodeMcpLookupCursor(
     kind,
     query: query ?? null,
     id: item.id,
+    name: item.name,
   };
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
 }
@@ -207,7 +222,8 @@ function decodeMcpLookupCursor(
       value.catalogId !== catalogId ||
       value.kind !== kind ||
       value.query !== (query ?? null) ||
-      !isIntegerInRange(value.id, 1, Number.MAX_SAFE_INTEGER)
+      !isIntegerInRange(value.id, 1, Number.MAX_SAFE_INTEGER) ||
+      typeof value.name !== 'string'
     ) {
       throw new Error('Invalid lookup cursor payload');
     }
@@ -409,24 +425,17 @@ function paginateLookupItems<T extends { id: number; name: string }>(
         normalizedQuery === undefined ||
         item.name.toLocaleLowerCase().includes(normalizedQuery),
     )
-    .sort(
-      (left, right) =>
-        left.name.localeCompare(right.name, undefined, {
-          sensitivity: 'base',
-        }) || left.id - right.id,
-    );
+    .sort(compareLookupItems);
   const cursor = input.cursor
     ? decodeMcpLookupCursor(input.cursor, catalogId, kind, input.query)
     : null;
-  const startIndex = cursor
-    ? filtered.findIndex((item) => item.id === cursor.id) + 1
+  // Resume after the cursor's sort boundary rather than after the cursor
+  // item's current position, so a rename between pages cannot skip items.
+  const firstAfterBoundary = cursor
+    ? filtered.findIndex((item) => compareLookupItems(item, cursor) > 0)
     : 0;
-  if (cursor && startIndex === 0) {
-    throw new McpReadError(
-      'invalid_cursor',
-      `Invalid ${kind} cursor for the selected catalog or query`,
-    );
-  }
+  const startIndex =
+    firstAfterBoundary === -1 ? filtered.length : firstAfterBoundary;
   const page = filtered.slice(startIndex, startIndex + input.limit);
   const hasMore = startIndex + page.length < filtered.length;
   return {

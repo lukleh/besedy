@@ -371,10 +371,11 @@ describe('MCP read service', () => {
       nextCursor: null,
     });
 
-    // Renaming an item between pages must not invalidate the cursor.
+    // A rename that keeps the item before the boundary ("Praga" sorts before
+    // "Prague") must neither invalidate the cursor nor repeat the item.
     db.location.findMany.mockResolvedValue([
       { id: 9, name: 'Vienna' },
-      { id: 7, name: 'Praha' },
+      { id: 7, name: 'Praga' },
     ]);
     await expect(
       listMcpLocations('catalog-a', {
@@ -386,6 +387,45 @@ describe('MCP read service', () => {
       locations: [{ id: 9, name: 'Vienna', eventCount: 1 }],
       nextCursor: null,
     });
+
+    // A rename that moves the cursor item to the end must not skip the items
+    // between; the renamed item reappears after them instead.
+    db.location.findMany.mockResolvedValue([
+      { id: 9, name: 'Vienna' },
+      { id: 7, name: 'Zulu' },
+    ]);
+    const afterMove = await listMcpLocations('catalog-a', {
+      cursor: locations.nextCursor!,
+      limit: 1,
+    });
+    expect(afterMove.locations).toEqual([
+      { id: 9, name: 'Vienna', eventCount: 1 },
+    ]);
+    expect(afterMove.nextCursor).toEqual(expect.any(String));
+    await expect(
+      listMcpLocations('catalog-a', {
+        cursor: afterMove.nextCursor!,
+        limit: 1,
+      }),
+    ).resolves.toEqual({
+      catalogId: 'catalog-a',
+      locations: [{ id: 7, name: 'Zulu', eventCount: 1 }],
+      nextCursor: null,
+    });
+
+    // A rename that moves the cursor item to the front yields the remaining
+    // items without repeating anything.
+    db.location.findMany.mockResolvedValue([
+      { id: 9, name: 'Vienna' },
+      { id: 7, name: 'Alpha' },
+    ]);
+    const cursorAfterVienna = (
+      await listMcpLocations('catalog-a', { limit: 2 })
+    ).locations;
+    expect(cursorAfterVienna.map((location) => location.name)).toEqual([
+      'Alpha',
+      'Vienna',
+    ]);
     db.location.findMany.mockResolvedValue([
       { id: 9, name: 'Vienna' },
       { id: 7, name: 'Prague' },
