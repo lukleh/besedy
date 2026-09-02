@@ -29,7 +29,6 @@ function renderRecordingContent(
     lines.push('Event: none visible.');
   }
   const metadata = [
-    recording.artist ? `artist=${recording.artist}` : null,
     recording.album ? `album=${recording.album.name}` : null,
     recording.durationHms ? `duration=${recording.durationHms}` : null,
     recording.date.year === null
@@ -37,14 +36,8 @@ function renderRecordingContent(
       : `date=${formatMcpDate(recording.date)}`,
     recording.location ? `location=${recording.location.name}` : null,
     recording.recorder ? `recorder=${recording.recorder.name}` : null,
-    `verified=${recording.verified ? 'yes' : 'no'}`,
-    recording.sourceDate ? `sourceDate=${recording.sourceDate}` : null,
   ].filter((value): value is string => value !== null);
   if (metadata.length > 0) lines.push(`Metadata: ${metadata.join('; ')}`);
-  if (recording.tags.length > 0) {
-    lines.push(`Tags: ${recording.tags.join(', ')}`);
-  }
-  if (recording.notes) lines.push(`Notes: ${recording.notes}`);
   return lines.join('\n');
 }
 

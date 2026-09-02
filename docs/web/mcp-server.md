@@ -86,13 +86,15 @@ serialization:
    access queries used by the web application. Every accessible catalog receives
    the uniform MCP capability set.
 3. **Keep identity data separate from authorization.** `getMcpIdentity` loads
-   only account and OAuth-client display data. `who_am_i` gets status and role
-   from the access profile rather than treating identity fields as permission
-   facts.
+   only account and OAuth-client display data. `who_am_i` takes the default
+   catalog from the access profile rather than treating identity fields as
+   permission facts.
 4. **Gate catalogs and returned fields.** Every active account receives every
    tool, but each invocation must still authorize its resolved catalog and apply
    listener visibility. Response serialization must also enforce OAuth scopes:
-   `profile` controls name, status, and role, while `email` controls email fields.
+   `profile` controls the account name, while `email` controls the email field.
+   Expose only fields an agent needs for the documented workflow; internal
+   flags, roles, and index bookkeeping stay out of tool results.
 5. **Share one policy snapshot inside the tool request.** The transport is
    stateless, so the next HTTP request rebuilds current policy state. Within a
    request, `BesedyMcpRequestContext` carries the client, effective scopes, and
@@ -256,10 +258,10 @@ invocation: every catalog-scoped call still checks that the resolved target is
 in the user's live accessible catalog list. An inaccessible catalog uses
 not-found semantics.
 
-`list_catalogs` includes the explicit web `catalogGrant`, the `isCatalogAdmin`
-system-authority flag, and `isDefault` for the effective default that an omitted
-`catalogId` will resolve. The uniform MCP capabilities are expressed by the
-discovered tool set and access rules rather than repeated on every catalog.
+`list_catalogs` includes `isDefault` for the effective default that an omitted
+`catalogId` will resolve. Web roles and system authority do not change MCP
+behavior, so they are not repeated on every catalog; the uniform MCP
+capabilities are expressed by the discovered tool set and access rules.
 
 ## Tool reference
 
@@ -318,11 +320,11 @@ no arguments.
 
 The response has two objects:
 
-- `account` always contains the stable account `id`. `name`, `status`, and
-  `systemRole` require the `profile` OAuth scope; `email` and `emailVerified`
-  require the `email` scope. A field hidden by scope is returned as `null`.
+- `account` always contains the stable account `id`. `name` requires the
+  `profile` OAuth scope and `email` requires the `email` scope. A field hidden by
+  scope is returned as `null`.
 - `authorization` contains `clientId`, `clientName`, the effective
-  `grantedScopes`, `accessibleCatalogCount`, and `defaultCatalogId`.
+  `grantedScopes`, and `defaultCatalogId`.
 
 This tool reports authorization state; it does not grant access or change the
 active catalog.
@@ -334,16 +336,12 @@ Example return value:
   "account": {
     "id": "user_01HZX7M4N5P6Q7R8S9T0",
     "name": "Example Listener",
-    "email": "listener@example.test",
-    "emailVerified": true,
-    "status": "ACTIVE",
-    "systemRole": "USER"
+    "email": "listener@example.test"
   },
   "authorization": {
     "clientId": "client_example",
     "clientName": "Example MCP client",
     "grantedScopes": ["openid", "profile", "email", "besedy:read"],
-    "accessibleCatalogCount": 1,
     "defaultCatalogId": "20990101_000000"
   }
 }
@@ -359,8 +357,8 @@ returns a catalog-related not-found error.
 | `cursor` | string                | omitted | ID of the last catalog from the previous page |
 | `limit`  | integer from 1 to 100 | `50`    | Maximum catalogs in the page                  |
 
-Each item in `catalogs` contains `id`, `label`, the web `catalogGrant`,
-`isCatalogAdmin`, and `isDefault`, which marks the effective default.
+Each item in `catalogs` contains `id`, `label`, and `isDefault`, which marks
+the effective default.
 The top-level `defaultCatalogId` is the catalog selected when a catalog-scoped
 tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
 `global_default`, `most_recent`, or `null`.
@@ -377,9 +375,7 @@ Example return value:
     {
       "id": "20990101_000000",
       "label": "Example catalog",
-      "isDefault": true,
-      "catalogGrant": "VIEWER",
-      "isCatalogAdmin": false
+      "isDefault": true
     }
   ],
   "defaultCatalogId": "20990101_000000",
@@ -513,8 +509,8 @@ recordings are needed.
 | `recordingOffset` | non-negative integer  | `0`               | Offset into visible attached recordings |
 | `recordingLimit`  | integer from 1 to 100 | `25`              | Maximum recording summaries in the page |
 
-The response contains `catalogId` and an `event` with its event reference,
-optional descriptive metadata, session index, and a `recordings` page. Every
+The response contains `catalogId` and an `event` with its event reference, an
+optional `title`, and a `recordings` page. Every
 recording item contains only the stable `audioHash`, `isPrimary`, and its
 authenticated `webUrl`. `totalVisible` counts only recordings visible to the
 caller. Continue with `nextOffset` as
@@ -529,9 +525,7 @@ Example return value:
     "id": 4242,
     "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
     "title": "Example Hall, 12 Apr 2099",
-    "description": "Fictional event used only for documentation",
     "date": { "year": 2099, "month": 4, "day": 12 },
-    "sessionIndex": 1,
     "location": { "id": 999, "name": "Example Hall" },
     "recordings": {
       "items": [
@@ -558,8 +552,9 @@ hash returned by an event, search, or transcript response.
 | `catalogId` | string                          | effective default | Catalog containing the recording |
 | `audioHash` | 64-character hexadecimal string | required          | Stable recording identifier      |
 
-`recording` contains descriptive metadata and an authenticated `webUrl`; it
-deliberately omits guaranteed visibility flags, audio, and storage locations.
+`recording` contains the title, album, duration, date, location, recorder, and
+an authenticated `webUrl`; it deliberately omits curation flags, free-text
+notes, guaranteed visibility flags, audio, and storage locations.
 `event` uses the common event reference shape plus whether the recording is
 primary, or is `null` when its event is not visible to the caller.
 Search results already include event identity, date, and location, so call this
@@ -573,16 +568,11 @@ Example return value:
   "recording": {
     "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "title": "Example recording",
-    "artist": "Example speaker",
     "album": { "id": 77, "name": "Example series" },
     "durationHms": "00:12:30",
-    "sourceDate": "2099-04-12",
     "date": { "year": 2099, "month": 4, "day": 12 },
     "location": { "id": 999, "name": "Example Hall" },
     "recorder": { "id": 12, "name": "Example recorder" },
-    "verified": true,
-    "notes": "Fictional recording used only for documentation",
-    "tags": ["example"],
     "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "event": {
@@ -627,8 +617,7 @@ in full mode. `mode: "page"` retains bounded reading and continuation behavior.
 The time window is half-open, but whole segments are preserved: a segment is
 included when it overlaps the window. In page mode, one unusually large
 segment may exceed `maxTextChars`. Segment items include their absolute
-`segmentIndex`, text, timestamps, optional speaker and source ID, and a
-timestamped `webUrl`.
+`segmentIndex`, text, timestamps, and a timestamped `webUrl`.
 
 The response reports the unbounded `recordingWebUrl`.
 Each segment link includes both `seek` and `end` timestamps.
@@ -649,11 +638,9 @@ Example full-mode return value:
     "items": [
       {
         "segmentIndex": 0,
-        "id": null,
         "text": "Example transcript segment.",
         "startSec": 0,
         "endSec": 12.5,
-        "speaker": null,
         "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5"
       }
     ],
@@ -672,11 +659,9 @@ Page mode has the same top-level shape and may return a continuation descriptor:
     "items": [
       {
         "segmentIndex": 0,
-        "id": null,
         "text": "Example transcript segment.",
         "startSec": 0,
         "endSec": 12.5,
-        "speaker": null,
         "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=0&end=12.5"
       }
     ]
@@ -716,8 +701,9 @@ SQLite `MATCH` operators are therefore treated as ordinary query tokens rather
 than executable query syntax. Matching is Unicode-aware and accent-insensitive,
 but the current tokenizer does not perform stemming or lemmatization.
 
-The tool returns the same event, recording identity, match, context, citation,
-and `transcriptRequest` result shape as meaning-based search. Use
+The tool returns the same event, recording identity, match, context, and
+`transcriptRequest` result shape as meaning-based search, and a `retrieval`
+object with the applied `matchMode` and the complete `totalMatches`. Use
 `get_transcript` to verify important matches in continuous context. A zero result
 establishes only that the chosen literal token pattern is absent under the
 chosen catalog, authorization scope, filters, and match mode; it does not
@@ -733,9 +719,9 @@ without another verified source.
 Use this tool to find passages by meaning: questions, themes, related concepts,
 paraphrases, and different wording. It can find relevant passages even when the
 exact query words are absent. Do not use it as proof that the corpus does or
-does not contain something. Retrieval is deliberately marked non-exhaustive,
-and results are ordered by relevance through `rank`; internal numeric retrieval
-scores are not exposed.
+does not contain something. Retrieval is non-exhaustive by design, as the tool
+description states, and results are ordered by relevance through `rank`;
+internal numeric retrieval scores are not exposed.
 
 | Argument          | Type                                       | Default           | Meaning                                                                   |
 | ----------------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------- |
@@ -782,11 +768,9 @@ Every result contains:
 - the authoritative `event` ID, authenticated event `webUrl`, date, and
   location;
 - a minimal `recording` identity containing only the stable `audioHash`;
-- the exact `match`, including chunk ID, time range, text, and seekable
-  `webUrl`;
-- optional before/after `context` without duplicating the exact match;
-- a stable `citation` naming the audio hash, chunk, time range, catalog, and
-  chunk version; and
+- the exact `match`, including time range, text, and seekable `webUrl`, which
+  is the citation;
+- optional before/after `context` without duplicating the exact match; and
 - `transcriptRequest`, when the canonical transcript exists, with
   `mode: "page"` and the time range to verify. This may be `null`.
 
@@ -838,13 +822,6 @@ Example return value:
 {
   "catalogId": "20990101_000000",
   "query": "example topic",
-  "retrieval": {
-    "mode": "semantic",
-    "exhaustive": false,
-    "requestedLimit": 10,
-    "returnedCount": 1,
-    "maxPerRecording": 1
-  },
   "results": [
     {
       "rank": 1,
@@ -858,7 +835,6 @@ Example return value:
         "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "match": {
-        "chunkId": "chunk-example-0001",
         "startSec": 600,
         "endSec": 620,
         "text": "Example matching transcript passage.",
@@ -869,14 +845,6 @@ Example return value:
         "endSec": 640,
         "beforeText": "Example preceding context.",
         "afterText": "Example following context."
-      },
-      "citation": {
-        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "chunkId": "chunk-example-0001",
-        "startSec": 600,
-        "endSec": 620,
-        "workflowGroupId": "20990101_000000",
-        "chunkVersion": "example-v1"
       },
       "transcriptRequest": {
         "catalogId": "20990101_000000",

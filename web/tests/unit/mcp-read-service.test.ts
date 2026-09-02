@@ -665,8 +665,6 @@ describe('MCP read service', () => {
       recording: {
         audioHash: 'visible-recording',
         title: 'Recording title',
-        notes: 'Detailed notes must stay out of event lists',
-        tags: ['tag'],
         webUrl:
           'https://besedy.example/catalog/catalog-a/recording/visible-recording',
       },
@@ -770,11 +768,9 @@ describe('MCP read service', () => {
         items: [
           {
             segmentIndex: 1,
-            id: 11,
             text: 'a'.repeat(700),
             startSec: 5,
             endSec: 10,
-            speaker: 'SPEAKER_00',
             webUrl:
               'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=5&end=10',
           },
@@ -855,21 +851,21 @@ describe('MCP read service', () => {
     });
   });
 
-  it('counts non-text segment metadata toward the full response ceiling', async () => {
+  it('counts serialized segment overhead toward the full response ceiling', async () => {
+    // 1,999 segments of 100 characters stay under both the segment-count and
+    // text-size limits, but the timestamps and citation URLs push the serialized
+    // JSON past the response ceiling.
     vi.mocked(loadTranscript).mockResolvedValue({
       hash: 'visible-recording',
       backend: 'whisperx/model',
       language: 'cs',
-      duration: 20,
-      segments: [
-        {
-          id: 1,
-          text: 'short',
-          start: 0,
-          end: 1,
-          speaker: 's'.repeat(400_000),
-        },
-      ],
+      duration: 2_000,
+      segments: Array.from({ length: 1_999 }, (_, index) => ({
+        id: index,
+        text: 't'.repeat(100),
+        start: index,
+        end: index + 1,
+      })),
     });
 
     await expect(
@@ -952,13 +948,6 @@ describe('MCP read service', () => {
     expect(result).toEqual({
       catalogId: 'catalog-a',
       query: 'search phrase',
-      retrieval: {
-        mode: 'semantic',
-        exhaustive: false,
-        requestedLimit: 10,
-        returnedCount: 1,
-        maxPerRecording: 2,
-      },
       results: [
         {
           rank: 1,
@@ -972,7 +961,6 @@ describe('MCP read service', () => {
             audioHash: 'visible-recording',
           },
           match: {
-            chunkId: 'chunk-1',
             startSec: 60,
             endSec: 90,
             text: 'Matching evidence',
@@ -984,14 +972,6 @@ describe('MCP read service', () => {
             endSec: 90,
             beforeText: 'Context before',
             afterText: null,
-          },
-          citation: {
-            audioHash: 'visible-recording',
-            chunkId: 'chunk-1',
-            startSec: 60,
-            endSec: 90,
-            workflowGroupId: 'catalog-a',
-            chunkVersion: 'v1',
           },
           transcriptRequest: {
             catalogId: 'catalog-a',
@@ -1055,13 +1035,8 @@ describe('MCP read service', () => {
       failOnMissingBundle: true,
     });
     expect(result.retrieval).toEqual({
-      mode: 'lexical',
       matchMode: 'phrase',
-      corpusCoverage: 'complete',
       totalMatches: 7,
-      requestedLimit: 10,
-      returnedCount: 0,
-      maxPerRecording: 2,
     });
   });
 

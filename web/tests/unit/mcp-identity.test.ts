@@ -25,14 +25,12 @@ describe('MCP identity', () => {
       id: 'user-1',
       name: 'Lukas',
       email: 'lukas@example.com',
-      emailVerified: true,
     });
 
     await expect(getMcpIdentity('user-1', 'client-1')).resolves.toEqual({
       userId: 'user-1',
       name: 'Lukas',
       email: 'lukas@example.com',
-      emailVerified: true,
       clientId: 'client-1',
       clientName: 'Codex',
     });
@@ -43,7 +41,6 @@ describe('MCP identity', () => {
       id: 'user-1',
       name: null,
       email: null,
-      emailVerified: false,
     });
     mocks.findClient.mockResolvedValue(null);
 

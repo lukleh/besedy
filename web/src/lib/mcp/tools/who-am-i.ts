@@ -44,27 +44,21 @@ export function registerWhoAmITool(
           id: identity.userId,
           name: canReadProfile ? identity.name : null,
           email: canReadEmail ? identity.email : null,
-          emailVerified: canReadEmail ? identity.emailVerified : null,
-          status: canReadProfile ? profile.userStatus : null,
-          systemRole: canReadProfile ? profile.systemRole : null,
         },
         authorization: {
           clientId: identity.clientId,
           clientName: identity.clientName,
           grantedScopes: scopes,
-          accessibleCatalogCount: profile.catalogs.length,
           defaultCatalogId: profile.defaultCatalogId,
         },
       };
       const accountLabel =
         result.account.email ?? result.account.name ?? identity.userId;
-      const roleLabel = canReadProfile ? ` (${profile.systemRole})` : '';
       const lines = [
-        `Connected to Besedy as ${accountLabel}${roleLabel} via ${identity.clientName ?? identity.clientId}.`,
+        `Connected to Besedy as ${accountLabel} via ${identity.clientName ?? identity.clientId}.`,
         `Account ID: ${identity.userId}`,
         `Client ID: ${identity.clientId}`,
         `Default catalog: ${profile.defaultCatalogId ?? 'none'}`,
-        `Accessible catalogs: ${profile.catalogs.length}`,
         `Scopes: ${scopes.join(', ') || 'none'}`,
       ];
       return toolSuccess(result, lines.join('\n'));

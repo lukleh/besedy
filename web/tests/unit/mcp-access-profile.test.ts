@@ -75,14 +75,10 @@ describe('MCP access profile', () => {
       expect.objectContaining({
         id: 'catalog-listener',
         isDefault: false,
-        catalogGrant: 'LISTENER',
-        isCatalogAdmin: false,
       }),
       expect.objectContaining({
         id: 'catalog-viewer',
         isDefault: true,
-        catalogGrant: 'VIEWER',
-        isCatalogAdmin: false,
       }),
     ]);
     expect(profile.defaultCatalogId).toBe('catalog-viewer');
@@ -176,9 +172,8 @@ describe('MCP access profile', () => {
       userStatus: 'ACTIVE',
       systemRole: 'ADMIN',
     });
-    expect(profile.catalogs[0]).toMatchObject({
-      catalogGrant: null,
-      isCatalogAdmin: true,
-    });
+    expect(profile.catalogs).toEqual([
+      { id: 'catalog-listener', label: 'Admin catalog', isDefault: true },
+    ]);
   });
 });

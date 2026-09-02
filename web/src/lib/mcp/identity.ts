@@ -4,7 +4,6 @@ export interface McpIdentity {
   userId: string;
   name: string | null;
   email: string | null;
-  emailVerified: boolean;
   clientId: string;
   clientName: string | null;
 }
@@ -20,7 +19,6 @@ export async function getMcpIdentity(
         id: true,
         name: true,
         email: true,
-        emailVerified: true,
       },
     }),
     prisma.oauthClient.findUnique({
@@ -35,7 +33,6 @@ export async function getMcpIdentity(
     userId: user.id,
     name: user.name,
     email: user.email,
-    emailVerified: user.emailVerified,
     clientId,
     clientName: client?.name ?? null,
   };

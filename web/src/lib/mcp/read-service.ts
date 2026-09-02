@@ -345,16 +345,11 @@ function serializeRecording(recording: CatalogRecordingReadModel) {
   return {
     audioHash: recording.audioHash,
     title: recording.title,
-    artist: recording.artist,
     album: recording.album,
     durationHms: recording.durationHms,
-    sourceDate: recording.sourceDate,
     date: recording.date,
     location: recording.location,
     recorder: recording.recorder,
-    verified: recording.verified,
-    notes: recording.notes,
-    tags: recording.tags,
   };
 }
 
@@ -599,9 +594,7 @@ export async function getMcpEvent(
       id: event.id,
       webUrl: buildEventWebUrl(catalogId, event.id),
       title: event.title,
-      description: event.description,
       date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
-      sessionIndex: event.sessionIndex,
       location: event.location,
       recordings: {
         items: recordingPage.map((recording) => ({
@@ -736,11 +729,9 @@ export async function getMcpTranscript(
     }
     const serializedSegment = {
       segmentIndex,
-      id: segment.id ?? null,
       text: segment.text,
       startSec: segment.start,
       endSec: segment.end,
-      speaker: segment.speaker ?? null,
       webUrl: buildRecordingSeekWebUrl(
         catalogId,
         audioHash,
@@ -874,13 +865,6 @@ export async function searchMcpTranscripts(
   return {
     catalogId,
     query: execution.query,
-    retrieval: {
-      mode: 'semantic' as const,
-      exhaustive: false,
-      requestedLimit: input.limit,
-      returnedCount: results.length,
-      maxPerRecording: input.maxPerRecording,
-    },
     results,
   };
 }
@@ -924,13 +908,8 @@ export async function findMcpTranscriptMentions(
     catalogId,
     query: execution.query,
     retrieval: {
-      mode: 'lexical' as const,
       matchMode: input.matchMode,
-      corpusCoverage: 'complete' as const,
       totalMatches: execution.totalMatches,
-      requestedLimit: input.limit,
-      returnedCount: results.length,
-      maxPerRecording: input.maxPerRecording,
     },
     results,
   };
@@ -1002,7 +981,6 @@ async function serializeMcpSearchResults(
         audioHash: result.audioHash,
       },
       match: {
-        chunkId: result.chunkId,
         startSec: result.startSec,
         endSec: result.endSec,
         text: result.text,
@@ -1028,14 +1006,6 @@ async function serializeMcpSearchResults(
                   .join('\n\n') || null,
             }
           : null,
-      citation: {
-        audioHash: result.citation.audioHash,
-        chunkId: result.citation.chunkId,
-        startSec: result.citation.startSec,
-        endSec: result.citation.endSec,
-        workflowGroupId: result.citation.workflowGroupId,
-        chunkVersion: result.citation.chunkVersion,
-      },
       transcriptRequest:
         canonicalTranscriptAvailability.get(result.audioHash) === true &&
         transcriptEndSec > transcriptStartSec

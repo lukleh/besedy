@@ -437,8 +437,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         id: expect.any(String),
         name: 'Catalog Owner',
         email: 'owner@besedy.test',
-        status: 'ACTIVE',
-        systemRole: 'USER',
       },
       authorization: {
         clientId,
@@ -473,8 +471,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogs: Array<{
           id: string;
-          catalogGrant: string | null;
-          isCatalogAdmin: boolean;
           isDefault: boolean;
         }>;
         defaultCatalogId: string;
@@ -489,9 +485,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(result?.defaultCatalogId).toBe(result?.catalogs[0]?.id);
     expect(result?.defaultCatalogSource).toBe('global_default');
     expect(result?.nextCursor).toBeNull();
-    expect(result?.catalogs[0]).toMatchObject({
-      catalogGrant: 'OWNER',
-      isCatalogAdmin: false,
+    expect(result?.catalogs[0]).toEqual({
+      id: result?.defaultCatalogId,
+      label: expect.any(String),
       isDefault: true,
     });
 
@@ -757,11 +753,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         segments: {
           items: Array<{
             segmentIndex: number;
-            id: number;
             text: string;
             startSec: number;
             endSec: number;
-            speaker: string;
             webUrl: string;
           }>;
           totalMatching: number;
@@ -792,11 +786,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     ).toHaveLength(2);
     expect(transcriptBody.result?.structuredContent.segments.items[0]).toEqual({
       segmentIndex: 0,
-      id: 0,
       text: 'Besedy MCP transcript fixture opens the discussion.',
       startSec: 0,
       endSec: 5,
-      speaker: 'SPEAKER_00',
       webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0&end=5`,
     });
     expect(transcriptBody.result?.content?.[0]?.text).toContain(
@@ -831,11 +823,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogId: string;
         query: string;
-        retrieval: {
-          mode: string;
-          exhaustive: boolean;
-          maxPerRecording: number;
-        };
         results: Array<{
           rank: number;
           event: {
@@ -845,9 +832,8 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             location: { id: number; name: string };
           };
           recording: { audioHash: string };
-          match: { chunkId: string; text: string; webUrl: string };
+          match: { text: string; webUrl: string };
           context: { beforeText: string | null; afterText: string | null };
-          citation: { workflowGroupId: string; chunkVersion: string };
           transcriptRequest: {
             audioHash: string;
             mode: 'page';
@@ -864,11 +850,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(searchBody.result?.structuredContent).toMatchObject({
       catalogId: result?.defaultCatalogId,
       query: 'Besedy MCP deterministic search',
-      retrieval: {
-        mode: 'semantic',
-        exhaustive: false,
-        maxPerRecording: 2,
-      },
       results: [
         {
           rank: 1,
@@ -882,17 +863,12 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             audioHash,
           },
           match: {
-            chunkId: 'mcp-smoke-chunk-1',
             text: 'Deterministic Besedy MCP search evidence.',
             webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5&end=10`,
           },
           context: {
             beforeText: 'Neighbor context before the deterministic evidence.',
             afterText: null,
-          },
-          citation: {
-            workflowGroupId: result?.defaultCatalogId,
-            chunkVersion: 'mcp-smoke-v1',
           },
           transcriptRequest: {
             audioHash,
@@ -903,9 +879,12 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         },
       ],
     });
-    expect(
-      searchBody.result?.structuredContent.results[0]?.citation,
-    ).not.toHaveProperty('backendKey');
+    expect(searchBody.result?.structuredContent.results[0]).not.toHaveProperty(
+      'citation',
+    );
+    expect(searchBody.result?.structuredContent).not.toHaveProperty(
+      'retrieval',
+    );
     expect(
       searchBody.result?.structuredContent.results[0]?.transcriptRequest,
     ).not.toHaveProperty('backend');
@@ -962,9 +941,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const lexicalBody = (await lexicalResponse.json()) as McpResponse<
       McpToolResult<{
         retrieval: {
-          mode: string;
           matchMode: string;
-          corpusCoverage: string;
           totalMatches: number;
         };
         results: Array<{
@@ -974,7 +951,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             location: { id: number; name: string };
           };
           recording: { audioHash: string };
-          match: { chunkId: string };
+          match: { text: string };
           score?: number;
         }>;
       }>
@@ -982,9 +959,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(lexicalBody.error).toBeUndefined();
     expect(lexicalBody.result?.structuredContent).toMatchObject({
       retrieval: {
-        mode: 'lexical',
         matchMode: 'phrase',
-        corpusCoverage: 'complete',
         totalMatches: 1,
       },
       results: [
@@ -995,7 +970,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             location: event!.location,
           },
           recording: { audioHash },
-          match: { chunkId: 'mcp-smoke-chunk-1' },
+          match: { text: 'Deterministic Besedy MCP search evidence.' },
         },
       ],
     });
