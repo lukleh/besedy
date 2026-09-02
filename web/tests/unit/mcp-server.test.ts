@@ -75,11 +75,6 @@ const defaultConnection = {
   scopes: ['openid', 'profile', 'email', 'besedy:read'],
 };
 
-const activeProfileFields = {
-  userStatus: 'ACTIVE',
-  systemRole: 'USER',
-} as const;
-
 let accessProfile: McpAccessProfile;
 
 async function invokeMcp(
@@ -188,7 +183,6 @@ describe('MCP personalized tool surface', () => {
     vi.clearAllMocks();
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -224,7 +218,6 @@ describe('MCP personalized tool surface', () => {
   it('reports the current account, client, scopes, and access summary', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -264,7 +257,6 @@ describe('MCP personalized tool surface', () => {
   it('withholds profile fields that were not granted to the client', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -293,7 +285,6 @@ describe('MCP personalized tool surface', () => {
   it('returns a structured error when the account no longer exists', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -320,7 +311,6 @@ describe('MCP personalized tool surface', () => {
   it('returns explicit catalog authority and a structured cursor error', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'global_default',
@@ -370,7 +360,6 @@ describe('MCP personalized tool surface', () => {
   it('exposes every tool to a listener-only user', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'listener-catalog',
       defaultCatalogSource: 'global_default',
@@ -397,7 +386,6 @@ describe('MCP personalized tool surface', () => {
   it('exposes the complete read surface when any catalog permits it', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -438,7 +426,6 @@ describe('MCP personalized tool surface', () => {
   it('describes the transcript discovery and verification workflow in tool metadata', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -610,7 +597,6 @@ describe('MCP personalized tool surface', () => {
   it('uses the effective default catalog when catalogId is omitted', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -684,7 +670,6 @@ describe('MCP personalized tool surface', () => {
   it('uses recording access for metadata lookup tools', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -737,7 +722,6 @@ describe('MCP personalized tool surface', () => {
   it('applies bounded recording pagination defaults to get_event', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -789,7 +773,6 @@ describe('MCP personalized tool surface', () => {
   it('gets recording metadata without event pagination', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -840,7 +823,6 @@ describe('MCP personalized tool surface', () => {
   it('supports compact transcript defaults and explicit full mode', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -927,7 +909,6 @@ describe('MCP personalized tool surface', () => {
   it('applies broad transcript search defaults with surrounding context', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -1025,7 +1006,6 @@ describe('MCP personalized tool surface', () => {
   it('applies symmetric lexical-search defaults and match mode', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -1068,7 +1048,6 @@ describe('MCP personalized tool surface', () => {
   it('keeps lexical query validation Unicode-aware', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -1130,7 +1109,6 @@ describe('MCP personalized tool surface', () => {
   it('does not reveal inaccessible catalogs through any catalog tool', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -1162,7 +1140,6 @@ describe('MCP personalized tool surface', () => {
   it('marks transient read failures as retryable', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
@@ -1192,7 +1169,6 @@ describe('MCP personalized tool surface', () => {
   it('logs unexpected read failures without returning their details', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',

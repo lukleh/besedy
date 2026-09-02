@@ -1,11 +1,9 @@
 import prisma from '@/lib/db';
-import type { UserStatus } from '@/generated/prisma/client';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
 import { getUserFeaturePreferences } from '@/lib/features/capabilities';
 import {
   resolvePortalActorContext,
   type PortalActorContext,
-  type SystemRole,
 } from '@/lib/policy/actor';
 import {
   selectDefaultReadableGroup,
@@ -23,8 +21,6 @@ export type McpDefaultCatalogSource =
 
 export interface McpAccessProfile {
   userId: string;
-  userStatus: UserStatus | null;
-  systemRole: SystemRole;
   canEnterPortal: boolean;
   defaultCatalogId: string | null;
   defaultCatalogSource: McpDefaultCatalogSource | null;
@@ -61,7 +57,7 @@ export async function getMcpAccessProfile(
   ]);
 
   if (!actor.canEnterPortal) {
-    return emptyProfile(userId, actor.userStatus, actor.systemRole);
+    return emptyProfile(userId);
   }
 
   const accessEntries = await listUserCatalogAccessEntries(actor);
@@ -91,8 +87,6 @@ export async function getMcpAccessProfile(
 
   return {
     userId,
-    userStatus: actor.userStatus,
-    systemRole: actor.systemRole,
     canEnterPortal: true,
     defaultCatalogId: effectiveDefault?.group.id ?? null,
     defaultCatalogSource: serializeDefaultCatalogSource(
@@ -102,15 +96,9 @@ export async function getMcpAccessProfile(
   };
 }
 
-function emptyProfile(
-  userId: string,
-  userStatus: UserStatus | null,
-  systemRole: SystemRole,
-): McpAccessProfile {
+function emptyProfile(userId: string): McpAccessProfile {
   return {
     userId,
-    userStatus,
-    systemRole,
     canEnterPortal: false,
     defaultCatalogId: null,
     defaultCatalogSource: null,

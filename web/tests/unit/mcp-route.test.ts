@@ -71,8 +71,6 @@ describe('MCP route hardening', () => {
   } as const;
   const activeAccessProfile = {
     userId: 'user-1',
-    userStatus: 'ACTIVE',
-    systemRole: 'USER',
     canEnterPortal: true,
     defaultCatalogId: null,
     defaultCatalogSource: null,

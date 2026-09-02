@@ -34,8 +34,6 @@ const context = {
   scopes: ['besedy:read'],
   accessProfile: {
     userId: 'user-1',
-    userStatus: 'ACTIVE' as const,
-    systemRole: 'USER' as const,
     canEnterPortal: true,
     defaultCatalogId: 'catalog-1',
     defaultCatalogSource: 'user_preference' as const,
