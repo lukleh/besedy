@@ -118,9 +118,9 @@ claude mcp login besedy
 
 The OAuth flow opens Besedy in a browser and continues through Google sign-in;
 no Google credential or bearer token is pasted into the client configuration.
-See the [MCP server reference](docs/web/mcp-server.md) for the tool contracts,
-access matrix, authentication design, self-hosted enablement, and local smoke
-test.
+See the [MCP server design](docs/web/mcp-server.md) for the access matrix,
+authentication design, self-hosted enablement, and local smoke test, and the
+[MCP tool reference](docs/web/mcp-tools.md) for the per-tool contracts.
 
 ### Besedy transcript research skill
 

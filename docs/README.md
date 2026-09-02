@@ -16,6 +16,8 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
 - [web/security.md](web/security.md) -- auth model, access control, deployment hardening
-- [web/mcp-server.md](web/mcp-server.md) -- remote MCP tools, OAuth, access matrix, and implementation plan
+- [web/mcp-server.md](web/mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing
+- [web/mcp-tools.md](web/mcp-tools.md) -- per-tool MCP contract: arguments, result shapes, errors
+- [web/mcp-follow-ups.md](web/mcp-follow-ups.md) -- deferred MCP work with the reasons it was deferred
 - [web/operations.md](web/operations.md) -- deploy runbook, monitoring, environments
 - [schemas/transcript.schema.json](schemas/transcript.schema.json) -- canonical transcript JSON schema
