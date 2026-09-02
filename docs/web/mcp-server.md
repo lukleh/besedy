@@ -132,6 +132,17 @@ queries there.
   once during the rollout.
 - Deleting an OAuth consent also revokes every refresh token for that user and
   client, so authorizing the client again cannot revive an older connection.
+  Database triggers enforce this: a refresh token row cannot be created without
+  its matching consent, and deleting the consent deletes the family, under a
+  per-family lock so a consent deletion cannot interleave with an in-flight
+  refresh.
+- Refresh grants for the same refresh token are serialized with a PostgreSQL
+  advisory lock in `web/src/lib/mcp/refresh-token-lock.ts`. This is deliberate
+  and load-bearing: some clients, Codex among them, issue several refreshes for
+  one credential at startup, and Better Auth's rotation replay is not atomic
+  for simultaneous requests, so without the lock the second request fails with
+  `invalid_grant` before the replay response exists. The smoke suite fires two
+  concurrent refreshes to keep this covered. Do not remove the lock to simplify.
 - OAuth client registration supports both mechanisms needed by remote clients:
   Client ID Metadata Documents (CIMD) for MCP 2026-07-28 clients such as Codex,
   and RFC 7591 Dynamic Client Registration (DCR) as a compatibility fallback
@@ -224,18 +235,23 @@ A `LISTENER` grant cannot open transcript text or transcript search in the web
 UI, yet the same grant can read and search transcripts through MCP. This is a
 deliberate decision, not an oversight, and it was confirmed on 2026-09-02.
 
-The reasoning: reading a transcript as a document and having an agent consult it
-are different uses. The web transcript view hands a person the full text of a
-recording to read like a book. Through MCP, the transcript is background
-knowledge that an agent draws on while answering the user's own questions about
-Besedy; the person sees grounded answers and bounded, citable excerpts, not the
-text as a whole. Listener visibility still applies in full: released events and
-published, actionable recordings only, with no widening for higher web roles.
+The reasoning is about the mode of access, not about how much text can be
+retrieved. The web transcript view hands a person the full text of a recording
+to read like a book. Through MCP, the transcript is background knowledge that
+an agent draws on while answering the user's own questions about Besedy. The
+decision does not rest on bounded disclosure: `get_transcript` in full mode
+returns a complete transcript up to the response ceiling, page mode walks a
+longer one to the end, and an agent asked for the whole text can hand it over.
+A listener's agent can therefore retrieve any released, published transcript in
+full through MCP. What still applies without exception is listener visibility:
+released events and published, actionable recordings only, with no widening for
+higher web roles.
 
 Consequences to keep in mind when changing either surface:
 
-- MCP transcript access is not a strict subset of web transcript access. Do not
-  "fix" the web denial by pointing at MCP or vice versa.
+- MCP transcript access is not a strict subset of web transcript access, and it
+  is not bounded to excerpts. Do not "fix" the web denial by pointing at MCP or
+  vice versa, and do not describe MCP access as excerpt-only.
 - If a catalog ever needs transcripts withheld from listeners on both surfaces,
   that is a new MCP capability rule, not a listener-visibility change.
 - The optional web role gate `canViewCatalogTranscripts` is intentionally not

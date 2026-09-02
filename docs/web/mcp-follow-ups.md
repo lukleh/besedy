@@ -7,6 +7,14 @@ deployment. Each entry records what was found, why it was left, and what would
 make it worth doing. Remove an entry when it ships or when the reason to defer
 becomes permanent.
 
+Decided and closed on 2026-09-02, so they are not listed: the refresh-token
+advisory lock stays because it fixes a real concurrent-refresh incident (see the
+Authentication section of [mcp-server.md](mcp-server.md)); the unused
+trusted-client trigger branches were removed instead; the 60-minute access-token
+TTL is acceptable now that stored-token revocation is immediate; the order in
+which rate-limit buckets are debited and the 1900 to 2100 bound on event cursor
+years are not worth changing.
+
 ## Test coverage
 
 **Retention and migration tests are string matches.** The tests for
@@ -16,28 +24,10 @@ database would make them meaningful.
 
 ## Authorization
 
-**Refresh-token serialization is more machinery than benefit.** A second
-PostgreSQL pool holds session-level advisory locks around Better Auth's refresh
-grant, and three PL/pgSQL triggers maintain their own lock ordering. The
-security property, that deleting a consent revokes the refresh family, needs
-only one trigger. The lock buys a replayed response for a duplicate concurrent
-refresh instead of an `invalid_grant`. Consider removing the lock and keeping
-the single consent trigger once the refresh replay window has been observed in
-production logs to be sufficient.
-
 **Dynamically registered clients are never cleaned up.** Open DCR creates an
 `oauthClient` row per registration with no expiry. Under the auth rate limit
 this is slow growth, not a risk, but a periodic delete of clients with no
 consent and no token older than some window would keep the table honest.
-
-**Rate-limit buckets are debited before all checks pass.** The global and
-per-user buckets are charged even when the per-client bucket rejects the
-request. Harmless at current volume.
-
-**Access-token TTL is 60 minutes.** Stored-token revocation now makes theft
-detection immediate, so the long TTL is defensible. Revisit only if the token
-registry lookup ever becomes a cost concern, in which case a shorter TTL is the
-alternative.
 
 ## Code structure
 
@@ -46,9 +36,6 @@ builders, eight read functions, and the search serializer. Splitting into
 `cursors.ts`, `links.ts`, `events.ts`, `transcripts.ts`, and `search.ts` would
 cost nothing and make ownership obvious. Do it when the next feature touches
 the file rather than as a standalone change.
-
-**Event cursors reject years outside 1900 to 2100.** Fine for this archive;
-noted so nobody hunts for it later.
 
 ## Documentation
 
