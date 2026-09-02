@@ -754,7 +754,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         catalogId: string;
         audioHash: string;
         recordingWebUrl: string;
-        language: string;
         segments: {
           items: Array<{
             segmentIndex: number;
@@ -778,7 +777,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       catalogId: result?.defaultCatalogId,
       audioHash,
       recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
-      language: 'cs',
       segments: {
         totalMatching: 2,
       },

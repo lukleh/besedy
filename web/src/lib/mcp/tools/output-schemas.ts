@@ -176,7 +176,6 @@ export const GetTranscriptOutputSchema = z.object({
   recordingWebUrl: WebUrlSchema.describe(
     'Unbounded recording page URL without a stop time.',
   ),
-  language: z.string().nullable(),
   durationSec: z.number().nonnegative().nullable(),
   segments: z.object({
     items: z.array(

@@ -789,7 +789,6 @@ export async function getMcpTranscript(
     catalogId,
     audioHash,
     recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
-    language: transcript.language ?? null,
     durationSec: transcript.duration ?? null,
     segments: {
       items: segments,

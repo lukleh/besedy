@@ -593,7 +593,9 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcript language');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'language of the transcript wording',
+    );
     // Corpus language is data, not code: the instructions must stay neutral.
     expect(BESEDY_MCP_INSTRUCTIONS).not.toMatch(/czech|english|german/i);
 
@@ -871,7 +873,6 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
       recordingWebUrl: 'https://besedy.example/recording',
-      language: 'cs',
       durationSec: 600,
       segments: {
         items: [

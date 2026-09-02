@@ -21,7 +21,7 @@ function renderTranscriptContent(
   result: Awaited<ReturnType<typeof getMcpTranscript>>,
 ): string {
   const lines = [
-    `Transcript for ${result.audioHash} (${result.language ?? 'unknown language'}):`,
+    `Transcript for ${result.audioHash}:`,
     ...result.segments.items.flatMap((segment) => {
       const speaker = segment.speaker ? ` ${segment.speaker}` : '';
       return [
