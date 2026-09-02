@@ -119,7 +119,7 @@ export function registerSearchTranscriptsTool(
             filters,
           }),
         (result) =>
-          `Found ${Array.isArray(result.results) ? result.results.length : 0} Besedy transcript match(es).`,
+          `Found ${result.results.length} Besedy transcript match(es).`,
         renderSearchContent,
       );
     },

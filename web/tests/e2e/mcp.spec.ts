@@ -16,7 +16,6 @@ const MCP_RESOURCE = `${BASE_URL}/api/mcp`;
 const MCP_REQUESTED_SCOPES = MCP_AUTH_SCOPES.join(' ');
 const MCP_PROTOCOL_VERSION = '2026-07-28';
 const LEGACY_MCP_PROTOCOL_VERSION = '2025-06-18';
-const TRANSCRIPT_BACKEND = 'faster-whisper/large-v3@silero_vad_v6';
 const MCP_FIXTURE_RECORDING = TEST_AUDIO_FILES[4];
 const pool = new Pool({ connectionString: DATABASE_URL });
 
@@ -31,6 +30,7 @@ interface TokenResponse {
 interface AccessTokenClaims {
   aud?: string | string[];
   iss?: string;
+  jti?: string;
   scope?: string;
   sub?: string;
 }
@@ -267,9 +267,27 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     ).toContain(MCP_RESOURCE);
     expect(accessTokenClaims).toMatchObject({
       iss: `${BASE_URL}/api/auth`,
+      jti: expect.any(String),
       scope: expect.stringContaining('besedy:read'),
       sub: expect.any(String),
     });
+    const storedAccessToken = await pool.query<{
+      id: string;
+      refreshId: string | null;
+      revoked: Date | null;
+    }>(
+      `SELECT "id", "refreshId", "revoked"
+       FROM "oauthAccessToken"
+       WHERE "token" = $1`,
+      [createHash('sha256').update(token.access_token!).digest('base64url')],
+    );
+    expect(storedAccessToken.rows).toEqual([
+      {
+        id: accessTokenClaims.jti,
+        refreshId: expect.any(String),
+        revoked: null,
+      },
+    ]);
 
     const legacyHeaders = {
       Authorization: `Bearer ${token.access_token}`,
@@ -419,8 +437,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         id: expect.any(String),
         name: 'Catalog Owner',
         email: 'owner@besedy.test',
-        status: 'ACTIVE',
-        systemRole: 'USER',
       },
       authorization: {
         clientId,
@@ -455,8 +471,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogs: Array<{
           id: string;
-          catalogGrant: string | null;
-          isCatalogAdmin: boolean;
           isDefault: boolean;
         }>;
         defaultCatalogId: string;
@@ -472,10 +486,14 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(result?.defaultCatalogSource).toBe('global_default');
     expect(result?.nextCursor).toBeNull();
     expect(result?.catalogs[0]).toMatchObject({
-      catalogGrant: 'OWNER',
-      isCatalogAdmin: false,
+      id: result?.defaultCatalogId,
       isDefault: true,
     });
+    expect(Object.keys(result!.catalogs[0]!).sort()).toEqual([
+      'id',
+      'isDefault',
+      'label',
+    ]);
 
     for (const lookup of [
       { tool: 'list_locations', field: 'locations' },
@@ -724,7 +742,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           name: 'get_transcript',
           arguments: {
             audioHash,
-            backend: TRANSCRIPT_BACKEND,
             mode: 'full',
           },
           _meta: envelope,
@@ -737,16 +754,12 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         catalogId: string;
         audioHash: string;
         recordingWebUrl: string;
-        backend: string;
-        language: string;
         segments: {
           items: Array<{
             segmentIndex: number;
-            id: number;
             text: string;
             startSec: number;
             endSec: number;
-            speaker: string;
             webUrl: string;
           }>;
           totalMatching: number;
@@ -762,22 +775,24 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       catalogId: result?.defaultCatalogId,
       audioHash,
       recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
-      backend: TRANSCRIPT_BACKEND,
-      language: 'cs',
       segments: {
         totalMatching: 2,
       },
     });
+    expect(transcriptBody.result?.structuredContent).not.toHaveProperty(
+      'backend',
+    );
+    expect(transcriptBody.result?.structuredContent).not.toHaveProperty(
+      'availableBackends',
+    );
     expect(
       transcriptBody.result?.structuredContent.segments.items,
     ).toHaveLength(2);
     expect(transcriptBody.result?.structuredContent.segments.items[0]).toEqual({
       segmentIndex: 0,
-      id: 0,
       text: 'Besedy MCP transcript fixture opens the discussion.',
       startSec: 0,
       endSec: 5,
-      speaker: 'SPEAKER_00',
       webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0&end=5`,
     });
     expect(transcriptBody.result?.content?.[0]?.text).toContain(
@@ -812,11 +827,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       McpToolResult<{
         catalogId: string;
         query: string;
-        retrieval: {
-          mode: string;
-          exhaustive: boolean;
-          maxPerRecording: number;
-        };
         results: Array<{
           rank: number;
           event: {
@@ -826,12 +836,10 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             location: { id: number; name: string };
           };
           recording: { audioHash: string };
-          match: { chunkId: string; text: string; webUrl: string };
+          match: { text: string; webUrl: string };
           context: { beforeText: string | null; afterText: string | null };
-          citation: { workflowGroupId: string; chunkVersion: string };
           transcriptRequest: {
             audioHash: string;
-            backend: string;
             mode: 'page';
             startSec: number;
             endSec: number;
@@ -846,11 +854,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(searchBody.result?.structuredContent).toMatchObject({
       catalogId: result?.defaultCatalogId,
       query: 'Besedy MCP deterministic search',
-      retrieval: {
-        mode: 'semantic',
-        exhaustive: false,
-        maxPerRecording: 2,
-      },
       results: [
         {
           rank: 1,
@@ -864,7 +867,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             audioHash,
           },
           match: {
-            chunkId: 'mcp-smoke-chunk-1',
             text: 'Deterministic Besedy MCP search evidence.',
             webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5&end=10`,
           },
@@ -872,13 +874,8 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             beforeText: 'Neighbor context before the deterministic evidence.',
             afterText: null,
           },
-          citation: {
-            workflowGroupId: result?.defaultCatalogId,
-            chunkVersion: 'mcp-smoke-v1',
-          },
           transcriptRequest: {
             audioHash,
-            backend: TRANSCRIPT_BACKEND,
             mode: 'page',
             startSec: 0,
             endSec: 10,
@@ -886,6 +883,15 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         },
       ],
     });
+    expect(searchBody.result?.structuredContent.results[0]).not.toHaveProperty(
+      'citation',
+    );
+    expect(searchBody.result?.structuredContent).not.toHaveProperty(
+      'retrieval',
+    );
+    expect(
+      searchBody.result?.structuredContent.results[0]?.transcriptRequest,
+    ).not.toHaveProperty('backend');
     expect(searchBody.result?.content?.[0]?.text).toContain(
       'Deterministic Besedy MCP search evidence.',
     );
@@ -939,9 +945,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const lexicalBody = (await lexicalResponse.json()) as McpResponse<
       McpToolResult<{
         retrieval: {
-          mode: string;
           matchMode: string;
-          corpusCoverage: string;
           totalMatches: number;
         };
         results: Array<{
@@ -951,7 +955,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             location: { id: number; name: string };
           };
           recording: { audioHash: string };
-          match: { chunkId: string };
+          match: { text: string };
           score?: number;
         }>;
       }>
@@ -959,9 +963,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(lexicalBody.error).toBeUndefined();
     expect(lexicalBody.result?.structuredContent).toMatchObject({
       retrieval: {
-        mode: 'lexical',
         matchMode: 'phrase',
-        corpusCoverage: 'complete',
         totalMatches: 1,
       },
       results: [
@@ -972,7 +974,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
             location: event!.location,
           },
           recording: { audioHash },
-          match: { chunkId: 'mcp-smoke-chunk-1' },
+          match: { text: 'Deterministic Besedy MCP search evidence.' },
         },
       ],
     });
@@ -980,14 +982,41 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'complete count is a chunk-match count, not a distinct-event count',
     );
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
-      'backend variants outside the active index',
-    );
-    expect(lexicalBody.result?.content?.[0]?.text).toContain(
       'Transcript request:',
     );
     expect(lexicalBody.result?.structuredContent.results[0]).not.toHaveProperty(
       'score',
     );
+
+    const revocationResponse = await request.post(
+      `${BASE_URL}/api/auth/oauth2/revoke`,
+      {
+        headers: { Origin: BASE_URL },
+        form: {
+          client_id: clientId,
+          token: token.access_token!,
+          token_type_hint: 'access_token',
+        },
+      },
+    );
+    expect(revocationResponse.ok(), await revocationResponse.text()).toBe(true);
+
+    const revokedTokenResponse = await request.post(MCP_RESOURCE, {
+      headers: { ...mcpHeaders, 'Mcp-Method': 'tools/list' },
+      data: {
+        jsonrpc: '2.0',
+        id: 200,
+        method: 'tools/list',
+        params: { _meta: envelope },
+      },
+    });
+    expect(revokedTokenResponse.status()).toBe(401);
+    expect(revokedTokenResponse.headers()['www-authenticate']).toContain(
+      'error="invalid_token"',
+    );
+    expect(await revokedTokenResponse.json()).toMatchObject({
+      error: { message: 'The access token is inactive' },
+    });
   } finally {
     await removeLocalTestClient(clientId);
   }

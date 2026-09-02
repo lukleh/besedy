@@ -6,6 +6,10 @@ const weeklyReport = readFileSync(
   resolve(process.cwd(), 'scripts/weekly-report.sh'),
   'utf8',
 );
+const auditCheck = readFileSync(
+  resolve(process.cwd(), 'scripts/audit-check.sh'),
+  'utf8',
+);
 
 describe('MCP usage report', () => {
   it('collects internally consistent summary metrics in one query', () => {
@@ -21,5 +25,14 @@ describe('MCP usage report', () => {
       'ARRAY_AGG(client_name ORDER BY last_used_at DESC)',
     );
     expect(weeklyReport).not.toContain('MAX(client_name)');
+  });
+
+  it('fails closed when the database container or a query is unavailable', () => {
+    for (const script of [weeklyReport, auditCheck]) {
+      expect(script).toContain('DB_CONTAINER_ID="$(compose_cmd ps -q db)"');
+      expect(script).toContain('-v ON_ERROR_STOP=1');
+      expect(script).not.toContain('|| echo "0"');
+      expect(script).toContain("trap 'on_error");
+    }
   });
 });

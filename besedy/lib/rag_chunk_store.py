@@ -27,6 +27,8 @@ CHUNK_SELECT_COLUMNS = """
 CHUNK_FTS_TABLE = "chunks_fts"
 CHUNK_FTS_BACKFILL_KEY = "chunks_fts_backfill_version"
 CHUNK_FTS_BACKFILL_VERSION = "1"
+MAX_FTS_QUERY_TOKENS = 32
+MIN_FTS_PREFIX_TOKEN_LENGTH = 2
 
 
 @dataclass(frozen=True)
@@ -225,6 +227,12 @@ def build_fts_query(query: str, *, match_mode: LexicalMatchMode) -> str:
     tokens = _fts_query_tokens(query)
     if not tokens:
         raise ValueError("Query must contain at least one searchable letter or number.")
+    if len(tokens) > MAX_FTS_QUERY_TOKENS:
+        raise ValueError(f"Query must contain at most {MAX_FTS_QUERY_TOKENS} searchable tokens.")
+    if match_mode == "prefix" and any(len(token) < MIN_FTS_PREFIX_TOKEN_LENGTH for token in tokens):
+        raise ValueError(
+            f"Prefix query tokens must contain at least {MIN_FTS_PREFIX_TOKEN_LENGTH} characters."
+        )
 
     # Tokens contain only Unicode letters, numbers, combining marks, or private-use
     # characters, so quoting them is sufficient to neutralize MATCH operators.
@@ -262,7 +270,10 @@ def search_chunks_fts(
 
     store_path = Path(path)
     with _connect_read_only(store_path) as connection:
-        connection.execute("PRAGMA temp_store = MEMORY")
+        # Exact total counts and one FTS scan require retaining the authorized
+        # matches for ranking. Keep that corpus-sized table file-backed rather
+        # than making broad any-term searches consume proportional process RAM.
+        connection.execute("PRAGMA temp_store = FILE")
         connection.execute(
             "CREATE TEMP TABLE allowed_audio_hashes (audio_hash TEXT PRIMARY KEY) WITHOUT ROWID"
         )
@@ -270,45 +281,44 @@ def search_chunks_fts(
             "INSERT INTO allowed_audio_hashes (audio_hash) VALUES (?)",
             ((audio_hash,) for audio_hash in allowed_hashes),
         )
+        connection.execute(
+            """
+            CREATE TEMP TABLE lexical_matches AS
+            SELECT
+              c.rowid AS chunk_rowid,
+              c.audio_hash AS audio_hash,
+              bm25(chunks_fts) AS score
+            FROM chunks_fts
+            JOIN chunks c ON c.rowid = chunks_fts.rowid
+            JOIN allowed_audio_hashes allowed ON allowed.audio_hash = c.audio_hash
+            WHERE chunks_fts MATCH ?
+            """,
+            (fts_query,),
+        )
         total_matches = int(
-            connection.execute(
-                """
-                SELECT COUNT(*)
-                FROM chunks_fts
-                JOIN chunks c ON c.rowid = chunks_fts.rowid
-                JOIN allowed_audio_hashes allowed ON allowed.audio_hash = c.audio_hash
-                WHERE chunks_fts MATCH ?
-                """,
-                (fts_query,),
-            ).fetchone()[0]
+            connection.execute("SELECT COUNT(*) FROM lexical_matches").fetchone()[0]
         )
         rows = connection.execute(
             f"""
-            WITH matches AS (
+            WITH ranked AS (
               SELECT
-                c.rowid AS chunk_rowid,
-                {_chunk_select_columns(table_alias="c")},
-                bm25(chunks_fts) AS score
-              FROM chunks_fts
-              JOIN chunks c ON c.rowid = chunks_fts.rowid
-              JOIN allowed_audio_hashes allowed ON allowed.audio_hash = c.audio_hash
-              WHERE chunks_fts MATCH ?
-            ), ranked AS (
-              SELECT
-                matches.*,
+                lexical_matches.*,
                 ROW_NUMBER() OVER (
                   PARTITION BY audio_hash
                   ORDER BY score, chunk_rowid
                 ) AS per_audio_rank
-              FROM matches
+              FROM lexical_matches
             )
-            SELECT *
+            SELECT
+              {_chunk_select_columns(table_alias="c")},
+              ranked.score
             FROM ranked
-            WHERE per_audio_rank <= ?
-            ORDER BY score, chunk_rowid
+            JOIN chunks c ON c.rowid = ranked.chunk_rowid
+            WHERE ranked.per_audio_rank <= ?
+            ORDER BY ranked.score, ranked.chunk_rowid
             LIMIT ?
             """,
-            (fts_query, max_per_audio, limit),
+            (max_per_audio, limit),
         ).fetchall()
 
     return LexicalChunkSearchResult(
@@ -568,6 +578,8 @@ __all__ = [
     "LexicalChunkMatch",
     "LexicalChunkSearchResult",
     "LexicalMatchMode",
+    "MAX_FTS_QUERY_TOKENS",
+    "MIN_FTS_PREFIX_TOKEN_LENGTH",
     "build_fts_query",
     "count_chunks_by_audio_hash",
     "delete_chunks_for_audio_hashes",

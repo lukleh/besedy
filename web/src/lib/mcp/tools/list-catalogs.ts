@@ -75,8 +75,6 @@ export function registerListCatalogsTool(
           id: catalog.id,
           label: catalog.label,
           isDefault: catalog.isDefault,
-          catalogGrant: catalog.catalogGrant,
-          isCatalogAdmin: catalog.isCatalogAdmin,
         })),
         defaultCatalogId: profile.defaultCatalogId,
         defaultCatalogSource: profile.defaultCatalogSource,
@@ -86,10 +84,7 @@ export function registerListCatalogsTool(
         `Listed ${result.catalogs.length} accessible catalog(s).`,
         result.catalogs.map((catalog) => {
           const label = catalog.label ? ` · ${catalog.label}` : '';
-          const authority = catalog.isCatalogAdmin
-            ? 'catalog admin'
-            : (catalog.catalogGrant ?? 'catalog access');
-          return `${catalog.id}${label}${catalog.isDefault ? ' · default' : ''} · ${authority}`;
+          return `${catalog.id}${label}${catalog.isDefault ? ' · default' : ''}`;
         }),
         result.nextCursor,
       );

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   createBesedyMcpServer: vi.fn(),
+  getActiveStoredMcpAccessToken: vi.fn(),
   getActiveMcpAuthorization: vi.fn(),
   getMcpAccessProfile: vi.fn(),
   logAccessDenied: vi.fn(),
@@ -44,6 +45,9 @@ vi.mock('@/lib/audit/logger', () => ({
 vi.mock('@/lib/mcp/access-profile', () => ({
   getMcpAccessProfile: mocks.getMcpAccessProfile,
 }));
+vi.mock('@/lib/mcp/access-token-state', () => ({
+  getActiveStoredMcpAccessToken: mocks.getActiveStoredMcpAccessToken,
+}));
 vi.mock('@/lib/mcp/authorization', () => ({
   getActiveMcpAuthorization: mocks.getActiveMcpAuthorization,
 }));
@@ -67,8 +71,6 @@ describe('MCP route hardening', () => {
   } as const;
   const activeAccessProfile = {
     userId: 'user-1',
-    userStatus: 'ACTIVE',
-    systemRole: 'USER',
     canEnterPortal: true,
     defaultCatalogId: null,
     defaultCatalogSource: null,
@@ -85,6 +87,9 @@ describe('MCP route hardening', () => {
     mocks.checkRateLimit.mockReturnValue(true);
     mocks.logAccessDenied.mockResolvedValue(undefined);
     mocks.getMcpAccessProfile.mockResolvedValue(activeAccessProfile);
+    mocks.getActiveStoredMcpAccessToken.mockResolvedValue({
+      scopes: ['openid', 'profile', 'email', 'besedy:read'],
+    });
     mocks.resolvePortalActorContext.mockResolvedValue(activeActor);
     mocks.getActiveMcpAuthorization.mockResolvedValue({
       clientName: 'Codex',
@@ -255,6 +260,38 @@ describe('MCP route hardening', () => {
     );
   });
 
+  it('returns an invalid-token challenge when the stored token is inactive', async () => {
+    mocks.getActiveStoredMcpAccessToken.mockResolvedValue(null);
+    const { POST } = await import('@/app/api/mcp/route');
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('WWW-Authenticate')).toContain(
+      'error="invalid_token"',
+    );
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      error: { code: -32_000, message: 'The access token is inactive' },
+      id: null,
+    });
+    expect(mocks.getActiveStoredMcpAccessToken).toHaveBeenCalledWith({
+      accessToken: 'signed-token',
+      clientId: 'client-1',
+      resourceUrl: 'http://localhost:3001/api/mcp',
+      userId: 'user-1',
+    });
+    expect(mocks.getActiveMcpAuthorization).not.toHaveBeenCalled();
+    expect(mocks.resolvePortalActorContext).not.toHaveBeenCalled();
+    expect(mocks.mcpFetch).not.toHaveBeenCalled();
+    expect(mocks.logAccessDenied).toHaveBeenCalledWith(
+      'user-1',
+      'mcp',
+      'request',
+      { clientId: 'client-1', reason: 'stored_access_token_inactive' },
+    );
+  });
+
   it('denies a valid JWT after its OAuth authorization is revoked', async () => {
     mocks.getActiveMcpAuthorization.mockResolvedValue(null);
     const { POST } = await import('@/app/api/mcp/route');
@@ -312,6 +349,12 @@ describe('MCP route hardening', () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
+    expect(mocks.getActiveStoredMcpAccessToken).toHaveBeenCalledWith({
+      accessToken: 'signed-token',
+      clientId: 'client-1',
+      resourceUrl: 'http://localhost:3001/api/mcp',
+      userId: 'user-1',
+    });
     expect(mocks.getActiveMcpAuthorization).toHaveBeenCalledWith({
       clientId: 'client-1',
       resourceUrl: 'http://localhost:3001/api/mcp',

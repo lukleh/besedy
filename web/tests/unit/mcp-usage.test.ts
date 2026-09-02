@@ -34,8 +34,6 @@ const context = {
   scopes: ['besedy:read'],
   accessProfile: {
     userId: 'user-1',
-    userStatus: 'ACTIVE' as const,
-    systemRole: 'USER' as const,
     canEnterPortal: true,
     defaultCatalogId: 'catalog-1',
     defaultCatalogSource: 'user_preference' as const,
@@ -133,6 +131,23 @@ describe('MCP usage telemetry', () => {
     expect(clientName).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
     expect(Array.from(clientName)).toHaveLength(255);
     expect(clientName).toMatch(/^Injected MCP ACTIVITY x+$/u);
+  });
+
+  it('bounds untrusted catalog IDs to the database column width', async () => {
+    const result = {
+      content: [{ type: 'text' as const, text: 'ok' }],
+      structuredContent: { events: [] },
+    } satisfies CallToolResult;
+
+    await trackMcpToolInvocation(
+      context,
+      'list_events',
+      { catalogId: `catalog-${'x'.repeat(300)}` },
+      () => result,
+    );
+
+    const catalogId = mocks.createInvocation.mock.calls[0][0].data.catalogId;
+    expect(Array.from(catalogId)).toHaveLength(191);
   });
 
   it('attributes default-catalog calls without assigning a catalog to global tools', async () => {

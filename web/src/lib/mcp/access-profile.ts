@@ -1,12 +1,9 @@
 import prisma from '@/lib/db';
-import type { AccessLevel, UserStatus } from '@/generated/prisma/client';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
 import { getUserFeaturePreferences } from '@/lib/features/capabilities';
 import {
-  hasSystemCatalogAuthority,
   resolvePortalActorContext,
   type PortalActorContext,
-  type SystemRole,
 } from '@/lib/policy/actor';
 import {
   selectDefaultReadableGroup,
@@ -17,8 +14,6 @@ export interface McpCatalogAccess {
   id: string;
   label: string | null;
   isDefault: boolean;
-  catalogGrant: AccessLevel | null;
-  isCatalogAdmin: boolean;
 }
 
 export type McpDefaultCatalogSource =
@@ -26,8 +21,6 @@ export type McpDefaultCatalogSource =
 
 export interface McpAccessProfile {
   userId: string;
-  userStatus: UserStatus | null;
-  systemRole: SystemRole;
   canEnterPortal: boolean;
   defaultCatalogId: string | null;
   defaultCatalogSource: McpDefaultCatalogSource | null;
@@ -64,13 +57,10 @@ export async function getMcpAccessProfile(
   ]);
 
   if (!actor.canEnterPortal) {
-    return emptyProfile(userId, actor.userStatus, actor.systemRole);
+    return emptyProfile(userId);
   }
 
   const accessEntries = await listUserCatalogAccessEntries(actor);
-  const accessByCatalogId = new Map(
-    accessEntries.map((entry) => [entry.catalogId, entry.accessLevel]),
-  );
 
   const groups = await prisma.workflowGroup.findMany({
     where: {
@@ -85,28 +75,18 @@ export async function getMcpAccessProfile(
     orderBy: { id: 'desc' },
   });
 
-  const isCatalogAdmin = hasSystemCatalogAuthority(actor);
   const effectiveDefault = selectDefaultReadableGroup(
     groups,
     preferences.activeGroupId,
   );
-  const catalogs = groups.map((group): McpCatalogAccess => {
-    const accessLevel = accessByCatalogId.get(group.id) ?? null;
-    const catalogGrant = isCatalogAdmin ? null : accessLevel;
-
-    return {
-      id: group.id,
-      label: group.label,
-      isDefault: effectiveDefault?.group.id === group.id,
-      catalogGrant,
-      isCatalogAdmin,
-    };
-  });
+  const catalogs = groups.map((group): McpCatalogAccess => ({
+    id: group.id,
+    label: group.label,
+    isDefault: effectiveDefault?.group.id === group.id,
+  }));
 
   return {
     userId,
-    userStatus: actor.userStatus,
-    systemRole: actor.systemRole,
     canEnterPortal: true,
     defaultCatalogId: effectiveDefault?.group.id ?? null,
     defaultCatalogSource: serializeDefaultCatalogSource(
@@ -116,15 +96,9 @@ export async function getMcpAccessProfile(
   };
 }
 
-function emptyProfile(
-  userId: string,
-  userStatus: UserStatus | null,
-  systemRole: SystemRole,
-): McpAccessProfile {
+function emptyProfile(userId: string): McpAccessProfile {
   return {
     userId,
-    userStatus,
-    systemRole,
     canEnterPortal: false,
     defaultCatalogId: null,
     defaultCatalogSource: null,

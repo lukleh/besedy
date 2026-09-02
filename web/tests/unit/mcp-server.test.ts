@@ -75,11 +75,6 @@ const defaultConnection = {
   scopes: ['openid', 'profile', 'email', 'besedy:read'],
 };
 
-const activeProfileFields = {
-  userStatus: 'ACTIVE',
-  systemRole: 'USER',
-} as const;
-
 let accessProfile: McpAccessProfile;
 
 async function invokeMcp(
@@ -123,17 +118,11 @@ async function invokeMcp(
   }>;
 }
 
-function catalog(
-  id: string,
-  catalogGrant: 'LISTENER' | 'VIEWER',
-  isDefault: boolean,
-): McpCatalogAccess {
+function catalog(id: string, isDefault: boolean): McpCatalogAccess {
   return {
     id,
     label: id,
     isDefault,
-    catalogGrant,
-    isCatalogAdmin: false,
   };
 }
 
@@ -194,7 +183,6 @@ describe('MCP personalized tool surface', () => {
     vi.clearAllMocks();
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -204,7 +192,6 @@ describe('MCP personalized tool surface', () => {
       userId: 'user-1',
       name: 'Test User',
       email: 'user@example.com',
-      emailVerified: true,
       clientId: 'client-1',
       clientName: 'Test MCP client',
     });
@@ -231,11 +218,10 @@ describe('MCP personalized tool surface', () => {
   it('reports the current account, client, scopes, and access summary', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
 
     const body = await invokeMcp('tools/call', {
@@ -250,15 +236,11 @@ describe('MCP personalized tool surface', () => {
         id: 'user-1',
         name: 'Test User',
         email: 'user@example.com',
-        emailVerified: true,
-        status: 'ACTIVE',
-        systemRole: 'USER',
       },
       authorization: {
         clientId: 'client-1',
         clientName: 'Test MCP client',
         grantedScopes: ['openid', 'profile', 'email', 'besedy:read'],
-        accessibleCatalogCount: 1,
         defaultCatalogId: 'viewer-catalog',
       },
     });
@@ -275,7 +257,6 @@ describe('MCP personalized tool surface', () => {
   it('withholds profile fields that were not granted to the client', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -296,9 +277,6 @@ describe('MCP personalized tool surface', () => {
       account: {
         name: null,
         email: null,
-        emailVerified: null,
-        status: null,
-        systemRole: null,
       },
       authorization: { grantedScopes: ['besedy:read'] },
     });
@@ -307,7 +285,6 @@ describe('MCP personalized tool surface', () => {
   it('returns a structured error when the account no longer exists', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: null,
       defaultCatalogSource: null,
@@ -334,11 +311,10 @@ describe('MCP personalized tool surface', () => {
   it('returns explicit catalog authority and a structured cursor error', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'global_default',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
 
     const successBody = await invokeMcp('tools/call', {
@@ -351,8 +327,6 @@ describe('MCP personalized tool surface', () => {
           id: 'viewer-catalog',
           label: 'viewer-catalog',
           isDefault: true,
-          catalogGrant: 'VIEWER',
-          isCatalogAdmin: false,
         },
       ],
       defaultCatalogId: 'viewer-catalog',
@@ -363,7 +337,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /viewer-catalog · viewer-catalog · default · VIEWER/,
+          /viewer-catalog · viewer-catalog · default$/m,
         ),
       },
     ]);
@@ -386,11 +360,10 @@ describe('MCP personalized tool surface', () => {
   it('exposes every tool to a listener-only user', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'listener-catalog',
       defaultCatalogSource: 'global_default',
-      catalogs: [catalog('listener-catalog', 'LISTENER', true)],
+      catalogs: [catalog('listener-catalog', true)],
     };
 
     const body = await invokeMcp('tools/list');
@@ -413,13 +386,12 @@ describe('MCP personalized tool surface', () => {
   it('exposes the complete read surface when any catalog permits it', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
       catalogs: [
-        catalog('listener-catalog', 'LISTENER', false),
-        catalog('viewer-catalog', 'VIEWER', true),
+        catalog('listener-catalog', false),
+        catalog('viewer-catalog', true),
       ],
     };
 
@@ -454,11 +426,10 @@ describe('MCP personalized tool surface', () => {
   it('describes the transcript discovery and verification workflow in tool metadata', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
 
     const body = await invokeMcp('tools/list');
@@ -499,9 +470,6 @@ describe('MCP personalized tool surface', () => {
     expect(lexicalTool?.description).toContain('totalMatches');
     expect(lexicalTool?.description).toContain('returned passages');
     expect(lexicalTool?.description).toContain('conceptual absence');
-    expect(lexicalTool?.description).toContain(
-      'backend variants outside the active index',
-    );
     expect(lexicalTool?.description).toContain('get_transcript');
     expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
@@ -552,6 +520,7 @@ describe('MCP personalized tool surface', () => {
     );
     expect(transcriptTool?.description).toContain('complete selected window');
     expect(transcriptTool?.description).toContain('bounded citation URL');
+    expect(transcriptTool?.inputSchema.properties.backend).toBeUndefined();
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
       'every segment',
     );
@@ -587,9 +556,6 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('Literal totalMatches');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('authorized indexed chunks');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
-      'backend variants outside the active index',
-    );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-null transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'authoritative event IDs, dates, and locations',
@@ -598,6 +564,11 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'language of the transcript wording',
+    );
+    // Corpus language is data, not code: the instructions must stay neutral.
+    expect(BESEDY_MCP_INSTRUCTIONS).not.toMatch(/czech|english|german/i);
 
     const body = await invokeMcp('server/discover');
     expect(body.error).toBeUndefined();
@@ -608,7 +579,6 @@ describe('MCP personalized tool surface', () => {
     const request = {
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
-      backend: 'whisperx/model',
       mode: 'page',
       startSec: 0,
       endSec: 15,
@@ -627,11 +597,10 @@ describe('MCP personalized tool surface', () => {
   it('uses the effective default catalog when catalogId is omitted', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(listMcpEvents).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -701,11 +670,10 @@ describe('MCP personalized tool surface', () => {
   it('uses recording access for metadata lookup tools', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(listMcpLocations).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -754,11 +722,10 @@ describe('MCP personalized tool surface', () => {
   it('applies bounded recording pagination defaults to get_event', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(getMcpEvent).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -766,9 +733,7 @@ describe('MCP personalized tool surface', () => {
         id: 42,
         webUrl: 'https://besedy.example/event/42',
         title: 'Event title',
-        description: null,
         date: { year: 2026, month: 8, day: 28 },
-        sessionIndex: 1,
         location: { id: 7, name: 'Prague' },
         recordings: {
           items: [
@@ -808,27 +773,21 @@ describe('MCP personalized tool surface', () => {
   it('gets recording metadata without event pagination', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(getMcpRecording).mockResolvedValue({
       catalogId: 'viewer-catalog',
       recording: {
         audioHash: 'a'.repeat(64),
         title: 'Recording title',
-        artist: 'Speaker',
         album: null,
         durationHms: '00:10:00',
-        sourceDate: null,
         date: { year: 2026, month: 8, day: 28 },
         location: { id: 7, name: 'Prague' },
         recorder: { id: 3, name: 'Petr' },
-        verified: true,
-        notes: null,
-        tags: [],
         webUrl: 'https://besedy.example/recording',
       },
       event: {
@@ -842,7 +801,7 @@ describe('MCP personalized tool surface', () => {
 
     const body = await invokeMcp('tools/call', {
       name: 'get_recording',
-      arguments: { audioHash: 'a'.repeat(64) },
+      arguments: { audioHash: 'A'.repeat(64) },
     });
 
     expect(body.error).toBeUndefined();
@@ -855,7 +814,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /Recording: a{64} https:\/\/besedy\.example\/recording[\s\S]*Event: 2026-08-28 · Prague · 42 https:\/\/besedy\.example\/event\/42 · primary recording[\s\S]*artist=Speaker[\s\S]*recorder=Petr/,
+          /Recording: a{64} https:\/\/besedy\.example\/recording[\s\S]*Event: 2026-08-28 · Prague · 42 https:\/\/besedy\.example\/event\/42 · primary recording[\s\S]*duration=00:10:00[\s\S]*recorder=Petr/,
         ),
       },
     ]);
@@ -864,28 +823,22 @@ describe('MCP personalized tool surface', () => {
   it('supports compact transcript defaults and explicit full mode', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(getMcpTranscript).mockResolvedValue({
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
       recordingWebUrl: 'https://besedy.example/recording',
-      backend: 'whisperx/model',
-      language: 'cs',
-      durationSec: 600,
       segments: {
         items: [
           {
             segmentIndex: 0,
-            id: 0,
             text: 'Transcript evidence',
             startSec: 0,
             endSec: 5,
-            speaker: 'SPEAKER_00',
             webUrl: 'https://besedy.example/recording?seek=0',
           },
         ],
@@ -894,7 +847,6 @@ describe('MCP personalized tool surface', () => {
       continuation: {
         catalogId: 'viewer-catalog',
         audioHash: 'a'.repeat(64),
-        backend: 'whisperx/model',
         mode: 'page',
         segmentOffset: 1,
         segmentLimit: 50,
@@ -912,7 +864,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /Transcript evidence[\s\S]*Source: https:\/\/besedy\.example\/recording\?seek=0/,
+          /Transcript evidence[\s\S]*Source: https:\/\/besedy\.example\/recording\?seek=0[\s\S]*Continue with segmentOffset 1\./,
         ),
       },
     ]);
@@ -921,12 +873,15 @@ describe('MCP personalized tool surface', () => {
         items: [{ webUrl: 'https://besedy.example/recording?seek=0' }],
       },
     });
+    expect(body.result?.structuredContent).not.toHaveProperty('backend');
+    expect(body.result?.structuredContent).not.toHaveProperty(
+      'availableBackends',
+    );
     expect(body.result?.structuredContent).not.toHaveProperty('seekWebUrl');
     expect(getMcpTranscript).toHaveBeenCalledWith(
       'viewer-catalog',
       'a'.repeat(64),
       {
-        backend: undefined,
         startSec: undefined,
         endSec: undefined,
         mode: 'page',
@@ -944,7 +899,6 @@ describe('MCP personalized tool surface', () => {
       'viewer-catalog',
       'a'.repeat(64),
       {
-        backend: undefined,
         startSec: undefined,
         endSec: undefined,
         mode: 'full',
@@ -955,22 +909,14 @@ describe('MCP personalized tool surface', () => {
   it('applies broad transcript search defaults with surrounding context', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(searchMcpTranscripts).mockResolvedValue({
       catalogId: 'viewer-catalog',
       query: 'search phrase',
-      retrieval: {
-        mode: 'semantic',
-        exhaustive: false,
-        requestedLimit: 50,
-        returnedCount: 1,
-        maxPerRecording: 10,
-      },
       results: [
         {
           rank: 1,
@@ -984,7 +930,6 @@ describe('MCP personalized tool surface', () => {
             audioHash: 'a'.repeat(64),
           },
           match: {
-            chunkId: 'chunk-1',
             startSec: 5,
             endSec: 10,
             text: 'Search evidence',
@@ -996,19 +941,9 @@ describe('MCP personalized tool surface', () => {
             beforeText: 'Earlier context',
             afterText: 'Later context',
           },
-          citation: {
-            audioHash: 'a'.repeat(64),
-            chunkId: 'chunk-1',
-            startSec: 5,
-            endSec: 10,
-            workflowGroupId: 'viewer-catalog',
-            backendKey: 'whisperx/model',
-            chunkVersion: 'v1',
-          },
           transcriptRequest: {
             catalogId: 'viewer-catalog',
             audioHash: 'a'.repeat(64),
-            backend: 'whisperx/model',
             mode: 'page',
             startSec: 0,
             endSec: 15,
@@ -1071,23 +1006,17 @@ describe('MCP personalized tool surface', () => {
   it('applies symmetric lexical-search defaults and match mode', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(findMcpTranscriptMentions).mockResolvedValue({
       catalogId: 'viewer-catalog',
       query: 'exact phrase',
       retrieval: {
-        mode: 'lexical',
         matchMode: 'all_terms',
-        corpusCoverage: 'complete',
         totalMatches: 0,
-        requestedLimit: 50,
-        returnedCount: 0,
-        maxPerRecording: 10,
       },
       results: [],
     });
@@ -1102,7 +1031,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /found 0 matching indexed chunk\(s\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*chunk-match count, not a distinct-event count[\s\S]*not stored transcript backend variants outside the active index[\s\S]*zero count establishes only indexed literal-pattern absence/,
+          /found 0 matching indexed chunk\(s\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*chunk-match count, not a distinct-event count[\s\S]*zero count establishes only indexed literal-pattern absence/,
         ),
       },
     ]);
@@ -1119,11 +1048,10 @@ describe('MCP personalized tool surface', () => {
   it('keeps lexical query validation Unicode-aware', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
 
     const invalidBody = await invokeMcp('tools/call', {
@@ -1146,13 +1074,8 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       query: 'člověk',
       retrieval: {
-        mode: 'lexical',
         matchMode: 'all_terms',
-        corpusCoverage: 'complete',
         totalMatches: 0,
-        requestedLimit: 50,
-        returnedCount: 0,
-        maxPerRecording: 10,
       },
       results: [],
     });
@@ -1167,16 +1090,29 @@ describe('MCP personalized tool surface', () => {
       'viewer-catalog',
       expect.objectContaining({ query: 'člověk' }),
     );
+
+    const shortPrefixBody = await invokeMcp('tools/call', {
+      name: 'find_transcript_mentions',
+      arguments: { query: 'a', matchMode: 'prefix' },
+    });
+    expect(shortPrefixBody.result).toMatchObject({ isError: true });
+    expect(shortPrefixBody.result?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining(
+          'Prefix query tokens must contain at least 2 characters.',
+        ),
+      },
+    ]);
   });
 
   it('does not reveal inaccessible catalogs through any catalog tool', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     for (const call of catalogToolCalls('missing-catalog')) {
       const body = await invokeMcp('tools/call', call);
@@ -1204,11 +1140,10 @@ describe('MCP personalized tool surface', () => {
   it('marks transient read failures as retryable', async () => {
     accessProfile = {
       userId: 'user-1',
-      ...activeProfileFields,
       canEnterPortal: true,
       defaultCatalogId: 'viewer-catalog',
       defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', 'VIEWER', true)],
+      catalogs: [catalog('viewer-catalog', true)],
     };
     vi.mocked(searchMcpTranscripts).mockRejectedValue(
       new McpReadError(
@@ -1229,5 +1164,32 @@ describe('MCP personalized tool surface', () => {
         retryable: true,
       },
     });
+  });
+
+  it('logs unexpected read failures without returning their details', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', true)],
+    };
+    vi.mocked(getMcpRecording).mockRejectedValue(
+      new Error('database host secret'),
+    );
+
+    const body = await invokeMcp('tools/call', {
+      name: 'get_recording',
+      arguments: { audioHash: 'a'.repeat(64) },
+    });
+
+    expect(body.result?.structuredContent).toEqual({
+      error: {
+        code: 'internal_error',
+        message: 'The tool could not complete because of an internal error',
+        retryable: true,
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('database host secret');
   });
 });

@@ -1,4 +1,4 @@
-import type { AccessLevel, Prisma } from '@/generated/prisma/client';
+import { Prisma, type AccessLevel } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
 import {
   catalogEventVisibilityWhere,
@@ -6,7 +6,6 @@ import {
   listReadableCatalogEvents,
   loadReadableCatalogEvent,
   resolveReadableEventIds,
-  resolveReadableRecordingHashes,
 } from '@/lib/catalog-events/read-service';
 import {
   loadCatalogRecordingReadModels,
@@ -18,7 +17,7 @@ import {
   loadTranscript,
   type TranscriptBackend,
 } from '@/lib/transcript';
-import { listTranscriptBackendPriorities } from '@/lib/transcript-priority';
+import { getRagBackendKey } from '@/lib/runtime-config';
 import {
   executeCatalogLexicalSearch,
   executeCatalogSearch,
@@ -26,6 +25,8 @@ import {
 } from '@/app/api/catalogs/[id]/search/search-service';
 import {
   RagServiceError,
+  buildAllowedAudioHashesQuery,
+  buildEligibleAudioHashesQuery,
   type LexicalMatchMode,
   type SearchMetadataFilters,
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
@@ -34,6 +35,10 @@ import { getMcpResourceUrl } from '@/lib/mcp/config';
 export type McpEventOrder = 'asc' | 'desc';
 
 const MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER' as const satisfies AccessLevel;
+const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
+const MAX_FULL_TRANSCRIPT_SEGMENTS = 2_000;
+const MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS = 400_000;
+const TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY = 8;
 
 export interface McpEventListInput {
   cursor?: string;
@@ -55,7 +60,6 @@ export interface McpLookupListInput {
 }
 
 interface McpTranscriptCommonInput {
-  backend?: TranscriptBackend;
   startSec?: number;
   endSec?: number;
 }
@@ -81,6 +85,7 @@ export type McpReadErrorCode =
   | 'not_found'
   | 'transcript_not_found'
   | 'invalid_window'
+  | 'response_too_large'
   | 'search_not_configured'
   | 'search_unavailable';
 
@@ -332,36 +337,29 @@ function eventAfterCursorWhere(
   return { OR: alternatives };
 }
 
-function resolveSearchTranscriptBackend(
-  indexedBackend: string,
-  availableBackends: TranscriptBackend[],
-): TranscriptBackend | null {
-  if (availableBackends.includes(indexedBackend)) {
-    return indexedBackend;
-  }
-
-  const languageAgnosticBackend = indexedBackend.replace(/@lang-[^/@]+$/, '');
-  if (availableBackends.includes(languageAgnosticBackend)) {
-    return languageAgnosticBackend;
-  }
-
-  return availableBackends[0] ?? null;
+/**
+ * Transcript directories that count as the canonical transcript, in order.
+ *
+ * The transcription pipeline names its output component with the language
+ * suffix carried by `RAG_BACKEND_KEY` (for example `…@lang-auto`), so the exact
+ * key is tried first. Czech runs and older bundles keep the legacy unsuffixed
+ * directory, so that is the only fallback. No other backend is consulted.
+ */
+function getCanonicalTranscriptBackends(): TranscriptBackend[] {
+  const configured = getRagBackendKey();
+  const legacy = configured.replace(/@lang-[^/@]+$/, '');
+  return legacy === configured ? [configured] : [configured, legacy];
 }
 
 function serializeRecording(recording: CatalogRecordingReadModel) {
   return {
     audioHash: recording.audioHash,
     title: recording.title,
-    artist: recording.artist,
     album: recording.album,
     durationHms: recording.durationHms,
-    sourceDate: recording.sourceDate,
     date: recording.date,
     location: recording.location,
     recorder: recording.recorder,
-    verified: recording.verified,
-    notes: recording.notes,
-    tags: recording.tags,
   };
 }
 
@@ -486,38 +484,26 @@ export async function listMcpRecorders(
   catalogId: string,
   input: McpLookupListInput,
 ) {
-  const recordingRows = await prisma.audioMetadata.findMany({
-    where: { workflowGroupId: catalogId, recorderId: { not: null } },
-    select: { audioHash: true, recorderId: true },
-  });
-  const visibleHashes = await resolveReadableRecordingHashes(
+  const eligibleHashesQuery = buildEligibleAudioHashesQuery(
     catalogId,
     MCP_VISIBILITY_ACCESS_LEVEL,
-    recordingRows.map((row) => row.audioHash),
+    null,
   );
-  const recordingCounts = new Map<number, number>();
-  for (const row of recordingRows) {
-    if (visibleHashes.has(row.audioHash)) {
-      incrementCount(recordingCounts, row.recorderId);
-    }
-  }
-  const ids = [...recordingCounts.keys()];
-  const recorders =
-    ids.length === 0
-      ? []
-      : await prisma.recorder.findMany({
-          where: { id: { in: ids } },
-          select: { id: true, name: true },
-        });
-  const page = paginateLookupItems(
-    catalogId,
-    'recorder',
-    input,
-    recorders.map((recorder) => ({
-      ...recorder,
-      recordingCount: recordingCounts.get(recorder.id) ?? 0,
-    })),
-  );
+  const recorders = await prisma.$queryRaw<
+    { id: number; name: string; recordingCount: number }[]
+  >(Prisma.sql`
+    SELECT
+      recorder.id,
+      recorder.name,
+      COUNT(*)::integer AS "recordingCount"
+    FROM (${eligibleHashesQuery}) AS eligible
+    JOIN audio_metadata metadata
+      ON metadata.workflow_group_id = ${catalogId}
+     AND metadata.audio_hash = eligible."audioHash"
+    JOIN recorders recorder ON recorder.id = metadata.recorder_id
+    GROUP BY recorder.id, recorder.name
+  `);
+  const page = paginateLookupItems(catalogId, 'recorder', input, recorders);
   return {
     catalogId,
     recorders: page.items,
@@ -618,9 +604,7 @@ export async function getMcpEvent(
       id: event.id,
       webUrl: buildEventWebUrl(catalogId, event.id),
       title: event.title,
-      description: event.description,
       date: serializeDate(event.dateYear, event.dateMonth, event.dateDay),
-      sessionIndex: event.sessionIndex,
       location: event.location,
       recordings: {
         items: recordingPage.map((recording) => ({
@@ -636,11 +620,9 @@ export async function getMcpEvent(
 }
 
 export async function getMcpRecording(catalogId: string, audioHash: string) {
-  const visibleHashes = await resolveReadableRecordingHashes(
-    catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
-    [audioHash],
-  );
+  const visibleHashes = await resolveMcpReadableRecordingHashes(catalogId, [
+    audioHash,
+  ]);
   if (!visibleHashes.has(audioHash)) {
     throw new McpReadError('not_found', 'Recording not found');
   }
@@ -705,11 +687,9 @@ export async function getMcpTranscript(
   audioHash: string,
   input: McpTranscriptInput,
 ) {
-  const visibleHashes = await resolveReadableRecordingHashes(
-    catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
-    [audioHash],
-  );
+  const visibleHashes = await resolveMcpReadableRecordingHashes(catalogId, [
+    audioHash,
+  ]);
   if (!visibleHashes.has(audioHash)) {
     throw new McpReadError('not_found', 'Recording not found');
   }
@@ -725,15 +705,11 @@ export async function getMcpTranscript(
   }
 
   const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const priorities = await listTranscriptBackendPriorities();
-  const available = await getAvailableTranscripts(transcriptsPath, audioHash, {
-    priorities,
-  });
-  const backend = input.backend ?? available.backends[0];
-  if (!backend || !available.backends.includes(backend)) {
-    throw new McpReadError('transcript_not_found', 'Transcript not found');
+  let transcript: Awaited<ReturnType<typeof loadTranscript>> = null;
+  for (const backend of getCanonicalTranscriptBackends()) {
+    transcript = await loadTranscript(transcriptsPath, audioHash, backend);
+    if (transcript) break;
   }
-  const transcript = await loadTranscript(transcriptsPath, audioHash, backend);
   if (!transcript) {
     throw new McpReadError('transcript_not_found', 'Transcript not found');
   }
@@ -754,6 +730,7 @@ export async function getMcpTranscript(
         );
   const segments = [];
   let returnedTextChars = 0;
+  let returnedSegmentJsonChars = 0;
   for (const { segment, segmentIndex } of candidates) {
     const textChars = segment.text.length;
     if (
@@ -763,21 +740,35 @@ export async function getMcpTranscript(
     ) {
       break;
     }
-    segments.push({
+    const serializedSegment = {
       segmentIndex,
-      id: segment.id ?? null,
       text: segment.text,
       startSec: segment.start,
       endSec: segment.end,
-      speaker: segment.speaker ?? null,
       webUrl: buildRecordingSeekWebUrl(
         catalogId,
         audioHash,
         segment.start,
         segment.end,
       ),
-    });
+    };
+    const segmentJsonChars =
+      input.mode === 'full' ? JSON.stringify(serializedSegment).length : 0;
+    if (
+      input.mode === 'full' &&
+      (segments.length >= MAX_FULL_TRANSCRIPT_SEGMENTS ||
+        returnedTextChars + textChars > MAX_FULL_TRANSCRIPT_TEXT_CHARS ||
+        returnedSegmentJsonChars + segmentJsonChars >
+          MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS)
+    ) {
+      throw new McpReadError(
+        'response_too_large',
+        'Transcript window is too large for full mode; use page mode or a narrower time window',
+      );
+    }
+    segments.push(serializedSegment);
     returnedTextChars += textChars;
+    returnedSegmentJsonChars += segmentJsonChars;
   }
   const nextOffset =
     input.mode === 'page' &&
@@ -790,7 +781,6 @@ export async function getMcpTranscript(
       : {
           catalogId,
           audioHash,
-          backend,
           mode: 'page' as const,
           ...(input.startSec === undefined ? {} : { startSec: input.startSec }),
           ...(input.endSec === undefined ? {} : { endSec: input.endSec }),
@@ -803,9 +793,6 @@ export async function getMcpTranscript(
     catalogId,
     audioHash,
     recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
-    backend,
-    language: transcript.language ?? null,
-    durationSec: transcript.duration ?? null,
     segments: {
       items: segments,
       totalMatching: matchingSegments.length,
@@ -814,19 +801,44 @@ export async function getMcpTranscript(
   };
 }
 
-async function assertMcpSearchEventsVisible(
+async function resolveMcpReadableRecordingHashes(
+  catalogId: string,
+  audioHashes: string[],
+): Promise<Set<string>> {
+  const eligibleQuery = buildAllowedAudioHashesQuery(
+    catalogId,
+    audioHashes,
+    MCP_VISIBILITY_ACCESS_LEVEL,
+    null,
+  );
+  if (!eligibleQuery) return new Set();
+  const rows = await prisma.$queryRaw<{ audioHash: string }[]>(eligibleQuery);
+  return new Set(rows.map((row) => row.audioHash));
+}
+
+async function assertMcpSearchFiltersVisible(
   catalogId: string,
   filters?: SearchMetadataFilters,
 ): Promise<void> {
   const requestedEventIds = filters?.eventIds;
-  if (!requestedEventIds?.length) return;
+  if (requestedEventIds?.length) {
+    const visibleEventIds = new Set(
+      (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
+        [],
+    );
+    if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
+      throw new McpReadError('not_found', 'Event not found');
+    }
+  }
 
-  const visibleEventIds = new Set(
-    (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
-      [],
+  const requestedAudioHashes = filters?.audioHashes;
+  if (!requestedAudioHashes?.length) return;
+  const visibleHashes = await resolveMcpReadableRecordingHashes(
+    catalogId,
+    requestedAudioHashes,
   );
-  if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
-    throw new McpReadError('not_found', 'Event not found');
+  if (requestedAudioHashes.some((audioHash) => !visibleHashes.has(audioHash))) {
+    throw new McpReadError('not_found', 'Recording not found');
   }
 }
 
@@ -840,7 +852,7 @@ export async function searchMcpTranscripts(
     filters?: SearchMetadataFilters;
   },
 ) {
-  await assertMcpSearchEventsVisible(catalogId, input.filters);
+  await assertMcpSearchFiltersVisible(catalogId, input.filters);
   let execution: Awaited<ReturnType<typeof executeCatalogSearch>>;
   try {
     execution = await executeCatalogSearch({
@@ -866,13 +878,6 @@ export async function searchMcpTranscripts(
   return {
     catalogId,
     query: execution.query,
-    retrieval: {
-      mode: 'semantic' as const,
-      exhaustive: false,
-      requestedLimit: input.limit,
-      returnedCount: results.length,
-      maxPerRecording: input.maxPerRecording,
-    },
     results,
   };
 }
@@ -888,7 +893,7 @@ export async function findMcpTranscriptMentions(
     filters?: SearchMetadataFilters;
   },
 ) {
-  await assertMcpSearchEventsVisible(catalogId, input.filters);
+  await assertMcpSearchFiltersVisible(catalogId, input.filters);
   let execution: Awaited<ReturnType<typeof executeCatalogLexicalSearch>>;
   try {
     execution = await executeCatalogLexicalSearch({
@@ -916,13 +921,8 @@ export async function findMcpTranscriptMentions(
     catalogId,
     query: execution.query,
     retrieval: {
-      mode: 'lexical' as const,
       matchMode: input.matchMode,
-      corpusCoverage: 'complete' as const,
       totalMatches: execution.totalMatches,
-      requestedLimit: input.limit,
-      returnedCount: results.length,
-      maxPerRecording: input.maxPerRecording,
     },
     results,
   };
@@ -960,26 +960,32 @@ async function serializeMcpSearchResults(
   const audioHashes = [
     ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const priorities = await listTranscriptBackendPriorities();
+  const canonicalBackends = getCanonicalTranscriptBackends();
   const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const availableBackendsByHash = new Map(
-    await Promise.all(
-      audioHashes.map(async (audioHash) => {
+  const canonicalTranscriptAvailability = new Map(
+    await mapWithConcurrency(
+      audioHashes,
+      TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
+      async (audioHash) => {
         const available = await getAvailableTranscripts(
           transcriptsPath,
           audioHash,
-          { priorities },
         );
-        return [audioHash, available.backends] as const;
-      }),
+        return [
+          audioHash,
+          canonicalBackends.some((backend) =>
+            available.backends.includes(backend),
+          ),
+        ] as const;
+      },
     ),
   );
 
   return eventSearchResults.map((result) => {
-    const transcriptBackend = resolveSearchTranscriptBackend(
-      result.citation.backendKey,
-      availableBackendsByHash.get(result.audioHash) ?? [],
-    );
+    const transcriptStartSec =
+      contextChunks > 0 ? result.contextStartSec : result.startSec;
+    const transcriptEndSec =
+      contextChunks > 0 ? result.contextEndSec : result.endSec;
     return {
       rank: result.rank,
       event: {
@@ -990,7 +996,6 @@ async function serializeMcpSearchResults(
         audioHash: result.audioHash,
       },
       match: {
-        chunkId: result.chunkId,
         startSec: result.startSec,
         endSec: result.endSec,
         text: result.text,
@@ -1016,18 +1021,39 @@ async function serializeMcpSearchResults(
                   .join('\n\n') || null,
             }
           : null,
-      citation: result.citation,
-      transcriptRequest: transcriptBackend
-        ? {
-            catalogId,
-            audioHash: result.audioHash,
-            backend: transcriptBackend,
-            mode: 'page' as const,
-            startSec:
-              contextChunks > 0 ? result.contextStartSec : result.startSec,
-            endSec: contextChunks > 0 ? result.contextEndSec : result.endSec,
-          }
-        : null,
+      transcriptRequest:
+        canonicalTranscriptAvailability.get(result.audioHash) === true &&
+        transcriptEndSec > transcriptStartSec
+          ? {
+              catalogId,
+              audioHash: result.audioHash,
+              mode: 'page' as const,
+              startSec: transcriptStartSec,
+              endSec: transcriptEndSec,
+            }
+          : null,
     };
   });
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  operation: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await operation(items[index]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () =>
+      worker(),
+    ),
+  );
+  return results;
 }

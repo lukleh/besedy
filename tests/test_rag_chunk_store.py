@@ -194,6 +194,10 @@ def test_build_fts_query_does_not_expose_raw_match_syntax() -> None:
     )
     with pytest.raises(ValueError, match="searchable"):
         build_fts_query('"***"', match_mode="all_terms")
+    with pytest.raises(ValueError, match="at most 32"):
+        build_fts_query(" ".join(f"token{index}" for index in range(33)), match_mode="any_term")
+    with pytest.raises(ValueError, match="at least 2"):
+        build_fts_query("a", match_mode="prefix")
 
 
 def test_ensure_chunk_store_fts_recovers_partial_existing_backfill(tmp_path: Path) -> None:

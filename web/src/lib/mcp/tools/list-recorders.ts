@@ -52,8 +52,7 @@ export function registerListRecordersTool(
             cursor,
             limit,
           }),
-        (result) =>
-          `Listed ${Array.isArray(result.recorders) ? result.recorders.length : 0} recorder(s).`,
+        (result) => `Listed ${result.recorders.length} recorder(s).`,
         renderRecorderListContent,
       );
     },

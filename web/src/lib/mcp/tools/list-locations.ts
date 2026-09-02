@@ -48,8 +48,7 @@ export function registerListLocationsTool(
       if ('error' in catalog) return toolError(catalog.code, catalog.error);
       return runReadTool(
         () => listMcpLocations(catalog.id, { query, cursor, limit }),
-        (result) =>
-          `Listed ${Array.isArray(result.locations) ? result.locations.length : 0} event location(s).`,
+        (result) => `Listed ${result.locations.length} event location(s).`,
         renderLocationListContent,
       );
     },

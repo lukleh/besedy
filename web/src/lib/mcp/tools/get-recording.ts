@@ -29,7 +29,6 @@ function renderRecordingContent(
     lines.push('Event: none visible.');
   }
   const metadata = [
-    recording.artist ? `artist=${recording.artist}` : null,
     recording.album ? `album=${recording.album.name}` : null,
     recording.durationHms ? `duration=${recording.durationHms}` : null,
     recording.date.year === null
@@ -37,14 +36,8 @@ function renderRecordingContent(
       : `date=${formatMcpDate(recording.date)}`,
     recording.location ? `location=${recording.location.name}` : null,
     recording.recorder ? `recorder=${recording.recorder.name}` : null,
-    `verified=${recording.verified ? 'yes' : 'no'}`,
-    recording.sourceDate ? `sourceDate=${recording.sourceDate}` : null,
   ].filter((value): value is string => value !== null);
   if (metadata.length > 0) lines.push(`Metadata: ${metadata.join('; ')}`);
-  if (recording.tags.length > 0) {
-    lines.push(`Tags: ${recording.tags.join(', ')}`);
-  }
-  if (recording.notes) lines.push(`Notes: ${recording.notes}`);
   return lines.join('\n');
 }
 
@@ -60,7 +53,7 @@ export function registerGetRecordingTool(
     {
       title: 'Get Besedy recording metadata',
       description:
-        'Get recording-specific metadata. Search results already provide event context.',
+        'Get recording-specific metadata for a published, ready recording linked to a released event. Search results already provide event context.',
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -69,7 +62,9 @@ export function registerGetRecordingTool(
           .describe(
             'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
           ),
-        audioHash: HashSchema.describe(
+        audioHash: HashSchema.transform((value) =>
+          value.toLowerCase(),
+        ).describe(
           'Stable recording hash returned by an event, search, or transcript response.',
         ),
       }),

@@ -27,6 +27,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose_cmd() {
     "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
 }
+
+on_error() {
+    local status="$1"
+    local line="$2"
+    trap - ERR
+    local message="Weekly report failed at line $line with status $status; no zero-value fallback was used."
+    logger -t "$TAG" "$message"
+    if [ -n "$REPORT_EMAIL" ] && command -v sendmail >/dev/null 2>&1; then
+        {
+            echo "Subject: [Besedy] Weekly report failed - $(date +%Y-%m-%d)"
+            echo "Content-Type: text/plain; charset=utf-8"
+            echo ""
+            echo "$message"
+        } | sendmail "$REPORT_EMAIL" || logger -t "$TAG" "Could not email report failure to $REPORT_EMAIL"
+    fi
+    exit "$status"
+}
+trap 'on_error "$?" "$LINENO"' ERR
 OPS_ENV_FILE="$("$PROJECT_DIR/scripts/resolve_ops_env_file.sh")"
 if [ -f "$OPS_ENV_FILE" ]; then
     set -a
@@ -82,9 +100,15 @@ fi
 
 REPORT_WINDOW_SQL="${REPORT_WINDOW_DAYS} days"
 
+DB_CONTAINER_ID="$(compose_cmd ps -q db)"
+if [ -z "$DB_CONTAINER_ID" ]; then
+    echo "Production database container is not running." >&2
+    false
+fi
+
 # Function to run database query
 db_query() {
-    compose_cmd exec -T db psql -U besedy_app -d besedy -tA -c "$1" 2>/dev/null || echo "0"
+    docker exec -i "$DB_CONTAINER_ID" psql -U besedy_app -d besedy -v ON_ERROR_STOP=1 -tA -c "$1"
 }
 
 # Run backup health check without triggering alert emails; return a report-friendly summary.

@@ -13,6 +13,9 @@ Canonical documentation:
 require an ops env file for their filesystem paths: copy
 `web/setup/backup/ops.env.example` to `~/.config/lukleh/besedy/ops.env` (or set
 `BESEDY_OPS_ENV`). They exit with an error if a required path is unset.
+Host monitoring requires Docker, `jq`, `logger`, and `sendmail` (normally backed
+by `msmtp`). Database-backed reports resolve the production database container
+once and exit with an alert if it or any query fails.
 
 Recommended host schedule:
 

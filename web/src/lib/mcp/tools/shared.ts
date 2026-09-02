@@ -12,11 +12,13 @@ import type {
   McpCatalogAccess,
 } from '@/lib/mcp/access-profile';
 import { McpReadError } from '@/lib/mcp/read-service';
+import { createServerLogger } from '@/lib/log/server';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { trackMcpToolInvocation } from '@/lib/mcp/usage';
 
 const DEFAULT_LOOKUP_PAGE_SIZE = 50;
 const MAX_LOOKUP_PAGE_SIZE = 100;
+const logger = createServerLogger('mcp-tools');
 
 export function createLookupListInputSchema(itemName: string) {
   return z.object({
@@ -223,6 +225,11 @@ export async function runReadTool<T extends Record<string, unknown>>(
     if (error instanceof McpReadError) {
       return toolError(error.code, error.message, error.retryable);
     }
-    throw error;
+    logger.error('Unexpected MCP read-tool failure', error);
+    return toolError(
+      'internal_error',
+      'The tool could not complete because of an internal error',
+      true,
+    );
   }
 }

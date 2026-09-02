@@ -24,7 +24,6 @@ function renderEventContent(
     `Event: ${event.webUrl}`,
   ];
   if (event.title) lines.push(`Title: ${event.title}`);
-  if (event.description) lines.push(`Description: ${event.description}`);
   lines.push(
     ...event.recordings.items.map(
       (recording) =>

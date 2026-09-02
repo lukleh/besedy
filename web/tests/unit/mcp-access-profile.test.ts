@@ -10,10 +10,6 @@ vi.mock('@/lib/access/catalog-access-queries', () => ({
 
 vi.mock('@/lib/policy/actor', () => ({
   resolvePortalActorContext: vi.fn(),
-  hasSystemCatalogAuthority: vi.fn(
-    (actor: { systemRole: string }) =>
-      actor.systemRole === 'ADMIN' || actor.systemRole === 'SUPERADMIN',
-  ),
 }));
 
 vi.mock('@/lib/features/capabilities', async () => {
@@ -67,22 +63,15 @@ describe('MCP access profile', () => {
   it('gives every accessible catalog the uniform MCP read surface', async () => {
     const profile = await getMcpAccessProfile('user-1');
 
-    expect(profile).toMatchObject({
-      userStatus: 'ACTIVE',
-      systemRole: 'USER',
-    });
+    expect(profile.canEnterPortal).toBe(true);
     expect(profile.catalogs).toEqual([
       expect.objectContaining({
         id: 'catalog-listener',
         isDefault: false,
-        catalogGrant: 'LISTENER',
-        isCatalogAdmin: false,
       }),
       expect.objectContaining({
         id: 'catalog-viewer',
         isDefault: true,
-        catalogGrant: 'VIEWER',
-        isCatalogAdmin: false,
       }),
     ]);
     expect(profile.defaultCatalogId).toBe('catalog-viewer');
@@ -98,10 +87,11 @@ describe('MCP access profile', () => {
       canEnterPortal: false,
     });
 
-    await expect(getMcpAccessProfile('blocked-1')).resolves.toMatchObject({
-      userStatus: 'BLOCKED',
-      systemRole: 'USER',
+    await expect(getMcpAccessProfile('blocked-1')).resolves.toEqual({
+      userId: 'blocked-1',
       canEnterPortal: false,
+      defaultCatalogId: null,
+      defaultCatalogSource: null,
       catalogs: [],
     });
     expect(prisma.workflowGroup.findMany).not.toHaveBeenCalled();
@@ -133,8 +123,7 @@ describe('MCP access profile', () => {
     expect(resolvePortalActorContext).not.toHaveBeenCalled();
     expect(profile).toMatchObject({
       userId: 'user-1',
-      userStatus: 'ACTIVE',
-      systemRole: 'USER',
+      canEnterPortal: true,
     });
   });
 
@@ -172,13 +161,9 @@ describe('MCP access profile', () => {
 
     const profile = await getMcpAccessProfile('admin-1');
 
-    expect(profile).toMatchObject({
-      userStatus: 'ACTIVE',
-      systemRole: 'ADMIN',
-    });
-    expect(profile.catalogs[0]).toMatchObject({
-      catalogGrant: null,
-      isCatalogAdmin: true,
-    });
+    expect(profile.canEnterPortal).toBe(true);
+    expect(profile.catalogs).toEqual([
+      { id: 'catalog-listener', label: 'Admin catalog', isDefault: true },
+    ]);
   });
 });

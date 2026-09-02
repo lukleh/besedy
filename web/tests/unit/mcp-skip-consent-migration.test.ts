@@ -28,7 +28,7 @@ describe('trusted OAuth client refresh migration', () => {
       'CREATE OR REPLACE FUNCTION "require_oauth_consent_for_refresh_token"',
     );
     expect(migration).toContain(
-      "jsonb_build_array('oauth-client-grant', NEW.\"clientId\")",
+      'jsonb_build_array(\'oauth-client-grant\', NEW."clientId")',
     );
     expect(migration.match(/pg_advisory_xact_lock_shared/g)).toHaveLength(3);
     expect(migration).toContain('FROM "oauthClient"');
