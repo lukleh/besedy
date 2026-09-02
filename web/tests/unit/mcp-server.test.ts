@@ -499,9 +499,6 @@ describe('MCP personalized tool surface', () => {
     expect(lexicalTool?.description).toContain('totalMatches');
     expect(lexicalTool?.description).toContain('returned passages');
     expect(lexicalTool?.description).toContain('conceptual absence');
-    expect(lexicalTool?.description).toContain(
-      'backend variants outside the active index',
-    );
     expect(lexicalTool?.description).toContain('get_transcript');
     expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
@@ -552,6 +549,7 @@ describe('MCP personalized tool surface', () => {
     );
     expect(transcriptTool?.description).toContain('complete selected window');
     expect(transcriptTool?.description).toContain('bounded citation URL');
+    expect(transcriptTool?.inputSchema.properties.backend).toBeUndefined();
     expect(transcriptTool?.inputSchema.properties.mode.description).toContain(
       'every segment',
     );
@@ -587,9 +585,6 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('Literal totalMatches');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('authorized indexed chunks');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
-      'backend variants outside the active index',
-    );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-null transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'authoritative event IDs, dates, and locations',
@@ -608,7 +603,6 @@ describe('MCP personalized tool surface', () => {
     const request = {
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
-      backend: 'whisperx/model',
       mode: 'page',
       startSec: 0,
       endSec: 15,
@@ -874,8 +868,6 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
       recordingWebUrl: 'https://besedy.example/recording',
-      backend: 'whisperx/model',
-      availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 600,
       segments: {
@@ -895,7 +887,6 @@ describe('MCP personalized tool surface', () => {
       continuation: {
         catalogId: 'viewer-catalog',
         audioHash: 'a'.repeat(64),
-        backend: 'whisperx/model',
         mode: 'page',
         segmentOffset: 1,
         segmentLimit: 50,
@@ -921,14 +912,16 @@ describe('MCP personalized tool surface', () => {
       segments: {
         items: [{ webUrl: 'https://besedy.example/recording?seek=0' }],
       },
-      availableBackends: ['whisperx/model'],
     });
+    expect(body.result?.structuredContent).not.toHaveProperty('backend');
+    expect(body.result?.structuredContent).not.toHaveProperty(
+      'availableBackends',
+    );
     expect(body.result?.structuredContent).not.toHaveProperty('seekWebUrl');
     expect(getMcpTranscript).toHaveBeenCalledWith(
       'viewer-catalog',
       'a'.repeat(64),
       {
-        backend: undefined,
         startSec: undefined,
         endSec: undefined,
         mode: 'page',
@@ -946,7 +939,6 @@ describe('MCP personalized tool surface', () => {
       'viewer-catalog',
       'a'.repeat(64),
       {
-        backend: undefined,
         startSec: undefined,
         endSec: undefined,
         mode: 'full',
@@ -1004,13 +996,11 @@ describe('MCP personalized tool surface', () => {
             startSec: 5,
             endSec: 10,
             workflowGroupId: 'viewer-catalog',
-            backendKey: 'whisperx/model',
             chunkVersion: 'v1',
           },
           transcriptRequest: {
             catalogId: 'viewer-catalog',
             audioHash: 'a'.repeat(64),
-            backend: 'whisperx/model',
             mode: 'page',
             startSec: 0,
             endSec: 15,
@@ -1104,7 +1094,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /found 0 matching indexed chunk\(s\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*chunk-match count, not a distinct-event count[\s\S]*not stored transcript backend variants outside the active index[\s\S]*zero count establishes only indexed literal-pattern absence/,
+          /found 0 matching indexed chunk\(s\) across the complete authorized indexed transcript corpus and returned 0[\s\S]*chunk-match count, not a distinct-event count[\s\S]*zero count establishes only indexed literal-pattern absence/,
         ),
       },
     ]);

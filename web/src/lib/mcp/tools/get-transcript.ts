@@ -9,7 +9,7 @@ import {
   toolError,
 } from '@/lib/mcp/tools/shared';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
-import { HashSchema, TranscriptBackendSchema } from '@/lib/validation/schemas';
+import { HashSchema } from '@/lib/validation/schemas';
 import { GetTranscriptOutputSchema } from '@/lib/mcp/tools/output-schemas';
 
 const DEFAULT_TRANSCRIPT_SEGMENT_LIMIT = 50;
@@ -21,7 +21,7 @@ function renderTranscriptContent(
   result: Awaited<ReturnType<typeof getMcpTranscript>>,
 ): string {
   const lines = [
-    `Transcript for ${result.audioHash} (${result.backend}, ${result.language ?? 'unknown language'}):`,
+    `Transcript for ${result.audioHash} (${result.language ?? 'unknown language'}):`,
     ...result.segments.items.flatMap((segment) => {
       const speaker = segment.speaker ? ` ${segment.speaker}` : '';
       return [
@@ -64,9 +64,6 @@ export function registerGetTranscriptTool(
             value.toLowerCase(),
           ).describe(
             'Stable audio hash of the recording. Copy it from a search result or recording response.',
-          ),
-          backend: TranscriptBackendSchema.optional().describe(
-            'Stored transcript backend to read. Prefer the backend supplied by a transcript search result transcriptRequest; omit it to use the highest-priority available backend.',
           ),
           startSec: z
             .number()
@@ -136,7 +133,6 @@ export function registerGetTranscriptTool(
     async ({
       catalogId,
       audioHash,
-      backend,
       startSec,
       endSec,
       mode,
@@ -149,7 +145,6 @@ export function registerGetTranscriptTool(
       return runReadTool(
         () =>
           getMcpTranscript(catalog.id, audioHash, {
-            backend,
             startSec,
             endSec,
             ...(mode === 'full'

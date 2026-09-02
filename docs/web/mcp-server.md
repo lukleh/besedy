@@ -600,19 +600,23 @@ Example return value:
 Use this tool to read continuous source context, normally after
 `search_transcripts` or `find_transcript_mentions` identifies a candidate
 passage. Copy the candidate's `transcriptRequest` when it is available so the
-catalog, recording, backend, and relevant time window remain aligned.
+catalog, recording, and relevant time window remain aligned.
 
-| Argument        | Type                            | Default                            | Meaning                                                                    |
-| --------------- | ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
-| `catalogId`     | string                          | effective default                  | Catalog containing the recording                                           |
-| `audioHash`     | 64-character hexadecimal string | required                           | Stable recording identifier                                                |
-| `backend`       | `workflow/model` string         | highest-priority available backend | Stored transcript backend to read                                          |
-| `startSec`      | number at least 0               | start of transcript                | Inclusive start of the time window                                         |
-| `endSec`        | positive number                 | end of transcript                  | Exclusive end of the time window; must exceed `startSec` when both are set |
-| `mode`          | `full` or `page`                | required                           | Return every matching segment or a bounded page                            |
-| `segmentOffset` | non-negative integer            | `0` in `page` mode                 | Page mode only: offset within segments overlapping the time window         |
-| `segmentLimit`  | integer from 1 to 200           | `50` in `page` mode                | Page mode only: maximum whole segments                                     |
-| `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode            | Page mode only: soft text-size target                                      |
+| Argument        | Type                            | Default                 | Meaning                                                                    |
+| --------------- | ------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
+| `catalogId`     | string                          | effective default       | Catalog containing the recording                                           |
+| `audioHash`     | 64-character hexadecimal string | required                | Stable recording identifier                                                |
+| `startSec`      | number at least 0               | start of transcript     | Inclusive start of the time window                                         |
+| `endSec`        | positive number                 | end of transcript       | Exclusive end of the time window; must exceed `startSec` when both are set |
+| `mode`          | `full` or `page`                | required                | Return every matching segment or a bounded page                            |
+| `segmentOffset` | non-negative integer            | `0` in `page` mode      | Page mode only: offset within segments overlapping the time window         |
+| `segmentLimit`  | integer from 1 to 200           | `50` in `page` mode     | Page mode only: maximum whole segments                                     |
+| `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode | Page mode only: soft text-size target                                      |
+
+The server reads only its configured canonical transcript. It never falls back
+to another stored transcript when the canonical one is absent, and returns
+`transcript_not_found` instead. Transcript implementation identifiers are not
+part of the MCP contract.
 
 `mode: "full"` returns every segment overlapping the optional time window in a
 single response, up to a hard 200,000-character response ceiling. With no time
@@ -626,13 +630,12 @@ segment may exceed `maxTextChars`. Segment items include their absolute
 `segmentIndex`, text, timestamps, optional speaker and source ID, and a
 timestamped `webUrl`.
 
-The response reports the chosen `backend`, every `availableBackends` value,
-language, duration, and unbounded `recordingWebUrl`. Each segment link includes
-both `seek` and `end` timestamps.
+The response reports language, duration, and the unbounded `recordingWebUrl`.
+Each segment link includes both `seek` and `end` timestamps.
 The player stops once at the linked end; pressing play again continues through
 the recording. The `segments` object contains the items and `totalMatching`.
 When more page-mode data exists, `continuation` preserves the catalog,
-recording, backend, mode, window, limits, and next offset and can be passed
+recording, mode, window, limits, and next offset and can be passed
 unchanged as the next call's arguments. Otherwise it is `null`.
 
 Example full-mode return value:
@@ -642,8 +645,6 @@ Example full-mode return value:
   "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "backend": "faster-whisper/large-v3@silero_vad_v6",
-  "availableBackends": ["faster-whisper/large-v3@silero_vad_v6"],
   "language": "en",
   "durationSec": 12.5,
   "segments": {
@@ -685,7 +686,6 @@ Page mode has the same top-level shape and may return a continuation descriptor:
   "continuation": {
     "catalogId": "20990101_000000",
     "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "backend": "faster-whisper/large-v3@silero_vad_v6",
     "mode": "page",
     "segmentOffset": 1,
     "segmentLimit": 1,
@@ -701,7 +701,6 @@ prefixes. It searches every indexed chunk belonging to visible recordings under
 released events authorized by the resolved catalog and filters. Its
 `totalMatches` is the number of matching indexed chunks before `limit` and
 `maxPerRecording` reduce the returned list; it is not a count of distinct events
-and does not cover stored transcript backend variants outside the active index.
 Numeric text-match scores are not exposed.
 
 It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
@@ -788,11 +787,10 @@ Every result contains:
 - the exact `match`, including chunk ID, time range, text, and seekable
   `webUrl`;
 - optional before/after `context` without duplicating the exact match;
-- a stable `citation` naming the audio hash, chunk, time range, catalog, RAG
-  backend, and chunk version; and
-- `transcriptRequest`, when a compatible stored transcript exists, with the
-  actual transcript backend, `mode: "page"`, and the time range to verify. This
-  may be `null`.
+- a stable `citation` naming the audio hash, chunk, time range, catalog, and
+  chunk version; and
+- `transcriptRequest`, when the canonical transcript exists, with
+  `mode: "page"` and the time range to verify. This may be `null`.
 
 The match `webUrl` is a bounded excerpt link: it seeks to `startSec`, stops once
 at `endSec`, and then permits ordinary continued playback when the user presses
@@ -804,7 +802,6 @@ The generated request can be passed directly to `get_transcript`:
 {
   "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "backend": "faster-whisper/large-v3@silero_vad_v6",
   "mode": "page",
   "startSec": 600,
   "endSec": 720
@@ -881,13 +878,11 @@ Example return value:
         "startSec": 600,
         "endSec": 620,
         "workflowGroupId": "20990101_000000",
-        "backendKey": "faster-whisper/large-v3@silero_vad_v6",
         "chunkVersion": "example-v1"
       },
       "transcriptRequest": {
         "catalogId": "20990101_000000",
         "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "backend": "faster-whisper/large-v3@silero_vad_v6",
         "mode": "page",
         "startSec": 580,
         "endSec": 640
@@ -915,15 +910,15 @@ Expected tool failures set `isError: true` and return the same object in
 | Code                    | Meaning                                                                            |
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | `catalog_required`      | No effective default exists; supply `catalogId`                                    |
-| `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request            |
+| `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request           |
 | `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
-| `transcript_not_found`  | The requested recording/backend has no readable stored transcript                  |
+| `transcript_not_found`  | The recording has no readable canonical transcript                                 |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
 | `response_too_large`    | A full transcript window exceeds the hard response ceiling                         |
 | `search_not_configured` | The catalog has no transcript search bundle                                        |
 | `search_unavailable`    | The transcript search service is temporarily unavailable                           |
-| `internal_error`        | An unexpected server failure was logged without exposing its details                |
+| `internal_error`        | An unexpected server failure was logged without exposing its details               |
 
 Clients may automatically retry only when `retryable` is `true`; currently
 that applies to `search_unavailable` and unexpected `internal_error` failures. Schema-validation and protocol

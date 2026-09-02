@@ -125,7 +125,9 @@ chmod 644 ~/.config/lukleh/besedy/besedy.container.toml
 Existing installations that switch the default Faster-Whisper workflow to
 automatic language detection must also set
 `RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-auto`. This keeps
-web search and transcript export pointed at the language-aware transcript tree.
+web search, transcript export, and the canonical MCP transcript pointed at the
+language-aware transcript tree. MCP does not fall back to another stored
+transcript when this canonical transcript is absent.
 
 ### Deploy
 

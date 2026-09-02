@@ -39,8 +39,9 @@ vi.mock('@/lib/transcript', () => ({
   loadTranscript: vi.fn(),
 }));
 
-vi.mock('@/lib/transcript-priority', () => ({
-  listTranscriptBackendPriorities: vi.fn().mockResolvedValue({}),
+vi.mock('@/lib/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
+  getRagBackendKey: () => 'whisperx/model@lang-auto',
 }));
 
 vi.mock('@/lib/paths', () => ({
@@ -728,10 +729,31 @@ describe('MCP read service', () => {
     expect(getAvailableTranscripts).not.toHaveBeenCalled();
   });
 
+  it('reads only the configured canonical transcript and does not fall back', async () => {
+    vi.mocked(getAvailableTranscripts).mockResolvedValue({
+      hash: 'visible-recording',
+      backends: ['other/model'],
+    });
+    vi.mocked(loadTranscript).mockResolvedValue(null);
+
+    await expect(
+      getMcpTranscript('catalog-a', 'visible-recording', { mode: 'full' }),
+    ).rejects.toMatchObject({
+      code: 'transcript_not_found',
+      retryable: false,
+    });
+
+    expect(loadTranscript).toHaveBeenCalledWith(
+      '/transcripts/catalog-a',
+      'visible-recording',
+      'whisperx/model',
+    );
+    expect(getAvailableTranscripts).not.toHaveBeenCalled();
+  });
+
   it('returns a half-open time range bounded by transcript text size', async () => {
     const result = await getMcpTranscript('catalog-a', 'visible-recording', {
       mode: 'page',
-      backend: 'whisperx/model',
       startSec: 5,
       endSec: 15,
       segmentOffset: 0,
@@ -744,8 +766,6 @@ describe('MCP read service', () => {
       audioHash: 'visible-recording',
       recordingWebUrl:
         'https://besedy.example/catalog/catalog-a/recording/visible-recording',
-      backend: 'whisperx/model',
-      availableBackends: ['whisperx/model'],
       language: 'cs',
       durationSec: 20,
       segments: {
@@ -766,7 +786,6 @@ describe('MCP read service', () => {
       continuation: {
         catalogId: 'catalog-a',
         audioHash: 'visible-recording',
-        backend: 'whisperx/model',
         mode: 'page',
         startSec: 5,
         endSec: 15,
@@ -874,7 +893,6 @@ describe('MCP read service', () => {
     expect(result.continuation).toEqual({
       catalogId: 'catalog-a',
       audioHash: 'visible-recording',
-      backend: 'whisperx/model',
       mode: 'page',
       segmentOffset: 2,
       segmentLimit: 2,
@@ -975,13 +993,11 @@ describe('MCP read service', () => {
             startSec: 60,
             endSec: 90,
             workflowGroupId: 'catalog-a',
-            backendKey: 'whisperx/model@lang-auto',
             chunkVersion: 'v1',
           },
           transcriptRequest: {
             catalogId: 'catalog-a',
             audioHash: 'visible-recording',
-            backend: 'whisperx/model',
             mode: 'page',
             startSec: 30,
             endSec: 90,
@@ -989,6 +1005,26 @@ describe('MCP read service', () => {
         },
       ],
     });
+  });
+
+  it('does not offer a transcript handoff when the canonical transcript is absent', async () => {
+    vi.mocked(getAvailableTranscripts).mockResolvedValue({
+      hash: 'visible-recording',
+      backends: ['other/model'],
+    });
+
+    const result = await searchMcpTranscripts('catalog-a', {
+      query: 'search phrase',
+      limit: 10,
+      contextChunks: 1,
+      maxPerRecording: 2,
+    });
+
+    expect(result.results[0]?.transcriptRequest).toBeNull();
+    expect(getAvailableTranscripts).toHaveBeenCalledWith(
+      '/transcripts/catalog-a',
+      'visible-recording',
+    );
   });
 
   it('forwards symmetric filters and reports complete lexical match counts', async () => {

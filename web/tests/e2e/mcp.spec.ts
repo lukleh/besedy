@@ -16,7 +16,6 @@ const MCP_RESOURCE = `${BASE_URL}/api/mcp`;
 const MCP_REQUESTED_SCOPES = MCP_AUTH_SCOPES.join(' ');
 const MCP_PROTOCOL_VERSION = '2026-07-28';
 const LEGACY_MCP_PROTOCOL_VERSION = '2025-06-18';
-const TRANSCRIPT_BACKEND = 'faster-whisper/large-v3@silero_vad_v6';
 const MCP_FIXTURE_RECORDING = TEST_AUDIO_FILES[4];
 const pool = new Pool({ connectionString: DATABASE_URL });
 
@@ -280,11 +279,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       `SELECT "id", "refreshId", "revoked"
        FROM "oauthAccessToken"
        WHERE "token" = $1`,
-      [
-        createHash('sha256')
-          .update(token.access_token!)
-          .digest('base64url'),
-      ],
+      [createHash('sha256').update(token.access_token!).digest('base64url')],
     );
     expect(storedAccessToken.rows).toEqual([
       {
@@ -747,7 +742,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           name: 'get_transcript',
           arguments: {
             audioHash,
-            backend: TRANSCRIPT_BACKEND,
             mode: 'full',
           },
           _meta: envelope,
@@ -760,7 +754,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         catalogId: string;
         audioHash: string;
         recordingWebUrl: string;
-        backend: string;
         language: string;
         segments: {
           items: Array<{
@@ -785,12 +778,17 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       catalogId: result?.defaultCatalogId,
       audioHash,
       recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
-      backend: TRANSCRIPT_BACKEND,
       language: 'cs',
       segments: {
         totalMatching: 2,
       },
     });
+    expect(transcriptBody.result?.structuredContent).not.toHaveProperty(
+      'backend',
+    );
+    expect(transcriptBody.result?.structuredContent).not.toHaveProperty(
+      'availableBackends',
+    );
     expect(
       transcriptBody.result?.structuredContent.segments.items,
     ).toHaveLength(2);
@@ -854,7 +852,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           citation: { workflowGroupId: string; chunkVersion: string };
           transcriptRequest: {
             audioHash: string;
-            backend: string;
             mode: 'page';
             startSec: number;
             endSec: number;
@@ -901,7 +898,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           },
           transcriptRequest: {
             audioHash,
-            backend: TRANSCRIPT_BACKEND,
             mode: 'page',
             startSec: 0,
             endSec: 10,
@@ -909,6 +905,12 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         },
       ],
     });
+    expect(
+      searchBody.result?.structuredContent.results[0]?.citation,
+    ).not.toHaveProperty('backendKey');
+    expect(
+      searchBody.result?.structuredContent.results[0]?.transcriptRequest,
+    ).not.toHaveProperty('backend');
     expect(searchBody.result?.content?.[0]?.text).toContain(
       'Deterministic Besedy MCP search evidence.',
     );
@@ -1001,9 +1003,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     });
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
       'complete count is a chunk-match count, not a distinct-event count',
-    );
-    expect(lexicalBody.result?.content?.[0]?.text).toContain(
-      'backend variants outside the active index',
     );
     expect(lexicalBody.result?.content?.[0]?.text).toContain(
       'Transcript request:',

@@ -41,8 +41,8 @@ disclose material coverage limits.
 
 Prefer the clearest recording when the MCP results identify variants. Preserve
 differences and tensions between distinct discussions instead of flattening them
-into false consensus. When an important passage is badly transcribed and another
-backend is available, compare the same time window before quoting it.
+into false consensus. When an important passage appears badly transcribed,
+qualify the quotation or rely on other independently verified evidence.
 
 ## Present a useful map of the material
 

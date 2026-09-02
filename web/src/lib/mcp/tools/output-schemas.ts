@@ -3,7 +3,6 @@ import { LexicalMatchModeSchema } from '@/app/api/catalogs/[id]/search/search-ro
 import {
   AccessLevelSchema,
   HashSchema,
-  TranscriptBackendSchema,
   UserStatusSchema,
 } from '@/lib/validation/schemas';
 
@@ -163,7 +162,6 @@ export const GetRecordingOutputSchema = z.object({
 const TranscriptContinuationSchema = z.object({
   catalogId: CatalogIdSchema,
   audioHash: HashSchema,
-  backend: TranscriptBackendSchema,
   mode: z.literal('page'),
   startSec: z.number().nonnegative().optional(),
   endSec: z.number().positive().optional(),
@@ -178,10 +176,6 @@ export const GetTranscriptOutputSchema = z.object({
   recordingWebUrl: WebUrlSchema.describe(
     'Unbounded recording page URL without a stop time.',
   ),
-  backend: TranscriptBackendSchema,
-  availableBackends: z
-    .array(TranscriptBackendSchema)
-    .describe('All stored transcript backends available for this recording.'),
   language: z.string().nullable(),
   durationSec: z.number().nonnegative().nullable(),
   segments: z.object({
@@ -236,21 +230,19 @@ const TranscriptSearchResultSchema = z.object({
     startSec: z.number().nonnegative(),
     endSec: z.number().nonnegative(),
     workflowGroupId: CatalogIdSchema,
-    backendKey: z.string(),
     chunkVersion: z.string(),
   }),
   transcriptRequest: z
     .object({
       catalogId: CatalogIdSchema,
       audioHash: HashSchema,
-      backend: TranscriptBackendSchema,
       mode: z.literal('page'),
       startSec: z.number().nonnegative(),
       endSec: z.number().nonnegative(),
     })
     .nullable()
     .describe(
-      'Ready-to-call get_transcript arguments for verifying this candidate in continuous context, or null when no compatible stored transcript is available.',
+      'Ready-to-call get_transcript arguments for verifying this candidate in continuous context, or null when the canonical transcript is unavailable.',
     ),
 });
 
@@ -276,7 +268,7 @@ export const FindTranscriptMentionsOutputSchema = z.object({
     corpusCoverage: z
       .literal('complete')
       .describe(
-        'Complete over authorized indexed chunks under the selected filters and match mode; does not cover stored backend variants outside the active index.',
+        'Complete over authorized indexed chunks under the selected filters and match mode.',
       ),
     totalMatches: z
       .number()

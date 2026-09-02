@@ -17,7 +17,7 @@ import {
   loadTranscript,
   type TranscriptBackend,
 } from '@/lib/transcript';
-import { listTranscriptBackendPriorities } from '@/lib/transcript-priority';
+import { getRagBackendKey } from '@/lib/runtime-config';
 import {
   executeCatalogLexicalSearch,
   executeCatalogSearch,
@@ -38,7 +38,7 @@ const MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER' as const satisfies AccessLevel;
 const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
 const MAX_FULL_TRANSCRIPT_SEGMENTS = 2_000;
 const MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS = 400_000;
-const TRANSCRIPT_BACKEND_LOOKUP_CONCURRENCY = 8;
+const TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY = 8;
 
 export interface McpEventListInput {
   cursor?: string;
@@ -60,7 +60,6 @@ export interface McpLookupListInput {
 }
 
 interface McpTranscriptCommonInput {
-  backend?: TranscriptBackend;
   startSec?: number;
   endSec?: number;
 }
@@ -338,20 +337,8 @@ function eventAfterCursorWhere(
   return { OR: alternatives };
 }
 
-function resolveSearchTranscriptBackend(
-  indexedBackend: string,
-  availableBackends: TranscriptBackend[],
-): TranscriptBackend | null {
-  if (availableBackends.includes(indexedBackend)) {
-    return indexedBackend;
-  }
-
-  const languageAgnosticBackend = indexedBackend.replace(/@lang-[^/@]+$/, '');
-  if (availableBackends.includes(languageAgnosticBackend)) {
-    return languageAgnosticBackend;
-  }
-
-  return availableBackends[0] ?? null;
+function getCanonicalTranscriptBackend(): TranscriptBackend {
+  return getRagBackendKey().replace(/@lang-[^/@]+$/, '');
 }
 
 function serializeRecording(recording: CatalogRecordingReadModel) {
@@ -715,14 +702,7 @@ export async function getMcpTranscript(
   }
 
   const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const priorities = await listTranscriptBackendPriorities();
-  const available = await getAvailableTranscripts(transcriptsPath, audioHash, {
-    priorities,
-  });
-  const backend = input.backend ?? available.backends[0];
-  if (!backend || !available.backends.includes(backend)) {
-    throw new McpReadError('transcript_not_found', 'Transcript not found');
-  }
+  const backend = getCanonicalTranscriptBackend();
   const transcript = await loadTranscript(transcriptsPath, audioHash, backend);
   if (!transcript) {
     throw new McpReadError('transcript_not_found', 'Transcript not found');
@@ -797,7 +777,6 @@ export async function getMcpTranscript(
       : {
           catalogId,
           audioHash,
-          backend,
           mode: 'page' as const,
           ...(input.startSec === undefined ? {} : { startSec: input.startSec }),
           ...(input.endSec === undefined ? {} : { endSec: input.endSec }),
@@ -810,8 +789,6 @@ export async function getMcpTranscript(
     catalogId,
     audioHash,
     recordingWebUrl: buildRecordingWebUrl(catalogId, audioHash),
-    backend,
-    availableBackends: available.backends,
     language: transcript.language ?? null,
     durationSec: transcript.duration ?? null,
     segments: {
@@ -993,19 +970,21 @@ async function serializeMcpSearchResults(
   const audioHashes = [
     ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const priorities = await listTranscriptBackendPriorities();
+  const canonicalBackend = getCanonicalTranscriptBackend();
   const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const availableBackendsByHash = new Map(
+  const canonicalTranscriptAvailability = new Map(
     await mapWithConcurrency(
       audioHashes,
-      TRANSCRIPT_BACKEND_LOOKUP_CONCURRENCY,
+      TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
       async (audioHash) => {
         const available = await getAvailableTranscripts(
           transcriptsPath,
           audioHash,
-          { priorities },
         );
-        return [audioHash, available.backends] as const;
+        return [
+          audioHash,
+          available.backends.includes(canonicalBackend),
+        ] as const;
       },
     ),
   );
@@ -1015,10 +994,6 @@ async function serializeMcpSearchResults(
       contextChunks > 0 ? result.contextStartSec : result.startSec;
     const transcriptEndSec =
       contextChunks > 0 ? result.contextEndSec : result.endSec;
-    const transcriptBackend = resolveSearchTranscriptBackend(
-      result.citation.backendKey,
-      availableBackendsByHash.get(result.audioHash) ?? [],
-    );
     return {
       rank: result.rank,
       event: {
@@ -1055,13 +1030,20 @@ async function serializeMcpSearchResults(
                   .join('\n\n') || null,
             }
           : null,
-      citation: result.citation,
+      citation: {
+        audioHash: result.citation.audioHash,
+        chunkId: result.citation.chunkId,
+        startSec: result.citation.startSec,
+        endSec: result.citation.endSec,
+        workflowGroupId: result.citation.workflowGroupId,
+        chunkVersion: result.citation.chunkVersion,
+      },
       transcriptRequest:
-        transcriptBackend && transcriptEndSec > transcriptStartSec
+        canonicalTranscriptAvailability.get(result.audioHash) === true &&
+        transcriptEndSec > transcriptStartSec
           ? {
               catalogId,
               audioHash: result.audioHash,
-              backend: transcriptBackend,
               mode: 'page' as const,
               startSec: transcriptStartSec,
               endSec: transcriptEndSec,
