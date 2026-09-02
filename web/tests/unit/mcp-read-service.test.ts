@@ -370,6 +370,67 @@ describe('MCP read service', () => {
       locations: [{ id: 9, name: 'Vienna', eventCount: 1 }],
       nextCursor: null,
     });
+
+    // A rename that keeps the item before the boundary ("Praga" sorts before
+    // "Prague") must neither invalidate the cursor nor repeat the item.
+    db.location.findMany.mockResolvedValue([
+      { id: 9, name: 'Vienna' },
+      { id: 7, name: 'Praga' },
+    ]);
+    await expect(
+      listMcpLocations('catalog-a', {
+        cursor: locations.nextCursor!,
+        limit: 1,
+      }),
+    ).resolves.toEqual({
+      catalogId: 'catalog-a',
+      locations: [{ id: 9, name: 'Vienna', eventCount: 1 }],
+      nextCursor: null,
+    });
+
+    // A rename that moves the cursor item to the end must not skip the items
+    // between; the renamed item reappears after them instead.
+    db.location.findMany.mockResolvedValue([
+      { id: 9, name: 'Vienna' },
+      { id: 7, name: 'Zulu' },
+    ]);
+    const afterMove = await listMcpLocations('catalog-a', {
+      cursor: locations.nextCursor!,
+      limit: 1,
+    });
+    expect(afterMove.locations).toEqual([
+      { id: 9, name: 'Vienna', eventCount: 1 },
+    ]);
+    expect(afterMove.nextCursor).toEqual(expect.any(String));
+    await expect(
+      listMcpLocations('catalog-a', {
+        cursor: afterMove.nextCursor!,
+        limit: 1,
+      }),
+    ).resolves.toEqual({
+      catalogId: 'catalog-a',
+      locations: [{ id: 7, name: 'Zulu', eventCount: 1 }],
+      nextCursor: null,
+    });
+
+    // A rename that moves the cursor item to the front yields the remaining
+    // items without repeating anything.
+    db.location.findMany.mockResolvedValue([
+      { id: 9, name: 'Vienna' },
+      { id: 7, name: 'Alpha' },
+    ]);
+    const cursorAfterVienna = (
+      await listMcpLocations('catalog-a', { limit: 2 })
+    ).locations;
+    expect(cursorAfterVienna.map((location) => location.name)).toEqual([
+      'Alpha',
+      'Vienna',
+    ]);
+    db.location.findMany.mockResolvedValue([
+      { id: 9, name: 'Vienna' },
+      { id: 7, name: 'Prague' },
+    ]);
+
     await expect(
       listMcpLocations('catalog-a', {
         cursor: locations.nextCursor!,
@@ -627,11 +688,16 @@ describe('MCP read service', () => {
 
     expect(db.catalogEntry.findMany).not.toHaveBeenCalled();
     expect(db.audioMetadata.findMany).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
+    // Exact shape: the MCP SDK forwards structuredContent unstripped, so an
+    // extra field would reach agents without failing schema validation.
+    expect(result).toEqual({
       catalogId: 'catalog-a',
       event: {
         id: 42,
         webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
+        title: 'Visible event',
+        date: { year: 2026, month: 8, day: 26 },
+        location: { id: 7, name: 'Prague' },
         recordings: {
           items: [
             {
@@ -660,11 +726,17 @@ describe('MCP read service', () => {
         },
       }),
     );
-    expect(result).toMatchObject({
+    // Exact shape, for the same reason as the event test above.
+    expect(result).toEqual({
       catalogId: 'catalog-a',
       recording: {
         audioHash: 'visible-recording',
         title: 'Recording title',
+        album: { id: 2, name: 'Album' },
+        durationHms: '00:42:00',
+        date: { year: 2026, month: 8, day: 26 },
+        location: { id: 7, name: 'Prague' },
+        recorder: { id: 3, name: 'Recorder' },
         webUrl:
           'https://besedy.example/catalog/catalog-a/recording/visible-recording',
       },
