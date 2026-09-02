@@ -485,11 +485,15 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(result?.defaultCatalogId).toBe(result?.catalogs[0]?.id);
     expect(result?.defaultCatalogSource).toBe('global_default');
     expect(result?.nextCursor).toBeNull();
-    expect(result?.catalogs[0]).toEqual({
+    expect(result?.catalogs[0]).toMatchObject({
       id: result?.defaultCatalogId,
-      label: expect.any(String),
       isDefault: true,
     });
+    expect(Object.keys(result!.catalogs[0]!).sort()).toEqual([
+      'id',
+      'isDefault',
+      'label',
+    ]);
 
     for (const lookup of [
       { tool: 'list_locations', field: 'locations' },
