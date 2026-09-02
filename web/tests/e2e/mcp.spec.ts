@@ -601,6 +601,24 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         ]),
       },
     });
+    // Exact key sets: the SDK forwards structuredContent unstripped, so an
+    // extra field would reach agents without failing schema validation.
+    const identity = identityBody.result!.structuredContent as {
+      account: Record<string, unknown>;
+      authorization: Record<string, unknown>;
+    };
+    expect(Object.keys(identity).sort()).toEqual(['account', 'authorization']);
+    expect(Object.keys(identity.account).sort()).toEqual([
+      'email',
+      'id',
+      'name',
+    ]);
+    expect(Object.keys(identity.authorization).sort()).toEqual([
+      'clientId',
+      'clientName',
+      'defaultCatalogId',
+      'grantedScopes',
+    ]);
 
     const catalogResponse = await request.post(MCP_RESOURCE, {
       headers: {
@@ -874,6 +892,21 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       date: event!.date,
       location: event!.location,
     });
+    expect(
+      Object.keys(recordingBody.result!.structuredContent.recording).sort(),
+    ).toEqual([
+      'album',
+      'audioHash',
+      'date',
+      'durationHms',
+      'location',
+      'recorder',
+      'title',
+      'webUrl',
+    ]);
+    expect(
+      Object.keys(recordingBody.result!.structuredContent.event!).sort(),
+    ).toEqual(['date', 'id', 'isPrimary', 'location', 'webUrl']);
     expect(
       recordingBody.result?.structuredContent.recording,
     ).not.toHaveProperty('ready');
