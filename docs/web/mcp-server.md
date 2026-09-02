@@ -337,16 +337,29 @@ just mcp-smoke
 ```
 
 It runs the MCP server against the disposable test database and mock OAuth
-provider, never production. The test signs in as the seeded catalog owner
-through the mock OAuth UI, accepts the MCP consent screen, exchanges an
-authorization code with PKCE, validates the audience-bound JWT, exercises
-stored-token issue and revocation, sends MCP 2026-07-28 `tools/list`, and calls
-all ten tools. It verifies default-catalog resolution, uniform MCP tool
-availability, listener-scoped metadata reads, complete transcript retrieval,
-and a grounded RAG result from a deterministic test-only ColBERT mock.
-Catalog-scoped calls do not supply `catalogId`, so the same run covers default
-selection. The test keeps its own `test-mcp-*` Compose project and volume, then
-removes both on exit. It resolves the test env file itself; inherited production
+provider, never production, and contains two tests.
+
+The first signs in as the seeded catalog owner through the mock OAuth UI,
+accepts the MCP consent screen, exchanges an authorization code with PKCE,
+validates the audience-bound JWT, exercises stored-token issue and revocation,
+sends MCP 2026-07-28 `tools/list`, and calls all ten tools. It verifies
+default-catalog resolution, uniform MCP tool availability, listener-scoped
+metadata reads, complete transcript retrieval, exact result key sets, and a
+grounded RAG result from a deterministic test-only ColBERT mock. Catalog-scoped
+calls do not supply `catalogId`, so the same run covers default selection.
+
+The second enforces the access matrix. It signs in as the seeded `LISTENER` and
+checks that only released events are listed, that the unreleased event, its
+recording, and its transcript all return `not_found` from every read and search
+tool, and that a released transcript and a grounded search result are still
+available, which asserts the documented listener transcript-access decision.
+It then signs in as the seeded account with no catalog grant and checks for an
+empty catalog list, `catalog_required` without a `catalogId`, and `not_found`
+with one. Each sign-in uses a fresh browser context so one user's session cookie
+cannot leak into the next.
+
+The suite keeps its own `test-mcp-*` Compose project and volume, then removes
+both on exit. It resolves the test env file itself; inherited production
 `APP_ENV`, config, and Compose project values are not used. Docker assigns
 run-specific loopback ports, so an existing test stack and concurrent smoke runs
 do not conflict. On a new machine, install the Playwright browser once with

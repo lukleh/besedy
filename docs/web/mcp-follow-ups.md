@@ -9,20 +9,6 @@ becomes permanent.
 
 ## Test coverage
 
-**Smoke suite covers one happy path.** `just mcp-smoke` signs in as the catalog
-owner and walks every tool once. Nothing end-to-end exercises a listener-only
-account, a hidden or unreleased event, a recording linked only to a hidden
-event, or an account with no catalog grants. The access matrix in
-[mcp-server.md](mcp-server.md) is therefore documented but not enforced by a
-test that reaches the database. Add a second smoke test per role and per hidden
-target; the seed data already contains an unreleased event and a listener user.
-
-**Unit tests use `toMatchObject` on several tool outputs.** The MCP SDK
-validates `structuredContent` against the zod output schema but forwards the
-original object unstripped, so an extra field would reach agents without any
-test failing. `get_recording`, `get_event`, and `who_am_i` unit tests should
-assert exact key sets, as the e2e now does for search results.
-
 **Retention and migration tests are string matches.** The tests for
 `mcp-usage-retention.sh` and the consent-revocation triggers assert substrings
 of SQL and never execute it. One integration test against the disposable test
@@ -60,9 +46,6 @@ builders, eight read functions, and the search serializer. Splitting into
 `cursors.ts`, `links.ts`, `events.ts`, `transcripts.ts`, and `search.ts` would
 cost nothing and make ownership obvious. Do it when the next feature touches
 the file rather than as a standalone change.
-
-**Lookup cursors require an exact id-and-name match.** Renaming a recorder or
-location between pages returns `invalid_cursor`. Match on id alone.
 
 **Event cursors reject years outside 1900 to 2100.** Fine for this archive;
 noted so nobody hunts for it later.
