@@ -1238,6 +1238,55 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       TEST_EVENTS.filter((event) => event.released).length,
     );
 
+    // Lookup tools must not leak metadata that only hidden content uses. The
+    // unreleased seeded event is the only event at its location, and the
+    // recording linked to it is one of two seeded recordings by its recorder.
+    const locations = await callMcpTool<{
+      locations: Array<{ name: string; eventCount: number }>;
+    }>(request, listener, 'list_locations', {});
+    expect(locations.result?.isError).not.toBe(true);
+    expect(
+      locations.result?.structuredContent.locations.map(
+        ({ name, eventCount }) => ({ name, eventCount }),
+      ),
+    ).toEqual([
+      {
+        name: releasedEvent.location,
+        eventCount: TEST_EVENTS.filter(
+          (event) =>
+            event.released && event.location === releasedEvent.location,
+        ).length,
+      },
+    ]);
+    expect(
+      locations.result?.structuredContent.locations.map(({ name }) => name),
+    ).not.toContain(unreleasedEvent.location);
+
+    const releasedHashes = new Set(
+      TEST_EVENTS.filter((event) => event.released).flatMap(
+        (event) => event.recordings,
+      ),
+    );
+    const expectedRecorderCounts = TEST_AUDIO_FILES.map((file, index) => ({
+      // Mirrors prisma/seed-test.ts: even indexes use Recorder A, odd Recorder B.
+      name: index % 2 === 0 ? 'Recorder A' : 'Recorder B',
+      visible: releasedHashes.has(file.shortHash),
+    })).reduce<Record<string, number>>((counts, { name, visible }) => {
+      if (visible) counts[name] = (counts[name] ?? 0) + 1;
+      return counts;
+    }, {});
+    const recorders = await callMcpTool<{
+      recorders: Array<{ name: string; recordingCount: number }>;
+    }>(request, listener, 'list_recorders', {});
+    expect(recorders.result?.isError).not.toBe(true);
+    expect(
+      Object.fromEntries(
+        recorders.result!.structuredContent.recorders.map(
+          ({ name, recordingCount }) => [name, recordingCount],
+        ),
+      ),
+    ).toEqual(expectedRecorderCounts);
+
     expectToolError(
       await callMcpTool(request, listener, 'get_event', {
         eventId: unreleasedEventId,
@@ -1302,7 +1351,8 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       recording: { audioHash: MCP_FIXTURE_RECORDING.hash },
     });
 
-    // An active account with no catalog grant: every tool, no data.
+    // An active account with no catalog grant: every tool is discoverable, no
+    // catalog-scoped tool returns data, with or without an explicit catalog.
     const noAccess = await authorizeMcpSession(
       await noAccessContext.newPage(),
       request,
@@ -1319,22 +1369,30 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       catalogs: [],
       defaultCatalogId: null,
     });
-    expectToolError(
-      await callMcpTool(request, noAccess, 'list_events', {}),
-      'catalog_required',
-    );
-    expectToolError(
-      await callMcpTool(request, noAccess, 'list_events', { catalogId }),
-      'not_found',
-    );
-    expectToolError(
-      await callMcpTool(request, noAccess, 'get_transcript', {
-        catalogId,
-        audioHash: MCP_FIXTURE_RECORDING.hash,
-        mode: 'page',
-      }),
-      'not_found',
-    );
+
+    const catalogScopedCalls: Array<[McpToolName, Record<string, unknown>]> = [
+      ['list_locations', {}],
+      ['list_recorders', {}],
+      ['list_events', {}],
+      ['get_event', { eventId: releasedEventId }],
+      ['get_recording', { audioHash: MCP_FIXTURE_RECORDING.hash }],
+      [
+        'get_transcript',
+        { audioHash: MCP_FIXTURE_RECORDING.hash, mode: 'page' },
+      ],
+      ['search_transcripts', { query: 'Besedy MCP deterministic search' }],
+      ['find_transcript_mentions', { query: 'deterministic evidence' }],
+    ];
+    for (const [tool, args] of catalogScopedCalls) {
+      expectToolError(
+        await callMcpTool(request, noAccess, tool, args),
+        'catalog_required',
+      );
+      expectToolError(
+        await callMcpTool(request, noAccess, tool, { ...args, catalogId }),
+        'not_found',
+      );
+    }
   } finally {
     await Promise.all(
       sessions.map((session) => removeLocalTestClient(session.clientId)),
