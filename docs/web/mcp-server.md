@@ -603,10 +603,13 @@ catalog, recording, and relevant time window remain aligned.
 | `segmentLimit`  | integer from 1 to 200           | `50` in `page` mode     | Page mode only: maximum whole segments                                     |
 | `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode | Page mode only: soft text-size target                                      |
 
-The server reads only its configured canonical transcript. It never falls back
-to another stored transcript when the canonical one is absent, and returns
-`transcript_not_found` instead. Transcript implementation identifiers are not
-part of the MCP contract.
+The server reads only its configured canonical transcript, the one selected by
+`RAG_BACKEND_KEY`. It looks in that key's transcript directory first and then in
+the legacy unsuffixed directory that Czech runs and older bundles use when the
+key carries a `@lang-…` suffix. It never falls back to another transcript
+backend when the canonical one is absent, and returns `transcript_not_found`
+instead. Transcript implementation identifiers are not part of the MCP
+contract.
 
 `mode: "full"` returns every segment overlapping the optional time window in a
 single response, up to a hard 200,000-character response ceiling. With no time

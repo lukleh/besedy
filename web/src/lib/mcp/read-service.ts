@@ -337,8 +337,18 @@ function eventAfterCursorWhere(
   return { OR: alternatives };
 }
 
-function getCanonicalTranscriptBackend(): TranscriptBackend {
-  return getRagBackendKey().replace(/@lang-[^/@]+$/, '');
+/**
+ * Transcript directories that count as the canonical transcript, in order.
+ *
+ * The transcription pipeline names its output component with the language
+ * suffix carried by `RAG_BACKEND_KEY` (for example `…@lang-auto`), so the exact
+ * key is tried first. Czech runs and older bundles keep the legacy unsuffixed
+ * directory, so that is the only fallback. No other backend is consulted.
+ */
+function getCanonicalTranscriptBackends(): TranscriptBackend[] {
+  const configured = getRagBackendKey();
+  const legacy = configured.replace(/@lang-[^/@]+$/, '');
+  return legacy === configured ? [configured] : [configured, legacy];
 }
 
 function serializeRecording(recording: CatalogRecordingReadModel) {
@@ -695,8 +705,11 @@ export async function getMcpTranscript(
   }
 
   const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const backend = getCanonicalTranscriptBackend();
-  const transcript = await loadTranscript(transcriptsPath, audioHash, backend);
+  let transcript: Awaited<ReturnType<typeof loadTranscript>> = null;
+  for (const backend of getCanonicalTranscriptBackends()) {
+    transcript = await loadTranscript(transcriptsPath, audioHash, backend);
+    if (transcript) break;
+  }
   if (!transcript) {
     throw new McpReadError('transcript_not_found', 'Transcript not found');
   }
@@ -947,7 +960,7 @@ async function serializeMcpSearchResults(
   const audioHashes = [
     ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const canonicalBackend = getCanonicalTranscriptBackend();
+  const canonicalBackends = getCanonicalTranscriptBackends();
   const transcriptsPath = resolveTranscriptsPath(catalogId);
   const canonicalTranscriptAvailability = new Map(
     await mapWithConcurrency(
@@ -960,7 +973,9 @@ async function serializeMcpSearchResults(
         );
         return [
           audioHash,
-          available.backends.includes(canonicalBackend),
+          canonicalBackends.some((backend) =>
+            available.backends.includes(backend),
+          ),
         ] as const;
       },
     ),

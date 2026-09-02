@@ -727,7 +727,21 @@ describe('MCP read service', () => {
     expect(getAvailableTranscripts).not.toHaveBeenCalled();
   });
 
-  it('reads only the configured canonical transcript and does not fall back', async () => {
+  it('reads the configured transcript directory before its legacy unsuffixed path', async () => {
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', {
+      mode: 'full',
+    });
+
+    expect(result.segments.totalMatching).toBe(4);
+    expect(loadTranscript).toHaveBeenCalledTimes(1);
+    expect(loadTranscript).toHaveBeenCalledWith(
+      '/transcripts/catalog-a',
+      'visible-recording',
+      'whisperx/model@lang-auto',
+    );
+  });
+
+  it('falls back only to the legacy unsuffixed canonical directory', async () => {
     vi.mocked(getAvailableTranscripts).mockResolvedValue({
       hash: 'visible-recording',
       backends: ['other/model'],
@@ -741,7 +755,15 @@ describe('MCP read service', () => {
       retryable: false,
     });
 
-    expect(loadTranscript).toHaveBeenCalledWith(
+    expect(loadTranscript).toHaveBeenCalledTimes(2);
+    expect(loadTranscript).toHaveBeenNthCalledWith(
+      1,
+      '/transcripts/catalog-a',
+      'visible-recording',
+      'whisperx/model@lang-auto',
+    );
+    expect(loadTranscript).toHaveBeenNthCalledWith(
+      2,
       '/transcripts/catalog-a',
       'visible-recording',
       'whisperx/model',
@@ -983,6 +1005,22 @@ describe('MCP read service', () => {
         },
       ],
     });
+  });
+
+  it('offers a transcript handoff when only the suffixed canonical directory exists', async () => {
+    vi.mocked(getAvailableTranscripts).mockResolvedValue({
+      hash: 'visible-recording',
+      backends: ['whisperx/model@lang-auto'],
+    });
+
+    const result = await searchMcpTranscripts('catalog-a', {
+      query: 'search phrase',
+      limit: 10,
+      contextChunks: 1,
+      maxPerRecording: 2,
+    });
+
+    expect(result.results[0]?.transcriptRequest).not.toBeNull();
   });
 
   it('does not offer a transcript handoff when the canonical transcript is absent', async () => {
