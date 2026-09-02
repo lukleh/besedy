@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
 import { TEST_AUDIO_FILES, TEST_EVENTS } from '../../prisma/test-data';
@@ -95,6 +96,158 @@ async function removeLocalTestClient(clientId: string): Promise<void> {
   await pool.query(`DELETE FROM "oauthClient" WHERE "clientId" = $1`, [
     clientId,
   ]);
+}
+
+type McpToolName =
+  | 'who_am_i'
+  | 'list_catalogs'
+  | 'list_locations'
+  | 'list_recorders'
+  | 'list_events'
+  | 'get_event'
+  | 'get_recording'
+  | 'get_transcript'
+  | 'search_transcripts'
+  | 'find_transcript_mentions';
+
+const MCP_ENVELOPE = {
+  'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
+  'io.modelcontextprotocol/clientInfo': {
+    name: 'besedy-e2e',
+    version: '1.0.0',
+  },
+  'io.modelcontextprotocol/clientCapabilities': {},
+};
+
+interface McpToolError {
+  error: { code: string; message: string; retryable: boolean };
+}
+
+interface McpSession {
+  clientId: string;
+  accessToken: string;
+}
+
+/**
+ * Registers a DCR client, signs in through the mock OAuth provider as the
+ * given seeded user, accepts consent, and exchanges the code with PKCE. Each
+ * call must use a fresh browser context so the previous user's Besedy session
+ * cookie does not short-circuit the sign-in step.
+ */
+async function authorizeMcpSession(
+  page: Page,
+  request: APIRequestContext,
+  mockUserLabel: string,
+): Promise<McpSession> {
+  const redirectUri = `${BASE_URL}/auth/mcp-signin/test-callback`;
+  const verifier = randomBytes(48).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const state = randomBytes(16).toString('base64url');
+
+  const registrationResponse = await request.post(
+    `${BASE_URL}/api/auth/oauth2/register`,
+    {
+      headers: { Origin: BASE_URL, 'User-Agent': 'besedy-mcp-e2e/1.0' },
+      data: {
+        application_type: 'native',
+        client_name: `Besedy MCP visibility E2E client (${mockUserLabel})`,
+        grant_types: ['authorization_code'],
+        redirect_uris: [redirectUri],
+        response_types: ['code'],
+        scope: MCP_REQUESTED_SCOPES,
+        token_endpoint_auth_method: 'none',
+      },
+    },
+  );
+  const registrationText = await registrationResponse.text();
+  expect(registrationResponse.status(), registrationText).toBe(201);
+  const clientId = (JSON.parse(registrationText) as ClientRegistrationResponse)
+    .client_id;
+  if (!clientId) throw new Error('DCR response is missing client_id');
+
+  const authorizeUrl = new URL(`${BASE_URL}/api/auth/oauth2/authorize`);
+  authorizeUrl.search = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: MCP_REQUESTED_SCOPES,
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    resource: MCP_RESOURCE,
+  }).toString();
+  await page.goto(authorizeUrl.toString());
+  await page.getByRole('button', { name: 'Sign in with Mock OAuth' }).click();
+  await page.getByRole('button', { name: mockUserLabel, exact: true }).click();
+  await page.getByRole('button', { name: 'Allow' }).click();
+  await page.waitForURL(`${redirectUri}**`);
+
+  const callbackUrl = new URL(page.url());
+  expect(callbackUrl.searchParams.get('state')).toBe(state);
+  expect(callbackUrl.searchParams.get('error')).toBeNull();
+  const code = callbackUrl.searchParams.get('code');
+  expect(code).toBeTruthy();
+
+  const tokenResponse = await request.post(
+    `${BASE_URL}/api/auth/oauth2/token`,
+    {
+      headers: { Origin: BASE_URL },
+      form: {
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        code: code!,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+        resource: MCP_RESOURCE,
+      },
+    },
+  );
+  const tokenText = await tokenResponse.text();
+  expect(tokenResponse.ok(), tokenText).toBe(true);
+  const token = JSON.parse(tokenText) as TokenResponse;
+  expect(token.access_token).toBeTruthy();
+  return { clientId, accessToken: token.access_token! };
+}
+
+let mcpRequestId = 1_000;
+
+async function callMcpTool<T>(
+  request: APIRequestContext,
+  session: McpSession,
+  name: McpToolName,
+  args: Record<string, unknown>,
+): Promise<McpResponse<McpToolResult<T>>> {
+  mcpRequestId += 1;
+  const response = await request.post(MCP_RESOURCE, {
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': name,
+    },
+    data: {
+      jsonrpc: '2.0',
+      id: mcpRequestId,
+      method: 'tools/call',
+      params: { name, arguments: args, _meta: MCP_ENVELOPE },
+    },
+  });
+  const text = await response.text();
+  expect(response.ok(), `${name}: ${text}`).toBe(true);
+  return JSON.parse(text) as McpResponse<McpToolResult<T>>;
+}
+
+function expectToolError(
+  body: McpResponse<McpToolResult<unknown>>,
+  code: string,
+): void {
+  expect(body.error).toBeUndefined();
+  expect(body.result?.isError, JSON.stringify(body)).toBe(true);
+  expect(
+    (body.result?.structuredContent as McpToolError | undefined)?.error,
+  ).toMatchObject({ code, retryable: false });
 }
 
 test.afterAll(async () => {
@@ -1019,5 +1172,174 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     });
   } finally {
     await removeLocalTestClient(clientId);
+  }
+});
+
+test('@smoke MCP enforces listener visibility and hidden-target semantics', async ({
+  browser,
+  request,
+}) => {
+  const releasedEvent = TEST_EVENTS.find(
+    (event) =>
+      event.released &&
+      event.recordings.includes(MCP_FIXTURE_RECORDING.shortHash),
+  )!;
+  const unreleasedEvent = TEST_EVENTS.find((event) => !event.released)!;
+  const hiddenRecording = TEST_AUDIO_FILES.find(
+    (file) => file.shortHash === unreleasedEvent.recordings[0],
+  )!;
+  const eventIds = await pool.query<{ id: number; title: string }>(
+    `SELECT "id", "title" FROM "catalog_event" WHERE "title" = ANY($1::text[])`,
+    [[releasedEvent.title, unreleasedEvent.title]],
+  );
+  const releasedEventId = eventIds.rows.find(
+    (row) => row.title === releasedEvent.title,
+  )?.id;
+  const unreleasedEventId = eventIds.rows.find(
+    (row) => row.title === unreleasedEvent.title,
+  )?.id;
+  expect(releasedEventId).toBeDefined();
+  expect(unreleasedEventId).toBeDefined();
+
+  const listenerContext = await browser.newContext();
+  const noAccessContext = await browser.newContext();
+  const sessions: McpSession[] = [];
+  try {
+    // A LISTENER grant: every tool, released content only, transcripts allowed.
+    const listener = await authorizeMcpSession(
+      await listenerContext.newPage(),
+      request,
+      'Listener',
+    );
+    sessions.push(listener);
+
+    const catalogs = await callMcpTool<{
+      catalogs: Array<{ id: string; isDefault: boolean }>;
+      defaultCatalogId: string | null;
+    }>(request, listener, 'list_catalogs', {});
+    expect(catalogs.result?.isError).not.toBe(true);
+    expect(catalogs.result?.structuredContent.catalogs).toHaveLength(1);
+    const catalogId = catalogs.result!.structuredContent.defaultCatalogId!;
+    expect(catalogId).toBe(catalogs.result!.structuredContent.catalogs[0]!.id);
+
+    const events = await callMcpTool<{ events: McpListedEvent[] }>(
+      request,
+      listener,
+      'list_events',
+      { limit: 100 },
+    );
+    expect(events.result?.isError).not.toBe(true);
+    const listedIds = events.result!.structuredContent.events.map(
+      (event) => event.id,
+    );
+    expect(listedIds).toContain(releasedEventId);
+    expect(listedIds).not.toContain(unreleasedEventId);
+    expect(listedIds).toHaveLength(
+      TEST_EVENTS.filter((event) => event.released).length,
+    );
+
+    expectToolError(
+      await callMcpTool(request, listener, 'get_event', {
+        eventId: unreleasedEventId,
+      }),
+      'not_found',
+    );
+    expectToolError(
+      await callMcpTool(request, listener, 'get_recording', {
+        audioHash: hiddenRecording.hash,
+      }),
+      'not_found',
+    );
+    expectToolError(
+      await callMcpTool(request, listener, 'get_transcript', {
+        audioHash: hiddenRecording.hash,
+        mode: 'page',
+      }),
+      'not_found',
+    );
+    expectToolError(
+      await callMcpTool(request, listener, 'search_transcripts', {
+        query: 'Besedy MCP deterministic search',
+        filters: { eventIds: [unreleasedEventId] },
+      }),
+      'not_found',
+    );
+    expectToolError(
+      await callMcpTool(request, listener, 'find_transcript_mentions', {
+        query: 'deterministic evidence',
+        filters: { audioHashes: [hiddenRecording.hash] },
+      }),
+      'not_found',
+    );
+
+    // Listener transcript access through MCP is a documented decision, not a
+    // gap: see "Design decision: listener transcript access" in
+    // docs/web/mcp-server.md.
+    const transcript = await callMcpTool<{
+      audioHash: string;
+      segments: { items: unknown[]; totalMatching: number };
+    }>(request, listener, 'get_transcript', {
+      audioHash: MCP_FIXTURE_RECORDING.hash,
+      mode: 'page',
+    });
+    expect(transcript.result?.isError, JSON.stringify(transcript)).not.toBe(
+      true,
+    );
+    expect(transcript.result?.structuredContent.segments.totalMatching).toBe(2);
+
+    const search = await callMcpTool<{
+      results: Array<{
+        event: { id: number };
+        recording: { audioHash: string };
+      }>;
+    }>(request, listener, 'search_transcripts', {
+      query: 'Besedy MCP deterministic search',
+      filters: { eventIds: [releasedEventId] },
+    });
+    expect(search.result?.isError, JSON.stringify(search)).not.toBe(true);
+    expect(search.result?.structuredContent.results[0]).toMatchObject({
+      event: { id: releasedEventId },
+      recording: { audioHash: MCP_FIXTURE_RECORDING.hash },
+    });
+
+    // An active account with no catalog grant: every tool, no data.
+    const noAccess = await authorizeMcpSession(
+      await noAccessContext.newPage(),
+      request,
+      'No Access',
+    );
+    sessions.push(noAccess);
+
+    const emptyCatalogs = await callMcpTool<{
+      catalogs: unknown[];
+      defaultCatalogId: string | null;
+    }>(request, noAccess, 'list_catalogs', {});
+    expect(emptyCatalogs.result?.isError).not.toBe(true);
+    expect(emptyCatalogs.result?.structuredContent).toMatchObject({
+      catalogs: [],
+      defaultCatalogId: null,
+    });
+    expectToolError(
+      await callMcpTool(request, noAccess, 'list_events', {}),
+      'catalog_required',
+    );
+    expectToolError(
+      await callMcpTool(request, noAccess, 'list_events', { catalogId }),
+      'not_found',
+    );
+    expectToolError(
+      await callMcpTool(request, noAccess, 'get_transcript', {
+        catalogId,
+        audioHash: MCP_FIXTURE_RECORDING.hash,
+        mode: 'page',
+      }),
+      'not_found',
+    );
+  } finally {
+    await Promise.all(
+      sessions.map((session) => removeLocalTestClient(session.clientId)),
+    );
+    await listenerContext.close();
+    await noAccessContext.close();
   }
 });
