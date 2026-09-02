@@ -171,8 +171,12 @@ Example return value:
 }
 ```
 
-Pass `nextCursor` unchanged with the same catalog and query to continue. A
-malformed or mismatched cursor returns `invalid_cursor`.
+Pass `nextCursor` unchanged with the same catalog and query to continue. The
+cursor is a sort boundary, not a reference to a specific item: the next page is
+every item that sorts after the last returned name and ID in the current list.
+An item renamed between pages is never skipped, though it can appear again when
+its new name sorts after the boundary. A malformed or mismatched cursor returns
+`invalid_cursor`.
 
 ## `list_recorders`
 
@@ -202,8 +206,12 @@ Example return value:
 }
 ```
 
-Pass `nextCursor` unchanged with the same catalog and query to continue. A
-malformed or mismatched cursor returns `invalid_cursor`.
+Pass `nextCursor` unchanged with the same catalog and query to continue. The
+cursor is a sort boundary, not a reference to a specific item: the next page is
+every item that sorts after the last returned name and ID in the current list.
+An item renamed between pages is never skipped, though it can appear again when
+its new name sorts after the boundary. A malformed or mismatched cursor returns
+`invalid_cursor`.
 
 ## `list_events`
 
