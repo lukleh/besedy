@@ -593,6 +593,9 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcript language');
+    // Corpus language is data, not code: the instructions must stay neutral.
+    expect(BESEDY_MCP_INSTRUCTIONS).not.toMatch(/czech|english|german/i);
 
     const body = await invokeMcp('server/discover');
     expect(body.error).toBeUndefined();

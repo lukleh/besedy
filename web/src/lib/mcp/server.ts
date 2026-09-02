@@ -19,7 +19,7 @@ export type { BesedyMcpRequestContext } from '@/lib/mcp/tools';
 export const BESEDY_MCP_INSTRUCTIONS = [
   'Besedy is a read-only multilingual corpus of released events and published recordings linked to them. Base claims about its content on returned Besedy evidence.',
   'Tool descriptions and schemas define individual calls. Use search_transcripts for meaning and find_transcript_mentions for actual wording.',
-  'The current corpus may be predominantly Czech. Semantic queries can follow the user language, but literal searches must use wording and language expected in the transcript; translate query terms when needed.',
+  'Transcripts may be in a different language than the user question. Semantic search tolerates that; literal search does not. Before a literal search, check the transcript language returned by get_transcript and translate query terms into it.',
   'Meaning-based search is ranked and non-exhaustive. Literal totalMatches counts matching authorized indexed chunks under the selected filters and match mode before result caps; it is not a distinct-event count.',
   'Verify important search evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on it when that request is unavailable.',
   'Search results include authoritative event IDs, dates, and locations. Group results by event ID because recordings from the same event are variants, not independent evidence; support recurring themes with distinct events.',

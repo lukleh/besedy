@@ -25,10 +25,10 @@ those configuration or authentication steps.
 
 Follow the live MCP guidance for tool choice, catalog resolution, search scope,
 evidence verification, and citations. Semantic search can use the user's
-language. For literal wording searches, use the language expected in the source
-transcript (often Czech in the current corpus), translating query terms when
-needed. If relevant material is not found, say so without turning missing
-evidence into a stronger claim than the MCP results support.
+language. For literal wording searches, use the language of the transcript,
+which `get_transcript` reports, and translate query terms into it. If relevant
+material is not found, say so without turning missing evidence into a stronger
+claim than the MCP results support.
 
 ## Explore the material
 
