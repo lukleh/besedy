@@ -873,7 +873,6 @@ describe('MCP personalized tool surface', () => {
       catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
       recordingWebUrl: 'https://besedy.example/recording',
-      durationSec: 600,
       segments: {
         items: [
           {

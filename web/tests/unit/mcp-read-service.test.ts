@@ -766,7 +766,6 @@ describe('MCP read service', () => {
       audioHash: 'visible-recording',
       recordingWebUrl:
         'https://besedy.example/catalog/catalog-a/recording/visible-recording',
-      durationSec: 20,
       segments: {
         items: [
           {

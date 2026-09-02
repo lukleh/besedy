@@ -630,7 +630,7 @@ segment may exceed `maxTextChars`. Segment items include their absolute
 `segmentIndex`, text, timestamps, optional speaker and source ID, and a
 timestamped `webUrl`.
 
-The response reports duration and the unbounded `recordingWebUrl`.
+The response reports the unbounded `recordingWebUrl`.
 Each segment link includes both `seek` and `end` timestamps.
 The player stops once at the linked end; pressing play again continues through
 the recording. The `segments` object contains the items and `totalMatching`.
@@ -645,7 +645,6 @@ Example full-mode return value:
   "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "recordingWebUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "durationSec": 12.5,
   "segments": {
     "items": [
       {
