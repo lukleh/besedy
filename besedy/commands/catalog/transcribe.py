@@ -44,6 +44,7 @@ class TranscribeRequest:
     no_symlink: bool = False
     overwrite: bool = False
     continue_on_error: bool = False
+    verbose_skips: bool = False
     limit: int | None = None
     hash_filter: str | None = None
     workflows: list[str] | None = None
@@ -70,6 +71,7 @@ class TranscribeRequest:
             no_symlink=bool(getattr(args, "no_symlink", False)),
             overwrite=bool(getattr(args, "overwrite", False)),
             continue_on_error=bool(getattr(args, "continue_on_error", False)),
+            verbose_skips=bool(getattr(args, "verbose_skips", False)),
             limit=getattr(args, "limit", None),
             hash_filter=getattr(args, "hash_filter", None),
             workflows=list(workflows) if workflows is not None else None,
@@ -138,6 +140,11 @@ Example:
         "--continue-on-error",
         action="store_true",
         help="Continue processing remaining files if a workflow fails on some files.",
+    )
+    parser.add_argument(
+        "--verbose-skips",
+        action="store_true",
+        help="List every already-complete row in the summary instead of a single count.",
     )
     parser.add_argument(
         "--limit",
@@ -440,7 +447,7 @@ def handle_transcribe(
 
     if not filtered_rows:
         print("No audio files require transcription.")
-        print_workflow_summary([], pre_skipped, [])
+        print_workflow_summary([], pre_skipped, [], verbose_skips=request.verbose_skips)
         return 1 if has_error_skips(pre_skipped) else 0
 
     prepared, validation_errors = validate_staged_audio(filtered_rows)
@@ -455,7 +462,7 @@ def handle_transcribe(
 
     if not prepared:
         print("No staged audio files passed validation; nothing to do.")
-        print_workflow_summary(prepared, skipped_total, [])
+        print_workflow_summary(prepared, skipped_total, [], verbose_skips=request.verbose_skips)
         return 1 if has_error_skips(skipped_total) else 0
 
     transcription_jobs: list[TranscriptionJob] = []
@@ -491,11 +498,11 @@ def handle_transcribe(
 
     if not workflows:
         print("No workflows to run.")
-        print_workflow_summary(prepared, skipped_total, [])
+        print_workflow_summary(prepared, skipped_total, [], verbose_skips=request.verbose_skips)
         return 1 if has_error_skips(skipped_total) else 0
 
     base_env = prepare_workflow_env()
     failures = launch_workflows(workflows, base_env)
 
-    print_workflow_summary(prepared, skipped_total, failures)
+    print_workflow_summary(prepared, skipped_total, failures, verbose_skips=request.verbose_skips)
     return 0 if not failures and not has_error_skips(skipped_total) else 1

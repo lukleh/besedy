@@ -207,6 +207,14 @@ Example:
         help="Continue to next pipeline step even if a step fails.",
     )
     parser.add_argument(
+        "--verbose-skips",
+        action="store_true",
+        help=(
+            "List every already-complete row in the transcribe/diarize summaries "
+            "instead of a single count."
+        ),
+    )
+    parser.add_argument(
         "--skip-derived",
         action="store_true",
         help="Skip post-processing: subtitle export and speaker clustering. Run these separately later if needed.",
@@ -327,6 +335,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
     continue_on_error = args.continue_on_error
     skip_derived = args.skip_derived
     no_symlink = bool(getattr(args, "no_symlink", False))
+    verbose_skips = bool(getattr(args, "verbose_skips", False))
 
     timestamp = extract_timestamp_from_catalog(csv_path.resolve())
     if not timestamp:
@@ -499,6 +508,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
             no_symlink=no_symlink,
             overwrite=False,
             continue_on_error=True,
+            verbose_skips=verbose_skips,
             limit=None,
             hash_filter=None,
             workflows=[workflow.workflow_id],
@@ -568,6 +578,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
             no_symlink=no_symlink,
             overwrite=False,
             continue_on_error=True,
+            verbose_skips=verbose_skips,
             limit=None,
             workflows=[workflow],
             pyannote_parallel=None,

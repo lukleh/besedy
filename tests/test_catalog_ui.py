@@ -93,3 +93,74 @@ class TestPrintWorkflowSummary:
         captured = capsys.readouterr()
 
         assert "All workflows completed successfully." in captured.out
+
+    def test_collapses_resume_skips_into_a_count(self, capsys):
+        """Re-runs report already-complete rows as one line, not one line per row."""
+
+        print_workflow_summary(
+            [],
+            [
+                SkippedEntry(
+                    sha256=char * 64,
+                    source=Path(f"/tmp/{char}.wav"),
+                    reason=ALREADY_EXISTS_REASON,
+                )
+                for char in "abc"
+            ],
+            [],
+        )
+
+        captured = capsys.readouterr()
+
+        assert f"3 already complete ({ALREADY_EXISTS_REASON})" in captured.out
+        assert "--verbose-skips" in captured.out
+        assert "a" * 64 not in captured.out
+
+    def test_verbose_skips_lists_every_resume_skip(self, capsys):
+        """The opt-in flag restores the full per-row listing."""
+
+        print_workflow_summary(
+            [],
+            [
+                SkippedEntry(
+                    sha256=char * 64,
+                    source=Path(f"/tmp/{char}.wav"),
+                    reason=ALREADY_EXISTS_REASON,
+                )
+                for char in "abc"
+            ],
+            [],
+            verbose_skips=True,
+        )
+
+        captured = capsys.readouterr()
+
+        assert "already complete" not in captured.out
+        for char in "abc":
+            assert f"{char * 64}: {ALREADY_EXISTS_REASON}" in captured.out
+
+    def test_error_skips_stay_listed_next_to_the_count(self, capsys):
+        """Collapsing resume skips must not hide real errors."""
+
+        print_workflow_summary(
+            [],
+            [
+                SkippedEntry(
+                    sha256="a" * 64,
+                    source=Path("/tmp/source.wav"),
+                    reason=ALREADY_EXISTS_REASON,
+                ),
+                SkippedEntry(
+                    sha256="b" * 64,
+                    source=Path("/tmp/missing.wav"),
+                    reason="file not found",
+                ),
+            ],
+            [],
+        )
+
+        captured = capsys.readouterr()
+
+        assert "1 already complete" in captured.out
+        assert f"{'b' * 64}: file not found" in captured.out
+        assert "a" * 64 not in captured.out

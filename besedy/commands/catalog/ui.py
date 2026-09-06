@@ -93,6 +93,8 @@ def print_workflow_summary(
     staged: Sequence[PreparedEntry],
     skipped: Sequence[SkippedEntry],
     workflow_failures: Sequence[tuple[str, int]],
+    *,
+    verbose_skips: bool = False,
 ) -> None:
     """Summarise workflow outcomes without implying work ran when it didn't."""
 
@@ -110,8 +112,21 @@ def print_workflow_summary(
         )
         print(f"  Reused: {reused}")
     if skipped:
+        # Resume no-ops are the common case on re-runs and would otherwise emit one
+        # line per catalog row, per workflow. Collapse them unless asked for detail.
+        resume_count = sum(1 for entry in skipped if entry.reason == ALREADY_EXISTS_REASON)
+        listed = (
+            skipped
+            if verbose_skips
+            else [entry for entry in skipped if entry.reason != ALREADY_EXISTS_REASON]
+        )
         print("Skipped rows:")
-        for entry in skipped:
+        if resume_count and not verbose_skips:
+            print(
+                f"  - {resume_count} already complete "
+                f"({ALREADY_EXISTS_REASON}); pass --verbose-skips to list them"
+            )
+        for entry in listed:
             print(f"  - {entry.sha256}: {entry.reason} ({entry.source})")
     if workflow_failures:
         print("Workflow failures:")
