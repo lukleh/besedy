@@ -13,6 +13,8 @@ PYLATE_QUERY_PREFIX = "[QueryMarker]"
 PYLATE_DOCUMENT_PREFIX = "[DocumentMarker]"
 PYLATE_ATTEND_TO_EXPANSION_TOKENS = True
 
+_remote_code_auto_trust_applied = False
+
 
 def normalize_plaid_backend(raw_value: str | None) -> str:
     normalized = (raw_value or DEFAULT_PYLATE_PLAID_BACKEND).strip().lower()
@@ -51,12 +53,38 @@ def get_engine_metadata(
     }
 
 
+def ensure_remote_code_auto_trust() -> None:
+    """Auto-approve nested remote-code repos pulled in by a trusted model.
+
+    transformers only threads ``trust_remote_code=True`` through the
+    top-level ``from_pretrained`` call. jina-colbert-v2's custom modeling
+    code itself loads a *second*, separate repo
+    (jinaai/xlm-roberta-flash-implementation) for its flash-attention
+    backbone, and that nested load re-prompts via ``input()`` since the
+    trust flag isn't forwarded to it. We already trust the top-level model
+    explicitly here, so approve the nested load too instead of blocking on
+    stdin inside the non-interactive pipeline worker.
+    """
+    global _remote_code_auto_trust_applied
+    if _remote_code_auto_trust_applied:
+        return
+
+    import transformers.dynamic_module_utils as dynamic_module_utils
+
+    def _auto_trust(*_args, **_kwargs):
+        return True
+
+    dynamic_module_utils.resolve_trust_remote_code = _auto_trust
+    _remote_code_auto_trust_applied = True
+
+
 def build_pylate_model(
     *,
     colbert_model: str,
     device: str | None = None,
     doc_maxlen: int | None = None,
 ):
+    ensure_remote_code_auto_trust()
     from pylate import models
 
     kwargs: dict[str, Any] = {

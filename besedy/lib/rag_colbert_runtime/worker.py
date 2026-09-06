@@ -249,6 +249,7 @@ def _audit_tokens(*, texts: Iterable[str], colbert_model: str, doc_maxlen: int) 
     import numpy as np
     from transformers import AutoTokenizer
 
+    rag_pylate.ensure_remote_code_auto_trust()
     tokenizer = AutoTokenizer.from_pretrained(
         colbert_model, use_fast=True, trust_remote_code=True
     )
