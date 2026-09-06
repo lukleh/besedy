@@ -2345,7 +2345,7 @@ wheels = [
 [[package]]
 name = "rlmbenchy"
 version = "0.1.0"
-source = { git = "https://github.com/lukleh/rlmbenchy.git#7458db2f46081b3972bac789db684056389769c7" }
+source = { git = "https://github.com/lukleh/rlmbenchy.git#2018dba5f0f28c3e0443e51dc76041ab78dd7cc7" }
 dependencies = [
     { name = "datasets" },
     { name = "dspy" },
