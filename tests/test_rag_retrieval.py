@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 import besedy.lib.rag_retrieval as rag_retrieval
+import besedy.lib.rag_retrieval_chunking as rag_retrieval_chunking
 from besedy.lib.rag_retrieval import (
     SegmentUnit,
     chunk_segments,
@@ -80,6 +83,33 @@ def test_chunk_segments_overlap_strategy() -> None:
     # 50-token overlap should step back by at least one segment (80 tokens).
     assert second.start_index == 2
     assert second.start_index < first.end_index
+
+
+def test_load_chunk_tokenizer_refuses_remote_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The host-side chunk tokenizer must never block on the remote-code prompt.
+
+    Models like jinaai/jina-colbert-v2 carry custom code in their config; with
+    ``trust_remote_code`` unset transformers asks on stdin whether to run it and
+    hangs the pipeline when run from a terminal. Chunk sizing only needs the
+    vocabulary, so the loader refuses remote code explicitly.
+    """
+
+    calls: list[tuple[tuple, dict]] = []
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            calls.append((args, kwargs))
+            return "tokenizer"
+
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.AutoTokenizer = FakeAutoTokenizer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    loaded = rag_retrieval_chunking._load_chunk_tokenizer.__wrapped__("jinaai/jina-colbert-v2")
+
+    assert loaded == "tokenizer"
+    assert calls == [(("jinaai/jina-colbert-v2",), {"use_fast": True, "trust_remote_code": False})]
 
 
 def test_measure_chunk_texts_reports_target_band() -> None:

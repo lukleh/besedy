@@ -247,9 +247,6 @@ def _audit_tokens(*, texts: Iterable[str], colbert_model: str, doc_maxlen: int) 
         }
 
     import numpy as np
-
-    # Patch before importing the auto classes: they bind the resolver by value.
-    rag_pylate.ensure_remote_code_auto_trust()
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(
