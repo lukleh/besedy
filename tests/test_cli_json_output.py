@@ -153,6 +153,14 @@ def test_catalog_check_json_includes_colbert_bundle_status(
         ),
     )
     monkeypatch.setattr(
+        "besedy.commands.catalog.check.require_colbert_hash_coverage",
+        lambda *_args, **_kwargs: (
+            True,
+            None,
+            {backend: {"total": 2, "expected": 2, "missing": 0, "stale": 0}},
+        ),
+    )
+    monkeypatch.setattr(
         "besedy.commands.catalog.check.expected_asr_backends_from_code",
         lambda: [backend],
     )
@@ -183,6 +191,7 @@ def test_catalog_check_json_includes_colbert_bundle_status(
     assert payload["name"] == "check"
     assert payload["status"] == "success"
     assert payload["result"]["pipeline_artifacts"]["colbert_bundle"]["ok"] is True
+    assert payload["result"]["derived_directories"]["colbert_index"]["ok"] is True
     assert "rag_index" not in payload["result"]["derived_directories"]
 
 

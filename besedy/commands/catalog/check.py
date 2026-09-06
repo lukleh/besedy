@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+import sqlite3
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from rich.console import Console
@@ -26,6 +27,7 @@ from besedy.core.paths import (
     resolve_transcripts_parent,
     resolve_transcripts_root,
 )
+from besedy.core.paths_transcripts import parse_transcript_components
 from besedy.lib.analysis.coverage import (
     expected_asr_backends_from_code,
     expected_diarization_backends_from_code,
@@ -39,7 +41,7 @@ from besedy.lib.catalog.validator import (
     load_catalog_csv,
     validate_catalog,
 )
-from besedy.lib.rag_bundle import resolve_colbert_scope_bundle
+from besedy.lib.rag_bundle import ResolvedColbertBundle, resolve_colbert_scope_bundle
 from besedy.lib.rag_colbert import resolve_default_colbert_model
 from besedy.lib.rag_colbert_source_state import read_source_state
 from besedy.lib.workflow.config import WorkflowConfig, get_transcription_workflows
@@ -108,45 +110,109 @@ def _workflow_has_transcripts(transcripts_root: Path, workflow: WorkflowConfig) 
     return any(path.is_file() for path in backend_dir.rglob("transcript.json"))
 
 
-def require_colbert_bundles(
+def _transcript_hashes_for_backend(transcripts_root: Path, backend_key: str) -> set[str]:
+    """Return the lowercase audio hashes that have a transcript for one backend."""
+
+    workflow_dir, model_component = backend_key.split("/", maxsplit=1)
+    backend_dir = transcripts_root / workflow_dir / model_component
+    if not backend_dir.exists():
+        return set()
+
+    hashes: set[str] = set()
+    for path in backend_dir.rglob("transcript.json"):
+        if not path.is_file():
+            continue
+        components = parse_transcript_components(path, transcripts_root)
+        if components:
+            hashes.add(components[2].lower())
+    return hashes
+
+
+@dataclass(frozen=True)
+class _ColbertCheckScope:
+    """Inputs shared by the ColBERT bundle and hash coverage checks."""
+
+    transcripts_root: Path
+    run_id: str
+    colbert_model: str
+    expected_backends: list[str]
+
+
+def _resolve_colbert_check_scope(
     transcripts_root: Path,
-) -> tuple[bool | None, str | None, dict | None]:
-    """Ensure live-search ColBERT bundles exist for transcription backends with transcripts."""
+    check_label: str,
+) -> tuple[_ColbertCheckScope | None, str | None]:
+    """Resolve run ID, ColBERT model, and backends with transcripts.
+
+    Returns (scope, skip_message) with exactly one of the two set.
+    """
 
     transcripts_resolved = (
         transcripts_root.resolve() if transcripts_root.is_symlink() else transcripts_root
     )
     run_id = extract_run_id_from_transcripts_root(transcripts_resolved)
     if not run_id:
-        return None, "Unable to determine transcript run ID; skipping ColBERT bundle check.", None
+        return (
+            None,
+            f"Unable to determine transcript run ID; skipping ColBERT {check_label} check.",
+        )
 
-    colbert_model = resolve_default_colbert_model()
-    candidate_workflows = get_transcription_workflows(expected_only=True)
     expected_backends = [
         _rag_backend_key_for_workflow(workflow)
-        for workflow in candidate_workflows
+        for workflow in get_transcription_workflows(expected_only=True)
         if _workflow_has_transcripts(transcripts_resolved, workflow)
     ]
     if not expected_backends:
         return (
             None,
-            "No transcription backends with transcripts found; skipping ColBERT bundle check.",
-            None,
+            "No transcription backends with transcripts found; "
+            f"skipping ColBERT {check_label} check.",
         )
+
+    return (
+        _ColbertCheckScope(
+            transcripts_root=transcripts_resolved,
+            run_id=run_id,
+            colbert_model=resolve_default_colbert_model(),
+            expected_backends=expected_backends,
+        ),
+        None,
+    )
+
+
+def _resolve_backend_bundle(
+    scope: _ColbertCheckScope,
+    backend_key: str,
+) -> tuple[ResolvedColbertBundle | None, str | None]:
+    """Resolve one backend's ColBERT bundle, returning (bundle, error_message)."""
+
+    try:
+        bundle = resolve_colbert_scope_bundle(
+            workflow_group_id=scope.run_id,
+            backend_key=backend_key,
+            colbert_model=scope.colbert_model,
+        )
+    except RuntimeError as exc:
+        return None, str(exc)
+    return bundle, None
+
+
+def require_colbert_bundles(
+    transcripts_root: Path,
+) -> tuple[bool | None, str | None, dict | None]:
+    """Ensure live-search ColBERT bundles exist for transcription backends with transcripts."""
+
+    scope, skip_message = _resolve_colbert_check_scope(transcripts_root, "bundle")
+    if scope is None:
+        return None, skip_message, None
 
     resolved_backends: list[str] = []
     missing_backends: list[str] = []
     compatibility_errors: list[str] = []
-    for backend_key in expected_backends:
-        try:
-            bundle = resolve_colbert_scope_bundle(
-                workflow_group_id=run_id,
-                backend_key=backend_key,
-                colbert_model=colbert_model,
-            )
-        except RuntimeError as exc:
-            bundle = None
-            compatibility_errors.append(f"{backend_key}: {exc}")
+    for backend_key in scope.expected_backends:
+        bundle, resolve_error = _resolve_backend_bundle(scope, backend_key)
+        if resolve_error is not None:
+            compatibility_errors.append(f"{backend_key}: {resolve_error}")
         if bundle is None:
             missing_backends.append(backend_key)
         else:
@@ -154,12 +220,12 @@ def require_colbert_bundles(
 
     stats = {
         "total": len(resolved_backends),
-        "expected": len(expected_backends),
+        "expected": len(scope.expected_backends),
         "missing": len(missing_backends),
         "resolved_backends": resolved_backends,
         "missing_backends": missing_backends,
         "compatibility_errors": compatibility_errors,
-        "colbert_model": colbert_model,
+        "colbert_model": scope.colbert_model,
     }
     if missing_backends:
         suffix = ""
@@ -177,68 +243,93 @@ def require_colbert_hash_coverage(
     transcripts_root: Path,
     catalog_hashes: set[str],
 ) -> tuple[bool | None, str | None, dict | None]:
-    """Ensure each resolved ColBERT bundle's index covers every catalog hash.
+    """Ensure each resolved ColBERT bundle's index covers every transcribed catalog hash.
 
     Complements `require_colbert_bundles` (which only checks that a bundle
     exists per backend) with per-hash coverage: a bundle can exist but still
     be missing recently-added audio hashes if the sync job silently skipped
     them or hasn't run since ingest.
+
+    Coverage is measured against the hashes that are both in the catalog and
+    transcribed for that backend, since ColBERT cannot index audio that has no
+    transcript yet. Source state rows with no chunks count as not indexed
+    (that is the silent skip this check exists to catch), and indexed hashes
+    that have left the catalog are reported as stale.
     """
 
-    transcripts_resolved = (
-        transcripts_root.resolve() if transcripts_root.is_symlink() else transcripts_root
-    )
-    run_id = extract_run_id_from_transcripts_root(transcripts_resolved)
-    if not run_id:
-        return (
-            None,
-            "Unable to determine transcript run ID; skipping ColBERT hash coverage check.",
-            None,
-        )
-
-    colbert_model = resolve_default_colbert_model()
-    candidate_workflows = get_transcription_workflows(expected_only=True)
-    expected_backends = [
-        _rag_backend_key_for_workflow(workflow)
-        for workflow in candidate_workflows
-        if _workflow_has_transcripts(transcripts_resolved, workflow)
-    ]
-    if not expected_backends:
-        return (
-            None,
-            "No transcription backends with transcripts found; skipping ColBERT hash coverage check.",
-            None,
-        )
+    scope, skip_message = _resolve_colbert_check_scope(transcripts_root, "hash coverage")
+    if scope is None:
+        return None, skip_message, None
 
     catalog_lower = {h.lower() for h in catalog_hashes}
     stats: dict[str, dict] = {}
     incomplete_backends: list[str] = []
+    stale_backends: list[str] = []
+    unreadable_backends: list[str] = []
+    unbuilt_backends: list[str] = []
 
-    for backend_key in expected_backends:
-        try:
-            bundle = resolve_colbert_scope_bundle(
-                workflow_group_id=run_id,
-                backend_key=backend_key,
-                colbert_model=colbert_model,
-            )
-        except RuntimeError:
-            bundle = None
+    for backend_key in scope.expected_backends:
+        bundle, _ = _resolve_backend_bundle(scope, backend_key)
         if bundle is None:
             # Bundle entirely missing is already reported by require_colbert_bundles.
             continue
 
-        indexed_hashes = {h.lower() for h in read_source_state(bundle.artifacts.source_state_path)}
-        missing_hashes = catalog_lower - indexed_hashes
+        source_state_path = bundle.artifacts.source_state_path
+        if not source_state_path.exists():
+            # No source state at all: coverage is unknown, not zero.
+            unbuilt_backends.append(backend_key)
+            continue
+
+        try:
+            source_rows = read_source_state(source_state_path, read_only=True)
+        except (OSError, sqlite3.Error) as exc:
+            # A concurrent sync holds a write lock, or the file is corrupt;
+            # degrade to a reported failure instead of aborting the report.
+            unreadable_backends.append(f"{backend_key}: {exc}")
+            continue
+
+        indexed_hashes = {
+            audio_hash.lower() for audio_hash, row in source_rows.items() if row.chunk_count > 0
+        }
+        empty_hashes = {
+            audio_hash.lower() for audio_hash, row in source_rows.items() if row.chunk_count <= 0
+        }
+        expected_hashes = catalog_lower & _transcript_hashes_for_backend(
+            scope.transcripts_root, backend_key
+        )
+        missing_hashes = expected_hashes - indexed_hashes
+        stale_hashes = indexed_hashes - catalog_lower
         stats[backend_key] = {
-            "total": len(catalog_lower - missing_hashes),
-            "expected": len(catalog_lower),
+            "total": len(expected_hashes & indexed_hashes),
+            "expected": len(expected_hashes),
             "missing": len(missing_hashes),
             "missing_hashes": sorted(missing_hashes)[:250],
+            "stale": len(stale_hashes),
+            "stale_hashes": sorted(stale_hashes)[:250],
+            "empty": len(expected_hashes & empty_hashes),
+            "not_transcribed": len(catalog_lower - expected_hashes),
         }
         if missing_hashes:
             incomplete_backends.append(backend_key)
+        if stale_hashes:
+            stale_backends.append(backend_key)
+
+    if unreadable_backends:
+        return (
+            False,
+            "Unable to read ColBERT source state for backend(s): " + "; ".join(unreadable_backends),
+            stats or None,
+        )
 
     if not stats:
+        if unbuilt_backends:
+            return (
+                None,
+                "No ColBERT source state for backend(s): "
+                + ", ".join(unbuilt_backends)
+                + "; skipping ColBERT hash coverage check.",
+                None,
+            )
         return (
             None,
             "No resolved ColBERT bundles found; skipping ColBERT hash coverage check.",
@@ -246,8 +337,22 @@ def require_colbert_hash_coverage(
         )
 
     if incomplete_backends:
-        details = ", ".join(f"{b} missing {stats[b]['missing']}" for b in incomplete_backends)
+        details = ", ".join(
+            f"{backend} missing {stats[backend]['missing']}"
+            + (
+                f" ({stats[backend]['empty']} indexed with no chunks)"
+                if stats[backend]["empty"]
+                else ""
+            )
+            for backend in incomplete_backends
+        )
         return False, f"ColBERT index missing hashes for backend(s): {details}", stats
+
+    if stale_backends:
+        details = ", ".join(
+            f"{backend} stale {stats[backend]['stale']}" for backend in stale_backends
+        )
+        return False, f"ColBERT index has stale hashes for backend(s): {details}", stats
 
     return True, None, stats
 
@@ -598,7 +703,12 @@ def handle_check(args: argparse.Namespace) -> int:
                         colbert_hashes_stats,
                     ) = require_colbert_hash_coverage(transcripts_root, catalog_hashes)
                     derived_dirs_status.append(
-                        ("colbert_index", colbert_hashes_ok, colbert_hashes_msg, colbert_hashes_stats)
+                        (
+                            "colbert_index",
+                            colbert_hashes_ok,
+                            colbert_hashes_msg,
+                            colbert_hashes_stats,
+                        )
                     )
 
                 case "clusters":
@@ -844,9 +954,7 @@ def handle_check(args: argparse.Namespace) -> int:
                 elif name == "speaker_clusters":
                     print(f"    Run: just catalog cluster-speakers  # {msg}")
                 elif name == "colbert_index":
-                    print(
-                        "    Run: just catalog rag-colbert-index  # Sync ColBERT index for missing hashes"
-                    )
+                    print(f"    Run: just catalog rag-colbert-index  # {msg}")
             if has_stale_files:
                 print("    Run: just catalog clean --prune-orphans  # Remove stale derived files")
         elif core_issues_detected:
