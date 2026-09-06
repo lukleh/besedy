@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,57 @@ def get_engine_metadata(
     }
 
 
+def _looks_like_repo_id(value: Any) -> bool:
+    return isinstance(value, str) and "/" in value and not any(ch.isspace() for ch in value)
+
+
+def _make_remote_code_auto_trust(original: Any) -> Any:
+    """Wrap ``resolve_trust_remote_code`` so nested repo prompts answer themselves."""
+
+    def _auto_trust(*args: Any, **kwargs: Any):
+        def _arg(position: int, name: str, default: Any = None) -> Any:
+            if len(args) > position:
+                return args[position]
+            return kwargs.get(name, default)
+
+        # The auto-class call sites pass ``upstream_repo`` positionally, where
+        # it lands in the ``error_message`` slot, so read the nested repo from
+        # either place. A keyword ``error_message`` (custom generation code)
+        # carries prose, not a repo id, and must not be mistaken for one.
+        nested_repo = kwargs.get("upstream_repo")
+        if nested_repo is None and len(args) > 4:
+            nested_repo = args[4]
+
+        if (
+            _arg(0, "trust_remote_code") is None
+            and _arg(3, "has_remote_code", False)
+            and not _arg(2, "has_local_code", False)
+            and _looks_like_repo_id(nested_repo)
+        ):
+            return True
+
+        return original(*args, **kwargs)
+
+    return _auto_trust
+
+
+def _rebind_remote_code_resolver(original: Any, replacement: Any) -> None:
+    """Swap ``resolve_trust_remote_code`` in every module that already bound it.
+
+    Consumers import the symbol by value (``from ...dynamic_module_utils import
+    resolve_trust_remote_code``), so rebinding the defining module alone only
+    reaches modules imported after the patch.
+    """
+    for module in list(sys.modules.values()):
+        # Read ``__dict__`` directly: ``getattr`` would trigger the lazy module
+        # machinery transformers installs and import submodules as a side effect.
+        namespace = getattr(module, "__dict__", None)
+        if namespace is None:
+            continue
+        if namespace.get("resolve_trust_remote_code") is original:
+            namespace["resolve_trust_remote_code"] = replacement
+
+
 def ensure_remote_code_auto_trust() -> None:
     """Auto-approve nested remote-code repos pulled in by a trusted model.
 
@@ -64,6 +116,11 @@ def ensure_remote_code_auto_trust() -> None:
     trust flag isn't forwarded to it. We already trust the top-level model
     explicitly here, so approve the nested load too instead of blocking on
     stdin inside the non-interactive pipeline worker.
+
+    The patch answers only the prompt upstream would have raised for a
+    nested repo reference. An explicit ``trust_remote_code`` value, a
+    top-level repo, and upstream's prefer-local-code default all keep their
+    normal behavior.
     """
     global _remote_code_auto_trust_applied
     if _remote_code_auto_trust_applied:
@@ -71,10 +128,10 @@ def ensure_remote_code_auto_trust() -> None:
 
     import transformers.dynamic_module_utils as dynamic_module_utils
 
-    def _auto_trust(*_args, **_kwargs):
-        return True
-
-    dynamic_module_utils.resolve_trust_remote_code = _auto_trust
+    original = dynamic_module_utils.resolve_trust_remote_code
+    auto_trust = _make_remote_code_auto_trust(original)
+    dynamic_module_utils.resolve_trust_remote_code = auto_trust
+    _rebind_remote_code_resolver(original, auto_trust)
     _remote_code_auto_trust_applied = True
 
 
@@ -164,6 +221,7 @@ __all__ = [
     "SUPPORTED_PYLATE_PLAID_BACKENDS",
     "build_pylate_model",
     "create_pylate_retriever",
+    "ensure_remote_code_auto_trust",
     "get_engine_metadata",
     "get_pylate_version",
     "normalize_plaid_backend",
