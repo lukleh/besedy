@@ -783,8 +783,13 @@ def handle_check(args: argparse.Namespace) -> int:
         ok is False for _, ok, _, _ in pipeline_artifacts_status
     )
 
+    # Stale ColBERT index rows are removed by `rag-colbert-index` (already
+    # suggested via the failed-check remediation), not by `clean --prune-orphans`,
+    # which only prunes transcript sidecars.
     has_stale_files = False
     for name, _, _, stats in derived_dirs_status:
+        if name == "colbert_index":
+            continue
         if stats:
             for s in stats.values():
                 if isinstance(s, dict) and s.get("stale", 0) > 0:
