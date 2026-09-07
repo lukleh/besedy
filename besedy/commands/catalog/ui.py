@@ -6,7 +6,6 @@ import csv
 from collections.abc import Sequence
 from pathlib import Path
 
-from besedy.commands.catalog.default_paths import ALREADY_EXISTS_REASON
 from besedy.lib.audio.types import PreparedEntry, SkippedEntry
 from besedy.lib.catalog.manager import METADATA_TAG_COLUMNS, FileRecord
 
@@ -83,20 +82,20 @@ def print_duration_summary(total_seconds: float) -> None:
     print("=" * 50)
 
 
-def has_error_skips(skipped: Sequence[SkippedEntry]) -> bool:
-    """Return True when skipped rows include real errors, not resume/no-op skips."""
-
-    return any(entry.reason != ALREADY_EXISTS_REASON for entry in skipped)
-
-
 def print_workflow_summary(
     staged: Sequence[PreparedEntry],
     skipped: Sequence[SkippedEntry],
     workflow_failures: Sequence[tuple[str, int]],
     *,
-    verbose_skips: bool = False,
+    already_complete: int = 0,
 ) -> None:
-    """Summarise workflow outcomes without implying work ran when it didn't."""
+    """Summarise workflow outcomes without implying work ran when it didn't.
+
+    ``skipped`` holds only rows that could not be processed; any non-empty value
+    means the command exits non-zero. Rows whose outputs already existed are the
+    common case on re-runs and are reported as a single ``already_complete``
+    count rather than one line per row.
+    """
 
     print("\n=== Summary ===")
     print(f"Staged files: {len(staged)}")
@@ -111,22 +110,11 @@ def print_workflow_summary(
             f"(normalized: {normalized}, plain: {converted - normalized})"
         )
         print(f"  Reused: {reused}")
+    if already_complete:
+        print(f"Already complete: {already_complete}")
     if skipped:
-        # Resume no-ops are the common case on re-runs and would otherwise emit one
-        # line per catalog row, per workflow. Collapse them unless asked for detail.
-        resume_count = sum(1 for entry in skipped if entry.reason == ALREADY_EXISTS_REASON)
-        listed = (
-            skipped
-            if verbose_skips
-            else [entry for entry in skipped if entry.reason != ALREADY_EXISTS_REASON]
-        )
         print("Skipped rows:")
-        if resume_count and not verbose_skips:
-            print(
-                f"  - {resume_count} already complete "
-                f"({ALREADY_EXISTS_REASON}); pass --verbose-skips to list them"
-            )
-        for entry in listed:
+        for entry in skipped:
             print(f"  - {entry.sha256}: {entry.reason} ({entry.source})")
     if workflow_failures:
         print("Workflow failures:")
@@ -134,15 +122,15 @@ def print_workflow_summary(
             print(f"  - {label} (exit code {code})")
         return
 
-    if has_error_skips(skipped):
+    if skipped:
         if staged:
             print("Workflows completed with skipped rows; command will exit with status 1.")
         else:
             print("No workflows completed successfully; command will exit with status 1.")
     elif staged:
         print("All workflows completed successfully.")
-    elif skipped:
-        print("No workflows executed; all entries were skipped.")
+    elif already_complete:
+        print("No workflows executed; all entries were already complete.")
     else:
         print("No workflows were queued.")
 

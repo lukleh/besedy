@@ -199,7 +199,6 @@ class TestTranscribeCommand:
         assert args.csv is None
         assert args.overwrite is False
         assert args.continue_on_error is False
-        assert args.verbose_skips is False
 
     def test_transcribe_with_csv(self, parser):
         """Transcribe accepts --csv option."""
@@ -210,11 +209,6 @@ class TestTranscribeCommand:
         """Transcribe accepts --overwrite flag."""
         args = parser.parse_args(["transcribe", "--overwrite"])
         assert args.overwrite is True
-
-    def test_transcribe_verbose_skips_flag(self, parser):
-        """Transcribe accepts --verbose-skips flag."""
-        args = parser.parse_args(["transcribe", "--verbose-skips"])
-        assert args.verbose_skips is True
 
     def test_transcribe_workflow_choices(self, parser):
         """Transcribe --workflow accepts valid choices."""
@@ -270,12 +264,6 @@ class TestDiarizeCommand:
         """Diarize works with defaults."""
         args = parser.parse_args(["diarize"])
         assert args.command == "diarize"
-        assert args.verbose_skips is False
-
-    def test_diarize_verbose_skips_flag(self, parser):
-        """Diarize accepts --verbose-skips flag."""
-        args = parser.parse_args(["diarize", "--verbose-skips"])
-        assert args.verbose_skips is True
 
     def test_diarize_does_not_expose_cross_file_clustering(self, parser):
         """Cross-file speaker matching remains a separate command."""
@@ -537,7 +525,6 @@ class TestRunPipelineCommand:
         assert args.skip_derived is False
         assert args.skip_rag_colbert_index is False
         assert args.continue_on_error is False
-        assert args.verbose_skips is False
         assert args.rag_backend is None
         assert args.rag_all_backends is False
         assert args.rag_colbert_index_dir is None
@@ -566,11 +553,6 @@ class TestRunPipelineCommand:
         """Run-pipeline accepts --continue-on-error flag."""
         args = parser.parse_args(["run-pipeline", "--continue-on-error"])
         assert args.continue_on_error is True
-
-    def test_verbose_skips_flag(self, parser):
-        """Run-pipeline accepts --verbose-skips flag."""
-        args = parser.parse_args(["run-pipeline", "--verbose-skips"])
-        assert args.verbose_skips is True
 
     def test_csv_option(self, parser):
         """Run-pipeline accepts --csv option."""

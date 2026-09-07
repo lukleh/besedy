@@ -7,8 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from besedy.commands.catalog.default_paths import ALREADY_EXISTS_REASON
-from besedy.commands.catalog.ui import has_error_skips, print_workflow_summary
+from besedy.commands.catalog.ui import print_workflow_summary
 from besedy.commands.catalog.validation import (
     print_validation_errors,
     validate_staged_audio,
@@ -44,7 +43,6 @@ class TranscribeRequest:
     no_symlink: bool = False
     overwrite: bool = False
     continue_on_error: bool = False
-    verbose_skips: bool = False
     limit: int | None = None
     hash_filter: str | None = None
     workflows: list[str] | None = None
@@ -71,7 +69,6 @@ class TranscribeRequest:
             no_symlink=bool(getattr(args, "no_symlink", False)),
             overwrite=bool(getattr(args, "overwrite", False)),
             continue_on_error=bool(getattr(args, "continue_on_error", False)),
-            verbose_skips=bool(getattr(args, "verbose_skips", False)),
             limit=getattr(args, "limit", None),
             hash_filter=getattr(args, "hash_filter", None),
             workflows=list(workflows) if workflows is not None else None,
@@ -140,11 +137,6 @@ Example:
         "--continue-on-error",
         action="store_true",
         help="Continue processing remaining files if a workflow fails on some files.",
-    )
-    parser.add_argument(
-        "--verbose-skips",
-        action="store_true",
-        help="List every already-complete row in the summary instead of a single count.",
     )
     parser.add_argument(
         "--limit",
@@ -373,8 +365,8 @@ def handle_transcribe(
     align_candidates_by_config: dict[WorkflowConfig, list[tuple[CsvAudioRow, str]]] = {
         cfg: [] for cfg in selected_configs
     }
-    # Track rows that don't need any work (for pre_skipped when not using limit)
-    rows_needing_no_work: list[CsvAudioRow] = []
+    # Rows whose outputs already exist for every selected config; reported as a count.
+    already_complete = 0
 
     for row in rows:
         hash_component = hash_component_from_sha(row.sha256)
@@ -408,7 +400,7 @@ def handle_transcribe(
                     row_needs_any_work = True
 
         if not row_needs_any_work:
-            rows_needing_no_work.append(row)
+            already_complete += 1
 
     # Apply limit per config independently
     # This ensures each workflow/model configuration makes progress independently
@@ -437,21 +429,13 @@ def handle_transcribe(
 
     filtered_rows: list[CsvAudioRow] = [row for row in rows if row.sha256 in selected_sha256s]
 
-    # Build pre_skipped list (only when not using limit)
-    pre_skipped: list[SkippedEntry] = []
-    if missing_limit is None:
-        for row in rows_needing_no_work:
-            pre_skipped.append(
-                SkippedEntry(row.sha256, Path(row.full_path).expanduser(), ALREADY_EXISTS_REASON)
-            )
-
     if not filtered_rows:
         print("No audio files require transcription.")
-        print_workflow_summary([], pre_skipped, [], verbose_skips=request.verbose_skips)
-        return 1 if has_error_skips(pre_skipped) else 0
+        print_workflow_summary([], [], [], already_complete=already_complete)
+        return 0
 
     prepared, validation_errors = validate_staged_audio(filtered_rows)
-    skipped_total = list(pre_skipped)
+    skipped_total: list[SkippedEntry] = []
     if validation_errors:
         if not request.continue_on_error:
             print_validation_errors(validation_errors, "transcribe")
@@ -462,8 +446,8 @@ def handle_transcribe(
 
     if not prepared:
         print("No staged audio files passed validation; nothing to do.")
-        print_workflow_summary(prepared, skipped_total, [], verbose_skips=request.verbose_skips)
-        return 1 if has_error_skips(skipped_total) else 0
+        print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
+        return 1 if skipped_total else 0
 
     transcription_jobs: list[TranscriptionJob] = []
     for cfg in selected_configs:
@@ -498,11 +482,11 @@ def handle_transcribe(
 
     if not workflows:
         print("No workflows to run.")
-        print_workflow_summary(prepared, skipped_total, [], verbose_skips=request.verbose_skips)
-        return 1 if has_error_skips(skipped_total) else 0
+        print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
+        return 1 if skipped_total else 0
 
     base_env = prepare_workflow_env()
     failures = launch_workflows(workflows, base_env)
 
-    print_workflow_summary(prepared, skipped_total, failures, verbose_skips=request.verbose_skips)
-    return 0 if not failures and not has_error_skips(skipped_total) else 1
+    print_workflow_summary(prepared, skipped_total, failures, already_complete=already_complete)
+    return 0 if not failures and not skipped_total else 1
