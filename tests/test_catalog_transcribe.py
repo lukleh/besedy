@@ -93,7 +93,7 @@ def test_handle_transcribe_accepts_workflow_id_prefix(
         lambda **_kwargs: [make_workflow_config(), beam],
     )
     monkeypatch.setattr(transcribe_module, "path_builder", DummyPathBuilder)
-    monkeypatch.setattr(transcribe_module, "print_workflow_summary", lambda *_args: None)
+    monkeypatch.setattr(transcribe_module, "print_workflow_summary", lambda *_args, **_kwargs: None)
 
     request = transcribe_module.TranscribeRequest(
         output_root=tmp_path / "transcripts",
@@ -133,7 +133,7 @@ def test_handle_transcribe_selects_only_requested_language_variant(
         lambda **_kwargs: [automatic, english],
     )
     monkeypatch.setattr(transcribe_module, "path_builder", DummyPathBuilder)
-    monkeypatch.setattr(transcribe_module, "print_workflow_summary", lambda *_args: None)
+    monkeypatch.setattr(transcribe_module, "print_workflow_summary", lambda *_args, **_kwargs: None)
 
     request = transcribe_module.TranscribeRequest(
         output_root=tmp_path / "transcripts",
