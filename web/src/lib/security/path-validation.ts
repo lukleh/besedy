@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { getPostersDir, getSourcesDir, getTextDataDir } from "../config";
+import { getPostersDir, getSourcesDir, getTextDataDir, getUploadsDir } from "../config";
 
 /**
  * Path validation utilities to prevent directory traversal attacks.
@@ -104,6 +104,17 @@ export function getAllowedBaseDirs(): string[] {
   try {
     const sourcesDir = getSourcesDir();
     const resolved = resolvePath(sourcesDir);
+    if (!dirs.includes(resolved)) {
+      dirs.push(resolved);
+    }
+  } catch {
+    // Ignore if config not available
+  }
+
+  // Admin upload (ingest) directory (if configured)
+  try {
+    const uploadsDir = getUploadsDir();
+    const resolved = resolvePath(uploadsDir);
     if (!dirs.includes(resolved)) {
       dirs.push(resolved);
     }

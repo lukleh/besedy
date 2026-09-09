@@ -9,6 +9,8 @@ text_data_dir = "/data/text"
 posters_dir = "/data/posters"
 # Recording sources stored separately (writable volume)
 sources_dir = "/data/sources"
+# Admin-uploaded recordings awaiting ingest (writable volume)
+uploads_dir = "/data/uploads"
 # Audio artifacts mounted at /data/audio
 audio_artifacts_dir = "/data/audio"
 # Subdirectories (relative to text_data_dir)

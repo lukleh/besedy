@@ -188,6 +188,20 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 
 - `pending` in user stats counts `portal_admission.status = PENDING`, not `users.status = PENDING`.
 
+### Admin Ingest Endpoints
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| GET | `/api/admin/ingest?catalogId=&limit=` | Admin | List recording intakes (live Prefect state overlaid) |
+| POST | `/api/admin/ingest/uploads` | Admin | Open a chunked upload (`catalogId`, `filename`, `sizeBytes`) |
+| PUT | `/api/admin/ingest/uploads/:intakeId/chunks/:index` | Admin | Append one sequential raw-body chunk |
+| POST | `/api/admin/ingest/uploads/:intakeId/finalize` | Admin | Verify size and submit the ingest job |
+| DELETE | `/api/admin/ingest/uploads/:intakeId` | Admin | Abort an unsubmitted upload |
+| POST | `/api/admin/ingest/:intakeId/remove` | Admin | Remove an ingested recording and all derived data (worker flow), or just the upload files |
+| POST | `/api/internal/ingest/:intakeId/complete` | Job service bearer | Worker completion callback; re-syncs the catalog on success |
+
+See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
+
 ### Auth, Preferences, and Utility Endpoints
 
 | Method | Endpoint | Access | Description |
@@ -270,6 +284,7 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 | Catalog Settings | `/catalog/[catalogId]/settings` | OWNER/Admin |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
+| Admin Ingest | `/admin/ingest` | Admin |
 | Sign In | `/auth/signin` | Public |
 
 - Auth proxy (`src/proxy.ts`) redirects unauthenticated users to `/auth/signin`.

@@ -19,6 +19,7 @@ import {
   ListOrdered,
   RefreshCw,
   Bot,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,11 @@ const navItems = [
     titleKey: "nav.catalogs" as const,
     href: "/admin/catalogs",
     icon: FolderCog,
+  },
+  {
+    titleKey: "nav.ingest" as const,
+    href: "/admin/ingest",
+    icon: Upload,
   },
   {
     titleKey: "nav.metadata" as const,
@@ -150,6 +156,7 @@ function Breadcrumb() {
       admin: t("title"),
       users: t("nav.users"),
       catalogs: t("nav.catalogs"),
+      ingest: t("nav.ingest"),
       metadata: t("nav.metadata"),
       "transcript-order": t("nav.transcripts"),
       audit: t("nav.auditLog"),

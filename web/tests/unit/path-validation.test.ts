@@ -11,6 +11,9 @@ vi.mock("@/lib/config", () => ({
   getSourcesDir: () => {
     throw new Error("config not available");
   },
+  getUploadsDir: () => process.env.TEST_UPLOADS_DIR || (() => {
+    throw new Error("config not available");
+  })(),
 }));
 
 describe("path-validation", () => {
@@ -49,6 +52,19 @@ describe("path-validation", () => {
       expect(dirs).toHaveLength(1);
       // Path should be resolved (absolute) and contain the base dir components
       expect(dirs[0]).toMatch(/\/test\/base\/dir$/);
+    });
+
+    it("includes the configured uploads directory", async () => {
+      delete process.env.BESEDY_BASE_DIR;
+      delete process.env.BESEDY_ALLOWED_PATHS;
+      process.env.TEST_UPLOADS_DIR = "/data/uploads";
+
+      const { getAllowedBaseDirs } = await import("@/lib/security/path-validation");
+      const dirs = getAllowedBaseDirs();
+
+      expect(dirs).toHaveLength(1);
+      expect(dirs[0]).toMatch(/\/data\/uploads$/);
+      delete process.env.TEST_UPLOADS_DIR;
     });
 
     it("includes BESEDY_ALLOWED_PATHS when set", async () => {

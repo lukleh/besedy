@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { formatBytes } from "@/lib/utils";
 import type { RecordingSource, RecordingSourceType } from "@/types/recording-sources";
 
 interface EventSourcesPageProps {
@@ -29,18 +30,6 @@ interface SourcesResponse {
   sources: RecordingSource[];
 }
 
-function formatBytes(bytes?: number | null): string | null {
-  if (bytes === null || bytes === undefined) return null;
-  if (bytes < 1000) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1000;
-  let unitIndex = 0;
-  while (value >= 1000 && unitIndex < units.length - 1) {
-    value /= 1000;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
-}
 
 function getFileIcon(mimeType?: string | null, filename?: string) {
   const mime = mimeType?.toLowerCase() ?? "";
