@@ -1,22 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { unauthorized } from "@/lib/api";
-import { constantTimeEqual } from "@/lib/security/constant-time";
-
-const BESEDY_JOB_SERVICE_SECRET = process.env.BESEDY_JOB_SERVICE_SECRET?.trim();
+import { authorizeJobServiceRequest } from "@/lib/security/job-service-auth";
 
 export function authorizeDeepSearchServiceRequest(
   request: NextRequest,
 ): NextResponse | null {
-  const authHeader = request.headers.get("Authorization");
-  if (
-    !BESEDY_JOB_SERVICE_SECRET ||
-    authHeader === null ||
-    !constantTimeEqual(authHeader, `Bearer ${BESEDY_JOB_SERVICE_SECRET}`)
-  ) {
-    return unauthorized("Unauthorized");
-  }
-  return null;
+  return authorizeJobServiceRequest(request);
 }
 
 export async function catalogExists(catalogId: string): Promise<boolean> {

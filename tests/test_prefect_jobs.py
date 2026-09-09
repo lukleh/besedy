@@ -200,7 +200,7 @@ class FakePrefectClient:
         self.submit_calls: list[dict[str, object]] = []
         self.cancelled = False
 
-    def create_deep_search_run(
+    def create_deployment_run(
         self,
         *,
         deployment_name: str,
@@ -871,6 +871,8 @@ def test_deploy_cli_registers_runner_deployment(monkeypatch) -> None:
 
     monkeypatch.setattr(deploy_module, "RuntimePrefectJobsClient", lambda: FakeClient())
     monkeypatch.setattr(deploy_module, "deep_search_flow", FakeFlow())
+    monkeypatch.setattr(deploy_module, "ingest_recording_flow", FakeFlow())
+    monkeypatch.setattr(deploy_module, "remove_recording_flow", FakeFlow())
 
     assert (
         deploy_module.main(
@@ -881,12 +883,23 @@ def test_deploy_cli_registers_runner_deployment(monkeypatch) -> None:
                 "deep-search-default",
                 "--concurrency-limit",
                 "2",
+                "--ingest-work-pool",
+                "besedy-ingest",
+                "--ingest-deployment-name",
+                "ingest-default",
+                "--ingest-concurrency-limit",
+                "0",
+                "--ingest-remove-deployment-name",
+                "ingest-remove-default",
             ]
         )
         == 0
     )
 
-    assert ensure_calls == [{"name": "besedy-deep-search", "concurrency_limit": 2}]
+    assert ensure_calls == [
+        {"name": "besedy-deep-search", "concurrency_limit": 2},
+        {"name": "besedy-ingest", "concurrency_limit": 1},
+    ]
     assert deployment_calls == [
         {
             "name": "deep-search-default",
@@ -895,14 +908,40 @@ def test_deploy_cli_registers_runner_deployment(monkeypatch) -> None:
             "tags": ["job-kind:deep-search"],
             "concurrency_limit": 2,
             "entrypoint_type": deploy_module.EntrypointType.MODULE_PATH,
-        }
+        },
+        {
+            "name": "ingest-default",
+            "work_pool_name": "besedy-ingest",
+            "parameters": {},
+            "tags": ["job-kind:ingest"],
+            "concurrency_limit": 1,
+            "entrypoint_type": deploy_module.EntrypointType.MODULE_PATH,
+        },
+        {
+            "name": "ingest-remove-default",
+            "work_pool_name": "besedy-ingest",
+            "parameters": {},
+            "tags": ["job-kind:ingest"],
+            "concurrency_limit": 1,
+            "entrypoint_type": deploy_module.EntrypointType.MODULE_PATH,
+        },
     ]
     assert apply_calls == [
         {
             "work_pool_name": "besedy-deep-search",
             "image": None,
             "version_info": None,
-        }
+        },
+        {
+            "work_pool_name": "besedy-ingest",
+            "image": None,
+            "version_info": None,
+        },
+        {
+            "work_pool_name": "besedy-ingest",
+            "image": None,
+            "version_info": None,
+        },
     ]
 
 

@@ -485,6 +485,7 @@
       "dashboard": "Dashboard",
       "users": "Users",
       "catalogs": "Catalogs",
+      "ingest": "Ingest",
       "metadata": "Catalog Enums",
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
@@ -492,6 +493,84 @@
       "mcpUsage": "MCP Usage",
       "clientErrors": "Client Errors",
       "webUpdates": "Web Updates"
+    },
+    "ingest": {
+      "title": "Recording Ingest",
+      "description": "Upload recordings and let the host worker process them into the catalog.",
+      "upload": {
+        "title": "Upload recordings",
+        "description": "Files are uploaded in chunks, hashed, checked against the catalog, then transcribed and indexed. Duplicates are rejected.",
+        "catalog": "Target catalog",
+        "selectCatalog": "Select a catalog",
+        "files": "Audio files",
+        "submit": "Upload & process ({count})",
+        "phase": {
+          "pending": "Ready to upload",
+          "uploading": "Uploading… {percent}%",
+          "done": "Uploaded and queued",
+          "error": "Upload failed"
+        }
+      },
+      "jobs": {
+        "title": "Ingest jobs",
+        "description": "Recent uploads across all catalogs. Active rows refresh automatically.",
+        "refresh": "Refresh",
+        "empty": "No recordings have been uploaded yet.",
+        "retrySubmit": "Retry submit",
+        "remove": "Remove recording",
+        "loadError": "Ingest jobs could not be loaded.",
+        "columns": {
+          "file": "File",
+          "catalog": "Catalog",
+          "requestedBy": "Requested by",
+          "created": "Created",
+          "status": "Status",
+          "actions": "Actions",
+          "result": "Result"
+        }
+      },
+      "status": {
+        "UPLOADING": "Uploading",
+        "QUEUED": "Queued",
+        "RUNNING": "Processing",
+        "SUCCEEDED": "Done",
+        "REJECTED": "Rejected",
+        "FAILED": "Failed",
+        "REMOVING": "Removing",
+        "REMOVED": "Removed",
+        "CANCELLED": "Cancelled"
+      },
+      "errors": {
+        "duplicate": "Already in the catalog (same audio)",
+        "submit_failed": "Could not submit the job to the jobs service",
+        "undecodable_audio": "ffmpeg could not decode the file",
+        "intake_missing": "Uploaded file not found on the worker",
+        "intake_invalid": "Upload directory has unexpected contents",
+        "catalog_missing": "Catalog CSV not found on the worker",
+        "accepted_exists": "A file with this name was already accepted",
+        "catalog_add_failed": "catalog add failed",
+        "run_pipeline_failed": "Pipeline failed",
+        "ingest_failed": "Ingest failed",
+        "worker_failed": "Worker run failed",
+        "worker_cancelled": "Worker run was cancelled",
+        "job_missing": "Job no longer exists in Prefect",
+        "completion_missing": "Worker finished but its report never arrived; catalog re-synced",
+        "remove_failed": "Removal failed - the recording may be partially removed; check the worker log",
+        "derived_refresh_failed": "Removed, but the RAG/speaker refresh failed - run catalog run-pipeline",
+        "sync_failed": "Processed, but catalog sync failed - run Sync catalog"
+      },
+      "remove": {
+        "title": "Remove this recording?",
+        "descriptionCatalog": "\"{file}\" will be deleted from the catalog together with its audio, transcripts, diarization, speaker embeddings, RAG chunks, metadata and event assignment. If it is the primary recording of a released event, that event is unreleased. This cannot be undone.",
+        "descriptionFiles": "The uploaded file for \"{file}\" will be deleted. It never reached the catalog, so nothing else changes.",
+        "confirm": "Remove"
+      },
+      "toasts": {
+        "queued": "{count, plural, one {# recording queued} other {# recordings queued}}",
+        "removed": "Recording removed",
+        "removalQueued": "Removal queued",
+        "partial": "{done} of {total} recordings queued"
+      }
     },
     "mcp": {
       "title": "MCP Usage",

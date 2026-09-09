@@ -14,6 +14,7 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [backends.md](backends.md) -- ML backend infrastructure: serving, config tuning, verification
 - [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface, offline
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
+- [web/recording-ingest.md](web/recording-ingest.md) -- admin recording upload processed by a host Prefect worker, with auto catalog sync
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
 - [web/security.md](web/security.md) -- auth model, access control, deployment hardening
 - [web/mcp-server.md](web/mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing

@@ -94,6 +94,33 @@ export const deepSearchJobsListSchema = z.object({
   jobs: z.array(deepSearchJobSchema),
 });
 
+export const ingestJobPayloadSchema = z
+  .object({
+    intakeId: z.string().nullable().optional(),
+    originalFilename: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const ingestJobSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.literal('INGEST'),
+    status: deepSearchJobStatusSchema,
+    requested_by_id: z.string().nullable(),
+    catalog_id: z.string().nullable(),
+    payload: ingestJobPayloadSchema,
+    error_message: z.string().nullable().optional(),
+    progress_label: z.string().nullable().optional(),
+    created_at: z.string().nullable().optional(),
+    started_at: z.string().nullable().optional(),
+    finished_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+    prefectStateName: z.string().nullable().optional(),
+    prefectStateType: z.string().nullable().optional(),
+    prefectFlowRunId: z.string().nullable().optional(),
+  })
+  .passthrough();
+
 export const deepSearchJobShareSchema = z.object({
   id: z.string().min(1),
   jobId: z.string().min(1),
@@ -154,6 +181,7 @@ export const deepSearchSubmitInputSchema = z
     }
   });
 
+export type IngestJob = z.infer<typeof ingestJobSchema>;
 export type DeepSearchJobStatus = z.infer<typeof deepSearchJobStatusSchema>;
 export type DeepSearchJob = z.infer<typeof deepSearchJobSchema>;
 export type DeepSearchJobsList = z.infer<typeof deepSearchJobsListSchema>;

@@ -31,7 +31,7 @@ class PrefectJobsClient(Protocol):
         concurrency_limit: int | None,
     ) -> None: ...
 
-    def create_deep_search_run(
+    def create_deployment_run(
         self,
         *,
         deployment_name: str,
@@ -78,7 +78,7 @@ class RuntimePrefectJobsClient:
                 overwrite=True,
             )
 
-    def create_deep_search_run(
+    def create_deployment_run(
         self,
         *,
         deployment_name: str,

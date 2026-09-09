@@ -45,6 +45,10 @@ class PathsConfig:
             catalogs/, transcripts/, and transcripts_parquet/ subdirectories.
         sources_dir: Directory for recording sources (URLs/files) managed by
             the web app. Defaults to text_data_dir when empty.
+        uploads_dir: Directory where the web app stores admin-uploaded
+            recordings and the ingest worker keeps accepted/rejected files.
+            Absolute, or relative to audio_artifacts_dir. Required for the
+            web ingest feature.
         transcripts_dir: Directory name for transcript JSON files, organized as
             {workflow}/{output_component}/{audio_hash}/transcript.json.
         speaker_clusters_dir: Directory name for speaker clustering results from
@@ -58,6 +62,7 @@ class PathsConfig:
     original_audio_dir: str = ""
     text_data_dir: str = ""
     sources_dir: str = ""
+    uploads_dir: str = ""
 
 
 @dataclass

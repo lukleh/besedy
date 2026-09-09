@@ -19,6 +19,7 @@ each record links to those references.
 | [0002](0002-artifact-generations.md) | Accepted | Timestamped generations, stable symlinks, and full-hash leaves |
 | [0003](0003-web-catalog-projection.md) | Accepted | CSV ingest ownership and PostgreSQL serving projection |
 | [0004](0004-system-boundaries.md) | Accepted | Python, web, jobs, and backend responsibility boundaries |
+| [0005](0005-web-recording-ingest.md) | Accepted | Web-triggered recording ingest via a host Prefect worker; duplicates rejected |
 
 When a decision changes, add a new ADR and mark the old record superseded. Do
 not rewrite old context to make it appear that the new design always existed.
