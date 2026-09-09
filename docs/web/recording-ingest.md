@@ -53,7 +53,7 @@ is ever passed across.
 | Web env file (`web.env.<mode>`) | `UPLOADS_DIR` | the same host directory; mounted rw at `/data/uploads` |
 | Web env file | `BESEDY_PATH_MAPPINGS` | must include `<host uploads dir>=/data/uploads` because catalog rows point at the host path |
 | Web container toml (`web/besedy.docker.toml`) | `[paths].uploads_dir` | `/data/uploads` |
-| Web env file (optional) | `INGEST_CHUNK_BYTES` | default 50 MB; keep below the edge proxy body limit (Cloudflare: 100 MB) |
+| Web env file (optional) | `INGEST_CHUNK_BYTES` | default 50 MB; keep below the edge proxy body limit (Cloudflare: 100 MB) and Next's `experimental.proxyClientMaxBodySize` (100mb in `web/next.config.ts`) |
 | Web env file (optional) | `INGEST_MAX_UPLOAD_BYTES` | default 4 GB |
 | jobs env (`jobs.env.<env>`) | `PREFECT_INGEST_WORK_POOL`, `PREFECT_INGEST_DEPLOYMENT_NAME`, `PREFECT_INGEST_FULL_DEPLOYMENT_NAME`, `PREFECT_INGEST_CONCURRENCY_LIMIT` | defaults `besedy-ingest-<env>`, `ingest-<env>`, `ingest_recording_flow/ingest-<env>`, `1` |
 
