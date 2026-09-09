@@ -37,10 +37,12 @@ Keep shared operational facts here and have provider-specific files such as
 - `just catalog run-pipeline`: normal operator entry point for processing
   pending catalog entries.
 - `just catalog <command>`: run lower-level bootstrap, maintenance, or recovery
-  commands (for example `create`, `merge`, `clean`, `check`, `loudness`,
+  commands (for example `create`, `merge`, `clean`, `remove`, `check`, `loudness`,
   `stage-audio`, `transcribe`, `diarize`, and `export-transcripts`).
   Source of truth for the complete command surface: `besedy/cli/catalog.py`
   and `tests/test_cli_parser.py`.
+- `just ingest-worker-run`: run the host-side Prefect worker for admin recording
+  uploads in the foreground (see `docs/web/recording-ingest.md`).
 - `just analyze <command>`: analysis CLI wrapper (e.g. `just analyze validate`)
 - `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/ --batch`)
 - `just test` (or `uv run --all-extras pytest`): run the full test suite
@@ -167,7 +169,7 @@ manages workflow-group records themselves.
 ## Production DB & Catalog Paths (Reference)
 
 - **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, `duplicates_catalog_path`, `transcripts_path`; `workflow_variant` holds `listening_archived_catalog_path`. Source of truth: `web/prisma/schema.prisma`.
-- **Where container path roots are defined:** the resolved production env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`; see template in `web/.env.prod.example`) defines `TEXT_DATA_DIR`, `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`, and optional `BESEDY_PATH_MAPPINGS` for host↔container path rewrites.
+- **Where container path roots are defined:** the resolved production env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`; see template in `web/.env.prod.example`) defines `TEXT_DATA_DIR`, `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`, `UPLOADS_DIR` (admin recording uploads, shared with the host ingest worker), and optional `BESEDY_PATH_MAPPINGS` for host↔container path rewrites.
 - **Existing path-mapping logic:** helpers that read production path mappings now use `BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`.
 - **How to connect to prod DB (local host → prod container):**
   - Prefer service-based exec (no container-name assumptions):

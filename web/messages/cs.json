@@ -485,6 +485,7 @@
       "dashboard": "Přehled",
       "users": "Uživatelé",
       "catalogs": "Katalogy",
+      "ingest": "Nahrání záznamů",
       "metadata": "Číselníky katalogu",
       "transcripts": "Pořadí přepisů",
       "addUsers": "Přidat uživatele",
@@ -492,6 +493,84 @@
       "mcpUsage": "Využití MCP",
       "clientErrors": "Chyby klienta",
       "webUpdates": "Aktualizace webu"
+    },
+    "ingest": {
+      "title": "Nahrání záznamů",
+      "description": "Nahrajte nahrávky a nechte je zpracovat do katalogu na serveru.",
+      "upload": {
+        "title": "Nahrát nahrávky",
+        "description": "Soubory se nahrávají po částech, spočítá se jejich audio hash, zkontroluje se katalog a poté proběhne přepis a indexace. Duplicity jsou odmítnuty.",
+        "catalog": "Cílový katalog",
+        "selectCatalog": "Vyberte katalog",
+        "files": "Zvukové soubory",
+        "submit": "Nahrát a zpracovat ({count})",
+        "phase": {
+          "pending": "Připraveno k nahrání",
+          "uploading": "Nahrávání… {percent} %",
+          "done": "Nahráno a zařazeno",
+          "error": "Nahrání selhalo"
+        }
+      },
+      "jobs": {
+        "title": "Zpracování",
+        "description": "Poslední nahrání napříč katalogy. Aktivní řádky se obnovují automaticky.",
+        "refresh": "Obnovit",
+        "empty": "Zatím nebyly nahrány žádné nahrávky.",
+        "retrySubmit": "Znovu odeslat",
+        "remove": "Odebrat nahrávku",
+        "loadError": "Seznam zpracování se nepodařilo načíst.",
+        "columns": {
+          "file": "Soubor",
+          "catalog": "Katalog",
+          "requestedBy": "Zadal",
+          "created": "Vytvořeno",
+          "status": "Stav",
+          "actions": "Akce",
+          "result": "Výsledek"
+        }
+      },
+      "status": {
+        "UPLOADING": "Nahrává se",
+        "QUEUED": "Ve frontě",
+        "RUNNING": "Zpracovává se",
+        "SUCCEEDED": "Hotovo",
+        "REJECTED": "Odmítnuto",
+        "FAILED": "Selhalo",
+        "REMOVING": "Odebírá se",
+        "REMOVED": "Odebráno",
+        "CANCELLED": "Zrušeno"
+      },
+      "errors": {
+        "duplicate": "Již v katalogu (stejné audio)",
+        "submit_failed": "Úlohu se nepodařilo předat službě zpracování",
+        "undecodable_audio": "ffmpeg nedokázal soubor dekódovat",
+        "intake_missing": "Nahraný soubor nebyl na serveru nalezen",
+        "intake_invalid": "Adresář nahrání má neočekávaný obsah",
+        "catalog_missing": "CSV katalogu nebylo na serveru nalezeno",
+        "accepted_exists": "Soubor s tímto názvem už byl přijat",
+        "catalog_add_failed": "catalog add selhal",
+        "run_pipeline_failed": "Pipeline selhala",
+        "ingest_failed": "Zpracování selhalo",
+        "worker_failed": "Běh na serveru selhal",
+        "worker_cancelled": "Běh na serveru byl zrušen",
+        "job_missing": "Úloha už v Prefectu neexistuje",
+        "completion_missing": "Zpracování doběhlo, ale hlášení nedorazilo; katalog byl synchronizován",
+        "remove_failed": "Odebrání selhalo - nahrávka může být odebrána jen částečně; zkontrolujte log workeru",
+        "derived_refresh_failed": "Odebráno, ale obnova RAG/mluvčích selhala - spusťte catalog run-pipeline",
+        "sync_failed": "Zpracováno, ale synchronizace katalogu selhala - spusťte Synchronizovat katalog"
+      },
+      "remove": {
+        "title": "Odebrat tuto nahrávku?",
+        "descriptionCatalog": "\"{file}\" bude smazána z katalogu včetně zvuku, přepisů, diarizace, embeddingů mluvčích, RAG úseků, metadat a přiřazení k události. Pokud je hlavní nahrávkou zveřejněné události, událost bude stažena ze zveřejnění. Akci nelze vrátit.",
+        "descriptionFiles": "Nahraný soubor \"{file}\" bude smazán. Do katalogu se nikdy nedostal, nic dalšího se nemění.",
+        "confirm": "Odebrat"
+      },
+      "toasts": {
+        "queued": "{count, plural, one {# nahrávka zařazena} few {# nahrávky zařazeny} other {# nahrávek zařazeno}}",
+        "removed": "Nahrávka odebrána",
+        "removalQueued": "Odebrání zařazeno",
+        "partial": "Zařazeno {done} z {total} nahrávek"
+      }
     },
     "mcp": {
       "title": "Využití MCP",

@@ -60,6 +60,27 @@ def pick_json_value(value: object, *keys: str) -> object | None:
 
 class JobKind(StrEnum):
     DEEP_SEARCH = "DEEP_SEARCH"
+    INGEST = "INGEST"
+
+
+JOB_KIND_TAGS: dict[JobKind, str] = {
+    JobKind.DEEP_SEARCH: "job-kind:deep-search",
+    JobKind.INGEST: "job-kind:ingest",
+}
+
+
+def job_kind_tag(kind: JobKind) -> str:
+    return JOB_KIND_TAGS[kind]
+
+
+def job_kind_from_tags(tags: object) -> JobKind:
+    """Resolve the job kind from flow-run tags; untagged runs are deep-search."""
+    if isinstance(tags, list | tuple | set):
+        rendered = {str(tag) for tag in tags}
+        for kind, tag in JOB_KIND_TAGS.items():
+            if tag in rendered:
+                return kind
+    return JobKind.DEEP_SEARCH
 
 
 class JobStatus(StrEnum):
@@ -175,6 +196,103 @@ class DeepSearchSubmitRequest:
         return parameters
 
 
+_CATALOG_ID_RE = re.compile(r"^\d{8}_\d{6}$")
+_INTAKE_ID_RE = re.compile(r"^[a-z0-9]{16,64}$")
+_AUDIO_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_FILENAME_FORBIDDEN_RE = re.compile(r"[/\\\x00]")
+MAX_ORIGINAL_FILENAME_LENGTH = 255
+
+
+def validate_catalog_id(value: object) -> str:
+    rendered = str(value or "").strip()
+    if not _CATALOG_ID_RE.fullmatch(rendered):
+        raise ValueError("catalog_id must look like YYYYMMDD_HHMMSS.")
+    return rendered
+
+
+def validate_intake_id(value: object) -> str:
+    rendered = str(value or "").strip()
+    if not _INTAKE_ID_RE.fullmatch(rendered):
+        raise ValueError("intakeId must be a lowercase alphanumeric identifier.")
+    return rendered
+
+
+def validate_audio_hash(value: object) -> str:
+    rendered = str(value or "").strip().lower()
+    if not _AUDIO_HASH_RE.fullmatch(rendered):
+        raise ValueError("audioHash must be a 64-character hex SHA-256 digest.")
+    return rendered
+
+
+def validate_original_filename(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("originalFilename must be a string.")
+    rendered = value.strip()
+    if not rendered or rendered in {".", ".."}:
+        raise ValueError("originalFilename must not be empty.")
+    if len(rendered) > MAX_ORIGINAL_FILENAME_LENGTH:
+        raise ValueError("originalFilename is too long.")
+    if _FILENAME_FORBIDDEN_RE.search(rendered):
+        raise ValueError("originalFilename must not contain path separators.")
+    return rendered
+
+
+@dataclass(slots=True, frozen=True)
+class IngestSubmitRequest:
+    intake_id: str
+    original_filename: str
+    requested_by_id: str | None = None
+
+    @classmethod
+    def from_payload(cls, payload: JsonDict) -> IngestSubmitRequest:
+        requested_by_id = payload.get("requestedById")
+        if requested_by_id is not None and (
+            not isinstance(requested_by_id, str) or not requested_by_id.strip()
+        ):
+            raise ValueError("requestedById must be a non-empty string when provided.")
+        return cls(
+            intake_id=validate_intake_id(payload.get("intakeId")),
+            original_filename=validate_original_filename(payload.get("originalFilename")),
+            requested_by_id=requested_by_id.strip() if isinstance(requested_by_id, str) else None,
+        )
+
+    def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
+        return {
+            "catalog_id": validate_catalog_id(catalog_id),
+            "intake_id": self.intake_id,
+            "original_filename": self.original_filename,
+            "requested_by_id": self.requested_by_id,
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class IngestRemovalRequest:
+    intake_id: str
+    audio_hash: str
+    requested_by_id: str | None = None
+
+    @classmethod
+    def from_payload(cls, payload: JsonDict) -> IngestRemovalRequest:
+        requested_by_id = payload.get("requestedById")
+        if requested_by_id is not None and (
+            not isinstance(requested_by_id, str) or not requested_by_id.strip()
+        ):
+            raise ValueError("requestedById must be a non-empty string when provided.")
+        return cls(
+            intake_id=validate_intake_id(payload.get("intakeId")),
+            audio_hash=validate_audio_hash(payload.get("audioHash")),
+            requested_by_id=requested_by_id.strip() if isinstance(requested_by_id, str) else None,
+        )
+
+    def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
+        return {
+            "catalog_id": validate_catalog_id(catalog_id),
+            "intake_id": self.intake_id,
+            "audio_hash": self.audio_hash,
+            "requested_by_id": self.requested_by_id,
+        }
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -214,6 +332,34 @@ def build_flow_run_tags(
         tags.append(f"requested-by:{sanitize_tag_value(requested_by_id)}")
     if caller_scope:
         tags.append(f"caller-scope:{sanitize_tag_value(caller_scope)}")
+    return tags
+
+
+def build_ingest_flow_run_name(
+    *, catalog_id: str, intake_id: str, operation: str = "ingest"
+) -> str:
+    stamp = utcnow().strftime("%Y%m%d-%H%M%S")
+    catalog = sanitize_tag_value(catalog_id, fallback="catalog")
+    intake = sanitize_tag_value(intake_id[:12], fallback="intake")
+    prefix = "ingest" if operation == "ingest" else f"ingest-{sanitize_tag_value(operation)}"
+    return f"{prefix}-{catalog}-{intake}-{stamp}"
+
+
+def build_ingest_flow_run_tags(
+    *,
+    catalog_id: str,
+    intake_id: str,
+    requested_by_id: str | None,
+    operation: str = "ingest",
+) -> list[str]:
+    tags = [
+        job_kind_tag(JobKind.INGEST),
+        f"catalog:{sanitize_tag_value(catalog_id, fallback='catalog')}",
+        f"intake:{sanitize_tag_value(intake_id, fallback='intake')}",
+        f"operation:{sanitize_tag_value(operation, fallback='ingest')}",
+    ]
+    if requested_by_id:
+        tags.append(f"requested-by:{sanitize_tag_value(requested_by_id)}")
     return tags
 
 
@@ -291,36 +437,26 @@ def normalize_flow_run(
     *,
     output_root_dir: Path,
 ) -> JsonDict:
+    envelope = _flow_run_envelope(flow_run)
+    if job_kind_from_tags(_value(flow_run, "tags")) == JobKind.INGEST:
+        return {**envelope, **_ingest_flow_run_fields(flow_run)}
+    return {
+        **envelope,
+        **_deep_search_flow_run_fields(flow_run, output_root_dir=output_root_dir),
+    }
+
+
+def _flow_run_envelope(flow_run: Any) -> JsonDict:
+    """Kind-independent projection of a Prefect flow run."""
     flow_run_id = str(_value(flow_run, "id"))
     state_name = _value(flow_run, "state_name")
     state_type = _value(flow_run, "state_type")
-    parameters = (
-        _value(flow_run, "parameters") if isinstance(_value(flow_run, "parameters"), dict) else {}
-    )
-    output_bundle = load_output_bundle(root_dir=output_root_dir, flow_run_id=flow_run_id)
-    result = output_bundle.get("result")
-    result_preview = None
-    if isinstance(result, dict):
-        markdown = result.get("markdown")
-        if isinstance(markdown, str) and markdown.strip():
-            first_line = markdown.strip().splitlines()[0].strip()
-            result_preview = first_line[:200] if first_line else None
-
-    deployment_id = _serialize_uuidish(_value(flow_run, "deployment_id"))
+    parameters = _flow_run_parameters(flow_run)
     return {
         "id": flow_run_id,
-        "kind": JobKind.DEEP_SEARCH.value,
         "status": prefect_state_to_job_status(str(state_name), str(state_type)).value,
         "requested_by_id": _string_or_none(parameters.get("requested_by_id")),
         "catalog_id": _string_or_none(parameters.get("catalog_id")),
-        "payload": {
-            "query": _string_or_none(parameters.get("query")),
-            "instructions": _string_or_none(parameters.get("instructions")),
-            "retrieval": _as_object(parameters.get("retrieval")),
-            "execution": _as_object(parameters.get("execution")),
-        },
-        "result": result if isinstance(result, dict) else None,
-        "result_preview": result_preview,
         "error_code": None,
         "error_message": _state_message(flow_run),
         "progress_label": str(state_name or "") or None,
@@ -332,8 +468,32 @@ def normalize_flow_run(
         "prefectStateName": str(state_name or "") or None,
         "prefectStateType": str(state_type or "") or None,
         "prefectFlowRunId": flow_run_id,
-        "prefectDeploymentId": deployment_id,
+        "prefectDeploymentId": _serialize_uuidish(_value(flow_run, "deployment_id")),
         "prefectWorkPoolName": _string_or_none(_value(flow_run, "work_pool_name")),
+    }
+
+
+def _deep_search_flow_run_fields(flow_run: Any, *, output_root_dir: Path) -> JsonDict:
+    flow_run_id = str(_value(flow_run, "id"))
+    parameters = _flow_run_parameters(flow_run)
+    output_bundle = load_output_bundle(root_dir=output_root_dir, flow_run_id=flow_run_id)
+    result = output_bundle.get("result")
+    result_preview = None
+    if isinstance(result, dict):
+        markdown = result.get("markdown")
+        if isinstance(markdown, str) and markdown.strip():
+            first_line = markdown.strip().splitlines()[0].strip()
+            result_preview = first_line[:200] if first_line else None
+    return {
+        "kind": JobKind.DEEP_SEARCH.value,
+        "payload": {
+            "query": _string_or_none(parameters.get("query")),
+            "instructions": _string_or_none(parameters.get("instructions")),
+            "retrieval": _as_object(parameters.get("retrieval")),
+            "execution": _as_object(parameters.get("execution")),
+        },
+        "result": result if isinstance(result, dict) else None,
+        "result_preview": result_preview,
         "rlmProgress": output_bundle.get("rlmProgress"),
         "artifacts": output_bundle.get("artifacts", []),
         "outputBundle": {
@@ -344,6 +504,27 @@ def normalize_flow_run(
             "runMetadataPath": output_bundle.get("runMetadataPath"),
         },
     }
+
+
+def _ingest_flow_run_fields(flow_run: Any) -> JsonDict:
+    parameters = _flow_run_parameters(flow_run)
+    return {
+        "kind": JobKind.INGEST.value,
+        "payload": {
+            "intakeId": _string_or_none(parameters.get("intake_id")),
+            "originalFilename": _string_or_none(parameters.get("original_filename")),
+            "audioHash": _string_or_none(parameters.get("audio_hash")),
+            "operation": "remove" if parameters.get("audio_hash") else "ingest",
+        },
+        "result": None,
+        "result_preview": None,
+        "artifacts": [],
+    }
+
+
+def _flow_run_parameters(flow_run: Any) -> JsonDict:
+    parameters = _value(flow_run, "parameters")
+    return parameters if isinstance(parameters, dict) else {}
 
 
 def normalize_flow_run_history(

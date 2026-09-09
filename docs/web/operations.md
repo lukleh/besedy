@@ -340,6 +340,35 @@ Then submit one small Deep Search job through the UI and confirm a
 
 ---
 
+## Recording Ingest (Host Worker)
+
+Admin uploads on `/admin/ingest` are processed by a Prefect worker running on
+the host (not in the hardened jobs containers). Full runbook:
+[recording-ingest.md](recording-ingest.md).
+
+Deploy additions on top of the Deep Search steps above:
+
+1. Web env file: set `UPLOADS_DIR` (writable by container UID 1001 and by the
+   worker user) and add `<host uploads dir>=/data/uploads` to
+   `BESEDY_PATH_MAPPINGS`; host `besedy.toml`: set `[paths].uploads_dir` to the
+   same host directory.
+2. `just prod-deploy` (includes the `recording_intake` migration) and
+   `just jobs-prod-rebuild && just jobs-prod-deploy` (registers the
+   `besedy-ingest-prod` pool and `ingest_recording_flow/ingest-prod`).
+3. Install and start the host worker unit from
+   `jobs-service/host-worker/besedy-ingest-worker.service` with
+   `~/.config/lukleh/besedy/ingest-worker.env` filled in
+   (`BESEDY_INTERNAL_BASE_URL=http://127.0.0.1:3000`, the production
+   `BESEDY_JOB_SERVICE_SECRET`, `PREFECT_INGEST_WORK_POOL=besedy-ingest-prod`).
+4. Verify: `systemctl --user status besedy-ingest-worker`, the pool shows a
+   healthy worker in the Prefect UI, then upload a short recording and watch it
+   reach `SUCCEEDED` with a hash link.
+
+Cloudflare limits proxied request bodies to 100 MB; uploads are chunked at
+`INGEST_CHUNK_BYTES` (default 50 MB) so do not raise that above the limit.
+
+---
+
 ## Cloudflare Tunnel
 
 ### What It Does

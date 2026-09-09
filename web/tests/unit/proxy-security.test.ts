@@ -262,6 +262,48 @@ describe("proxy security controls", () => {
     expect(response.status).toBe(200);
   });
 
+  it("allows authorized internal ingest completion callbacks without browser origin", async () => {
+    process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest(
+      "http://localhost/api/internal/ingest/cmf9abcdefghijklmnopqrstu/complete",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer test-job-secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ status: "SUCCEEDED" }),
+      }
+    );
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects internal ingest completion callbacks with a wrong secret", async () => {
+    process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
+    const { proxy } = await import("@/proxy");
+
+    const request = new NextRequest(
+      "http://localhost/api/internal/ingest/cmf9abcdefghijklmnopqrstu/complete",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer wrong-secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ status: "SUCCEEDED" }),
+      }
+    );
+
+    const response = await proxy(request);
+
+    expect(response.status).toBe(403);
+  });
+
   it("rejects unauthenticated internal deep-search service mutations without browser origin", async () => {
     process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
     const { proxy } = await import("@/proxy");

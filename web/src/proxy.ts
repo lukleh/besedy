@@ -125,8 +125,10 @@ function isMutationMethod(method: string): boolean {
   );
 }
 
-function isAuthorizedInternalDeepSearchRequest(req: NextRequest): boolean {
-  if (!req.nextUrl.pathname.startsWith("/api/internal/deep-search/")) {
+function isAuthorizedInternalServiceRequest(req: NextRequest): boolean {
+  // Service-to-service routes (jobs API, Prefect workers) carry no browser
+  // Origin/Referer; the shared bearer secret is their whole trust boundary.
+  if (!req.nextUrl.pathname.startsWith("/api/internal/")) {
     return false;
   }
 
@@ -521,7 +523,7 @@ export async function proxy(req: NextRequest) {
   if (pathname.startsWith("/api/")) {
     if (
       isMutationMethod(req.method) &&
-      !isAuthorizedInternalDeepSearchRequest(req) &&
+      !isAuthorizedInternalServiceRequest(req) &&
       // MCP is bearer-only. Let its route handler produce the OAuth challenge
       // for the initial unauthenticated request instead of applying the
       // browser-cookie CSRF policy here.

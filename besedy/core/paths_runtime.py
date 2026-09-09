@@ -222,6 +222,31 @@ def resolve_original_audio_root() -> Path | None:
     return candidate if candidate.is_absolute() else artifacts_root / candidate
 
 
+def resolve_uploads_root() -> Path:
+    """Resolve the directory holding web-uploaded recordings for ingest."""
+    env_value = os.getenv("BESEDY_UPLOADS_ROOT")
+    if env_value:
+        candidate = Path(env_value).expanduser()
+        return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
+
+    message = (
+        "Uploads root is required. Set [paths].uploads_dir in besedy.toml "
+        "or BESEDY_UPLOADS_ROOT in the environment."
+    )
+    try:
+        from besedy.config.settings import config
+
+        configured = getattr(config.paths, "uploads_dir", "")
+    except Exception as exc:
+        raise RuntimeError(message) from exc
+
+    if not configured:
+        raise RuntimeError(message)
+
+    candidate = Path(configured).expanduser()
+    return candidate if candidate.is_absolute() else resolve_audio_artifacts_root() / candidate
+
+
 def resolve_text_data_root() -> Path:
     """Resolve a base directory for text artifacts (catalogs, transcripts, parquet)."""
     env_value = os.getenv("BESEDY_TEXT_DATA_ROOT")

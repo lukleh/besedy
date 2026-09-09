@@ -30,3 +30,19 @@ export function formatTimestamp(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Human-readable decimal (1000-based) byte size, e.g. "58.3 MB".
+ */
+export function formatBytes(bytes?: number | null): string | null {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return null;
+  if (bytes < 1000) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1000;
+  let unitIndex = 0;
+  while (value >= 1000 && unitIndex < units.length - 1) {
+    value /= 1000;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}

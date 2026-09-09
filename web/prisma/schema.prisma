@@ -63,6 +63,19 @@ enum CatalogSyncStatus {
   ERROR
 }
 
+/// Lifecycle of an admin-uploaded recording handled by the host ingest worker
+enum RecordingIntakeStatus {
+  UPLOADING
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  REJECTED
+  FAILED
+  CANCELLED
+  REMOVING
+  REMOVED
+}
+
 enum WebUpdateEventType {
   CLIENT_SEEN
   UPDATE_DETECTED
@@ -135,6 +148,8 @@ model User {
   deepSearchSharesCreated      DeepSearchJobShare[]    @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
+  /// Recording uploads this user submitted for ingest
+  recordingIntakes             RecordingIntake[]       @relation("RecordingIntakeRequestedBy")
 
   @@map("users")
 }
@@ -553,8 +568,41 @@ model WorkflowGroup {
   catalogEventRecordings  CatalogEventRecording[]
   /// Deep-search job shares scoped to this catalog
   deepSearchJobShares     DeepSearchJobShare[]
+  /// Admin uploads being ingested into this catalog
+  recordingIntakes        RecordingIntake[]
 
   @@map("workflow_group")
+}
+
+/// Admin-uploaded recording tracked from upload through the host ingest worker.
+/// The audio hash is only known once the worker has decoded the file.
+model RecordingIntake {
+  id                String                @id @default(cuid())
+  workflowGroupId   String                @map("workflow_group_id") @db.VarChar(15)
+  requestedById     String                @map("requested_by_id")
+  originalFilename  String                @map("original_filename")
+  /// File name inside <uploads>/<catalog>/incoming/<id>/ (extension only, no user input)
+  storedFilename    String                @map("stored_filename")
+  mimeType          String?               @map("mime_type")
+  expectedSizeBytes BigInt                @map("expected_size_bytes")
+  receivedBytes     BigInt                @default(0) @map("received_bytes")
+  receivedChunks    Int                   @default(0) @map("received_chunks")
+  status            RecordingIntakeStatus @default(UPLOADING)
+  /// Prefect flow-run id returned by the jobs API
+  jobId             String?               @unique @map("job_id") @db.Uuid
+  audioHash         String?               @map("audio_hash") @db.VarChar(64)
+  errorCode         String?               @map("error_code")
+  errorMessage      String?               @map("error_message")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  finishedAt        DateTime?             @map("finished_at")
+
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  requestedBy   User          @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([workflowGroupId, status])
+  @@index([createdAt])
+  @@map("recording_intake")
 }
 
 // ============================================================================
@@ -888,6 +936,8 @@ enum AuditAction {
   METADATA_UPDATED
   METADATA_VERIFIED
   METADATA_DELETED
+  RECORDING_INGEST_REQUESTED
+  RECORDING_INGEST_REMOVED
   // Security events
   ACCESS_DENIED
   SUPERADMIN_ACCESS

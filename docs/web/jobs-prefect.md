@@ -147,6 +147,12 @@ Responsibilities:
 
 ## Prefect Model Mapping
 
+> The facade now carries a second job kind, `INGEST`, with its own flow
+> (`ingest_recording_flow`), work pool (`besedy-ingest-<env>`) and a
+> host-resident worker. Runs are distinguished by the `job-kind:*` tag. See
+> [recording-ingest.md](recording-ingest.md); the rest of this document
+> describes the deep-search kind.
+
 Use the following model for the first implementation:
 
 - one Prefect flow: `deep_search_flow`

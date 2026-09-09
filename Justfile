@@ -248,6 +248,24 @@ jobs-prod-deploy:
     {{ ensure_prefect_network }}
     {{ jobs_prod_compose }} run --rm jobs-api python -m besedy.lib.prefect_jobs.deploy
 
+# Run the host-side ingest Prefect worker in the foreground. It needs Docker,
+# the GPU backends, ffmpeg and the host besedy.toml; see
+# jobs-service/host-worker/ingest-worker.env.example for the required env.
+ingest-worker-run:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env_file="${BESEDY_INGEST_WORKER_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/lukleh/besedy/ingest-worker.env}"
+    if [ -f "$env_file" ]; then
+        set -a
+        . "$env_file"
+        set +a
+    else
+        echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
+    fi
+    exec uv run --extra jobs prefect worker start \
+        --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
+        --type process --limit 1 --install-policy never
+
 # Backward-compatible aliases while the old jobs-* naming is phased out.
 jobs-up:
     just jobs-dev-up
