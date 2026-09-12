@@ -567,6 +567,13 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'language of the transcript wording',
     );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'Begin the first reply that uses Besedy evidence with a short caution',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'AI interpretation of AI-generated transcripts of Besedy recordings',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same language as that reply');
     // Corpus language is data, not code: the instructions must stay neutral.
     expect(BESEDY_MCP_INSTRUCTIONS).not.toMatch(/czech|english|german/i);
 
