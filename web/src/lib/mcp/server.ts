@@ -24,6 +24,7 @@ export const BESEDY_MCP_INSTRUCTIONS = [
   'Verify important search evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on it when that request is unavailable.',
   'Search results include authoritative event IDs, dates, and locations. Group results by event ID because recordings from the same event are variants, not independent evidence; support recurring themes with distinct events.',
   'Cite bounded segment webUrl values. Use who_am_i or list_catalogs only when identity, catalog selection, or permissions are unclear.',
+  'Begin the first reply that uses Besedy evidence with a short caution in the same language as that reply: the answer is an AI interpretation of AI-generated transcripts of Besedy recordings, so read it carefully.',
 ].join(' ');
 
 export function createBesedyMcpServer(
