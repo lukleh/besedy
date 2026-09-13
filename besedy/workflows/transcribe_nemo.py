@@ -25,6 +25,7 @@ from besedy.core.paths import (
     resolve_transcripts_root,
 )
 from besedy.lib.audio.probe import measure_audio_duration_seconds
+from besedy.lib.data.atomic_io import atomic_write_text
 from besedy.lib.nemo import (
     VadArtifacts,
     build_chunk_metadata,
@@ -625,9 +626,8 @@ def main() -> None:
                 }
                 if broken_segments:
                     payload["broken_segments"] = broken_segments
-                target_path.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
+                serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+                atomic_write_text(target_path, serialized, encoding="utf-8")
                 logging.info("Completed: Transcript written to %s", target_path)
             if args.decode_strategy == "beam":
                 beam_segments = [
@@ -653,9 +653,8 @@ def main() -> None:
                     },
                 }
                 beam_path = target_dir / "nemo_beam_segments.json"
-                beam_path.write_text(
-                    json.dumps(beam_payload, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
+                beam_serialized = json.dumps(beam_payload, ensure_ascii=False, indent=2)
+                atomic_write_text(beam_path, beam_serialized, encoding="utf-8")
                 logging.info("Saved beam segments: %s", beam_path)
             logging.info("=" * 80)
 
