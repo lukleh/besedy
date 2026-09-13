@@ -21,8 +21,9 @@ export const BESEDY_MCP_INSTRUCTIONS = [
   'Tool descriptions and schemas define individual calls. Use search_transcripts for meaning and find_transcript_mentions for actual wording.',
   'Transcripts may be in a different language than the user question. Semantic search tolerates that; literal search does not. Write literal queries in the language of the transcript wording; when unsure, run a semantic search first and reuse the wording it returns.',
   'Meaning-based search is ranked and non-exhaustive. Literal totalMatches counts matching authorized indexed chunks under the selected filters and match mode before result caps; it is not a distinct-event count.',
-  'Verify important search evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on it when that request is unavailable.',
-  'Search results include authoritative event IDs, dates, and locations. Group results by event ID because recordings from the same event are variants, not independent evidence; support recurring themes with distinct events.',
+  'Verify important search evidence with get_transcript: pass a non-null transcriptRequest, then widen its window, because the unchanged request returns only the passage you already have. Do not rely on evidence whose request is unavailable.',
+  'Search results include authoritative event IDs, dates, and locations; dates may be partial. Group results by event ID because recordings from the same event are variants, not independent evidence; support recurring themes with distinct events.',
+  'Recordings are multi-speaker discussions without speaker labels, so a passage may be an audience question or a single participant view rather than a settled claim. Attribute accordingly.',
   'Cite bounded segment webUrl values. Use who_am_i or list_catalogs only when identity, catalog selection, or permissions are unclear.',
   'Begin the first reply that uses Besedy evidence with a short caution in the same language as that reply: the answer is an AI interpretation of AI-generated transcripts of Besedy recordings, so read it carefully.',
 ].join(' ');
