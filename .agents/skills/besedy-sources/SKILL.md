@@ -45,6 +45,11 @@ differences and tensions between distinct discussions instead of flattening them
 into false consensus. When an important passage appears badly transcribed,
 qualify the quotation or rely on other independently verified evidence.
 
+Transcripts carry no speaker labels, and these recordings are discussions.
+Before presenting a passage as what the material holds, widen the transcript
+window far enough to see who is speaking and whether the words are a question
+from the room, one participant view, or the answer given to it.
+
 ## Present a useful map of the material
 
 Group the strongest verified passages into themes and explain how their models,

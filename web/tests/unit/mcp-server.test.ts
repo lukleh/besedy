@@ -548,7 +548,9 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
-    expect(BESEDY_MCP_INSTRUCTIONS.length).toBeLessThan(1_600);
+    // Prepended to every client context, so it stays bounded. Raised from
+    // 1,600 for the verification-widening and speaker-attribution guidance.
+    expect(BESEDY_MCP_INSTRUCTIONS.length).toBeLessThan(1_800);
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'Tool descriptions and schemas define individual calls',
     );
@@ -574,6 +576,13 @@ describe('MCP personalized tool surface', () => {
       'AI interpretation of AI-generated transcripts of Besedy recordings',
     );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('same language as that reply');
+    // An unchanged transcriptRequest replays the passage the search already
+    // returned, so verification only adds context when the window widens.
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('then widen its window');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'multi-speaker discussions without speaker labels',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('dates may be partial');
     // Corpus language is data, not code: the instructions must stay neutral.
     expect(BESEDY_MCP_INSTRUCTIONS).not.toMatch(/czech|english|german/i);
 
