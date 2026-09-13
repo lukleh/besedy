@@ -20,6 +20,13 @@ const DEFAULT_LOOKUP_PAGE_SIZE = 50;
 const MAX_LOOKUP_PAGE_SIZE = 100;
 const logger = createServerLogger('mcp-tools');
 
+// Shared by the server instructions, both search tool descriptions, and the
+// rendered search text so the verification step cannot drift between them.
+// An unchanged transcriptRequest replays exactly the passage the search already
+// returned; verification only adds context when the window widens.
+export const TRANSCRIPT_VERIFICATION_GUIDANCE =
+  "Verify important evidence with get_transcript: pass the result's transcriptRequest, then widen the time window, because the unchanged request only replays that passage. Do not rely on an important candidate when that request is unavailable.";
+
 export function createLookupListInputSchema(itemName: string) {
   return z.object({
     catalogId: z

@@ -9,6 +9,7 @@ import { findMcpTranscriptMentions } from '@/lib/mcp/read-service';
 import { FindTranscriptMentionsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  TRANSCRIPT_VERIFICATION_GUIDANCE,
   registerBesedyTool,
   renderTranscriptSearchResult,
   resolveToolCatalog,
@@ -54,8 +55,7 @@ export function registerFindTranscriptMentionsTool(
     'find_transcript_mentions',
     {
       title: 'Find exact transcript mentions',
-      description:
-        'Search actual wording in the authorized indexed transcript corpus for visible released Besedy events. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches counts matching authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it is not a distinct-event count. A zero count establishes only indexed literal-pattern absence, not conceptual absence. Verify important returned passages by passing a non-null transcriptRequest to get_transcript and reading continuous context; do not rely on an important candidate when that request is unavailable. Every match directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group matches by event ID because recordings from the same event are variants, not independent evidence. Each match webUrl is a bounded citation. Rank is text-match relevance, not confidence.',
+      description: `Search actual wording in the authorized indexed transcript corpus for visible released Besedy events. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches counts matching authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it is not a distinct-event count. A zero count establishes only indexed literal-pattern absence, not conceptual absence. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every match directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group matches by event ID because recordings from the same event are variants, not independent evidence. Each match webUrl is a bounded citation. Rank is text-match relevance, not confidence.`,
       inputSchema: z
         .object({
           catalogId: z
