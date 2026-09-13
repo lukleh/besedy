@@ -17,7 +17,13 @@ from besedy.cli import convert_stable_ts, convert_whisperx_transcript
 # The workflow runners import their ML backend at module scope. Stub
 # faster-whisper only when the optional extra is absent, so the lean suite can
 # still drive main() while an ML-extra environment keeps the real package.
-if importlib.util.find_spec("faster_whisper") is None:  # pragma: no cover - env dependent
+#
+# The sys.modules check must come first and short-circuit: another test module
+# may already have stubbed faster_whisper with a bare MagicMock, and find_spec
+# raises ValueError rather than returning a spec for one of those.
+if (
+    "faster_whisper" not in sys.modules and importlib.util.find_spec("faster_whisper") is None
+):  # pragma: no cover - env dependent
     sys.modules.setdefault("faster_whisper", MagicMock())
     sys.modules.setdefault("faster_whisper.vad", MagicMock())
 
@@ -167,27 +173,66 @@ def test_faster_whisper_workflow_overwrite_leaves_no_residue(
     assert [p.name for p in out.parent.iterdir()] == ["transcript.json"]
 
 
+# Characters that may appear in a file mode, and those that make it writable.
+# "r+" counts: it does not truncate, but it still publishes in place.
+_MODE_CHARS = frozenset("rwxabt+U")
+_PUBLISHING_MODE_CHARS = frozenset("wax+")
+
+
+def _is_publishing_mode(value: object) -> bool:
+    """Return True for a file-mode string that can write at the final path.
+
+    Anything that is not a plausible mode is ignored, so an unrelated call
+    such as webbrowser.open("http://...") is not mistaken for a file write.
+    """
+    if not isinstance(value, str) or not 1 <= len(value) <= 3:
+        return False
+    chars = set(value)
+    return chars <= _MODE_CHARS and bool(chars & _PUBLISHING_MODE_CHARS)
+
+
+def _mode_argument(node: ast.Call, position: int) -> ast.expr | None:
+    """Return the mode argument of an open() call, positional or keyword."""
+    if len(node.args) > position:
+        return node.args[position]
+    for keyword in node.keywords:
+        if keyword.arg == "mode":
+            return keyword.value
+    return None
+
+
 def _publishing_calls(tree: ast.AST) -> list[str]:
     """Return non-atomic file-publication calls found in a parsed module.
 
     The workflow runners must route every output through atomic_io, so a bare
     Path.write_text/write_bytes, a json.dump into an open handle, or a
     write-mode open() at the final path is a regression.
+
+    Catching the write-mode open() covers handle.write() and writelines()
+    transitively: a writable handle cannot exist without one. Flagging .write()
+    directly would instead false-positive on tqdm.write(), which the runners use
+    for progress output.
     """
     offenders: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if isinstance(func, ast.Attribute):
+        if isinstance(func, ast.Name):
+            # Builtin open(file, mode); no mode argument means "r".
+            if func.id == "open":
+                mode = _mode_argument(node, 1)
+                if isinstance(mode, ast.Constant) and _is_publishing_mode(mode.value):
+                    offenders.append(f"line {node.lineno}: open({mode.value!r})")
+        elif isinstance(func, ast.Attribute):
             if func.attr in {"write_text", "write_bytes"}:
                 offenders.append(f"line {node.lineno}: .{func.attr}()")
             elif func.attr == "dump" and isinstance(func.value, ast.Name):
                 if func.value.id == "json":
                     offenders.append(f"line {node.lineno}: json.dump()")
             elif func.attr == "open":
-                mode = node.args[0] if node.args else None
-                if isinstance(mode, ast.Constant) and "r" not in str(mode.value):
+                mode = _mode_argument(node, 0)
+                if isinstance(mode, ast.Constant) and _is_publishing_mode(mode.value):
                     offenders.append(f"line {node.lineno}: .open({mode.value!r})")
     return offenders
 
