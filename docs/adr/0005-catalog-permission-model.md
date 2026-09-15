@@ -68,25 +68,46 @@ them. No role that describes an ordinary participant carries one.
 This splits the catalogue in two: permissions that describe a kind of
 participant, and permissions that describe an exception made for one person.
 
-Caching a recording for offline listening is not file delivery. The audio stays
-inside the application and the experience is the same one `stream_audio`
-describes, so it needs no separate permission.
+**This is a stance about what the product is, not a control boundary, and it
+should not be mistaken for one.** A reader can select and copy a whole
+transcript from the page, and an agent asked for the full text through MCP will
+hand it over. Offline caching writes the audio bytes to the viewer's device,
+where they sit in browser storage; what it withholds is a file the viewer can
+easily use elsewhere, which is a matter of convenience rather than of
+protection. Anyone determined to hold the corpus as data already can. What these
+permissions decide is whether taking files out is a normal part of using Besedy
+or an arrangement made with a particular person.
 
-### One transcript per recording
+Because it is a stance rather than a control, the cost of holding it should be
+counted honestly — and measured against production it is small. Of eighty
+grants, seventy-seven are listeners who never had a download; two owners and one
+member did. The buttons disappear for three accounts.
 
-A recording has exactly one transcript from a reader's point of view: the
-corrected one when it exists, the original machine output otherwise. Correction
-state is a **substitution**, not a visibility gate. A corrected transcript
-replaces the original everywhere it is read — page, download, export, search and
-MCP alike.
+Offline caching therefore needs no permission of its own. It delivers bytes, but
+it delivers the same listening `stream_audio` already describes.
 
-What a reader is given is the corrected transcript. Where none exists yet the
-original stands in, marked as unverified machine output — the difference between
-the two is carried by **labelling, not by access**. As correction progresses the
-stand-ins are replaced one recording at a time, and nobody's permissions change.
+### One transcript per recording, corrected span by span
+
+A recording has exactly one transcript from a reader's point of view. Correction
+does not produce a second document that replaces the first: it replaces
+**spans**, one at a time, inside the only transcript there is. A reader of a
+partly corrected recording gets machine text with verified spans in it, and that
+is the normal state for years rather than a transitional one.
+
+Correction state is therefore a **substitution at span level**, not a visibility
+gate and not a property of the transcript as a whole. There is no moment at
+which a recording flips from "original" to "corrected", so there is nothing to
+gate on. What a reader needs instead is to see **which spans** are verified,
+which means labelling is per span, with a coverage figure standing for the
+recording. A badge reading "verified" over a seven-per-cent corrected transcript
+would simply be false.
+
+The difference between verified and machine text is carried by **labelling, not
+by access**, and nobody's permissions change as correction progresses.
 
 There is therefore no permission for "corrected transcripts" as distinct from
-"all transcripts". The original text remains reachable in exactly two places:
+"all transcripts". The original text of a corrected span remains reachable in
+exactly two places:
 
 - inside the correction surface, as the text being worked on;
 - through an explicit download of the pre-correction variant.
@@ -179,7 +200,7 @@ conferred rather than taken, which is what makes the role name worth reading.
 | Permission | Covers |
 | --- | --- |
 | `correct_transcripts` | The correction surface: editing spans, proposing corrections, attesting, and reading the original text within that surface. |
-| `publish_transcript` | Marking a transcript as corrected, and resolving disputes between correctors. |
+| `resolve_corrections` | Overriding the attestation rule on a span and settling disagreements between correctors. Named for what it does: nothing is published, because a transcript has no corrected/uncorrected state to publish. |
 
 ### Search
 
@@ -210,7 +231,7 @@ conferred rather than taken, which is what makes the role name worth reading.
 | Permission | Covers |
 | --- | --- |
 | `manage_access` | Granting and revoking access, including pending grants for accounts that have never signed in. |
-| `manage_lookups` | Recorder, location and album rows for this catalog. |
+| `manage_lookups` | Recorder, location and album rows for this catalog. Assumes [ADR 0007](0007-per-catalog-lookups.md); the rows are global today. |
 | `manage_catalog_config` | Catalog paths, sync, default and active flags. `catalogAdmin` only. |
 
 ### File delivery — `redaktor` and above, or an individual grant
@@ -240,7 +261,7 @@ catalog permission reaches them.
 | čtenář | + `read_transcripts`, `search_transcripts` |
 | korektor | čtenář + `correct_transcripts`, `see_speakers` |
 | hostitel | čtenář + `manage_access` |
-| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `resolve_corrections`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
 | catalogAdmin | wildcard, including `see_transcript_variants` and `manage_catalog_config` |
 
 Every role below `redaktor` sees released events and published recordings only,
@@ -292,39 +313,11 @@ the `catalogAdmin`.
   through MCP can hand it over. If the goal is to control who holds the corpus as
   data rather than who gets a convenient button, download permissions alone do
   not achieve it.
-- The lookup change splits in two, and the halves belong to different tasks. The
-  **schema and data** half — `Recorder`, `Location` and `Album` gain a catalog,
-  their unique constraints become per-catalog, and the `/api/metadata/*` routes
-  become catalog-scoped — stands alone and may land first. The **permission**
-  half, where `manage_lookups` becomes a catalog permission and joins `redaktor`,
-  belongs to the permission rework.
-- Lookups are copied per catalog, not shared. Each catalog receives a copy of
-  exactly the rows referenced from it, through `audio_metadata` for all three
-  kinds and additionally through `catalog_event.location_id` for locations.
-  Copying every row into every catalog would reproduce today's undifferentiated
-  lists once per catalog, which is what the change exists to stop. Rows nothing
-  references are parked in the default catalog rather than dropped.
-- Lookup ids leave the system: MCP returns them and deep-search jobs store them
-  in saved metadata filters. The migration therefore keeps each original row and
-  assigns it to one catalog, creating new rows only for the others, so most ids
-  stay stable and saved filters keep resolving.
-- Measured against production on 2026-09-15 the copy rule degenerates to a
-  backfill: there is **one** catalog, so every lookup row is assigned to it, no
-  row is duplicated and no id changes. The rule above is what makes the migration
-  correct if a second catalog ever exists; today it costs a column, a backfill
-  and two changed unique constraints.
-- The resulting invariant — every lookup reference points at a row in the
-  referencing row's own catalog — cannot be expressed as a foreign key. It
-  belongs with the workflow invariants rather than with authorization.
-- Doing the data half first means `manage_lookups` reaches its final shape during
-  the rework instead of passing through an interim in which one permission stays
-  system-level while every other one is catalog-scoped.
-- The lookup change is not a prerequisite for anything else.
-  `requireEditorOnAnyCatalog` appears only in `lib/api/crud-factory.ts` and
-  `admin/metadata/layout.tsx`, so it touches no transcript, event, recording or
-  access path. Coupling a schema-and-data migration into the behaviour-preserving
-  refactor would cost that refactor the property that makes it safe; running it
-  before, as its own change, does not.
+- `manage_lookups` assumes the lookups are per catalog, which they are not today.
+  That change carries its own migration, identifier and invariant concerns and is
+  a prerequisite for nothing, so it has its own record:
+  [ADR 0007](0007-per-catalog-lookups.md). `redaktor` carries the permission from
+  the moment that record lands; before then there is no catalog for it to govern.
 - Migration is behaviour-preserving: the five existing levels become the first
   rows of the role table, `accessLevelAtLeast` calls become permission checks,
   and only afterwards are `korektor` and `hostitel` added.
@@ -364,7 +357,7 @@ the `catalogAdmin`.
 - **File delivery starts at `redaktor`.** No role describing an ordinary
   participant carries a download; below `redaktor` it is granted to a named
   account, because the product is listening and reading inside Besedy.
-- **Lookups become per-catalog.** Recorder, location and album rows belong to one
-  catalog, which turns `manage_lookups` into an ordinary catalog permission and
-  removes the cross-catalog write path that `requireEditorOnAnyCatalog` opens
-  today.
+- **Lookups become per-catalog**, which turns `manage_lookups` into an ordinary
+  catalog permission and removes the cross-catalog write path that
+  `requireEditorOnAnyCatalog` opens today. Recorded separately in
+  [ADR 0007](0007-per-catalog-lookups.md).

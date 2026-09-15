@@ -21,6 +21,7 @@ each record links to those references.
 | [0004](0004-system-boundaries.md) | Accepted | Python, web, jobs, and backend responsibility boundaries |
 | [0005](0005-catalog-permission-model.md) | Proposed | Permission sets with visibility as one permission, roles as named presets |
 | [0006](0006-transcript-correction.md) | Proposed | Human transcript correction as a time-anchored layer that substitutes for machine output |
+| [0007](0007-per-catalog-lookups.md) | Proposed | Recorder, location and album rows belong to one catalog |
 
 When a decision changes, add a new ADR and mark the old record superseded. Do
 not rewrite old context to make it appear that the new design always existed.

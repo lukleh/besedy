@@ -41,12 +41,18 @@ rewritten, which keeps [ADR 0002](0002-artifact-generations.md) intact and
 follows [ADR 0003](0003-web-catalog-projection.md), where user-authored state is
 authoritative in PostgreSQL rather than reconstructed from pipeline output.
 
-### One transcript per recording
+### One transcript per recording, substituted span by span
 
-Per [ADR 0005](0005-catalog-permission-model.md), a corrected transcript
-substitutes for the original everywhere it is read. Correction state is not an
-access gate; the difference between corrected and provisional text is carried by
-labelling.
+Per [ADR 0005](0005-catalog-permission-model.md), correction substitutes at the
+level of the **span**, not the document. A recording has one transcript in which
+each span is either machine output or verified text, and a partly corrected
+recording — the normal state for years — reads as machine text with verified
+spans in it.
+
+Nothing therefore flips from "original" to "corrected", so the reader is told
+which spans are verified rather than which transcripts are, and the recording
+carries a coverage figure derived from its spans. Correction state is not an
+access gate; the difference is carried by labelling.
 
 ### The unit is a segment of the default backend, anchored by time
 
@@ -152,6 +158,42 @@ the first real use of the tool produces an impression; with it, it produces the
 numbers that decide whether the two-person rule is worth its cost, how much
 correction time a minute of audio costs, and how much two people actually differ.
 
+### Two people on one span
+
+The queue of spans awaiting a second opinion exists precisely to send several
+people to the same span, so simultaneous work on one is the main flow rather
+than an edge case.
+
+Every write carries the hash of the text it was based on. If the span has moved
+on, the write is refused and the author is shown what is there now. The hash is
+already in the model for attestations, so this costs nothing to add and it
+prevents the quiet loss that last-write-wins would otherwise produce: a second
+editor overwriting text a first was working on, the first's attestation voided by
+mismatch, and their work visible only in the edit history.
+
+The queue hands out spans under a short lease so two people are not sent to the
+same one to begin with. A lease is an ergonomic measure, not a lock: it expires
+on its own and the hash check remains the thing that guarantees correctness.
+
+### The sidecar is a resolved transcript, not a list of changes
+
+The artifact that crosses into the Python runtime is a **complete transcript in
+the canonical schema** — machine text with verified spans already substituted in
+— written per `audio_hash` alongside the generation it resolves.
+
+Making it a diff would put merge logic on both sides of the boundary, where the
+two implementations could disagree. As a resolved transcript it needs none: the
+export step renders `txt`, `srt` and `vtt` from it exactly as it does from any
+transcript, chunking reads it exactly as it reads any transcript,
+`readTranscriptFile()` resolves by pointing at its directory, and
+`docs/schemas/transcript.schema.json` validates it without a new schema being
+written. Merging lives once, in the runtime that owns the database.
+
+Beyond the canonical fields it carries only what a reader must be told:
+which spans are verified, and by how many attestations. Words a person wrote
+already carry `confidence: null` and an estimated-timing marker from the
+reconciliation rule above.
+
 ### Scope and what to correct first
 
 Only primary recordings of events are in scope: 198 recordings, 606.7 hours.
@@ -177,10 +219,14 @@ tool, is a prerequisite rather than documentation written afterwards.
 
 ## Consequences
 
-- A transcript gains a publication state alongside `CatalogEntry.isPublished` and
-  `CatalogEvent.released`. Having passed correction is a workflow invariant that
-  permits setting it, not an authorization decision.
-- Resolving "corrected if present, original otherwise" belongs in
+- There is **one** definition of done, and it lives on the span: the required
+  number of attestations on its current text. A transcript acquires no
+  corrected/uncorrected flag alongside `CatalogEntry.isPublished` and
+  `CatalogEvent.released`, because nothing reads such a flag — reading resolves
+  span by span. What stands for the recording is a **derived coverage figure**,
+  computed from its spans, never a stored boolean that could disagree with them.
+- Resolving "corrected where a span has been verified, original elsewhere"
+  belongs in
   `lib/transcript`, where both `loadTranscript()` and `readTranscriptFile()`
   live. The first covers the recording page, the comparison view and MCP; the
   second covers the transcript download route and the bulk export. Changing
@@ -195,12 +241,12 @@ tool, is a prerequisite rather than documentation written afterwards.
   the transcript fingerprint, and the existing incremental per-`audio_hash` sync
   already adds, refreshes and prunes on that basis.
 - Corrections must reach the Python side without either runtime reaching into the
-  other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. Accepted
-  corrections are materialized as a sidecar artifact in a writable directory, the
-  way posters and sources already are, and the export and chunking steps read it.
+  other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. They are
+  materialized as a sidecar artifact in a writable directory, the way posters and
+  sources already are, and the export and chunking steps read it.
 - That materialization is also what answers the download path, so the two are one
-  mechanism rather than two. Once accepted corrections are materialized and the
-  export step renders the format files from them, `readTranscriptFile()` resolves
+  mechanism rather than two. Once the resolved transcript is materialized and the
+  export step renders the format files from it, `readTranscriptFile()` resolves
   by pointing at the corrected artifact and needs no renderer of its own. The
   alternative — rendering formats on the fly in the web app — would duplicate
   subtitle rendering that already exists in Python and put it on the wrong side
