@@ -37,6 +37,14 @@ published recordings to all material. It is not a separate value and not a
 position on a ladder, so gaining a capability never widens visibility and
 widening visibility never grants a capability.
 
+Visibility here means precisely one thing: **the release state of the material**.
+On that axis `see_unreleased` is the only key, and nothing else opens it. Other
+permissions do widen what an actor can see along other axes —
+`correct_transcripts` shows unchecked text inside the correction surface, because
+one cannot correct what one cannot see, and `see_transcript_variants` shows the
+machine transcripts other than the default. Neither reaches unreleased material,
+which is what the orthogonality above is about.
+
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
 
@@ -123,20 +131,25 @@ reachable in the places where working on it is the point:
 - to `redaktor` and `catalogAdmin` through `see_unreleased`;
 - through search and agents, which are not reading surfaces — see below.
 
-### Search and agents are not gated on release
+### Search is scoped by the event, never by the transcript
 
-The code holds an invariant that search must never be broader than transcript
-access, and it now has to be read at the level of the **catalog**: an actor may
+On the axis that decides what material exists for an actor, search behaves like
+every other read: it returns material from released events, and an actor holding
+`see_unreleased` searches the transcripts of unreleased ones too, in the web
+application and through MCP alike. There is no special rule.
+
+What does not enter into it is the transcript's own release state. A correction
+reaches retrieval as soon as it is verified, and search keeps working over
+whatever text exists, improving as correction proceeds. Release gates the reading
+surfaces — the transcript view, its download, the bulk export — and nothing else.
+
+The invariant the code holds, that search must never be broader than transcript
+access, therefore has to be read at the level of the **catalog**: an actor may
 not search a catalog whose transcripts it may not read. It does not mean an actor
-may not search a transcript it cannot open — under release gating that is the
-normal case, deliberately. The comment predates release being a state of the
-material rather than a property of the role, and rereading it the old way would
-gate search and undo this decision.
-
-A correction reaches retrieval as soon as it is made; a release gates only the
-reading surfaces — the transcript view, its download, and the bulk export.
-Search, both in the web application and through MCP, keeps working over whatever
-text exists and simply gets better as correction proceeds.
+may not search a transcript it cannot open, which under release gating is the
+normal case. The comment predates release being a state of the material rather
+than a property of the role, and rereading it the old way would gate search and
+undo this decision.
 
 This is deliberate and it follows a decision the MCP server already records: the
 web transcript view hands a person the full text to read like a book, while
@@ -228,7 +241,7 @@ than taken, which is what makes the role name worth reading.
 | --- | --- |
 | `read_transcripts` | Reading a recording's transcript, once it has been released. |
 | `see_transcript_variants` | That more than one machine backend exists: the per-recording picker and the multi-backend stream view. Administrative only; every other role reads the default backend. |
-| `see_speakers` | The diarization overlay. |
+| `see_speakers` | The diarization overlay. Administrative for the same reason as the line above: it is unevaluated machine output, it names nobody, and it currently tells an ordinary reader nothing useful. |
 
 ### Correction
 
@@ -279,8 +292,9 @@ grant comes from `catalogAdmin`.
 account may take files out, not which material it may take: the scope is always
 whatever that account can read. A `redaktor` holds `see_unreleased` and so
 downloads unreleased transcripts too; a `čtenář` granted a download takes
-released ones only. The same rule covers the bulk export, so no download carries
-a release test of its own.
+released ones only. Audio follows the same rule against what the account may
+stream, and so does the bulk export, so no download carries a release test of its
+own.
 
 A `korektor` is not an exception to this. Their access to unchecked text is
 access to a working surface, not a right to read it, so a `korektor` granted a
@@ -305,10 +319,10 @@ catalog permission reaches them.
 | --- | --- |
 | posluchač | `stream_audio` |
 | čtenář | + `read_transcripts`, `search_transcripts` |
-| korektor | čtenář + `correct_transcripts`, `see_speakers` |
+| korektor | čtenář + `correct_transcripts` |
 | hostitel | čtenář + `manage_access` |
-| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
-| catalogAdmin | wildcard, including `see_transcript_variants` and `manage_catalog_config` |
+| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config` |
 
 Every role below `redaktor` sees released events and published recordings only,
 because none of them holds `see_unreleased`.
@@ -415,9 +429,19 @@ the `catalogAdmin`.
   than of the actor, each is permitted by a workflow invariant, and each is
   performed deliberately by a person. Keeping the three alike is worth more than
   tailoring any one of them.
-- **Backend variants are administrative.** Every role except `catalogAdmin` reads
-  one transcript per recording, the configured default from
-  `TranscriptBackendPriority`. The picker and the stream view are one permission.
+- **Machine-output views are administrative.** Two permissions sit with
+  `catalogAdmin` alone for the same reason: they expose raw model output that has
+  not been evaluated and that tells an ordinary user nothing useful yet.
+  `see_transcript_variants` covers the backend picker and the stream view, so
+  every other role reads the one default from `TranscriptBackendPriority`.
+  `see_speakers` covers the diarization overlay, which distinguishes turns
+  without naming anyone. Both are candidates to open later — diarization once
+  speaker attribution becomes a phase of correction — but neither earns a place
+  in a role today.
+- **A released transcript therefore carries no speaker information for its
+  audience**, in material that is by its nature discussion. This is accepted for
+  now rather than overlooked: the overlay identifies nobody, and attributing
+  speech is a later phase built on the same span mechanism.
 - **Posters and sources stay separate permissions.**
 - **Downloaded audio is the playable file.** Original masters are not part of any
   role.
