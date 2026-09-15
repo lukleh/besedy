@@ -293,10 +293,11 @@ tool, is a prerequisite rather than documentation written afterwards.
   is not to be closed by rendering formats in the web app; it is bounded by that
   job and never by someone remembering to run `just catalog export-transcripts`.
 - That job is a dependency, not existing machinery. Prefect runs in production
-  and owns one flow today, deep search. Transcript rendering and reindexing on
-  acceptance is a second flow, and triggering a job from the web application is
-  itself work in progress. Until both exist, corrections reach the page and
-  `get_transcript` and go no further.
+  and owns one flow today, deep search, which the web application already starts
+  through the jobs API. Transcript rendering and reindexing on acceptance is a
+  second flow with a second deployment, and the acceptance handler has to call
+  the jobs API the way the deep-search route does. Until both exist, corrections
+  reach the page and `get_transcript` and go no further.
 - Corrections are anchored to text that re-transcription can change. On a
   mismatch the span is relocated by time overlap and text similarity; a confident
   relocation is applied and recorded, and anything less leaves the span marked
