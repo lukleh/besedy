@@ -117,6 +117,12 @@ Access is granted as roles, not as permissions. Two permissions are
 
 - A holder of `manage_access` may assign any role that carries neither
   protected permission. Today that is `posluchač`, `čtenář` and `korektor`.
+- The same test applies to the role being **replaced**. Changing or revoking the
+  access of an account that already holds a protected role is reserved to
+  `catalogAdmin`, so a `hostitel` cannot demote a `redaktor` to `posluchač` or
+  revoke them outright.
+- Nobody changes their own access. A holder of `manage_access` cannot assign
+  themselves a role, protected or not; that is a `catalogAdmin` act.
 - Only `catalogAdmin` and above may assign a role that carries a protected
   permission (`hostitel`, `redaktor`), and only they may grant extras.
 
@@ -129,6 +135,21 @@ can mint accounts which grant. Protecting `see_unreleased` keeps unreleased
 material an administrative decision: a `redaktor` sees it but cannot pass that
 sight on. Because the test is on the permissions a role carries, a role added
 later is classified without touching this rule.
+
+Testing the replaced role as well as the assigned one keeps the existing
+two-sided check. Today every access mutation asks both
+`canGrantCatalogAccessLevel` about the new level and
+`canManageExistingCatalogAccessLevel` about the level already held, on update and
+on revoke alike. Without the second test the rule would stop privilege from
+spreading upward but still let an account strip one above it, which is the same
+authority wearing a different hat.
+
+Forbidding self-assignment is new, not inherited. Under a rule that let a granter
+pass on only what it held, assigning to oneself gained nothing and the question
+never arose; the only self-check in the code today is the narrow one that stops
+an owner demoting itself out of its own catalog. Granting by role removes that
+natural limit, so the prohibition has to be stated. It also keeps a role
+conferred rather than taken, which is what makes the role name worth reading.
 
 ## Permission catalogue
 
@@ -318,7 +339,8 @@ the `catalogAdmin`.
   assign a role that carries it, and no role can extend it as an extra.
 - **A `hostitel` invites anyone below `hostitel`.** Below means a role carrying
   neither protected permission, so a `hostitel` assigns `posluchač`, `čtenář`
-  and `korektor` and nothing else.
+  and `korektor` and nothing else — to other people, and to accounts that do not
+  already hold a protected role.
 - **An empty corrected-transcript state is acceptable at launch.** Until a
   recording has a corrected transcript, readers get the original. No backfill and
   no grandfathering are needed, because substitution makes the original the
