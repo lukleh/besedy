@@ -60,6 +60,35 @@ is the step that needs the `host` role, the extras column and both of the two
 steps above to exist. Keeping it separate from steps 3 and 4 is what makes those
 two provable.
 
+## What the assignment costs, checked against production
+
+Step 7 was verified against the live grants on 2026-09-16, before any of it was
+built. Eighty active grants, none revoked, and the administrator holds no grant
+at all.
+
+The 77 listeners are unaffected: `listener` carries what `LISTENER` carried.
+
+The one member is dormant — three logins, three streams, one transcript view,
+nothing since 2026-08-30, Labs off — and `reader` keeps the reading and
+searching it used.
+
+For the two owners, what they use survives the move to `host`: 1146 audio
+streams, 154 transcript views, 27 invitations created, and nine transcript
+downloads, the last of which is why the role carries `download_transcripts` as
+an extra. What they give up is mostly unused, and measurably so — zero metadata
+edits, zero audio downloads, and none of the 198 events, every one of which was
+created and last updated by the administrator.
+
+Two of the losses are real and are accepted rather than overlooked. One owner
+browses through the recordings list, which their stored tab preference shows,
+and `host` has no `browse_recordings`, so the catalog becomes events-only for
+them.
+The same owner has created three deep-search jobs, and `host` has no
+`use_deep_search`. Both were offered to the role and both were declined: the
+rights belong to the editorial role, and an owner who wants them can be given
+one. The dormant member likewise loses access to a deep-search job shared with
+them.
+
 ## How this reaches production
 
 The merges are not deployed one at a time; the whole rework goes out in a single
