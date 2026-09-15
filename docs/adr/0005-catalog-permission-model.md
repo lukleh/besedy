@@ -133,12 +133,12 @@ Correction proceeds span by span and improves the corpus continuously. Reading a
 transcript from end to end is a different act, and it opens only when the whole
 transcript has been checked and **released**.
 
-Those two facts are not in tension; they answer different questions. What a
-correction changes immediately is the material that search and agents draw on,
-which gets better one span at a time and needs no ceremony. What a release
-changes is whether a person may sit down and read the transcript as a document,
-which is an editorial statement about the whole of it and cannot be made span by
-span.
+Those two facts are not in tension; they answer different questions. Correction
+in progress is kept apart: nothing a corrector writes leaves the correction
+surface until the transcript is released. Release is then the one moment at
+which the recording's transcript changes, and it changes for everyone at once —
+readers, search and agents alike. It is also an editorial statement about the
+whole of the transcript, which cannot be made span by span.
 
 So a transcript carries a release state, the third instance of a pattern this
 system already uses twice: a recording is published, an event is released, and
@@ -171,10 +171,12 @@ every other read: it returns material from released events, and an actor holding
 `see_unreleased` searches the transcripts of unreleased ones too, in the web
 application and through MCP alike. There is no special rule.
 
-What does not enter into it is the transcript's own release state. A correction
-reaches retrieval as soon as it is verified, and search keeps working over
-whatever text exists, improving as correction proceeds. Release gates the reading
-surfaces — the transcript view, its download, the bulk export — and nothing else.
+What does not enter into it is the transcript's own release state. Search works
+over the machine transcript until the transcript is released, and over the
+released transcript afterwards; corrections in progress reach it no more than
+they reach anyone else. Release gates *reading* — the transcript view, its
+download, the bulk export — and nothing else: an unreleased transcript's machine
+text stays searchable, exactly as it is today.
 
 The invariant the code holds, that search must never be broader than transcript
 access, therefore has to be read at the level of the **catalog**: an actor may
@@ -259,7 +261,7 @@ than taken, which is what makes the role name worth reading.
 
 | Permission | Covers |
 | --- | --- |
-| `see_unreleased` | Unreleased events, unpublished and non-actionable recordings, and the release-state indicators that only make sense alongside them. |
+| `see_unreleased` | Unreleased events, unpublished and non-actionable recordings, unreleased transcripts, and the release-state indicators that only make sense alongside them. |
 
 ### Browsing and audio
 
@@ -377,12 +379,13 @@ empty.
   transcript changes, which the incremental per-`audio_hash` sync keyed on
   `transcript_fingerprint` already does. This is existing machinery, not new
   index work.
-- Gating reading on release removes work rather than adding it. Every reading
-  surface — the transcript view, its download, the bulk export — touches only
-  released transcripts, and a released transcript has been fully verified,
-  materialized and rendered. All of them therefore read the same artifact, and
-  neither `loadTranscript()` nor `readTranscriptFile()` needs a rule for
-  resolving partially corrected text. See [ADR 0006](0006-transcript-correction.md).
+- Keeping corrections apart until release removes work rather than adding it.
+  Before release every surface — the transcript view, its download, the bulk
+  export, search and MCP — serves the machine transcript; after release all of
+  them serve the released one, which has been fully verified, materialized and
+  rendered. No reader anywhere merges partially corrected text, and the only
+  resolution rule is "the released transcript if there is one, otherwise the
+  default backend". See [ADR 0006](0006-transcript-correction.md).
 - The catalog settings page is one permission today and mixes access management,
   catalog configuration, event health and bulk transcript export. Splitting the
   roles requires splitting that page into separately gated cards.
@@ -483,10 +486,13 @@ empty.
   but it should not be promised as anything else.
 - **Unchecked text is withheld from reading, not from use.** A `čtenář` opening a
   recording whose transcript is not yet released sees how far checking has got,
-  not the machine text. The same text still reaches them through search and
-  through an agent's answer, where it is a source rather than a document, and
+  not the machine text. The same machine text still reaches them through search
+  and through an agent's answer, where it is a source rather than a document, and
   where the caution the MCP server asks agents to give still applies. Releasing
   is what turns a transcript into something to read.
+- **Corrections in progress reach nobody outside the correction surface.** Not
+  the reading surfaces, not search, not agents. Release is the single moment the
+  transcript changes, and it changes everywhere at once.
 - **Release is one pattern used three times.** A recording is published, an event
   is released, a transcript is released. Each is a state of the material rather
   than of the actor, each is permitted by a workflow invariant, and each is

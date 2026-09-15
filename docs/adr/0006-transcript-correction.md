@@ -48,9 +48,10 @@ level of the **span**. A recording has one transcript in which each span is
 either machine output or verified text, and a partly corrected recording is the
 normal state for years rather than a transitional one.
 
-What that improving text feeds is search and agents, continuously and without
-ceremony. What it does not do is open the transcript for reading: that happens
-once, when every span has been verified and a person **releases** the transcript.
+That improving text stays inside the correction surface. Nothing a corrector
+writes reaches a reader, search or an agent until every span has been verified
+and a person **releases** the transcript; release is the one moment the
+recording's transcript changes, and it changes for every surface at once.
 Reading end to end is an editorial statement about the whole document and cannot
 be made span by span.
 
@@ -97,12 +98,15 @@ The middle state exists because a single pass by one person already removes most
 nonsense, and with a small group it would otherwise be work that never counts
 for anything.
 
-**Only `verified` spans leave the correction surface.** A span one person has
-corrected still reads as machine output to search, to agents and to the eventual
-release, until a second person agrees. Holding `correct_transcripts` is therefore
-not the power to change what anyone else sees: it is access to a tool, and the
-second attestation is the control. This is what makes it safe to hand the
-permission out widely, and it has to hold whatever the roles look like.
+**Nothing leaves the correction surface before release.** Corrections in
+progress, reviewed or verified, are visible only to correctors; search, agents
+and readers keep the machine transcript until the whole transcript is released.
+Inside the surface, verification is the control: a span one person corrected
+counts for nothing until a second person agrees, and a transcript cannot be
+released until every span is verified. Holding `correct_transcripts` is
+therefore not the power to change what anyone else sees: it is access to a tool.
+This is what makes it safe to hand the permission out widely, and it has to hold
+whatever the roles look like.
 
 A reader sees none of this. Nothing from a transcript reaches the reading surface
 until every span is verified and the transcript is released, so the span states
@@ -201,7 +205,8 @@ on its own and the hash check remains the thing that guarantees correctness.
 ### The sidecar is a resolved transcript, not a list of changes
 
 The artifact that crosses into the Python runtime is a **complete transcript in
-the canonical schema** — machine text with verified spans already substituted in.
+the canonical schema** — the released transcript, every span verified and
+substituted in. It is written at release and at no other time.
 
 It lives in its own writable tree, keyed by the generation it resolves against
 and then by `audio_hash`, the way posters and sources already have writable
@@ -221,8 +226,9 @@ transcript, chunking reads it exactly as it reads any transcript,
 `docs/schemas/transcript.schema.json` validates it without a new schema being
 written. Merging lives once, in the runtime that owns the database.
 
-Beyond the canonical fields it carries only what a reader must be told:
-which spans are verified, and by how many attestations. Words a person wrote
+Beyond the canonical fields it carries only what a reader must be told: that
+the transcript is released, and how many attestations each span carries. Words a
+person wrote
 already carry `confidence: null` and an estimated-timing marker from the
 reconciliation rule above.
 
@@ -270,19 +276,21 @@ tool, is a prerequisite rather than documentation written afterwards.
   release, not the release itself. Until then a derived coverage figure stands
   for the transcript, and it is computed from the spans rather than stored beside
   them, so the two can never disagree.
-- Gating reading on release spares `lib/transcript` a resolution rule entirely.
-  Partially corrected text never reaches a reading surface, so neither
-  `loadTranscript()` on the recording page nor `readTranscriptFile()` on the
-  download and export paths has to merge anything: both point at the materialized
-  artifact of a released transcript, which is already whole. What each still
-  needs is to know that a transcript is released and where its artifact is.
-- Retrieval needs no notion of correction state. A corrected transcript changes
+- Keeping corrections apart until release spares every reader a resolution rule.
+  Partially corrected text never leaves the correction surface, so neither
+  `loadTranscript()` — on the recording page, in the comparison view and behind
+  MCP's `get_transcript` — nor `readTranscriptFile()` on the download and export
+  paths has to merge anything. Each points at the materialized artifact of a
+  released transcript, which is already whole, or at the default backend's
+  machine transcript when there is none. What each still needs is to know that a
+  transcript is released and where its artifact is.
+- Retrieval needs no notion of correction state. A released transcript changes
   the transcript fingerprint, and the existing incremental per-`audio_hash` sync
   already adds, refreshes and prunes on that basis.
 - Corrections must reach the Python side without either runtime reaching into the
-  other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. They are
-  materialized into the writable tree described above, and the export and chunking
-  steps read it from there.
+  other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. At release
+  they are materialized into the writable tree described above, and the export
+  and chunking steps read it from there.
 - That materialization is also what answers the download path, so the two are one
   mechanism rather than two. Once the resolved transcript is materialized and the
   export step renders the format files from it, `readTranscriptFile()` resolves
@@ -291,28 +299,27 @@ tool, is a prerequisite rather than documentation written afterwards.
   subtitle rendering that already exists in Python and put it on the wrong side
   of the boundary. It also means downloads and search become correct at the same
   moment, both driven by materialization, rather than drifting apart.
-- Before release, MCP is inconsistent with itself, and that is the only place the
-  lag is visible. `get_transcript` goes through `loadTranscript()` and reflects a
-  correction as soon as it is verified; `search_transcripts` and
-  `find_transcript_mentions` read the retrieval bundle and trail until the render
-  job runs, as does the catalog's own search. An agent can therefore quote a
-  corrected passage from one tool while another still returns the machine wording
-  for the same moment. The reading surfaces show none of this, because they open
-  only after release, by which time everything has been rendered and indexed.
-- Because of that, accepting a correction triggers **one** job that both renders
-  the format files and refreshes the index. Two separate triggers would let the
-  surfaces drift apart from each other rather than merely lag the page, which is
-  the outcome materialization exists to prevent. The lag itself is accepted and
-  is not to be closed by rendering formats in the web app; it is bounded by that
-  job and never by someone remembering to run `just catalog export-transcripts`.
-  A transcript cannot be released while that job still owes it work, so the lag
-  never reaches a reader.
+- Before release no surface differs from any other: the transcript view, its
+  download, the bulk export, web search and every MCP tool serve the machine
+  transcript, and corrections in progress are visible only inside the correction
+  surface. There is therefore no lag between surfaces to account for. The only
+  interval is between the act of releasing and the moment the artifact has been
+  materialized, rendered and indexed.
+- That interval is hidden rather than accepted. Releasing triggers **one** job
+  that materializes the resolved transcript, renders the format files and
+  refreshes the index; the transcript is presented as released only once that
+  job has completed, so no surface ever finds a released transcript without its
+  artifact or its index entry. One job rather than several, because separate
+  triggers would let the surfaces drift apart, which is the outcome
+  materialization exists to prevent. Formats are never rendered on the fly in the
+  web app, and the job is never a person remembering to run
+  `just catalog export-transcripts`.
 - That job is a dependency, not existing machinery. Prefect runs in production
   and owns one flow today, deep search, which the web application already starts
-  through the jobs API. Transcript rendering and reindexing on acceptance is a
-  second flow with a second deployment, and the acceptance handler has to call
-  the jobs API the way the deep-search route does. Until both exist, corrections
-  reach the page and `get_transcript` and go no further.
+  through the jobs API. Materializing, rendering and reindexing on release is a
+  second flow with a second deployment, and the release handler has to call the
+  jobs API the way the deep-search route does. Until both exist, nothing can be
+  released.
 - Corrections are anchored to text that re-transcription can change. On a
   mismatch the span is relocated by time overlap and text similarity; a confident
   relocation is applied and recorded, and anything less leaves the span marked
@@ -324,7 +331,7 @@ tool, is a prerequisite rather than documentation written afterwards.
   rather than part of text correction.
 - Releasing gates the reading surfaces only: the transcript view, its download
   and the bulk export. Search and MCP are never gated on it, so a reader can
-  obtain unreleased text by asking an agent for it. That asymmetry is the
+  obtain an unreleased transcript's machine text by asking an agent for it. That asymmetry is the
   documented MCP position — the transcript is a source there, not a document —
   and is not to be closed by gating `get_transcript`.
 - Until a transcript is released a reader is shown how far checking has got,
