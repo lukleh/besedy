@@ -378,6 +378,14 @@ the `catalogAdmin`.
 - Migration is behaviour-preserving: the five existing levels become the first
   rows of the role table, `accessLevelAtLeast` calls become permission checks,
   and only afterwards are `korektor` and `hostitel` added.
+- **The release gate must not ship with the permission rework.** It can only
+  arrive together with the correction system, because until then nothing is
+  released and nothing can release anything. Switching it on earlier would take
+  transcripts away from every account that reads them today without
+  `see_unreleased` — measured in production that is one, and it would be all 77
+  listeners the moment they were made readers. Until corrections exist,
+  `read_transcripts` means what it means today: read the transcript. This is a
+  condition on the order of work, not an implicit consequence of it.
 
 ## Settled points
 

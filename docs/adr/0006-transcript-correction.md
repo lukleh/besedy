@@ -65,6 +65,13 @@ nine variants of the same speech is not work anyone will do. The verified layer
 that results is keyed by **time**, not by backend: it records what was said
 between two moments, and the machine transcripts become proposals underneath it.
 
+A released transcript therefore ranks **above** `TranscriptBackendPriority`
+rather than inside it. Resolution is: the released corrected transcript if there
+is one, otherwise the highest-priority backend. Reordering that table changes
+which machine transcript stands in for the recordings nobody has finished, and
+cannot disturb one that has been released — which follows from the verified layer
+belonging to the recording rather than to the backend it started from.
+
 Because segments carry no identifiers, a span is anchored by its **time range
 plus a hash of its source text**. The segment index is stored as a hint, never as
 the identity. Rows are created lazily on the first human touch; an untouched span
@@ -224,15 +231,26 @@ reconciliation rule above.
 Only primary recordings of events are in scope: 198 recordings, 606.7 hours.
 
 At a playback speed of one, two passes over that cannot cost less than 1213
-person-hours, and realistically cost several times that. Complete coverage is
-therefore not a goal. Work is directed by two signals the system already has:
-low `confidence`, and which passages are actually being read, from MCP tool
-telemetry and search logs.
+person-hours, and realistically cost several times that. Complete coverage of the
+**corpus** is therefore not a goal. Complete coverage of any **recording** that is
+taken on is not optional: a half-checked beseda is of no use to a reader and can
+never be released, so a recording is gone through from end to end or not started.
 
-An average recording runs over three hours, so the unit a person commits to
-cannot be a recording. Progress is tracked and resumed inside one, and the
-default view for a corrector is the queue of spans waiting for a second opinion,
-because finishing someone else's work is the cheapest useful action available.
+That settles what the two signals the system already has are for, and it is not
+selecting spans. Low `confidence` directs **attention inside a pass** — it is
+where the tool pauses and waits rather than playing on — and it is read with
+reserve, because a model's certainty is not the same as being right. Citation
+telemetry and search logs choose **which recording to take next**, not which
+parts of one to bother with.
+
+Scattering corrections across the corpus at low-confidence spots would improve
+search and release nothing, which is the opposite of the trade this design makes.
+
+An average recording runs over three hours, so the unit a person commits to in
+one sitting cannot be a recording. Progress is tracked and resumed inside one,
+and the default view for a corrector is the queue of spans waiting for a second
+opinion **within the recordings already under way**, because finishing someone
+else's work is the cheapest useful action available.
 
 ### An editorial policy precedes the code
 
@@ -314,6 +332,11 @@ tool, is a prerequisite rather than documentation written afterwards.
   `čtenář` learns about a transcript in progress.
 - The correction page is desktop-first. Typing against running audio on a phone
   is not a workflow worth pretending to support, though confirming a span may be.
+- The release gate arrives with this system and not before it. A transcript
+  cannot be released until spans can be verified, so switching the gate on during
+  the permission rework would leave every reader without `see_unreleased` holding
+  a permission that resolves to nothing. See
+  [ADR 0005](0005-catalog-permission-model.md).
 - Until someone makes the listeners readers, released transcripts have an
   audience of three accounts. The reward that motivates correction — a verified passage quoted
   without a caution about machine transcription — only exists once that
