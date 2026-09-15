@@ -206,6 +206,11 @@ tool, is a prerequisite rather than documentation written afterwards.
   subtitle rendering that already exists in Python and put it on the wrong side
   of the boundary. It also means downloads and search become correct at the same
   moment, both driven by materialization, rather than drifting apart.
+- The recording page and MCP read corrections live, so downloads and the bulk
+  export may trail them until the next render; this lag is accepted and is not
+  to be closed by rendering formats in the web app. The render is triggered by
+  a job when corrections are accepted, so the lag is bounded by that job and
+  never by someone remembering to run `just catalog export-transcripts`.
 - Corrections are anchored to text that re-transcription can change. On a
   mismatch the span is relocated by time overlap and text similarity; a confident
   relocation is applied and recorded, and anything less leaves the span marked
