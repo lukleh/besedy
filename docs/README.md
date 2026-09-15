@@ -19,5 +19,6 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [web/mcp-server.md](web/mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing
 - [web/mcp-tools.md](web/mcp-tools.md) -- per-tool MCP contract: arguments, result shapes, errors
 - [web/mcp-follow-ups.md](web/mcp-follow-ups.md) -- deferred MCP work with the reasons it was deferred
+- [web/permission-rework.md](web/permission-rework.md) -- order and state of the permission rework; delete when it is finished
 - [web/operations.md](web/operations.md) -- deploy runbook, monitoring, environments
 - [schemas/transcript.schema.json](schemas/transcript.schema.json) -- canonical transcript JSON schema
