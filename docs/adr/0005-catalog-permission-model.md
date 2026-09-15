@@ -330,6 +330,16 @@ the `catalogAdmin`.
   means `redaktor` and `catalogAdmin`; every role below them loses visibility it
   has today. `see_unreleased` is protected, so only `catalogAdmin` and above can
   assign a role that carries it, and no role can extend it as an extra.
+- **`čtenář` and `korektor` stay separate roles.** Folding `correct_transcripts`
+  into `čtenář` was considered: the two-attestation rule rather than the
+  permission is what protects what readers see, so opening the tool widely is
+  safe, and the hours involved argue for the largest possible pool. It was
+  rejected because the role is a step rather than a cap — a `hostitel` assigns
+  `korektor` with no administrative involvement, so the pool grows without
+  merging anything. Keeping them apart also makes being a corrector something a
+  person accepts rather than something that arrives with reading, and gives a
+  moment at which the editorial convention is handed over. Merging later costs
+  one line; unmerging would take something away from people who already had it.
 - **A `hostitel` invites anyone below `hostitel`.** Below means a role carrying
   neither protected permission, so a `hostitel` assigns `posluchač`, `čtenář`
   and `korektor` and nothing else — to other people, and to accounts that do not

@@ -86,6 +86,13 @@ The middle state exists because a single pass by one person already removes most
 nonsense, and with a small group it would otherwise be work that never counts
 for anything.
 
+**Only `verified` spans reach a reader.** A span one person has corrected still
+reads as machine output everywhere except the correction surface, until a second
+person agrees. Holding `correct_transcripts` is therefore not the power to change
+what people read: it is access to a tool, and the second attestation is the
+control. This is what makes it safe to hand the permission out widely, and it has
+to hold whatever the roles look like.
+
 Attestations are bound to a hash of the text they vouch for. Editing the text
 therefore voids them by mismatch rather than by deletion, and the history of who
 vouched for what survives.
