@@ -39,7 +39,7 @@ export function canViewRecording(
     return false;
   }
 
-  if (context.catalogGrant === "LISTENER") {
+  if (lacksUnreleasedVisibility(context.catalogGrant)) {
     return !!state && state.isActionable && state.isPublished;
   }
 

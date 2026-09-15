@@ -171,6 +171,30 @@ describe("unreleased-visibility threshold", () => {
     }
   );
 
+  it.each([
+    ["LISTENER", false],
+    ["VIEWER", true],
+    ["MEMBER", true],
+    ["EDITOR", true],
+    ["OWNER", true],
+  ] as const)(
+    "lets %s open an unpublished recording directly: %s",
+    (level, visible) => {
+      const context = {
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: level,
+        isCatalogAdmin: false,
+      };
+      expect(
+        canViewRecording(context, { isActionable: true, isPublished: false })
+      ).toBe(visible);
+      // The per-recording gate must agree with the list scope, or a level
+      // hidden from the list could still be reached by direct URL.
+      expect(visible).toBe(!requiresReadyRecordingScope(level));
+    }
+  );
+
   it("keeps both scopes answering alike for every input", () => {
     for (const grant of [
       "LISTENER",
