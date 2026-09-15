@@ -206,11 +206,24 @@ tool, is a prerequisite rather than documentation written afterwards.
   subtitle rendering that already exists in Python and put it on the wrong side
   of the boundary. It also means downloads and search become correct at the same
   moment, both driven by materialization, rather than drifting apart.
-- The recording page and MCP read corrections live, so downloads and the bulk
-  export may trail them until the next render; this lag is accepted and is not
-  to be closed by rendering formats in the web app. The render is triggered by
-  a job when corrections are accepted, so the lag is bounded by that job and
-  never by someone remembering to run `just catalog export-transcripts`.
+- The split between live and trailing reads does not follow surfaces, it follows
+  readers, and MCP falls on both sides of it. `get_transcript` goes through
+  `loadTranscript()` and is live; `search_transcripts` and
+  `find_transcript_mentions` read the retrieval bundle and trail, exactly as the
+  download route, the bulk export and the catalog's own search do. An agent can
+  therefore quote a corrected passage from one tool while another still returns
+  the machine wording for the same moment.
+- Because of that, accepting a correction triggers **one** job that both renders
+  the format files and refreshes the index. Two separate triggers would let the
+  surfaces drift apart from each other rather than merely lag the page, which is
+  the outcome materialization exists to prevent. The lag itself is accepted and
+  is not to be closed by rendering formats in the web app; it is bounded by that
+  job and never by someone remembering to run `just catalog export-transcripts`.
+- That job is a dependency, not existing machinery. Prefect runs in production
+  and owns one flow today, deep search. Transcript rendering and reindexing on
+  acceptance is a second flow, and triggering a job from the web application is
+  itself work in progress. Until both exist, corrections reach the page and
+  `get_transcript` and go no further.
 - Corrections are anchored to text that re-transcription can change. On a
   mismatch the span is relocated by time overlap and text similarity; a confident
   relocation is applied and recorded, and anything less leaves the span marked
