@@ -293,10 +293,10 @@ the `catalogAdmin`.
 
 ## Consequences
 
-- Transcript correction state becomes a publication flag on the transcript,
-  alongside `CatalogEntry.isPublished` and `CatalogEvent.released`. Whether a
-  transcript has passed correction is a workflow invariant that permits setting
-  the flag, not an authorization decision.
+- A transcript gains a stored release state alongside `CatalogEntry.isPublished`
+  and `CatalogEvent.released`, and the reading surfaces consult it. Every span
+  being verified is the workflow invariant that permits setting it; setting it is
+  an editorial act, and neither is an authorization decision.
 - Because correction substitutes rather than gates, search needs no notion of
   correction state for authorization. It needs the index to be refreshed when a
   transcript changes, which the incremental per-`audio_hash` sync keyed on

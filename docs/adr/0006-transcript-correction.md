@@ -194,8 +194,17 @@ on its own and the hash check remains the thing that guarantees correctness.
 ### The sidecar is a resolved transcript, not a list of changes
 
 The artifact that crosses into the Python runtime is a **complete transcript in
-the canonical schema** — machine text with verified spans already substituted in
-— written per `audio_hash` alongside the generation it resolves.
+the canonical schema** — machine text with verified spans already substituted in.
+
+It lives in its own writable tree, keyed by the generation it resolves against
+and then by `audio_hash`, the way posters and sources already have writable
+directories of their own. It is not written inside the transcript generation.
+[ADR 0002](0002-artifact-generations.md) treats a generation's contents as
+published artifacts whose only mutable coordination state is the symlink, so
+writing corrections into one would break rollback: repointing the symlink would
+leave corrections attached to a generation nobody is reading. Keying by
+generation also stops a re-transcription from silently inheriting a sidecar
+resolved against a different segmentation.
 
 Making it a diff would put merge logic on both sides of the boundary, where the
 two implementations could disagree. As a resolved transcript it needs none: the
@@ -260,8 +269,8 @@ tool, is a prerequisite rather than documentation written afterwards.
   already adds, refreshes and prunes on that basis.
 - Corrections must reach the Python side without either runtime reaching into the
   other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. They are
-  materialized as a sidecar artifact in a writable directory, the way posters and
-  sources already are, and the export and chunking steps read it.
+  materialized into the writable tree described above, and the export and chunking
+  steps read it from there.
 - That materialization is also what answers the download path, so the two are one
   mechanism rather than two. Once the resolved transcript is materialized and the
   export step renders the format files from it, `readTranscriptFile()` resolves

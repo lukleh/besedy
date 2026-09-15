@@ -44,10 +44,16 @@ lists once per catalog, which is the situation the change exists to end.
 
 ### Identifiers survive the migration
 
-Lookup ids leave the system: MCP returns them, and deep-search jobs store them
-in saved metadata filters. The migration therefore keeps each original row and
-assigns it to one catalog, creating new rows only for the additional catalogs.
-Most ids stay as they are and saved filters keep resolving.
+Lookup ids leave the system: MCP returns them from `list_locations` and
+`list_recorders` and accepts them back as search filters, so a client that
+remembered one across sessions would stop resolving it. Nothing inside Besedy
+persists them beyond the foreign keys the migration repoints — the deep-search
+job payload carries a query, instructions and two opaque configuration objects,
+not filters.
+
+That makes the case for stability thinner than it first appears, but preserving
+ids costs nothing, so the migration keeps each original row and assigns it to one
+catalog, creating new rows only for the additional catalogs.
 
 ### The invariant
 
@@ -65,6 +71,11 @@ the application and checkable with one query over `audio_metadata` and
   backfill and two altered unique constraints.
 - `requireEditorOnAnyCatalog` disappears, and with it the `/api/metadata/*` item
   routes that apply no catalog scope at all.
+- Removing it reaches further than the guard. The derived flag
+  `hasEditorOnAnyCatalog` is computed in `lib/access/capabilities.ts`, shipped to
+  the browser by `/api/me/permissions`, consumed by `hooks/use-admin-status.ts`
+  and used to gate `admin/metadata/layout.tsx`. Retiring the guard therefore
+  changes the shape of a client-facing response, not only server-side policy.
 - The change is visible to users, not merely structural: recorder, location and
   album pickers narrow to the catalog being worked on. It therefore needs its own
   tests rather than passing as a migration.
@@ -72,9 +83,9 @@ the application and checkable with one query over `audio_metadata` and
   `redaktor` role, which is where [ADR 0005](0005-catalog-permission-model.md)
   already places it.
 - This change is a prerequisite for nothing. `requireEditorOnAnyCatalog` appears
-  only in `lib/api/crud-factory.ts` and `admin/metadata/layout.tsx`, so it
-  touches no transcript, event, recording or access path. It can land before the
-  permission rework, after it, or not yet.
+  only in `lib/api/crud-factory.ts`, and the flag derived from it only in the four
+  files named above, so it touches no transcript, event, recording or access
+  path. It can land before the permission rework, after it, or not yet.
 - Landing it **before** the permission rework is nonetheless preferable. The
   rework is a behaviour-preserving refactor, and its safety rests on that
   property; folding a schema-and-data migration into it would cost exactly that.
