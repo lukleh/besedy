@@ -236,7 +236,9 @@ the `catalogAdmin`.
   MCP, while the transcript download route and the bulk export read format
   files through `readTranscriptFile()`. Both readers must resolve "corrected if
   present, original otherwise", or downloads and the export keep serving machine
-  text after the page has switched.
+  text after the page has switched. The two need different work, because the
+  format files have no corrected counterpart until something renders one; see
+  [ADR 0006](0006-transcript-correction.md).
 - MCP serves the same substituted transcript. The documented decision that a
   listener may read transcripts through MCP stops conflicting with web
   restrictions, because both surfaces now serve one text.

@@ -303,7 +303,8 @@ means the capability is qualified.
     whose default authorizer is `hasCatalogManagementAuthority`, after
     `requireCatalogEventsAccess(catalogId, "view")`. Poster reads are open to
     every level; for LISTENER they are release-scoped through
-    `requiresReleasedEventVisibilityScope`.
+    `requiresReleasedEventVisibilityScope`. Source reads are not: every source
+    route, read included, goes through the management check.
 
 [^lookup]: `requireEditorOnAnyCatalog` means EDITOR on *any* catalog. Recorder,
     location and album rows are global, so this is cross-catalog write access.

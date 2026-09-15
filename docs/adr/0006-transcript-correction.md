@@ -185,6 +185,12 @@ tool, is a prerequisite rather than documentation written afterwards.
   live. The first covers the recording page, the comparison view and MCP; the
   second covers the transcript download route and the bulk export. Changing
   only the first would leave downloads and the export serving machine text.
+- The two readers need different work, because they read different things.
+  `loadTranscript()` parses `transcript.json` and can pick a different source.
+  `readTranscriptFile()` returns `transcript.<format>` as bytes, and no corrected
+  `json`, `txt`, `srt` or `vtt` exists anywhere: the format files are rendered by
+  the pipeline's export step. Resolution on that side therefore means producing
+  the formats from corrected text, not choosing a different file.
 - Retrieval needs no notion of correction state. A corrected transcript changes
   the transcript fingerprint, and the existing incremental per-`audio_hash` sync
   already adds, refreshes and prunes on that basis.
@@ -192,6 +198,14 @@ tool, is a prerequisite rather than documentation written afterwards.
   other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. Accepted
   corrections are materialized as a sidecar artifact in a writable directory, the
   way posters and sources already are, and the export and chunking steps read it.
+- That materialization is also what answers the download path, so the two are one
+  mechanism rather than two. Once accepted corrections are materialized and the
+  export step renders the format files from them, `readTranscriptFile()` resolves
+  by pointing at the corrected artifact and needs no renderer of its own. The
+  alternative — rendering formats on the fly in the web app — would duplicate
+  subtitle rendering that already exists in Python and put it on the wrong side
+  of the boundary. It also means downloads and search become correct at the same
+  moment, both driven by materialization, rather than drifting apart.
 - Corrections are anchored to text that re-transcription can change. On a
   mismatch the span is relocated by time overlap and text similarity; a confident
   relocation is applied and recorded, and anything less leaves the span marked
