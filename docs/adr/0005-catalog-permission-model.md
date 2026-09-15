@@ -48,11 +48,44 @@ which is what the orthogonality above is about.
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
 
+The typed capability layer stays, and permissions become what it is computed
+from. `security.md` already requires route and page code to depend on that layer
+rather than on ad hoc policy logic, it is consumed by pages, API routes, MCP and
+the browser, and a bare permission set at the call site invites exactly the ad hoc
+checks the layer exists to prevent. So `canViewCatalogTranscripts` and its
+siblings survive as thin wrappers over `has(actor, 'read_transcripts')`, which
+also keeps the mechanical step of the rework inside the policy layer instead of
+spreading it across every caller.
+
 ### Roles are named permission sets
 
 Roles are defined in code, the way feature rollouts already are. An account
 stores a role name per catalog, not an expanded set. Adding a role is a commit,
 not a migration and not a runtime editor.
+
+`CatalogAccess.accessLevel` becomes the stored role and its extras sit beside it
+as a list on the same row, so an account's effective set is readable without a
+join. Identifiers are English and lower case; the Czech names in this record are
+what the interface and this conversation use.
+
+| Identifier | Name here |
+| --- | --- |
+| `listener` | posluchač |
+| `reader` | čtenář |
+| `corrector` | korektor |
+| `host` | hostitel |
+| `curator` | redaktor |
+| `catalog_admin` | catalogAdmin |
+
+`curator` rather than `editor` deliberately. The retired `EDITOR` level meant
+metadata editing alone, while this role runs the archive's editorial work; reusing
+the word for a wider meaning is the kind of collision that misleads a reader a
+year from now.
+
+`catalog_admin` is a stored role like any other, so a person can hold it for one
+catalog without being a system administrator. `isCatalogAdmin` is then true for a
+system administrator **or** a holder of that role. Nobody holds it at
+introduction.
 
 ### Extra permissions are additive only
 
@@ -315,22 +348,23 @@ catalog permission reaches them.
 
 ## Roles
 
-| Role | Permissions |
-| --- | --- |
-| posluchač | `stream_audio` |
-| čtenář | + `read_transcripts`, `search_transcripts` |
-| korektor | čtenář + `correct_transcripts` |
-| hostitel | čtenář + `manage_access` |
-| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
-| catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config` |
+| Role | Name here | Permissions |
+| --- | --- | --- |
+| `listener` | posluchač | `stream_audio` |
+| `reader` | čtenář | + `read_transcripts`, `search_transcripts` |
+| `corrector` | korektor | `reader` + `correct_transcripts` |
+| `host` | hostitel | `reader` + `manage_access` |
+| `curator` | redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config` |
 
-Every role below `redaktor` sees released events and published recordings only,
+Every role below `curator` sees released events and published recordings only,
 because none of them holds `see_unreleased`.
 
-Expected occupancy at introduction: one `catalogAdmin`, two `hostitel` (one of
-them with `download_transcripts` as an extra), a few `korektor`, and everyone
-else `čtenář`. `redaktor` starts empty — its editorial rights currently sit with
-the `catalogAdmin`.
+Occupancy at introduction, from the production figures: 77 `listener`, two
+`host` carrying `download_transcripts` as an extra, one `reader`, and the
+administrator reaching every catalog through `isCatalogAdmin` without holding a
+grant. `corrector` fills as people are asked; `curator` and `catalog_admin` start
+empty.
 
 ## Consequences
 
@@ -375,9 +409,30 @@ the `catalogAdmin`.
   a prerequisite for nothing, so it has its own record:
   [ADR 0007](0007-per-catalog-lookups.md). `redaktor` carries the permission from
   the moment that record lands; before then there is no catalog for it to govern.
-- Migration is behaviour-preserving: the five existing levels become the first
-  rows of the role table, `accessLevelAtLeast` calls become permission checks,
-  and only afterwards are `korektor` and `hostitel` added.
+- The mechanical part of the rework preserves behaviour — `accessLevelAtLeast`
+  calls become permission checks inside the policy layer, and the capability
+  objects above it keep their shape. **Assigning the roles does not**, and that is
+  intended rather than incidental. Measured in production the whole of it is three
+  accounts:
+
+  | Today | Count | Becomes | Effect |
+  | --- | --- | --- | --- |
+  | `LISTENER` | 77 | `listener` | unchanged |
+  | `MEMBER` | 1 | `reader` | loses downloads and sight of unreleased material |
+  | `OWNER` | 2 | `host` | loses the editorial rights below |
+  | `VIEWER` | 0 | `reader` | nobody holds it |
+  | `EDITOR` | 0 | `reader` + `edit_metadata` | nobody holds it |
+
+- Neither owner is the administrator, who holds no catalog grant at all and
+  reaches the catalog through `isCatalogAdmin`. As `host` the two of them keep
+  listening, reading, searching and managing access, and give up unreleased
+  visibility, event management and release, recording publication, metadata
+  editing, posters, sources, deep search, downloads and the settings page. That is
+  acceptable because it is not what they do: in practice they add users and
+  occasionally download a transcript, which the role keeps — the download as an
+  extra. The role finally describes the work rather than the history.
+- `curator` starts empty, so the editorial rights it names sit with the
+  `catalog_admin` until somebody is given them.
 - **The release gate must not ship with the permission rework.** It can only
   arrive together with the correction system, because until then nothing is
   released and nothing can release anything. Switching it on earlier would take
