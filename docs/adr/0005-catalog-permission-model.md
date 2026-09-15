@@ -86,31 +86,50 @@ member did. The buttons disappear for three accounts.
 Offline caching therefore needs no permission of its own. It delivers bytes, but
 it delivers the same listening `stream_audio` already describes.
 
-### One transcript per recording, corrected span by span
+### The span is the unit of work; the transcript is the unit of release
 
-A recording has exactly one transcript from a reader's point of view. Correction
-does not produce a second document that replaces the first: it replaces
-**spans**, one at a time, inside the only transcript there is. A reader of a
-partly corrected recording gets machine text with verified spans in it, and that
-is the normal state for years rather than a transitional one.
+Correction proceeds span by span and improves the corpus continuously. Reading a
+transcript from end to end is a different act, and it opens only when the whole
+transcript has been checked and **released**.
 
-Correction state is therefore a **substitution at span level**, not a visibility
-gate and not a property of the transcript as a whole. There is no moment at
-which a recording flips from "original" to "corrected", so there is nothing to
-gate on. What a reader needs instead is to see **which spans** are verified,
-which means labelling is per span, with a coverage figure standing for the
-recording. A badge reading "verified" over a seven-per-cent corrected transcript
-would simply be false.
+Those two facts are not in tension; they answer different questions. What a
+correction changes immediately is the material that search and agents draw on,
+which gets better one span at a time and needs no ceremony. What a release
+changes is whether a person may sit down and read the transcript as a document,
+which is an editorial statement about the whole of it and cannot be made span by
+span.
 
-The difference between verified and machine text is carried by **labelling, not
-by access**, and nobody's permissions change as correction progresses.
+So a transcript carries a release state, the third instance of a pattern this
+system already uses twice: a recording is published, an event is released, and
+now a transcript is released. In each case the state belongs to the material, not
+to the actor, and in each case a workflow invariant permits it — an event needs
+exactly one primary recording, and a transcript needs every span verified.
+Releasing is then a deliberate act by a person, not an automatic consequence of
+the last attestation landing.
 
-There is therefore no permission for "corrected transcripts" as distinct from
-"all transcripts". The original text of a corrected span remains reachable in
-exactly two places:
+There is therefore still no permission for "corrected transcripts" as distinct
+from "all transcripts". A `čtenář` holds `read_transcripts` and reads released
+transcripts, exactly as they browse released events. Unchecked text stays
+reachable in the places where working on it is the point:
 
-- inside the correction surface, as the text being worked on;
-- through an explicit download of the pre-correction variant.
+- inside the correction surface, which `correct_transcripts` grants;
+- to `redaktor` and `catalogAdmin` through `see_unreleased`;
+- through search and agents, which are not reading surfaces — see below.
+
+### Search and agents are not gated on release
+
+A correction reaches retrieval as soon as it is made; a release gates only the
+reading surfaces — the transcript view, its download, and the bulk export.
+Search, both in the web application and through MCP, keeps working over whatever
+text exists and simply gets better as correction proceeds.
+
+This is deliberate and it follows a decision the MCP server already records: the
+web transcript view hands a person the full text to read like a book, while
+through MCP the transcript is background an agent draws on while answering a
+question. Because `get_transcript` can return a full transcript, a reader can
+obtain unreleased text by asking an agent for it. That asymmetry exists today,
+is documented as intentional, and is not to be "fixed" by pointing either
+surface at the other.
 
 ### Correction is its own activity
 
@@ -191,7 +210,7 @@ conferred rather than taken, which is what makes the role name worth reading.
 
 | Permission | Covers |
 | --- | --- |
-| `read_transcripts` | The recording's transcript: corrected when one exists, original otherwise. |
+| `read_transcripts` | Reading a recording's transcript, once it has been released. |
 | `see_transcript_variants` | That more than one machine backend exists: the per-recording picker and the multi-backend stream view. Administrative only; every other role reads the default backend. |
 | `see_speakers` | The diarization overlay. |
 
@@ -200,7 +219,7 @@ conferred rather than taken, which is what makes the role name worth reading.
 | Permission | Covers |
 | --- | --- |
 | `correct_transcripts` | The correction surface: editing spans, proposing corrections, attesting, and reading the original text within that surface. |
-| `resolve_corrections` | Overriding the attestation rule on a span and settling disagreements between correctors. Named for what it does: nothing is published, because a transcript has no corrected/uncorrected state to publish. |
+| `publish_transcript` | Releasing a checked transcript for reading, and settling disagreements between correctors along the way. Both are the same person's job: whoever owns a transcript's correction to its end. |
 
 ### Search
 
@@ -261,7 +280,7 @@ catalog permission reaches them.
 | čtenář | + `read_transcripts`, `search_transcripts` |
 | korektor | čtenář + `correct_transcripts`, `see_speakers` |
 | hostitel | čtenář + `manage_access` |
-| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `resolve_corrections`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
 | catalogAdmin | wildcard, including `see_transcript_variants` and `manage_catalog_config` |
 
 Every role below `redaktor` sees released events and published recordings only,
@@ -344,20 +363,26 @@ the `catalogAdmin`.
   neither protected permission, so a `hostitel` assigns `posluchač`, `čtenář`
   and `korektor` and nothing else — to other people, and to accounts that do not
   already hold a protected role.
-- **An empty corrected-transcript state is acceptable at launch.** Until a
-  recording has a corrected transcript, readers get the original. No backfill and
-  no grandfathering are needed, because substitution makes the original the
-  default rather than a withheld variant.
+- **No transcript is readable at launch, and that is accepted.** Nothing is
+  released until a whole transcript has been checked, and a recording runs to
+  three hours and several hundred spans, so the first one a reader can open is
+  weeks of work by two people away. Nothing is backfilled and no machine
+  transcript is grandfathered into the released state.
 - **Listeners become readers only once the correction system has been tried and
   trusted** — not once it merely exists, and not once the corpus is corrected.
   Until then the 77 `LISTENER` grants measured in production stay as they are,
   which makes every step of this rework invisible to all but three accounts.
-- **Provisional text is labelled, not withheld.** A `čtenář` opening a recording
-  nobody has corrected yet sees the machine transcript marked as unverified,
-  rather than an empty panel. This is the web counterpart of the caution the MCP
-  server already asks agents to give, and it is what lets "readers read corrected
-  transcripts" and "use the original when there is no corrected one" both hold
-  without a second read permission.
+- **Unchecked text is withheld from reading, not from use.** A `čtenář` opening a
+  recording whose transcript is not yet released sees how far checking has got,
+  not the machine text. The same text still reaches them through search and
+  through an agent's answer, where it is a source rather than a document, and
+  where the caution the MCP server asks agents to give still applies. Releasing
+  is what turns a transcript into something to read.
+- **Release is one pattern used three times.** A recording is published, an event
+  is released, a transcript is released. Each is a state of the material rather
+  than of the actor, each is permitted by a workflow invariant, and each is
+  performed deliberately by a person. Keeping the three alike is worth more than
+  tailoring any one of them.
 - **Backend variants are administrative.** Every role except `catalogAdmin` reads
   one transcript per recording, the configured default from
   `TranscriptBackendPriority`. The picker and the stream view are one permission.

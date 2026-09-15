@@ -41,18 +41,22 @@ rewritten, which keeps [ADR 0002](0002-artifact-generations.md) intact and
 follows [ADR 0003](0003-web-catalog-projection.md), where user-authored state is
 authoritative in PostgreSQL rather than reconstructed from pipeline output.
 
-### One transcript per recording, substituted span by span
+### The span is the unit of work; the transcript is the unit of release
 
 Per [ADR 0005](0005-catalog-permission-model.md), correction substitutes at the
-level of the **span**, not the document. A recording has one transcript in which
-each span is either machine output or verified text, and a partly corrected
-recording — the normal state for years — reads as machine text with verified
-spans in it.
+level of the **span**. A recording has one transcript in which each span is
+either machine output or verified text, and a partly corrected recording is the
+normal state for years rather than a transitional one.
 
-Nothing therefore flips from "original" to "corrected", so the reader is told
-which spans are verified rather than which transcripts are, and the recording
-carries a coverage figure derived from its spans. Correction state is not an
-access gate; the difference is carried by labelling.
+What that improving text feeds is search and agents, continuously and without
+ceremony. What it does not do is open the transcript for reading: that happens
+once, when every span has been verified and a person **releases** the transcript.
+Reading end to end is an editorial statement about the whole document and cannot
+be made span by span.
+
+So the work is granular and the publication is not, and the record has to keep
+both. A coverage figure derived from the spans is what stands for a transcript
+until it is released.
 
 ### The unit is a segment of the default backend, anchored by time
 
@@ -86,12 +90,17 @@ The middle state exists because a single pass by one person already removes most
 nonsense, and with a small group it would otherwise be work that never counts
 for anything.
 
-**Only `verified` spans reach a reader.** A span one person has corrected still
-reads as machine output everywhere except the correction surface, until a second
-person agrees. Holding `correct_transcripts` is therefore not the power to change
-what people read: it is access to a tool, and the second attestation is the
-control. This is what makes it safe to hand the permission out widely, and it has
-to hold whatever the roles look like.
+**Only `verified` spans leave the correction surface.** A span one person has
+corrected still reads as machine output to search, to agents and to the eventual
+release, until a second person agrees. Holding `correct_transcripts` is therefore
+not the power to change what anyone else sees: it is access to a tool, and the
+second attestation is the control. This is what makes it safe to hand the
+permission out widely, and it has to hold whatever the roles look like.
+
+A reader sees none of this. Nothing from a transcript reaches the reading surface
+until every span is verified and the transcript is released, so the span states
+are visible to correctors and to the progress figure, not to a `čtenář` waiting
+for the document.
 
 Attestations are bound to a hash of the text they vouch for. Editing the text
 therefore voids them by mismatch rather than by deletion, and the history of who
@@ -226,12 +235,14 @@ tool, is a prerequisite rather than documentation written afterwards.
 
 ## Consequences
 
-- There is **one** definition of done, and it lives on the span: the required
-  number of attestations on its current text. A transcript acquires no
-  corrected/uncorrected flag alongside `CatalogEntry.isPublished` and
-  `CatalogEvent.released`, because nothing reads such a flag — reading resolves
-  span by span. What stands for the recording is a **derived coverage figure**,
-  computed from its spans, never a stored boolean that could disagree with them.
+- Done means two things at two levels, and the record keeps them apart. A **span**
+  is done when its current text carries the required attestations. A
+  **transcript** is done when every span is and a person has released it, which
+  is a stored state alongside `CatalogEntry.isPublished` and
+  `CatalogEvent.released`. Every span verified is the invariant that permits the
+  release, not the release itself. Until then a derived coverage figure stands
+  for the transcript, and it is computed from the spans rather than stored beside
+  them, so the two can never disagree.
 - Resolving "corrected where a span has been verified, original elsewhere"
   belongs in
   `lib/transcript`, where both `loadTranscript()` and `readTranscriptFile()`
@@ -286,6 +297,14 @@ tool, is a prerequisite rather than documentation written afterwards.
   names; the diarization overlay distinguishes turns without identifying who is
   speaking. Attributing speech is a later phase using the same span mechanism
   rather than part of text correction.
+- Releasing gates the reading surfaces only: the transcript view, its download
+  and the bulk export. Search and MCP are never gated on it, so a reader can
+  obtain unreleased text by asking an agent for it. That asymmetry is the
+  documented MCP position — the transcript is a source there, not a document —
+  and is not to be closed by gating `get_transcript`.
+- Until a transcript is released a reader is shown how far checking has got,
+  rather than an empty panel or the machine text. That figure is the only thing a
+  `čtenář` learns about a transcript in progress.
 - The correction page is desktop-first. Typing against running audio on a phone
   is not a workflow worth pretending to support, though confirming a span may be.
 - Until listeners become readers, corrected transcripts have an audience of three
