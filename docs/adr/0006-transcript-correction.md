@@ -24,8 +24,8 @@ What the existing system offers:
   transcription with `--overwrite` replaces them in place.
 - Transcript reads go through two functions in `lib/transcript`:
   `loadTranscript()` for the recording page, the backend comparison view and
-  MCP, and `readTranscriptFile()` for the transcript download route and the
-  bulk export.
+  MCP, and `readTranscriptFile()` for the transcript download route and the bulk
+  export.
 - Diarization is already merged into the reading view as an overlay resolved at
   render time, from a separate artifact.
 - Agent-facing guidance already tells an agent to qualify a quotation when a
@@ -70,21 +70,21 @@ A released transcript therefore ranks **above** `TranscriptBackendPriority`
 rather than inside it. Resolution is: the released corrected transcript if there
 is one, otherwise the highest-priority backend. Reordering that table changes
 which machine transcript stands in for the recordings nobody has finished, and
-cannot disturb one that has been released — which follows from the verified layer
-belonging to the recording rather than to the backend it started from.
+cannot disturb one that has been released — which follows from the verified
+layer belonging to the recording rather than to the backend it started from.
 
 Because segments carry no identifiers, a span is anchored by its **time range
-plus a hash of its source text**. The segment index is stored as a hint, never as
-the identity. Rows are created lazily on the first human touch; an untouched span
-has no row.
+plus a hash of its source text**. The segment index is stored as a hint, never
+as the identity. Rows are created lazily on the first human touch; an untouched
+span has no row.
 
 ### Span state, attestation, and what verification means
 
-A span carries its current text and a status. Verification is reached when
-**two distinct people have vouched for that exact text**. Whoever writes a
-correction vouches for it by writing it, so a corrected span needs one further
-attestation and an untouched machine span needs two. The required count is
-configurable per catalog and defaults to two.
+A span carries its current text and a status. Verification is reached when **two
+distinct people have vouched for that exact text**. Whoever writes a correction
+vouches for it by writing it, so a corrected span needs one further attestation
+and an untouched machine span needs two. The required count is configurable per
+catalog and defaults to two.
 
 Three states are visible, not two:
 
@@ -108,10 +108,10 @@ therefore not the power to change what anyone else sees: it is access to a tool.
 This is what makes it safe to hand the permission out widely, and it has to hold
 whatever the roles look like.
 
-A reader sees none of this. Nothing from a transcript reaches the reading surface
-until every span is verified and the transcript is released, so the span states
-are visible to correctors and to the progress figure, not to a `čtenář` waiting
-for the document.
+A reader sees none of this. Nothing from a transcript reaches the reading
+surface until every span is verified and the transcript is released, so the span
+states are visible to correctors and to the progress figure, not to a `čtenář`
+waiting for the document.
 
 Attestations are bound to a hash of the text they vouch for. Editing the text
 therefore voids them by mismatch rather than by deletion, and the history of who
@@ -125,8 +125,8 @@ intervenes only when something is wrong. Making the second pass cheap is what
 makes a two-person rule affordable at all.
 
 Two safeguards against rubber-stamping, both cheap: an attestation cannot be
-recorded for audio the player has not actually played, and the second reviewer is
-not shown who worked on the span before them.
+recorded for audio the player has not actually played, and the second reviewer
+is not shown who worked on the span before them.
 
 ### What an edit does to word timings
 
@@ -160,17 +160,17 @@ merged — so split and merge belong in the first version, not a later one.
 ### Correction is its own surface
 
 Correction lives on its own page rather than as extra controls on the recording
-page. The reading page serves people who are listening; the correction page needs
-the transcript to be the whole screen, a different keyboard model, a different
-permission, and data the reading page does not load.
+page. The reading page serves people who are listening; the correction page
+needs the transcript to be the whole screen, a different keyboard model, a
+different permission, and data the reading page does not load.
 
 The player is already a controlled component and already supports playing an
 excerpt and stopping at a chosen time, which is exactly the segment-playback
 primitive this needs. Two things it does not support: being paused from outside,
 and keyboard transport while focus is in a text field — its shortcuts
-deliberately stand down inside inputs. The correction page therefore owns its own
-transport, and the player gains an imperative handle. That is the only change
-required to an existing component.
+deliberately stand down inside inputs. The correction page therefore owns its
+own transport, and the player gains an imperative handle. That is the only
+change required to an existing component.
 
 The timeline mechanics needed for a progress-and-navigation ribbon — tick
 spacing, active-item lookup, playhead interpolation between the browser's
@@ -183,7 +183,8 @@ The store keeps the history of edits — who, when, from what text to what text,
 and how long was spent on the span — not only the resulting text. Without this
 the first real use of the tool produces an impression; with it, it produces the
 numbers that decide whether the two-person rule is worth its cost, how much
-correction time a minute of audio costs, and how much two people actually differ.
+correction time a minute of audio costs, and how much two people actually
+differ.
 
 ### Two people on one span
 
@@ -195,8 +196,8 @@ Every write carries the hash of the text it was based on. If the span has moved
 on, the write is refused and the author is shown what is there now. The hash is
 already in the model for attestations, so this costs nothing to add and it
 prevents the quiet loss that last-write-wins would otherwise produce: a second
-editor overwriting text a first was working on, the first's attestation voided by
-mismatch, and their work visible only in the edit history.
+editor overwriting text a first was working on, the first's attestation voided
+by mismatch, and their work visible only in the edit history.
 
 The queue hands out spans under a short lease so two people are not sent to the
 same one to begin with. A lease is an ergonomic measure, not a lock: it expires
@@ -226,21 +227,21 @@ transcript, chunking reads it exactly as it reads any transcript,
 `docs/schemas/transcript.schema.json` validates it without a new schema being
 written. Merging lives once, in the runtime that owns the database.
 
-Beyond the canonical fields it carries only what a reader must be told: that
-the transcript is released, and how many attestations each span carries. Words a
-person wrote
-already carry `confidence: null` and an estimated-timing marker from the
-reconciliation rule above.
+Beyond the canonical fields it carries only that the transcript is released and
+how many attestations each span carries. Words a person wrote already carry
+`confidence: null` and an estimated-timing marker from the reconciliation rule
+above.
 
 ### Scope and what to correct first
 
 Only primary recordings of events are in scope: 198 recordings, 606.7 hours.
 
 At a playback speed of one, two passes over that cannot cost less than 1213
-person-hours, and realistically cost several times that. Complete coverage of the
-**corpus** is therefore not a goal. Complete coverage of any **recording** that is
-taken on is not optional: a half-checked beseda is of no use to a reader and can
-never be released, so a recording is gone through from end to end or not started.
+person-hours, and realistically cost several times that. Complete coverage of
+the **corpus** is therefore not a goal. Complete coverage of any **recording**
+that is taken on is not optional: a half-checked beseda is of no use to a reader
+and can never be released, so a recording is gone through from end to end or not
+started.
 
 That settles what the two signals the system already has are for, and it is not
 selecting spans. Low `confidence` directs **attention inside a pass** — it is
@@ -250,7 +251,8 @@ telemetry and search logs choose **which recording to take next**, not which
 parts of one to bother with.
 
 Scattering corrections across the corpus at low-confidence spots would improve
-search and release nothing, which is the opposite of the trade this design makes.
+search and release nothing, which is the opposite of the trade this design
+makes.
 
 An average recording runs over three hours, so the unit a person commits to in
 one sitting cannot be a recording. Progress is tracked and resumed inside one,
@@ -268,14 +270,14 @@ tool, is a prerequisite rather than documentation written afterwards.
 
 ## Consequences
 
-- Done means two things at two levels, and the record keeps them apart. A **span**
-  is done when its current text carries the required attestations. A
+- Done means two things at two levels, and the record keeps them apart. A
+  **span** is done when its current text carries the required attestations. A
   **transcript** is done when every span is and a person has released it, which
   is a stored state alongside `CatalogEntry.isPublished` and
   `CatalogEvent.released`. Every span verified is the invariant that permits the
   release, not the release itself. Until then a derived coverage figure stands
-  for the transcript, and it is computed from the spans rather than stored beside
-  them, so the two can never disagree.
+  for the transcript, and it is computed from the spans rather than stored
+  beside them, so the two can never disagree.
 - Keeping corrections apart until release spares every reader a resolution rule.
   Partially corrected text never leaves the correction surface, so neither
   `loadTranscript()` — on the recording page, in the comparison view and behind
@@ -287,18 +289,19 @@ tool, is a prerequisite rather than documentation written afterwards.
 - Retrieval needs no notion of correction state. A released transcript changes
   the transcript fingerprint, and the existing incremental per-`audio_hash` sync
   already adds, refreshes and prunes on that basis.
-- Corrections must reach the Python side without either runtime reaching into the
-  other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. At release
-  they are materialized into the writable tree described above, and the export
-  and chunking steps read it from there.
-- That materialization is also what answers the download path, so the two are one
-  mechanism rather than two. Once the resolved transcript is materialized and the
-  export step renders the format files from it, `readTranscriptFile()` resolves
-  by pointing at the corrected artifact and needs no renderer of its own. The
-  alternative — rendering formats on the fly in the web app — would duplicate
-  subtitle rendering that already exists in Python and put it on the wrong side
-  of the boundary. It also means downloads and search become correct at the same
-  moment, both driven by materialization, rather than drifting apart.
+- Corrections must reach the Python side without either runtime reaching into
+  the other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. At
+  release they are materialized into the writable tree described above, and the
+  export and chunking steps read it from there.
+- That materialization is also what answers the download path, so the two are
+  one mechanism rather than two. Once the resolved transcript is materialized
+  and the export step renders the format files from it, `readTranscriptFile()`
+  resolves by pointing at the corrected artifact and needs no renderer of its
+  own. The alternative — rendering formats on the fly in the web app — would
+  duplicate subtitle rendering that already exists in Python and put it on the
+  wrong side of the boundary. It also means downloads and search become correct
+  at the same moment, both driven by materialization, rather than drifting
+  apart.
 - Before release no surface differs from any other: the transcript view, its
   download, the bulk export, web search and every MCP tool serve the machine
   transcript, and corrections in progress are visible only inside the correction
@@ -311,9 +314,9 @@ tool, is a prerequisite rather than documentation written afterwards.
   job has completed, so no surface ever finds a released transcript without its
   artifact or its index entry. One job rather than several, because separate
   triggers would let the surfaces drift apart, which is the outcome
-  materialization exists to prevent. Formats are never rendered on the fly in the
-  web app, and the job is never a person remembering to run
-  `just catalog export-transcripts`.
+  materialization exists to prevent. Formats are never rendered on the fly in
+  the web app, and the job is never a person remembering to run `just catalog
+  export-transcripts`.
 - That job is a dependency, not existing machinery. Prefect runs in production
   and owns one flow today, deep search, which the web application already starts
   through the jobs API. Materializing, rendering and reindexing on release is a
@@ -321,33 +324,37 @@ tool, is a prerequisite rather than documentation written afterwards.
   jobs API the way the deep-search route does. Until both exist, nothing can be
   released.
 - Corrections are anchored to text that re-transcription can change. On a
-  mismatch the span is relocated by time overlap and text similarity; a confident
-  relocation is applied and recorded, and anything less leaves the span marked
-  stale for a person to resolve. Corrections are never applied silently to text
-  they were not written against.
-- Speaker attribution is a separate concern. Transcripts carry no speaker
-  names; the diarization overlay distinguishes turns without identifying who is
+  mismatch the span is relocated by time overlap and text similarity; a
+  confident relocation is applied and recorded, and anything less leaves the
+  span marked stale for a person to resolve. Corrections are never applied
+  silently to text they were not written against.
+- Speaker attribution is a separate concern. Transcripts carry no speaker names;
+  the diarization overlay distinguishes turns without identifying who is
   speaking. Attributing speech is a later phase using the same span mechanism
   rather than part of text correction.
 - Releasing gates the reading surfaces only: the transcript view, its download
   and the bulk export. Search and MCP are never gated on it, so a reader can
-  obtain an unreleased transcript's machine text by asking an agent for it. That asymmetry is the
-  documented MCP position — the transcript is a source there, not a document —
-  and is not to be closed by gating `get_transcript`.
+  obtain an unreleased transcript's machine text by asking an agent for it. That
+  asymmetry is the documented MCP position — the transcript is a source there,
+  not a document — and is not to be closed by gating `get_transcript`.
 - Until a transcript is released a reader is shown how far checking has got,
-  rather than an empty panel or the machine text. That figure is the only thing a
-  `čtenář` learns about a transcript in progress.
+  rather than an empty panel or the machine text. That figure is the only thing
+  a `čtenář` learns about a transcript in progress.
 - The correction page is desktop-first. Typing against running audio on a phone
-  is not a workflow worth pretending to support, though confirming a span may be.
+  is not a workflow worth pretending to support, though confirming a span may
+  be.
 - The release gate arrives with this system and not before it. A transcript
-  cannot be released until spans can be verified, so switching the gate on during
-  the permission rework would leave every reader without `see_unreleased` holding
-  a permission that resolves to nothing. See
-  [ADR 0005](0005-catalog-permission-model.md).
-- Until someone makes the listeners readers, released transcripts have an
-  audience of three accounts. The reward that motivates correction — a verified passage quoted
-  without a caution about machine transcription — only exists once that
-  promotion happens.
+  cannot be released until spans can be verified, so switching the gate on
+  during the permission rework would leave every reader without `see_unreleased`
+  holding a permission that resolves to nothing. See [ADR
+  0005](0005-catalog-permission-model.md).
+- The reward that motivates correction arrives with the first released
+  transcript, not with the promotion of the listeners. Release replaces the
+  machine text everywhere at once, and every active account holds the MCP tools,
+  so the answers an agent gives all 81 of them improve immediately. Reading the
+  transcript as a document still waits for someone to make the listeners
+  readers, but correction stops being work without an audience the moment one
+  recording is finished.
 
 ## Settled points
 

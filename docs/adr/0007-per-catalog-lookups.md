@@ -13,17 +13,18 @@ Everything that references them is catalog-scoped: `AudioMetadata` through
 Three consequences follow from that mismatch.
 
 Write access is not catalog-scoped at all. Every mutating `/api/metadata/*`
-route guards with `requireEditorOnAnyCatalog`, which means an editor on *any one*
-catalog may edit or delete rows that every catalog depends on. The matching item
-reads require only authentication.
+route guards with `requireEditorOnAnyCatalog`, which means an editor on *any
+one* catalog may edit or delete rows that every catalog depends on. The matching
+item reads require only authentication.
 
 Reads are not scoped either. The collection routes scope the usage `_count` but
 return the rows themselves unfiltered, so a catalog's recorder and location
 pickers offer every value any catalog has ever used.
 
-And the permission cannot be placed. [ADR 0005](0005-catalog-permission-model.md)
-gives every catalog permission to a role, but a global table cannot be governed
-by a per-catalog role, so `manage_lookups` has nowhere to sit.
+And the permission cannot be placed. [ADR
+0005](0005-catalog-permission-model.md) gives every catalog permission to a
+role, but a global table cannot be governed by a per-catalog role, so
+`manage_lookups` has nowhere to sit.
 
 ## Decision
 
@@ -33,8 +34,8 @@ and name.
 
 ### Copies, not links
 
-Each catalog receives a **copy** of exactly the rows referenced from it — through
-`audio_metadata` for all three kinds, and additionally through
+Each catalog receives a **copy** of exactly the rows referenced from it —
+through `audio_metadata` for all three kinds, and additionally through
 `catalog_event.location_id` for locations. Rows that nothing references are
 parked in the default catalog rather than dropped, so a name somebody typed is
 never silently lost.
@@ -52,14 +53,14 @@ job payload carries a query, instructions and two opaque configuration objects,
 not filters.
 
 That makes the case for stability thinner than it first appears, but preserving
-ids costs nothing, so the migration keeps each original row and assigns it to one
-catalog, creating new rows only for the additional catalogs.
+ids costs nothing, so the migration keeps each original row and assigns it to
+one catalog, creating new rows only for the additional catalogs.
 
 ### The invariant
 
-Every lookup reference points at a row in the referencing row's own catalog.
-A foreign key cannot express this, so it is a workflow invariant, enforced in
-the application and checkable with one query over `audio_metadata` and
+Every lookup reference points at a row in the referencing row's own catalog. A
+foreign key cannot express this, so it is a workflow invariant, enforced in the
+application and checkable with one query over `audio_metadata` and
 `catalog_event`.
 
 ## Consequences
@@ -72,20 +73,21 @@ the application and checkable with one query over `audio_metadata` and
 - `requireEditorOnAnyCatalog` disappears, and with it the `/api/metadata/*` item
   routes that apply no catalog scope at all.
 - Removing it reaches further than the guard. The derived flag
-  `hasEditorOnAnyCatalog` is computed in `lib/access/capabilities.ts`, shipped to
-  the browser by `/api/me/permissions`, consumed by `hooks/use-admin-status.ts`
-  and used to gate `admin/metadata/layout.tsx`. Retiring the guard therefore
-  changes the shape of a client-facing response, not only server-side policy.
+  `hasEditorOnAnyCatalog` is computed in `lib/access/capabilities.ts`, shipped
+  to the browser by `/api/me/permissions`, consumed by
+  `hooks/use-admin-status.ts` and used to gate `admin/metadata/layout.tsx`.
+  Retiring the guard therefore changes the shape of a client-facing response,
+  not only server-side policy.
 - The change is visible to users, not merely structural: recorder, location and
-  album pickers narrow to the catalog being worked on. It therefore needs its own
-  tests rather than passing as a migration.
+  album pickers narrow to the catalog being worked on. It therefore needs its
+  own tests rather than passing as a migration.
 - `manage_lookups` becomes an ordinary catalog permission and joins the
   `redaktor` role, which is where [ADR 0005](0005-catalog-permission-model.md)
   already places it.
 - This change is a prerequisite for nothing. `requireEditorOnAnyCatalog` appears
-  only in `lib/api/crud-factory.ts`, and the flag derived from it only in the four
-  files named above, so it touches no transcript, event, recording or access
-  path. It can land before the permission rework, after it, or not yet.
+  only in `lib/api/crud-factory.ts`, and the flag derived from it only in the
+  four files named above, so it touches no transcript, event, recording or
+  access path. It can land before the permission rework, after it, or not yet.
 - Landing it **before** the permission rework is nonetheless preferable. The
   rework is a behaviour-preserving refactor, and its safety rests on that
   property; folding a schema-and-data migration into it would cost exactly that.

@@ -6,11 +6,10 @@
 
 ## Context
 
-Catalog authorization is a single ordered scale,
-`LISTENER < VIEWER < MEMBER < EDITOR < OWNER`. Gaining a capability requires
-moving up the scale, which also widens visibility, because the scale carries two
-unrelated concerns at once: *which material exists for an actor* and *what the
-actor may do with it*.
+Catalog authorization is a single ordered scale, `LISTENER < VIEWER < MEMBER <
+EDITOR < OWNER`. Gaining a capability requires moving up the scale, which also
+widens visibility, because the scale carries two unrelated concerns at once:
+*which material exists for an actor* and *what the actor may do with it*.
 
 Three concrete requirements cannot be expressed on that shape:
 
@@ -37,13 +36,13 @@ published recordings to all material. It is not a separate value and not a
 position on a ladder, so gaining a capability never widens visibility and
 widening visibility never grants a capability.
 
-Visibility here means precisely one thing: **the release state of the material**.
-On that axis `see_unreleased` is the only key, and nothing else opens it. Other
-permissions do widen what an actor can see along other axes —
-`correct_transcripts` shows unchecked text inside the correction surface, because
-one cannot correct what one cannot see, and `see_transcript_variants` shows the
-machine transcripts other than the default. Neither reaches unreleased material,
-which is what the orthogonality above is about.
+Visibility here means precisely one thing: **the release state of the
+material**. On that axis `see_unreleased` is the only key, and nothing else
+opens it. Other permissions do widen what an actor can see along other axes —
+`correct_transcripts` shows unchecked text inside the correction surface,
+because one cannot correct what one cannot see, and `see_transcript_variants`
+shows the machine transcripts other than the default. Neither reaches unreleased
+material, which is what the orthogonality above is about.
 
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
@@ -51,8 +50,8 @@ never whether a level is high enough.
 The typed capability layer stays, and permissions become what it is computed
 from. `security.md` already requires route and page code to depend on that layer
 rather than on ad hoc policy logic, it is consumed by pages, API routes, MCP and
-the browser, and a bare permission set at the call site invites exactly the ad hoc
-checks the layer exists to prevent. So `canViewCatalogTranscripts` and its
+the browser, and a bare permission set at the call site invites exactly the ad
+hoc checks the layer exists to prevent. So `canViewCatalogTranscripts` and its
 siblings survive as thin wrappers over `has(actor, 'read_transcripts')`, which
 also keeps the mechanical step of the rework inside the policy layer instead of
 spreading it across every caller.
@@ -78,13 +77,13 @@ what the interface and this conversation use.
 | `catalog_admin` | catalogAdmin |
 
 `curator` rather than `editor` deliberately. The retired `EDITOR` level meant
-metadata editing alone, while this role runs the archive's editorial work; reusing
-the word for a wider meaning is the kind of collision that misleads a reader a
-year from now.
+metadata editing alone, while this role runs the archive's editorial work;
+reusing the word for a wider meaning is the kind of collision that misleads a
+reader a year from now.
 
 `catalog_admin` is a stored role like any other, so a person can hold it for one
-catalog without being a system administrator. `isCatalogAdmin` is then true for a
-system administrator **or** a holder of that role. Nobody holds it at
+catalog without being a system administrator. `isCatalogAdmin` is then true for
+a system administrator **or** a holder of that role. Nobody holds it at
 introduction.
 
 ### Extra permissions are additive only
@@ -102,8 +101,8 @@ transcript — in the web application, or through an agent asking questions of t
 corpus. That is what roles are for.
 
 Taking audio or transcript files out of the application serves specific,
-occasional purposes. Those permissions belong to the roles that run the archive —
-`redaktor` and `catalogAdmin` — and to **individually named accounts** below
+occasional purposes. Those permissions belong to the roles that run the archive
+— `redaktor` and `catalogAdmin` — and to **individually named accounts** below
 them. No role that describes an ordinary participant carries one.
 
 This splits the catalogue in two: permissions that describe a kind of
@@ -145,17 +144,17 @@ whole of the transcript, which cannot be made span by span.
 
 So a transcript carries a release state, the third instance of a pattern this
 system already uses twice: a recording is published, an event is released, and
-now a transcript is released. In each case the state belongs to the material, not
-to the actor, and in each case a workflow invariant permits it — an event needs
-exactly one primary recording, and a transcript needs every span verified.
+now a transcript is released. In each case the state belongs to the material,
+not to the actor, and in each case a workflow invariant permits it — an event
+needs exactly one primary recording, and a transcript needs every span verified.
 Releasing is then a deliberate act by a person, not an automatic consequence of
 the last attestation landing.
 
 **Like the stance on file delivery, this gate decides how the text is offered,
 not whether it can be obtained.** Search returns passages from unreleased
-transcripts, and an agent asked through MCP will hand over the whole of one. What
-release withholds is the transcript *as a document to sit and read*. It is a
-statement about when a text is fit to be presented that way, not a boundary
+transcripts, and an agent asked through MCP will hand over the whole of one.
+What release withholds is the transcript *as a document to sit and read*. It is
+a statement about when a text is fit to be presented that way, not a boundary
 around the words.
 
 There is therefore still no permission for "corrected transcripts" as distinct
@@ -183,11 +182,11 @@ text stays searchable, exactly as it is today.
 
 The invariant the code holds, that search must never be broader than transcript
 access, therefore has to be read at the level of the **catalog**: an actor may
-not search a catalog whose transcripts it may not read. It does not mean an actor
-may not search a transcript it cannot open, which under release gating is the
-normal case. The comment predates release being a state of the material rather
-than a property of the role, and rereading it the old way would gate search and
-undo this decision.
+not search a catalog whose transcripts it may not read. It does not mean an
+actor may not search a transcript it cannot open, which under release gating is
+the normal case. The comment predates release being a state of the material
+rather than a property of the role, and rereading it the old way would gate
+search and undo this decision.
 
 This is deliberate and it follows a decision the MCP server already records: the
 web transcript view hands a person the full text to read like a book, while
@@ -221,8 +220,8 @@ instead of needing to be added to a top role every time.
 Access is granted as roles, not as permissions. Two permissions are
 **protected**: `manage_access` and `see_unreleased`.
 
-- A holder of `manage_access` may assign any role that carries neither
-  protected permission. Today that is `posluchač`, `čtenář` and `korektor`.
+- A holder of `manage_access` may assign any role that carries neither protected
+  permission. Today that is `posluchač`, `čtenář` and `korektor`.
 - The same test applies to the role being **replaced**. Changing or revoking the
   access of an account that already holds a protected role is reserved to
   `catalogAdmin`, so a `hostitel` cannot demote a `redaktor` to `posluchač` or
@@ -245,8 +244,8 @@ later is classified without touching this rule.
 Testing the replaced role as well as the assigned one keeps the existing
 two-sided check. Today every access mutation asks both
 `canGrantCatalogAccessLevel` about the new level and
-`canManageExistingCatalogAccessLevel` about the level already held, on update and
-on revoke alike. Without the second test the rule would stop privilege from
+`canManageExistingCatalogAccessLevel` about the level already held, on update
+and on revoke alike. Without the second test the rule would stop privilege from
 spreading upward but still let an account strip one above it, which is the same
 authority wearing a different hat.
 
@@ -331,8 +330,8 @@ account may take files out, not which material it may take: the scope is always
 whatever that account can read. A `redaktor` holds `see_unreleased` and so
 downloads unreleased transcripts too; a `čtenář` granted a download takes
 released ones only. Audio follows the same rule against what the account may
-stream, and so does the bulk export, so no download carries a release test of its
-own.
+stream, and so does the bulk export, so no download carries a release test of
+its own.
 
 A `korektor` is not an exception to this. Their access to unchecked text is
 access to a working surface, not a right to read it, so a `korektor` granted a
@@ -368,15 +367,15 @@ because none of them holds `see_unreleased`.
 Occupancy at introduction, from the production figures: 77 `listener`, two
 `host` carrying `download_transcripts` as an extra, one `reader`, and the
 administrator reaching every catalog through `isCatalogAdmin` without holding a
-grant. `corrector` fills as people are asked; `curator` and `catalog_admin` start
-empty.
+grant. `corrector` fills as people are asked; `curator` and `catalog_admin`
+start empty.
 
 ## Consequences
 
 - A transcript gains a stored release state alongside `CatalogEntry.isPublished`
   and `CatalogEvent.released`, and the reading surfaces consult it. Every span
-  being verified is the workflow invariant that permits setting it; setting it is
-  an editorial act, and neither is an authorization decision.
+  being verified is the workflow invariant that permits setting it; setting it
+  is an editorial act, and neither is an authorization decision.
 - Because correction substitutes rather than gates, search needs no notion of
   correction state for authorization. It needs the index to be refreshed when a
   transcript changes, which the incremental per-`audio_hash` sync keyed on
@@ -406,20 +405,20 @@ empty.
   see them; afterwards only accounts holding an explicit extra do. This is a
   visible product change, not only a policy one.
 - A download permission bounds **file delivery, not text extraction.** A reader
-  can copy a whole transcript from the page, and an agent asked for the full text
-  through MCP can hand it over. If the goal is to control who holds the corpus as
-  data rather than who gets a convenient button, download permissions alone do
-  not achieve it.
-- `manage_lookups` assumes the lookups are per catalog, which they are not today.
-  That change carries its own migration, identifier and invariant concerns and is
-  a prerequisite for nothing, so it has its own record:
-  [ADR 0007](0007-per-catalog-lookups.md). `redaktor` carries the permission from
-  the moment that record lands; before then there is no catalog for it to govern.
+  can copy a whole transcript from the page, and an agent asked for the full
+  text through MCP can hand it over. If the goal is to control who holds the
+  corpus as data rather than who gets a convenient button, download permissions
+  alone do not achieve it.
+- `manage_lookups` assumes the lookups are per catalog, which they are not
+  today. That change carries its own migration, identifier and invariant
+  concerns and is a prerequisite for nothing, so it has its own record: [ADR
+  0007](0007-per-catalog-lookups.md). `redaktor` carries the permission from the
+  moment that record lands; before then there is no catalog for it to govern.
 - The mechanical part of the rework preserves behaviour — `accessLevelAtLeast`
   calls become permission checks inside the policy layer, and the capability
-  objects above it keep their shape. **Assigning the roles does not**, and that is
-  intended rather than incidental. Measured in production the whole of it is three
-  accounts:
+  objects above it keep their shape. **Assigning the roles does not**, and that
+  is intended rather than incidental. Measured in production the whole of it is
+  three accounts:
 
   | Today | Count | Becomes | Effect |
   | --- | --- | --- | --- |
@@ -434,10 +433,10 @@ empty.
   listening, reading, searching and managing access, and give up unreleased
   visibility, event management and release, recording publication, metadata
   editing, posters, sources, deep search, the diarization overlay, audio
-  downloads and the settings page. That is acceptable because it is not what they
-  do: in practice they add users and occasionally download a transcript, and the
-  transcript download they keep, as an extra. The role finally describes the work
-  rather than the history.
+  downloads and the settings page. That is acceptable because it is not what
+  they do: in practice they add users and occasionally download a transcript,
+  and the transcript download they keep, as an extra. The role finally describes
+  the work rather than the history.
 - `curator` starts empty, so the editorial rights it names sit with the
   `catalog_admin` until somebody is given them.
 - **The release gate must not ship with the permission rework.** It can only
@@ -485,26 +484,26 @@ empty.
 - **What a new reader gets first is search, not reading.** `search_transcripts`
   works from the first day over every transcript; `read_transcripts` returns
   nothing until a transcript is released, and at twenty to thirty-five
-  person-hours per recording across 198 recordings, most never will be. That is a
-  coherent product — searching works, reading arrives one transcript at a time —
-  but it should not be promised as anything else.
-- **Unchecked text is withheld from reading, not from use.** A `čtenář` opening a
-  recording whose transcript is not yet released sees how far checking has got,
-  not the machine text. The same machine text still reaches them through search
-  and through an agent's answer, where it is a source rather than a document, and
-  where the caution the MCP server asks agents to give still applies. Releasing
-  is what turns a transcript into something to read.
+  person-hours per recording across 198 recordings, most never will be. That is
+  a coherent product — searching works, reading arrives one transcript at a time
+  — but it should not be promised as anything else.
+- **Unchecked text is withheld from reading, not from use.** A `čtenář` opening
+  a recording whose transcript is not yet released sees how far checking has
+  got, not the machine text. The same machine text still reaches them through
+  search and through an agent's answer, where it is a source rather than a
+  document, and where the caution the MCP server asks agents to give still
+  applies. Releasing is what turns a transcript into something to read.
 - **Corrections in progress reach nobody outside the correction surface.** Not
   the reading surfaces, not search, not agents. Release is the single moment the
   transcript changes, and it changes everywhere at once.
-- **Release is one pattern used three times.** A recording is published, an event
-  is released, a transcript is released. Each is a state of the material rather
-  than of the actor, each is permitted by a workflow invariant, and each is
-  performed deliberately by a person. Keeping the three alike is worth more than
-  tailoring any one of them.
+- **Release is one pattern used three times.** A recording is published, an
+  event is released, a transcript is released. Each is a state of the material
+  rather than of the actor, each is permitted by a workflow invariant, and each
+  is performed deliberately by a person. Keeping the three alike is worth more
+  than tailoring any one of them.
 - **Machine-output views are administrative.** Two permissions sit with
-  `catalogAdmin` alone for the same reason: they expose raw model output that has
-  not been evaluated and that tells an ordinary user nothing useful yet.
+  `catalogAdmin` alone for the same reason: they expose raw model output that
+  has not been evaluated and that tells an ordinary user nothing useful yet.
   `see_transcript_variants` covers the backend picker and the stream view, so
   every other role reads the one default from `TranscriptBackendPriority`.
   `see_speakers` covers the diarization overlay, which distinguishes turns
@@ -516,12 +515,12 @@ empty.
   now rather than overlooked: the overlay identifies nobody, and attributing
   speech is a later phase built on the same span mechanism.
 - **Posters and sources stay separate permissions.**
-- **Downloaded audio is the playable file.** Original masters are not part of any
-  role.
+- **Downloaded audio is the playable file.** Original masters are not part of
+  any role.
 - **File delivery starts at `redaktor`.** No role describing an ordinary
   participant carries a download; below `redaktor` it is granted to a named
   account, because the product is listening and reading inside Besedy.
 - **Lookups become per-catalog**, which turns `manage_lookups` into an ordinary
   catalog permission and removes the cross-catalog write path that
-  `requireEditorOnAnyCatalog` opens today. Recorded separately in
-  [ADR 0007](0007-per-catalog-lookups.md).
+  `requireEditorOnAnyCatalog` opens today. Recorded separately in [ADR
+  0007](0007-per-catalog-lookups.md).
