@@ -29,13 +29,13 @@ per-recording publication scoping. The deep-search worker searches with
 
 ## Decision
 
-### Two values, not one scale
+### One set of permissions, not one scale
 
-An actor holds, per catalog:
-
-- a **visibility** value: released events and published recordings only, or all
-  material;
-- a **set of permissions**.
+An actor holds, per catalog, a **set of permissions**. Visibility is one of
+them: `see_unreleased` widens what exists for the actor from released events and
+published recordings to all material. It is not a separate value and not a
+position on a ladder, so gaining a capability never widens visibility and
+widening visibility never grants a capability.
 
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
@@ -105,23 +105,30 @@ general right to read machine output elsewhere. An account holding
 | superadmin | Everything. Bootstrap account; not for daily use. |
 | admin | Everything. |
 | catalogAdmin | Every permission within one catalog, as a wildcard rather than an enumerated set. |
-| user | A role, optional extras, and a visibility value per catalog. |
+| user | A role and optional extras per catalog. |
 
 `catalogAdmin` is a wildcard so that new permissions accrue to it automatically
 instead of needing to be added to a top role every time.
 
 ### Granting rule
 
-An account that may grant permissions may grant:
+Access is granted as roles, not as permissions. Two permissions are
+**protected**: `manage_access` and `see_unreleased`.
 
-- visibility no higher than its own;
-- a subset of its own effective permissions;
-- never `manage_access` itself.
+- A holder of `manage_access` may assign any role that carries neither
+  protected permission. Today that is `posluchač`, `čtenář` and `korektor`.
+- Only `catalogAdmin` and above may assign a role that carries a protected
+  permission (`hostitel`, `redaktor`), and only they may grant extras.
 
-Only `catalogAdmin` and above may grant `manage_access`. This generalizes the
-existing rule that an OWNER cannot grant OWNER, which exists to prevent
-self-propagating privilege chains, and keeps the tier list load-bearing:
-`catalogAdmin` is the tier that can mint accounts which grant.
+The granter need not hold what the assigned role carries: a `hostitel` can make
+someone a `korektor` without being able to correct transcripts. What the rule
+prevents is a chain. Protecting `manage_access` generalizes the existing rule
+that an OWNER cannot grant OWNER, which exists to stop self-propagating
+privilege, and keeps the tier list load-bearing: `catalogAdmin` is the tier that
+can mint accounts which grant. Protecting `see_unreleased` keeps unreleased
+material an administrative decision: a `redaktor` sees it but cannot pass that
+sight on. Because the test is on the permissions a role carries, a role added
+later is classified without touching this rule.
 
 ## Permission catalogue
 
@@ -188,8 +195,8 @@ self-propagating privilege chains, and keeps the tier list load-bearing:
 ### File delivery — `redaktor` and above, or an individual grant
 
 Held by `redaktor` and `catalogAdmin`. For any role below them these are extras
-granted to a named account, and since a granter may only pass on what it holds,
-such a grant comes from `catalogAdmin`.
+granted to a named account, and since only `catalogAdmin` grants extras, such a
+grant comes from `catalogAdmin`.
 
 | Permission | Covers |
 | --- | --- |
@@ -206,14 +213,17 @@ catalog permission reaches them.
 
 ## Roles
 
-| Role | Visibility | Permissions |
-| --- | --- | --- |
-| posluchač | published | `stream_audio` |
-| čtenář | published | + `read_transcripts`, `search_transcripts` |
-| korektor | published | čtenář + `correct_transcripts`, `see_speakers` |
-| hostitel | published | čtenář + `manage_access` |
-| redaktor | all | `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
-| catalogAdmin | all | wildcard, including `see_transcript_variants` and `manage_catalog_config` |
+| Role | Permissions |
+| --- | --- |
+| posluchač | `stream_audio` |
+| čtenář | + `read_transcripts`, `search_transcripts` |
+| korektor | čtenář + `correct_transcripts`, `see_speakers` |
+| hostitel | čtenář + `manage_access` |
+| redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `see_speakers`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| catalogAdmin | wildcard, including `see_transcript_variants` and `manage_catalog_config` |
+
+Every role below `redaktor` sees released events and published recordings only,
+because none of them holds `see_unreleased`.
 
 Expected occupancy at introduction: one `catalogAdmin`, two `hostitel` (one of
 them with `download_transcripts` as an extra), a few `korektor`, and everyone
@@ -246,10 +256,10 @@ the `catalogAdmin`.
   catalog configuration, event health and bulk transcript export. Splitting the
   roles requires splitting that page into separately gated cards.
 - `requiresReadyRecordingScope` and `requiresReleasedEventVisibilityScope` test
-  equality against `LISTENER`. They must become visibility checks before any new
-  role is introduced, or the new role silently gains full visibility.
+  equality against `LISTENER`. They must become `see_unreleased` checks before
+  any new role is introduced, or the new role silently gains full visibility.
 - The bulk export path and the deep-search worker currently bypass publication
-  scoping. Both have to consult visibility like every other read.
+  scoping. Both have to consult `see_unreleased` like every other read.
 - The recording page's "download original audio" item moves behind the
   `catalogAdmin` wildcard, and the transcript download route gains a variant
   parameter for the pre-correction text.
@@ -304,7 +314,11 @@ the `catalogAdmin`.
   someone who cannot see it, so `redaktor` holds both `see_unreleased` and
   `release_events`. In practice "unreleased material is for administrators only"
   means `redaktor` and `catalogAdmin`; every role below them loses visibility it
-  has today.
+  has today. `see_unreleased` is protected, so only `catalogAdmin` and above can
+  assign a role that carries it, and no role can extend it as an extra.
+- **A `hostitel` invites anyone below `hostitel`.** Below means a role carrying
+  neither protected permission, so a `hostitel` assigns `posluchač`, `čtenář`
+  and `korektor` and nothing else.
 - **An empty corrected-transcript state is acceptable at launch.** Until a
   recording has a corrected transcript, readers get the original. No backfill and
   no grandfathering are needed, because substitution makes the original the

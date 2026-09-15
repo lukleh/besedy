@@ -19,7 +19,7 @@ each record links to those references.
 | [0002](0002-artifact-generations.md) | Accepted | Timestamped generations, stable symlinks, and full-hash leaves |
 | [0003](0003-web-catalog-projection.md) | Accepted | CSV ingest ownership and PostgreSQL serving projection |
 | [0004](0004-system-boundaries.md) | Accepted | Python, web, jobs, and backend responsibility boundaries |
-| [0005](0005-catalog-permission-model.md) | Proposed | Visibility plus permission sets, with roles as named presets |
+| [0005](0005-catalog-permission-model.md) | Proposed | Permission sets with visibility as one permission, roles as named presets |
 | [0006](0006-transcript-correction.md) | Proposed | Human transcript correction as a time-anchored layer that substitutes for machine output |
 
 When a decision changes, add a new ADR and mark the old record superseded. Do
