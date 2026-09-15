@@ -122,7 +122,10 @@ or an arrangement made with a particular person.
 Because it is a stance rather than a control, the cost of holding it should be
 counted honestly — and measured against production it is small. Of eighty
 grants, seventy-seven are listeners who never had a download; two owners and one
-member did. The buttons disappear for three accounts.
+member did. Audio downloads disappear for all three of them. Transcript
+downloads disappear for one, because the two owners become hosts carrying
+`download_transcripts` as an extra — the mechanism working as intended: the role
+describes the ordinary case and the exception is named.
 
 Offline caching therefore needs no permission of its own. It delivers bytes, but
 it delivers the same listening `stream_audio` already describes.
@@ -421,7 +424,7 @@ empty.
   | Today | Count | Becomes | Effect |
   | --- | --- | --- | --- |
   | `LISTENER` | 77 | `listener` | unchanged |
-  | `MEMBER` | 1 | `reader` | loses downloads and sight of unreleased material |
+  | `MEMBER` | 1 | `reader` | loses downloads, sight of unreleased material, and the diarization overlay |
   | `OWNER` | 2 | `host` | loses the editorial rights below |
   | `VIEWER` | 0 | `reader` | nobody holds it |
   | `EDITOR` | 0 | `reader` + `edit_metadata` | nobody holds it |
@@ -430,10 +433,11 @@ empty.
   reaches the catalog through `isCatalogAdmin`. As `host` the two of them keep
   listening, reading, searching and managing access, and give up unreleased
   visibility, event management and release, recording publication, metadata
-  editing, posters, sources, deep search, downloads and the settings page. That is
-  acceptable because it is not what they do: in practice they add users and
-  occasionally download a transcript, which the role keeps — the download as an
-  extra. The role finally describes the work rather than the history.
+  editing, posters, sources, deep search, the diarization overlay, audio
+  downloads and the settings page. That is acceptable because it is not what they
+  do: in practice they add users and occasionally download a transcript, and the
+  transcript download they keep, as an extra. The role finally describes the work
+  rather than the history.
 - `curator` starts empty, so the editorial rights it names sit with the
   `catalog_admin` until somebody is given them.
 - **The release gate must not ship with the permission rework.** It can only

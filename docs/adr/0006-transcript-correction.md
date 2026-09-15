@@ -362,7 +362,5 @@ tool, is a prerequisite rather than documentation written afterwards.
 - Whether verification should also be reachable for spans nobody edits by a
   single person confirming a whole run at once, or whether every span must be
   attested individually.
-- Whether the correction queue is offered per recording, per event, or purely as
-  a stream of spans ranked by confidence and citation frequency.
 - How a corrector marks an inaudible or disputed passage so that the marker is
   machine-readable rather than a convention inside free text.
