@@ -1,5 +1,8 @@
 import type { AccessLevel } from "@/generated/prisma/client";
-import { accessLevelAtLeast } from "@/lib/policy/access-level";
+import {
+  accessLevelAtLeast,
+  lacksUnreleasedVisibility,
+} from "@/lib/policy/access-level";
 import { hasCatalogAccess, type CatalogPolicyContext } from "@/lib/policy/catalog";
 
 export const EVENTS_VIEW_ACCESS_LEVEL: AccessLevel = "LISTENER";
@@ -17,7 +20,7 @@ export interface ReleasedVisibleEventState {
 export function requiresReleasedEventVisibilityScope(
   catalogGrant: AccessLevel | null | undefined
 ): boolean {
-  return catalogGrant === "LISTENER";
+  return lacksUnreleasedVisibility(catalogGrant);
 }
 
 /**

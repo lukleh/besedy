@@ -1,4 +1,5 @@
 import type { AccessLevel } from "@/generated/prisma/client";
+import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
 import {
   canDownloadCatalogContent,
   canEditCatalogMetadata,
@@ -16,7 +17,7 @@ export interface RecordingVisibilityState {
 export function requiresReadyRecordingScope(
   catalogGrant: AccessLevel | null | undefined
 ): boolean {
-  return catalogGrant === "LISTENER";
+  return lacksUnreleasedVisibility(catalogGrant);
 }
 
 function createRecordingVisibilityContext(
