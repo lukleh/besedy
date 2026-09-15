@@ -184,12 +184,13 @@ on revoke alike. Without the second test the rule would stop privilege from
 spreading upward but still let an account strip one above it, which is the same
 authority wearing a different hat.
 
-Forbidding self-assignment is new, not inherited. Under a rule that let a granter
-pass on only what it held, assigning to oneself gained nothing and the question
-never arose; the only self-check in the code today is the narrow one that stops
-an owner demoting itself out of its own catalog. Granting by role removes that
-natural limit, so the prohibition has to be stated. It also keeps a role
-conferred rather than taken, which is what makes the role name worth reading.
+Forbidding self-assignment is mostly new. Under a rule that let a granter pass
+on only what it held, assigning to oneself gained nothing and the question never
+arose; the two self-checks in the code today are narrow, one stopping an owner
+demoting itself out of its own catalog and one stopping any account revoking its
+own access. Granting by role removes the natural limit on everything else, so
+the general prohibition has to be stated. It also keeps a role conferred rather
+than taken, which is what makes the role name worth reading.
 
 ## Permission catalogue
 
