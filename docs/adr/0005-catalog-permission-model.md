@@ -231,10 +231,12 @@ the `catalogAdmin`.
   transcript changes, which the incremental per-`audio_hash` sync keyed on
   `transcript_fingerprint` already does. This is existing machinery, not new
   index work.
-- The single read path is what makes substitution cheap. `loadTranscript()`
-  already serves the recording page, downloads, the bulk export and MCP, so
-  resolving "corrected if present, original otherwise" in one place propagates
-  everywhere at once.
+- Substitution has to be resolved in `lib/transcript`, not in one caller.
+  `loadTranscript()` serves the recording page, the backend comparison view and
+  MCP, while the transcript download route and the bulk export read format
+  files through `readTranscriptFile()`. Both readers must resolve "corrected if
+  present, original otherwise", or downloads and the export keep serving machine
+  text after the page has switched.
 - MCP serves the same substituted transcript. The documented decision that a
   listener may read transcripts through MCP stops conflicting with web
   restrictions, because both surfaces now serve one text.

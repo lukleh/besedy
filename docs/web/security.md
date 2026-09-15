@@ -219,7 +219,7 @@ means the capability is qualified.
 | View backend comparison ("transcript stream") | Y | Y | Y | Y | - | no gate; default view [^stream] |
 | View speaker diarization | Y | Y | Y | Y | - | `resolveTranscriptRouteAccess` |
 | Download transcript file | Y | Y | Y | - | - | `requireDownload` |
-| Bulk catalog transcript export | Y | - | - | - | - | settings page + `canDownload` [^export] |
+| Bulk catalog transcript export | Y | Y | Y | - | - | `canDownload` + `canViewTranscripts` [^export] |
 
 **Search**
 
@@ -283,9 +283,12 @@ means the capability is qualified.
 [^stream]: The multi-backend comparison view has no capability gate and is the
     default transcript view (`besedy-transcript-enabled` defaults to `true`).
 
-[^export]: The bulk export route is the only transcript path with no
-    per-recording published/released scoping — it exports every hash in the
-    catalog, and the settings card requests `includeInactive=true`.
+[^export]: The export card lives on the OWNER-only settings page, but the route
+    itself (`/api/catalogs/:id/transcript-export`) checks only `canDownload`
+    and `canViewTranscripts`, so MEMBER and EDITOR can call it directly. It is
+    also the only transcript path with no per-recording published/released
+    scoping — it exports every hash in the catalog, and the settings card
+    requests `includeInactive=true`.
 
 [^rag]: Deliberately identical to `canViewCatalogTranscripts`: search returns
     transcript-derived content and must never be broader than direct transcript
@@ -295,6 +298,12 @@ means the capability is qualified.
     is looser than the OWNER-level guard on the navigation link and on job
     creation. Job results are produced by an internal worker call that passes
     `accessLevel: null`, so they are not release-scoped.
+
+[^poster]: Poster and source writes go through `requireCatalogManagementAccess`,
+    whose default authorizer is `hasCatalogManagementAuthority`, after
+    `requireCatalogEventsAccess(catalogId, "view")`. Poster reads are open to
+    every level; for LISTENER they are release-scoped through
+    `requiresReleasedEventVisibilityScope`.
 
 [^lookup]: `requireEditorOnAnyCatalog` means EDITOR on *any* catalog. Recorder,
     location and album rows are global, so this is cross-catalog write access.

@@ -22,8 +22,10 @@ What the existing system offers:
   text, and its position in an array.
 - Transcript artifacts are immutable within a generation, and re-running
   transcription with `--overwrite` replaces them in place.
-- `loadTranscript()` is the single read path for the recording page, downloads,
-  the bulk export and MCP.
+- Transcript reads go through two functions in `lib/transcript`:
+  `loadTranscript()` for the recording page, the backend comparison view and
+  MCP, and `readTranscriptFile()` for the transcript download route and the
+  bulk export.
 - Diarization is already merged into the reading view as an overlay resolved at
   render time, from a separate artifact.
 - Agent-facing guidance already tells an agent to qualify a quotation when a
@@ -178,9 +180,11 @@ tool, is a prerequisite rather than documentation written afterwards.
 - A transcript gains a publication state alongside `CatalogEntry.isPublished` and
   `CatalogEvent.released`. Having passed correction is a workflow invariant that
   permits setting it, not an authorization decision.
-- Because `loadTranscript()` is the single read path, resolving "corrected if
-  present, original otherwise" in one place propagates to the recording page,
-  downloads, the bulk export and MCP at once.
+- Resolving "corrected if present, original otherwise" belongs in
+  `lib/transcript`, where both `loadTranscript()` and `readTranscriptFile()`
+  live. The first covers the recording page, the comparison view and MCP; the
+  second covers the transcript download route and the bulk export. Changing
+  only the first would leave downloads and the export serving machine text.
 - Retrieval needs no notion of correction state. A corrected transcript changes
   the transcript fingerprint, and the existing incremental per-`audio_hash` sync
   already adds, refreshes and prunes on that basis.
@@ -193,9 +197,10 @@ tool, is a prerequisite rather than documentation written afterwards.
   relocation is applied and recorded, and anything less leaves the span marked
   stale for a person to resolve. Corrections are never applied silently to text
   they were not written against.
-- Speaker labels are a separate concern. Transcripts carry none today, which the
-  `besedy-sources` skill states outright, so attributing speech is a later phase
-  using the same span mechanism rather than part of text correction.
+- Speaker attribution is a separate concern. Transcripts carry no speaker
+  names; the diarization overlay distinguishes turns without identifying who is
+  speaking. Attributing speech is a later phase using the same span mechanism
+  rather than part of text correction.
 - The correction page is desktop-first. Typing against running audio on a phone
   is not a workflow worth pretending to support, though confirming a span may be.
 - Until listeners become readers, corrected transcripts have an audience of three
