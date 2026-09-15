@@ -252,18 +252,12 @@ tool, is a prerequisite rather than documentation written afterwards.
   release, not the release itself. Until then a derived coverage figure stands
   for the transcript, and it is computed from the spans rather than stored beside
   them, so the two can never disagree.
-- Resolving "corrected where a span has been verified, original elsewhere"
-  belongs in
-  `lib/transcript`, where both `loadTranscript()` and `readTranscriptFile()`
-  live. The first covers the recording page, the comparison view and MCP; the
-  second covers the transcript download route and the bulk export. Changing
-  only the first would leave downloads and the export serving machine text.
-- The two readers need different work, because they read different things.
-  `loadTranscript()` parses `transcript.json` and can pick a different source.
-  `readTranscriptFile()` returns `transcript.<format>` as bytes, and no corrected
-  `json`, `txt`, `srt` or `vtt` exists anywhere: the format files are rendered by
-  the pipeline's export step. Resolution on that side therefore means producing
-  the formats from corrected text, not choosing a different file.
+- Gating reading on release spares `lib/transcript` a resolution rule entirely.
+  Partially corrected text never reaches a reading surface, so neither
+  `loadTranscript()` on the recording page nor `readTranscriptFile()` on the
+  download and export paths has to merge anything: both point at the materialized
+  artifact of a released transcript, which is already whole. What each still
+  needs is to know that a transcript is released and where its artifact is.
 - Retrieval needs no notion of correction state. A corrected transcript changes
   the transcript fingerprint, and the existing incremental per-`audio_hash` sync
   already adds, refreshes and prunes on that basis.
@@ -279,19 +273,22 @@ tool, is a prerequisite rather than documentation written afterwards.
   subtitle rendering that already exists in Python and put it on the wrong side
   of the boundary. It also means downloads and search become correct at the same
   moment, both driven by materialization, rather than drifting apart.
-- The split between live and trailing reads does not follow surfaces, it follows
-  readers, and MCP falls on both sides of it. `get_transcript` goes through
-  `loadTranscript()` and is live; `search_transcripts` and
-  `find_transcript_mentions` read the retrieval bundle and trail, exactly as the
-  download route, the bulk export and the catalog's own search do. An agent can
-  therefore quote a corrected passage from one tool while another still returns
-  the machine wording for the same moment.
+- Before release, MCP is inconsistent with itself, and that is the only place the
+  lag is visible. `get_transcript` goes through `loadTranscript()` and reflects a
+  correction as soon as it is verified; `search_transcripts` and
+  `find_transcript_mentions` read the retrieval bundle and trail until the render
+  job runs, as does the catalog's own search. An agent can therefore quote a
+  corrected passage from one tool while another still returns the machine wording
+  for the same moment. The reading surfaces show none of this, because they open
+  only after release, by which time everything has been rendered and indexed.
 - Because of that, accepting a correction triggers **one** job that both renders
   the format files and refreshes the index. Two separate triggers would let the
   surfaces drift apart from each other rather than merely lag the page, which is
   the outcome materialization exists to prevent. The lag itself is accepted and
   is not to be closed by rendering formats in the web app; it is bounded by that
   job and never by someone remembering to run `just catalog export-transcripts`.
+  A transcript cannot be released while that job still owes it work, so the lag
+  never reaches a reader.
 - That job is a dependency, not existing machinery. Prefect runs in production
   and owns one flow today, deep search, which the web application already starts
   through the jobs API. Transcript rendering and reindexing on acceptance is a
@@ -317,8 +314,8 @@ tool, is a prerequisite rather than documentation written afterwards.
   `čtenář` learns about a transcript in progress.
 - The correction page is desktop-first. Typing against running audio on a phone
   is not a workflow worth pretending to support, though confirming a span may be.
-- Until listeners become readers, corrected transcripts have an audience of three
-  accounts. The reward that motivates correction — a verified passage quoted
+- Until someone makes the listeners readers, released transcripts have an
+  audience of three accounts. The reward that motivates correction — a verified passage quoted
   without a caution about machine transcription — only exists once that
   promotion happens.
 

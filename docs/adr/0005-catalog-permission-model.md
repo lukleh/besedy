@@ -107,6 +107,13 @@ exactly one primary recording, and a transcript needs every span verified.
 Releasing is then a deliberate act by a person, not an automatic consequence of
 the last attestation landing.
 
+**Like the stance on file delivery, this gate decides how the text is offered,
+not whether it can be obtained.** Search returns passages from unreleased
+transcripts, and an agent asked through MCP will hand over the whole of one. What
+release withholds is the transcript *as a document to sit and read*. It is a
+statement about when a text is fit to be presented that way, not a boundary
+around the words.
+
 There is therefore still no permission for "corrected transcripts" as distinct
 from "all transcripts". A `čtenář` holds `read_transcripts` and reads released
 transcripts, exactly as they browse released events. Unchecked text stays
@@ -117,6 +124,14 @@ reachable in the places where working on it is the point:
 - through search and agents, which are not reading surfaces — see below.
 
 ### Search and agents are not gated on release
+
+The code holds an invariant that search must never be broader than transcript
+access, and it now has to be read at the level of the **catalog**: an actor may
+not search a catalog whose transcripts it may not read. It does not mean an actor
+may not search a transcript it cannot open — under release gating that is the
+normal case, deliberately. The comment predates release being a state of the
+material rather than a property of the role, and rereading it the old way would
+gate search and undo this decision.
 
 A correction reaches retrieval as soon as it is made; a release gates only the
 reading surfaces — the transcript view, its download, and the bulk export.
@@ -226,7 +241,7 @@ than taken, which is what makes the role name worth reading.
 
 | Permission | Covers |
 | --- | --- |
-| `search_transcripts` | Semantic and lexical search over the same transcripts `read_transcripts` serves. |
+| `search_transcripts` | Semantic and lexical search over every transcript in the catalog, released or not. Unlike `read_transcripts` it is not gated on release. |
 | `use_deep_search` | Running and reading deep-search jobs. Per-job sharing stays a property of the job. |
 
 ### Curated metadata
@@ -260,11 +275,22 @@ Held by `redaktor` and `catalogAdmin`. For any role below them these are extras
 granted to a named account, and since only `catalogAdmin` grants extras, such a
 grant comes from `catalogAdmin`.
 
+**Delivery is never broader than reading.** These permissions decide whether an
+account may take files out, not which material it may take: the scope is always
+whatever that account can read. A `redaktor` holds `see_unreleased` and so
+downloads unreleased transcripts too; a `čtenář` granted a download takes
+released ones only. The same rule covers the bulk export, so no download carries
+a release test of its own.
+
+A `korektor` is not an exception to this. Their access to unchecked text is
+access to a working surface, not a right to read it, so a `korektor` granted a
+download still takes released transcripts only.
+
 | Permission | Covers |
 | --- | --- |
 | `download_audio` | The playable audio file. Original masters stay inside the `catalogAdmin` wildcard. |
-| `download_transcripts` | File delivery of a recording's transcript. |
-| `download_original_transcript` | The pre-correction machine text, as an explicit variant of that download. |
+| `download_transcripts` | File delivery of a transcript the account can already read. |
+| `download_original_transcript` | The machine text underneath, as a variant of that same download — for a released transcript, what the corrections replaced. |
 | `bulk_export_transcripts` | Catalog-wide export. The highest-impact permission in the catalogue: one request yields the whole corpus as data. |
 
 ### Outside the catalog scope
@@ -303,17 +329,12 @@ the `catalogAdmin`.
   transcript changes, which the incremental per-`audio_hash` sync keyed on
   `transcript_fingerprint` already does. This is existing machinery, not new
   index work.
-- Substitution has to be resolved in `lib/transcript`, not in one caller.
-  `loadTranscript()` serves the recording page, the backend comparison view and
-  MCP, while the transcript download route and the bulk export read format
-  files through `readTranscriptFile()`. Both readers must resolve "corrected if
-  present, original otherwise", or downloads and the export keep serving machine
-  text after the page has switched. The two need different work, because the
-  format files have no corrected counterpart until something renders one; see
-  [ADR 0006](0006-transcript-correction.md).
-- MCP serves the same substituted transcript. The documented decision that a
-  listener may read transcripts through MCP stops conflicting with web
-  restrictions, because both surfaces now serve one text.
+- Gating reading on release removes work rather than adding it. Every reading
+  surface — the transcript view, its download, the bulk export — touches only
+  released transcripts, and a released transcript has been fully verified,
+  materialized and rendered. All of them therefore read the same artifact, and
+  neither `loadTranscript()` nor `readTranscriptFile()` needs a rule for
+  resolving partially corrected text. See [ADR 0006](0006-transcript-correction.md).
 - The catalog settings page is one permission today and mixes access management,
   catalog configuration, event health and bulk transcript export. Splitting the
   roles requires splitting that page into separately gated cards.
@@ -321,7 +342,9 @@ the `catalogAdmin`.
   equality against `LISTENER`. They must become `see_unreleased` checks before
   any new role is introduced, or the new role silently gains full visibility.
 - The bulk export path and the deep-search worker currently bypass publication
-  scoping. Both have to consult `see_unreleased` like every other read.
+  scoping. The export is covered by the delivery rule above, which scopes it to
+  what the account can read; the worker has to consult `see_unreleased` like
+  every other read.
 - The recording page's "download original audio" item moves behind the
   `catalogAdmin` wildcard, and the transcript download route gains a variant
   parameter for the pre-correction text.
@@ -369,10 +392,18 @@ the `catalogAdmin`.
   three hours and several hundred spans, so the first one a reader can open is
   weeks of work by two people away. Nothing is backfilled and no machine
   transcript is grandfathered into the released state.
-- **Listeners become readers only once the correction system has been tried and
-  trusted** — not once it merely exists, and not once the corpus is corrected.
-  Until then the 77 `LISTENER` grants measured in production stay as they are,
-  which makes every step of this rework invisible to all but three accounts.
+- **Listeners are made readers; they do not become them.** Nothing promotes
+  anyone automatically. Someone changes each account, and the change waits until
+  the correction system has been tried and trusted — not until it merely exists,
+  and not until the corpus is corrected. Until then the 77 `LISTENER` grants
+  measured in production stay as they are, which makes every step of this rework
+  invisible to all but three accounts.
+- **What a new reader gets first is search, not reading.** `search_transcripts`
+  works from the first day over every transcript; `read_transcripts` returns
+  nothing until a transcript is released, and at twenty to thirty-five
+  person-hours per recording across 198 recordings, most never will be. That is a
+  coherent product — searching works, reading arrives one transcript at a time —
+  but it should not be promised as anything else.
 - **Unchecked text is withheld from reading, not from use.** A `čtenář` opening a
   recording whose transcript is not yet released sees how far checking has got,
   not the machine text. The same text still reaches them through search and
