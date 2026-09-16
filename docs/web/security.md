@@ -504,10 +504,23 @@ solution. For edge MFA, consider Cloudflare Access (Zero Trust).
 ### Egress Controls
 
 Containers cannot reach private IP ranges (RFC 1918): `10.0.0.0/8`,
-`172.16.0.0/12` (except Docker's own subnet), `192.168.0.0/16`. Inter-container
+`172.16.0.0/12` (except Docker's own subnets), `192.168.0.0/16`. Inter-container
 traffic (web to db) is allowed. Internet is allowed (required for Google OAuth).
 Rules are applied by `web/setup/egress/iptables-egress.sh` and persisted via
-`besedy-egress.service` (systemd, runs at boot).
+`besedy-egress.service` (systemd, runs at boot and after every Docker restart).
+
+The script discovers the container subnets from Docker each time it runs and
+writes the rules into a dedicated `BESEDY-EGRESS` chain. Never hardcode a
+subnet: `docker compose down` destroys its networks, and Docker re-allocates
+subnets from its pool on the next `up`, so a hardcoded value silently stops
+matching and the LAN block quietly stops applying.
+
+Because the rules fail open, presence is not proof of enforcement — check it:
+
+```bash
+sudo /usr/local/bin/iptables-egress.sh --verify   # exits non-zero on drift
+sudo iptables -L BESEDY-EGRESS -n -v              # DROP counters should move
+```
 
 ### Input Validation
 

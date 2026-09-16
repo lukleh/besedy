@@ -2,6 +2,9 @@
 Description=Besedy Docker Egress Controls (block LAN access)
 After=docker.service
 Requires=docker.service
+# Docker rebuilds its own chains when it restarts, which drops the rules this
+# unit installed. PartOf re-runs it on every docker.service restart.
+PartOf=docker.service
 
 [Service]
 Type=oneshot
@@ -9,6 +12,11 @@ ExecStart=/usr/local/bin/iptables-egress.sh
 StandardOutput=journal
 StandardError=journal
 RemainAfterExit=yes
+# The script refuses to install an empty ruleset (e.g. if the Docker API is not
+# up yet), so retry rather than leaving the LAN reachable until the next boot.
+Restart=on-failure
+RestartSec=30s
 
 [Install]
 WantedBy=multi-user.target
+WantedBy=docker.service
