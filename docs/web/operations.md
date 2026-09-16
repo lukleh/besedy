@@ -154,8 +154,10 @@ migrations do not disturb. `prod-migrate` runs from the host against the `db`
 container, so it needs nothing from `web`.
 
 A migration that removes or narrows something the running code still uses breaks
-that reasoning in the other direction, and wants a deliberate two-stage deploy
-rather than a reordering.
+that reasoning in the other direction: no ordering saves it, because one of the
+two must meet a schema it does not match. Besedy is not a high-availability
+deployment, so the answer there is to stop `web`, migrate, and start it again,
+rather than to stage the change across two releases.
 
 **Version tracking:** The build keeps `GIT_COMMIT` for deployment diagnostics
 and derives `WEB_VERSION` from an allowlist of production web inputs plus the
