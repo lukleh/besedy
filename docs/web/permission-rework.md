@@ -111,15 +111,16 @@ level; that is worth keeping deliberate rather than leaving to luck.
 
 ## The UI follows every split
 
-The web UI never decides a permission itself. It reads booleans from four
+The web UI never decides a permission itself. It reads booleans from five
 payloads, each with a Zod schema on the client, and shows or hides on them:
 
 | Payload | Route | Client schema |
 | --- | --- | --- |
 | Catalog list | `/api/catalog` | `components/catalog/catalog-list/types.ts` |
-| Recording entry | `/api/catalog/:hash` | `hooks/use-recording-entry.ts` |
+| Recording entry | `/api/catalogs/:id/recordings/:hash/entry` | `hooks/use-recording-entry.ts` |
 | Catalog features | `/api/catalogs/:id/features` | `lib/features/types.ts` |
 | Settings data | settings page loaders | `app/catalog/[catalogId]/settings/*` |
+| Admin status | `/api/me/permissions` | `hooks/use-admin-status.ts` |
 
 So a permission that is split or moved on the server is invisible to the user
 until the payload carries a boolean for it and an element hides on that boolean.
