@@ -1,6 +1,6 @@
 # Permission Rework Progress
 
-> **Last Updated:** 2026-09-15
+> **Last Updated:** 2026-09-16
 
 Order and state for the rework decided in
 [ADR 0005](../adr/0005-catalog-permission-model.md) and
@@ -18,13 +18,13 @@ reference.
 | 2 | Lookups become per catalog: schema, data, `/api/metadata/*` scoped to the catalog | Not started |
 | 3 | Permission checks computed from the level scale inside the policy layer; nothing stored changes | Not started |
 | 4 | Roles and extras stored: `CatalogAccess` gains the six role identifiers and an extras list, the roles are defined in code, the five legacy values stay valid | Not started |
-| 5 | Catalog settings page split into separately gated cards | Not started |
+| 5 | Catalog settings page split into separately gated cards; the catalog list's publish toggle gated on `publish_recording` instead of `manage_access` | Not started |
 | 6 | Granting rule becomes the protected-permission test: what may be assigned, what may be replaced, and no account changing its own access | Not started |
 | 7 | Roles assigned: 77 listeners, one reader, two hosts with `download_transcripts` as an extra; legacy values retired | Not started |
 | 8 | Bulk export scoped by the delivery rule; deep-search worker stops passing `accessLevel: null` | Not started |
-| 9 | `see_transcript_variants` and `see_speakers` to `catalog_admin`; stream viewer stops being the default view | Not started |
+| 9 | `see_transcript_variants` and `see_speakers` to `catalog_admin`; the stream switch, backend picker and speaker toggle hide on new recording-entry flags, and the stream stops being the default view | Not started |
 | 10 | `browse_recordings` becomes a stated choice rather than an accident of the tab switcher | Not started |
-| 11 | Original-audio download behind the `catalog_admin` wildcard; transcript download gains its pre-correction variant | Not started |
+| 11 | Original-audio download behind the `catalog_admin` wildcard; transcript download gains its pre-correction variant; the one `canDownload` flag becomes one per download permission | Not started |
 
 Step 1 comes first because every later step that adds a role depends on it:
 while the threshold is an equality with `LISTENER`, a new role below `VIEWER`
@@ -109,7 +109,44 @@ migration not having run yet. Step 4 satisfies this because nobody holds a role
 identifier until step 7 and every account still resolves through its legacy
 level; that is worth keeping deliberate rather than leaving to luck.
 
+## The UI follows every split
+
+The web UI never decides a permission itself. It reads booleans from four
+payloads, each with a Zod schema on the client, and shows or hides on them:
+
+| Payload | Route | Client schema |
+| --- | --- | --- |
+| Catalog list | `/api/catalog` | `components/catalog/catalog-list/types.ts` |
+| Recording entry | `/api/catalog/:hash` | `hooks/use-recording-entry.ts` |
+| Catalog features | `/api/catalogs/:id/features` | `lib/features/types.ts` |
+| Settings data | settings page loaders | `app/catalog/[catalogId]/settings/*` |
+
+So a permission that is split or moved on the server is invisible to the user
+until the payload carries a boolean for it and an element hides on that boolean.
+Where the boolean already exists the step is server-only; where it does not, the
+step includes the payload field, the schema, and the element. Checked against
+the code on 2026-09-16:
+
+| Element | Today | Needs | Step |
+| --- | --- | --- | --- |
+| Publish toggle in the catalog list | shown on `canManageAccess` | `canPublishRecording` in the list payload | 5 |
+| Settings page: export card, event health card | shown to anyone who can open the page | one flag per card; header link and page gate become "any card visible" | 5 |
+| Stream view switch and backend picker | always shown; stream is the default | `canSeeTranscriptVariants` in the recording entry; stored preference ignored when false | 9 |
+| Speaker overlay toggle | shown whenever diarization exists | `canSeeSpeakers` in the recording entry | 9 |
+| Audio menu, original-audio item, transcript formats menu | one `canDownload` | one flag per download permission | 11 |
+| Release event action | same flag as edit event | `canRelease` beside `canEdit` in features | with `release_events` |
+| Status column default | keyed on the access level string | a boolean for unreleased visibility | 7 |
+
+Already consumed as server-computed booleans and needing no UI work: the tab
+switcher, event admin columns, release-state indicators, the deep-search link,
+the search box, batch edit, metadata edit, poster and source management, and the
+offline cache button, which has no gate and needs none.
+
 ## Must not move
+
+**A permission is not done until the UI consumes it.** A step that introduces
+or splits a permission ships the payload field, the client schema and the
+element together with the policy change, or it has not shipped.
 
 **The release gate does not ship with this rework.** Reading a transcript may
 only depend on release once corrections exist, because until then nothing can be
