@@ -1,5 +1,8 @@
 import type { AccessLevel } from "@/generated/prisma/client";
-import { accessLevelAtLeast } from "@/lib/policy/access-level";
+import {
+  grantHasPermission,
+  type CatalogPermission,
+} from "@/lib/policy/catalog-permissions";
 
 export interface CatalogPolicyContext {
   catalogExists: boolean;
@@ -8,14 +11,21 @@ export interface CatalogPolicyContext {
   isCatalogAdmin: boolean;
 }
 
-function hasCatalogGrantAtLeast(
+/**
+ * Whether the actor holds a permission in this catalog.
+ *
+ * Access to the catalog is checked separately by each caller, because a gate
+ * that asks about a permission without first asking whether the actor may be
+ * here at all would answer for someone who cannot open the catalog.
+ */
+export function hasCatalogPermission(
   context: CatalogPolicyContext,
-  requiredLevel: AccessLevel
+  permission: CatalogPermission
 ): boolean {
-  return (
-    context.isCatalogAdmin ||
-    (context.catalogGrant !== null &&
-      accessLevelAtLeast(context.catalogGrant, requiredLevel))
+  return grantHasPermission(
+    context.catalogGrant,
+    context.isCatalogAdmin,
+    permission
   );
 }
 
@@ -36,21 +46,21 @@ export function canBrowseRecordings(context: CatalogPolicyContext): boolean {
 }
 
 export function canViewCatalogTranscripts(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogGrantAtLeast(context, "VIEWER");
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "read_transcripts");
 }
 
 export function canDownloadCatalogContent(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogGrantAtLeast(context, "MEMBER");
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "download");
 }
 
 export function canEditCatalogMetadata(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogGrantAtLeast(context, "EDITOR");
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "edit_metadata");
 }
 
 export function hasCatalogManagementAuthority(
   context: CatalogPolicyContext
 ): boolean {
-  return hasCatalogAccess(context) && (context.isCatalogAdmin || context.catalogGrant === "OWNER");
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "manage_access");
 }
 
 export function canAccessCatalogSettings(
@@ -62,13 +72,13 @@ export function canAccessCatalogSettings(
 export function canManageCatalogConfiguration(
   context: CatalogPolicyContext
 ): boolean {
-  return hasCatalogAccess(context) && context.isCatalogAdmin;
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "manage_catalog_config");
 }
 
 export function canAttemptCatalogManagement(
   context: CatalogPolicyContext
 ): boolean {
-  return context.canEnterPortal && (context.isCatalogAdmin || context.catalogGrant === "OWNER");
+  return context.canEnterPortal && hasCatalogPermission(context, "manage_access");
 }
 
 export function canGrantCatalogAccessLevel(
@@ -86,7 +96,7 @@ export function canManageExistingCatalogAccessLevel(
 }
 
 export function canBatchEditCatalogMetadata(context: CatalogPolicyContext): boolean {
-  return hasCatalogManagementAuthority(context);
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "batch_edit_metadata");
 }
 
 export function canUseCatalogRag(context: CatalogPolicyContext): boolean {

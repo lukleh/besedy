@@ -1,9 +1,10 @@
 import type { AccessLevel } from "@/generated/prisma/client";
+import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
 import {
-  accessLevelAtLeast,
-  lacksUnreleasedVisibility,
-} from "@/lib/policy/access-level";
-import { hasCatalogAccess, type CatalogPolicyContext } from "@/lib/policy/catalog";
+  hasCatalogAccess,
+  hasCatalogPermission,
+  type CatalogPolicyContext,
+} from "@/lib/policy/catalog";
 
 export const EVENTS_VIEW_ACCESS_LEVEL: AccessLevel = "LISTENER";
 
@@ -42,9 +43,7 @@ export function canBrowseEvents(context: EventFeaturePolicyContext): boolean {
   return (
     context.featureEnabled &&
     hasCatalogAccess(context) &&
-    (context.isCatalogAdmin ||
-      (context.catalogGrant !== null &&
-        accessLevelAtLeast(context.catalogGrant, EVENTS_VIEW_ACCESS_LEVEL)))
+    hasCatalogPermission(context, "browse_recordings")
   );
 }
 
@@ -68,10 +67,7 @@ export function canViewEvent(
 }
 
 export function canEditEvent(context: EventFeaturePolicyContext): boolean {
-  return (
-    canBrowseEvents(context) &&
-    (context.isCatalogAdmin || context.catalogGrant === "OWNER")
-  );
+  return canBrowseEvents(context) && hasCatalogPermission(context, "manage_events");
 }
 
 export function canEditCatalogEvents(context: EventFeaturePolicyContext): boolean {

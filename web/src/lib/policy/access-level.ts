@@ -1,4 +1,5 @@
 import type { AccessLevel } from "@/generated/prisma/client";
+import { permissionsForLevel } from "@/lib/policy/catalog-permissions";
 
 const ACCESS_LEVEL_ORDER: AccessLevel[] = [
   "LISTENER",
@@ -18,26 +19,16 @@ export function accessLevelAtLeast(
 }
 
 /**
- * Lowest access level that may see unreleased events and unpublished recordings.
- */
-export const UNRELEASED_VISIBILITY_ACCESS_LEVEL: AccessLevel = "VIEWER";
-
-/**
- * Whether a grant sits below the level that may see unreleased material.
- *
- * Asked as an ordering question rather than as equality with the lowest level,
- * so that inserting a level below VIEWER scopes it like a listener instead of
- * silently granting it sight of everything.
+ * Whether a grant lacks the permission to see unreleased material, and so has to
+ * be scoped to released events and published recordings.
  *
  * A null or undefined grant belongs either to a catalog admin, who is not scoped,
  * or to an actor with no access, who is refused before reaching any scoped query.
- * Both answer false.
+ * Both answer false, which is why this asks about the grant rather than calling
+ * `grantHasPermission` with an administrator flag it does not have.
  */
 export function lacksUnreleasedVisibility(
   catalogGrant: AccessLevel | null | undefined
 ): boolean {
-  return (
-    catalogGrant != null &&
-    !accessLevelAtLeast(catalogGrant, UNRELEASED_VISIBILITY_ACCESS_LEVEL)
-  );
+  return catalogGrant != null && !permissionsForLevel(catalogGrant).has("see_unreleased");
 }
