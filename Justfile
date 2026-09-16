@@ -480,10 +480,20 @@ prod-deploy:
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} build --pull web
-    echo "Starting production services..."
-    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web
+    # Migrate before the new container starts, never after. The new image knows
+    # about columns the old schema lacks, and Prisma asks for every scalar of a
+    # model unless a query names a select, so starting it first leaves it serving
+    # against a schema it does not match until the restart. Migrating first means
+    # the old container meets the new schema instead, which additive migrations
+    # do not disturb. prod-migrate runs from the host against the db container,
+    # so it needs nothing from web.
     echo "Running migrations..."
     just prod-migrate
+    echo "Starting production services..."
+    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web
+    # Kept although `up -d` recreates the container on a new image: it costs
+    # seconds and guarantees the running container matches the migrated schema
+    # even when the build produced an identical image.
     echo "Restarting web service..."
     {{ prod_compose }} restart web
     echo "Deployment complete. Commit: ${GIT_COMMIT:0:7}"

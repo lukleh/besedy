@@ -145,6 +145,18 @@ container recreation (which can corrupt indexes). Its `prod-migrate` step grants
 the app access to newly migrated tables and then re-applies the `audit_log`
 DELETE revoke.
 
+**Migrations run before the new container starts, and that order matters.** The
+new image knows about columns the old schema lacks, and Prisma asks for every
+scalar of a model unless a query names a `select`, so starting it first would
+leave it serving against a schema it does not match until the restart. Migrating
+first has the old container meet the new schema instead, which additive
+migrations do not disturb. `prod-migrate` runs from the host against the `db`
+container, so it needs nothing from `web`.
+
+A migration that removes or narrows something the running code still uses breaks
+that reasoning in the other direction, and wants a deliberate two-stage deploy
+rather than a reordering.
+
 **Version tracking:** The build keeps `GIT_COMMIT` for deployment diagnostics
 and derives `WEB_VERSION` from an allowlist of production web inputs plus the
 browser-visible build configuration. Root-only, jobs/Python, web test, and web
