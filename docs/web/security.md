@@ -1,6 +1,6 @@
 # Web Security Reference
 
-> **Last Updated:** 2026-09-14
+> **Last Updated:** 2026-09-16
 
 Dense reference for agents working on auth, access control, and deployment
 hardening.
@@ -237,7 +237,7 @@ means the capability is qualified.
 | View curated metadata | Y | Y | Y | Y | Y | recording access |
 | Edit / verify / delete recording metadata | Y | Y | - | - | - | `canEditCatalogMetadata` |
 | Batch edit mode | Y | - | - | - | - | `canBatchEditCatalogMetadata` |
-| Edit shared lookup rows (recorder, location, album) | Y | Y | - | - | - | `requireEditorOnAnyCatalog` [^lookup] |
+| Edit lookup rows (recorder, location, album) | Y | Y | - | - | - | `canEditMetadata` on this catalog [^lookup] |
 
 **Publication and editorial**
 
@@ -306,9 +306,12 @@ means the capability is qualified.
     `requiresReleasedEventVisibilityScope`. Source reads are not: every source
     route, read included, goes through the management check.
 
-[^lookup]: `requireEditorOnAnyCatalog` means EDITOR on *any* catalog. Recorder,
-    location and album rows are global, so this is cross-catalog write access.
-    The corresponding item reads require only authentication.
+[^lookup]: Recorder, location and album rows belong to one catalog, so reads are
+    filtered by it and writes require edit rights on it. They were global until
+    [ADR 0007](../adr/0007-per-catalog-lookups.md), guarded by an
+    editor-on-any-catalog permission that let an editor of one catalog change
+    rows every catalog depended on, while the item reads asked only for
+    authentication.
 
 ### LISTENER Role
 
