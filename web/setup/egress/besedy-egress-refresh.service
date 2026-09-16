@@ -1,0 +1,14 @@
+[Unit]
+Description=Reapply Besedy Docker Egress Controls if they have drifted
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Compose recreates its networks on `down`/`up` without restarting dockerd, so
+# the new subnets have no rules until something reapplies them. Verify quietly
+# and only reapply — and log — when the live rules no longer match the live
+# networks, so the journal stays meaningful.
+ExecStart=/bin/sh -c '/usr/local/bin/iptables-egress.sh --verify >/dev/null 2>&1 || /usr/local/bin/iptables-egress.sh'
+StandardOutput=journal
+StandardError=journal

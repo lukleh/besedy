@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically reconcile Besedy Docker egress controls
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=besedy-egress-refresh.service
+
+[Install]
+WantedBy=timers.target

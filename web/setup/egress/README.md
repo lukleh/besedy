@@ -7,8 +7,14 @@ These files are host setup assets, not scheduled maintenance scripts.
   outbound internet access. Container subnets are discovered from Docker on
   every run — they are never hardcoded, because compose re-allocates them
   whenever a stack is recreated.
+  Inter-container traffic is handed back to Docker (`RETURN`) rather than
+  accepted outright, so Docker's own network isolation still applies.
 - `besedy-egress.service` is a `systemd` unit that reapplies those rules after
   Docker starts and after every Docker restart (`PartOf=docker.service`).
+- `besedy-egress-refresh.timer` reconciles the rules every 5 minutes. This is
+  what covers `docker compose down && up`, which recreates networks with new
+  subnets *without* restarting dockerd, so neither boot nor `PartOf` would
+  reapply them. The timer verifies quietly and only reapplies on drift.
 
 Use them during host deployment or security hardening:
 
@@ -16,8 +22,11 @@ Use them during host deployment or security hardening:
 sudo cp web/setup/egress/iptables-egress.sh /usr/local/bin/
 sudo chmod +x /usr/local/bin/iptables-egress.sh
 sudo cp web/setup/egress/besedy-egress.service /etc/systemd/system/
+sudo cp web/setup/egress/besedy-egress-refresh.service /etc/systemd/system/
+sudo cp web/setup/egress/besedy-egress-refresh.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now besedy-egress.service
+sudo systemctl enable --now besedy-egress-refresh.timer
 ```
 
 Re-run `systemctl enable` after updating the unit: the `WantedBy=docker.service`
