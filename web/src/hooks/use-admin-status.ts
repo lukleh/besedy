@@ -10,7 +10,6 @@ interface AdminPermissions {
   isSuperadmin: boolean;
   isAdmin: boolean;
   canAccessAdmin: boolean;
-  hasEditorOnAnyCatalog: boolean;
 }
 
 interface AdminStatus extends AdminPermissions {
@@ -22,14 +21,12 @@ const adminPermissionsSchema = z.object({
   isSuperadmin: z.boolean(),
   isAdmin: z.boolean(),
   canAccessAdmin: z.boolean(),
-  hasEditorOnAnyCatalog: z.boolean(),
 });
 
 const defaultPermissions: AdminPermissions = {
   isSuperadmin: false,
   isAdmin: false,
   canAccessAdmin: false,
-  hasEditorOnAnyCatalog: false,
 };
 
 /**

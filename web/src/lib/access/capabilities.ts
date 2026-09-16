@@ -1,7 +1,6 @@
 import { AccessLevel, UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import {
-  hasEditorAuthorityOnAnyCatalog,
   listUserCatalogAccessEntries,
 } from "@/lib/access/catalog-access-queries";
 import {
@@ -41,7 +40,6 @@ export interface AdminCapability extends PortalCapability {
   isSuperadmin: boolean;
   isAdmin: boolean;
   canAccessAdmin: boolean;
-  hasEditorOnAnyCatalog: boolean;
 }
 
 export interface CatalogDiscoveryCapability extends PortalCapability {
@@ -139,21 +137,17 @@ export async function getAdminCapability(userId?: string): Promise<AdminCapabili
       isSuperadmin: false,
       isAdmin: false,
       canAccessAdmin: false,
-      hasEditorOnAnyCatalog: false,
     };
   }
 
   const isSuperadmin = actor.systemRole === "SUPERADMIN";
   const isAdmin = hasSystemCatalogAuthority(actor);
 
-  const editorOnAnyCatalog = await hasEditorAuthorityOnAnyCatalog(actor);
-
   return {
     ...portal,
     isSuperadmin,
     isAdmin,
     canAccessAdmin: isAdmin,
-    hasEditorOnAnyCatalog: editorOnAnyCatalog,
   };
 }
 
