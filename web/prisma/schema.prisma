@@ -100,23 +100,23 @@ model User {
   oauthRefreshTokens           OauthRefreshToken[]
   oauthAccessTokens            OauthAccessToken[]
   oauthConsents                OauthConsent[]
-  invitedBy                    User?                   @relation("UserInvitations", fields: [invitedById], references: [id])
-  invitedUsers                 User[]                  @relation("UserInvitations")
+  invitedBy                    User?                       @relation("UserInvitations", fields: [invitedById], references: [id])
+  invitedUsers                 User[]                      @relation("UserInvitations")
   catalogAccess                CatalogAccess[]
-  accessGranted                CatalogAccess[]         @relation("AccessGrantedBy")
-  accessRevoked                CatalogAccess[]         @relation("AccessRevokedBy")
+  accessGranted                CatalogAccess[]             @relation("AccessGrantedBy")
+  accessRevoked                CatalogAccess[]             @relation("AccessRevokedBy")
   auditLogs                    AuditLog[]
   mcpToolInvocations           McpToolInvocation[]
   clientErrorReports           ClientErrorReport[]
   webUpdateEvents              WebUpdateEvent[]
   /// Portal admissions this user created or explicitly reviewed
-  portalAdmissionsAdmitted     PortalAdmission[]       @relation("PortalAdmissionAdmittedBy")
-  portalAdmissionsClaimed      PortalAdmission[]       @relation("PortalAdmissionClaimedBy")
-  portalAdmissionsRevoked      PortalAdmission[]       @relation("PortalAdmissionRevokedBy")
+  portalAdmissionsAdmitted     PortalAdmission[]           @relation("PortalAdmissionAdmittedBy")
+  portalAdmissionsClaimed      PortalAdmission[]           @relation("PortalAdmissionClaimedBy")
+  portalAdmissionsRevoked      PortalAdmission[]           @relation("PortalAdmissionRevokedBy")
   /// Pending catalog grants this user created or lifecycle-touched
-  pendingCatalogGrantsGranted  PendingCatalogGrant[]   @relation("PendingCatalogGrantGrantedBy")
-  pendingCatalogGrantsConsumed PendingCatalogGrant[]   @relation("PendingCatalogGrantConsumedBy")
-  pendingCatalogGrantsRevoked  PendingCatalogGrant[]   @relation("PendingCatalogGrantRevokedBy")
+  pendingCatalogGrantsGranted  PendingCatalogGrant[]       @relation("PendingCatalogGrantGrantedBy")
+  pendingCatalogGrantsConsumed PendingCatalogGrant[]       @relation("PendingCatalogGrantConsumedBy")
+  pendingCatalogGrantsRevoked  PendingCatalogGrant[]       @relation("PendingCatalogGrantRevokedBy")
   /// Push notification subscriptions for this user's browsers
   pushSubscriptions            PushSubscription[]
   /// Recording notifications for this user
@@ -124,15 +124,15 @@ model User {
   /// Event publish notifications for this user
   eventNotifications           EventNotification[]
   /// Events created by this user
-  catalogEventsCreated         CatalogEvent[]          @relation("CatalogEventCreatedBy")
+  catalogEventsCreated         CatalogEvent[]              @relation("CatalogEventCreatedBy")
   /// Events last updated by this user
-  catalogEventsUpdated         CatalogEvent[]          @relation("CatalogEventUpdatedBy")
+  catalogEventsUpdated         CatalogEvent[]              @relation("CatalogEventUpdatedBy")
   /// Deep-search jobs owned by this user and shared with others
-  deepSearchSharesOwned        DeepSearchJobShare[]    @relation("DeepSearchJobShareOwner")
+  deepSearchSharesOwned        DeepSearchJobShare[]        @relation("DeepSearchJobShareOwner")
   /// Deep-search jobs shared with this user
-  deepSearchSharesReceived     DeepSearchJobShare[]    @relation("DeepSearchJobShareRecipient")
+  deepSearchSharesReceived     DeepSearchJobShare[]        @relation("DeepSearchJobShareRecipient")
   /// Deep-search shares created by this user
-  deepSearchSharesCreated      DeepSearchJobShare[]    @relation("DeepSearchJobShareCreator")
+  deepSearchSharesCreated      DeepSearchJobShare[]        @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
 
@@ -173,7 +173,7 @@ model Session {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   oauthRefreshTokens OauthRefreshToken[]
   oauthAccessTokens  OauthAccessToken[]
 
@@ -208,16 +208,16 @@ model Jwks {
 
 /// OAuth clients discovered through MCP Client ID Metadata Documents.
 model OauthClient {
-  id                               String                @id
-  clientId                         String                @unique
+  id                               String    @id
+  clientId                         String    @unique
   clientSecret                     String?
   clientDiscoveryId                String?
-  disabled                         Boolean?              @default(false)
+  disabled                         Boolean?  @default(false)
   skipConsent                      Boolean?
   enableEndSession                 Boolean?
   subjectType                      String?
   scopes                           String[]
-  clientCredentialsScopes          String[]              @default([])
+  clientCredentialsScopes          String[]  @default([])
   userId                           String?
   createdAt                        DateTime?
   updatedAt                        DateTime?
@@ -241,7 +241,7 @@ model OauthClient {
   grantTypes                       String[]
   responseTypes                    String[]
   requirePKCE                      Boolean?
-  dpopBoundAccessTokens            Boolean?              @default(false)
+  dpopBoundAccessTokens            Boolean?  @default(false)
   referenceId                      String?
   metadata                         Json?
 
@@ -257,8 +257,8 @@ model OauthClient {
 
 /// Protected resources for which the OAuth server issues audience-bound tokens.
 model OauthResource {
-  id                            String                @id
-  identifier                    String                @unique
+  id                            String    @id
+  identifier                    String    @unique
   name                          String
   accessTokenTtl                Int?
   refreshTokenTtl               Int?
@@ -266,11 +266,11 @@ model OauthResource {
   signingKeyId                  String?
   allowedScopes                 String[]
   customClaims                  Json?
-  dpopBoundAccessTokensRequired Boolean?              @default(false)
-  disabled                      Boolean?              @default(false)
+  dpopBoundAccessTokensRequired Boolean?  @default(false)
+  disabled                      Boolean?  @default(false)
   createdAt                     DateTime?
   updatedAt                     DateTime?
-  policyVersion                 Int?                  @default(1)
+  policyVersion                 Int?      @default(1)
   metadata                      Json?
 
   clients OauthClientResource[]
@@ -279,7 +279,7 @@ model OauthResource {
 }
 
 model OauthClientResource {
-  id         String @id
+  id         String    @id
   clientId   String
   resourceId String
   metadata   Json?
@@ -295,8 +295,8 @@ model OauthClientResource {
 }
 
 model OauthRefreshToken {
-  id                      String             @id
-  token                   String             @unique
+  id                      String    @id
+  token                   String    @unique
   clientId                String
   sessionId               String?
   userId                  String
@@ -327,8 +327,8 @@ model OauthRefreshToken {
 }
 
 model OauthAccessToken {
-  id                      String             @id
-  token                   String             @unique
+  id                      String    @id
+  token                   String    @unique
   clientId                String
   sessionId               String?
   userId                  String?
@@ -357,7 +357,7 @@ model OauthAccessToken {
 }
 
 model OauthConsent {
-  id                      String      @id
+  id                      String   @id
   clientId                String
   userId                  String?
   referenceId             String?
@@ -553,6 +553,9 @@ model WorkflowGroup {
   catalogEventRecordings  CatalogEventRecording[]
   /// Deep-search job shares scoped to this catalog
   deepSearchJobShares     DeepSearchJobShare[]
+  recorders               Recorder[]
+  locations               Location[]
+  albums                  Album[]
 
   @@map("workflow_group")
 }
@@ -716,12 +719,12 @@ model CatalogEvent {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  workflowGroup       WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  location            Location                @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  createdBy           User                    @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
-  updatedBy           User                    @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
-  recordings          CatalogEventRecording[]
-  eventNotifications  EventNotification[]
+  workflowGroup      WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  location           Location                @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy          User                    @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
+  updatedBy          User                    @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
+  recordings         CatalogEventRecording[]
+  eventNotifications EventNotification[]
 
   @@unique([id, workflowGroupId])
   @@index([workflowGroupId, released])
@@ -816,13 +819,13 @@ model UserPreferences {
 
 /// Durable per-user playback state keyed by the content-addressed audio hash.
 model RecordingPlaybackProgress {
-  userId       String    @map("user_id")
-  audioHash    String    @map("audio_hash") @db.VarChar(64)
-  positionSec  Float     @default(0) @map("position_sec")
-  durationSec  Float?    @map("duration_sec")
-  completedAt  DateTime? @map("completed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  userId      String    @map("user_id")
+  audioHash   String    @map("audio_hash") @db.VarChar(64)
+  positionSec Float     @default(0) @map("position_sec")
+  durationSec Float?    @map("duration_sec")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -956,35 +959,35 @@ model McpToolUsageDaily {
 
 /// Audit log entry for tracking security-relevant events
 model AuditLog {
-  id         String      @id @default(cuid())
+  id             String      @id @default(cuid())
   /// User who performed the action (null for system/anonymous)
-  userId     String?     @map("user_id")
+  userId         String?     @map("user_id")
   /// Type of action performed
-  action     AuditAction
+  action         AuditAction
   /// Canonical audit domain for faceted filtering
-  domain     String?     @db.VarChar(50)
+  domain         String?     @db.VarChar(50)
   /// Canonical subject type for faceted filtering
-  subjectType String?    @map("subject_type") @db.VarChar(50)
+  subjectType    String?     @map("subject_type") @db.VarChar(50)
   /// Canonical subject identifier for faceted filtering
-  subjectId  String?     @map("subject_id") @db.VarChar(191)
+  subjectId      String?     @map("subject_id") @db.VarChar(191)
   /// Associated catalog/workflow group when relevant
-  catalogId  String?     @map("catalog_id") @db.VarChar(191)
+  catalogId      String?     @map("catalog_id") @db.VarChar(191)
   /// Canonical outcome/severity label
-  outcome    String?     @db.VarChar(20)
+  outcome        String?     @db.VarChar(20)
   /// Canonical payload schema version
-  payloadVersion Int?    @map("payload_version")
+  payloadVersion Int?        @map("payload_version")
   /// Resource type (e.g., "user", "catalog", "audio", "group")
-  resource   String      @db.VarChar(50)
+  resource       String      @db.VarChar(50)
   /// Resource identifier (e.g., user ID, audio hash)
-  resourceId String?     @map("resource_id") @db.VarChar(64)
+  resourceId     String?     @map("resource_id") @db.VarChar(64)
   /// Additional context as JSON (changed fields, old/new values, etc.)
-  details    Json?
+  details        Json?
   /// Client IP address
-  ipAddress  String?     @map("ip_address") @db.VarChar(45)
+  ipAddress      String?     @map("ip_address") @db.VarChar(45)
   /// User agent string
-  userAgent  String?     @map("user_agent")
+  userAgent      String?     @map("user_agent")
   /// Timestamp of the event
-  createdAt  DateTime    @default(now()) @map("created_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -1063,38 +1066,53 @@ model WebUpdateEvent {
 
 /// Recorder (zvukař) - person who made the recording
 model Recorder {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  /// Catalog this lookup belongs to; names are unique within one catalog
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  name            String
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
+  workflowGroup WorkflowGroup   @relation(fields: [workflowGroupId], references: [id])
   audioMetadata AudioMetadata[]
 
+  @@unique([workflowGroupId, name])
+  @@index([workflowGroupId])
   @@map("recorders")
 }
 
 /// Location - where the recording took place
 model Location {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  /// Catalog this lookup belongs to; names are unique within one catalog
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  name            String
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
+  workflowGroup WorkflowGroup   @relation(fields: [workflowGroupId], references: [id])
   audioMetadata AudioMetadata[]
   catalogEvents CatalogEvent[]
 
+  @@unique([workflowGroupId, name])
+  @@index([workflowGroupId])
   @@map("locations")
 }
 
 /// Album - collection of recordings
 model Album {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  /// Catalog this lookup belongs to; names are unique within one catalog
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  name            String
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
+  workflowGroup WorkflowGroup   @relation(fields: [workflowGroupId], references: [id])
   audioMetadata AudioMetadata[]
 
+  @@unique([workflowGroupId, name])
+  @@index([workflowGroupId])
   @@map("albums")
 }
 
@@ -1168,9 +1186,9 @@ model EventNotification {
   readAt    DateTime? @map("read_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
-  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   catalog WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  event   CatalogEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event   CatalogEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([userId, catalogId, eventId])
   @@index([userId, isRead])
