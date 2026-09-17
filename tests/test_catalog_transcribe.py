@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from besedy.commands.catalog import transcribe as transcribe_module
+from besedy.lib.workflow.common import CsvAudioRow
 from besedy.lib.workflow.config import WorkflowConfig
 from tests.helpers.workflows import make_workflow_config
 
@@ -144,3 +145,56 @@ def test_handle_transcribe_selects_only_requested_language_variant(
 
     assert transcribe_module.handle_transcribe(request) == 0
     assert selected == [english]
+
+
+def test_handle_transcribe_reports_already_complete_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Rows with every requested output are counted without being validated again."""
+    config = make_workflow_config()
+    output_root = tmp_path / "transcripts"
+    audio_hash = "a" * 64
+    transcript = transcribe_module.path_builder(config).workflow_dir(output_root) / audio_hash
+    transcript.mkdir(parents=True)
+    (transcript / "transcript.json").write_text("{}", encoding="utf-8")
+
+    row = CsvAudioRow(sha256=audio_hash, full_path=str(tmp_path / "source.wav"))
+    summaries: list[dict[str, int]] = []
+
+    def fail_validation(_rows) -> None:
+        raise AssertionError("validation should not run")
+
+    def capture_summary(staged, skipped, failures, **kwargs) -> None:
+        assert list(staged) == []
+        assert list(skipped) == []
+        assert list(failures) == []
+        summaries.append(kwargs)
+
+    monkeypatch.setattr(
+        transcribe_module,
+        "resolve_and_load_catalog",
+        lambda *_args: (tmp_path / "catalog.csv", [row]),
+    )
+    monkeypatch.setattr(transcribe_module, "extract_run_info", lambda _path: ("run", "base"))
+    monkeypatch.setattr(transcribe_module, "setup_output_root", lambda *_args: True)
+    monkeypatch.setattr(
+        transcribe_module,
+        "get_transcription_workflows",
+        lambda **_kwargs: [config],
+    )
+    monkeypatch.setattr(
+        transcribe_module,
+        "validate_staged_audio",
+        fail_validation,
+    )
+    monkeypatch.setattr(
+        transcribe_module,
+        "print_workflow_summary",
+        capture_summary,
+    )
+
+    request = transcribe_module.TranscribeRequest(output_root=output_root)
+
+    assert transcribe_module.handle_transcribe(request) == 0
+    assert summaries == [{"already_complete": 1}]
