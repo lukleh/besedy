@@ -5,7 +5,10 @@ import {
   createBesedyMcpServer,
   paginateCatalogs,
 } from '@/lib/mcp/server';
-import { renderTranscriptVerificationHandoff } from '@/lib/mcp/tools/shared';
+import {
+  TRANSCRIPT_VERIFICATION_GUIDANCE,
+  renderTranscriptVerificationHandoff,
+} from '@/lib/mcp/tools/shared';
 import type {
   McpAccessProfile,
   McpCatalogAccess,
@@ -471,6 +474,12 @@ describe('MCP personalized tool surface', () => {
     expect(lexicalTool?.description).toContain('returned passages');
     expect(lexicalTool?.description).toContain('conceptual absence');
     expect(lexicalTool?.description).toContain('get_transcript');
+    // Both search tools and the server instructions must carry the same
+    // verification sentence; see BESEDY_MCP_INSTRUCTIONS.
+    expect(lexicalTool?.description).toContain(
+      TRANSCRIPT_VERIFICATION_GUIDANCE,
+    );
+    expect(searchTool?.description).toContain(TRANSCRIPT_VERIFICATION_GUIDANCE);
     expect(lexicalTool?.inputSchema.properties.limit.default).toBe(50);
     expect(lexicalTool?.inputSchema.properties.maxPerRecording.default).toBe(
       10,
@@ -516,7 +525,7 @@ describe('MCP personalized tool surface', () => {
     expect(recordingTool?.inputSchema.properties.eventOffset).toBeUndefined();
     expect(recordingTool?.inputSchema.properties.eventLimit).toBeUndefined();
     expect(transcriptTool?.description).toContain(
-      'transcriptRequest unchanged',
+      TRANSCRIPT_VERIFICATION_GUIDANCE,
     );
     expect(transcriptTool?.description).toContain('complete selected window');
     expect(transcriptTool?.description).toContain('bounded citation URL');
@@ -548,7 +557,9 @@ describe('MCP personalized tool surface', () => {
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
-    expect(BESEDY_MCP_INSTRUCTIONS.length).toBeLessThan(1_600);
+    // Prepended to every client context, so it stays bounded. Raised from
+    // 1,600 for the verification-widening and speaker-attribution guidance.
+    expect(BESEDY_MCP_INSTRUCTIONS.length).toBeLessThan(1_800);
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'Tool descriptions and schemas define individual calls',
     );
@@ -556,7 +567,9 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('transcriptRequest');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('Literal totalMatches');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('authorized indexed chunks');
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('non-null transcriptRequest');
+    // One shared sentence so the instructions and both search tool
+    // descriptions cannot drift apart on how to verify.
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(TRANSCRIPT_VERIFICATION_GUIDANCE);
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'authoritative event IDs, dates, and locations',
     );
@@ -567,6 +580,25 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'language of the transcript wording',
     );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'Begin the first reply that uses Besedy evidence with a short caution',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'AI interpretation of AI-generated transcripts of Besedy recordings',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same language as that reply');
+    // An unchanged transcriptRequest replays the passage the search already
+    // returned, so verification only adds context when the window widens.
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'widen startSec and endSec, then call the tool',
+    );
+    // Not every recording is multi-speaker throughout; keep the claim to what
+    // the corpus supports.
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'discussions without speaker labels',
+    );
+    expect(BESEDY_MCP_INSTRUCTIONS).not.toContain('multi-speaker');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain('dates may be partial');
     // Corpus language is data, not code: the instructions must stay neutral.
     expect(BESEDY_MCP_INSTRUCTIONS).not.toMatch(/czech|english|german/i);
 

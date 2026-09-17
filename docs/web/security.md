@@ -1,6 +1,6 @@
 # Web Security Reference
 
-> **Last Updated:** 2026-09-14
+> **Last Updated:** 2026-09-17
 
 Dense reference for agents working on auth, access control, and deployment
 hardening.
@@ -9,6 +9,7 @@ hardening.
 - Audit action types: `AuditAction` enum in `prisma/schema.prisma`
 - Path validation: `web/src/lib/security/path-validation.ts`
 - Monitoring scripts and schedules: `docs/web/operations.md`
+- Retired LAN egress control: `docs/web/egress-control-retirement.md`
 
 ---
 
@@ -439,7 +440,7 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | `no-new-privileges: true` | Done | `docker-compose.secure.yml` |
 | Resource limits (2 CPU, 1 GB RAM) | Done | `docker-compose.secure.yml` |
 | Syslog logging | Done | Docker logs to host syslog |
-| Egress controls (LAN blocked) | Done | `web/setup/egress/` + systemd service |
+| LAN egress isolation | Open | Retired; see [egress-control-retirement.md](egress-control-retirement.md) |
 | Cloudflare Tunnel (outbound-only) | Done | No listening port to attack |
 
 ### Container Escape Vectors
@@ -450,7 +451,7 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | Docker socket | None | Not mounted |
 | Host filesystem | None | Only `/data` (read-only), container FS read-only |
 | Privilege escalation | Very Low | UID 1001, all caps dropped, no-new-privileges |
-| Network pivot to LAN | Low | RFC 1918 blocked via iptables |
+| Network pivot to LAN | Medium | No repository-managed egress block; see [retirement record](egress-control-retirement.md) |
 | Network pivot to Internet | Medium | Internet allowed for OAuth |
 
 ### Blast Radius: Web Container Compromised
@@ -462,6 +463,7 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | Read audio/transcripts | `/data` mounted read-only |
 | Full DB read/write | Via `DATABASE_URL` env var |
 | Network to DB container | Docker network |
+| Reach LAN services | No repository-managed container egress firewall |
 | Exfiltrate data | Outbound internet (required for OAuth) |
 | Delete audit logs | Via database access |
 
@@ -474,7 +476,6 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | Access other containers' filesystems | No shared volumes, no Docker socket |
 | Escape to host | No privileged mode, no capabilities |
 | Access cloudflared credentials | Stored on host, not in container |
-| Scan/attack LAN devices | RFC 1918 ranges blocked via iptables |
 
 ### Lateral Movement Summary
 
@@ -482,9 +483,9 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 |------|--------|------|
 | web -> db | `DATABASE_URL` env var | High (full DB) |
 | web -> backup | None (no shared creds) | Low |
-| web -> host | No escape vector | Low |
+| web -> host | `host.docker.internal`; exposure depends on host services | Medium |
 | web -> cloudflared | Runs on host | Low |
-| web -> LAN | iptables DROP on RFC 1918 | Blocked |
+| web -> LAN | Container network; not filtered by Besedy | Medium |
 | web -> Internet | Outbound TCP/HTTP | Medium (OAuth) |
 
 ### Cloudflare Origin Protection
@@ -501,13 +502,16 @@ requests not arriving via Cloudflare. Note: an attacker with their own
 Cloudflare account could still set this header, so this is not a complete
 solution. For edge MFA, consider Cloudflare Access (Zero Trust).
 
-### Egress Controls
+### LAN Egress Isolation
 
-Containers cannot reach private IP ranges (RFC 1918): `10.0.0.0/8`,
-`172.16.0.0/12` (except Docker's own subnet), `192.168.0.0/16`. Inter-container
-traffic (web to db) is allowed. Internet is allowed (required for Google OAuth).
-Rules are applied by `web/setup/egress/iptables-egress.sh` and persisted via
-`besedy-egress.service` (systemd, runs at boot).
+Besedy does not currently install host firewall rules that prevent containers
+from reaching private LAN addresses. The previous hardcoded-subnet control was
+retired after it was found to be silently ineffective, and a dynamic replacement
+was rejected because it added substantial fail-open reconciliation complexity.
+
+See [Docker LAN Egress Control Retirement](egress-control-retirement.md) for the
+failure analysis, current risk, host cleanup notes, and requirements for a
+future design.
 
 ### Input Validation
 
@@ -537,5 +541,4 @@ Rotate all secrets after any suspected compromise.
 | Real-time alerting | Open (webhook integration not yet wired) |
 
 For monitoring scripts, schedules, and the update workflow, see
-`docs/web/operations.md`. Egress hardening assets live in
-`web/setup/egress/`.
+`docs/web/operations.md`.
