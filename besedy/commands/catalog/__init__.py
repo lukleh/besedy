@@ -10,7 +10,6 @@ from importlib import import_module
 from typing import Any
 
 from besedy.commands.catalog.default_paths import (
-    ALREADY_EXISTS_REASON,
     get_default_archived_symlink,
     get_default_catalog_symlink,
     get_default_duplicates_symlink,
@@ -28,7 +27,6 @@ __all__ = [
     "get_default_archived_symlink",
     "get_default_joined_symlink",
     # Constants
-    "ALREADY_EXISTS_REASON",
     "METADATA_LOGGER",
     "DUPLICATES_CSV_COLUMNS",
     # Classes

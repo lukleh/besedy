@@ -17,7 +17,7 @@ from besedy.commands.catalog.symlink import (
     create_or_update_symlink,
     validate_symlink_can_be_created,
 )
-from besedy.commands.catalog.ui import has_error_skips, print_workflow_summary
+from besedy.commands.catalog.ui import print_workflow_summary
 from besedy.core.paths import (
     extract_timestamp_from_loudness_catalog,
     resolve_audio_artifacts_root,
@@ -340,4 +340,4 @@ def handle_stage_audio(
 
     print_workflow_summary(prepared, skipped, [])
 
-    return 1 if has_error_skips(skipped) else 0
+    return 1 if skipped else 0

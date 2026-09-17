@@ -7,8 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from besedy.commands.catalog.default_paths import ALREADY_EXISTS_REASON
-from besedy.commands.catalog.ui import has_error_skips, print_workflow_summary
+from besedy.commands.catalog.ui import print_workflow_summary
 from besedy.commands.catalog.validation import (
     print_validation_errors,
     validate_staged_audio,
@@ -194,7 +193,7 @@ def handle_diarize(
     output_root = resolve_output_root(request.output_root)
     hashes_for_pyannote: set[str] = set()
     filtered_rows: list[CsvAudioRow] = []
-    pre_skipped: list[SkippedEntry] = []
+    already_complete = 0
     candidates: list[tuple[CsvAudioRow, str]] = []
 
     for row in rows:
@@ -205,10 +204,8 @@ def handle_diarize(
 
         if need_pyannote:
             candidates.append((row, hash_component))
-        elif missing_limit is None:
-            pre_skipped.append(
-                SkippedEntry(row.sha256, Path(row.full_path).expanduser(), ALREADY_EXISTS_REASON)
-            )
+        else:
+            already_complete += 1
 
     if missing_limit is not None:
         candidates = candidates[:missing_limit]
@@ -219,11 +216,11 @@ def handle_diarize(
 
     if not filtered_rows:
         print("No audio files require diarization.")
-        print_workflow_summary([], pre_skipped, [])
-        return 1 if has_error_skips(pre_skipped) else 0
+        print_workflow_summary([], [], [], already_complete=already_complete)
+        return 0
 
     prepared, validation_errors = validate_staged_audio(filtered_rows)
-    skipped_total = list(pre_skipped)
+    skipped_total: list[SkippedEntry] = []
     if validation_errors:
         if not request.continue_on_error:
             print_validation_errors(validation_errors, "diarize")
@@ -234,8 +231,8 @@ def handle_diarize(
 
     if not prepared:
         print("No staged audio files passed validation; nothing to do.")
-        print_workflow_summary(prepared, skipped_total, [])
-        return 1 if has_error_skips(skipped_total) else 0
+        print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
+        return 1 if skipped_total else 0
 
     workflow_config = WorkflowRunConfig(
         output_root=output_root,
@@ -255,11 +252,11 @@ def handle_diarize(
 
     if not workflows:
         print("No workflows to run.")
-        print_workflow_summary(prepared, skipped_total, [])
-        return 1 if has_error_skips(skipped_total) else 0
+        print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
+        return 1 if skipped_total else 0
 
     base_env = prepare_workflow_env()
     failures = launch_workflows(workflows, base_env)
 
-    print_workflow_summary(prepared, skipped_total, failures)
-    return 0 if not failures and not has_error_skips(skipped_total) else 1
+    print_workflow_summary(prepared, skipped_total, failures, already_complete=already_complete)
+    return 0 if not failures and not skipped_total else 1
