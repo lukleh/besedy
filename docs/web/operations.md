@@ -165,6 +165,28 @@ This is only needed because older migrations create `vector` columns before late
 migrations remove them. Existing databases that already passed that point need
 nothing.
 
+**Required one-time cleanup for hosts with the retired LAN egress control:**
+
+Removing the repository files does not disable a unit or delete firewall rules
+previously installed on a host. Follow
+[Removing an Earlier Host Installation](egress-control-retirement.md#removing-an-earlier-host-installation)
+during a maintenance window. Do not consider the retirement complete until
+these checks succeed:
+
+```bash
+set -euo pipefail
+egress_units=$(systemctl list-unit-files --no-legend 'besedy-egress*')
+test -z "$egress_units"
+test ! -e /usr/local/bin/iptables-egress.sh
+docker_user_rules=$(sudo iptables -S DOCKER-USER)
+! grep -Fq besedy-egress <<<"$docker_user_rules"
+! sudo iptables -S BESEDY-EGRESS >/dev/null 2>&1
+```
+
+The last check also covers hosts where the unmerged dynamic reconciler was
+tested. Run this cleanup once per affected host; it is not part of routine
+releases.
+
 **First-deployment extras** (run once, not on every release):
 
 1. Install monitoring cron jobs (see Monitoring section below).
