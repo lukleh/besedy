@@ -16,8 +16,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "@iarna/toml"],
   // Enable experimental features
   experimental: {
-    // Enable View Transitions API for smooth page transitions
-    viewTransition: true,
     // Next.js 16 renamed middleware.* config to proxy.*.
     // Allow larger request bodies for file uploads (sources, posters, etc.)
     proxyClientMaxBodySize: "100mb",

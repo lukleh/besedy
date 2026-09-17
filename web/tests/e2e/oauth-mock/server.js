@@ -318,9 +318,6 @@ async function main() {
   const oauth2Server = new OAuth2Server();
   const app = express();
 
-  // Parse form data
-  app.use(express.urlencoded({ extended: true }));
-
   // Configure issuer URL (required for OIDC discovery)
   oauth2Server.issuer.url = `http://localhost:${PORT}`;
 
@@ -436,7 +433,8 @@ async function main() {
   });
 
   // Custom route: Handle user selection form submission
-  app.post("/select-user", (req, res) => {
+  // Keep parsing scoped here; oauth2-mock-server reads token request bodies directly.
+  app.post("/select-user", express.urlencoded({ extended: true }), (req, res) => {
     // Determine which email to use
     let email;
     if (req.body.use_custom === "1" && req.body.custom_email) {
@@ -460,7 +458,7 @@ async function main() {
 
   // Forward all other requests to OAuth2 server (token, userinfo, jwks, discovery)
   // This catches everything not handled by /authorize or /select-user above
-  app.all("*", (req, res) => {
+  app.use((req, res) => {
     oauth2Server.service.requestHandler(req, res);
   });
 
