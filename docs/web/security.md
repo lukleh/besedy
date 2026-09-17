@@ -1,6 +1,6 @@
 # Web Security Reference
 
-> **Last Updated:** 2026-04-06
+> **Last Updated:** 2026-09-14
 
 Dense reference for agents working on auth, access control, and deployment
 hardening.
@@ -186,19 +186,129 @@ Access level hierarchy: `LISTENER < VIEWER < MEMBER < EDITOR < OWNER`
 
 ### Catalog-Level Access Matrix
 
-| Feature | Owner | Editor | Member | Viewer | Listener |
-|---------|:-----:|:------:|:------:|:------:|:--------:|
-| View Catalog | Y | Y | Y | Y | Y |
-| Stream Audio | Y | Y | Y | Y | Y |
-| View Transcripts | Y | Y | Y | Y | - |
-| Download Audio | Y | Y | Y | - | - |
-| Download Transcripts | Y | Y | Y | - | - |
-| Edit Metadata | Y | Y | - | - | - |
-| Manage Access | Y* | - | - | - | - |
-| Manage Pending Access | Y* | - | - | - | - |
+Full per-capability inventory. `A` is system admin/superadmin, which resolves to
+OWNER on every catalog. `Y` means allowed; `-` means denied; a footnote marker
+means the capability is qualified.
 
-*OWNER can grant LISTENER, VIEWER, MEMBER, EDITOR access. Only Admins can
-grant OWNER access.
+**Browsing and visibility**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| Open catalog | Y | Y | Y | Y | Y | `hasCatalogAccess` |
+| See unpublished / non-actionable recordings | Y | Y | Y | Y | - | `requiresReadyRecordingScope` |
+| See unreleased events | Y | Y | Y | Y | - | `requiresReleasedEventVisibilityScope` |
+| See event release state | Y | Y | Y | Y | - | `canSeeReleaseState` |
+| See event admin columns (recordings, sources, posters, primary, status) | Y | - | - | - | - | `canSeeAllEventColumns` |
+| Reach the recordings list in the UI | Y | - | - | - | - | `canUseCatalogTabSwitcher` [^tabs] |
+
+**Audio**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| Stream audio | Y | Y | Y | Y | Y | `canStreamRecording` |
+| Radio mode | Y | Y | Y | Y | Y | page/API access only |
+| Cache audio for offline use | Y | Y | Y | Y | Y | no UI gate [^cache] |
+| Download audio | Y | Y | Y | - | - | `canDownloadCatalogContent` |
+
+**Transcripts**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| View transcript | Y | Y | Y | Y | - | `canViewCatalogTranscripts` |
+| Copy full transcript text | Y | Y | Y | Y | - | no separate gate [^copy] |
+| View backend comparison ("transcript stream") | Y | Y | Y | Y | - | no gate; default view [^stream] |
+| View speaker diarization | Y | Y | Y | Y | - | `resolveTranscriptRouteAccess` |
+| Download transcript file | Y | Y | Y | - | - | `requireDownload` |
+| Bulk catalog transcript export | Y | Y | Y | - | - | `canDownload` + `canViewTranscripts` [^export] |
+
+**Search**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| Semantic / lexical transcript search | Y | Y | Y | Y | - | `canUseCatalogRag` [^rag] |
+| Open deep-search pages | Y | Y | Y | Y | Y | catalog access + Labs [^deep] |
+| Create deep-search job | Y | - | - | - | - | `deepSearch.canView` + Labs |
+| Share a deep-search job | Y | - | - | - | - | job owner; recipient needs any grant |
+
+**Curated metadata**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| View curated metadata | Y | Y | Y | Y | Y | recording access |
+| Edit / verify / delete recording metadata | Y | Y | - | - | - | `canEditCatalogMetadata` |
+| Batch edit mode | Y | - | - | - | - | `canBatchEditCatalogMetadata` |
+| Edit shared lookup rows (recorder, location, album) | Y | Y | - | - | - | `requireEditorOnAnyCatalog` [^lookup] |
+
+**Publication and editorial**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| Publish / unpublish recording | Y | - | - | - | - | `canPublishRecording` |
+| Create / edit / delete event | Y | - | - | - | - | `canEditEvent` |
+| Release event | Y | - | - | - | - | `canReleaseEvent` |
+| Attach / detach / set primary recording | Y | - | - | - | - | `canEditEvent` |
+| Manage event posters and sources | Y | - | - | - | - | `hasCatalogManagementAuthority` [^poster] |
+
+**Access and configuration**
+
+| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| Open catalog settings | Y | - | - | - | - | `canAccessCatalogSettings` |
+| Grant / revoke access up to EDITOR | Y | - | - | - | - | `canGrantCatalogAccessLevel` |
+| Grant or modify OWNER access | A | - | - | - | - | admin only |
+| Manage pending catalog grants | Y | - | - | - | - | `canAttemptCatalogManagement` |
+| Read / edit catalog configuration and paths | A | - | - | - | - | `canManageCatalogConfiguration` |
+
+**System-wide (not catalog-scoped)**
+
+| Capability | Required role |
+|---|---|
+| Admin panel, user management, audit log, MCP usage, transcript backend order, catalog sync | ADMIN |
+| Grant / revoke admin role | SUPERADMIN |
+| Labs toggle, notification preferences, playback progress | any authenticated user |
+
+[^tabs]: `canUseCatalogTabSwitcher` requires browse-recordings **and** browse-events
+    **and** edit-events. With the `events` feature at `public` rollout, every
+    level below OWNER is therefore locked to the events view and has no UI path
+    to the recordings list, even though `/api/catalog` itself allows LISTENER.
+
+[^cache]: The offline cache button carries no capability check, but the fetches
+    it triggers go through the gated audio and transcript routes, so it cannot
+    widen access. It is a UI inconsistency, not a hole.
+
+[^copy]: A VIEWER can copy the entire transcript to the clipboard. The
+    MEMBER-level download right therefore does not bound how much transcript
+    text a VIEWER can extract; it bounds only file delivery.
+
+[^stream]: The multi-backend comparison view has no capability gate and is the
+    default transcript view (`besedy-transcript-enabled` defaults to `true`).
+
+[^export]: The export card lives on the OWNER-only settings page, but the route
+    itself (`/api/catalogs/:id/transcript-export`) checks only `canDownload`
+    and `canViewTranscripts`, so MEMBER and EDITOR can call it directly. It is
+    also the only transcript path with no per-recording published/released
+    scoping — it exports every hash in the catalog, and the settings card
+    requests `includeInactive=true`.
+
+[^rag]: Deliberately identical to `canViewCatalogTranscripts`: search returns
+    transcript-derived content and must never be broader than direct transcript
+    access.
+
+[^deep]: The deep-search page guard is catalog access plus the Labs flag, which
+    is looser than the OWNER-level guard on the navigation link and on job
+    creation. Job results are produced by an internal worker call that passes
+    `accessLevel: null`, so they are not release-scoped.
+
+[^poster]: Poster and source writes go through `requireCatalogManagementAccess`,
+    whose default authorizer is `hasCatalogManagementAuthority`, after
+    `requireCatalogEventsAccess(catalogId, "view")`. Poster reads are open to
+    every level; for LISTENER they are release-scoped through
+    `requiresReleasedEventVisibilityScope`. Source reads are not: every source
+    route, read included, goes through the management check.
+
+[^lookup]: `requireEditorOnAnyCatalog` means EDITOR on *any* catalog. Recorder,
+    location and album rows are global, so this is cross-catalog write access.
+    The corresponding item reads require only authentication.
 
 ### LISTENER Role
 
@@ -206,6 +316,21 @@ LISTENER is the default access level for new pending catalog grants. Listeners
 can access the catalog homepage and stream audio but **cannot view transcripts**.
 The catalog homepage is events-first for listeners; recording detail access
 follows listener recording visibility rules.
+
+### Surface Differences
+
+The web UI is not the only read surface, and the surfaces do not agree:
+
+| Surface | Unreleased events | Transcript read | Release scoping |
+|---|---|---|---|
+| Web UI / web API | VIEWER and above | VIEWER and above | per access level |
+| MCP | nobody, including admins | **every active grant, including LISTENER** | uniform, `MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER'` |
+| Deep-search worker | n/a | catalog-wide | **none** (`accessLevel: null`) |
+
+The MCP listener-transcript decision is deliberate and dated; see
+[mcp-server.md](mcp-server.md#design-decision-listener-transcript-access-through-mcp).
+Any change to who may read transcripts has to be made on both surfaces or it
+does not take effect.
 
 ### Access Management Rules
 
