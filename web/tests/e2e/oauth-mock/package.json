@@ -5,7 +5,7 @@
   "type": "commonjs",
   "description": "Mock OAuth server for E2E testing",
   "dependencies": {
-    "express": "^5.2.1",
+    "express": "^4.22.3",
     "oauth2-mock-server": "^9.1.0"
   }
 }
