@@ -51,8 +51,8 @@ async function globalTeardown(): Promise<void> {
 
     if (!process.env.TEARDOWN_CONTAINERS && !process.env.TEARDOWN_VOLUMES) {
       console.log("Containers kept running for faster subsequent runs.");
-      console.log("To stop: npm run test:e2e:teardown");
-      console.log("To stop and clean: npm run test:e2e:teardown:clean");
+      console.log("To stop: (cd .. && just test-down)");
+      console.log("To stop and clean: (cd .. && just test-down-clean)");
     }
 
     console.log("\n=== Teardown complete ===\n");
