@@ -1,0 +1,18 @@
+[Unit]
+Description=Reconcile Besedy egress controls on Docker network changes
+After=docker.service besedy-egress.service
+Requires=docker.service
+Wants=besedy-egress.service
+PartOf=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/iptables-egress.sh --watch
+StandardOutput=journal
+StandardError=journal
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=docker.service

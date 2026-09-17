@@ -16,16 +16,22 @@
 #   sudo cp web/setup/egress/besedy-egress-refresh.timer /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now besedy-egress.service
+#   sudo systemctl enable --now besedy-egress-watch.service
 #   sudo systemctl enable --now besedy-egress-refresh.timer
 #
 # Usage:
 #   iptables-egress.sh              apply the rules (idempotent)
 #   iptables-egress.sh --verify     check the live rules match the live networks
 #   iptables-egress.sh --dry-run    print what would be applied, change nothing
+#   iptables-egress.sh --watch      reconcile when Docker networks change
 #
 # Configuration:
-#   DOCKER_SUBNET   - space/comma separated subnets, overriding discovery
-#   DOCKER_WAIT_SEC - how long to wait for the Docker API at boot (default 60)
+#   DOCKER_SUBNET                 - space/comma separated subnets, overriding discovery
+#   DOCKER_WAIT_SEC               - Docker API wait at boot (default 60 seconds)
+#   IPTABLES_BIN                  - iptables executable (default iptables)
+#   IPTABLES_WAIT_SEC             - xtables lock wait (default 10 seconds)
+#   BESEDY_EGRESS_LOCK_FILE       - reconciliation lock file
+#   BESEDY_EGRESS_LOCK_WAIT_SEC   - reconciliation lock wait (default 60 seconds)
 #
 # See docs/web/security.md for details.
 
@@ -36,6 +42,10 @@ EGRESS_CHAIN="BESEDY-EGRESS"
 COMMENT_TAG="besedy-egress"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 DOCKER_WAIT_SEC="${DOCKER_WAIT_SEC:-60}"
+IPTABLES_BIN="${IPTABLES_BIN:-iptables}"
+IPTABLES_WAIT_SEC="${IPTABLES_WAIT_SEC:-10}"
+LOCK_FILE="${BESEDY_EGRESS_LOCK_FILE:-/run/lock/besedy-egress.lock}"
+LOCK_WAIT_SEC="${BESEDY_EGRESS_LOCK_WAIT_SEC:-60}"
 
 # Private IP ranges (RFC 1918) to block
 PRIVATE_RANGES=(
@@ -48,14 +58,26 @@ MODE="apply"
 case "${1:-}" in
     --verify)  MODE="verify" ;;
     --dry-run) MODE="dry-run" ;;
+    --watch)   MODE="watch" ;;
     "")        ;;
-    *)         echo "Usage: $0 [--verify|--dry-run]" >&2; exit 2 ;;
+    *)         echo "Usage: $0 [--verify|--dry-run|--watch]" >&2; exit 2 ;;
 esac
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 require_root() {
     [ "$(id -u)" -eq 0 ] || die "must run as root (iptables)"
+}
+
+iptables_cmd() {
+    "$IPTABLES_BIN" -w "$IPTABLES_WAIT_SEC" "$@"
+}
+
+acquire_lock() {
+    command -v flock >/dev/null 2>&1 || die "flock is required"
+    exec 9>"$LOCK_FILE"
+    flock -x -w "$LOCK_WAIT_SEC" 9 || \
+        die "could not acquire reconciliation lock $LOCK_FILE after ${LOCK_WAIT_SEC}s"
 }
 
 wait_for_docker() {
@@ -66,6 +88,21 @@ wait_for_docker() {
         sleep 2
         waited=$((waited + 2))
     done
+}
+
+watch_networks() {
+    wait_for_docker
+    echo "Watching Docker network create/destroy events..."
+    "$DOCKER_BIN" events \
+        --filter type=network \
+        --filter event=create \
+        --filter event=destroy \
+        --format '{{.Action}}' |
+        while IFS= read -r action; do
+            [ -n "$action" ] || continue
+            echo "Docker network $action event; reconciling egress rules..."
+            /bin/bash "$0"
+        done
 }
 
 # Every IPv4 subnet Docker currently manages. These are the source addresses the
@@ -109,13 +146,13 @@ load_subnets() {
 # already stripped — i.e. the LAN reachable — on every retry.
 clean_rules() {
     local nums n
-    mapfile -t nums < <(iptables -L "$CHAIN" -n --line-numbers 2>/dev/null \
+    mapfile -t nums < <(iptables_cmd -L "$CHAIN" -n --line-numbers 2>/dev/null \
         | awk -v tag="$COMMENT_TAG" '$0 ~ tag && $1 ~ /^[0-9]+$/ {print $1}' \
         | sort -rn)
     for n in "${nums[@]}"; do
-        iptables -D "$CHAIN" "$n"
+        iptables_cmd -D "$CHAIN" "$n"
     done
-    iptables -N "$EGRESS_CHAIN" 2>/dev/null || iptables -F "$EGRESS_CHAIN"
+    iptables_cmd -N "$EGRESS_CHAIN" 2>/dev/null || iptables_cmd -F "$EGRESS_CHAIN"
 }
 
 apply_rules() {
@@ -131,11 +168,11 @@ apply_rules() {
     # compose network reach unpublished ports in another. RETURN hands the packet
     # back and lets Docker decide, which is the pre-existing behaviour.
     for subnet in "${SUBNETS[@]}"; do
-        iptables -A "$EGRESS_CHAIN" -d "$subnet" -j RETURN \
+        iptables_cmd -A "$EGRESS_CHAIN" -d "$subnet" -j RETURN \
             -m comment --comment "$COMMENT_TAG: inter-container, defer to Docker ($subnet)"
     done
     for range in "${PRIVATE_RANGES[@]}"; do
-        iptables -A "$EGRESS_CHAIN" -d "$range" -j DROP \
+        iptables_cmd -A "$EGRESS_CHAIN" -d "$range" -j DROP \
             -m comment --comment "$COMMENT_TAG: block LAN ($range)"
     done
     # Anything else falls off the end of the chain and returns to DOCKER-USER,
@@ -144,11 +181,12 @@ apply_rules() {
     # Insert at the top of DOCKER-USER rather than appending: Docker 28 and
     # earlier seed the chain with a terminal `-j RETURN`, and anything appended
     # after it would never be evaluated.
-    iptables -I "$CHAIN" 1 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT \
-        -m comment --comment "$COMMENT_TAG: allow established"
-    pos=2
+    # Do not accept established traffic here. Docker handles established return
+    # traffic in its later chains; accepting it before these source filters
+    # would let existing container-to-LAN connections bypass the policy.
+    pos=1
     for subnet in "${SUBNETS[@]}"; do
-        iptables -I "$CHAIN" "$pos" -s "$subnet" -j "$EGRESS_CHAIN" \
+        iptables_cmd -I "$CHAIN" "$pos" -s "$subnet" -j "$EGRESS_CHAIN" \
             -m comment --comment "$COMMENT_TAG: filter egress ($subnet)"
         pos=$((pos + 1))
     done
@@ -160,59 +198,86 @@ print_plan() {
     for subnet in "${SUBNETS[@]}"; do echo "  RETURN -d $subnet   (inter-container, defer to Docker)"; done
     for range in "${PRIVATE_RANGES[@]}"; do echo "  DROP   -d $range   (block LAN)"; done
     echo "Would insert, at the top of $CHAIN:"
-    echo "  ACCEPT conntrack ESTABLISHED,RELATED"
     for subnet in "${SUBNETS[@]}"; do echo "  -s $subnet -j $EGRESS_CHAIN"; done
 }
 
-# iptables -S prints matches between the address and the target
-# ("-s SUBNET -m comment ... -j TARGET"), so these checks match on a pattern
-# rather than a literal rule string.
 rule_exists() {
-    local chain="$1" direction="$2" cidr="$3" target="$4" live="$5" pattern
-    pattern="^-A $chain $direction ${cidr//./\\.} .*-j $target\$"
-    grep -Eq -- "$pattern" <<<"$live"
+    local chain="$1" direction="$2" cidr="$3" target="$4" comment="$5"
+    iptables_cmd -C "$chain" "$direction" "$cidr" -j "$target" \
+        -m comment --comment "$comment" >/dev/null 2>&1
+}
+
+count_rules() {
+    awk '$1 == "-A" { count++ } END { print count + 0 }' <<<"$1"
+}
+
+count_tagged_rules() {
+    awk -v tag="$COMMENT_TAG:" '$1 == "-A" && index($0, tag) { count++ } END { print count + 0 }' <<<"$1"
 }
 
 # A rule that sits below an unconditional RETURN/ACCEPT/DROP in DOCKER-USER is
 # never evaluated, so presence alone would report a ruleset that enforces
 # nothing as healthy.
 check_position() {
-    local terminal_line jump_line
-    terminal_line=$(iptables -L "$CHAIN" -n --line-numbers 2>/dev/null \
-        | awk '$1 ~ /^[0-9]+$/ && $2 ~ /^(RETURN|ACCEPT|DROP)$/ && $5 == "0.0.0.0/0" && $6 == "0.0.0.0/0" && $0 !~ /state|ctstate|besedy-egress/ {print $1; exit}')
+    local terminal_line jump_line listing subnet problems=0
+    listing=$(iptables_cmd -L "$CHAIN" -n --line-numbers 2>/dev/null)
+    terminal_line=$(awk '$1 ~ /^[0-9]+$/ && $2 ~ /^(RETURN|ACCEPT|DROP)$/ && $5 == "0.0.0.0/0" && $6 == "0.0.0.0/0" && $0 !~ /state|ctstate/ {print $1; exit}' <<<"$listing")
     [ -n "$terminal_line" ] || return 0
-    jump_line=$(iptables -L "$CHAIN" -n --line-numbers 2>/dev/null \
-        | awk -v chain="$EGRESS_CHAIN" '$1 ~ /^[0-9]+$/ && $2 == chain {print $1; exit}')
-    [ -n "$jump_line" ] || return 0
-    if [ "$terminal_line" -lt "$jump_line" ]; then
-        echo "UNREACHABLE: $CHAIN rule $terminal_line terminates before the egress jump at $jump_line"
-        return 1
-    fi
+    for subnet in "${SUBNETS[@]}"; do
+        jump_line=$(awk -v chain="$EGRESS_CHAIN" -v subnet="$subnet" \
+            '$1 ~ /^[0-9]+$/ && $2 == chain && $5 == subnet {print $1; exit}' <<<"$listing")
+        [ -n "$jump_line" ] || continue
+        if [ "$terminal_line" -lt "$jump_line" ]; then
+            echo "UNREACHABLE: $CHAIN rule $terminal_line terminates before the $subnet egress jump at $jump_line"
+            problems=$((problems + 1))
+        fi
+    done
+    [ "$problems" -eq 0 ]
 }
 
 # Verify the live ruleset still matches the live networks. Presence of rules is
 # not enough: rules naming a subnet nothing uses any more enforce nothing.
 verify_rules() {
-    local problems=0 subnet range live tagged stale
+    local problems=0 subnet range live tagged stale docker_user_live egress_live
+    local actual_docker_tagged actual_egress actual_egress_tagged expected_egress
 
-    if ! iptables -L "$EGRESS_CHAIN" -n >/dev/null 2>&1; then
+    if ! iptables_cmd -L "$EGRESS_CHAIN" -n >/dev/null 2>&1; then
         echo "MISSING: chain $EGRESS_CHAIN does not exist"
         return 1
     fi
-    live=$(iptables -S "$EGRESS_CHAIN"; iptables -S "$CHAIN")
+    egress_live=$(iptables_cmd -S "$EGRESS_CHAIN")
+    docker_user_live=$(iptables_cmd -S "$CHAIN")
+    live=$(printf '%s\n%s\n' "$egress_live" "$docker_user_live")
+
+    actual_docker_tagged=$(count_tagged_rules "$docker_user_live")
+    if [ "$actual_docker_tagged" -ne "${#SUBNETS[@]}" ]; then
+        echo "UNEXPECTED: $CHAIN contains $actual_docker_tagged tagged rules; expected ${#SUBNETS[@]}"
+        problems=$((problems + 1))
+    fi
+
+    expected_egress=$((${#SUBNETS[@]} + ${#PRIVATE_RANGES[@]}))
+    actual_egress=$(count_rules "$egress_live")
+    actual_egress_tagged=$(count_tagged_rules "$egress_live")
+    if [ "$actual_egress" -ne "$expected_egress" ] || [ "$actual_egress_tagged" -ne "$expected_egress" ]; then
+        echo "UNEXPECTED: $EGRESS_CHAIN contains $actual_egress rules ($actual_egress_tagged tagged); expected $expected_egress managed rules"
+        problems=$((problems + 1))
+    fi
 
     for subnet in "${SUBNETS[@]}"; do
-        rule_exists "$CHAIN" -s "$subnet" "$EGRESS_CHAIN" "$live" || {
+        rule_exists "$CHAIN" -s "$subnet" "$EGRESS_CHAIN" \
+            "$COMMENT_TAG: filter egress ($subnet)" || {
             echo "MISSING: no egress filter for active subnet $subnet"
             problems=$((problems + 1))
         }
-        rule_exists "$EGRESS_CHAIN" -d "$subnet" RETURN "$live" || {
+        rule_exists "$EGRESS_CHAIN" -d "$subnet" RETURN \
+            "$COMMENT_TAG: inter-container, defer to Docker ($subnet)" || {
             echo "MISSING: no inter-container rule for active subnet $subnet"
             problems=$((problems + 1))
         }
     done
     for range in "${PRIVATE_RANGES[@]}"; do
-        rule_exists "$EGRESS_CHAIN" -d "$range" DROP "$live" || {
+        rule_exists "$EGRESS_CHAIN" -d "$range" DROP \
+            "$COMMENT_TAG: block LAN ($range)" || {
             echo "MISSING: no DROP rule for $range"
             problems=$((problems + 1))
         }
@@ -242,6 +307,16 @@ verify_rules() {
 
 main() {
     require_root
+
+    if [ "$MODE" = "watch" ]; then
+        watch_networks
+        return
+    fi
+
+    # Serialize discovery, verification, cleanup, and installation. In
+    # particular, line-number deletion is unsafe if two reconciliations run at
+    # once. iptables_cmd also waits for the kernel xtables lock.
+    [ "$MODE" = "dry-run" ] || acquire_lock
     load_subnets
 
     if [ "$MODE" = "verify" ]; then
@@ -264,10 +339,10 @@ main() {
 
     echo ""
     echo "Rules applied. $CHAIN:"
-    iptables -L "$CHAIN" -n -v --line-numbers
+    iptables_cmd -L "$CHAIN" -n -v --line-numbers
     echo ""
     echo "$EGRESS_CHAIN:"
-    iptables -L "$EGRESS_CHAIN" -n -v --line-numbers
+    iptables_cmd -L "$EGRESS_CHAIN" -n -v --line-numbers
 }
 
 main

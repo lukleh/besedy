@@ -508,21 +508,27 @@ Containers cannot reach private IP ranges (RFC 1918): `10.0.0.0/8`,
 traffic (web to db) is allowed. Internet is allowed (required for Google OAuth).
 Rules are applied by `web/setup/egress/iptables-egress.sh` and persisted via
 `besedy-egress.service` (systemd, runs at boot and after every Docker restart)
-plus `besedy-egress-refresh.timer`, which reconciles them every 5 minutes.
+plus `besedy-egress-watch.service`, which reconciles immediately after Docker
+network create/destroy events. `besedy-egress-refresh.timer` also verifies every
+5 minutes as a backstop in case an event is missed.
 
 The script discovers the container subnets from Docker each time it runs and
 writes the rules into a dedicated `BESEDY-EGRESS` chain. Never hardcode a
 subnet: `docker compose down` destroys its networks, and Docker re-allocates
 subnets from its pool on the next `up`, so a hardcoded value silently stops
 matching and the LAN block quietly stops applying. That recreation does not
-restart dockerd, which is why the reconcile timer exists and not just the
-boot-time unit.
+restart dockerd, which is why the event watcher and timer exist in addition to
+the boot-time unit.
 
 Traffic bound for another container `RETURN`s to `DOCKER-USER` instead of being
 accepted there. An `ACCEPT` in `DOCKER-USER` ends `FORWARD` traversal and skips
 `DOCKER-FORWARD`, where Docker enforces per-network isolation
 (`! -i br-X -o br-X -j DROP`) — accepting would silently let a container in one
 compose network reach unpublished ports in another.
+
+Reconciliation is serialized with a host lock, and every iptables command waits
+for the xtables lock. This prevents deploy, event-watcher, and timer runs from
+racing while replacing rules.
 
 Because the rules fail open, presence is not proof of enforcement — check it:
 

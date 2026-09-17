@@ -167,7 +167,9 @@ nothing.
 
 **First-deployment extras** (run once, not on every release):
 
-1. Install egress hardening: copy `web/setup/egress/` assets, enable `besedy-egress.service`.
+1. Install egress hardening: copy `web/setup/egress/` assets, then enable
+   `besedy-egress.service`, `besedy-egress-watch.service`, and
+   `besedy-egress-refresh.timer`.
 2. Install monitoring cron jobs (see Monitoring section below).
 
 ### Post-Deploy Verification
@@ -179,7 +181,10 @@ nothing.
 - [ ] `just prod-monitor` (session health -- see below)
 - [ ] Backups appearing in `BACKUP_DIR`
 - [ ] Daily logs appearing in `WEB_LOGS_DIR`
-- [ ] `sudo systemctl status besedy-egress` confirms LAN blocked
+- [ ] `sudo /usr/local/bin/iptables-egress.sh --verify` confirms every live
+      Docker bridge subnet is filtered
+- [ ] `sudo systemctl status besedy-egress besedy-egress-watch` and
+      `sudo systemctl status besedy-egress-refresh.timer` show reconciliation active
 
 ### Session Health Monitor
 

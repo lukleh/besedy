@@ -1,5 +1,5 @@
 [Unit]
-Description=Periodically reconcile Besedy Docker egress controls
+Description=Periodically backstop Besedy Docker egress controls
 
 [Timer]
 OnBootSec=2min

@@ -11,21 +11,27 @@ These files are host setup assets, not scheduled maintenance scripts.
   accepted outright, so Docker's own network isolation still applies.
 - `besedy-egress.service` is a `systemd` unit that reapplies those rules after
   Docker starts and after every Docker restart (`PartOf=docker.service`).
-- `besedy-egress-refresh.timer` reconciles the rules every 5 minutes. This is
-  what covers `docker compose down && up`, which recreates networks with new
-  subnets *without* restarting dockerd, so neither boot nor `PartOf` would
-  reapply them. The timer verifies quietly and only reapplies on drift.
+- `besedy-egress-watch.service` listens for Docker network create/destroy events
+  and reconciles immediately. This covers `docker compose down && up`, which
+  recreates networks without restarting dockerd.
+- `besedy-egress-refresh.timer` verifies quietly every 5 minutes and reapplies
+  only on drift. It is a backstop in case an event is missed or the watcher was
+  temporarily unavailable.
+
+The script serializes verification and updates with `flock` and asks iptables to
+wait for its own xtables lock. Concurrent deploy, watcher, and timer runs cannot
+race while deleting rules by line number.
 
 Use them during host deployment or security hardening:
 
 ```bash
 sudo cp web/setup/egress/iptables-egress.sh /usr/local/bin/
 sudo chmod +x /usr/local/bin/iptables-egress.sh
-sudo cp web/setup/egress/besedy-egress.service /etc/systemd/system/
-sudo cp web/setup/egress/besedy-egress-refresh.service /etc/systemd/system/
+sudo cp web/setup/egress/besedy-egress*.service /etc/systemd/system/
 sudo cp web/setup/egress/besedy-egress-refresh.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now besedy-egress.service
+sudo systemctl enable --now besedy-egress-watch.service
 sudo systemctl enable --now besedy-egress-refresh.timer
 ```
 
@@ -39,6 +45,8 @@ missing rule looks exactly like a working one until you look at the counters:
 sudo /usr/local/bin/iptables-egress.sh --verify    # non-zero exit on drift
 sudo /usr/local/bin/iptables-egress.sh --dry-run   # show the plan, change nothing
 sudo iptables -L BESEDY-EGRESS -n -v --line-numbers
+sudo systemctl status besedy-egress besedy-egress-watch
+sudo systemctl status besedy-egress-refresh.timer
 ```
 
 The ongoing scheduled checks remain under `web/scripts/`:
