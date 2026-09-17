@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from besedy.lib.rag_colbert_source_state import (
     ColbertSourceStateRow,
@@ -59,3 +62,27 @@ def test_upsert_and_delete_source_state_rows(tmp_path: Path) -> None:
     assert deleted == 1
     rows = read_source_state(path)
     assert sorted(rows) == ["b" * 64]
+
+
+def test_read_source_state_read_only_returns_rows(tmp_path: Path) -> None:
+    path = tmp_path / "source_state.sqlite"
+    replace_source_state(path=path, rows=[_row("a" * 64, chunk_count=2)])
+
+    rows = read_source_state(path, read_only=True)
+
+    assert sorted(rows) == ["a" * 64]
+    assert rows["a" * 64].chunk_count == 2
+
+
+def test_read_source_state_read_only_does_not_create_schema(tmp_path: Path) -> None:
+    path = tmp_path / "source_state.sqlite"
+    path.touch()
+
+    with pytest.raises(sqlite3.OperationalError):
+        read_source_state(path, read_only=True)
+
+    with sqlite3.connect(path) as connection:
+        tables = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    assert tables == []

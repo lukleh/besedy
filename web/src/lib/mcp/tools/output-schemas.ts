@@ -212,7 +212,7 @@ const TranscriptSearchResultSchema = z.object({
     })
     .nullable()
     .describe(
-      'Ready-to-call get_transcript arguments for verifying this candidate in continuous context, or null when the canonical transcript is unavailable.',
+      'Ready-to-call get_transcript arguments for this candidate; the unchanged request replays only this passage, so widen its time window to verify. Null when the canonical transcript is unavailable.',
     ),
 });
 

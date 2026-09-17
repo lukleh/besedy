@@ -34,7 +34,8 @@ that ignore `structuredContent` can still make a correct verification decision.
 
 The initialization response adds only cross-tool and corpus-wide rules: ground
 Besedy claims in returned evidence, distinguish meaning from literal wording,
-verify important candidates with `get_transcript`, do not count recording variants
+verify important candidates with `get_transcript` by widening the returned time
+window, do not count recording variants
 of one event as independent evidence, group search results directly by their
 returned event IDs, support recurring themes with distinct events, and cite
 bounded segment links. Tool descriptions and schemas remain authoritative for
@@ -476,7 +477,8 @@ token.
 The tool returns the same event, recording identity, match, context, and
 `transcriptRequest` result shape as meaning-based search, and a `retrieval`
 object with the applied `matchMode` and the complete `totalMatches`. Use
-`get_transcript` to verify important matches in continuous context. A zero result
+`get_transcript` to verify important matches, widening the request's time window
+because the unchanged request only replays the matched passage. A zero result
 establishes only that the chosen literal token pattern is absent under the
 chosen catalog, authorization scope, filters, and match mode; it does not
 establish conceptual absence. Rendered text repeats that scope, distinguishes
@@ -575,10 +577,12 @@ The recommended evidence workflow is:
    variants, not independent evidence.
 4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.
-5. When the chosen result has a non-null `transcriptRequest`, pass it to
-   `get_transcript` and read the continuous source context before relying on the
-   passage. Do not use a candidate with a null request as important evidence
-   unless another source can be verified.
+5. When the chosen result has a non-null `transcriptRequest`, copy it, widen its
+   `startSec` and `endSec`, and only then pass the modified request to
+   `get_transcript`. Unchanged values return exactly the segments the search
+   already showed, so the surrounding context is what verifies the passage. Do
+   not use a candidate with a null request as important evidence unless another
+   source can be verified.
 
 Run broad reformulations sequentially, compacting and deduplicating each
 structured response before requesting the next one. Use the maximum of `200`
