@@ -35,4 +35,4 @@ What belongs here:
 What does not belong here:
 
 - one-time host setup assets
-- boot-time hardening files such as the egress controls under `web/setup/egress/`
+- boot-time services or firewall setup

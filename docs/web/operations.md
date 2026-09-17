@@ -1,6 +1,6 @@
 # Web Operations
 
-> **Last Updated:** 2026-04-22
+> **Last Updated:** 2026-09-17
 
 Operational reference for deploying, monitoring, and running the Besedy web app.
 For security hardening details see `docs/web/security.md`.
@@ -167,8 +167,7 @@ nothing.
 
 **First-deployment extras** (run once, not on every release):
 
-1. Install egress hardening: copy `web/setup/egress/` assets, enable `besedy-egress.service`.
-2. Install monitoring cron jobs (see Monitoring section below).
+1. Install monitoring cron jobs (see Monitoring section below).
 
 ### Post-Deploy Verification
 
@@ -179,7 +178,6 @@ nothing.
 - [ ] `just prod-monitor` (session health -- see below)
 - [ ] Backups appearing in `BACKUP_DIR`
 - [ ] Daily logs appearing in `WEB_LOGS_DIR`
-- [ ] `sudo systemctl status besedy-egress` confirms LAN blocked
 
 ### Session Health Monitor
 
@@ -382,8 +380,8 @@ sudo journalctl -u cloudflared -f
 
 ## Monitoring & Alerts
 
-All monitoring scripts live in `web/scripts/`. Host setup assets (egress
-hardening) live in `web/setup/`.
+All monitoring scripts live in `web/scripts/`. Host backup setup assets live in
+`web/setup/backup/`.
 
 ### Script Inventory
 
