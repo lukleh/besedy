@@ -7,6 +7,7 @@ import {
 import { searchMcpTranscripts } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  TRANSCRIPT_VERIFICATION_GUIDANCE,
   registerBesedyTool,
   renderTranscriptSearchResult,
   resolveToolCatalog,
@@ -27,7 +28,7 @@ function renderSearchContent(
 ): string {
   const lines = [
     `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} ranked, non-exhaustive candidate(s).`,
-    'A zero result does not establish conceptual absence. Verify important candidates by passing a non-null transcriptRequest to get_transcript; do not rely on candidates whose verification request is unavailable.',
+    `A zero result does not establish conceptual absence. ${TRANSCRIPT_VERIFICATION_GUIDANCE}`,
     'Each candidate includes its authoritative event date, location, and ID. Group candidates by event ID because recordings from the same event are variants, not independent evidence.',
   ];
   for (const searchResult of result.results) {
@@ -47,8 +48,7 @@ export function registerSearchTranscriptsTool(
     'search_transcripts',
     {
       title: 'Search transcripts by meaning',
-      description:
-        'Find candidate passages by meaning across transcripts from visible released Besedy events. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage: verify important evidence by passing a non-null transcriptRequest to get_transcript and reading coherent continuous context; do not rely on an important candidate when that request is unavailable. Every candidate directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group candidates by event ID because recordings from the same event are variants, not independent evidence. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation. Rank is relevance within this query, not confidence.',
+      description: `Find candidate passages by meaning across transcripts from visible released Besedy events. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every candidate directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group candidates by event ID because recordings from the same event are variants, not independent evidence. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation. Rank is relevance within this query, not confidence.`,
       inputSchema: z.object({
         catalogId: z
           .string()
