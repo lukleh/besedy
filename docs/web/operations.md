@@ -179,8 +179,14 @@ egress_units=$(systemctl list-unit-files --no-legend 'besedy-egress*')
 test -z "$egress_units"
 test ! -e /usr/local/bin/iptables-egress.sh
 docker_user_rules=$(sudo iptables -S DOCKER-USER)
-! grep -Fq besedy-egress <<<"$docker_user_rules"
-! sudo iptables -S BESEDY-EGRESS >/dev/null 2>&1
+if grep -Fq besedy-egress <<<"$docker_user_rules"; then
+  echo "leftover besedy-egress rules in DOCKER-USER" >&2
+  exit 1
+fi
+if sudo iptables -S BESEDY-EGRESS >/dev/null 2>&1; then
+  echo "leftover BESEDY-EGRESS chain" >&2
+  exit 1
+fi
 ```
 
 The last check also covers hosts where the unmerged dynamic reconciler was
