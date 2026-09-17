@@ -28,15 +28,20 @@ def test_catalog_check_json_is_enveloped(capsys) -> None:
     assert payload["result"]["error"] == "catalog_csv_missing"
 
 
-def test_catalog_check_json_includes_colbert_bundle_status(
+CATALOG_CHECK_BACKEND = "faster-whisper/large-v3@silero_vad_v6"
+
+
+def _patch_catalog_check(
     monkeypatch,
     tmp_path: Path,
-    capsys,
-) -> None:
-    from besedy.commands.catalog.check import handle_check
+    *,
+    colbert_hash_coverage: tuple[bool | None, str | None, dict | None],
+) -> Path:
+    """Stub every `catalog check` dependency so handle_check runs against tmp_path."""
+
     from besedy.lib.catalog.validator import CatalogEntry, ValidationResult
 
-    backend = "faster-whisper/large-v3@silero_vad_v6"
+    backend = CATALOG_CHECK_BACKEND
     diar_backend = "speaker_diarization/pyannote_speaker-diarization-community-1"
     hash_a = "a" * 64
     hash_b = "b" * 64
@@ -153,6 +158,10 @@ def test_catalog_check_json_includes_colbert_bundle_status(
         ),
     )
     monkeypatch.setattr(
+        "besedy.commands.catalog.check.require_colbert_hash_coverage",
+        lambda *_args, **_kwargs: colbert_hash_coverage,
+    )
+    monkeypatch.setattr(
         "besedy.commands.catalog.check.expected_asr_backends_from_code",
         lambda: [backend],
     )
@@ -167,6 +176,26 @@ def test_catalog_check_json_includes_colbert_bundle_status(
     monkeypatch.setattr(
         "besedy.commands.catalog.check.format_validation_report",
         lambda _result, verbose=False: ("CATALOG VALIDATION REPORT", False),
+    )
+    return csv_path
+
+
+def test_catalog_check_json_includes_colbert_bundle_status(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    from besedy.commands.catalog.check import handle_check
+
+    backend = CATALOG_CHECK_BACKEND
+    csv_path = _patch_catalog_check(
+        monkeypatch,
+        tmp_path,
+        colbert_hash_coverage=(
+            True,
+            None,
+            {backend: {"total": 2, "expected": 2, "missing": 0, "stale": 0}},
+        ),
     )
 
     args = argparse.Namespace(
@@ -183,7 +212,53 @@ def test_catalog_check_json_includes_colbert_bundle_status(
     assert payload["name"] == "check"
     assert payload["status"] == "success"
     assert payload["result"]["pipeline_artifacts"]["colbert_bundle"]["ok"] is True
+    assert payload["result"]["derived_directories"]["colbert_index"]["ok"] is True
     assert "rag_index" not in payload["result"]["derived_directories"]
+
+
+def test_catalog_check_text_stale_colbert_hashes_point_at_index_sync(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    """Stale ColBERT rows are fixed by the index sync, not by `clean --prune-orphans`."""
+
+    from besedy.commands.catalog.check import handle_check
+
+    backend = CATALOG_CHECK_BACKEND
+    stale_message = f"ColBERT index has stale hashes for backend(s): {backend} stale 1"
+    csv_path = _patch_catalog_check(
+        monkeypatch,
+        tmp_path,
+        colbert_hash_coverage=(
+            False,
+            stale_message,
+            {
+                backend: {
+                    "total": 2,
+                    "expected": 2,
+                    "missing": 0,
+                    "stale": 1,
+                    "stale_hashes": ["c" * 64],
+                }
+            },
+        ),
+    )
+
+    args = argparse.Namespace(
+        csv=csv_path,
+        csv_normalized=None,
+        verbose=False,
+        format="text",
+    )
+
+    exit_code = handle_check(args)
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert f"Run: just catalog rag-colbert-index  # {stale_message}" in output
+    assert "clean --prune-orphans" not in output
+    assert "(+1 stale)" in output
 
 
 def test_catalog_clean_json_is_enveloped(capsys) -> None:
