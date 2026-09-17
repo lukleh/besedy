@@ -577,12 +577,12 @@ The recommended evidence workflow is:
    variants, not independent evidence.
 4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.
-5. When the chosen result has a non-null `transcriptRequest`, pass it to
-   `get_transcript`, then widen its `startSec` and `endSec`. The unchanged
-   request returns exactly the segments the search already showed, so the
-   surrounding context is what verifies the passage. Do not use a candidate
-   with a null request as important evidence unless another source can be
-   verified.
+5. When the chosen result has a non-null `transcriptRequest`, copy it, widen its
+   `startSec` and `endSec`, and only then pass the modified request to
+   `get_transcript`. Unchanged values return exactly the segments the search
+   already showed, so the surrounding context is what verifies the passage. Do
+   not use a candidate with a null request as important evidence unless another
+   source can be verified.
 
 Run broad reformulations sequentially, compacting and deduplicating each
 structured response before requesting the next one. Use the maximum of `200`

@@ -25,7 +25,7 @@ const logger = createServerLogger('mcp-tools');
 // An unchanged transcriptRequest replays exactly the passage the search already
 // returned; verification only adds context when the window widens.
 export const TRANSCRIPT_VERIFICATION_GUIDANCE =
-  "Verify important evidence with get_transcript: pass the result's transcriptRequest, then widen the time window, because the unchanged request only replays that passage. Do not rely on an important candidate when that request is unavailable.";
+  "Verify important evidence with get_transcript: copy the result's transcriptRequest, widen startSec and endSec, then call the tool; unchanged values only replay that passage. Do not rely on an important candidate when the request is unavailable.";
 
 export function createLookupListInputSchema(itemName: string) {
   return z.object({

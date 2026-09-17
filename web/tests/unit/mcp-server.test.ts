@@ -525,7 +525,7 @@ describe('MCP personalized tool surface', () => {
     expect(recordingTool?.inputSchema.properties.eventOffset).toBeUndefined();
     expect(recordingTool?.inputSchema.properties.eventLimit).toBeUndefined();
     expect(transcriptTool?.description).toContain(
-      'transcriptRequest unchanged',
+      TRANSCRIPT_VERIFICATION_GUIDANCE,
     );
     expect(transcriptTool?.description).toContain('complete selected window');
     expect(transcriptTool?.description).toContain('bounded citation URL');
@@ -589,7 +589,9 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('same language as that reply');
     // An unchanged transcriptRequest replays the passage the search already
     // returned, so verification only adds context when the window widens.
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('then widen the time window');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      'widen startSec and endSec, then call the tool',
+    );
     // Not every recording is multi-speaker throughout; keep the claim to what
     // the corpus supports.
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
