@@ -321,15 +321,7 @@ def require_colbert_hash_coverage(
             stats or None,
         )
 
-    if not stats:
-        if unbuilt_backends:
-            return (
-                None,
-                "No ColBERT source state for backend(s): "
-                + ", ".join(unbuilt_backends)
-                + "; skipping ColBERT hash coverage check.",
-                None,
-            )
+    if not stats and not unbuilt_backends:
         return (
             None,
             "No resolved ColBERT bundles found; skipping ColBERT hash coverage check.",
@@ -353,6 +345,15 @@ def require_colbert_hash_coverage(
             f"{backend} stale {stats[backend]['stale']}" for backend in stale_backends
         )
         return False, f"ColBERT index has stale hashes for backend(s): {details}", stats
+
+    if unbuilt_backends:
+        return (
+            None,
+            "No ColBERT source state for backend(s): "
+            + ", ".join(unbuilt_backends)
+            + "; skipping ColBERT hash coverage check.",
+            stats or None,
+        )
 
     return True, None, stats
 

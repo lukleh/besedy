@@ -10,6 +10,7 @@ from besedy.lib.rag_bundle import ResolvedColbertBundle, resolve_colbert_bundle_
 from besedy.lib.rag_colbert_source_state import ColbertSourceStateRow, replace_source_state
 
 BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6"
+SECOND_BACKEND_KEY = "whisperx/large-v3"
 HASH_A = "a" * 64
 HASH_B = "b" * 64
 HASH_C = "c" * 64
@@ -18,10 +19,16 @@ HASH_C = "c" * 64
 class _StubWorkflow:
     """Minimal stand-in for WorkflowConfig as used by the ColBERT checks."""
 
-    workflow_label = "faster-whisper"
+    def __init__(
+        self,
+        workflow_label: str = "faster-whisper",
+        model_component: str = "large-v3@silero_vad_v6",
+    ) -> None:
+        self.workflow_label = workflow_label
+        self.model_component = model_component
 
     def output_component(self, _sanitizer) -> str:
-        return "large-v3@silero_vad_v6"
+        return self.model_component
 
 
 def _row(audio_hash: str, *, chunk_count: int = 3) -> ColbertSourceStateRow:
@@ -36,8 +43,13 @@ def _row(audio_hash: str, *, chunk_count: int = 3) -> ColbertSourceStateRow:
     )
 
 
-def _write_transcript(transcripts_root: Path, audio_hash: str) -> None:
-    workflow_dir, model_component = BACKEND_KEY.split("/", maxsplit=1)
+def _write_transcript(
+    transcripts_root: Path,
+    audio_hash: str,
+    *,
+    backend_key: str = BACKEND_KEY,
+) -> None:
+    workflow_dir, model_component = backend_key.split("/", maxsplit=1)
     target = transcripts_root / workflow_dir / model_component / audio_hash
     target.mkdir(parents=True, exist_ok=True)
     (target / "transcript.json").write_text("{}", encoding="utf-8")
@@ -170,6 +182,52 @@ def test_hash_coverage_skips_when_source_state_absent(colbert_env) -> None:
     assert stats is None
     assert msg is not None
     assert "No ColBERT source state" in msg
+
+
+def test_hash_coverage_does_not_pass_when_one_backend_has_no_source_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    transcripts_root = tmp_path / "transcripts_20260101_000000"
+    bundle_dirs = {
+        BACKEND_KEY: tmp_path / "bundle-a",
+        SECOND_BACKEND_KEY: tmp_path / "bundle-b",
+    }
+    for backend_key, bundle_dir in bundle_dirs.items():
+        _write_transcript(transcripts_root, HASH_A, backend_key=backend_key)
+        bundle_dir.mkdir()
+
+    replace_source_state(
+        path=bundle_dirs[BACKEND_KEY] / "source_state.sqlite",
+        rows=[_row(HASH_A)],
+    )
+    monkeypatch.setattr(
+        check_module,
+        "get_transcription_workflows",
+        lambda **_kwargs: [
+            _StubWorkflow(),
+            _StubWorkflow("whisperx", "large-v3"),
+        ],
+    )
+    monkeypatch.setattr(check_module, "resolve_default_colbert_model", lambda: "colbert-model")
+    monkeypatch.setattr(
+        check_module,
+        "resolve_colbert_scope_bundle",
+        lambda **kwargs: ResolvedColbertBundle(
+            artifacts=resolve_colbert_bundle_artifacts(bundle_dirs[kwargs["backend_key"]]),
+            chunk_version="v1",
+            built_at=None,
+        ),
+    )
+
+    ok, msg, stats = check_module.require_colbert_hash_coverage(transcripts_root, {HASH_A})
+
+    assert ok is None
+    assert msg is not None
+    assert SECOND_BACKEND_KEY in msg
+    assert stats is not None
+    assert stats[BACKEND_KEY]["total"] == 1
+    assert SECOND_BACKEND_KEY not in stats
 
 
 def test_hash_coverage_reports_corrupt_source_state(colbert_env) -> None:
