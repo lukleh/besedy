@@ -81,9 +81,17 @@ def test_prod_apply_refuses_an_image_from_a_different_checkout_before_downtime()
 
     label = 'org.opencontainers.image.revision'
     assert label in apply_recipe
+    assert 'resolve_web_env_file.sh production' in apply_recipe
     assert 'if [ "$image_commit" != "$git_commit" ]' in apply_recipe
     assert "Run just prod-build from this checkout before applying it." in apply_recipe
     assert apply_recipe.index(label) < apply_recipe.index("stop web backup")
+    build_recipe = justfile.split("prod-build:", maxsplit=1)[1].split(
+        "\n# Stop the web writer", maxsplit=1
+    )[0]
+    assert "resolve_jobs_env_file.sh production" in build_recipe
+    assert build_recipe.index("resolve_jobs_env_file.sh production") < build_recipe.index(
+        'jobs_image="${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}"'
+    )
 
 
 def test_database_maintenance_quiesces_scheduled_backups() -> None:

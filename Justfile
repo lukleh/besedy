@@ -475,6 +475,10 @@ prod-build:
         echo "Refusing to build a production web image from a dirty worktree." >&2
         exit 1
     fi
+    jobs_env="$(bash scripts/resolve_jobs_env_file.sh production)"
+    set -a
+    . "$jobs_env"
+    set +a
     bash scripts/validate_web_config_mount.sh production
     echo "Running web checks..."
     just web-check
@@ -534,6 +538,10 @@ prod-apply:
     #!/usr/bin/env bash
     set -euo pipefail
     cd web
+    env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
+    set -a
+    . "$env_file"
+    set +a
     git_commit=$(git rev-parse HEAD)
     web_image="${BESEDY_WEB_IMAGE:-besedy-web:prod}"
     image_commit="$(docker image inspect "$web_image" | jq -er '.[0].Config.Labels["org.opencontainers.image.revision"] // empty')" || {
