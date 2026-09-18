@@ -199,9 +199,14 @@ async function main() {
     console.log("\n[4/9] Creating recorders...");
     for (const recorder of SEEDED_RECORDERS) {
       await prisma.recorder.upsert({
-        where: { name: recorder.name },
+        where: {
+          workflowGroupId_name: {
+            workflowGroupId: TEST_CATALOG_ID,
+            name: recorder.name,
+          },
+        },
         update: recorder,
-        create: recorder,
+        create: { ...recorder, workflowGroupId: TEST_CATALOG_ID },
       });
       console.log(`  ✓ ${recorder.name}`);
     }
@@ -210,19 +215,32 @@ async function main() {
     console.log("\n[5/9] Creating locations...");
     for (const location of SEEDED_LOCATIONS) {
       await prisma.location.upsert({
-        where: { name: location.name },
+        where: {
+          workflowGroupId_name: {
+            workflowGroupId: TEST_CATALOG_ID,
+            name: location.name,
+          },
+        },
         update: location,
-        create: location,
+        create: { ...location, workflowGroupId: TEST_CATALOG_ID },
       });
       console.log(`  ✓ ${location.name}`);
     }
 
     // 6. Create audio metadata
     console.log("\n[6/9] Creating audio metadata...");
-    const recorderA = await prisma.recorder.findUnique({ where: { name: "Recorder A" } });
-    const recorderB = await prisma.recorder.findUnique({ where: { name: "Recorder B" } });
-    const locationX = await prisma.location.findUnique({ where: { name: "Location X" } });
-    const locationY = await prisma.location.findUnique({ where: { name: "Location Y" } });
+    const recorderA = await prisma.recorder.findUnique({
+      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Recorder A" } },
+    });
+    const recorderB = await prisma.recorder.findUnique({
+      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Recorder B" } },
+    });
+    const locationX = await prisma.location.findUnique({
+      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Location X" } },
+    });
+    const locationY = await prisma.location.findUnique({
+      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Location Y" } },
+    });
 
     for (let i = 0; i < TEST_AUDIO_FILES.length; i++) {
       const file = TEST_AUDIO_FILES[i];

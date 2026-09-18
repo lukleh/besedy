@@ -1,18 +1,14 @@
-import { redirect } from "next/navigation";
-import { getAdminCapability } from "@/lib/access/capabilities";
 import MetadataLayoutClient from "./metadata-layout-client";
 
-export default async function MetadataLayout({
+/**
+ * The admin layout above already refuses anyone who is not an administrator, and
+ * the lookup routes themselves require edit rights on the catalog being worked
+ * on, so this layout adds no gate of its own.
+ */
+export default function MetadataLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const capability = await getAdminCapability();
-
-  if (!capability.hasEditorOnAnyCatalog) {
-    redirect("/");
-  }
-
-  // Providers already wrapped at root layout level
   return <MetadataLayoutClient>{children}</MetadataLayoutClient>;
 }

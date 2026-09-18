@@ -34,7 +34,6 @@ describe("me permissions route", () => {
       isSuperadmin: false,
       isAdmin: true,
       canAccessAdmin: true,
-      hasEditorOnAnyCatalog: true,
     });
 
     const response = await GET();
@@ -45,7 +44,6 @@ describe("me permissions route", () => {
       isSuperadmin: false,
       isAdmin: true,
       canAccessAdmin: true,
-      hasEditorOnAnyCatalog: true,
     });
     expect(getAdminCapability).toHaveBeenCalledWith("admin-1");
   });

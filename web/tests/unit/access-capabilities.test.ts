@@ -84,7 +84,6 @@ describe("access capabilities", () => {
       isSuperadmin: false,
       isAdmin: true,
       canAccessAdmin: true,
-      hasEditorOnAnyCatalog: true,
     });
     expect(session.getCurrentUserId).not.toHaveBeenCalled();
   });

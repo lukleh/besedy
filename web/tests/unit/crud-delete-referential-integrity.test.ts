@@ -3,7 +3,6 @@ import { NextRequest } from "next/server";
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
-  requireEditorOnAnyCatalog: vi.fn(),
   // errors.ts checks `error instanceof AuthError`; provide a real class so the
   // instanceof check works and plain Prisma-shaped errors fall through.
   AuthError: class AuthError extends Error {
@@ -15,10 +14,20 @@ vi.mock("@/lib/db", () => ({
   default: {
     audioMetadata: { count: vi.fn() },
     catalogEvent: { count: vi.fn() },
-    recorder: { delete: vi.fn() },
-    location: { delete: vi.fn() },
-    album: { delete: vi.fn() },
+    recorder: { delete: vi.fn(), findFirst: vi.fn() },
+    location: { delete: vi.fn(), findFirst: vi.fn() },
+    album: { delete: vi.fn(), findFirst: vi.fn() },
   },
+}));
+
+vi.mock("@/lib/access/capabilities", () => ({
+  getCatalogCapability: vi.fn(),
+}));
+
+vi.mock("@/lib/catalog", () => ({ loadCatalogHashes: vi.fn() }));
+
+vi.mock("@/lib/catalog/resolve-group", () => ({
+  resolveActiveGroupWithAccess: vi.fn(),
 }));
 
 import {
@@ -29,12 +38,14 @@ import {
 import { handlePrismaError } from "@/lib/api/errors";
 import prisma from "@/lib/db";
 
+type Model = { delete: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
+
 const db = prisma as unknown as {
   audioMetadata: { count: ReturnType<typeof vi.fn> };
   catalogEvent: { count: ReturnType<typeof vi.fn> };
-  recorder: { delete: ReturnType<typeof vi.fn> };
-  location: { delete: ReturnType<typeof vi.fn> };
-  album: { delete: ReturnType<typeof vi.fn> };
+  recorder: Model;
+  location: Model;
+  album: Model;
 };
 
 function deleteRequest() {
@@ -43,8 +54,25 @@ function deleteRequest() {
 const params = () => ({ params: Promise.resolve({ id: "5" }) });
 
 describe("CRUD delete referential-integrity guards", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
+    const { requireAuth } = await import("@/lib/auth/permissions");
+    const { getCatalogCapability } = await import("@/lib/access/capabilities");
+    const { loadCatalogHashes } = await import("@/lib/catalog");
+    const { resolveActiveGroupWithAccess } = await import("@/lib/catalog/resolve-group");
+    // An editor of the one catalog the row lives in; the guards under test are
+    // referential, not authorizational.
+    asMock(requireAuth).mockResolvedValue("user-1");
+    asMock(resolveActiveGroupWithAccess).mockResolvedValue({
+      group: { id: "20251222_144441" },
+      hasAccess: true,
+    });
+    asMock(loadCatalogHashes).mockResolvedValue(new Set<string>());
+    asMock(getCatalogCapability).mockResolvedValue({ canEditMetadata: true });
+    for (const model of [db.recorder, db.location, db.album]) {
+      model.findFirst.mockResolvedValue({ id: 5 });
+    }
   });
 
   it("blocks deleting a recorder still referenced by recordings (409)", async () => {
