@@ -1786,7 +1786,15 @@
     "unknownTitle": "Nahrávka bez názvu",
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
-    "sessionLabel": "Sezení {index}"
+    "sessionLabel": "Sezení {index}",
+    "availableOffline": "Dostupné offline",
+    "offlinePlayer": "Offline přehrávač",
+    "audioUnavailable": "Stažený zvuk není k dispozici. Odeberte toto stažení a uložte jej znovu online.",
+    "transcript": "Přepis",
+    "noOfflineTranscript": "S tímto stažením nebyl uložen žádný přepis.",
+    "backToDownloads": "Zpět ke staženým",
+    "detailUnavailable": "Stažení není k dispozici",
+    "detailUnavailableDescription": "Tato položka již není v tomto zařízení uložena. Vraťte se ke staženým nebo ji znovu uložte online."
   },
   "googleTranslate": {
     "warningMessage": "Byl detekován překlad prohlížeče. Pro nejlepší zážitek použijte přepínač jazyka.",

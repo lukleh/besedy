@@ -15,7 +15,12 @@ import { destroyDownloadsDatabase, isIndexedDBAvailable } from "@/lib/offline/do
 // This allows sign-out in one tab to redirect all other tabs
 const AUTH_CHANNEL_NAME = "besedy-auth";
 // Legacy cache families from earlier service worker versions.
-const LEGACY_OFFLINE_CACHE_PREFIXES = ["besedy-audio-", "besedy-transcript-"];
+const LEGACY_OFFLINE_CACHE_PREFIXES = [
+  "besedy-audio-",
+  "besedy-transcript-",
+  "besedy-data-",
+  "besedy-shell-",
+];
 const isProductionApp = process.env.NEXT_PUBLIC_APP_ENV === "production";
 
 type SignInWithOAuthOptions = {
@@ -56,9 +61,9 @@ function broadcastAuthEvent(message: AuthBroadcastMessage): void {
 
 /**
  * Clear offline data that may contain protected content: downloaded audio,
- * cached API responses and page HTML, and the downloads registry. Build
- * assets stay cached because they are public. Best effort only; failures must
- * not block sign-out.
+ * the Downloads shell, and the downloads registry and payloads. Build assets
+ * stay cached because they are public. Best effort only; failures must not
+ * block sign-out.
  */
 async function clearOfflineCaches(): Promise<void> {
   if (typeof window === "undefined") {

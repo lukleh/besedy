@@ -1,44 +1,53 @@
 /**
  * @vitest-environment jsdom
  */
-import "fake-indexeddb/auto";
-import { IDBFactory } from "fake-indexeddb";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const HASH = "e".repeat(64);
+const HASH = 'e'.repeat(64);
 
 async function loadDb() {
-  return import("@/lib/offline/downloads-db");
+  return import('@/lib/offline/downloads-db');
 }
 
-describe("downloads database", () => {
+describe('downloads database', () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.stubGlobal("indexedDB", new IDBFactory());
+    vi.stubGlobal('indexedDB', new IDBFactory());
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("stores, lists, and deletes records", async () => {
+  it('stores, lists, and deletes records', async () => {
     const db = await loadDb();
     const now = Date.now();
     await db.putDownload({
-      key: db.makeDownloadKey("cat", HASH),
-      catalogId: "cat",
+      key: db.makeDownloadKey('cat', HASH),
+      catalogId: 'cat',
       hash: HASH,
-      userId: "u1",
-      eventKey: db.makeEventKey("cat", 3),
-      event: { id: 3, title: null, locationName: "Brno", dateYear: 2026, dateMonth: null, dateDay: null, sessionIndex: 1 },
+      userId: 'u1',
+      eventKey: db.makeEventKey('cat', 3),
+      event: {
+        id: 3,
+        title: null,
+        locationName: 'Brno',
+        dateYear: 2026,
+        dateMonth: null,
+        dateDay: null,
+        sessionIndex: 1,
+      },
       recording: null,
       audioUrl: null,
       audioCacheKey: null,
-      status: "queued",
+      status: 'queued',
       progress: 0,
       bytesLoaded: 0,
       totalBytes: 0,
       error: null,
+      resumeOnReconnect: false,
       transcriptBackend: null,
       hasPoster: false,
       createdAt: now,
@@ -48,22 +57,26 @@ describe("downloads database", () => {
 
     const listed = await db.listDownloads();
     expect(listed).toHaveLength(1);
-    expect(listed[0].eventKey).toBe("cat:3");
-    expect(await db.getDownload("cat:" + HASH)).toMatchObject({ status: "queued" });
+    expect(listed[0].eventKey).toBe('cat:3');
+    expect(await db.getDownload('cat:' + HASH)).toMatchObject({
+      status: 'queued',
+    });
 
-    await db.deleteDownloadRecord("cat:" + HASH);
+    await db.deleteDownloadRecord('cat:' + HASH);
     expect(await db.listDownloads()).toHaveLength(0);
   });
 
-  it("drops the stores of the earlier catalog-mirror schema on upgrade", async () => {
-    const legacy = indexedDB.open("besedy-offline", 1);
+  it('drops the stores of the earlier catalog-mirror schema on upgrade', async () => {
+    const legacy = indexedDB.open('besedy-offline', 1);
     await new Promise<void>((resolve, reject) => {
       legacy.onupgradeneeded = () => {
         const database = legacy.result;
-        database.createObjectStore("catalogEntries", { keyPath: ["catalogId", "hash"] });
-        database.createObjectStore("catalogs", { keyPath: "id" });
-        database.createObjectStore("contentCache", { keyPath: "hash" });
-        database.createObjectStore("syncMeta", { keyPath: "key" });
+        database.createObjectStore('catalogEntries', {
+          keyPath: ['catalogId', 'hash'],
+        });
+        database.createObjectStore('catalogs', { keyPath: 'id' });
+        database.createObjectStore('contentCache', { keyPath: 'hash' });
+        database.createObjectStore('syncMeta', { keyPath: 'key' });
       };
       legacy.onsuccess = () => {
         legacy.result.close();
@@ -74,15 +87,48 @@ describe("downloads database", () => {
 
     const db = await loadDb();
     const database = await db.getDownloadsDB();
-    expect(Array.from(database.objectStoreNames)).toEqual(["downloads"]);
-    expect(database.version).toBe(2);
+    expect(Array.from(database.objectStoreNames)).toEqual([
+      'downloadBundles',
+      'downloads',
+    ]);
+    expect(database.version).toBe(3);
   });
 
-  it("can destroy the database entirely", async () => {
+  it('keeps large payloads separate from lightweight registry rows', async () => {
+    const db = await loadDb();
+    const key = db.makeDownloadKey('cat', HASH);
+    await db.putDownloadBundle({
+      key,
+      transcriptBackend: 'whisperx/large',
+      transcript: {
+        backend: 'whisperx/large',
+        segments: [{ start: 0, end: 1, text: 'Hello' }],
+      },
+      diarization: null,
+      poster: {
+        blob: new Blob(['poster'], { type: 'image/jpeg' }),
+        contentType: 'image/jpeg',
+        variant: 'portrait',
+      },
+      updatedAt: Date.now(),
+    });
+
+    expect(await db.getDownloadBundle(key)).toMatchObject({
+      key,
+      transcriptBackend: 'whisperx/large',
+      poster: { variant: 'portrait' },
+    });
+    await db.deleteDownloadBundle(key);
+    expect(await db.getDownloadBundle(key)).toBeUndefined();
+  });
+
+  it('can destroy the database entirely', async () => {
     const db = await loadDb();
     await db.getDownloadsDB();
     await db.destroyDownloadsDatabase();
     const databases = await indexedDB.databases();
-    expect(databases.find((entry) => entry.name === db.DOWNLOADS_DB_NAME)).toBeUndefined();
+    expect(
+      databases.find((entry) => entry.name === db.DOWNLOADS_DB_NAME),
+    ).toBeUndefined();
   });
 });

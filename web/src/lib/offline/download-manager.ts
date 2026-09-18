@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * Page-side download engine.
@@ -13,7 +13,7 @@
  * from running the queue at the same time, and a BroadcastChannel lets tabs
  * see each other's changes.
  */
-import { createClientLogger } from "@/lib/log/client";
+import { createClientLogger } from '@/lib/log/client';
 import {
   buildAudioSourcePreferenceUrl,
   buildAudioSourcesUrl,
@@ -21,16 +21,16 @@ import {
   buildDiarizationBackendsUrl,
   buildDiarizationUrl,
   buildEventDetailUrl,
-  buildEventPagePath,
   buildEventPosterUrl,
-  buildPlaybackProgressUrl,
   buildRecordingEntryUrl,
-  buildRecordingPagePath,
   buildTranscriptBackendsUrl,
-  buildTranscriptFormatsUrl,
   buildTranscriptUrl,
   type AudioSourceOption,
-} from "@/lib/api/recording-urls";
+} from '@/lib/api/recording-urls';
+import type {
+  Diarization,
+  Transcript,
+} from '@/components/transcript/transcript-viewer-types';
 import {
   AUDIO_CHUNK_SIZE,
   deleteAudioCacheEntries,
@@ -39,25 +39,30 @@ import {
   readAudioCacheMeta,
   writeAudioCacheMeta,
   type AudioCacheMeta,
-} from "./audio-cache-format";
-import { CACHED_AT_HEADER, DOWNLOADS_PATH, OFFLINE_CACHE_NAMES } from "./cache-names";
+} from './audio-cache-format';
+import { OFFLINE_CACHE_NAMES } from './cache-names';
 import {
+  deleteDownloadBundle,
   deleteDownloadRecord,
+  getDownload,
   isIndexedDBAvailable,
   listDownloads,
   makeDownloadKey,
   makeEventKey,
+  putDownloadBundle,
   putDownload,
+  type DownloadBundlePayload,
   type DownloadEventSnapshot,
+  type DownloadPosterPayload,
   type DownloadRecord,
   type DownloadRecordingSnapshot,
-} from "./downloads-db";
+} from './downloads-db';
 
-const logger = createClientLogger("downloads");
-const QUEUE_LOCK_NAME = "besedy-downloads-queue";
-const CHANNEL_NAME = "besedy-downloads";
-const PERSIST_REQUESTED_KEY = "besedy-storage-persist-requested";
-const STATIC_FETCH_CONCURRENCY = 4;
+const logger = createClientLogger('downloads');
+const QUEUE_LOCK_NAME = 'besedy-downloads-queue';
+const DOWNLOAD_LOCK_PREFIX = 'besedy-download:';
+const CHANNEL_NAME = 'besedy-downloads';
+const PERSIST_REQUESTED_KEY = 'besedy-storage-persist-requested';
 
 // ---------------------------------------------------------------------------
 // Server response shapes (only the fields the manager reads)
@@ -132,21 +137,22 @@ export class DownloadHttpError extends Error {
 
   constructor(url: string, status: number) {
     super(`HTTP ${status} for ${url}`);
-    this.name = "DownloadHttpError";
+    this.name = 'DownloadHttpError';
     this.status = status;
     this.url = url;
   }
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 /** A dropped connection, as opposed to a server verdict. */
 export function isNetworkError(error: unknown): boolean {
   if (error instanceof DownloadHttpError) return false;
   if (isAbortError(error)) return false;
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false)
+    return true;
   return error instanceof TypeError;
 }
 
@@ -154,57 +160,60 @@ export function isNetworkError(error: unknown): boolean {
 // Cache helpers
 // ---------------------------------------------------------------------------
 
-function cachedAtHeaders(contentType: string): HeadersInit {
-  return {
-    "content-type": contentType,
-    [CACHED_AT_HEADER]: String(Date.now()),
-  };
-}
-
-async function storeResponse(cache: Cache, url: string, response: Response): Promise<void> {
-  // Re-materialize the body so Vary/Set-Cookie headers do not affect matching.
-  const body = await response.arrayBuffer();
-  const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-  await cache.put(url, new Response(body, { status: 200, headers: cachedAtHeaders(contentType) }));
-}
-
-async function fetchAndStore(cache: Cache, url: string, signal: AbortSignal): Promise<Response> {
-  const response = await fetch(url, { credentials: "include", cache: "no-store", signal });
+async function fetchResponse(
+  url: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  const response = await fetch(url, {
+    credentials: 'include',
+    cache: 'no-store',
+    signal,
+  });
   if (!response.ok) {
     throw new DownloadHttpError(url, response.status);
   }
-  await storeResponse(cache, url, response.clone());
   return response;
 }
 
-async function fetchJsonAndStore<T>(cache: Cache, url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetchAndStore(cache, url, signal);
+async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
+  const response = await fetchResponse(url, signal);
   return (await response.json()) as T;
 }
 
-/** Like fetchJsonAndStore but treats server errors as "not available". */
-async function tryFetchJsonAndStore<T>(
-  cache: Cache,
+/** Like fetchJson but treats server verdicts as "not available". */
+async function tryFetchJson<T>(
   url: string,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<T | null> {
   try {
-    return await fetchJsonAndStore<T>(cache, url, signal);
+    return await fetchJson<T>(url, signal);
   } catch (error) {
     if (isAbortError(error) || isNetworkError(error)) throw error;
-    logger.debug("Optional resource unavailable", { url, error });
+    logger.debug('Optional resource unavailable', { url, error });
     return null;
   }
 }
 
-async function tryFetchAndStore(cache: Cache, url: string, signal: AbortSignal): Promise<boolean> {
+async function tryFetchPoster(
+  url: string,
+  variant: DownloadPosterPayload['variant'],
+  signal: AbortSignal,
+): Promise<DownloadPosterPayload | null> {
   try {
-    await fetchAndStore(cache, url, signal);
-    return true;
+    const response = await fetchResponse(url, signal);
+    const blob = await response.blob();
+    return {
+      blob,
+      contentType:
+        response.headers.get('content-type') ??
+        blob.type ??
+        'application/octet-stream',
+      variant,
+    };
   } catch (error) {
     if (isAbortError(error) || isNetworkError(error)) throw error;
-    logger.debug("Optional resource unavailable", { url, error });
-    return false;
+    logger.debug('Optional resource unavailable', { url, error });
+    return null;
   }
 }
 
@@ -222,17 +231,17 @@ async function fetchRangeChunk(
   url: string,
   start: number,
   end: number,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<RangeChunk> {
   const response = await fetch(url, {
-    credentials: "include",
-    cache: "no-store",
+    credentials: 'include',
+    cache: 'no-store',
     headers: { Range: `bytes=${start}-${end}` },
     signal,
   });
 
   if (response.status === 206) {
-    const contentRange = response.headers.get("content-range") ?? "";
+    const contentRange = response.headers.get('content-range') ?? '';
     const match = contentRange.match(/\/(\d+)$/);
     const totalSize = match ? Number.parseInt(match[1], 10) : Number.NaN;
     if (!Number.isFinite(totalSize) || totalSize <= 0) {
@@ -241,7 +250,7 @@ async function fetchRangeChunk(
     return {
       bytes: await response.arrayBuffer(),
       totalSize,
-      contentType: response.headers.get("content-type") ?? "audio/webm",
+      contentType: response.headers.get('content-type') ?? 'audio/webm',
     };
   }
 
@@ -255,14 +264,18 @@ async function fetchRangeChunk(
     return {
       bytes,
       totalSize: bytes.byteLength,
-      contentType: response.headers.get("content-type") ?? "audio/webm",
+      contentType: response.headers.get('content-type') ?? 'audio/webm',
     };
   }
 
   throw new DownloadHttpError(url, response.status);
 }
 
-async function hasAllChunks(cache: Cache, cacheKey: string, meta: AudioCacheMeta): Promise<boolean> {
+async function hasAllChunks(
+  cache: Cache,
+  cacheKey: string,
+  meta: AudioCacheMeta,
+): Promise<boolean> {
   for (let index = 0; index < meta.chunkSizes.length; index += 1) {
     const chunk = await cache.match(getAudioChunkKey(cacheKey, index));
     if (!chunk) return false;
@@ -289,17 +302,26 @@ export async function downloadAudioChunks(options: {
   const { cache, url, cacheKey, signal, onProgress } = options;
 
   let meta = await readAudioCacheMeta(cache, cacheKey);
-  if (meta && (meta.chunkSizes.length === 0 || !(await hasAllChunks(cache, cacheKey, meta)))) {
+  if (
+    meta &&
+    (meta.chunkSizes.length === 0 ||
+      !(await hasAllChunks(cache, cacheKey, meta)))
+  ) {
     meta = null;
   }
   if (!meta) {
     await deleteAudioCacheEntries(cache, cacheKey);
   }
 
-  let bytesLoaded = meta ? meta.chunkSizes.reduce((sum, size) => sum + size, 0) : 0;
+  let bytesLoaded = meta
+    ? meta.chunkSizes.reduce((sum, size) => sum + size, 0)
+    : 0;
 
   if (meta && meta.complete && bytesLoaded >= meta.totalSize) {
-    await onProgress({ bytesLoaded: meta.totalSize, totalBytes: meta.totalSize });
+    await onProgress({
+      bytesLoaded: meta.totalSize,
+      totalBytes: meta.totalSize,
+    });
     return meta.totalSize;
   }
 
@@ -307,7 +329,9 @@ export async function downloadAudioChunks(options: {
     const first = await fetchRangeChunk(url, 0, AUDIO_CHUNK_SIZE - 1, signal);
     await cache.put(
       getAudioChunkKey(cacheKey, 0),
-      new Response(first.bytes, { headers: { "Content-Type": "application/octet-stream" } })
+      new Response(first.bytes, {
+        headers: { 'Content-Type': 'application/octet-stream' },
+      }),
     );
     bytesLoaded = first.bytes.byteLength;
     meta = {
@@ -323,7 +347,7 @@ export async function downloadAudioChunks(options: {
 
   while (bytesLoaded < meta.totalSize) {
     if (signal.aborted) {
-      throw new DOMException("Download aborted", "AbortError");
+      throw new DOMException('Download aborted', 'AbortError');
     }
     const start = bytesLoaded;
     const end = Math.min(start + AUDIO_CHUNK_SIZE - 1, meta.totalSize - 1);
@@ -337,7 +361,9 @@ export async function downloadAudioChunks(options: {
     const chunkIndex: number = meta.chunkSizes.length;
     await cache.put(
       getAudioChunkKey(cacheKey, chunkIndex),
-      new Response(chunk.bytes, { headers: { "Content-Type": "application/octet-stream" } })
+      new Response(chunk.bytes, {
+        headers: { 'Content-Type': 'application/octet-stream' },
+      }),
     );
     bytesLoaded += chunk.bytes.byteLength;
     meta = {
@@ -351,101 +377,6 @@ export async function downloadAudioChunks(options: {
   }
 
   return meta.totalSize;
-}
-
-// ---------------------------------------------------------------------------
-// Page shell + static assets
-// ---------------------------------------------------------------------------
-
-const STATIC_PREFIXED_PATTERN = /\/_next\/static\/[A-Za-z0-9_./%-]+/g;
-const STATIC_BARE_PATTERN = /(?<![A-Za-z0-9_/])static\/(?:chunks|css|media)\/[A-Za-z0-9_./%-]+\.(?:js|css|woff2?|ttf|otf|png|svg|ico)/g;
-const CSS_URL_PATTERN = /url\((["']?)(\/_next\/static\/[^)"']+)\1\)/g;
-
-/** Collect every build asset URL referenced by an HTML document. */
-export function collectStaticAssetUrls(html: string): string[] {
-  const unescaped = html.replace(/\\\//g, "/");
-  const urls = new Set<string>();
-  for (const match of unescaped.match(STATIC_PREFIXED_PATTERN) ?? []) {
-    urls.add(match);
-  }
-  for (const match of unescaped.match(STATIC_BARE_PATTERN) ?? []) {
-    urls.add(`/_next/${match}`);
-  }
-  return Array.from(urls);
-}
-
-export function collectCssAssetUrls(css: string): string[] {
-  const urls = new Set<string>();
-  for (const match of css.matchAll(CSS_URL_PATTERN)) {
-    urls.add(match[2]);
-  }
-  return Array.from(urls);
-}
-
-async function runWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<void>
-): Promise<void> {
-  const queue = [...items];
-  const runners = Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    while (queue.length > 0) {
-      const item = queue.shift();
-      if (item === undefined) return;
-      await worker(item);
-    }
-  });
-  await Promise.all(runners);
-}
-
-async function cacheStaticAssets(urls: string[], signal: AbortSignal): Promise<void> {
-  if (urls.length === 0) return;
-  const cache = await caches.open(OFFLINE_CACHE_NAMES.static);
-  const discoveredCss: string[] = [];
-
-  await runWithConcurrency(urls, STATIC_FETCH_CONCURRENCY, async (url) => {
-    if (await cache.match(url)) return;
-    try {
-      const response = await fetch(url, { credentials: "same-origin", signal });
-      if (!response.ok) return;
-      if (url.endsWith(".css")) {
-        const css = await response.clone().text();
-        discoveredCss.push(...collectCssAssetUrls(css));
-      }
-      await cache.put(url, response);
-    } catch (error) {
-      if (isAbortError(error) || isNetworkError(error)) throw error;
-      logger.debug("Static asset skipped", { url, error });
-    }
-  });
-
-  const remaining = discoveredCss.filter((url) => !urls.includes(url));
-  if (remaining.length > 0) {
-    await cacheStaticAssets(remaining, signal);
-  }
-}
-
-/**
- * Store a page's HTML by pathname and prefetch the build assets it references,
- * so the worker can serve the page offline even if it was never visited.
- */
-export async function cachePage(pathname: string, signal: AbortSignal): Promise<boolean> {
-  const response = await fetch(pathname, {
-    credentials: "include",
-    cache: "no-store",
-    redirect: "follow",
-    headers: { accept: "text/html" },
-    signal,
-  });
-  if (!response.ok || response.redirected) return false;
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/html")) return false;
-
-  const html = await response.text();
-  const shell = await caches.open(OFFLINE_CACHE_NAMES.shell);
-  await shell.put(pathname, new Response(html, { headers: cachedAtHeaders(contentType) }));
-  await cacheStaticAssets(collectStaticAssetUrls(html), signal);
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -466,7 +397,7 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
 
 function snapshotEventRecording(
   recording: EventRecordingResponse,
-  event: EventDetailResponse
+  event: EventDetailResponse,
 ): DownloadRecordingSnapshot {
   return {
     title: recording.title,
@@ -479,7 +410,9 @@ function snapshotEventRecording(
   };
 }
 
-function snapshotEntryRecording(entry: EntryResponse["entry"]): DownloadRecordingSnapshot {
+function snapshotEntryRecording(
+  entry: EntryResponse['entry'],
+): DownloadRecordingSnapshot {
   return {
     title: entry.curatedTitle ?? entry.title ?? null,
     artist: entry.curatedArtist ?? entry.artist ?? null,
@@ -526,10 +459,10 @@ export interface EnqueueEventInput {
 
 export function isDownloadSupported(): boolean {
   return (
-    typeof window !== "undefined" &&
-    "caches" in window &&
+    typeof window !== 'undefined' &&
+    'caches' in window &&
     isIndexedDBAvailable() &&
-    typeof fetch === "function"
+    typeof fetch === 'function'
   );
 }
 
@@ -542,6 +475,8 @@ const SERVER_SNAPSHOT: DownloadManagerSnapshot = {
 };
 
 type Listener = () => void;
+type DownloadChannelMessage =
+  { type: 'changed' } | { type: 'abort'; key: string };
 
 class DownloadManager {
   private listeners = new Set<Listener>();
@@ -573,7 +508,7 @@ class DownloadManager {
   hydrate(): Promise<void> {
     if (!this.hydratePromise) {
       this.hydratePromise = this.doHydrate().catch((error) => {
-        logger.error("Failed to load downloads", { error });
+        logger.error('Failed to load downloads', { error });
         this.hydratePromise = null;
         this.publish({ hydrated: true });
       });
@@ -586,18 +521,23 @@ class DownloadManager {
       this.publish({ supported: false, hydrated: true });
       return;
     }
-    this.online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
+    this.online =
+      typeof navigator === 'undefined' ? true : navigator.onLine !== false;
     this.openChannel();
 
     const stored = await listDownloads();
     this.records.clear();
+    const recovered: DownloadRecord[] = [];
     for (const record of stored) {
       // A download that was in flight when the page closed is simply queued again.
-      this.records.set(
-        record.key,
-        record.status === "downloading" ? { ...record, status: "queued" } : record
-      );
+      const next =
+        record.status === 'downloading'
+          ? { ...record, status: 'queued' as const }
+          : record;
+      this.records.set(record.key, next);
+      if (next !== record) recovered.push(next);
     }
+    await Promise.all(recovered.map((record) => putDownload(record)));
     this.publish({ supported: true, hydrated: true });
     void this.refreshStorageEstimate();
     void this.processQueue();
@@ -613,7 +553,7 @@ class DownloadManager {
     if (this.online === online) return;
     this.online = online;
     if (online) {
-      void this.processQueue();
+      void this.resumeInterruptedDownloads();
     }
   }
 
@@ -621,17 +561,24 @@ class DownloadManager {
     return this.records.get(makeDownloadKey(catalogId, hash));
   }
 
-  findEventRecord(catalogId: string, eventId: number): DownloadRecord | undefined {
+  findEventRecord(
+    catalogId: string,
+    eventId: number,
+  ): DownloadRecord | undefined {
     const eventKey = makeEventKey(catalogId, eventId);
-    return Array.from(this.records.values()).find((record) => record.eventKey === eventKey);
+    return Array.from(this.records.values()).find(
+      (record) => record.eventKey === eventKey,
+    );
   }
 
-  async enqueueRecording(input: EnqueueRecordingInput): Promise<DownloadRecord> {
+  async enqueueRecording(
+    input: EnqueueRecordingInput,
+  ): Promise<DownloadRecord> {
     await this.hydrate();
     const key = makeDownloadKey(input.catalogId, input.hash);
     const existing = this.records.get(key);
     if (existing) {
-      if (existing.status === "paused" || existing.status === "error") {
+      if (existing.status === 'paused' || existing.status === 'error') {
         await this.resume(key);
       }
       return this.records.get(key) ?? existing;
@@ -644,16 +591,19 @@ class DownloadManager {
       catalogId: input.catalogId,
       hash: input.hash,
       userId: this.userId,
-      eventKey: input.event ? makeEventKey(input.catalogId, input.event.id) : null,
+      eventKey: input.event
+        ? makeEventKey(input.catalogId, input.event.id)
+        : null,
       event: input.event ?? null,
       recording: input.recording ?? null,
       audioUrl: null,
       audioCacheKey: null,
-      status: "queued",
+      status: 'queued',
       progress: 0,
       bytesLoaded: 0,
       totalBytes: 0,
       error: null,
+      resumeOnReconnect: false,
       transcriptBackend: null,
       hasPoster: false,
       createdAt: now,
@@ -669,25 +619,25 @@ class DownloadManager {
     await this.hydrate();
     const existing = this.findEventRecord(input.catalogId, input.eventId);
     if (existing) {
-      if (existing.status === "paused" || existing.status === "error") {
+      if (existing.status === 'paused' || existing.status === 'error') {
         await this.resume(existing.key);
       }
       return this.records.get(existing.key) ?? existing;
     }
 
-    const dataCache = await caches.open(OFFLINE_CACHE_NAMES.data);
     const controller = new AbortController();
-    const event = await fetchJsonAndStore<EventDetailResponse>(
-      dataCache,
+    const event = await fetchJson<EventDetailResponse>(
       buildEventDetailUrl(input.catalogId, input.eventId),
-      controller.signal
+      controller.signal,
     );
     const recording =
-      (input.hash ? event.recordings.find((item) => item.audioHash === input.hash) : undefined) ??
+      (input.hash
+        ? event.recordings.find((item) => item.audioHash === input.hash)
+        : undefined) ??
       event.recordings.find((item) => item.isPrimary) ??
       event.recordings[0];
     if (!recording) {
-      throw new Error("Event has no recordings to download");
+      throw new Error('Event has no recordings to download');
     }
 
     return this.enqueueRecording({
@@ -700,15 +650,30 @@ class DownloadManager {
 
   async pause(key: string): Promise<void> {
     const record = this.records.get(key);
-    if (!record || record.status === "complete") return;
-    await this.write({ ...record, status: "paused" });
+    if (!record || record.status === 'complete') return;
+    await this.write({
+      ...record,
+      status: 'paused',
+      resumeOnReconnect: false,
+    });
     this.controllers.get(key)?.abort();
+    this.broadcast({ type: 'abort', key });
   }
 
   async resume(key: string): Promise<void> {
     const record = this.records.get(key);
-    if (!record || record.status === "complete" || record.status === "downloading") return;
-    await this.write({ ...record, status: "queued", error: null });
+    if (
+      !record ||
+      record.status === 'complete' ||
+      record.status === 'downloading'
+    )
+      return;
+    await this.write({
+      ...record,
+      status: 'queued',
+      error: null,
+      resumeOnReconnect: false,
+    });
     void this.processQueue();
   }
 
@@ -716,17 +681,27 @@ class DownloadManager {
     const record = this.records.get(key);
     if (!record) return;
 
-    // Stop the job first and wait for it to unwind so no chunk lands after
-    // the cleanup below.
-    this.controllers.get(key)?.abort();
-    await this.jobs.get(key)?.catch(() => undefined);
+    if (record.status !== 'complete') {
+      await this.write({
+        ...record,
+        status: 'paused',
+        resumeOnReconnect: false,
+      });
+      this.controllers.get(key)?.abort();
+      this.broadcast({ type: 'abort', key });
+      await this.jobs.get(key)?.catch(() => undefined);
+    }
 
-    this.records.delete(key);
-    this.publish();
-    await deleteDownloadRecord(key).catch((error) => {
-      logger.warn("Failed to delete download record", { key, error });
+    // The tab running this key holds the same lock. Waiting here guarantees
+    // that its fetch has unwound before bytes and registry state are removed.
+    await this.withDownloadLock(key, async () => {
+      this.records.delete(key);
+      this.publish();
+      await deleteDownloadRecord(key).catch((error) => {
+        logger.warn('Failed to delete download record', { key, error });
+      });
+      await this.deleteBundle(record);
     });
-    await this.deleteBundle(record);
     this.broadcast();
     void this.refreshStorageEstimate();
   }
@@ -739,7 +714,8 @@ class DownloadManager {
   }
 
   async refreshStorageEstimate(): Promise<void> {
-    if (typeof navigator === "undefined" || !navigator.storage?.estimate) return;
+    if (typeof navigator === 'undefined' || !navigator.storage?.estimate)
+      return;
     try {
       const estimate = await navigator.storage.estimate();
       this.storage = {
@@ -752,23 +728,13 @@ class DownloadManager {
     }
   }
 
-  /** Cache the Downloads page so offline navigations can land there. */
-  async warmShell(): Promise<void> {
-    if (!isDownloadSupported() || !this.online) return;
-    try {
-      await cachePage(DOWNLOADS_PATH, new AbortController().signal);
-    } catch (error) {
-      logger.debug("Shell warm-up skipped", { error });
-    }
-  }
-
   // -- internals -----------------------------------------------------------
 
   private async requestPersistentStorage(): Promise<void> {
-    if (typeof navigator === "undefined" || !navigator.storage?.persist) return;
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) return;
     try {
-      if (window.localStorage.getItem(PERSIST_REQUESTED_KEY) === "1") return;
-      window.localStorage.setItem(PERSIST_REQUESTED_KEY, "1");
+      if (window.localStorage.getItem(PERSIST_REQUESTED_KEY) === '1') return;
+      window.localStorage.setItem(PERSIST_REQUESTED_KEY, '1');
       await navigator.storage.persist();
     } catch {
       // Best effort; the browser may refuse or storage may be unavailable.
@@ -776,18 +742,32 @@ class DownloadManager {
   }
 
   private openChannel(): void {
-    if (this.channel || typeof BroadcastChannel === "undefined") return;
+    if (this.channel || typeof BroadcastChannel === 'undefined') return;
     try {
       this.channel = new BroadcastChannel(CHANNEL_NAME);
-      this.channel.addEventListener("message", () => this.scheduleReload());
+      this.channel.addEventListener(
+        'message',
+        (event: MessageEvent<unknown>) => {
+          const message = event.data as Partial<DownloadChannelMessage> | null;
+          if (!message || typeof message !== 'object') return;
+          if (message.type === 'abort' && typeof message.key === 'string') {
+            this.controllers.get(message.key)?.abort();
+          }
+          if (message.type === 'changed' || message.type === 'abort') {
+            this.scheduleReload();
+          }
+        },
+      );
     } catch {
       this.channel = null;
     }
   }
 
-  private broadcast(): void {
+  private broadcast(
+    message: DownloadChannelMessage = { type: 'changed' },
+  ): void {
     try {
-      this.channel?.postMessage({ type: "changed" });
+      this.channel?.postMessage(message);
     } catch {
       // Ignore; other tabs will catch up on their next hydrate.
     }
@@ -818,7 +798,7 @@ class DownloadManager {
       this.publish();
       void this.processQueue();
     } catch (error) {
-      logger.warn("Failed to reload downloads", { error });
+      logger.warn('Failed to reload downloads', { error });
     }
   }
 
@@ -830,7 +810,10 @@ class DownloadManager {
     this.broadcast();
   }
 
-  private async update(key: string, patch: Partial<DownloadRecord>): Promise<DownloadRecord | null> {
+  private async update(
+    key: string,
+    patch: Partial<DownloadRecord>,
+  ): Promise<DownloadRecord | null> {
     const current = this.records.get(key);
     if (!current) return null;
     const next = { ...current, ...patch };
@@ -838,9 +821,18 @@ class DownloadManager {
     return next;
   }
 
-  private publish(patch: Partial<Pick<DownloadManagerSnapshot, "supported" | "hydrated">> = {}): void {
+  private publish(
+    patch: Partial<
+      Pick<DownloadManagerSnapshot, 'supported' | 'hydrated'>
+    > = {},
+  ): void {
     const visible = Array.from(this.records.values())
-      .filter((record) => record.userId === null || this.userId === null || record.userId === this.userId)
+      .filter(
+        (record) =>
+          record.userId === null ||
+          this.userId === null ||
+          record.userId === this.userId,
+      )
       .sort((a, b) => b.createdAt - a.createdAt);
     this.snapshot = {
       supported: patch.supported ?? this.snapshot.supported,
@@ -856,8 +848,22 @@ class DownloadManager {
 
   private nextQueued(): DownloadRecord | undefined {
     return Array.from(this.records.values())
-      .filter((record) => record.status === "queued")
+      .filter((record) => record.status === 'queued')
       .sort((a, b) => a.createdAt - b.createdAt)[0];
+  }
+
+  private async resumeInterruptedDownloads(): Promise<void> {
+    const interrupted = Array.from(this.records.values()).filter(
+      (record) => record.status === 'paused' && record.resumeOnReconnect,
+    );
+    for (const record of interrupted) {
+      await this.write({
+        ...record,
+        status: 'queued',
+        resumeOnReconnect: false,
+      });
+    }
+    await this.processQueue();
   }
 
   private async processQueue(): Promise<void> {
@@ -866,14 +872,26 @@ class DownloadManager {
     this.processing = true;
     try {
       await this.withQueueLock(async () => {
-        for (let next = this.nextQueued(); next && this.online; next = this.nextQueued()) {
-          const job = this.runJob(next.key);
-          this.jobs.set(next.key, job);
-          try {
-            await job;
-          } finally {
-            this.jobs.delete(next.key);
-          }
+        for (
+          let next = this.nextQueued();
+          next && this.online;
+          next = this.nextQueued()
+        ) {
+          await this.withDownloadLock(next.key, async () => {
+            const persisted = await getDownload(next.key);
+            if (!persisted || persisted.status !== 'queued') {
+              await this.reloadFromDatabase();
+              return;
+            }
+            this.records.set(next.key, persisted);
+            const job = this.runJob(next.key);
+            this.jobs.set(next.key, job);
+            try {
+              await job;
+            } finally {
+              this.jobs.delete(next.key);
+            }
+          });
         }
       });
     } finally {
@@ -882,14 +900,34 @@ class DownloadManager {
   }
 
   private async withQueueLock(work: () => Promise<void>): Promise<void> {
-    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+    const locks =
+      typeof navigator !== 'undefined' ? navigator.locks : undefined;
     if (!locks) {
       await work();
       return;
     }
-    await locks.request(QUEUE_LOCK_NAME, { ifAvailable: true }, async (lock) => {
-      // Another tab owns the queue; it will pick up our records via the channel.
-      if (!lock) return;
+    await locks.request(
+      QUEUE_LOCK_NAME,
+      { ifAvailable: true },
+      async (lock) => {
+        // Another tab owns the queue; it will pick up our records via the channel.
+        if (!lock) return;
+        await work();
+      },
+    );
+  }
+
+  private async withDownloadLock(
+    key: string,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    const locks =
+      typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    if (!locks) {
+      await work();
+      return;
+    }
+    await locks.request(`${DOWNLOAD_LOCK_PREFIX}${key}`, async () => {
       await work();
     });
   }
@@ -901,38 +939,48 @@ class DownloadManager {
     this.activeKey = key;
 
     try {
-      const started = await this.update(key, { status: "downloading", error: null });
+      const started = await this.update(key, {
+        status: 'downloading',
+        error: null,
+        resumeOnReconnect: false,
+      });
       if (!started) return;
 
-      const dataCache = await caches.open(OFFLINE_CACHE_NAMES.data);
       const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
       const { catalogId, hash } = started;
 
-      const entry = await fetchJsonAndStore<EntryResponse>(
-        dataCache,
+      const entry = await fetchJson<EntryResponse>(
         buildRecordingEntryUrl(catalogId, hash),
-        signal
+        signal,
       );
-      const sources = await tryFetchJsonAndStore<SourcesResponse>(
-        dataCache,
+      const sources = await tryFetchJson<SourcesResponse>(
         buildAudioSourcesUrl(catalogId, hash),
-        signal
+        signal,
       );
-      const preference = await tryFetchJsonAndStore<PreferenceResponse>(
-        dataCache,
+      const preference = await tryFetchJson<PreferenceResponse>(
         buildAudioSourcePreferenceUrl(catalogId, hash),
-        signal
+        signal,
       );
-      await tryFetchJsonAndStore(dataCache, buildPlaybackProgressUrl(catalogId, hash), signal);
 
       const availableSources = sources?.sources ?? [];
       const preferredSource =
-        preference?.sourceId && availableSources.some((source) => source.id === preference.sourceId)
+        preference?.sourceId &&
+        availableSources.some((source) => source.id === preference.sourceId)
           ? preference.sourceId
           : null;
-      const audioSource = preferredSource ?? sources?.defaultSource ?? "archived";
-      const audioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
+      const audioSource =
+        preferredSource ?? sources?.defaultSource ?? 'archived';
+      const audioUrl = buildAudioUrl(
+        catalogId,
+        hash,
+        audioSource,
+        availableSources,
+      );
       const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
+
+      if (started.audioCacheKey && started.audioCacheKey !== audioCacheKey) {
+        await deleteAudioCacheEntries(audioCache, started.audioCacheKey);
+      }
 
       await this.update(key, {
         audioUrl,
@@ -956,30 +1004,44 @@ class DownloadManager {
       });
 
       let transcriptBackend: string | null = null;
+      let transcript: Transcript | null = null;
+      let diarization: Diarization | null = null;
       if (entry.canViewTranscripts) {
-        transcriptBackend = await this.cacheTranscriptBundle(dataCache, catalogId, hash, signal);
+        const transcriptPayload = await this.downloadTranscriptBundle(
+          catalogId,
+          hash,
+          signal,
+        );
+        transcriptBackend = transcriptPayload.transcriptBackend;
+        transcript = transcriptPayload.transcript;
+        diarization = transcriptPayload.diarization;
       }
 
-      let hasPoster = false;
+      let poster: DownloadPosterPayload | null = null;
       if (started.event) {
-        hasPoster = await this.cacheEventBundle(dataCache, catalogId, started.event.id, signal);
-        await cachePage(buildEventPagePath(catalogId, started.event.id), signal).catch((error) => {
-          if (isAbortError(error) || isNetworkError(error)) throw error;
-          logger.debug("Event page not cached", { error });
-        });
-      } else {
-        await cachePage(buildRecordingPagePath(catalogId, hash), signal).catch((error) => {
-          if (isAbortError(error) || isNetworkError(error)) throw error;
-          logger.debug("Recording page not cached", { error });
-        });
+        poster = await this.downloadEventPoster(
+          catalogId,
+          started.event.id,
+          signal,
+        );
       }
+
+      await putDownloadBundle({
+        key,
+        transcriptBackend,
+        transcript,
+        diarization,
+        poster,
+        updatedAt: Date.now(),
+      });
 
       await this.update(key, {
-        status: "complete",
+        status: 'complete',
         progress: 100,
         error: null,
+        resumeOnReconnect: false,
         transcriptBackend,
-        hasPoster,
+        hasPoster: poster !== null,
         completedAt: Date.now(),
       });
     } catch (error) {
@@ -988,12 +1050,16 @@ class DownloadManager {
         return;
       }
       if (isNetworkError(error)) {
-        logger.info("Download paused by network loss", { key });
-        await this.update(key, { status: "paused", error: null });
+        logger.info('Download paused by network loss', { key });
+        await this.update(key, {
+          status: 'paused',
+          error: null,
+          resumeOnReconnect: true,
+        });
       } else {
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn("Download failed", { key, error });
-        await this.update(key, { status: "error", error: message });
+        logger.warn('Download failed', { key, error });
+        await this.update(key, { status: 'error', error: message });
       }
     } finally {
       this.controllers.delete(key);
@@ -1005,69 +1071,96 @@ class DownloadManager {
     }
   }
 
-  private async cacheTranscriptBundle(
-    dataCache: Cache,
+  private async downloadTranscriptBundle(
     catalogId: string,
     hash: string,
-    signal: AbortSignal
-  ): Promise<string | null> {
-    const backends = await tryFetchJsonAndStore<TranscriptBackendsResponse>(
-      dataCache,
-      buildTranscriptBackendsUrl(hash, catalogId),
-      signal
-    );
+    signal: AbortSignal,
+  ): Promise<
+    Pick<
+      DownloadBundlePayload,
+      'transcriptBackend' | 'transcript' | 'diarization'
+    >
+  > {
+    const [backends, diarizations] = await Promise.all([
+      tryFetchJson<TranscriptBackendsResponse>(
+        buildTranscriptBackendsUrl(hash, catalogId),
+        signal,
+      ),
+      tryFetchJson<DiarizationBackendsResponse>(
+        buildDiarizationBackendsUrl(hash, catalogId),
+        signal,
+      ),
+    ]);
     const backend = backends?.backends[0];
-    if (!backend) return null;
-
-    await tryFetchAndStore(dataCache, buildTranscriptUrl(hash, catalogId, backend), signal);
-    await tryFetchAndStore(dataCache, buildTranscriptFormatsUrl(hash, catalogId, backend), signal);
-
-    const diarizations = await tryFetchJsonAndStore<DiarizationBackendsResponse>(
-      dataCache,
-      buildDiarizationBackendsUrl(hash, catalogId),
-      signal
-    );
-    const diarizationBackend = diarizations?.backends.includes("pyannote")
-      ? "pyannote"
-      : diarizations?.backends[0];
-    if (diarizationBackend) {
-      await tryFetchAndStore(dataCache, buildDiarizationUrl(hash, catalogId, diarizationBackend), signal);
+    if (!backend) {
+      return { transcriptBackend: null, transcript: null, diarization: null };
     }
-    return backend;
+
+    const diarizationBackend = diarizations?.backends.includes('pyannote')
+      ? 'pyannote'
+      : diarizations?.backends[0];
+    const [transcript, diarization] = await Promise.all([
+      tryFetchJson<Transcript>(
+        buildTranscriptUrl(hash, catalogId, backend),
+        signal,
+      ),
+      diarizationBackend
+        ? tryFetchJson<Diarization>(
+            buildDiarizationUrl(hash, catalogId, diarizationBackend),
+            signal,
+          )
+        : Promise.resolve(null),
+    ]);
+    return {
+      transcriptBackend: transcript ? backend : null,
+      transcript,
+      diarization,
+    };
   }
 
-  private async cacheEventBundle(
-    dataCache: Cache,
+  private async downloadEventPoster(
     catalogId: string,
     eventId: number,
-    signal: AbortSignal
-  ): Promise<boolean> {
-    const event = await fetchJsonAndStore<EventDetailResponse>(
-      dataCache,
+    signal: AbortSignal,
+  ): Promise<DownloadPosterPayload | null> {
+    const event = await fetchJson<EventDetailResponse>(
       buildEventDetailUrl(catalogId, eventId),
-      signal
+      signal,
     );
-    const portraitExists = event.posterFiles?.portrait.exists ?? event.posterStatus?.portrait ?? false;
+    const portraitExists =
+      event.posterFiles?.portrait.exists ??
+      event.posterStatus?.portrait ??
+      false;
     const landscapeExists =
-      event.posterFiles?.landscape.exists ?? event.posterStatus?.landscape ?? false;
-    let hasPoster = false;
-    if (portraitExists) {
-      hasPoster =
-        (await tryFetchAndStore(
-          dataCache,
-          buildEventPosterUrl(catalogId, eventId, "portrait", event.posterFiles?.portrait.uploadedAt),
-          signal
-        )) || hasPoster;
-    }
+      event.posterFiles?.landscape.exists ??
+      event.posterStatus?.landscape ??
+      false;
     if (landscapeExists) {
-      hasPoster =
-        (await tryFetchAndStore(
-          dataCache,
-          buildEventPosterUrl(catalogId, eventId, "landscape", event.posterFiles?.landscape.uploadedAt),
-          signal
-        )) || hasPoster;
+      const landscape = await tryFetchPoster(
+        buildEventPosterUrl(
+          catalogId,
+          eventId,
+          'landscape',
+          event.posterFiles?.landscape.uploadedAt,
+        ),
+        'landscape',
+        signal,
+      );
+      if (landscape) return landscape;
     }
-    return hasPoster;
+    if (portraitExists) {
+      return tryFetchPoster(
+        buildEventPosterUrl(
+          catalogId,
+          eventId,
+          'portrait',
+          event.posterFiles?.portrait.uploadedAt,
+        ),
+        'portrait',
+        signal,
+      );
+    }
+    return null;
   }
 
   private async deleteBundle(record: DownloadRecord): Promise<void> {
@@ -1077,39 +1170,13 @@ class DownloadManager {
         await deleteAudioCacheEntries(audioCache, record.audioCacheKey);
       }
 
-      const dataCache = await caches.open(OFFLINE_CACHE_NAMES.data);
-      const shellCache = await caches.open(OFFLINE_CACHE_NAMES.shell);
-      const dataKeys = await dataCache.keys();
-      await Promise.all(
-        dataKeys
-          .filter((request) => request.url.includes(record.hash))
-          .map((request) => dataCache.delete(request))
-      );
-      await shellCache.delete(buildRecordingPagePath(record.catalogId, record.hash));
-
-      if (record.event && record.eventKey) {
-        const stillReferenced = Array.from(this.records.values()).some(
-          (other) => other.eventKey === record.eventKey
-        );
-        if (!stillReferenced) {
-          const eventPattern = new RegExp(`/events/${record.event.id}(?:/|\\?|$)`);
-          await Promise.all(
-            dataKeys
-              .filter((request) => {
-                const pathname = new URL(request.url).pathname;
-                return pathname.includes(`/catalogs/${record.catalogId}/`) && eventPattern.test(request.url);
-              })
-              .map((request) => dataCache.delete(request))
-          );
-          await shellCache.delete(buildEventPagePath(record.catalogId, record.event.id));
-        }
-      }
+      await deleteDownloadBundle(record.key);
     } catch (error) {
-      logger.warn("Failed to delete download data", { key: record.key, error });
+      logger.warn('Failed to delete download data', { key: record.key, error });
     }
   }
 }
 
 export const downloadManager = new DownloadManager();
 
-export type { DownloadRecord, DownloadStatus } from "./downloads-db";
+export type { DownloadRecord, DownloadStatus } from './downloads-db';

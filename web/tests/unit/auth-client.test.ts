@@ -178,6 +178,8 @@ describe("auth client", () => {
       "besedy-data-v1",
       "besedy-shell-v1",
       "besedy-static-v1",
+      "besedy-offline-shell-v1",
+      "besedy-offline-static-v1",
       "unrelated-cache",
     ]);
     const del = vi.fn().mockResolvedValue(true);
@@ -211,7 +213,9 @@ describe("auth client", () => {
     expect(del).toHaveBeenCalledWith("besedy-audio-v5");
     expect(del).toHaveBeenCalledWith("besedy-data-v1");
     expect(del).toHaveBeenCalledWith("besedy-shell-v1");
+    expect(del).toHaveBeenCalledWith("besedy-offline-shell-v1");
     expect(del).not.toHaveBeenCalledWith("besedy-static-v1");
+    expect(del).not.toHaveBeenCalledWith("besedy-offline-static-v1");
     expect(del).not.toHaveBeenCalledWith("unrelated-cache");
     expect(postMessage).toHaveBeenCalledWith({ type: "signout" });
   });

@@ -1787,7 +1787,15 @@
     "unknownTitle": "Untitled recording",
     "eventLabel": "Event",
     "recordingLabel": "Recording",
-    "sessionLabel": "Session {index}"
+    "sessionLabel": "Session {index}",
+    "availableOffline": "Available offline",
+    "offlinePlayer": "Offline player",
+    "audioUnavailable": "The downloaded audio is unavailable. Remove this download and save it again while online.",
+    "transcript": "Transcript",
+    "noOfflineTranscript": "No transcript was stored with this download.",
+    "backToDownloads": "Back to downloads",
+    "detailUnavailable": "Download unavailable",
+    "detailUnavailableDescription": "This item is no longer stored on this device. Return to Downloads or save it again while online."
   },
   "errors": {
     "notFound": "Page not found",

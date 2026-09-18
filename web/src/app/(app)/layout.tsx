@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { getLocale, getMessages, getTimeZone } from "next-intl/server";
-import "./globals.css";
+import "../globals.css";
 import { AppProviders } from "@/components/app-providers";
 import { Header } from "@/components/header";
 import { GoogleTranslateWarning } from "@/components/google-translate-warning";

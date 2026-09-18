@@ -1,9 +1,8 @@
 /**
  * URL builders shared by the pages and the offline download manager.
  *
- * The service worker serves cached JSON by exact URL, so the request a page
- * makes and the request the download manager pre-caches must be the same
- * string, including query parameter order. Build every such URL here.
+ * Pages and the offline download manager share these builders so they request
+ * the same resource variants and audio cache keys.
  */
 
 export interface AudioSourceOption {

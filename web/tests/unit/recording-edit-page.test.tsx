@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import EditMetadataPage from "@/app/catalog/[catalogId]/recording/[hash]/edit/page";
+import EditMetadataPage from "@/app/(app)/catalog/[catalogId]/recording/[hash]/edit/page";
 
 const mocks = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {
@@ -27,7 +27,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 }));
 
 vi.mock(
-  "@/app/catalog/[catalogId]/recording/[hash]/edit/edit-metadata-content",
+  "@/app/(app)/catalog/[catalogId]/recording/[hash]/edit/edit-metadata-content",
   () => ({
     default: ({
       catalogId,

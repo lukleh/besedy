@@ -7,7 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, FolderOpen, Image as ImageIcon, Mic, Pencil } from "lucide-react";
-import RecordingContent from "@/app/catalog/[catalogId]/recording/[hash]/recording-content";
+import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildEventDetailUrl, buildEventPosterUrl } from "@/lib/api/recording-urls";

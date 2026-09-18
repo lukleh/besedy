@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import AuthCompleteClient from "@/app/auth/complete/auth-complete-client";
+import AuthCompleteClient from "@/app/(app)/auth/complete/auth-complete-client";
 import { getAuthCompletionStatus } from "@/lib/auth/client";
 
 const mocks = vi.hoisted(() => ({

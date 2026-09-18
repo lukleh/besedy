@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import RecordingContent from "@/app/catalog/[catalogId]/recording/[hash]/recording-content";
+import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
@@ -57,7 +57,7 @@ vi.mock("@/hooks/use-recording-entry", () => ({
   useRecordingEntry: (...args: unknown[]) => useRecordingEntryMock(...args),
 }));
 
-vi.mock("@/app/catalog/[catalogId]/recording/[hash]/use-recording-playback", () => ({
+vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback", () => ({
   useRecordingPlayback: (...args: unknown[]) => useRecordingPlaybackMock(...args),
 }));
 

@@ -345,11 +345,10 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
 Offline mode is documented in [offline.md](offline.md). In short: users
 download events or recordings from the page-side download manager
 (`lib/offline/download-manager.ts`), the registry lives in IndexedDB, and the
-service worker (`public/sw.js`) serves downloaded audio, cached JSON, and cached
-page HTML when the network is unavailable. Navigation and JSON requests stay
-network-first; React Query data is treated as stale immediately and refetched
-on mount, with the worker supplying the last stored response only when the
-fetch fails.
+service worker (`public/sw.js`) serves downloaded audio and the dedicated
+session-free `/downloads` shell when the network is unavailable. Normal
+application pages and API responses are not cached for offline use; failed
+offline navigations are redirected to the device-local Downloads library.
 
 Catalog staleness markers are unrelated to downloads: `useCatalogStatus`
 stores `lastModifiedAt` in `localStorage` to detect server-side changes while

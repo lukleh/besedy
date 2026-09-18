@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRecordingPlayback } from "@/app/catalog/[catalogId]/recording/[hash]/use-recording-playback";
+import { useRecordingPlayback } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback";
 
 const mocks = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
