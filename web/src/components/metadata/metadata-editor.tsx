@@ -96,9 +96,9 @@ export function MetadataEditor({ hash, source, groupId }: MetadataEditorProps) {
   const groupKey = groupId || "default";
 
   // Fetch enum data for dropdowns
-  const { data: recorders } = useRecorders();
-  const { data: locations } = useLocations();
-  const { data: albums } = useAlbums();
+  const { data: recorders } = useRecorders(groupId);
+  const { data: locations } = useLocations(groupId);
+  const { data: albums } = useAlbums(groupId);
 
   // Fetch curated metadata - use nested catalog path when groupId is available
   const { data: curated, isLoading } = useQuery<CuratedMetadata>({

@@ -26,16 +26,21 @@ const metadataEnumsSchema = z.array(metadataEnumSchema);
 const artistsSchema = z.array(z.string());
 const duplicateCountsSchema = z.array(z.number());
 
-/**
- * Fetch the list of recorders for metadata selection.
- * Returns empty array on error for graceful degradation.
- */
-export function useRecorders() {
-  return useQuery<MetadataRecorder[]>({
-    queryKey: ["metadata", "recorders"],
+type MetadataEnumResource = "recorders" | "locations" | "albums";
+type MetadataEnumItem = z.infer<typeof metadataEnumSchema>;
+
+function useMetadataEnumQuery(
+  resource: MetadataEnumResource,
+  groupId?: string
+) {
+  return useQuery<MetadataEnumItem[]>({
+    queryKey: ["metadata", resource, groupId],
     queryFn: async () => {
+      const params = new URLSearchParams();
+      if (groupId) params.set("group", groupId);
+      const url = `/api/metadata/${resource}${params.toString() ? `?${params}` : ""}`;
       try {
-        return await fetchJson<MetadataRecorder[]>("/api/metadata/recorders", {
+        return await fetchJson<MetadataEnumItem[]>(url, {
           schema: metadataEnumsSchema,
         });
       } catch {
@@ -46,22 +51,19 @@ export function useRecorders() {
 }
 
 /**
+ * Fetch the list of recorders for metadata selection.
+ * Returns empty array on error for graceful degradation.
+ */
+export function useRecorders(groupId?: string) {
+  return useMetadataEnumQuery("recorders", groupId);
+}
+
+/**
  * Fetch the list of locations for metadata selection.
  * Returns empty array on error for graceful degradation.
  */
-export function useLocations() {
-  return useQuery<MetadataLocation[]>({
-    queryKey: ["metadata", "locations"],
-    queryFn: async () => {
-      try {
-        return await fetchJson<MetadataLocation[]>("/api/metadata/locations", {
-          schema: metadataEnumsSchema,
-        });
-      } catch {
-        return [];
-      }
-    },
-  });
+export function useLocations(groupId?: string) {
+  return useMetadataEnumQuery("locations", groupId);
 }
 
 /**
@@ -93,19 +95,8 @@ export function useArtists(groupId?: string) {
  * Fetch the list of albums for metadata selection.
  * Returns empty array on error for graceful degradation.
  */
-export function useAlbums() {
-  return useQuery<MetadataAlbum[]>({
-    queryKey: ["metadata", "albums"],
-    queryFn: async () => {
-      try {
-        return await fetchJson<MetadataAlbum[]>("/api/metadata/albums", {
-          schema: metadataEnumsSchema,
-        });
-      } catch {
-        return [];
-      }
-    },
-  });
+export function useAlbums(groupId?: string) {
+  return useMetadataEnumQuery("albums", groupId);
 }
 
 /**
