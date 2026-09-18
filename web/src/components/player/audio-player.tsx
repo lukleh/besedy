@@ -62,7 +62,7 @@ import {
   safePlay,
 } from './audio-player-utils';
 import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
-import { useContentCache } from '@/hooks/use-content-cache';
+import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
 function resolvePlaybackEnd(value: number | undefined): number | null {
@@ -91,8 +91,9 @@ export function AudioPlayer({
     return extractRecordingHash(src);
   }, [src]);
 
-  // Cache status for buffer indicator (shows full ring when cached)
-  const { status: cacheStatus } = useContentCache(hash, src, catalogId ?? null);
+  // Download state drives the switch from network streaming to cached playback.
+  const downloadRecord = useDownloadRecord(catalogId ?? null, hash);
+  const cacheStatus = downloadRecord?.status ?? 'none';
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -741,8 +742,8 @@ export function AudioPlayer({
     updateDebugInfo,
   ]);
 
-  // Reload the audio element when caching completes so playback switches from
-  // the network stream to SW cache. If `src` changes before loadedmetadata
+  // Reload the audio element when a download completes so playback switches
+  // from the network stream to the service worker cache. If `src` changes before loadedmetadata
   // fires (e.g. user navigates to another recording), the cleanup removes the
   // restorePosition listener so we never apply the old position to the new
   // src.
@@ -753,7 +754,7 @@ export function AudioPlayer({
     const prevStatus = prevCacheStatusRef.current;
     prevCacheStatusRef.current = cacheStatus;
 
-    if (prevStatus !== 'caching' || cacheStatus !== 'cached') return;
+    if (prevStatus !== 'downloading' || cacheStatus !== 'complete') return;
 
     // Don't collide with a retry-in-flight. The retry effect already owns
     // the audio element and will call audio.load() itself; a second load()
@@ -939,12 +940,12 @@ export function AudioPlayer({
 
       <AudioPlayerChrome
         bufferInfo={bufferInfo}
-        cacheStatus={cacheStatus}
         catalogId={catalogId}
         currentTime={currentTime}
         duration={duration}
         hash={hash}
         isBuffering={isBuffering}
+        isDownloaded={cacheStatus === 'complete'}
         isMuted={isMuted}
         isPlaying={isPlaying}
         isReconnecting={isReconnecting}
@@ -956,7 +957,6 @@ export function AudioPlayer({
         onTogglePlay={togglePlay}
         onVolumeChange={handleVolumeChange}
         showDebug={showDebug}
-        src={src}
         volume={volume}
       />
 

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useRadioMode } from "@/contexts/radio-mode-context";
 import { useAudioPlayback } from "@/contexts/audio-playback-context";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildPlaybackProgressUrl } from "@/lib/api/recording-urls";
 import {
   getSavedPlaybackPosition,
   isPlaybackCompleted,
@@ -87,7 +88,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
       lastRequestRef.current = { signature, sentAt: now };
 
       void fetchJson(
-        `/api/catalogs/${catalogId}/recordings/${hash}/progress`,
+        buildPlaybackProgressUrl(catalogId, hash),
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -248,7 +249,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
 
     let cancelled = false;
     void fetchJson<RemotePlaybackProgressResponse>(
-      `/api/catalogs/${catalogId}/recordings/${hash}/progress`
+      buildPlaybackProgressUrl(catalogId, hash)
     )
       .then((response) => {
         if (

@@ -1,0 +1,342 @@
+/**
+ * @vitest-environment jsdom
+ */
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildAudioSourcesUrl,
+  buildEventDetailUrl,
+  buildEventPagePath,
+  buildRecordingEntryUrl,
+  buildTranscriptBackendsUrl,
+  buildTranscriptUrl,
+} from "@/lib/api/recording-urls";
+import { getAudioCacheKey, getAudioChunkKey, getAudioMetaKey } from "@/lib/offline/audio-cache-format";
+import { OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
+
+const HASH = "c".repeat(64);
+const OTHER_HASH = "d".repeat(64);
+const CATALOG = "20260101_000000";
+const CHUNK = 2 * 1024 * 1024;
+const AUDIO_SIZE = CHUNK * 2 + 1234;
+
+class MemoryCache {
+  store = new Map<string, Response>();
+
+  private key(request: RequestInfo | URL): string {
+    if (typeof request === "string") return new URL(request, window.location.origin).toString();
+    if (request instanceof URL) return request.toString();
+    return request.url;
+  }
+  async match(request: RequestInfo | URL) {
+    const hit = this.store.get(this.key(request));
+    return hit ? hit.clone() : undefined;
+  }
+  async put(request: RequestInfo | URL, response: Response) {
+    this.store.set(this.key(request), response);
+  }
+  async delete(request: RequestInfo | URL) {
+    return this.store.delete(this.key(request));
+  }
+  async keys() {
+    return Array.from(this.store.keys()).map((url) => new Request(url));
+  }
+}
+
+class MemoryCacheStorage {
+  caches = new Map<string, MemoryCache>();
+  async open(name: string) {
+    let cache = this.caches.get(name);
+    if (!cache) {
+      cache = new MemoryCache();
+      this.caches.set(name, cache);
+    }
+    return cache;
+  }
+  async keys() {
+    return Array.from(this.caches.keys());
+  }
+  async delete(name: string) {
+    return this.caches.delete(name);
+  }
+}
+
+interface FakeServerOptions {
+  /** Throw a network error when this byte offset is requested. */
+  failAtOffset?: number | null;
+  canViewTranscripts?: boolean;
+}
+
+function createFakeServer(options: FakeServerOptions = {}) {
+  const audio = new Uint8Array(AUDIO_SIZE);
+  for (let i = 0; i < audio.length; i += 1) audio[i] = i % 251;
+  const rangeRequests: string[] = [];
+  const state = { failAtOffset: options.failAtOffset ?? null };
+
+  const json = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, window.location.origin);
+    const pathname = url.pathname;
+
+    if (pathname === buildRecordingEntryUrl(CATALOG, HASH) || pathname === buildRecordingEntryUrl(CATALOG, OTHER_HASH)) {
+      return json({
+        entry: { hash: HASH, title: "Talk", artist: "Speaker", duration: "01:00:00" },
+        canViewTranscripts: options.canViewTranscripts ?? true,
+        canEditMetadata: false,
+        canDownload: true,
+      });
+    }
+    if (pathname.endsWith("/audio/sources")) {
+      return json({ hash: HASH, sources: [{ id: "archived", label: "Archived", type: "archived", available: true }], defaultSource: "archived" });
+    }
+    if (pathname === "/api/preferences/audio-source") {
+      return json({ hash: HASH, sourceId: null });
+    }
+    if (pathname.endsWith("/progress")) {
+      return json({ progress: null });
+    }
+    if (pathname.endsWith("/audio")) {
+      const range = new Headers(init?.headers).get("Range") ?? "";
+      rangeRequests.push(range);
+      const match = range.match(/bytes=(\d+)-(\d+)/);
+      const start = match ? Number(match[1]) : 0;
+      const end = match ? Math.min(Number(match[2]), AUDIO_SIZE - 1) : AUDIO_SIZE - 1;
+      if (state.failAtOffset !== null && start === state.failAtOffset) {
+        throw new TypeError("Failed to fetch");
+      }
+      return new Response(audio.slice(start, end + 1), {
+        status: 206,
+        headers: {
+          "content-type": "audio/webm",
+          "content-range": `bytes ${start}-${end}/${AUDIO_SIZE}`,
+        },
+      });
+    }
+    if (pathname.startsWith("/api/transcript/")) {
+      if (pathname.endsWith("/speakers")) return json({ hash: HASH, backends: [] });
+      if (pathname.endsWith("/formats")) return json({ hash: HASH, backend: "whisperx/large", formats: ["json"] });
+      if (url.searchParams.get("backend")) return json({ hash: HASH, backend: "whisperx/large", segments: [] });
+      return json({ hash: HASH, backends: ["whisperx/large"] });
+    }
+    if (pathname === buildEventDetailUrl(CATALOG, 7)) {
+      return json({
+        id: 7,
+        workflowGroupId: CATALOG,
+        title: "Evening talk",
+        location: { id: 1, name: "Prague" },
+        dateYear: 2026,
+        dateMonth: 5,
+        dateDay: 1,
+        sessionIndex: 1,
+        released: true,
+        recordings: [
+          { audioHash: OTHER_HASH, isPrimary: false, sortOrder: 1, title: "B", artist: null, durationHms: null, verified: true, recorder: null },
+          { audioHash: HASH, isPrimary: true, sortOrder: 0, title: "A", artist: null, durationHms: "01:00:00", verified: true, recorder: { id: 1, name: "Zoom" } },
+        ],
+        posterFiles: {
+          portrait: { exists: true, filename: "p.jpg", uploadedAt: "2026-05-01T00:00:00.000Z" },
+          landscape: { exists: false, filename: null },
+        },
+      });
+    }
+    if (pathname.endsWith("/poster")) {
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "image/jpeg" } });
+    }
+    if (pathname === buildEventPagePath(CATALOG, 7) || pathname.startsWith("/catalog/")) {
+      return new Response(
+        '<html><head><link rel="stylesheet" href="/_next/static/css/app.css"><script src="/_next/static/chunks/main.js"></script></head><body>ok</body></html>',
+        { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
+      );
+    }
+    if (pathname.startsWith("/_next/static/")) {
+      const body = pathname.endsWith(".css") ? "body{font-family:url(/_next/static/media/font.woff2)}" : "js";
+      return new Response(body, { status: 200 });
+    }
+    return new Response("not found", { status: 404 });
+  });
+
+  return { fetchMock, rangeRequests, state, audio };
+}
+
+async function loadManager() {
+  const mod = await import("@/lib/offline/download-manager");
+  return mod;
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 5000) {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+describe("download manager", () => {
+  let cacheStorage: MemoryCacheStorage;
+
+  beforeEach(() => {
+    vi.resetModules();
+    cacheStorage = new MemoryCacheStorage();
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    vi.stubGlobal("caches", cacheStorage);
+    // localStorage is a mock in tests/setup.ts; the manager tolerates that.
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("downloads a recording into the audio and data caches and marks it complete", async () => {
+    const server = createFakeServer();
+    vi.stubGlobal("fetch", server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+    downloadManager.setUserId("user-1");
+
+    const record = await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    expect(record.status).toBe("queued");
+
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "complete");
+    const done = downloadManager.getSnapshot().records[0];
+    expect(done.progress).toBe(100);
+    expect(done.totalBytes).toBe(AUDIO_SIZE);
+    expect(done.bytesLoaded).toBe(AUDIO_SIZE);
+    expect(done.transcriptBackend).toBe("whisperx/large");
+    expect(done.userId).toBe("user-1");
+    expect(done.recording?.title).toBe("Talk");
+
+    const audioCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+    const key = getAudioCacheKey(`/api/catalogs/${CATALOG}/recordings/${HASH}/audio`, window.location.origin);
+    const meta = await (await audioCache.match(getAudioMetaKey(key)))!.json();
+    expect(meta).toMatchObject({ totalSize: AUDIO_SIZE, chunkSizes: [CHUNK, CHUNK, 1234], complete: true });
+    const chunk2 = new Uint8Array(await (await audioCache.match(getAudioChunkKey(key, 2)))!.arrayBuffer());
+    expect(chunk2).toEqual(server.audio.slice(CHUNK * 2));
+    expect(server.rangeRequests).toEqual([
+      `bytes=0-${CHUNK - 1}`,
+      `bytes=${CHUNK}-${CHUNK * 2 - 1}`,
+      `bytes=${CHUNK * 2}-${AUDIO_SIZE - 1}`,
+    ]);
+
+    const dataCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.data);
+    for (const url of [
+      buildRecordingEntryUrl(CATALOG, HASH),
+      buildAudioSourcesUrl(CATALOG, HASH),
+      buildTranscriptBackendsUrl(HASH, CATALOG),
+      buildTranscriptUrl(HASH, CATALOG, "whisperx/large"),
+    ]) {
+      expect(await dataCache.match(url), url).toBeDefined();
+    }
+
+    const shell = await cacheStorage.open(OFFLINE_CACHE_NAMES.shell);
+    expect(await shell.match(`/catalog/${CATALOG}/recording/${HASH}`)).toBeDefined();
+    const staticCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.static);
+    expect(await staticCache.match("/_next/static/chunks/main.js")).toBeDefined();
+    expect(await staticCache.match("/_next/static/css/app.css")).toBeDefined();
+    expect(await staticCache.match("/_next/static/media/font.woff2")).toBeDefined();
+  });
+
+  it("pauses on network loss and resumes from the last stored chunk", async () => {
+    const server = createFakeServer({ failAtOffset: CHUNK * 2 });
+    vi.stubGlobal("fetch", server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "paused");
+    const paused = downloadManager.getSnapshot().records[0];
+    expect(paused.bytesLoaded).toBe(CHUNK * 2);
+    expect(paused.error).toBeNull();
+
+    server.state.failAtOffset = null;
+    server.rangeRequests.length = 0;
+    await downloadManager.resume(paused.key);
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "complete");
+    expect(server.rangeRequests).toEqual([`bytes=${CHUNK * 2}-${AUDIO_SIZE - 1}`]);
+  });
+
+  it("records server errors as failed downloads", async () => {
+    const server = createFakeServer();
+    server.fetchMock.mockImplementationOnce(async () => new Response("denied", { status: 403 }));
+    vi.stubGlobal("fetch", server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "error");
+    expect(downloadManager.getSnapshot().records[0].error).toContain("HTTP 403");
+  });
+
+  it("downloads an event through its primary recording and caches the event page", async () => {
+    const server = createFakeServer();
+    vi.stubGlobal("fetch", server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    const record = await downloadManager.enqueueEvent({ catalogId: CATALOG, eventId: 7 });
+    expect(record.hash).toBe(HASH);
+    expect(record.event).toMatchObject({ id: 7, locationName: "Prague", dateYear: 2026 });
+    expect(record.recording?.recorderName).toBe("Zoom");
+
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "complete");
+    expect(downloadManager.getSnapshot().records[0].hasPoster).toBe(true);
+    expect(downloadManager.findEventRecord(CATALOG, 7)?.status).toBe("complete");
+
+    const shell = await cacheStorage.open(OFFLINE_CACHE_NAMES.shell);
+    expect(await shell.match(buildEventPagePath(CATALOG, 7))).toBeDefined();
+    const dataCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.data);
+    expect(await dataCache.match(buildEventDetailUrl(CATALOG, 7))).toBeDefined();
+
+    // A second request for the same event reuses the record instead of duplicating it.
+    const again = await downloadManager.enqueueEvent({ catalogId: CATALOG, eventId: 7 });
+    expect(again.key).toBe(record.key);
+    expect(downloadManager.getSnapshot().records).toHaveLength(1);
+  });
+
+  it("removes a download together with its cached bundle", async () => {
+    const server = createFakeServer();
+    vi.stubGlobal("fetch", server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    const record = await downloadManager.enqueueEvent({ catalogId: CATALOG, eventId: 7 });
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "complete");
+
+    await downloadManager.remove(record.key);
+    expect(downloadManager.getSnapshot().records).toHaveLength(0);
+
+    const audioCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+    expect(await audioCache.keys()).toHaveLength(0);
+    const dataCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.data);
+    expect(await dataCache.match(buildRecordingEntryUrl(CATALOG, HASH))).toBeUndefined();
+    expect(await dataCache.match(buildEventDetailUrl(CATALOG, 7))).toBeUndefined();
+    const shell = await cacheStorage.open(OFFLINE_CACHE_NAMES.shell);
+    expect(await shell.match(buildEventPagePath(CATALOG, 7))).toBeUndefined();
+
+    // The registry stays empty after a fresh hydrate.
+    vi.resetModules();
+    const fresh = await loadManager();
+    await fresh.downloadManager.hydrate();
+    expect(fresh.downloadManager.getSnapshot().records).toHaveLength(0);
+  });
+
+  it("hides another user's downloads", async () => {
+    const server = createFakeServer();
+    vi.stubGlobal("fetch", server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+    downloadManager.setUserId("user-1");
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === "complete");
+
+    downloadManager.setUserId("user-2");
+    expect(downloadManager.getSnapshot().records).toHaveLength(0);
+    downloadManager.setUserId("user-1");
+    expect(downloadManager.getSnapshot().records).toHaveLength(1);
+  });
+});

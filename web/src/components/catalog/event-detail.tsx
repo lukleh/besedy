@@ -10,6 +10,8 @@ import { ChevronDown, FolderOpen, Image as ImageIcon, Mic, Pencil } from "lucide
 import RecordingContent from "@/app/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildEventDetailUrl, buildEventPosterUrl } from "@/lib/api/recording-urls";
+import { DownloadButton } from "@/components/offline/download-button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,7 +89,7 @@ export function EventDetail({
   const { data, isLoading, error } = useQuery<EventDetailResponse>({
     queryKey: ["catalog-event-detail", eventId],
     queryFn: () =>
-      fetchJson<EventDetailResponse>(`/api/catalogs/${catalogId}/events/${eventId}`),
+      fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
   });
 
   const defaultSelectedHash = useMemo(
@@ -167,11 +169,14 @@ export function EventDetail({
   const hasAnyPoster = posterPortraitExists || posterLandscapeExists;
   const posterPortraitVersion = posterFiles?.portrait.uploadedAt;
   const posterLandscapeVersion = posterFiles?.landscape.uploadedAt;
-  const portraitPosterSrc = `/api/catalogs/${catalogId}/events/${eventId}/poster?variant=portrait${posterPortraitVersion ? `&v=${encodeURIComponent(posterPortraitVersion)}` : ""}`;
-  const landscapePosterSrc = `/api/catalogs/${catalogId}/events/${eventId}/poster?variant=landscape${posterLandscapeVersion ? `&v=${encodeURIComponent(posterLandscapeVersion)}` : ""}`;
+  const portraitPosterSrc = buildEventPosterUrl(catalogId, eventId, "portrait", posterPortraitVersion);
+  const landscapePosterSrc = buildEventPosterUrl(catalogId, eventId, "landscape", posterLandscapeVersion);
 
   const eventHeaderActions = (
     <>
+      {data.recordings.length > 0 && (
+        <DownloadButton catalogId={catalogId} eventId={eventId} size="default" />
+      )}
       {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
       {data.sessionIndex > 1 ? (
         <Badge variant="outline">{t("sessionLabel", { index: data.sessionIndex })}</Badge>

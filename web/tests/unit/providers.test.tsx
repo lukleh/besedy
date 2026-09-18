@@ -31,6 +31,10 @@ vi.mock("@/contexts/service-worker-context", () => ({
   ServiceWorkerProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+vi.mock("@/components/offline/download-manager-bridge", () => ({
+  DownloadManagerBridge: () => null,
+}));
+
 describe("Providers", () => {
   beforeEach(() => {
     useLabsSyncListener.mockClear();

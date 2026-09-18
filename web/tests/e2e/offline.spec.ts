@@ -1,12 +1,10 @@
 /**
- * Offline mode E2E tests for Besedy.
+ * Offline mode E2E tests.
  *
- * Tests the offline functionality including:
- * - Manual content caching from the player UI
- * - Offline banner visibility
- * - Service worker network fallback behavior
- *
- * Note: These tests require Chromium for best Service Worker support.
+ * Covers the offline banner, the download control, the service worker's
+ * network fallback for streaming audio, the Downloads page, and offline
+ * playback of a downloaded recording. Chromium only: Playwright's offline
+ * emulation and service worker support are most reliable there.
  */
 
 import { test, expect } from "./helpers/base-test";
@@ -14,166 +12,139 @@ import { loginAs } from "./helpers/auth";
 import { URLS, FIRST_RECORDING } from "./helpers/fixtures";
 import { waitForPageReady } from "./helpers/navigation";
 import {
+  clearOfflineStorage,
+  downloadButton,
+  downloadCurrentRecording,
+  expectDownloadStatus,
   setOffline,
   waitForOfflineBanner,
   waitForOfflineBannerGone,
   waitForServiceWorker,
-  clearAudioCache,
 } from "./helpers/offline";
 
 test.describe("Offline Mode", () => {
-  // Use only Chromium for offline tests (best SW support)
   test.skip(({ browserName }) => browserName !== "chromium", "Offline tests require Chromium");
 
   test.describe("Offline Banner", () => {
-    test("shows banner when network disconnected", async ({ page, context }) => {
+    test("shows banner with a Downloads shortcut when the network disconnects", async ({ page, context }) => {
       await loginAs(page, "viewer");
       await page.goto(URLS.catalog);
       await waitForPageReady(page);
 
-      // Verify banner is not shown when online
       const banner = page.getByTestId("offline-banner");
       await expect(banner).not.toBeVisible();
 
-      // Go offline
       await setOffline(context, true);
       await waitForOfflineBanner(page);
-
-      // Verify banner content
       await expect(banner).toContainText(/offline/i);
+      await expect(banner.getByRole("link", { name: /downloads|stažené/i })).toHaveAttribute(
+        "href",
+        "/downloads"
+      );
 
-      // Go back online
       await setOffline(context, false);
       await waitForOfflineBannerGone(page);
     });
   });
 
-  test.describe("Content Caching", () => {
-    test("cache button is visible on recording page", async ({ page }) => {
+  test.describe("Download control", () => {
+    test("download button is visible and idle on the recording page", async ({ page }) => {
       await loginAs(page, "viewer");
+      await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
       await waitForServiceWorker(page);
 
-      // The audio player renders two copies of the cache button (one for wide
-      // viewports, one for narrow) and toggles them via Tailwind responsive
-      // classes. Filter to the visible copy so the assertion works across all
-      // breakpoints.
-      const cacheButton = page
-        .locator(
-          "button[title*='cache' i], button[title*='offline' i], button[aria-label*='cache' i], button[aria-label*='offline' i]"
-        )
-        .filter({ visible: true })
-        .first();
-      await expect(cacheButton).toBeVisible({ timeout: 10000 });
+      await expect(downloadButton(page)).toBeVisible({ timeout: 10_000 });
+      await expectDownloadStatus(page, "none");
     });
 
-    // This test is slow as it downloads actual audio
-    test.skip("can cache recording for offline use", async ({ page }) => {
+    test("downloads a recording and lists it on the Downloads page", async ({ page }) => {
       await loginAs(page, "viewer");
+      await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
       await waitForServiceWorker(page);
 
-      // Find and click cache button
-      const cacheButton = page.locator(
-        "button[title*='cache' i], button[title*='offline' i]"
-      ).first();
-      await cacheButton.click();
+      await downloadCurrentRecording(page);
 
-      // Wait for caching to complete (this can take a while for large files)
-      // The button title should change to indicate cached status
-      await expect(cacheButton).toHaveAttribute(
-        "title",
-        /cached/i,
-        { timeout: 120000 }
-      );
+      await page.goto("/downloads");
+      await waitForPageReady(page);
+      const card = page.getByTestId(`download-card-${FIRST_RECORDING.hash}`);
+      await expect(card).toBeVisible();
+      await expect(card).toHaveAttribute("data-status", "complete");
+
+      await page.getByTestId(`download-remove-${FIRST_RECORDING.hash}`).click();
+      await expect(card).not.toBeVisible();
+      await expect(page.getByTestId("downloads-empty")).toBeVisible();
     });
   });
 
-  test.describe("Service Worker Credentials", () => {
-    test("uncached audio plays when SW falls back to network", async ({ page }) => {
-      // This test verifies that when the SW intercepts an audio request
-      // and the audio is NOT cached, it correctly includes credentials
-      // when falling back to network fetch. Without credentials, the
-      // audio API would return 403 Access Denied.
-
+  test.describe("Service Worker network fallback", () => {
+    test("streams audio that is not downloaded straight from the server", async ({ page }) => {
       await loginAs(page, "viewer");
+      await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
-
-      // Wait for SW to be controlling the page
       await waitForServiceWorker(page);
 
-      // Clear the audio cache to force network fallback
-      await clearAudioCache(page);
-
-      // Click play - this will trigger audio fetch through SW
       const playButton = page.getByTestId("audio-play-button");
       await expect(playButton).toBeVisible();
 
-      // Set up promise to wait for audio response and capture status
       const audioResponsePromise = page.waitForResponse(
         (response) =>
           response.url().includes("/api/catalogs/") &&
           response.url().includes("/recordings/") &&
-          response.url().includes("/audio"),
-        { timeout: 10000 }
+          response.url().endsWith("/audio"),
+        { timeout: 10_000 }
       );
 
       await playButton.click();
 
-      // Wait for audio request to complete and verify no 403
       const audioResponse = await audioResponsePromise;
       expect(audioResponse.status()).not.toBe(403);
-
-      // Verify the player is in playing or buffering state (not error)
-      // The button should show pause icon or loading spinner
-      await expect(playButton).toHaveAttribute(
-        "aria-label",
-        /pause|buffering|reconnecting/i,
-        { timeout: 10000 }
-      );
+      await expect(playButton).toHaveAttribute("aria-label", /pause|buffering|reconnecting/i, {
+        timeout: 10_000,
+      });
     });
   });
 
-  test.describe("Offline Playback", () => {
-    // This test requires pre-cached content which is complex to set up
-    // Skipping for now - manual testing recommended
-    test.skip("cached recording plays when offline", async ({ page, context }) => {
+  test.describe("Offline playback", () => {
+    test("a downloaded recording opens and plays without a connection", async ({ page, context }) => {
       await loginAs(page, "viewer");
+      await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
       await waitForServiceWorker(page);
 
-      // Cache the recording first
-      const cacheButton = page.locator(
-        "button[title*='cache' i], button[title*='offline' i]"
-      ).first();
-      await cacheButton.click();
+      await downloadCurrentRecording(page);
 
-      // Wait for caching to complete
-      await expect(cacheButton).toHaveAttribute("title", /cached/i, { timeout: 120000 });
-
-      // Go offline
       await setOffline(context, true);
       await waitForOfflineBanner(page);
 
-      // Audio player should still work
+      // A full reload offline must be served by the service worker.
+      await page.reload();
+      await expect(page.getByTestId("audio-play-button")).toBeVisible({ timeout: 15_000 });
+      await expectDownloadStatus(page, "complete", 15_000);
+
       const playButton = page.getByTestId("audio-play-button");
-      await expect(playButton).toBeVisible();
-
-      // Should be able to play
       await playButton.click();
-      await expect(playButton).toHaveAttribute("aria-label", /pause|reconnecting/i, { timeout: 10000 });
+      await expect(playButton).toHaveAttribute("aria-label", /pause|buffering/i, { timeout: 10_000 });
 
-      // Transcript should still be visible (if cached)
-      const transcriptHeading = page.getByRole("heading", { name: /transcript/i });
-      // Note: transcript visibility depends on whether it was cached
-      // This assertion may need adjustment based on implementation
-      await expect(transcriptHeading).toBeVisible({ timeout: 5000 });
+      await setOffline(context, false);
+    });
 
-      // Go back online
+    test("an offline navigation to an unknown page lands on Downloads", async ({ page, context }) => {
+      await loginAs(page, "viewer");
+      await page.goto("/downloads");
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+
+      await setOffline(context, true);
+      await page.goto(`${URLS.catalog}/does-not-exist/event/999999`);
+      await expect(page).toHaveURL(/\/downloads\?from=/);
+      await expect(page.getByTestId("downloads-offline-redirect")).toBeVisible();
+
       await setOffline(context, false);
     });
   });

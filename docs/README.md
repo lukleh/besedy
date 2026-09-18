@@ -12,7 +12,8 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [rag-system.md](rag-system.md) -- ColBERT retrieval architecture and incremental sync
 - [rag-oblique-eval.md](rag-oblique-eval.md) -- time-grounded evaluation for implicit retrieval queries
 - [backends.md](backends.md) -- ML backend infrastructure: serving, config tuning, verification
-- [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface, offline
+- [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface
+- [web/offline.md](web/offline.md) -- downloads, service worker caching, offline behavior
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
 - [web/security.md](web/security.md) -- auth model, access control, deployment hardening
