@@ -40,7 +40,7 @@ import {
   writeAudioCacheMeta,
   type AudioCacheMeta,
 } from './audio-cache-format';
-import { OFFLINE_CACHE_NAMES } from './cache-names';
+import { DOWNLOADS_PATH, OFFLINE_CACHE_NAMES } from './cache-names';
 import {
   deleteDownloadBundle,
   deleteDownloadRecord,
@@ -63,6 +63,47 @@ const QUEUE_LOCK_NAME = 'besedy-downloads-queue';
 const DOWNLOAD_LOCK_PREFIX = 'besedy-download:';
 const CHANNEL_NAME = 'besedy-downloads';
 const PERSIST_REQUESTED_KEY = 'besedy-storage-persist-requested';
+let downloadsShellWarmPromise: Promise<void> | null = null;
+
+/** Load the real session-free route so its HTML and build graph are cached. */
+function warmDownloadsShell(): Promise<void> {
+  if (downloadsShellWarmPromise) return downloadsShellWarmPromise;
+  if (
+    typeof document === 'undefined' ||
+    typeof navigator === 'undefined' ||
+    navigator.onLine === false ||
+    !navigator.serviceWorker ||
+    new URLSearchParams(window.location.search).has('warm')
+  ) {
+    return Promise.resolve();
+  }
+
+  downloadsShellWarmPromise = navigator.serviceWorker.ready
+    .then(
+      () =>
+        new Promise<void>((resolve) => {
+          const frame = document.createElement('iframe');
+          const finish = () => {
+            window.clearTimeout(timeoutId);
+            frame.remove();
+            resolve();
+          };
+          const timeoutId = window.setTimeout(finish, 15_000);
+          frame.hidden = true;
+          frame.tabIndex = -1;
+          frame.setAttribute('aria-hidden', 'true');
+          frame.addEventListener('load', finish, { once: true });
+          frame.addEventListener('error', finish, { once: true });
+          frame.src = `${DOWNLOADS_PATH}?warm=1`;
+          document.body.append(frame);
+        }),
+    )
+    .catch((error) => {
+      downloadsShellWarmPromise = null;
+      logger.debug('Failed to warm Downloads shell', { error });
+    });
+  return downloadsShellWarmPromise;
+}
 
 // ---------------------------------------------------------------------------
 // Server response shapes (only the fields the manager reads)
@@ -242,13 +283,26 @@ async function fetchRangeChunk(
 
   if (response.status === 206) {
     const contentRange = response.headers.get('content-range') ?? '';
-    const match = contentRange.match(/\/(\d+)$/);
-    const totalSize = match ? Number.parseInt(match[1], 10) : Number.NaN;
-    if (!Number.isFinite(totalSize) || totalSize <= 0) {
+    const match = contentRange.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+    const actualStart = match ? Number.parseInt(match[1], 10) : Number.NaN;
+    const actualEnd = match ? Number.parseInt(match[2], 10) : Number.NaN;
+    const totalSize = match ? Number.parseInt(match[3], 10) : Number.NaN;
+    const bytes = await response.arrayBuffer();
+    if (
+      !Number.isFinite(totalSize) ||
+      totalSize <= 0 ||
+      actualStart !== start ||
+      !Number.isFinite(actualEnd) ||
+      actualEnd < actualStart ||
+      actualEnd > end ||
+      actualEnd >= totalSize ||
+      bytes.byteLength !== actualEnd - actualStart + 1 ||
+      bytes.byteLength === 0
+    ) {
       throw new DownloadHttpError(url, 206);
     }
     return {
-      bytes: await response.arrayBuffer(),
+      bytes,
       totalSize,
       contentType: response.headers.get('content-type') ?? 'audio/webm',
     };
@@ -392,6 +446,29 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
     dateMonth: event.dateMonth,
     dateDay: event.dateDay,
     sessionIndex: event.sessionIndex,
+    posterFiles: event.posterFiles
+      ? {
+          portrait: {
+            exists: event.posterFiles.portrait.exists,
+            uploadedAt: event.posterFiles.portrait.uploadedAt ?? null,
+          },
+          landscape: {
+            exists: event.posterFiles.landscape.exists,
+            uploadedAt: event.posterFiles.landscape.uploadedAt ?? null,
+          },
+        }
+      : event.posterStatus
+        ? {
+            portrait: {
+              exists: event.posterStatus.portrait,
+              uploadedAt: null,
+            },
+            landscape: {
+              exists: event.posterStatus.landscape,
+              uploadedAt: null,
+            },
+          }
+        : null,
   };
 }
 
@@ -445,6 +522,7 @@ export interface DownloadManagerSnapshot {
 
 export interface EnqueueRecordingInput {
   catalogId: string;
+  catalogLabel?: string | null;
   hash: string;
   event?: DownloadEventSnapshot | null;
   recording?: DownloadRecordingSnapshot | null;
@@ -452,6 +530,7 @@ export interface EnqueueRecordingInput {
 
 export interface EnqueueEventInput {
   catalogId: string;
+  catalogLabel?: string | null;
   eventId: number;
   /** Preferred recording; defaults to the event's primary recording. */
   hash?: string | null;
@@ -487,6 +566,7 @@ class DownloadManager {
   private hydratePromise: Promise<void> | null = null;
   private processing = false;
   private online = true;
+  private onlineGeneration = 0;
   private userId: string | null = null;
   private activeKey: string | null = null;
   private storage: StorageEstimateSnapshot | null = null;
@@ -530,16 +610,31 @@ class DownloadManager {
     const recovered: DownloadRecord[] = [];
     for (const record of stored) {
       // A download that was in flight when the page closed is simply queued again.
-      const next =
-        record.status === 'downloading'
-          ? { ...record, status: 'queued' as const }
+      const normalized =
+        record.catalogLabel === undefined
+          ? { ...record, catalogLabel: null }
           : record;
+      const next =
+        normalized.status === 'downloading'
+          ? {
+              ...normalized,
+              status: 'queued' as const,
+            }
+          : normalized;
       this.records.set(record.key, next);
       if (next !== record) recovered.push(next);
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
     this.publish({ supported: true, hydrated: true });
     void this.refreshStorageEstimate();
+    if (
+      this.online &&
+      Array.from(this.records.values()).some(
+        (record) => record.status === 'complete',
+      )
+    ) {
+      void warmDownloadsShell();
+    }
     void this.processQueue();
   }
 
@@ -553,6 +648,7 @@ class DownloadManager {
     if (this.online === online) return;
     this.online = online;
     if (online) {
+      this.onlineGeneration += 1;
       void this.resumeInterruptedDownloads();
     }
   }
@@ -578,6 +674,37 @@ class DownloadManager {
     const key = makeDownloadKey(input.catalogId, input.hash);
     const existing = this.records.get(key);
     if (existing) {
+      const eventKey = input.event
+        ? makeEventKey(input.catalogId, input.event.id)
+        : existing.eventKey;
+      const addsEvent = existing.event === null && input.event != null;
+      const enriched: DownloadRecord = {
+        ...existing,
+        catalogLabel: existing.catalogLabel ?? input.catalogLabel ?? null,
+        eventKey,
+        event: existing.event ?? input.event ?? null,
+        recording: existing.recording ?? input.recording ?? null,
+        ...(addsEvent && existing.status === 'complete'
+          ? {
+              status: 'queued' as const,
+              progress: 99,
+              completedAt: null,
+            }
+          : {}),
+      };
+      if (
+        enriched.catalogLabel !== existing.catalogLabel ||
+        enriched.eventKey !== existing.eventKey ||
+        enriched.event !== existing.event ||
+        enriched.recording !== existing.recording ||
+        enriched.status !== existing.status
+      ) {
+        await this.write(enriched);
+      }
+      if (addsEvent && existing.status === 'complete') {
+        void this.processQueue();
+        return enriched;
+      }
       if (existing.status === 'paused' || existing.status === 'error') {
         await this.resume(key);
       }
@@ -589,6 +716,7 @@ class DownloadManager {
     const record: DownloadRecord = {
       key,
       catalogId: input.catalogId,
+      catalogLabel: input.catalogLabel ?? null,
       hash: input.hash,
       userId: this.userId,
       eventKey: input.event
@@ -642,6 +770,7 @@ class DownloadManager {
 
     return this.enqueueRecording({
       catalogId: input.catalogId,
+      catalogLabel: input.catalogLabel,
       hash: recording.audioHash,
       event: snapshotEvent(event),
       recording: snapshotEventRecording(recording, event),
@@ -933,6 +1062,7 @@ class DownloadManager {
   }
 
   private async runJob(key: string): Promise<void> {
+    const startedOnlineGeneration = this.onlineGeneration;
     const controller = new AbortController();
     const { signal } = controller;
     this.controllers.set(key, controller);
@@ -1018,10 +1148,11 @@ class DownloadManager {
       }
 
       let poster: DownloadPosterPayload | null = null;
-      if (started.event) {
+      const currentEvent = this.records.get(key)?.event ?? started.event;
+      if (currentEvent) {
         poster = await this.downloadEventPoster(
           catalogId,
-          started.event.id,
+          currentEvent,
           signal,
         );
       }
@@ -1044,6 +1175,7 @@ class DownloadManager {
         hasPoster: poster !== null,
         completedAt: Date.now(),
       });
+      void warmDownloadsShell();
     } catch (error) {
       if (signal.aborted) {
         // pause() or remove() already recorded the new state.
@@ -1056,6 +1188,16 @@ class DownloadManager {
           error: null,
           resumeOnReconnect: true,
         });
+        // A short outage can report "online" before the failed fetch rejects.
+        // Requeue only when an actual offline -> online transition happened
+        // during this job; retrying every TypeError while still online would
+        // otherwise create a tight failure loop.
+        if (this.online && this.onlineGeneration > startedOnlineGeneration) {
+          await this.update(key, {
+            status: 'queued',
+            resumeOnReconnect: false,
+          });
+        }
       } else {
         const message = error instanceof Error ? error.message : String(error);
         logger.warn('Download failed', { key, error });
@@ -1120,26 +1262,16 @@ class DownloadManager {
 
   private async downloadEventPoster(
     catalogId: string,
-    eventId: number,
+    event: DownloadEventSnapshot,
     signal: AbortSignal,
   ): Promise<DownloadPosterPayload | null> {
-    const event = await fetchJson<EventDetailResponse>(
-      buildEventDetailUrl(catalogId, eventId),
-      signal,
-    );
-    const portraitExists =
-      event.posterFiles?.portrait.exists ??
-      event.posterStatus?.portrait ??
-      false;
-    const landscapeExists =
-      event.posterFiles?.landscape.exists ??
-      event.posterStatus?.landscape ??
-      false;
+    const portraitExists = event.posterFiles?.portrait.exists ?? false;
+    const landscapeExists = event.posterFiles?.landscape.exists ?? false;
     if (landscapeExists) {
       const landscape = await tryFetchPoster(
         buildEventPosterUrl(
           catalogId,
-          eventId,
+          event.id,
           'landscape',
           event.posterFiles?.landscape.uploadedAt,
         ),
@@ -1152,7 +1284,7 @@ class DownloadManager {
       return tryFetchPoster(
         buildEventPosterUrl(
           catalogId,
-          eventId,
+          event.id,
           'portrait',
           event.posterFiles?.portrait.uploadedAt,
         ),
@@ -1164,15 +1296,23 @@ class DownloadManager {
   }
 
   private async deleteBundle(record: DownloadRecord): Promise<void> {
-    try {
-      const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
-      if (record.audioCacheKey) {
-        await deleteAudioCacheEntries(audioCache, record.audioCacheKey);
+    const removals: Promise<unknown>[] = [deleteDownloadBundle(record.key)];
+    const { audioCacheKey } = record;
+    if (audioCacheKey) {
+      removals.push(
+        caches
+          .open(OFFLINE_CACHE_NAMES.audio)
+          .then((cache) => deleteAudioCacheEntries(cache, audioCacheKey)),
+      );
+    }
+    const results = await Promise.allSettled(removals);
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        logger.warn('Failed to delete download data', {
+          key: record.key,
+          error: result.reason,
+        });
       }
-
-      await deleteDownloadBundle(record.key);
-    } catch (error) {
-      logger.warn('Failed to delete download data', { key: record.key, error });
     }
   }
 }

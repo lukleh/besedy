@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertCircle,
+  ArrowLeft,
   Check,
   Download,
   HardDrive,
@@ -83,6 +85,8 @@ export function DownloadsContent() {
     }
     return Array.from(byCatalog.entries()).map(([catalogId, items]) => ({
       catalogId,
+      catalogLabel:
+        items.find((item) => item.catalogLabel)?.catalogLabel ?? null,
       items,
     }));
   }, [records]);
@@ -106,12 +110,20 @@ export function DownloadsContent() {
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <Download className="h-6 w-6" aria-hidden="true" />
-          {t('title')}
-        </h1>
-        <p className="text-sm text-muted-foreground">{t('description')}</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold flex items-center gap-2">
+            <Download className="h-6 w-6" aria-hidden="true" />
+            {t('title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t('description')}</p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/catalog">
+            <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+            {t('backToCatalog')}
+          </Link>
+        </Button>
       </header>
 
       {redirectedFrom && (
@@ -191,7 +203,8 @@ export function DownloadsContent() {
           {groups.map((group) => (
             <section key={group.catalogId} className="space-y-3">
               <h2 className="text-sm font-medium text-muted-foreground">
-                {t('unknownCatalog', { id: group.catalogId })}
+                {group.catalogLabel ??
+                  t('unknownCatalog', { id: group.catalogId })}
               </h2>
               <div className="space-y-2">
                 {group.items.map((record) => (

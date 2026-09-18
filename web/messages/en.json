@@ -1794,6 +1794,7 @@
     "transcript": "Transcript",
     "noOfflineTranscript": "No transcript was stored with this download.",
     "backToDownloads": "Back to downloads",
+    "backToCatalog": "Back to catalog",
     "detailUnavailable": "Download unavailable",
     "detailUnavailableDescription": "This item is no longer stored on this device. Return to Downloads or save it again while online."
   },

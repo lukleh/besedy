@@ -19,6 +19,7 @@ const HASH = 'a'.repeat(64);
 
 type FetchHandlerEvent = {
   request: Request;
+  clientId?: string;
   respondWith: ReturnType<typeof vi.fn>;
 };
 
@@ -32,6 +33,7 @@ interface SwInternals {
   AUDIO_CACHE_NAME: string;
   SHELL_CACHE_NAME: string;
   STATIC_CACHE_NAME: string;
+  STATIC_CACHE_MAX_ENTRIES: number;
   CHUNK_SIZE: number;
   DOWNLOADS_PATH: string;
   OFFLINE_RESPONSE_HEADER: string;
@@ -101,6 +103,7 @@ function loadScript() {
     .mockResolvedValue(new Response('network', { status: 200 }));
   const cacheStorage = new MemoryCacheStorage();
   const consoleMock = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const clientUrls = new Map<string, string>();
   const selfScope: Record<string, unknown> = {
     __BESEDY_WEB_VERSION: 'web-v2-test',
     addEventListener: vi.fn(
@@ -108,7 +111,15 @@ function loadScript() {
         listeners.set(type, handler);
       },
     ),
-    clients: { claim: vi.fn(), matchAll: vi.fn(), openWindow: vi.fn() },
+    clients: {
+      claim: vi.fn(),
+      get: vi.fn(async (id: string) => {
+        const url = clientUrls.get(id);
+        return url ? { url } : null;
+      }),
+      matchAll: vi.fn(),
+      openWindow: vi.fn(),
+    },
     location: { origin: ORIGIN },
     registration: { showNotification: vi.fn() },
     skipWaiting: vi.fn(),
@@ -149,20 +160,21 @@ function loadScript() {
     }) => void,
     internals: selfScope.__BESEDY_SW_INTERNALS as SwInternals,
     cacheStorage,
+    clientUrls,
     fetchMock,
   };
 }
 
 function createEvent(
   url: string,
-  init: RequestInit & { mode?: RequestMode } = {},
+  init: RequestInit & { clientId?: string; mode?: RequestMode } = {},
 ): FetchHandlerEvent {
-  const { mode, ...requestInit } = init;
+  const { clientId, mode, ...requestInit } = init;
   const request = new Request(new URL(url, ORIGIN).toString(), requestInit);
   if (mode === 'navigate') {
     Object.defineProperty(request, 'mode', { value: 'navigate' });
   }
-  return { request, respondWith: vi.fn() };
+  return { request, clientId, respondWith: vi.fn() };
 }
 
 async function respondedWith(event: FetchHandlerEvent): Promise<Response> {
@@ -222,6 +234,7 @@ describe('service worker constants', () => {
     expect(internals.AUDIO_CACHE_NAME).toBe(OFFLINE_CACHE_NAMES.audio);
     expect(internals.SHELL_CACHE_NAME).toBe(OFFLINE_CACHE_NAMES.shell);
     expect(internals.STATIC_CACHE_NAME).toBe(OFFLINE_CACHE_NAMES.static);
+    expect(internals.STATIC_CACHE_MAX_ENTRIES).toBeGreaterThan(0);
     expect(internals.CHUNK_SIZE).toBe(AUDIO_CHUNK_SIZE);
     expect(internals.DOWNLOADS_PATH).toBe(DOWNLOADS_PATH);
     expect(internals.OFFLINE_RESPONSE_HEADER).toBe(OFFLINE_RESPONSE_HEADER);
@@ -305,6 +318,22 @@ describe('downloaded audio', () => {
     expect(await response.text()).toBe('network');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves well-formed partial chunks while forwarding to the network', async () => {
+    const { fetchHandler, fetchMock, cacheStorage } = loadScript();
+    const first = new Uint8Array([0, 1, 2, 3, 4]);
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [first], {
+      complete: false,
+    });
+
+    const event = createEvent(url, { headers: { Range: 'bytes=5-9' } });
+    fetchHandler(event);
+    expect(await (await respondedWith(event)).text()).toBe('network');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await cache.match(getAudioMetaKey(baseKey))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeDefined();
+  });
 });
 
 describe('offline shell routing', () => {
@@ -353,5 +382,61 @@ describe('offline shell routing', () => {
     const event = createEvent(`/api/transcript/${HASH}`);
     fetchHandler(event);
     expect(event.respondWith).not.toHaveBeenCalled();
+  });
+});
+
+describe('offline build assets', () => {
+  it('recognizes a Downloads iframe by its referrer', async () => {
+    const { fetchHandler, cacheStorage, clientUrls } = loadScript();
+    clientUrls.set('parent-client', `${ORIGIN}/catalog/cat`);
+
+    const event = createEvent('/_next/static/chunks/downloads-frame.js', {
+      clientId: 'parent-client',
+      referrer: `${ORIGIN}/downloads?warm=1`,
+    });
+    fetchHandler(event);
+    await respondedWith(event);
+
+    const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.static);
+    expect(await cache.match(event.request)).toBeDefined();
+  });
+
+  it('only adds Downloads assets and keeps the cache bounded', async () => {
+    const { fetchHandler, cacheStorage, clientUrls, internals } = loadScript();
+    clientUrls.set('downloads-client', `${ORIGIN}/downloads`);
+    clientUrls.set('app-client', `${ORIGIN}/catalog/cat`);
+
+    const appAsset = createEvent('/_next/static/chunks/app-only.js', {
+      clientId: 'app-client',
+    });
+    fetchHandler(appAsset);
+    await respondedWith(appAsset);
+
+    for (
+      let index = 0;
+      index <= internals.STATIC_CACHE_MAX_ENTRIES;
+      index += 1
+    ) {
+      const event = createEvent(`/_next/static/chunks/downloads-${index}.js`, {
+        clientId: 'downloads-client',
+      });
+      fetchHandler(event);
+      await respondedWith(event);
+    }
+
+    const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.static);
+    const keys = await cache.keys();
+    expect(keys).toHaveLength(internals.STATIC_CACHE_MAX_ENTRIES);
+    expect(
+      await cache.match(`${ORIGIN}/_next/static/chunks/app-only.js`),
+    ).toBeUndefined();
+    expect(
+      await cache.match(`${ORIGIN}/_next/static/chunks/downloads-0.js`),
+    ).toBeUndefined();
+    expect(
+      await cache.match(
+        `${ORIGIN}/_next/static/chunks/downloads-${internals.STATIC_CACHE_MAX_ENTRIES}.js`,
+      ),
+    ).toBeDefined();
   });
 });

@@ -9,7 +9,7 @@
 
 import { test, expect } from './helpers/base-test';
 import { loginAs } from './helpers/auth';
-import { URLS, FIRST_RECORDING } from './helpers/fixtures';
+import { URLS, FIRST_RECORDING, TEST_CATALOG_ID } from './helpers/fixtures';
 import { waitForPageReady } from './helpers/navigation';
 import {
   clearOfflineStorage,
@@ -135,22 +135,63 @@ test.describe('Offline Mode', () => {
       await waitForPageReady(page);
       await waitForServiceWorker(page);
 
+      // A partial download is valid resumable state. Its next Range request
+      // passes through the worker and must not make the worker delete chunk 0.
+      const partialDownloadSurvived = await page.evaluate(
+        async ({ catalogId, hash }) => {
+          const audioUrl = new URL(
+            `/api/catalogs/${catalogId}/recordings/${hash}/audio`,
+            window.location.origin,
+          ).toString();
+          const metaKey = `${audioUrl}?_meta`;
+          const chunkKey = `${audioUrl}?_chunk=0`;
+          const cache = await caches.open('besedy-audio-v5');
+          await cache.put(
+            chunkKey,
+            new Response(new Uint8Array([0, 1, 2, 3, 4])),
+          );
+          await cache.put(
+            metaKey,
+            new Response(
+              JSON.stringify({
+                totalSize: 10,
+                chunkCount: 1,
+                chunkSizes: [5],
+                contentType: 'audio/webm',
+                complete: false,
+              }),
+              { headers: { 'content-type': 'application/json' } },
+            ),
+          );
+
+          const response = await fetch(audioUrl, {
+            headers: { Range: 'bytes=5-9' },
+          });
+          await response.arrayBuffer();
+          const survived = Boolean(
+            (await cache.match(metaKey)) && (await cache.match(chunkKey)),
+          );
+          await Promise.all([cache.delete(metaKey), cache.delete(chunkKey)]);
+          return survived;
+        },
+        { catalogId: TEST_CATALOG_ID, hash: FIRST_RECORDING.hash },
+      );
+      expect(partialDownloadSurvived).toBe(true);
+
       await downloadCurrentRecording(page);
 
-      // The Downloads route has a separate root layout. Visiting it online is
-      // what lets the worker cache that real shell and its complete build graph.
-      await page.goto('/downloads');
-      await waitForPageReady(page);
-      await expect(
-        page.getByTestId(`download-card-${FIRST_RECORDING.hash}`),
-      ).toBeVisible();
+      // Completing a download warms the real Downloads route automatically.
+      await expect
+        .poll(() =>
+          page.evaluate(async () => {
+            const cache = await caches.open('besedy-offline-shell-v1');
+            return Boolean(await cache.match('/downloads'));
+          }),
+        )
+        .toBe(true);
 
       await setOffline(context, true);
-      await waitForOfflineBanner(page);
-
-      // A full offline reload proves the session-free shell and every client
-      // chunk it needs were cached by the online visit.
-      await page.reload();
+      await page.goto('/downloads');
       const card = page.getByTestId(`download-card-${FIRST_RECORDING.hash}`);
       await expect(card).toBeVisible({ timeout: 15_000 });
       await expect(card).toHaveAttribute('data-status', 'complete');

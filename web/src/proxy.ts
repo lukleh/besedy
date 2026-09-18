@@ -325,7 +325,14 @@ function generateNonce(): string {
  * nonce + 'strict-dynamic' (no 'unsafe-inline'); 'unsafe-eval' stays dev-only.
  * style-src still allows 'unsafe-inline' (out of scope; framework injects styles).
  */
-function buildCsp(nonce: string): string {
+function isDownloadsShellWarmRequest(req: NextRequest): boolean {
+  return (
+    req.nextUrl.pathname === "/downloads" &&
+    req.nextUrl.searchParams.get("warm") === "1"
+  );
+}
+
+function buildCsp(nonce: string, allowSameOriginFrame = false): string {
   const scriptSrc = isDevelopment
     ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
     : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
@@ -340,7 +347,7 @@ function buildCsp(nonce: string): string {
     "object-src 'none'",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
-    "frame-ancestors 'none'",
+    allowSameOriginFrame ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "report-to csp-endpoint",
@@ -355,7 +362,10 @@ function buildCsp(nonce: string): string {
 function nextWithNonce(req: NextRequest, nonce: string): NextResponse {
   const headers = new Headers(req.headers);
   headers.set("x-nonce", nonce);
-  headers.set("Content-Security-Policy", buildCsp(nonce));
+  headers.set(
+    "Content-Security-Policy",
+    buildCsp(nonce, isDownloadsShellWarmRequest(req))
+  );
   return NextResponse.next({ request: { headers } });
 }
 
@@ -376,7 +386,11 @@ function addSecurityHeaders(
     "X-Web-Version",
     process.env.WEB_VERSION ?? process.env.GIT_COMMIT ?? "unknown"
   );
-  response.headers.set("X-Frame-Options", "DENY");
+  const allowSameOriginFrame = isDownloadsShellWarmRequest(req);
+  response.headers.set(
+    "X-Frame-Options",
+    allowSameOriginFrame ? "SAMEORIGIN" : "DENY"
+  );
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("X-XSS-Protection", "1; mode=block");
@@ -391,7 +405,10 @@ function addSecurityHeaders(
   const host = forwardedHost ?? req.headers.get("host") ?? req.nextUrl.host;
   const reportingEndpoint = `${protocol}://${host}/api/csp-report`;
   response.headers.set("Reporting-Endpoints", `csp-endpoint="${reportingEndpoint}"`);
-  response.headers.set("Content-Security-Policy", buildCsp(nonce));
+  response.headers.set(
+    "Content-Security-Policy",
+    buildCsp(nonce, allowSameOriginFrame)
+  );
 
   if (isProduction) {
     response.headers.set(

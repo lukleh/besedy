@@ -1793,6 +1793,7 @@
     "transcript": "Přepis",
     "noOfflineTranscript": "S tímto stažením nebyl uložen žádný přepis.",
     "backToDownloads": "Zpět ke staženým",
+    "backToCatalog": "Zpět do katalogu",
     "detailUnavailable": "Stažení není k dispozici",
     "detailUnavailableDescription": "Tato položka již není v tomto zařízení uložena. Vraťte se ke staženým nebo ji znovu uložte online."
   },

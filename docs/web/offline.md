@@ -31,8 +31,8 @@ Only a complete download can be served to the player.
 The remaining caches are intentionally small:
 
 - `besedy-offline-shell-v1` contains one HTML document, keyed as `/downloads`.
-- `besedy-offline-static-v1` contains content-hashed Next.js assets requested
-  during a real online visit to Downloads, plus app icons and the web manifest.
+- `besedy-offline-static-v1` contains at most 96 content-hashed Next.js assets
+  requested by Downloads, plus app icons and the web manifest.
 
 Normal application HTML and API JSON are never put in an offline cache.
 
@@ -68,10 +68,12 @@ to `queued` when the registry is next hydrated.
 not read the server session, so the cached HTML document can start offline. The
 online proxy still protects the route normally.
 
-The route is client-rendered from the local registry. The first online visit to
-Downloads is what caches its real HTML and complete content-hashed build graph;
-the download manager does not scrape or synthesize framework assets. Users must
-open Downloads online once before relying on it as an offline entry point.
+The route is client-rendered from the local registry. After the first download
+completes, the manager loads the real Downloads route in a hidden frame so its
+HTML and content-hashed build graph are cached without scraping or synthesizing
+framework assets. An ordinary online visit refreshes the same shell.
+Only the `?warm=1` response permits same-origin framing; the normal Downloads
+response and every other page retain the global framing denial.
 Selecting a download uses `?item=<download-key>` in the current document rather
 than a server navigation. The detail view reuses the normal audio player and
 transcript renderer, but supplies them with the downloaded audio URL and
@@ -90,7 +92,7 @@ The worker handles requests in this order:
 | Downloaded audio             | Serve byte ranges from complete cached chunks, streaming one chunk at a time; otherwise use the network. `?download=true` is never intercepted.    |
 | `/downloads` navigation      | Network-first and refresh the one cached shell. On a network error, return the cached shell with `x-besedy-offline: 1`.                            |
 | Other application navigation | Network-only. On a network error, redirect to `/downloads?from=<original path>` if the shell exists; otherwise return a small inline offline page. |
-| `/_next/static/*`            | Cache-first. Successful same-origin responses are cached as they are requested.                                                                    |
+| `/_next/static/*`            | Cache-first for existing entries. New entries are cached only when requested by Downloads, with a 96-entry limit.                                  |
 | Manifest and app icons       | Network-first with cache fallback.                                                                                                                 |
 | API and other requests       | Not intercepted.                                                                                                                                   |
 
@@ -130,7 +132,7 @@ The static asset cache is not user-specific.
 - Background Fetch and periodic sync are not used. Downloads run while an app
   page is open.
 - To reset offline data, use DevTools → Application → Storage → Clear site data.
-- If Downloads cannot open offline, visit it online first and check
-  `besedy-offline-shell-v1` plus `besedy-offline-static-v1`.
+- If Downloads cannot open offline, complete a download or visit it online and
+  check `besedy-offline-shell-v1` plus `besedy-offline-static-v1`.
 - If playback fails for a complete record, inspect its metadata and chunks in
   `besedy-audio-v5`; removing and downloading it again rebuilds them.

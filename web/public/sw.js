@@ -16,6 +16,7 @@
 const AUDIO_CACHE_NAME = 'besedy-audio-v5';
 const SHELL_CACHE_NAME = 'besedy-offline-shell-v1';
 const STATIC_CACHE_NAME = 'besedy-offline-static-v1';
+const STATIC_CACHE_MAX_ENTRIES = 96;
 const KNOWN_CACHE_NAMES = [
   AUDIO_CACHE_NAME,
   SHELL_CACHE_NAME,
@@ -117,7 +118,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (isImmutableStaticPath(url.pathname)) {
-    event.respondWith(handleImmutableStaticRequest(request));
+    event.respondWith(handleImmutableStaticRequest(request, event.clientId));
     return;
   }
 
@@ -240,13 +241,42 @@ const OFFLINE_FALLBACK_HTML = [
   '</main></body></html>',
 ].join('');
 
-async function handleImmutableStaticRequest(request) {
+async function isDownloadsClientRequest(request, clientId) {
+  if (clientId && self.clients.get) {
+    const client = await self.clients.get(clientId).catch(() => null);
+    if (client && isDownloadsPath(new URL(client.url).pathname)) {
+      return true;
+    }
+  }
+  if (!request.referrer) return false;
+  try {
+    return isDownloadsPath(new URL(request.referrer).pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function trimStaticCache(cache) {
+  const keys = await cache.keys();
+  const excess = keys.length - STATIC_CACHE_MAX_ENTRIES;
+  if (excess > 0) {
+    await Promise.all(
+      keys.slice(0, excess).map((request) => cache.delete(request)),
+    );
+  }
+}
+
+async function handleImmutableStaticRequest(request, clientId) {
   const cache = await caches.open(STATIC_CACHE_NAME);
   const cached = await cache.match(request, { ignoreVary: true });
   if (cached) return cached;
 
   const response = await fetch(request);
-  if (response.ok && isSameOriginResponse(response)) {
+  if (
+    response.ok &&
+    isSameOriginResponse(response) &&
+    (await isDownloadsClientRequest(request, clientId))
+  ) {
     await cache.put(request, response.clone()).catch((error) => {
       console.warn(
         '[SW] Failed to cache offline build asset',
@@ -254,6 +284,7 @@ async function handleImmutableStaticRequest(request) {
         error,
       );
     });
+    await trimStaticCache(cache).catch(() => {});
   }
   return response;
 }
@@ -323,11 +354,11 @@ async function deleteAudioCacheEntries(cache, baseKey) {
   }
 }
 
-function isValidAudioMeta(meta) {
+function isWellFormedAudioMeta(meta) {
   return (
     meta &&
     typeof meta === 'object' &&
-    meta.complete === true &&
+    typeof meta.complete === 'boolean' &&
     Number.isFinite(meta.totalSize) &&
     meta.totalSize > 0 &&
     typeof meta.contentType === 'string' &&
@@ -350,10 +381,14 @@ async function handleAudioRequest(request) {
     await deleteAudioCacheEntries(cache, cacheKey);
     return fetch(request);
   }
-  if (!isValidAudioMeta(meta)) {
+  if (!isWellFormedAudioMeta(meta)) {
     await deleteAudioCacheEntries(cache, cacheKey);
     return fetch(request);
   }
+  // The page-side manager's own Range requests pass through this worker while
+  // it is still writing chunks. Incomplete metadata is valid resumable state:
+  // use the network without deleting bytes that are actively being assembled.
+  if (!meta.complete) return fetch(request);
   return handleRangeFromChunks(
     cache,
     cacheKey,
@@ -532,6 +567,7 @@ self.__BESEDY_SW_INTERNALS = {
   AUDIO_CACHE_NAME,
   SHELL_CACHE_NAME,
   STATIC_CACHE_NAME,
+  STATIC_CACHE_MAX_ENTRIES,
   CHUNK_SIZE,
   DOWNLOADS_PATH,
   OFFLINE_RESPONSE_HEADER,

@@ -36,6 +36,10 @@ export interface DownloadEventSnapshot {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  posterFiles: {
+    portrait: { exists: boolean; uploadedAt: string | null };
+    landscape: { exists: boolean; uploadedAt: string | null };
+  } | null;
 }
 
 export interface DownloadRecordingSnapshot {
@@ -52,6 +56,7 @@ export interface DownloadRecord {
   /** `${catalogId}:${hash}` */
   key: string;
   catalogId: string;
+  catalogLabel: string | null;
   hash: string;
   /** Owner at the time of download; records are hidden from other users. */
   userId: string | null;

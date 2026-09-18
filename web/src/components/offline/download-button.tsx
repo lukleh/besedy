@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { AlertCircle, Check, Download, Loader2, Pause } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useToast } from "@/hooks/use-toast";
+import { useCatalogs } from "@/hooks/use-catalogs";
 import { useDownloadManager, useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
 import { downloadManager, type DownloadRecord } from "@/lib/offline/download-manager";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,10 @@ export function DownloadButton(props: DownloadButtonProps) {
   const eventRecord = useEventDownload(catalogId, isEvent ? props.eventId : null);
   const record: DownloadRecord | null = isEvent ? eventRecord : recordingRecord;
   const { supported, hydrated } = useDownloadManager();
+  // Catalog pages already populate this query. Keep the button read-only so it
+  // can enrich the offline snapshot without introducing another request.
+  const { data: catalogs } = useCatalogs({ enabled: false });
+  const catalogLabel = catalogs?.find((catalog) => catalog.id === catalogId)?.label ?? null;
   const t = useTranslations("downloads");
   const { toast } = useToast();
   const [isStarting, setIsStarting] = useState(false);
@@ -56,9 +61,17 @@ export function DownloadButton(props: DownloadButtonProps) {
       if (!record) {
         setIsStarting(true);
         if (isEvent) {
-          await downloadManager.enqueueEvent({ catalogId, eventId: props.eventId });
+          await downloadManager.enqueueEvent({
+            catalogId,
+            catalogLabel,
+            eventId: props.eventId,
+          });
         } else {
-          await downloadManager.enqueueRecording({ catalogId, hash: props.hash });
+          await downloadManager.enqueueRecording({
+            catalogId,
+            catalogLabel,
+            hash: props.hash,
+          });
         }
         return;
       }
@@ -83,7 +96,7 @@ export function DownloadButton(props: DownloadButtonProps) {
     } finally {
       setIsStarting(false);
     }
-  }, [supported, isStarting, record, isEvent, catalogId, props, toast, t]);
+  }, [supported, isStarting, record, isEvent, catalogId, catalogLabel, props, toast, t]);
 
   if (!supported && hydrated) {
     return null;

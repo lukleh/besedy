@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  AlertCircle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Download,
   Loader2,
+  Pause,
 } from "lucide-react";
 import { useDownloadedEvents } from "@/hooks/use-downloads";
 import { Badge } from "@/components/ui/badge";
@@ -87,13 +89,29 @@ export function EventListResults({
         </span>
       );
     }
+    if (status === "queued" || status === "downloading")
+      return (
+        <span
+          className="inline-flex shrink-0 items-center text-muted-foreground"
+          aria-label={tDownloads("downloadInProgress")}
+          title={tDownloads("downloadInProgress")}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+      );
+    const isPaused = status === "paused";
+    const label = tDownloads(isPaused ? "statusPaused" : "statusError");
     return (
       <span
         className="inline-flex shrink-0 items-center text-muted-foreground"
-        aria-label={tDownloads("downloadInProgress")}
-        title={tDownloads("downloadInProgress")}
+        aria-label={label}
+        title={label}
       >
-        <Loader2 className="h-4 w-4 animate-spin" />
+        {isPaused ? (
+          <Pause className="h-4 w-4" />
+        ) : (
+          <AlertCircle className="h-4 w-4 text-destructive" />
+        )}
       </span>
     );
   };

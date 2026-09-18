@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, FileText, Loader2, WifiOff } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { AudioPlayer } from '@/components/player/audio-player';
@@ -8,6 +8,11 @@ import { TranscriptContent } from '@/components/transcript/transcript-viewer-con
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatPartialDate } from '@/lib/date-format';
+import {
+  getSavedPlaybackPosition,
+  markPlaybackCompleted,
+  savePlaybackPosition,
+} from '@/lib/playback-position';
 import {
   getDownloadBundle,
   type DownloadBundlePayload,
@@ -32,25 +37,65 @@ export function OfflineDownloadDetail({
   const [currentTime, setCurrentTime] = useState(0);
   const [seekTo, setSeekTo] = useState<number | undefined>();
   const [seekKey, setSeekKey] = useState(0);
+  const playbackRef = useRef({ time: 0, lastSavedAt: 0 });
+  const recordKey = record?.key ?? null;
+  const recordingHash = record?.hash ?? null;
 
   useEffect(() => {
     let cancelled = false;
-    if (!record) return;
+    if (!recordKey) return;
 
     void (async () => {
       let bundle: DownloadBundlePayload | null = null;
       try {
-        bundle = (await getDownloadBundle(record.key)) ?? null;
+        bundle = (await getDownloadBundle(recordKey)) ?? null;
       } catch {
         // The audio remains useful if IndexedDB cannot read the optional payload.
       } finally {
-        if (!cancelled) setBundleState({ key: record.key, bundle });
+        if (!cancelled) setBundleState({ key: recordKey, bundle });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [record]);
+  }, [recordKey]);
+
+  const persistPlaybackPosition = useCallback(() => {
+    if (!recordingHash) return;
+    savePlaybackPosition(recordingHash, playbackRef.current.time, {
+      clearWhenZero: true,
+    });
+    playbackRef.current.lastSavedAt = Date.now();
+  }, [recordingHash]);
+
+  useEffect(() => {
+    if (!recordingHash) return;
+    playbackRef.current = {
+      time: getSavedPlaybackPosition(recordingHash) ?? 0,
+      lastSavedAt: 0,
+    };
+    const persistWhenHidden = () => {
+      if (document.visibilityState === 'hidden') persistPlaybackPosition();
+    };
+    window.addEventListener('pagehide', persistPlaybackPosition);
+    document.addEventListener('visibilitychange', persistWhenHidden);
+    return () => {
+      persistPlaybackPosition();
+      window.removeEventListener('pagehide', persistPlaybackPosition);
+      document.removeEventListener('visibilitychange', persistWhenHidden);
+    };
+  }, [persistPlaybackPosition, recordingHash]);
+
+  const handleTimeUpdate = useCallback(
+    (time: number) => {
+      setCurrentTime(time);
+      playbackRef.current.time = time;
+      if (Date.now() - playbackRef.current.lastSavedAt >= 5_000) {
+        persistPlaybackPosition();
+      }
+    },
+    [persistPlaybackPosition],
+  );
 
   const bundle = bundleState.key === record?.key ? bundleState.bundle : null;
   const loading = record !== null && bundleState.key !== record.key;
@@ -75,7 +120,7 @@ export function OfflineDownloadDetail({
   }, [locale, record, t]);
 
   const seek = (time: number) => {
-    setCurrentTime(time);
+    handleTimeUpdate(time);
     setSeekTo(time);
     setSeekKey((value) => value + 1);
   };
@@ -140,7 +185,14 @@ export function OfflineDownloadDetail({
             <AudioPlayer
               src={record.audioUrl}
               catalogId={record.catalogId}
-              onTimeUpdate={setCurrentTime}
+              onTimeUpdate={handleTimeUpdate}
+              onPlayingChange={(isPlaying) => {
+                if (!isPlaying) persistPlaybackPosition();
+              }}
+              onEnded={() => {
+                markPlaybackCompleted(record.hash);
+                playbackRef.current = { time: 0, lastSavedAt: Date.now() };
+              }}
               seekTo={seekTo}
               seekKey={seekKey}
               autoPlayOnSeek

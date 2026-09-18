@@ -66,14 +66,27 @@ class MemoryCacheStorage {
 interface FakeServerOptions {
   /** Throw a network error when this byte offset is requested. */
   failAtOffset?: number | null;
+  /** Hold this byte offset until the test explicitly rejects it. */
+  deferAtOffset?: number | null;
+  /** Return a mismatched Content-Range header at this byte offset. */
+  invalidRangeAtOffset?: number | null;
   canViewTranscripts?: boolean;
+  posterStatus?: number;
 }
 
 function createFakeServer(options: FakeServerOptions = {}) {
   const audio = new Uint8Array(AUDIO_SIZE);
   for (let i = 0; i < audio.length; i += 1) audio[i] = i % 251;
   const rangeRequests: string[] = [];
-  const state = { failAtOffset: options.failAtOffset ?? null };
+  const state: {
+    deferAtOffset: number | null;
+    failAtOffset: number | null;
+    rejectDeferred: ((error: TypeError) => void) | null;
+  } = {
+    deferAtOffset: options.deferAtOffset ?? null,
+    failAtOffset: options.failAtOffset ?? null,
+    rejectDeferred: null,
+  };
 
   const json = (body: unknown) =>
     new Response(JSON.stringify(body), {
@@ -140,11 +153,19 @@ function createFakeServer(options: FakeServerOptions = {}) {
         if (state.failAtOffset !== null && start === state.failAtOffset) {
           throw new TypeError('Failed to fetch');
         }
+        if (state.deferAtOffset !== null && start === state.deferAtOffset) {
+          return await new Promise<Response>((_resolve, reject) => {
+            state.rejectDeferred = reject;
+          });
+        }
         return new Response(audio.slice(start, end + 1), {
           status: 206,
           headers: {
             'content-type': 'audio/webm',
-            'content-range': `bytes ${start}-${end}/${AUDIO_SIZE}`,
+            'content-range':
+              options.invalidRangeAtOffset === start
+                ? `bytes ${start + 1}-${end}/${AUDIO_SIZE}`
+                : `bytes ${start}-${end}/${AUDIO_SIZE}`,
           },
         });
       }
@@ -205,6 +226,11 @@ function createFakeServer(options: FakeServerOptions = {}) {
         });
       }
       if (pathname.endsWith('/poster')) {
+        if (options.posterStatus) {
+          return new Response('poster unavailable', {
+            status: options.posterStatus,
+          });
+        }
         return new Response(new Uint8Array([1, 2, 3]), {
           status: 200,
           headers: { 'content-type': 'image/jpeg' },
@@ -326,6 +352,28 @@ describe('download manager', () => {
     ]);
   });
 
+  it('does not miss a reconnect while the failed request is still unwinding', async () => {
+    const server = createFakeServer({ deferAtOffset: CHUNK * 2 });
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(() => server.state.rejectDeferred !== null);
+
+    downloadManager.setOnline(false);
+    downloadManager.setOnline(true);
+    server.state.deferAtOffset = null;
+    server.state.rejectDeferred?.(new TypeError('Failed to fetch'));
+
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+    );
+    expect(downloadManager.getSnapshot().records[0].resumeOnReconnect).toBe(
+      false,
+    );
+  });
+
   it('records server errors as failed downloads', async () => {
     const server = createFakeServer();
     server.fetchMock.mockImplementationOnce(
@@ -342,6 +390,19 @@ describe('download manager', () => {
     expect(downloadManager.getSnapshot().records[0].error).toContain(
       'HTTP 403',
     );
+  });
+
+  it('rejects a mismatched partial-content response', async () => {
+    const server = createFakeServer({ invalidRangeAtOffset: CHUNK });
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'error',
+    );
+    expect(downloadManager.getSnapshot().records[0].bytesLoaded).toBe(CHUNK);
   });
 
   it('downloads an event through its primary recording and stores its poster payload', async () => {
@@ -374,6 +435,13 @@ describe('download manager', () => {
     const bundle = await getDownloadBundle(record.key);
     expect(bundle?.poster?.variant).toBe('portrait');
     expect(bundle?.poster?.contentType).toBe('image/jpeg');
+    expect(
+      server.fetchMock.mock.calls.filter(([input]) =>
+        new URL(String(input), window.location.origin).pathname.endsWith(
+          `/events/7`,
+        ),
+      ),
+    ).toHaveLength(1);
 
     // A second request for the same event reuses the record instead of duplicating it.
     const again = await downloadManager.enqueueEvent({
@@ -382,6 +450,52 @@ describe('download manager', () => {
     });
     expect(again.key).toBe(record.key);
     expect(downloadManager.getSnapshot().records).toHaveLength(1);
+  });
+
+  it('upgrades an existing recording download into an event download', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    const recording = await downloadManager.enqueueRecording({
+      catalogId: CATALOG,
+      catalogLabel: 'Winter catalog',
+      hash: HASH,
+    });
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+    );
+
+    const upgraded = await downloadManager.enqueueEvent({
+      catalogId: CATALOG,
+      catalogLabel: 'Winter catalog',
+      eventId: 7,
+    });
+    expect(upgraded.key).toBe(recording.key);
+    expect(upgraded.event?.id).toBe(7);
+    expect(upgraded.catalogLabel).toBe('Winter catalog');
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+    );
+
+    const done = downloadManager.getSnapshot().records[0];
+    expect(done.eventKey).toBe(`${CATALOG}:7`);
+    expect(done.hasPoster).toBe(true);
+    expect(downloadManager.getSnapshot().records).toHaveLength(1);
+  });
+
+  it('completes an event download when its optional poster is unavailable', async () => {
+    const server = createFakeServer({ posterStatus: 500 });
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await downloadManager.enqueueEvent({ catalogId: CATALOG, eventId: 7 });
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+    );
+    expect(downloadManager.getSnapshot().records[0].hasPoster).toBe(false);
   });
 
   it('removes a download together with its cached bundle', async () => {
@@ -420,6 +534,7 @@ describe('download manager', () => {
     await db.putDownload({
       key,
       catalogId: CATALOG,
+      catalogLabel: null,
       hash: HASH,
       userId: null,
       eventKey: null,

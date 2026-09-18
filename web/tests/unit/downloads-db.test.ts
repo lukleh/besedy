@@ -27,6 +27,7 @@ describe('downloads database', () => {
     await db.putDownload({
       key: db.makeDownloadKey('cat', HASH),
       catalogId: 'cat',
+      catalogLabel: 'Catalog label',
       hash: HASH,
       userId: 'u1',
       eventKey: db.makeEventKey('cat', 3),
@@ -38,6 +39,7 @@ describe('downloads database', () => {
         dateMonth: null,
         dateDay: null,
         sessionIndex: 1,
+        posterFiles: null,
       },
       recording: null,
       audioUrl: null,
