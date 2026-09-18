@@ -4,10 +4,15 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from prefect.client.schemas.filters import FlowRunFilter
-from prefect.client.schemas.objects import StateType
+import pytest
 
-from besedy.lib.prefect_jobs import maintenance
+pytestmark = pytest.mark.optional_dependency
+pytest.importorskip("prefect", reason="requires the optional jobs extra")
+
+from prefect.client.schemas.filters import FlowRunFilter  # noqa: E402
+from prefect.client.schemas.objects import StateType  # noqa: E402
+
+from besedy.lib.prefect_jobs import maintenance  # noqa: E402
 
 
 @dataclass
