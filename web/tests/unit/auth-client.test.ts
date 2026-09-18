@@ -174,6 +174,12 @@ describe("auth client", () => {
     const keys = vi.fn().mockResolvedValue([
       "besedy-audio-v3",
       "besedy-transcript-v1",
+      "besedy-audio-v5",
+      "besedy-data-v1",
+      "besedy-shell-v1",
+      "besedy-static-v1",
+      "besedy-offline-shell-v1",
+      "besedy-offline-static-v1",
       "unrelated-cache",
     ]);
     const del = vi.fn().mockResolvedValue(true);
@@ -203,6 +209,13 @@ describe("auth client", () => {
     expect(keys).toHaveBeenCalled();
     expect(del).toHaveBeenCalledWith("besedy-audio-v3");
     expect(del).toHaveBeenCalledWith("besedy-transcript-v1");
+    // Protected offline content goes; public build assets stay.
+    expect(del).toHaveBeenCalledWith("besedy-audio-v5");
+    expect(del).toHaveBeenCalledWith("besedy-data-v1");
+    expect(del).toHaveBeenCalledWith("besedy-shell-v1");
+    expect(del).toHaveBeenCalledWith("besedy-offline-shell-v1");
+    expect(del).not.toHaveBeenCalledWith("besedy-static-v1");
+    expect(del).not.toHaveBeenCalledWith("besedy-offline-static-v1");
     expect(del).not.toHaveBeenCalledWith("unrelated-cache");
     expect(postMessage).toHaveBeenCalledWith({ type: "signout" });
   });

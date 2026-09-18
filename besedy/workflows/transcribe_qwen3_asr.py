@@ -26,6 +26,7 @@ from besedy.core.paths import (
     resolve_transcripts_root,
 )
 from besedy.lib.audio.probe import measure_audio_duration_seconds
+from besedy.lib.data.atomic_io import atomic_write_text
 from besedy.lib.workflow.config import select_transcription_workflow
 from besedy.lib.workflow.language import (
     qwen_language_code,
@@ -715,7 +716,8 @@ def main() -> int:
         target_dir = bundle_root / hash_component
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / "transcript.json"
-        target_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+        atomic_write_text(target_path, serialized, encoding="utf-8")
         logging.info(
             "Completed %s -> %s (%d segments)",
             audio_path.name,

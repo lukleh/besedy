@@ -21,6 +21,13 @@ import {
 } from "@/components/ui/responsive-menu";
 import { Switch } from "@/components/ui/switch";
 import { fetchJson } from "@/lib/api/fetch-json";
+import {
+  buildDiarizationBackendsUrl,
+  buildDiarizationUrl,
+  buildTranscriptBackendsUrl,
+  buildTranscriptFormatsUrl,
+  buildTranscriptUrl,
+} from "@/lib/api/recording-urls";
 import { formatModelLabel } from "@/lib/transcript-labels";
 import { Check, ChevronDown, Clock, Copy, Download, FileText, Users } from "lucide-react";
 import { TranscriptContent, TranscriptSkeleton } from "./transcript-viewer-content";
@@ -80,19 +87,10 @@ export function TranscriptViewer({
 
   const { data: available, isLoading: loadingBackends } = useQuery<AvailableTranscripts>({
     queryKey: ["transcript-backends", hash, groupKey],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      const suffix = params.toString();
-      return fetchJson<AvailableTranscripts>(
-        `/api/transcript/${hash}${suffix ? `?${suffix}` : ""}`,
-        {
-          schema: availableTranscriptsSchema,
-        }
-      );
-    },
+    queryFn: async () =>
+      fetchJson<AvailableTranscripts>(buildTranscriptBackendsUrl(hash, groupId), {
+        schema: availableTranscriptsSchema,
+      }),
   });
 
   const effectiveBackend = selectedBackend || available?.backends[0] || null;
@@ -119,20 +117,13 @@ export function TranscriptViewer({
 
   const { data: availableFormats } = useQuery<AvailableFormats>({
     queryKey: ["transcript-formats", hash, groupKey, effectiveBackend],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        backend: effectiveBackend ?? "",
-      });
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      return fetchJson<AvailableFormats>(
-        `/api/transcript/${hash}/formats?${params.toString()}`,
+    queryFn: async () =>
+      fetchJson<AvailableFormats>(
+        buildTranscriptFormatsUrl(hash, groupId, effectiveBackend ?? ""),
         {
           schema: availableFormatsSchema,
         }
-      );
-    },
+      ),
     enabled: !!effectiveBackend,
   });
 
@@ -153,17 +144,10 @@ export function TranscriptViewer({
 
   const { data: transcript, isLoading: loadingTranscript } = useQuery<Transcript>({
     queryKey: ["transcript", hash, groupKey, effectiveBackend],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        backend: effectiveBackend ?? "",
-      });
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      return fetchJson<Transcript>(`/api/transcript/${hash}?${params.toString()}`, {
+    queryFn: async () =>
+      fetchJson<Transcript>(buildTranscriptUrl(hash, groupId, effectiveBackend ?? ""), {
         schema: transcriptSchema,
-      });
-    },
+      }),
     enabled: !!effectiveBackend,
   });
 
@@ -212,14 +196,9 @@ export function TranscriptViewer({
   const { data: availableDiarizations } = useQuery<AvailableDiarizations>({
     queryKey: ["diarization-backends", hash, groupKey],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      const suffix = params.toString();
       try {
         return await fetchJson<AvailableDiarizations>(
-          `/api/transcript/${hash}/speakers${suffix ? `?${suffix}` : ""}`,
+          buildDiarizationBackendsUrl(hash, groupId),
           {
             schema: availableDiarizationsSchema,
           }
@@ -237,20 +216,13 @@ export function TranscriptViewer({
 
   const { data: diarization } = useQuery<Diarization>({
     queryKey: ["diarization", hash, groupKey, effectiveDiarizationBackend],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        backend: effectiveDiarizationBackend ?? "",
-      });
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      return fetchJson<Diarization>(
-        `/api/transcript/${hash}/speakers?${params.toString()}`,
+    queryFn: async () =>
+      fetchJson<Diarization>(
+        buildDiarizationUrl(hash, groupId, effectiveDiarizationBackend ?? ""),
         {
           schema: diarizationSchema,
         }
-      );
-    },
+      ),
     enabled: !!effectiveDiarizationBackend && showSpeakers,
   });
 

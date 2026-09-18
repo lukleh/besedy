@@ -112,9 +112,13 @@ test.describe("Smoke Tests @smoke", () => {
       page.getByRole("button", { name: /^mute$/i }).first()
     ).toBeVisible({ timeout: 5000 });
 
-    // Listener restrictions stay in force even on the playable surface.
+    // Listener restrictions stay in force even on the playable surface:
+    // transcripts remain hidden, while audio can still be downloaded for
+    // offline listening.
     await expect(page.getByRole("heading", { name: /transcript/i })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
+    await expect(
+      page.getByTestId("download-button").filter({ visible: true }).first()
+    ).toBeVisible();
 
     // Keep a direct signal in the failure output about which UI route was used.
     expect(["recording", "event"]).toContain(openedRoute);

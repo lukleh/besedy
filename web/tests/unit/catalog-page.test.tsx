@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import CatalogPage from "@/app/catalog/[catalogId]/page";
+import CatalogPage from "@/app/(app)/catalog/[catalogId]/page";
 
 const mocks = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {

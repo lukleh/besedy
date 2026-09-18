@@ -87,10 +87,6 @@ export function Header() {
           {/* Radio, Notifications, Update, Support & User Menu */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {!isAuthPage && effectiveCatalogId && <RadioButton catalogId={effectiveCatalogId} />}
-            {/* Intentionally not mounting SyncStatusIndicator here for now.
-                The old header sync path booted offline catalog syncing automatically,
-                and that caching flow needs a proper redesign before we expose it again.
-                Manual offline audio caching remains available from the player UI. */}
             {!isAuthPage && <NotificationBell />}
             {!isAuthPage && <UpdateIndicator />}
             <Button

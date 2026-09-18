@@ -11,8 +11,6 @@ from pathlib import Path
 
 from besedy.core.paths import resolve_catalogs_root
 
-ALREADY_EXISTS_REASON = "transcripts already exist for all workflows"
-
 
 def get_default_catalog_symlink() -> Path:
     """Return the default path for the audio_catalog.csv symlink."""

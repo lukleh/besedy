@@ -100,7 +100,7 @@ describe("RootLayout", () => {
   });
 
   it("passes the canonical request time zone into AppProviders", async () => {
-    const { default: RootLayout } = await import("@/app/layout");
+    const { default: RootLayout } = await import("@/app/(app)/layout");
 
     const tree = await RootLayout({ children: <div>child content</div> });
     expect(isValidElement(tree)).toBe(true);

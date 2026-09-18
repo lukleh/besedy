@@ -5,7 +5,7 @@ import {
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import AuditDetailContent from "@/app/admin/audit/[id]/audit-detail-content";
+import AuditDetailContent from "@/app/(app)/admin/audit/[id]/audit-detail-content";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 vi.mock("next/navigation", () => ({
