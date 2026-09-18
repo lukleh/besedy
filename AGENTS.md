@@ -44,6 +44,8 @@ Keep shared operational facts here and have provider-specific files such as
 - `just analyze <command>`: analysis CLI wrapper (e.g. `just analyze validate`)
 - `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/ --batch`)
 - `just test` (or `uv run --all-extras pytest`): run the full test suite
+- `just ruff`: run Ruff lint checks across `besedy/` and `tests/`
+- `just ty`: run the Python type checker across `besedy/`
 - `just web-check`: TypeScript + ESLint + web unit tests
 - Always run Python code via `uv run python ...` (instead of plain `python ...`) unless using a `just` wrapper.
 - Optional pre-commit (Ruff): `uv tool install pre-commit && pre-commit install` (config in `ruff.toml`)
@@ -120,8 +122,8 @@ npm run test:e2e:headed     # With visible browser
 # Environment management
 npm run test:e2e:reset      # Reset database between runs
 npm run test:e2e:generate   # Regenerate test fixtures
-npm run test:e2e:teardown   # Stop containers (keep data)
-npm run test:e2e:teardown:clean  # Stop and delete volumes
+(cd .. && just test-down)     # Stop containers (keep data)
+(cd .. && just test-down-clean)  # Stop and delete volumes
 ```
 
 **Test Environment:**
@@ -217,6 +219,6 @@ manages workflow-group records themselves.
 2. **Loudness Normalization**: Staged audio targets -16 LUFS (acceptable range: -20 to -12 LUFS).
 3. **Duration Format**: CSV durations use `HH:MM:SS`.
 4. **Audio Hash Directories**: Transcript artifacts use the full 64-character audio hash as the leaf directory.
-5. **Timestamped Outputs**: All output-producing CLI commands must follow the timestamp + symlink pattern.
+5. **Timestamped Outputs**: CLI commands that create output directories must follow the timestamp + symlink pattern; `export-transcripts` is the documented sidecar exception.
 6. **Audio Input Format**: All workflows expect 16kHz mono WAV; use `validate_mono_wav_16k()`.
 7. **Workflow Registration**: Add labels in `besedy/core/paths.py` and register in `besedy/lib/workflow/runner.py`.

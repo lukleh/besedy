@@ -8,11 +8,19 @@ import {
   sanitizePostAuthCallbackPath,
   getAllowlistRejectionParam,
 } from "./oauth-routing";
+import { PROTECTED_OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
+import { destroyDownloadsDatabase, isIndexedDBAvailable } from "@/lib/offline/downloads-db";
 
 // Cross-tab auth synchronization using BroadcastChannel
 // This allows sign-out in one tab to redirect all other tabs
 const AUTH_CHANNEL_NAME = "besedy-auth";
-const OFFLINE_CACHE_PREFIXES = ["besedy-audio-", "besedy-transcript-"];
+// Legacy cache families from earlier service worker versions.
+const LEGACY_OFFLINE_CACHE_PREFIXES = [
+  "besedy-audio-",
+  "besedy-transcript-",
+  "besedy-data-",
+  "besedy-shell-",
+];
 const isProductionApp = process.env.NEXT_PUBLIC_APP_ENV === "production";
 
 type SignInWithOAuthOptions = {
@@ -52,22 +60,36 @@ function broadcastAuthEvent(message: AuthBroadcastMessage): void {
 }
 
 /**
- * Clear offline caches that may contain protected media.
- * Best effort only; failures must not block sign-out.
+ * Clear offline data that may contain protected content: downloaded audio,
+ * the Downloads shell, and the downloads registry and payloads. Build assets
+ * stay cached because they are public. Best effort only; failures must not
+ * block sign-out.
  */
 async function clearOfflineCaches(): Promise<void> {
-  if (typeof window === "undefined" || !("caches" in window)) {
+  if (typeof window === "undefined") {
     return;
   }
 
-  try {
-    const cacheNames = await caches.keys();
-    const targets = cacheNames.filter((name) =>
-      OFFLINE_CACHE_PREFIXES.some((prefix) => name.startsWith(prefix))
-    );
-    await Promise.all(targets.map((name) => caches.delete(name)));
-  } catch {
-    // Ignore cache-clearing failures.
+  if ("caches" in window) {
+    try {
+      const cacheNames = await caches.keys();
+      const targets = cacheNames.filter(
+        (name) =>
+          (PROTECTED_OFFLINE_CACHE_NAMES as readonly string[]).includes(name) ||
+          LEGACY_OFFLINE_CACHE_PREFIXES.some((prefix) => name.startsWith(prefix))
+      );
+      await Promise.all(targets.map((name) => caches.delete(name)));
+    } catch {
+      // Ignore cache-clearing failures.
+    }
+  }
+
+  if (isIndexedDBAvailable()) {
+    try {
+      await destroyDownloadsDatabase();
+    } catch {
+      // Ignore database-clearing failures.
+    }
   }
 }
 

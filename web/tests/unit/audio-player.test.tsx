@@ -46,10 +46,19 @@ interface RenderPlayerOptions {
   playbackEnd?: number;
   autoPlayOnSeek?: boolean;
   onTimeUpdate?: (time: number) => void;
+  onSeek?: (time: number) => void;
 }
 
 function renderPlayer(options: RenderPlayerOptions = {}) {
-  const { src = "https://example.com/audio.mp3", seekTo, seekKey, playbackEnd, autoPlayOnSeek, onTimeUpdate } = options;
+  const {
+    src = "https://example.com/audio.mp3",
+    seekTo,
+    seekKey,
+    playbackEnd,
+    autoPlayOnSeek,
+    onTimeUpdate,
+    onSeek,
+  } = options;
   const utils = render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <AudioPlayer
@@ -59,6 +68,7 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
         playbackEnd={playbackEnd}
         autoPlayOnSeek={autoPlayOnSeek}
         onTimeUpdate={onTimeUpdate}
+        onSeek={onSeek}
       />
     </NextIntlClientProvider>
   );
@@ -203,7 +213,8 @@ describe("AudioPlayer play/pause controls", () => {
 
 describe("AudioPlayer skip controls", () => {
   it("skips backward 10 seconds when skip back button is clicked", async () => {
-    const { audio, container } = renderPlayer();
+    const onSeek = vi.fn();
+    const { audio, container } = renderPlayer({ onSeek });
     audio.currentTime = 30;
 
     const skipBackButton = container.querySelector(
@@ -215,10 +226,12 @@ describe("AudioPlayer skip controls", () => {
     });
 
     expect(audio.currentTime).toBe(20);
+    expect(onSeek).toHaveBeenCalledWith(20);
   });
 
   it("skips forward 10 seconds when skip forward button is clicked", async () => {
-    const { audio, container } = renderPlayer();
+    const onSeek = vi.fn();
+    const { audio, container } = renderPlayer({ onSeek });
     Object.defineProperty(audio, "duration", { value: 100, configurable: true });
 
     // Fire loadedmetadata to update component state
@@ -237,6 +250,7 @@ describe("AudioPlayer skip controls", () => {
     });
 
     expect(audio.currentTime).toBe(40);
+    expect(onSeek).toHaveBeenCalledWith(40);
   });
 
   it("does not skip backward below 0", async () => {

@@ -3,7 +3,7 @@
 import { signOutAndRedirect } from "@/lib/auth/client";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react";
+import { Download, LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react";
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 import { useAdminStatus } from "@/hooks/use-admin-status";
@@ -187,8 +187,18 @@ export function UserMenu() {
         <LanguageMenuItem />
         <TextSizeMenuItem />
 
-        {/* Settings */}
+        {/* Downloads & Settings */}
         <ResponsiveMenuSeparator />
+        <ResponsiveMenuItem asChild>
+          <Link
+            href="/downloads"
+            className="flex items-center gap-2 cursor-pointer"
+            data-testid="user-menu-downloads"
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            {t("nav.downloads")}
+          </Link>
+        </ResponsiveMenuItem>
         <ResponsiveMenuItem asChild>
           <Link href="/settings" className="flex items-center gap-2 cursor-pointer">
             <Settings className="h-4 w-4 shrink-0" />

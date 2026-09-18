@@ -7,7 +7,7 @@ import {
   summarizeCatalogNames,
   type PendingPortalAdmission,
   type User,
-} from "@/app/admin/users/users-content-types";
+} from "@/app/(app)/admin/users/users-content-types";
 
 const baseUser: User = {
   id: "user-1",

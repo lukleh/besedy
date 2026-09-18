@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, Calendar, Clock, Hash, MapPin, Mic } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import type { CatalogEntry } from "../types";
-import { CacheButton } from "@/components/player/cache-button";
+import { DownloadButton } from "@/components/offline/download-button";
 import { formatMediumDate } from "@/lib/date-format";
 
 interface MobileCardViewProps {
@@ -136,11 +136,7 @@ export function MobileCardView({ entries, groupId }: MobileCardViewProps) {
               {/* Right side: cache button, vertically centered */}
               {entry.isActionable && (
                 <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-                  <CacheButton
-                    audioUrl={`/api/catalogs/${groupId}/recordings/${entry.hash}/audio`}
-                    hash={entry.hash}
-                    catalogId={groupId}
-                  />
+                  <DownloadButton catalogId={groupId} hash={entry.hash} />
                 </div>
               )}
             </CardContent>

@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { ReloadBlockerKind } from "@/lib/service-worker/reload-safety";
+import { isReloadBlockerKind, type ReloadBlockerKind } from "@/lib/service-worker/reload-safety";
 import { createBrowserId } from "@/lib/browser-id";
 
 const CHANNEL_NAME = "besedy-reload-safety";
@@ -57,9 +57,7 @@ function isReloadBlocker(value: unknown): value is ReloadBlocker {
   const blocker = value as Partial<ReloadBlocker>;
   return (
     typeof blocker.id === "string" &&
-    (blocker.kind === "audio" ||
-      blocker.kind === "unsaved-changes" ||
-      blocker.kind === "critical-mutation") &&
+    isReloadBlockerKind(blocker.kind) &&
     typeof blocker.blocksAutomatic === "boolean" &&
     typeof blocker.blocksManual === "boolean"
   );

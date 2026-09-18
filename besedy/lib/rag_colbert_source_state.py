@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
+from urllib.parse import quote
 
 
 @dataclass(frozen=True)
@@ -20,8 +21,11 @@ class ColbertSourceStateRow:
     updated_at: str | None = None
 
 
-def _connect(path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(path)
+def _connect(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
+    if read_only:
+        connection = sqlite3.connect(f"file:{quote(str(path))}?mode=ro", uri=True)
+    else:
+        connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -68,13 +72,26 @@ def initialize_source_state(path: Path | str) -> Path:
     return target_path
 
 
-def read_source_state(path: Path | str) -> dict[str, ColbertSourceStateRow]:
+def read_source_state(
+    path: Path | str,
+    *,
+    read_only: bool = False,
+) -> dict[str, ColbertSourceStateRow]:
+    """Read every source state row, keyed by audio hash.
+
+    Pass ``read_only=True`` for diagnostic readers (such as ``catalog check``)
+    that must not create or migrate the schema: it opens the database in
+    SQLite read-only mode so the read never takes a write lock against a
+    concurrent sync.
+    """
+
     source_state_path = Path(path)
     if not source_state_path.exists():
         return {}
 
-    with _connect(source_state_path) as connection:
-        _initialize_schema(connection)
+    with _connect(source_state_path, read_only=read_only) as connection:
+        if not read_only:
+            _initialize_schema(connection)
         rows = connection.execute(
             """
             SELECT

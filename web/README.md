@@ -235,8 +235,6 @@ The authenticated MCP suite uses its own isolated stack and deterministic RAG mo
 npm run test:e2e          # Run tests (headless) against the started test stack
 npm run test:e2e:ui       # Interactive UI mode
 npm run test:e2e:headed   # With visible browser
-npm run test:e2e:teardown # Stop containers (keeps data)
-npm run test:e2e:teardown:clean  # Stop and delete volumes
 ```
 
 Or use just commands:

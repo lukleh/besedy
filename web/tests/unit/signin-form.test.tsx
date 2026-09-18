@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import SignInForm from "@/app/auth/signin/signin-form";
+import SignInForm from "@/app/(app)/auth/signin/signin-form";
 import { signInWithOAuth } from "@/lib/auth/client";
 
 const replaceMock = vi.fn();

@@ -42,7 +42,13 @@ interface ServiceWorkerContextValue extends ServiceWorkerRuntimeSnapshot {
 
 const ServiceWorkerContext = createContext<ServiceWorkerContextValue | undefined>(undefined);
 
-export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
+export function ServiceWorkerProvider({
+  children,
+  passive = false,
+}: {
+  children: ReactNode;
+  passive?: boolean;
+}) {
   const runtime = useMemo(() => createServiceWorkerRuntime(), []);
   const { automaticBlockerKinds, manualBlockerKinds } = useReloadSafety();
   const { session, isPending } = useSession();
@@ -59,28 +65,32 @@ export function ServiceWorkerProvider({ children }: { children: ReactNode }) {
   }, [runtime]);
 
   useEffect(() => {
+    if (passive) return;
     runtime.setAppShellMode({
       isAuthenticatedAppShell,
       shouldSilentlyActivateWaitingWorker,
     });
-  }, [isAuthenticatedAppShell, runtime, shouldSilentlyActivateWaitingWorker]);
+  }, [isAuthenticatedAppShell, passive, runtime, shouldSilentlyActivateWaitingWorker]);
 
   useEffect(() => {
+    if (passive) return;
     const parseKinds = (key: string): ReloadBlockerKind[] =>
       key ? (key.split(",") as ReloadBlockerKind[]) : [];
     runtime.setReloadSafety({
       automaticBlockerKinds: parseKinds(automaticBlockerKey),
       manualBlockerKinds: parseKinds(manualBlockerKey),
     });
-  }, [automaticBlockerKey, manualBlockerKey, runtime]);
+  }, [automaticBlockerKey, manualBlockerKey, passive, runtime]);
 
   useEffect(() => {
+    if (passive) return;
     return runtime.start();
-  }, [runtime]);
+  }, [passive, runtime]);
 
   useEffect(() => {
+    if (passive) return;
     return registerWebVersionObserver(runtime.observeWebVersion);
-  }, [runtime]);
+  }, [passive, runtime]);
 
   const applyUpdate = useCallback(() => {
     runtime.applyUpdate();

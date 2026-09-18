@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getMcpTranscript } from '@/lib/mcp/read-service';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
+  TRANSCRIPT_VERIFICATION_GUIDANCE,
   registerBesedyTool,
   resolveToolCatalog,
   runReadTool,
@@ -48,8 +49,7 @@ export function registerGetTranscriptTool(
     'get_transcript',
     {
       title: 'Get a Besedy transcript',
-      description:
-        'Read transcript context for a visible recording linked to a released event. Pass a search result transcriptRequest unchanged, then expand its time window when more context is needed. Page mode is bounded; full mode returns the complete selected window up to a hard response ceiling. Each segment includes a bounded citation URL.',
+      description: `Read transcript context for a visible recording linked to a released event. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Page mode is bounded; full mode returns the complete selected window up to a hard response ceiling. Each segment includes a bounded citation URL.`,
       inputSchema: z
         .object({
           catalogId: z

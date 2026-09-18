@@ -47,7 +47,13 @@ def _load_chunk_tokenizer(model_name: str):
             "Install dependencies with `uv sync`."
         ) from exc
 
-    return AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    # Chunk sizing only needs the tokenizer vocabulary, never a model's custom
+    # modeling code. Models such as jinaai/jina-colbert-v2 ship remote code in
+    # their config, and leaving the flag unset makes transformers block on an
+    # interactive "Do you wish to run the custom code?" prompt when the host
+    # pipeline loads them. Refusing remote code keeps the load non-interactive
+    # and yields the same tokenizer.
+    return AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=False)
 
 
 @lru_cache(maxsize=50000)
