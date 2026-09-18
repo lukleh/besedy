@@ -13,9 +13,10 @@ import type {
 } from '@/components/transcript/transcript-viewer-types';
 
 export const DOWNLOADS_DB_NAME = 'besedy-offline';
-const DOWNLOADS_DB_VERSION = 3;
+const DOWNLOADS_DB_VERSION = 4;
 const DOWNLOADS_STORE = 'downloads';
 const DOWNLOAD_BUNDLES_STORE = 'downloadBundles';
+const PLAYBACK_PROGRESS_STORE = 'pendingPlaybackProgress';
 
 export type DownloadStatus =
   /** Waiting for the queue. */
@@ -98,6 +99,29 @@ export interface DownloadBundlePayload {
   updatedAt: number;
 }
 
+export interface PendingPlaybackProgress {
+  /** `${userId}:${catalogId}:${hash}` */
+  key: string;
+  userId: string;
+  catalogId: string;
+  hash: string;
+  positionSec: number;
+  durationSec: number | null;
+  completed: boolean;
+  /** Monotonic per-recording revision used for compare-and-delete after sync. */
+  revision: number;
+  updatedAt: number;
+}
+
+export interface PendingPlaybackProgressInput {
+  userId: string;
+  catalogId: string;
+  hash: string;
+  positionSec: number;
+  durationSec: number | null;
+  completed: boolean;
+}
+
 interface DownloadsDBSchema extends DBSchema {
   downloads: {
     key: string;
@@ -112,6 +136,11 @@ interface DownloadsDBSchema extends DBSchema {
     key: string;
     value: DownloadBundlePayload;
   };
+  pendingPlaybackProgress: {
+    key: string;
+    value: PendingPlaybackProgress;
+    indexes: { byUser: string };
+  };
 }
 
 export function makeDownloadKey(catalogId: string, hash: string): string {
@@ -120,6 +149,14 @@ export function makeDownloadKey(catalogId: string, hash: string): string {
 
 export function makeEventKey(catalogId: string, eventId: number): string {
   return `${catalogId}:${eventId}`;
+}
+
+export function makePendingPlaybackProgressKey(
+  userId: string,
+  catalogId: string,
+  hash: string,
+): string {
+  return `${userId}:${catalogId}:${hash}`;
 }
 
 export function isIndexedDBAvailable(): boolean {
@@ -136,7 +173,11 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
       {
         upgrade(db) {
           for (const name of Array.from(db.objectStoreNames)) {
-            if (name !== DOWNLOADS_STORE && name !== DOWNLOAD_BUNDLES_STORE) {
+            if (
+              name !== DOWNLOADS_STORE &&
+              name !== DOWNLOAD_BUNDLES_STORE &&
+              name !== PLAYBACK_PROGRESS_STORE
+            ) {
               db.deleteObjectStore(name);
             }
           }
@@ -150,6 +191,12 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
           }
           if (!db.objectStoreNames.contains(DOWNLOAD_BUNDLES_STORE)) {
             db.createObjectStore(DOWNLOAD_BUNDLES_STORE, { keyPath: 'key' });
+          }
+          if (!db.objectStoreNames.contains(PLAYBACK_PROGRESS_STORE)) {
+            const store = db.createObjectStore(PLAYBACK_PROGRESS_STORE, {
+              keyPath: 'key',
+            });
+            store.createIndex('byUser', 'userId');
           }
         },
         blocking() {
@@ -205,6 +252,68 @@ export async function putDownloadBundle(
 export async function deleteDownloadBundle(key: string): Promise<void> {
   const db = await getDownloadsDB();
   await db.delete(DOWNLOAD_BUNDLES_STORE, key);
+}
+
+/** Coalesce playback changes into the latest durable state for a recording. */
+export async function putPendingPlaybackProgress(
+  input: PendingPlaybackProgressInput,
+): Promise<PendingPlaybackProgress> {
+  const db = await getDownloadsDB();
+  const key = makePendingPlaybackProgressKey(
+    input.userId,
+    input.catalogId,
+    input.hash,
+  );
+  const transaction = db.transaction(PLAYBACK_PROGRESS_STORE, 'readwrite');
+  const existing = await transaction.store.get(key);
+  const pending: PendingPlaybackProgress = {
+    ...input,
+    key,
+    revision: (existing?.revision ?? 0) + 1,
+    updatedAt: Date.now(),
+  };
+  await transaction.store.put(pending);
+  await transaction.done;
+  return pending;
+}
+
+export async function getPendingPlaybackProgress(
+  userId: string,
+  catalogId: string,
+  hash: string,
+): Promise<PendingPlaybackProgress | undefined> {
+  const db = await getDownloadsDB();
+  return db.get(
+    PLAYBACK_PROGRESS_STORE,
+    makePendingPlaybackProgressKey(userId, catalogId, hash),
+  );
+}
+
+export async function listPendingPlaybackProgress(
+  userId: string,
+): Promise<PendingPlaybackProgress[]> {
+  const db = await getDownloadsDB();
+  return db.getAllFromIndex(PLAYBACK_PROGRESS_STORE, 'byUser', userId);
+}
+
+/**
+ * Remove a synced entry only if no newer local playback update replaced it
+ * while the request was in flight.
+ */
+export async function deletePendingPlaybackProgress(
+  key: string,
+  revision: number,
+): Promise<boolean> {
+  const db = await getDownloadsDB();
+  const transaction = db.transaction(PLAYBACK_PROGRESS_STORE, 'readwrite');
+  const current = await transaction.store.get(key);
+  if (!current || current.revision !== revision) {
+    await transaction.done;
+    return false;
+  }
+  await transaction.store.delete(key);
+  await transaction.done;
+  return true;
 }
 
 /** Drop the whole database. Used on sign-out and in tests. */

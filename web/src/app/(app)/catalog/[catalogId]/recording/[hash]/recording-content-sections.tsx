@@ -71,6 +71,7 @@ interface RecordingAudioSectionProps {
   onAudioEnded: (duration: number) => void;
   onDurationChange: (duration: number) => void;
   onPlayingChange: (playing: boolean) => void;
+  onSeek: (time: number) => void;
   onSourceChange: (sourceId: string) => void;
   permissions: RecordingPermissions;
   recording: CatalogEntryResponse;
@@ -210,6 +211,7 @@ export function RecordingAudioSection({
   onAudioEnded,
   onDurationChange,
   onPlayingChange,
+  onSeek,
   onSourceChange,
   permissions,
   recording,
@@ -260,6 +262,7 @@ export function RecordingAudioSection({
         onTimeUpdate={currentTimeSetter}
         onDurationChange={onDurationChange}
         onPlayingChange={onPlayingChange}
+        onSeek={onSeek}
         onEnded={onAudioEnded}
         seekTo={seekRequest?.time}
         seekKey={seekRequest?.key}

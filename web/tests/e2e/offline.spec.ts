@@ -125,12 +125,23 @@ test.describe('Offline Mode', () => {
   });
 
   test.describe('Offline playback', () => {
-    test('a downloaded recording opens from the offline library and plays', async ({
+    test('a downloaded recording plays offline and syncs progress on reconnect', async ({
       page,
       context,
     }) => {
-      await loginAs(page, 'viewer');
+      // Use a separate account because progress is backend state and the
+      // service-worker streaming test runs concurrently as the viewer.
+      await loginAs(page, 'listener');
       await clearOfflineStorage(page);
+      const progressUrl = `/api/catalogs/${TEST_CATALOG_ID}/recordings/${FIRST_RECORDING.hash}/progress`;
+      const initialProgress = await page.request.put(progressUrl, {
+        data: {
+          positionSec: 20,
+          durationSec: 30,
+          completed: false,
+        },
+      });
+      expect(initialProgress.ok()).toBe(true);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
       await waitForServiceWorker(page);
@@ -211,7 +222,60 @@ test.describe('Offline Mode', () => {
         { timeout: 10_000 },
       );
 
+      await playButton.click();
+      await expect(playButton).toHaveAttribute('aria-label', /play/i);
+      const progressSlider = page.getByRole('slider', {
+        name: 'Playback progress',
+      });
+      await progressSlider.press('Home');
+      // The shared player slider uses 100 ms steps.
+      for (let step = 0; step < 50; step += 1) {
+        await progressSlider.press('ArrowRight');
+      }
+      await expect(progressSlider).toHaveAttribute('aria-valuenow', '5');
+      await expect
+        .poll(() =>
+          page.evaluate(async () => {
+            const request = indexedDB.open('besedy-offline');
+            const database = await new Promise<IDBDatabase>(
+              (resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+              },
+            );
+            const transaction = database.transaction(
+              'pendingPlaybackProgress',
+              'readonly',
+            );
+            const entries = await new Promise<Array<{ positionSec: number }>>(
+              (resolve, reject) => {
+                const getAll = transaction
+                  .objectStore('pendingPlaybackProgress')
+                  .getAll();
+                getAll.onsuccess = () => resolve(getAll.result);
+                getAll.onerror = () => reject(getAll.error);
+              },
+            );
+            database.close();
+            return entries[0]?.positionSec ?? null;
+          }),
+        )
+        .toBe(5);
+
       await setOffline(context, false);
+      await expect
+        .poll(
+          async () => {
+            const response = await page.request.get(progressUrl);
+            if (!response.ok()) return null;
+            const body = (await response.json()) as {
+              progress: { positionSec: number } | null;
+            };
+            return body.progress?.positionSec ?? null;
+          },
+          { timeout: 15_000 },
+        )
+        .toBe(5);
     });
 
     test('an offline navigation to an unknown page lands on Downloads', async ({

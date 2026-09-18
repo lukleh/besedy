@@ -92,8 +92,9 @@ describe('downloads database', () => {
     expect(Array.from(database.objectStoreNames)).toEqual([
       'downloadBundles',
       'downloads',
+      'pendingPlaybackProgress',
     ]);
-    expect(database.version).toBe(3);
+    expect(database.version).toBe(4);
   });
 
   it('keeps large payloads separate from lightweight registry rows', async () => {
@@ -131,6 +132,45 @@ describe('downloads database', () => {
     const databases = await indexedDB.databases();
     expect(
       databases.find((entry) => entry.name === db.DOWNLOADS_DB_NAME),
+    ).toBeUndefined();
+  });
+
+  it('coalesces pending playback progress and only deletes a synced revision', async () => {
+    const db = await loadDb();
+    const input = {
+      userId: 'u1',
+      catalogId: 'cat',
+      hash: HASH,
+      durationSec: 120,
+      completed: false,
+    };
+    const first = await db.putPendingPlaybackProgress({
+      ...input,
+      positionSec: 80,
+    });
+    const backwardSeek = await db.putPendingPlaybackProgress({
+      ...input,
+      positionSec: 20,
+    });
+
+    expect(backwardSeek.revision).toBe(first.revision + 1);
+    expect(await db.listPendingPlaybackProgress('u1')).toEqual([
+      expect.objectContaining({ positionSec: 20 }),
+    ]);
+    expect(
+      await db.deletePendingPlaybackProgress(first.key, first.revision),
+    ).toBe(false);
+    expect(await db.getPendingPlaybackProgress('u1', 'cat', HASH)).toEqual(
+      expect.objectContaining({ positionSec: 20 }),
+    );
+    expect(
+      await db.deletePendingPlaybackProgress(
+        backwardSeek.key,
+        backwardSeek.revision,
+      ),
+    ).toBe(true);
+    expect(
+      await db.getPendingPlaybackProgress('u1', 'cat', HASH),
     ).toBeUndefined();
   });
 });

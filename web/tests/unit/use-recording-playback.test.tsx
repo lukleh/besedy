@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
     stopRadio: vi.fn(),
   },
   setRecordingPlaying: vi.fn(),
+  session: { userId: null as string | null },
+  flushPendingPlaybackProgress: vi.fn(),
+  getPendingPlaybackProgress: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -27,6 +30,22 @@ vi.mock("@/contexts/audio-playback-context", () => ({
     isAudioPlaying: false,
     setRecordingPlaying: mocks.setRecordingPlaying,
   }),
+}));
+
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => ({
+    session: mocks.session.userId
+      ? { user: { id: mocks.session.userId } }
+      : null,
+  }),
+}));
+
+vi.mock("@/lib/offline/playback-progress-sync", () => ({
+  flushPendingPlaybackProgress: mocks.flushPendingPlaybackProgress,
+}));
+
+vi.mock("@/lib/offline/downloads-db", () => ({
+  getPendingPlaybackProgress: mocks.getPendingPlaybackProgress,
 }));
 
 const HASH = "a".repeat(64);
@@ -53,6 +72,13 @@ describe("useRecordingPlayback", () => {
       isActive: false,
       stopRadio: vi.fn(),
     };
+    mocks.session.userId = null;
+    mocks.flushPendingPlaybackProgress.mockResolvedValue({
+      attempted: 0,
+      synced: 0,
+      failed: 0,
+    });
+    mocks.getPendingPlaybackProgress.mockResolvedValue(undefined);
     const storage = new Map<string, string>();
     vi.mocked(localStorage.getItem).mockImplementation((key: string) => storage.get(key) ?? null);
     vi.mocked(localStorage.setItem).mockImplementation((key: string, value: string) => {
@@ -233,6 +259,47 @@ describe("useRecordingPlayback", () => {
     });
     expect(result.current.seekRequest?.time).toBe(75);
     expect(localStorage.getItem(STORAGE_KEY)).toBe("75");
+  });
+
+  it("keeps a pending offline backward seek authoritative", async () => {
+    mocks.session.userId = "u1";
+    localStorage.setItem(STORAGE_KEY, "20");
+    mocks.getPendingPlaybackProgress.mockResolvedValue({
+      key: `u1:${CATALOG_ID}:${HASH}`,
+      userId: "u1",
+      catalogId: CATALOG_ID,
+      hash: HASH,
+      positionSec: 20,
+      durationSec: 100,
+      completed: false,
+      revision: 1,
+      updatedAt: Date.now(),
+    });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          progress: {
+            positionSec: 75,
+            durationSec: 100,
+            completed: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.flushPendingPlaybackProgress).toHaveBeenCalledWith("u1");
+    expect(result.current.seekRequest?.time).toBe(20);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("20");
   });
 
   it("imports a browser position when it is further than server progress", async () => {

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { formatPartialDate } from '@/lib/date-format';
 import {
   getSavedPlaybackPosition,
+  isPlaybackCompleted,
   markPlaybackCompleted,
   savePlaybackPosition,
 } from '@/lib/playback-position';
@@ -18,6 +19,7 @@ import {
   type DownloadBundlePayload,
   type DownloadRecord,
 } from '@/lib/offline/downloads-db';
+import { queuePlaybackProgress } from '@/lib/offline/playback-progress-sync';
 
 interface OfflineDownloadDetailProps {
   record: DownloadRecord | null;
@@ -37,9 +39,16 @@ export function OfflineDownloadDetail({
   const [currentTime, setCurrentTime] = useState(0);
   const [seekTo, setSeekTo] = useState<number | undefined>();
   const [seekKey, setSeekKey] = useState(0);
-  const playbackRef = useRef({ time: 0, lastSavedAt: 0 });
+  const playbackRef = useRef({
+    time: 0,
+    duration: 0,
+    completed: false,
+    lastSavedAt: 0,
+  });
   const recordKey = record?.key ?? null;
   const recordingHash = record?.hash ?? null;
+  const catalogId = record?.catalogId ?? null;
+  const ownerUserId = record?.userId ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -60,28 +69,54 @@ export function OfflineDownloadDetail({
     };
   }, [recordKey]);
 
-  const persistPlaybackPosition = useCallback(() => {
-    if (!recordingHash) return;
-    savePlaybackPosition(recordingHash, playbackRef.current.time, {
-      clearWhenZero: true,
-    });
-    playbackRef.current.lastSavedAt = Date.now();
-  }, [recordingHash]);
+  const persistPlaybackPosition = useCallback(
+    (completed?: boolean) => {
+      if (!recordingHash) return;
+      const nextCompleted = completed ?? playbackRef.current.completed;
+      playbackRef.current.completed = nextCompleted;
+      if (nextCompleted) {
+        markPlaybackCompleted(recordingHash);
+      } else {
+        savePlaybackPosition(recordingHash, playbackRef.current.time, {
+          clearWhenZero: true,
+        });
+      }
+      playbackRef.current.lastSavedAt = Date.now();
+      if (catalogId && ownerUserId) {
+        void queuePlaybackProgress({
+          userId: ownerUserId,
+          catalogId,
+          hash: recordingHash,
+          positionSec: nextCompleted
+            ? playbackRef.current.duration || playbackRef.current.time
+            : playbackRef.current.time,
+          durationSec: playbackRef.current.duration || null,
+          completed: nextCompleted,
+        }).catch(() => {
+          // LocalStorage still preserves resume state if IndexedDB is blocked.
+        });
+      }
+    },
+    [catalogId, ownerUserId, recordingHash],
+  );
 
   useEffect(() => {
     if (!recordingHash) return;
     playbackRef.current = {
       time: getSavedPlaybackPosition(recordingHash) ?? 0,
+      duration: 0,
+      completed: isPlaybackCompleted(recordingHash),
       lastSavedAt: 0,
     };
     const persistWhenHidden = () => {
       if (document.visibilityState === 'hidden') persistPlaybackPosition();
     };
-    window.addEventListener('pagehide', persistPlaybackPosition);
+    const persistOnPageHide = () => persistPlaybackPosition();
+    window.addEventListener('pagehide', persistOnPageHide);
     document.addEventListener('visibilitychange', persistWhenHidden);
     return () => {
       persistPlaybackPosition();
-      window.removeEventListener('pagehide', persistPlaybackPosition);
+      window.removeEventListener('pagehide', persistOnPageHide);
       document.removeEventListener('visibilitychange', persistWhenHidden);
     };
   }, [persistPlaybackPosition, recordingHash]);
@@ -120,7 +155,9 @@ export function OfflineDownloadDetail({
   }, [locale, record, t]);
 
   const seek = (time: number) => {
-    handleTimeUpdate(time);
+    setCurrentTime(time);
+    playbackRef.current.time = time;
+    persistPlaybackPosition();
     setSeekTo(time);
     setSeekKey((value) => value + 1);
   };
@@ -189,9 +226,18 @@ export function OfflineDownloadDetail({
               onPlayingChange={(isPlaying) => {
                 if (!isPlaying) persistPlaybackPosition();
               }}
-              onEnded={() => {
-                markPlaybackCompleted(record.hash);
-                playbackRef.current = { time: 0, lastSavedAt: Date.now() };
+              onSeek={(time) => {
+                playbackRef.current.time = time;
+                setCurrentTime(time);
+                persistPlaybackPosition();
+              }}
+              onDurationChange={(duration) => {
+                playbackRef.current.duration = duration;
+              }}
+              onEnded={(duration) => {
+                playbackRef.current.time = duration;
+                playbackRef.current.duration = duration;
+                persistPlaybackPosition(true);
               }}
               seekTo={seekTo}
               seekKey={seekKey}

@@ -4,8 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRadioMode } from "@/contexts/radio-mode-context";
 import { useAudioPlayback } from "@/contexts/audio-playback-context";
+import { useSession } from "@/contexts/session-context";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildPlaybackProgressUrl } from "@/lib/api/recording-urls";
+import { getPendingPlaybackProgress } from "@/lib/offline/downloads-db";
+import { flushPendingPlaybackProgress } from "@/lib/offline/playback-progress-sync";
 import {
   getSavedPlaybackPosition,
   isPlaybackCompleted,
@@ -44,6 +47,8 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const searchParams = useSearchParams();
   const radio = useRadioMode();
   const { setRecordingPlaying } = useAudioPlayback();
+  const { session } = useSession();
+  const userId = session?.user?.id ?? null;
   const fromRadio = searchParams.get("fromRadio") === "true";
   const seekParam = searchParams.get("seek");
   const endParam = searchParams.get("end");
@@ -248,10 +253,23 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     if (fromRadio && radio.isActive) return;
 
     let cancelled = false;
-    void fetchJson<RemotePlaybackProgressResponse>(
-      buildPlaybackProgressUrl(catalogId, hash)
-    )
-      .then((response) => {
+    const loadProgress = async () => {
+      if (userId && navigator.onLine) {
+        await flushPendingPlaybackProgress(userId);
+      }
+      const [response, pending] = await Promise.all([
+        fetchJson<RemotePlaybackProgressResponse>(
+          buildPlaybackProgressUrl(catalogId, hash)
+        ),
+        userId
+          ? getPendingPlaybackProgress(userId, catalogId, hash)
+          : Promise.resolve(undefined),
+      ]);
+      return { pending, response };
+    };
+
+    void loadProgress()
+      .then(({ pending, response }) => {
         if (
           cancelled ||
           remoteRestoreAppliedRef.current
@@ -264,7 +282,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
         lastServerSyncRef.current = Date.now();
         const localPosition = Math.max(
           0,
-          localPositionAtMountRef.current ?? 0
+          pending?.positionSec ?? localPositionAtMountRef.current ?? 0
         );
         const remoteProgress = response.progress;
 
@@ -309,11 +327,12 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
           0,
           remoteProgress?.positionSec ?? 0
         );
-        const mergedPosition = Math.max(
-          localPosition,
-          remotePosition,
-          currentTimeRef.current
-        );
+        // A dirty offline position represents a later explicit user action and
+        // must win even when it moved backward. Without a pending entry, retain
+        // the established furthest-position merge for cross-device restores.
+        const mergedPosition = pending
+          ? localPosition
+          : Math.max(localPosition, remotePosition, currentTimeRef.current);
         const remoteDuration = remoteProgress?.durationSec ?? 0;
         if (remoteDuration > 0) {
           durationRef.current = remoteDuration;
@@ -321,7 +340,9 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
 
         if (mergedPosition <= 0) return;
 
-        if (mergedPosition > remotePosition) {
+        if (pending) {
+          savePlaybackPosition(hash, mergedPosition, { clearWhenZero: true });
+        } else if (mergedPosition > remotePosition) {
           // This is either the one-time migration from browser-only storage or
           // an offline session that advanced further. Import it immediately so
           // the progress is available on the user's other devices.
@@ -358,6 +379,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     radio.isActive,
     sendPlaybackProgress,
     seekParam,
+    userId,
   ]);
 
   // Persist periodically during long uninterrupted playback. Pause, hide,

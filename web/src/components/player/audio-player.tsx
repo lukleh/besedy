@@ -77,6 +77,7 @@ export function AudioPlayer({
   onTimeUpdate,
   onDurationChange,
   onPlayingChange,
+  onSeek,
   onEnded,
   seekTo,
   seekKey,
@@ -821,6 +822,7 @@ export function AudioPlayer({
     playbackEndRef.current = null;
     audio.currentTime = value[0];
     setCurrentTime(value[0]);
+    onSeek?.(value[0]);
   };
 
   const handleVolumeChange = (value: number[]) => {
@@ -850,14 +852,20 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    audio.currentTime = Math.max(0, audio.currentTime - 10);
+    const time = Math.max(0, audio.currentTime - 10);
+    audio.currentTime = time;
+    setCurrentTime(time);
+    onSeek?.(time);
   };
 
   const skipForward = () => {
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    audio.currentTime = Math.min(duration, audio.currentTime + 10);
+    const time = Math.min(duration, audio.currentTime + 10);
+    audio.currentTime = time;
+    setCurrentTime(time);
+    onSeek?.(time);
   };
 
   // Keyboard shortcuts
@@ -869,9 +877,11 @@ export function AudioPlayer({
       // Don't capture keyboard events when user is typing in an input
       const target = e.target as HTMLElement;
       if (
+        e.defaultPrevented ||
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
+        target.isContentEditable ||
+        target.closest('[role="slider"]')
       ) {
         return;
       }
@@ -890,11 +900,15 @@ export function AudioPlayer({
           e.preventDefault();
           playbackEndRef.current = null;
           audio.currentTime = Math.max(0, audio.currentTime - 5);
+          setCurrentTime(audio.currentTime);
+          onSeek?.(audio.currentTime);
           break;
         case 'ArrowRight':
           e.preventDefault();
           playbackEndRef.current = null;
           audio.currentTime = Math.min(duration, audio.currentTime + 5);
+          setCurrentTime(audio.currentTime);
+          onSeek?.(audio.currentTime);
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -920,7 +934,7 @@ export function AudioPlayer({
           break;
       }
     },
-    [isPlaying, duration, volume, isMuted, logDebugEvent],
+    [isPlaying, duration, volume, isMuted, logDebugEvent, onSeek],
   );
 
   // Register keyboard shortcuts
