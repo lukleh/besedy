@@ -25,6 +25,7 @@ interface AudioPlayerChromeProps {
     peakBuffer: number;
   };
   catalogId?: string;
+  downloadEventId?: number;
   currentTime: number;
   duration: number;
   hash: string | null;
@@ -48,6 +49,7 @@ interface AudioPlayerChromeProps {
 export function AudioPlayerChrome({
   bufferInfo,
   catalogId,
+  downloadEventId,
   currentTime,
   duration,
   hash,
@@ -67,6 +69,19 @@ export function AudioPlayerChrome({
   volume,
 }: AudioPlayerChromeProps) {
   const t = useTranslations("player");
+  const downloadControl =
+    hash && catalogId ? (
+      downloadEventId !== undefined ? (
+        <DownloadButton
+          catalogId={catalogId}
+          eventId={downloadEventId}
+          hash={hash}
+          size="player"
+        />
+      ) : (
+        <DownloadButton catalogId={catalogId} hash={hash} size="player" />
+      )
+    ) : null;
 
   return (
     <>
@@ -88,9 +103,7 @@ export function AudioPlayerChrome({
       <div className="flex flex-col items-center gap-2 sm:gap-0">
         <div className="relative flex w-full items-center justify-center gap-2 sm:gap-4">
           <div className="absolute left-0 hidden items-center gap-1 sm:flex">
-            {hash && catalogId && (
-              <DownloadButton catalogId={catalogId} hash={hash} size="player" />
-            )}
+            {downloadControl}
             <BufferIndicator
               bufferAhead={bufferInfo.bufferAhead}
               peakBuffer={bufferInfo.peakBuffer}
@@ -189,9 +202,7 @@ export function AudioPlayerChrome({
           </button>
           <div className="grid w-[14.25rem] grid-cols-3 items-center justify-items-center gap-3">
             <div className="flex h-12 items-center justify-center">
-              {hash && catalogId && (
-                <DownloadButton catalogId={catalogId} hash={hash} size="player" />
-              )}
+              {downloadControl}
             </div>
             <div className="flex h-12 items-center justify-center">
               <BufferIndicator

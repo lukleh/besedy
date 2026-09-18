@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, FileText, Loader2, WifiOff } from 'lucide-react';
+import { FileText, Loader2, WifiOff } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { AudioPlayer } from '@/components/player/audio-player';
 import { TranscriptContent } from '@/components/transcript/transcript-viewer-content';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { formatPartialDate } from '@/lib/date-format';
 import {
   getSavedPlaybackPosition,
@@ -20,6 +19,7 @@ import {
   type DownloadRecord,
 } from '@/lib/offline/downloads-db';
 import { queuePlaybackProgress } from '@/lib/offline/playback-progress-sync';
+import { CircularBackButton } from '@/components/navigation/circular-back-control';
 
 interface OfflineDownloadDetailProps {
   record: DownloadRecord | null;
@@ -315,16 +315,11 @@ function OfflineDetailFrame({
   const t = useTranslations('downloads');
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
+      <CircularBackButton
+        label={t('backToDownloads')}
         onClick={onBack}
-        data-testid="downloads-back"
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-        {t('backToDownloads')}
-      </Button>
+        testId="downloads-back"
+      />
       {children}
     </div>
   );

@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertCircle,
-  ArrowLeft,
   Check,
   Download,
   HardDrive,
@@ -38,6 +36,7 @@ import {
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
 import { cn } from '@/lib/utils';
+import { CircularBackLink } from '@/components/navigation/circular-back-control';
 import { OfflineDownloadDetail } from './download-detail';
 
 export function DownloadsContent() {
@@ -110,7 +109,13 @@ export function DownloadsContent() {
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
+      <header className="flex items-start gap-3">
+        <CircularBackLink
+          href="/catalog"
+          label={t('backToCatalog')}
+          className="mt-0.5"
+          testId="downloads-catalog-back"
+        />
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold flex items-center gap-2">
             <Download className="h-6 w-6" aria-hidden="true" />
@@ -118,12 +123,6 @@ export function DownloadsContent() {
           </h1>
           <p className="text-sm text-muted-foreground">{t('description')}</p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/catalog">
-            <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-            {t('backToCatalog')}
-          </Link>
-        </Button>
       </header>
 
       {redirectedFrom && (
