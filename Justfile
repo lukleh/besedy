@@ -518,6 +518,14 @@ prod-build:
     {{ prod_compose }} build --pull web
     docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}" "besedy-web:$GIT_COMMIT"
     echo "Retained production web image: besedy-web:$GIT_COMMIT"
+    jobs_image="${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}"
+    if ! docker image inspect "$jobs_image" >/dev/null; then
+        echo "Missing deployed jobs image: $jobs_image" >&2
+        echo "A rollback-safe release requires a snapshot of the jobs image currently in production." >&2
+        exit 1
+    fi
+    docker image tag "$jobs_image" "besedy-jobs:$GIT_COMMIT"
+    echo "Retained current production jobs image: besedy-jobs:$GIT_COMMIT"
 
 # Stop the web writer and scheduled backup, create a verified backup, migrate,
 # and start the image previously produced by prod-build. A failure deliberately
@@ -527,6 +535,17 @@ prod-apply:
     set -euo pipefail
     cd web
     git_commit=$(git rev-parse HEAD)
+    web_image="${BESEDY_WEB_IMAGE:-besedy-web:prod}"
+    image_commit="$(docker image inspect "$web_image" | jq -er '.[0].Config.Labels["org.opencontainers.image.revision"] // empty')" || {
+        echo "Cannot determine the source commit for production image: $web_image" >&2
+        echo "Run just prod-build from this checkout before applying it." >&2
+        exit 1
+    }
+    if [ "$image_commit" != "$git_commit" ]; then
+        echo "Refusing to apply commit $git_commit with web image $web_image built from $image_commit." >&2
+        echo "Run just prod-build from this checkout before applying it." >&2
+        exit 1
+    fi
     # The application is deliberately unavailable during migration. Several
     # permission migrations change constraints as well as adding columns, so
     # neither the old nor new process may write while the schema is between

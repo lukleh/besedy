@@ -7,6 +7,7 @@ JUSTFILE = PROJECT_ROOT / "Justfile"
 WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
 WEB_PROD_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.production.yml"
 WEB_COMPOSE_WRAPPER = PROJECT_ROOT / "scripts" / "run_web_compose.sh"
+WEB_DOCKERFILE = PROJECT_ROOT / "web" / "Dockerfile"
 
 
 def test_prod_migrate_restores_audit_log_delete_revoke_after_blanket_grant() -> None:
@@ -58,15 +59,31 @@ def test_production_builds_and_restore_keep_exact_rollback_artifacts() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
     production_compose = WEB_PROD_COMPOSE.read_text(encoding="utf-8")
     compose_wrapper = WEB_COMPOSE_WRAPPER.read_text(encoding="utf-8")
+    dockerfile = WEB_DOCKERFILE.read_text(encoding="utf-8")
 
     assert "Refusing to build a production web image from a dirty worktree." in justfile
     assert 'docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}"' in justfile
     assert 'docker image tag "${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}"' in justfile
+    assert 'docker image tag "$jobs_image" "besedy-jobs:$GIT_COMMIT"' in justfile
+    assert "LABEL org.opencontainers.image.revision=${GIT_COMMIT}" in dockerfile
     assert 'image: ${BESEDY_WEB_IMAGE:-besedy-web:prod}' in production_compose
     assert "GIT_COMMIT WEB_VERSION BUILD_TIME BESEDY_WEB_IMAGE" in compose_wrapper
     assert 'CONFIRM_PROD_RESTORE="$backup"' in justfile
     assert 'dropdb --if-exists --force "$PGDATABASE"' in justfile
     assert 'createdb --owner="$PGUSER" "$PGDATABASE"' in justfile
+
+
+def test_prod_apply_refuses_an_image_from_a_different_checkout_before_downtime() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+    apply_recipe = justfile.split("prod-apply:", maxsplit=1)[1].split(
+        "\n# Full production web deployment", maxsplit=1
+    )[0]
+
+    label = 'org.opencontainers.image.revision'
+    assert label in apply_recipe
+    assert 'if [ "$image_commit" != "$git_commit" ]' in apply_recipe
+    assert "Run just prod-build from this checkout before applying it." in apply_recipe
+    assert apply_recipe.index(label) < apply_recipe.index("stop web backup")
 
 
 def test_database_maintenance_quiesces_scheduled_backups() -> None:

@@ -150,9 +150,12 @@ backup or migration fails, the recipe exits with `web` and scheduled backups
 stopped; inspect the error and restore or retry before starting them again.
 
 Production builds retain immutable `besedy-web:<full-commit>` images in addition
-to the mutable deployment tag. Coordinated web/jobs builds also retain
-`besedy-jobs:<full-commit>`, allowing an exact image rollback without rebuilding
-a different checkout.
+to the mutable deployment tag. They also snapshot the jobs image currently in
+production as `besedy-jobs:<full-commit>`; a coordinated build replaces that
+snapshot with the newly built jobs image. This keeps web-only and coordinated
+releases rollback-safe without rebuilding from another checkout. `prod-apply`
+reads the web image's source-revision label and refuses to begin downtime unless
+it exactly matches the current checkout.
 
 The start is scoped to the `web` service and does not recreate the database
 container (which can corrupt indexes). The `prod-migrate` step also grants the
@@ -324,8 +327,9 @@ errors, active/expired session counts, session endpoint health, deployed version
 
 ## Rollback
 
-Every production build keeps an image tagged with its full source commit, and
-every maintenance deployment writes a verified backup under
+Every production build keeps the web image and the jobs image paired with it
+tagged with the release's full source commit, and every maintenance deployment
+writes a verified backup under
 `BACKUP_DIR/deploy/`. For a coordinated web/jobs rollback, select the previous
 known-good commit and the backup created immediately before the failed release:
 
