@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 JUSTFILE = PROJECT_ROOT / "Justfile"
 WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
 WEB_PROD_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.production.yml"
+WEB_COMPOSE_WRAPPER = PROJECT_ROOT / "scripts" / "run_web_compose.sh"
 
 
 def test_prod_migrate_restores_audit_log_delete_revoke_after_blanket_grant() -> None:
@@ -56,11 +57,32 @@ def test_manual_backup_uses_container_shell_variables_and_retained_directory() -
 def test_production_builds_and_restore_keep_exact_rollback_artifacts() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
     production_compose = WEB_PROD_COMPOSE.read_text(encoding="utf-8")
+    compose_wrapper = WEB_COMPOSE_WRAPPER.read_text(encoding="utf-8")
 
     assert "Refusing to build a production web image from a dirty worktree." in justfile
     assert 'docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}"' in justfile
     assert 'docker image tag "${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}"' in justfile
     assert 'image: ${BESEDY_WEB_IMAGE:-besedy-web:prod}' in production_compose
+    assert "GIT_COMMIT WEB_VERSION BUILD_TIME BESEDY_WEB_IMAGE" in compose_wrapper
     assert 'CONFIRM_PROD_RESTORE="$backup"' in justfile
     assert 'dropdb --if-exists --force "$PGDATABASE"' in justfile
     assert 'createdb --owner="$PGUSER" "$PGDATABASE"' in justfile
+
+
+def test_database_maintenance_quiesces_scheduled_backups() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+    restore_recipe = justfile.split("prod-restore *args:", maxsplit=1)[1].split(
+        "\n# Restore a retained database backup", maxsplit=1
+    )[0]
+
+    assert "{{ prod_compose }} stop web backup" in justfile
+    assert "ps --services --status running backup" in restore_recipe
+    assert "scheduled backup service before restoring" in restore_recipe
+
+
+def test_rollback_preserves_optional_codex_auth_overlay() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+
+    assert "prod-rollback-codex commit backup:" in justfile
+    assert 'just _prod-rollback jobs-prod-start-codex "$1" "$2"' in justfile
+    assert 'BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just "$jobs_start"' in justfile

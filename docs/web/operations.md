@@ -141,11 +141,13 @@ just prod-deploy
 ```
 
 `prod-deploy` builds and checks the new image while the old service is still
-running. It then stops `web`, creates and validates an immediate database
-backup, applies migrations, and starts the already-built image. The maintenance
-window is deliberate: neither old nor new code writes while the schema is
-between versions. If backup or migration fails, the recipe exits with `web`
-stopped; inspect the error and restore or retry before starting it again.
+running. It then stops `web` and the scheduled backup service, creates and
+validates an immediate database backup, applies migrations, and starts the
+already-built image plus scheduled backups. The maintenance window is
+deliberate: neither old nor new code writes while the schema is between
+versions, and a scheduled `pg_dump` cannot hold locks across the migration. If
+backup or migration fails, the recipe exits with `web` and scheduled backups
+stopped; inspect the error and restore or retry before starting them again.
 
 Production builds retain immutable `besedy-web:<full-commit>` images in addition
 to the mutable deployment tag. Coordinated web/jobs builds also retain
@@ -334,15 +336,24 @@ CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
   just prod-rollback "$previous_commit" "$backup"
 ```
 
-The recipe verifies both retained images and that Prefect is idle, stops all
-writers, creates another retained backup of the failed state, validates and
-restores the selected archive into a fresh database, then starts the exact
-previous web/jobs images and re-registers that jobs deployment. A missing image,
-active job, bad archive, or mismatched confirmation stops before the database is
-replaced.
+For a `model-chatgpt-*` production profile, retain the narrowly scoped Codex
+credential mount during rollback:
 
-For a database-only restore, stop web, the jobs API, and the worker first, then
-repeat the exact archive path in the confirmation:
+```bash
+CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
+  just prod-rollback-codex "$previous_commit" "$backup"
+```
+
+The recipe verifies both retained images and that Prefect is idle, stops all
+writers and the scheduled backup service, creates another retained backup of
+the failed state, validates and restores the selected archive into a fresh
+database, then starts the exact previous web/jobs images, restarts scheduled
+backups, and re-registers that jobs deployment. A missing image, active job, bad
+archive, or mismatched confirmation stops before the database is replaced.
+
+For a database-only restore, stop web, the scheduled backup service, the jobs
+API, and the worker first, then repeat the exact archive path in the
+confirmation:
 
 ```bash
 backup=deploy/besedy_deploy_<commit>_<timestamp>.sql.gz

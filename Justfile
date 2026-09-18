@@ -519,8 +519,9 @@ prod-build:
     docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}" "besedy-web:$GIT_COMMIT"
     echo "Retained production web image: besedy-web:$GIT_COMMIT"
 
-# Stop the web writer, create a verified backup, migrate, and start the image
-# previously produced by prod-build. A failure deliberately leaves web stopped.
+# Stop the web writer and scheduled backup, create a verified backup, migrate,
+# and start the image previously produced by prod-build. A failure deliberately
+# leaves web and the scheduled backup stopped.
 prod-apply:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -530,14 +531,14 @@ prod-apply:
     # permission migrations change constraints as well as adding columns, so
     # neither the old nor new process may write while the schema is between
     # versions.
-    echo "Stopping web service for database maintenance..."
-    {{ prod_compose }} stop web
+    echo "Stopping web and scheduled backup for database maintenance..."
+    {{ prod_compose }} stop web backup
     echo "Creating a pre-migration backup..."
     just prod-backup
     echo "Running migrations..."
     just prod-migrate
-    echo "Starting the migrated web service..."
-    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web
+    echo "Starting the migrated web service and scheduled backup..."
+    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web backup
     echo "Deployment complete. Commit: ${git_commit:0:7}"
     echo "Verify: curl -s http://localhost:3000/api/version | jq"
 
@@ -611,8 +612,9 @@ prod-backup:
         echo "Backup verified: $FILENAME"
     ' sh "$git_commit"
 
-# Restore one retained deployment backup. Both writers must already be stopped,
-# and the confirmation must repeat the exact relative path under BACKUP_DIR.
+# Restore one retained deployment backup. All database clients managed by these
+# stacks must already be stopped, and the confirmation must repeat the exact
+# relative path under BACKUP_DIR.
 prod-restore *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -632,6 +634,10 @@ prod-restore *args:
     cd web
     if [ -n "$({{ prod_compose }} ps --services --status running web)" ]; then
         echo "Stop the production web service before restoring." >&2
+        exit 1
+    fi
+    if [ -n "$({{ prod_compose }} ps --services --status running backup)" ]; then
+        echo "Stop the production scheduled backup service before restoring." >&2
         exit 1
     fi
     cd ..
@@ -654,16 +660,15 @@ prod-restore *args:
     ' sh "$backup"
 
 # Restore a retained database backup and restart the exact web/jobs images from
-# a previous coordinated deployment. The confirmation binds both inputs.
-prod-rollback *args:
+# a previous coordinated deployment. The selected jobs start recipe preserves
+# whether production uses the Codex auth overlay. The confirmation binds both
+# user-provided inputs.
+_prod-rollback jobs_start commit backup:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ "$#" -ne 2 ]; then
-        echo "Usage: CONFIRM_PROD_ROLLBACK=<commit>:deploy/<backup> just prod-rollback <commit> deploy/<backup>.sql.gz" >&2
-        exit 2
-    fi
-    commit="$1"
-    backup="$2"
+    jobs_start="$1"
+    commit="$2"
+    backup="$3"
     if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
         echo "Rollback requires the full 40-character source commit." >&2
         exit 2
@@ -676,18 +681,26 @@ prod-rollback *args:
     docker image inspect "besedy-jobs:$commit" >/dev/null
     just jobs-prod-check-idle
     cd web
-    {{ prod_compose }} stop web
+    {{ prod_compose }} stop web backup
     cd ..
     {{ jobs_prod_compose }} stop jobs-api prefect-worker
     echo "Preserving the current failed state before restoring..."
     just prod-backup
     CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
     cd web
-    BESEDY_WEB_IMAGE="besedy-web:$commit" {{ prod_compose }} up -d --no-deps --no-build web
+    BESEDY_WEB_IMAGE="besedy-web:$commit" {{ prod_compose }} up -d --no-deps --no-build web backup
     cd ..
-    BESEDY_JOBS_IMAGE="besedy-jobs:$commit" {{ jobs_prod_compose }} up -d --no-build jobs-api prefect-worker
+    BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just "$jobs_start"
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-deploy
     echo "Rollback complete. Verify web, jobs, and permissions before reopening maintenance."
+
+# Roll back a standard OpenRouter/NVIDIA production jobs deployment.
+prod-rollback commit backup:
+    just _prod-rollback jobs-prod-start "$1" "$2"
+
+# Roll back a model-chatgpt-* deployment while retaining its Codex auth mount.
+prod-rollback-codex commit backup:
+    just _prod-rollback jobs-prod-start-codex "$1" "$2"
 
 # Check deployed version
 prod-version:
