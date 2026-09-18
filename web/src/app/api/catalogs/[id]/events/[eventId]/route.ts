@@ -207,8 +207,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         let locationName = existing.location.name;
         if (nextLocationId !== existing.locationId) {
-          const location = await tx.location.findUnique({
-            where: { id: nextLocationId },
+          const location = await tx.location.findFirst({
+            where: { id: nextLocationId, workflowGroupId: catalogId },
             select: { id: true, name: true },
           });
           if (!location) {

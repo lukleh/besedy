@@ -385,14 +385,18 @@ export async function POST(request: NextRequest) {
     const bodyResult = await validateRequestBody(request, CreateCatalogEventSchema);
     if (!bodyResult.success) return bodyResult.response;
     const body = bodyResult.data;
+    const { userId } = await requireCatalogEventsAccess(body.workflowGroupId, "edit");
 
     const [group, location] = await Promise.all([
       prisma.workflowGroup.findFirst({
         where: { id: body.workflowGroupId, isActive: true },
         select: { id: true },
       }),
-      prisma.location.findUnique({
-        where: { id: body.locationId },
+      prisma.location.findFirst({
+        where: {
+          id: body.locationId,
+          workflowGroupId: body.workflowGroupId,
+        },
         select: { id: true, name: true },
       }),
     ]);
@@ -403,8 +407,6 @@ export async function POST(request: NextRequest) {
     if (!location) {
       return notFound("location");
     }
-    const { userId } = await requireCatalogEventsAccess(body.workflowGroupId, "edit");
-
     const sessionIndex =
       body.sessionIndex ??
       ((await prisma.catalogEvent.findFirst({

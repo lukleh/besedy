@@ -37,6 +37,9 @@ vi.mock("@/lib/db", () => ({
     workflowGroup: {
       update: vi.fn(),
     },
+    album: { findFirst: vi.fn() },
+    recorder: { findFirst: vi.fn() },
+    location: { findFirst: vi.fn() },
   },
 }));
 
@@ -55,6 +58,9 @@ describe("recording metadata route", () => {
     workflowGroup: {
       update: ReturnType<typeof vi.fn>;
     };
+    album: { findFirst: ReturnType<typeof vi.fn> };
+    recorder: { findFirst: ReturnType<typeof vi.fn> };
+    location: { findFirst: ReturnType<typeof vi.fn> };
   };
 
   beforeEach(async () => {
@@ -172,6 +178,36 @@ describe("recording metadata route", () => {
     });
 
     expect(response.status).toBe(404);
+    expect(prisma.audioMetadata.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a lookup from another catalog", async () => {
+    requireAuth.mockResolvedValue("editor-1");
+    getRecordingCapability.mockResolvedValue({
+      catalogExists: true,
+      hasAccess: true,
+      canEditRecording: true,
+    });
+    prisma.catalogEntry.findUnique.mockResolvedValue({ audioHash: HASH });
+    prisma.album.findFirst.mockResolvedValue(null);
+
+    const request = new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/metadata`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ albumId: 42 }),
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    const response = await putMetadata(request, {
+      params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(prisma.album.findFirst).toHaveBeenCalledWith({
+      where: { id: 42, workflowGroupId: CATALOG_ID },
+      select: { id: true },
+    });
     expect(prisma.audioMetadata.upsert).not.toHaveBeenCalled();
   });
 

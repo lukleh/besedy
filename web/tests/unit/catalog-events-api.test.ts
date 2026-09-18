@@ -52,7 +52,7 @@ vi.mock("@/lib/db", () => ({
       update: vi.fn(),
     },
     location: {
-      findUnique: vi.fn(),
+      findFirst: vi.fn(),
     },
   },
 }));
@@ -88,7 +88,7 @@ describe("catalog events API", () => {
       update: ReturnType<typeof vi.fn>;
     };
     location: {
-      findUnique: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
     };
   };
 
@@ -142,6 +142,41 @@ describe("catalog events API", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toMatch(/cannot be released/i);
+    expect(prisma.catalogEvent.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects moving an event to a location from another catalog", async () => {
+    prisma.catalogEvent.findFirst.mockResolvedValue({
+      id: 12,
+      workflowGroupId: catalogId,
+      locationId: 3,
+      dateYear: 2024,
+      dateMonth: 4,
+      dateDay: 3,
+      sessionIndex: 1,
+      released: false,
+      publishedNotifiedAt: null,
+      location: { id: 3, name: "Praha" },
+    });
+    prisma.location.findFirst.mockResolvedValue(null);
+
+    const request = new NextRequest(
+      `http://localhost/api/catalogs/${catalogId}/events/12`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId: 99 }),
+      }
+    );
+    const response = await patchEvent(request, {
+      params: Promise.resolve({ id: catalogId, eventId: "12" }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(prisma.location.findFirst).toHaveBeenCalledWith({
+      where: { id: 99, workflowGroupId: catalogId },
+      select: { id: true, name: true },
+    });
     expect(prisma.catalogEvent.update).not.toHaveBeenCalled();
   });
 

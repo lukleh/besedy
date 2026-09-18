@@ -9,7 +9,14 @@ import {
   logMetadataVerified,
 } from "@/lib/audit/logger";
 import { CatalogHashParamSchema } from "@/lib/validation/schemas";
-import { validateParams, validateRequestBody, notFound, forbidden, handlePrismaError } from "@/lib/api";
+import {
+  validateParams,
+  validateRequestBody,
+  notFound,
+  forbidden,
+  badRequest,
+  handlePrismaError,
+} from "@/lib/api";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +62,41 @@ async function findCatalogEntry(catalogId: string, hash: string) {
     },
     select: { audioHash: true },
   });
+}
+
+async function findInvalidLookup(
+  catalogId: string,
+  lookups: {
+    albumId?: number | null;
+    recorderId?: number | null;
+    locationId?: number | null;
+  }
+): Promise<"album" | "recorder" | "location" | null> {
+  const [album, recorder, location] = await Promise.all([
+    lookups.albumId == null
+      ? null
+      : prisma.album.findFirst({
+          where: { id: lookups.albumId, workflowGroupId: catalogId },
+          select: { id: true },
+        }),
+    lookups.recorderId == null
+      ? null
+      : prisma.recorder.findFirst({
+          where: { id: lookups.recorderId, workflowGroupId: catalogId },
+          select: { id: true },
+        }),
+    lookups.locationId == null
+      ? null
+      : prisma.location.findFirst({
+          where: { id: lookups.locationId, workflowGroupId: catalogId },
+          select: { id: true },
+        }),
+  ]);
+
+  if (lookups.albumId != null && !album) return "album";
+  if (lookups.recorderId != null && !recorder) return "recorder";
+  if (lookups.locationId != null && !location) return "location";
+  return null;
 }
 
 /**
@@ -171,6 +213,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const entry = await findCatalogEntry(catalogId, hash);
     if (!entry) {
       return notFound("recording");
+    }
+
+    const invalidLookup = await findInvalidLookup(catalogId, {
+      albumId,
+      recorderId,
+      locationId,
+    });
+    if (invalidLookup) {
+      return badRequest(
+        `Selected ${invalidLookup} does not belong to this catalog`
+      );
     }
 
     // Build update data - only include fields that were explicitly provided
