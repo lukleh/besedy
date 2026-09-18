@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentType } from "react";
+import { Mic } from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EnumCrudPage } from "@/components/settings/enum-crud-page";
@@ -32,17 +32,13 @@ const item = {
   _count: { audioMetadata: 0 },
 };
 
-function TestIcon() {
-  return <svg aria-hidden="true" />;
-}
-
 function Page() {
   return (
     <EnumCrudPage
       config={{
         entityName: "recorder",
         apiPath: "/api/metadata/recorders",
-        icon: TestIcon as ComponentType<{ className?: string }>,
+        icon: Mic,
         queryKey: ["metadata", "recorders"],
       }}
     />
