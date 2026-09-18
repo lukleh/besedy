@@ -87,7 +87,13 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { activeGroupId } = useActiveGroup();
+  const { activeGroupId, groupKey } = useActiveGroup();
+  const scopedQueryKey = [...queryKey, groupKey];
+  const scopedApiPath = (path: string) => {
+    if (!activeGroupId) return path;
+    const params = new URLSearchParams({ group: activeGroupId });
+    return `${path}?${params.toString()}`;
+  };
 
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -108,21 +114,21 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
 
   // Fetch items
   const { data: items, isLoading } = useQuery<EnumItem[]>({
-    queryKey,
-    queryFn: () => fetchJson<EnumItem[]>(apiPath),
+    queryKey: scopedQueryKey,
+    queryFn: () => fetchJson<EnumItem[]>(scopedApiPath(apiPath)),
   });
 
   // Create item
   const createItem = useMutation({
     mutationFn: async (name: string) => {
-      return fetchJson(apiPath, {
+      return fetchJson(scopedApiPath(apiPath), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: scopedQueryKey });
       setNewName("");
       toast({
         title: t("created"),
@@ -141,7 +147,7 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   // Update item
   const updateItem = useMutation({
     mutationFn: async ({ id, name }: { id: number; name: string }) => {
-      return fetchJson(`${apiPath}/${id}`, {
+      return fetchJson(scopedApiPath(`${apiPath}/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -150,7 +156,7 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
     onSuccess: async () => {
       // Wait for data refetch to complete before clearing edit state
       // This prevents a race condition where the old row and new row both appear briefly
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({ queryKey: scopedQueryKey });
       setEditingId(null);
       toast({
         title: t("updated"),
@@ -169,12 +175,12 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   // Delete item
   const deleteItem = useMutation({
     mutationFn: async (id: number) => {
-      return fetchJson(`${apiPath}/${id}`, {
+      return fetchJson(scopedApiPath(`${apiPath}/${id}`), {
         method: "DELETE",
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: scopedQueryKey });
       setDeleteDialog(null);
       toast({
         title: t("deleted"),
