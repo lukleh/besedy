@@ -263,6 +263,11 @@ test.describe('Offline Mode', () => {
         .toBe(5);
 
       await setOffline(context, false);
+      // CDP updates navigator.onLine but does not reliably emit the browser
+      // lifecycle event that drives reconnect work in the application.
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event('online'));
+      });
       await expect
         .poll(
           async () => {

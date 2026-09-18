@@ -23,6 +23,7 @@ export function DownloadManagerBridge() {
   const { registerBlocker } = useReloadSafety();
   const { activeKey, records } = useDownloadManager();
   const userId = session?.user?.id ?? null;
+  const hasOwnedDownloads = records.some((record) => record.userId !== null);
 
   useEffect(() => {
     void downloadManager.hydrate();
@@ -50,39 +51,40 @@ export function DownloadManagerBridge() {
   // the authenticated client session after reconnecting and use that verified
   // identity for the flush; never upload entries under an anonymous owner.
   useEffect(() => {
-    if (userId || !records.some((record) => record.userId)) return;
+    if (userId || !hasOwnedDownloads || !isOnline) return;
     let cancelled = false;
-    let retryTimer: number | undefined;
+    let recoveryInFlight = false;
 
     const recoverSessionAndFlush = () => {
-      if (!navigator.onLine) return;
+      if (!navigator.onLine || recoveryInFlight) return;
+      recoveryInFlight = true;
       void getClientSession()
         .then(async (result) => {
           if (cancelled) return;
           const refreshedUserId = result.data?.user.id;
           if (!refreshedUserId) return;
-          const flush = await flushPendingPlaybackProgress(refreshedUserId);
-          if (flush.failed === 0 && retryTimer !== undefined) {
-            window.clearInterval(retryTimer);
-            retryTimer = undefined;
-          }
+          await flushPendingPlaybackProgress(refreshedUserId);
         })
         .catch(() => {
-          // Stay local and retry on the next reconnect/focus/timer trigger.
+          // Stay local and retry on the next reconnect, focus, or foreground.
+        })
+        .finally(() => {
+          recoveryInFlight = false;
         });
+    };
+    const recoverWhenVisible = () => {
+      if (document.visibilityState === 'visible') recoverSessionAndFlush();
     };
 
     recoverSessionAndFlush();
-    window.addEventListener('online', recoverSessionAndFlush);
     window.addEventListener('focus', recoverSessionAndFlush);
-    retryTimer = window.setInterval(recoverSessionAndFlush, 2_000);
+    document.addEventListener('visibilitychange', recoverWhenVisible);
     return () => {
       cancelled = true;
-      if (retryTimer !== undefined) window.clearInterval(retryTimer);
-      window.removeEventListener('online', recoverSessionAndFlush);
       window.removeEventListener('focus', recoverSessionAndFlush);
+      document.removeEventListener('visibilitychange', recoverWhenVisible);
     };
-  }, [records, userId]);
+  }, [hasOwnedDownloads, isOnline, userId]);
 
   useEffect(() => {
     if (!isOnline || !userId) return;

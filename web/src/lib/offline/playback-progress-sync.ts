@@ -1,6 +1,6 @@
 'use client';
 
-import { fetchJson } from '@/lib/api/fetch-json';
+import { ApiError, fetchJson } from '@/lib/api/fetch-json';
 import { buildPlaybackProgressUrl } from '@/lib/api/recording-urls';
 import { createClientLogger } from '@/lib/log/client';
 import {
@@ -15,6 +15,7 @@ const logger = createClientLogger('playbackProgressSync');
 export interface PlaybackProgressFlushResult {
   attempted: number;
   synced: number;
+  discarded: number;
   failed: number;
 }
 
@@ -24,6 +25,17 @@ const pendingListeners = new Set<(userId: string) => void>();
 
 function finiteNonNegative(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function isTerminalClientError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 401 &&
+    error.status !== 408 &&
+    error.status !== 429
+  );
 }
 
 export async function queuePlaybackProgress(
@@ -56,12 +68,13 @@ async function runFlush(userId: string): Promise<PlaybackProgressFlushResult> {
     pending = await listPendingPlaybackProgress(userId);
   } catch (error) {
     logger.warn('Failed to read pending playback progress', { error });
-    return { attempted: 0, synced: 0, failed: 1 };
+    return { attempted: 0, synced: 0, discarded: 0, failed: 1 };
   }
 
   const result: PlaybackProgressFlushResult = {
     attempted: pending.length,
     synced: 0,
+    discarded: 0,
     failed: 0,
   };
 
@@ -89,6 +102,35 @@ async function runFlush(userId: string): Promise<PlaybackProgressFlushResult> {
           rerunRequested.add(userId);
         }
       } catch (error) {
+        if (isTerminalClientError(error)) {
+          try {
+            const deleted = await deletePendingPlaybackProgress(
+              entry.key,
+              entry.revision,
+            );
+            if (deleted) {
+              result.discarded += 1;
+              logger.info('Discarded rejected playback progress', {
+                catalogId: entry.catalogId,
+                hash: entry.hash,
+                status: error.status,
+              });
+            } else {
+              // A newer revision replaced the rejected request. Give that
+              // revision its own attempt before deciding whether to discard it.
+              rerunRequested.add(userId);
+            }
+            return;
+          } catch (deleteError) {
+            result.failed += 1;
+            logger.warn('Failed to discard rejected playback progress', {
+              catalogId: entry.catalogId,
+              hash: entry.hash,
+              error: deleteError,
+            });
+            return;
+          }
+        }
         result.failed += 1;
         logger.warn('Playback progress sync deferred', {
           catalogId: entry.catalogId,
@@ -116,12 +158,13 @@ export function flushPendingPlaybackProgress(
   }
 
   const flush = (async () => {
-    const total = { attempted: 0, synced: 0, failed: 0 };
+    const total = { attempted: 0, synced: 0, discarded: 0, failed: 0 };
     do {
       rerunRequested.delete(userId);
       const pass = await runFlush(userId);
       total.attempted += pass.attempted;
       total.synced += pass.synced;
+      total.discarded += pass.discarded;
       total.failed += pass.failed;
     } while (rerunRequested.delete(userId));
     return total;
