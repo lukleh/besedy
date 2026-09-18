@@ -11,6 +11,7 @@ import { ServiceWorkerProvider } from "@/contexts/service-worker-context";
 import { ReloadSafetyProvider } from "@/contexts/reload-safety-context";
 import { DownloadManagerBridge } from "@/components/offline/download-manager-bridge";
 import { useLabsSyncListener } from "@/hooks/use-labs";
+import { isDownloadsShellWarmup } from "@/lib/offline/downloads-shell";
 import { QUERY_CLIENT_DEFAULT_OPTIONS } from "@/lib/query/profiles";
 
 function LabsSyncListener() {
@@ -25,6 +26,7 @@ export function Providers({
   children: React.ReactNode;
   nonce?: string;
 }) {
+  const isWarmup = isDownloadsShellWarmup();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -46,8 +48,8 @@ export function Providers({
           <RadioModeProvider>
             <ReloadSafetyProvider>
               <AudioPlaybackProvider>
-                <ServiceWorkerProvider>
-                  <DownloadManagerBridge />
+                <ServiceWorkerProvider passive={isWarmup}>
+                  {!isWarmup && <DownloadManagerBridge />}
                   {children}
                 </ServiceWorkerProvider>
               </AudioPlaybackProvider>

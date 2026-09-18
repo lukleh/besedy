@@ -41,6 +41,7 @@ import {
   type AudioCacheMeta,
 } from './audio-cache-format';
 import { DOWNLOADS_PATH, OFFLINE_CACHE_NAMES } from './cache-names';
+import { isDownloadsShellWarmup } from './downloads-shell';
 import {
   deleteDownloadBundle,
   deleteDownloadRecord,
@@ -73,7 +74,7 @@ function warmDownloadsShell(): Promise<void> {
     typeof navigator === 'undefined' ||
     navigator.onLine === false ||
     !navigator.serviceWorker ||
-    new URLSearchParams(window.location.search).has('warm')
+    isDownloadsShellWarmup()
   ) {
     return Promise.resolve();
   }
