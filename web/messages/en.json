@@ -546,12 +546,32 @@
     },
     "webUpdates": {
       "title": "Web client updates",
-      "description": "Update lifecycle activity from the last 24 hours, followed by the 100 most recent events.",
+      "description": "Last-observed client versions and update lifecycle activity for the selected period.",
+      "deployedVersion": "Deployed version",
+      "distributionTitle": "Version distribution",
+      "usersTitle": "Latest observation per user",
+      "lifecycleTitle": "Update lifecycle",
       "recentTitle": "Recent update events",
       "anonymous": "Anonymous",
+      "unknownVersion": "Unknown version",
       "empty": "No update events have been received yet.",
+      "emptyUsers": "No identified users were observed in this period.",
+      "ranges": {
+        "24h": "24 hours",
+        "7d": "7 days",
+        "30d": "30 days"
+      },
+      "status": {
+        "current": "Current",
+        "other": "Other",
+        "unknown": "Unknown"
+      },
       "metrics": {
-        "seen": "Client starts",
+        "observedUsers": "Observed users",
+        "currentUsers": "Current version",
+        "otherUsers": "Other versions",
+        "unknownUsers": "Unknown version",
+        "starts": "Client starts",
         "detected": "Updates detected",
         "completed": "Updates completed",
         "delayed": "Slow activations",
@@ -561,7 +581,13 @@
       "table": {
         "time": "Time",
         "event": "Event",
-        "version": "Client → target",
+        "version": "Version",
+        "transition": "Client → target",
+        "status": "Status",
+        "users": "Observed users",
+        "starts": "Starts",
+        "browser": "Browser",
+        "lastSeen": "Last observed",
         "user": "User",
         "context": "Context"
       },

@@ -106,6 +106,20 @@ if [ -z "$DB_CONTAINER_ID" ]; then
     false
 fi
 
+CURRENT_WEB_VERSION=""
+WEB_CONTAINER_ID="$(compose_cmd ps -q web 2>/dev/null || true)"
+if [ -z "$WEB_CONTAINER_ID" ]; then
+    logger -t "$TAG" "Production web container is unavailable; reporting deployed version as unknown." || true
+else
+    DETECTED_WEB_VERSION="$(docker exec "$WEB_CONTAINER_ID" printenv WEB_VERSION 2>/dev/null || true)"
+    if [[ "$DETECTED_WEB_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+        CURRENT_WEB_VERSION="$DETECTED_WEB_VERSION"
+    else
+        logger -t "$TAG" "Production WEB_VERSION is unavailable or invalid; reporting deployed version as unknown." || true
+    fi
+fi
+CURRENT_WEB_VERSION_DISPLAY="${CURRENT_WEB_VERSION:-unknown}"
+
 # Function to run database query
 db_query() {
     docker exec -i "$DB_CONTAINER_ID" psql -U besedy_app -d besedy -v ON_ERROR_STOP=1 -tA -c "$1"
@@ -350,6 +364,73 @@ SUPERADMIN_COUNT=$(db_query "SELECT COUNT(*) FROM users WHERE is_superadmin = tr
 # Total users
 TOTAL_USERS=$(db_query "SELECT COUNT(*) FROM users WHERE status = 'ACTIVE'")
 
+# Latest observed web version per identified user. These are observations in
+# the report window, not persistent device registrations or live presence.
+CLIENT_VERSION_SUMMARY=$(db_query "
+WITH latest AS (
+  SELECT DISTINCT ON (user_id) user_id, client_version
+  FROM web_update_event
+  WHERE event = 'CLIENT_SEEN'
+    AND user_id IS NOT NULL
+    AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+  ORDER BY user_id, created_at DESC
+)
+SELECT COUNT(*),
+       COUNT(*) FILTER (
+         WHERE '$CURRENT_WEB_VERSION' <> ''
+           AND client_version = '$CURRENT_WEB_VERSION'
+       ),
+       COUNT(*) FILTER (
+         WHERE '$CURRENT_WEB_VERSION' <> ''
+           AND client_version IS NOT NULL
+           AND client_version <> '$CURRENT_WEB_VERSION'
+       ),
+       COUNT(*) FILTER (WHERE client_version IS NULL),
+       (
+         SELECT COUNT(*)
+         FROM web_update_event
+         WHERE event = 'CLIENT_SEEN'
+           AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+       )
+FROM latest
+")
+IFS='|' read -r \
+    CLIENT_OBSERVED_USERS \
+    CLIENT_CURRENT_USERS \
+    CLIENT_OTHER_USERS \
+    CLIENT_UNKNOWN_USERS \
+    CLIENT_STARTS <<< "$CLIENT_VERSION_SUMMARY"
+
+if [ -z "$CURRENT_WEB_VERSION" ]; then
+    CLIENT_CURRENT_USERS="unavailable"
+    CLIENT_OTHER_USERS="unavailable"
+fi
+
+CLIENT_VERSION_DISTRIBUTION=$(db_query "
+WITH latest AS (
+  SELECT DISTINCT ON (user_id) user_id, client_version, created_at
+  FROM web_update_event
+  WHERE event = 'CLIENT_SEEN'
+    AND user_id IS NOT NULL
+    AND created_at > NOW() - INTERVAL '$REPORT_WINDOW_SQL'
+  ORDER BY user_id, created_at DESC
+)
+SELECT COALESCE(client_version, 'unknown') || ': ' || COUNT(*) ||
+       CASE WHEN COUNT(*) = 1 THEN ' user' ELSE ' users' END ||
+       CASE
+         WHEN '$CURRENT_WEB_VERSION' <> ''
+           AND client_version = '$CURRENT_WEB_VERSION' THEN ' (current)'
+         WHEN client_version IS NULL THEN ' (unknown)'
+         ELSE ''
+       END
+FROM latest
+GROUP BY client_version
+ORDER BY ('$CURRENT_WEB_VERSION' <> ''
+          AND client_version = '$CURRENT_WEB_VERSION') DESC NULLS LAST,
+         COUNT(*) DESC,
+         COALESCE(client_version, '') ASC
+" | sed 's/^/  • /')
+
 # Backup health
 BACKUP_HEALTH_RESULT="$(backup_health_summary)"
 BACKUP_HEALTH_STATUS="${BACKUP_HEALTH_RESULT%%|*}"
@@ -381,6 +462,18 @@ ACTIVITY SUMMARY (Last ${REPORT_WINDOW_DAYS} Days)
 --------------------------------
 Logins:             $LOGINS successful, $FAILED_LOGINS failed
 Active users:       $ACTIVE_USERS (of $TOTAL_USERS total)
+
+WEB CLIENT VERSIONS
+-------------------
+Deployed version:   $CURRENT_WEB_VERSION_DISPLAY
+Observed users:     $CLIENT_OBSERVED_USERS
+Current version:    $CLIENT_CURRENT_USERS
+Other versions:     $CLIENT_OTHER_USERS
+Unknown version:    $CLIENT_UNKNOWN_USERS
+Client starts:      $CLIENT_STARTS
+${CLIENT_VERSION_DISTRIBUTION:+
+Latest observation per user:
+$CLIENT_VERSION_DISTRIBUTION}
 
 AUDIO ACTIVITY
 --------------
