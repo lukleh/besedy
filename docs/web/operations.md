@@ -147,6 +147,11 @@ window is deliberate: neither old nor new code writes while the schema is
 between versions. If backup or migration fails, the recipe exits with `web`
 stopped; inspect the error and restore or retry before starting it again.
 
+Production builds retain immutable `besedy-web:<full-commit>` images in addition
+to the mutable deployment tag. Coordinated web/jobs builds also retain
+`besedy-jobs:<full-commit>`, allowing an exact image rollback without rebuilding
+a different checkout.
+
 The start is scoped to the `web` service and does not recreate the database
 container (which can corrupt indexes). The `prod-migrate` step also grants the
 app access to newly migrated tables and re-applies the `audit_log` DELETE
@@ -158,7 +163,12 @@ For a release that changes the web/jobs contract, use
 jobs API and worker, performs the web backup and migration, then starts web,
 jobs, and refreshes the Prefect deployment. Production profiles using
 `model-chatgpt-*` must use `just prod-deploy-with-jobs-codex` so the narrowly
-scoped Codex auth mount is retained.
+scoped Codex auth mount is retained. The coordinated recipes check the production
+Prefect deployment before downtime, then stop new submissions and check again
+before stopping the worker. If a run is queued or active, deployment refuses to
+continue; wait for it to finish or cancel it explicitly. If a run races the
+first check, the unchanged web and jobs API containers are restarted without
+migrating.
 
 ### Permissions rework rollout
 
@@ -213,10 +223,12 @@ Deploy the lookup ownership change separately from the role cutover:
    preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
    `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
 
-Each maintenance run creates its own verified pre-migration backup. If a
-post-migration verification fails, stop web and jobs, preserve the failed-state
-database for diagnosis, restore that run's backup, and restart the previous
-images. Do not attempt an ad-hoc reverse migration.
+Each maintenance run creates its own verified pre-migration backup below
+`BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating
+seven daily files and remain until an operator removes them. If a post-migration
+verification fails, use the guarded rollback recipe described below; it
+preserves the failed-state database, restores that run's backup, and restarts
+the retained previous images. Do not attempt an ad-hoc reverse migration.
 
 **Migrations run before the new container starts, and that order matters.** The
 new image knows about columns the old schema lacks, and Prisma asks for every
@@ -310,20 +322,37 @@ errors, active/expired session counts, session endpoint health, deployed version
 
 ## Rollback
 
-1. Check out the previous known-good commit.
-2. Redeploy: `just prod-deploy`.
-3. If a migration must be reverted, restore the database from backup:
+Every production build keeps an image tagged with its full source commit, and
+every maintenance deployment writes a verified backup under
+`BACKUP_DIR/deploy/`. For a coordinated web/jobs rollback, select the previous
+known-good commit and the backup created immediately before the failed release:
 
 ```bash
-cd web
-bash ../scripts/run_web_compose.sh production stop web
-gunzip -c /path/to/backup.sql.gz | \
-  bash ../scripts/run_web_compose.sh production \
-  exec -T db psql -U besedy -d besedy
-bash ../scripts/run_web_compose.sh production start web
+previous_commit=<full-40-character-commit>
+backup=deploy/besedy_deploy_<failed-commit>_<timestamp>.sql.gz
+CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
+  just prod-rollback "$previous_commit" "$backup"
 ```
 
-4. Verify rollback: `curl -s https://besedy.org/api/version | jq`.
+The recipe verifies both retained images and that Prefect is idle, stops all
+writers, creates another retained backup of the failed state, validates and
+restores the selected archive into a fresh database, then starts the exact
+previous web/jobs images and re-registers that jobs deployment. A missing image,
+active job, bad archive, or mismatched confirmation stops before the database is
+replaced.
+
+For a database-only restore, stop web, the jobs API, and the worker first, then
+repeat the exact archive path in the confirmation:
+
+```bash
+backup=deploy/besedy_deploy_<commit>_<timestamp>.sql.gz
+CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
+```
+
+After either path, verify `just prod-status`, `just jobs-prod-status`, the public
+version endpoint, authentication, and the permission backfill queries above.
+Remove old `BACKUP_DIR/deploy/` archives and `besedy-web:<commit>` /
+`besedy-jobs:<commit>` images only after the release is accepted.
 
 ---
 
@@ -602,6 +631,10 @@ script without sending email. Output goes to stdout.
 
 The `backup` compose service creates daily `besedy_YYYYMMDD_HHMMSS.sql.gz` files
 and retains seven days. Files land in the host path configured by `BACKUP_DIR`.
+Maintenance deployments additionally create
+`deploy/besedy_deploy_<commit>_<timestamp>.sql.gz`. The daily rotation does not
+touch that subdirectory; deployment backups are removed only by an operator
+after the rollback window closes.
 
 Host-side rsnapshot coverage is intentionally split:
 
@@ -635,17 +668,18 @@ sync success.
 
 ### Restore Procedure
 
+Use a retained deployment archive and the guarded restore recipe. It requires
+the web service, jobs API, and worker to already be stopped, verifies the gzip
+archive before replacing the database, and requires an exact confirmation:
+
 ```bash
-cd web
-bash ../scripts/run_web_compose.sh production stop web
-gunzip -c /path/to/backup.sql.gz | \
-  bash ../scripts/run_web_compose.sh production \
-  exec -T db psql -U besedy -d besedy
-bash ../scripts/run_web_compose.sh production start web
+backup=deploy/besedy_deploy_<commit>_<timestamp>.sql.gz
+CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
 ```
 
-After restore, verify with `just prod-status` and
-`curl -s https://besedy.org/api/version | jq`.
+Start the intended image versions only after the restore succeeds. For a full
+coordinated rollback, prefer `just prod-rollback` as described in the Rollback
+section. Then verify service status and the public version endpoint.
 
 ---
 

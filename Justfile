@@ -217,9 +217,14 @@ jobs-prod-build:
     fi
     export GIT_COMMIT="$(git rev-parse HEAD)"
     export BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    jobs_env="$(bash scripts/resolve_jobs_env_file.sh production)"
+    set -a
+    . "$jobs_env"
+    set +a
     {{ jobs_prod_compose }} build --pull \
         --build-arg RLMBENCHY_REFRESH="$(date +%s)" \
         jobs-api
+    docker image tag "${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}" "besedy-jobs:$GIT_COMMIT"
     echo "Built production jobs image for commit ${GIT_COMMIT:0:12}"
 
 jobs-prod-down:
@@ -228,6 +233,12 @@ jobs-prod-down:
 # Pause the production jobs writers without removing their containers.
 jobs-prod-stop:
     {{ jobs_prod_compose }} stop jobs-api prefect-worker
+
+# Refuse coordinated maintenance while the production deployment has queued or
+# running work. Run this once before downtime and again after submissions stop.
+jobs-prod-check-idle:
+    {{ jobs_prod_compose }} run --rm --no-deps jobs-api \
+        python -m besedy.lib.prefect_jobs.maintenance
 
 # Start production jobs from the already-built image.
 jobs-prod-start:
@@ -460,6 +471,10 @@ prod-rebuild:
 prod-build:
     #!/usr/bin/env bash
     set -euo pipefail
+    if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        echo "Refusing to build a production web image from a dirty worktree." >&2
+        exit 1
+    fi
     bash scripts/validate_web_config_mount.sh production
     echo "Running web checks..."
     just web-check
@@ -501,6 +516,8 @@ prod-build:
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} build --pull web
+    docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}" "besedy-web:$GIT_COMMIT"
+    echo "Retained production web image: besedy-web:$GIT_COMMIT"
 
 # Stop the web writer, create a verified backup, migrate, and start the image
 # previously produced by prod-build. A failure deliberately leaves web stopped.
@@ -529,25 +546,42 @@ prod-deploy:
     just prod-build
     just prod-apply
 
+# Quiesce web and the jobs API, verify that no run raced the initial idle check,
+# then stop the worker and apply the migration. If that second check finds work,
+# restart the unchanged containers and leave the database untouched.
+_prod-apply-with-jobs jobs_start:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just jobs-prod-check-idle
+    cd web
+    {{ prod_compose }} stop web
+    cd ..
+    {{ jobs_prod_compose }} stop jobs-api
+    if ! just jobs-prod-check-idle; then
+        echo "A Prefect run started while services were being quiesced; restoring service without migrating." >&2
+        {{ jobs_prod_compose }} start jobs-api
+        cd web
+        {{ prod_compose }} start web
+        exit 1
+    fi
+    {{ jobs_prod_compose }} stop prefect-worker
+    just prod-apply
+    just {{ jobs_start }}
+    just jobs-prod-deploy
+
 # Coordinated deployment for revisions that change both web and jobs contracts.
-# Both images are built before downtime. The jobs worker is then stopped before
-# the web migration and restarted only after the migrated web service is up.
+# Both images are built before downtime. New submissions are stopped before the
+# worker, so active work is never abandoned by the deployment.
 prod-deploy-with-jobs:
     just prod-build
     just jobs-prod-build
-    just jobs-prod-stop
-    just prod-apply
-    just jobs-prod-start
-    just jobs-prod-deploy
+    just _prod-apply-with-jobs jobs-prod-start
 
 # The same coordinated deployment for model-chatgpt-* production profiles.
 prod-deploy-with-jobs-codex:
     just prod-build
     just jobs-prod-build
-    just jobs-prod-stop
-    just prod-apply
-    just jobs-prod-start-codex
-    just jobs-prod-deploy
+    just _prod-apply-with-jobs jobs-prod-start-codex
 
 # Create and validate an immediate production database backup. This uses the
 # same credentials and host-mounted backup directory as the scheduled service.
@@ -555,24 +589,105 @@ prod-backup:
     #!/usr/bin/env bash
     set -euo pipefail
     cd web
+    git_commit="$(git rev-parse HEAD)"
     {{ prod_compose }} run --rm --no-deps --entrypoint /bin/sh backup -c '
         set -eu
-        FILENAME="/backups/besedy_$$(date +%Y%m%d_%H%M%S).sql.gz"
-        SQL_FILE="$${FILENAME%.gz}.tmp"
-        ARCHIVE="$$FILENAME.tmp"
-        cleanup() { rm -f "$$SQL_FILE" "$$ARCHIVE"; }
+        commit="$1"
+        mkdir -p /backups/deploy
+        FILENAME="/backups/deploy/besedy_deploy_${commit}_$(date +%Y%m%d_%H%M%S).sql.gz"
+        SQL_FILE="${FILENAME%.gz}.tmp"
+        ARCHIVE="$FILENAME.tmp"
+        cleanup() { rm -f "$SQL_FILE" "$ARCHIVE"; }
         trap cleanup EXIT
-        echo "Creating backup: $$FILENAME"
-        pg_dump > "$$SQL_FILE"
-        test -s "$$SQL_FILE"
-        gzip -c "$$SQL_FILE" > "$$ARCHIVE"
-        gzip -t "$$ARCHIVE"
-        test -s "$$ARCHIVE"
-        mv "$$ARCHIVE" "$$FILENAME"
-        rm -f "$$SQL_FILE"
+        echo "Creating retained deployment backup: $FILENAME"
+        pg_dump > "$SQL_FILE"
+        test -s "$SQL_FILE"
+        gzip -c "$SQL_FILE" > "$ARCHIVE"
+        gzip -t "$ARCHIVE"
+        test -s "$ARCHIVE"
+        mv "$ARCHIVE" "$FILENAME"
+        rm -f "$SQL_FILE"
         trap - EXIT
-        echo "Backup verified: $$FILENAME"
-    '
+        echo "Backup verified: $FILENAME"
+    ' sh "$git_commit"
+
+# Restore one retained deployment backup. Both writers must already be stopped,
+# and the confirmation must repeat the exact relative path under BACKUP_DIR.
+prod-restore *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$#" -ne 1 ]; then
+        echo "Usage: CONFIRM_PROD_RESTORE=deploy/<backup>.sql.gz just prod-restore deploy/<backup>.sql.gz" >&2
+        exit 2
+    fi
+    backup="$1"
+    case "$backup" in
+        deploy/besedy_deploy_*.sql.gz) ;;
+        *) echo "Restore accepts only retained deploy/*.sql.gz backups." >&2; exit 2 ;;
+    esac
+    if [ "${CONFIRM_PROD_RESTORE:-}" != "$backup" ]; then
+        echo "Refusing destructive restore. Set CONFIRM_PROD_RESTORE=$backup" >&2
+        exit 2
+    fi
+    cd web
+    if [ -n "$({{ prod_compose }} ps --services --status running web)" ]; then
+        echo "Stop the production web service before restoring." >&2
+        exit 1
+    fi
+    cd ..
+    if [ -n "$({{ jobs_prod_compose }} ps --services --status running jobs-api prefect-worker)" ]; then
+        echo "Stop the production jobs API and worker before restoring." >&2
+        exit 1
+    fi
+    cd web
+    {{ prod_compose }} run --rm --no-deps --entrypoint /bin/sh backup -c '
+        set -eu
+        backup="/backups/$1"
+        test -f "$backup"
+        test -s "$backup"
+        gzip -t "$backup"
+        echo "Archive verified; replacing database $PGDATABASE from $backup"
+        dropdb --if-exists --force "$PGDATABASE"
+        createdb --owner="$PGUSER" "$PGDATABASE"
+        gzip -dc "$backup" | psql --dbname="$PGDATABASE" --set=ON_ERROR_STOP=1
+        echo "Database restore completed: $backup"
+    ' sh "$backup"
+
+# Restore a retained database backup and restart the exact web/jobs images from
+# a previous coordinated deployment. The confirmation binds both inputs.
+prod-rollback *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$#" -ne 2 ]; then
+        echo "Usage: CONFIRM_PROD_ROLLBACK=<commit>:deploy/<backup> just prod-rollback <commit> deploy/<backup>.sql.gz" >&2
+        exit 2
+    fi
+    commit="$1"
+    backup="$2"
+    if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "Rollback requires the full 40-character source commit." >&2
+        exit 2
+    fi
+    if [ "${CONFIRM_PROD_ROLLBACK:-}" != "$commit:$backup" ]; then
+        echo "Refusing rollback. Set CONFIRM_PROD_ROLLBACK=$commit:$backup" >&2
+        exit 2
+    fi
+    docker image inspect "besedy-web:$commit" >/dev/null
+    docker image inspect "besedy-jobs:$commit" >/dev/null
+    just jobs-prod-check-idle
+    cd web
+    {{ prod_compose }} stop web
+    cd ..
+    {{ jobs_prod_compose }} stop jobs-api prefect-worker
+    echo "Preserving the current failed state before restoring..."
+    just prod-backup
+    CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
+    cd web
+    BESEDY_WEB_IMAGE="besedy-web:$commit" {{ prod_compose }} up -d --no-deps --no-build web
+    cd ..
+    BESEDY_JOBS_IMAGE="besedy-jobs:$commit" {{ jobs_prod_compose }} up -d --no-build jobs-api prefect-worker
+    BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-deploy
+    echo "Rollback complete. Verify web, jobs, and permissions before reopening maintenance."
 
 # Check deployed version
 prod-version:
