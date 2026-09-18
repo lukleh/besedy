@@ -106,17 +106,19 @@ if [ -z "$DB_CONTAINER_ID" ]; then
     false
 fi
 
-WEB_CONTAINER_ID="$(compose_cmd ps -q web)"
+CURRENT_WEB_VERSION=""
+WEB_CONTAINER_ID="$(compose_cmd ps -q web 2>/dev/null || true)"
 if [ -z "$WEB_CONTAINER_ID" ]; then
-    echo "Production web container is not running." >&2
-    false
+    logger -t "$TAG" "Production web container is unavailable; reporting deployed version as unknown." || true
+else
+    DETECTED_WEB_VERSION="$(docker exec "$WEB_CONTAINER_ID" printenv WEB_VERSION 2>/dev/null || true)"
+    if [[ "$DETECTED_WEB_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+        CURRENT_WEB_VERSION="$DETECTED_WEB_VERSION"
+    else
+        logger -t "$TAG" "Production WEB_VERSION is unavailable or invalid; reporting deployed version as unknown." || true
+    fi
 fi
-
-CURRENT_WEB_VERSION="$(docker exec "$WEB_CONTAINER_ID" printenv WEB_VERSION)"
-if [[ ! "$CURRENT_WEB_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
-    echo "Production web container returned an invalid WEB_VERSION." >&2
-    false
-fi
+CURRENT_WEB_VERSION_DISPLAY="${CURRENT_WEB_VERSION:-unknown}"
 
 # Function to run database query
 db_query() {
@@ -374,9 +376,13 @@ WITH latest AS (
   ORDER BY user_id, created_at DESC
 )
 SELECT COUNT(*),
-       COUNT(*) FILTER (WHERE client_version = '$CURRENT_WEB_VERSION'),
        COUNT(*) FILTER (
-         WHERE client_version IS NOT NULL
+         WHERE '$CURRENT_WEB_VERSION' <> ''
+           AND client_version = '$CURRENT_WEB_VERSION'
+       ),
+       COUNT(*) FILTER (
+         WHERE '$CURRENT_WEB_VERSION' <> ''
+           AND client_version IS NOT NULL
            AND client_version <> '$CURRENT_WEB_VERSION'
        ),
        COUNT(*) FILTER (WHERE client_version IS NULL),
@@ -395,6 +401,11 @@ IFS='|' read -r \
     CLIENT_UNKNOWN_USERS \
     CLIENT_STARTS <<< "$CLIENT_VERSION_SUMMARY"
 
+if [ -z "$CURRENT_WEB_VERSION" ]; then
+    CLIENT_CURRENT_USERS="unavailable"
+    CLIENT_OTHER_USERS="unavailable"
+fi
+
 CLIENT_VERSION_DISTRIBUTION=$(db_query "
 WITH latest AS (
   SELECT DISTINCT ON (user_id) user_id, client_version, created_at
@@ -407,13 +418,15 @@ WITH latest AS (
 SELECT COALESCE(client_version, 'unknown') || ': ' || COUNT(*) ||
        CASE WHEN COUNT(*) = 1 THEN ' user' ELSE ' users' END ||
        CASE
-         WHEN client_version = '$CURRENT_WEB_VERSION' THEN ' (current)'
+         WHEN '$CURRENT_WEB_VERSION' <> ''
+           AND client_version = '$CURRENT_WEB_VERSION' THEN ' (current)'
          WHEN client_version IS NULL THEN ' (unknown)'
          ELSE ''
        END
 FROM latest
 GROUP BY client_version
-ORDER BY (client_version = '$CURRENT_WEB_VERSION') DESC NULLS LAST,
+ORDER BY ('$CURRENT_WEB_VERSION' <> ''
+          AND client_version = '$CURRENT_WEB_VERSION') DESC NULLS LAST,
          COUNT(*) DESC,
          COALESCE(client_version, '') ASC
 " | sed 's/^/  • /')
@@ -452,7 +465,7 @@ Active users:       $ACTIVE_USERS (of $TOTAL_USERS total)
 
 WEB CLIENT VERSIONS
 -------------------
-Deployed version:   $CURRENT_WEB_VERSION
+Deployed version:   $CURRENT_WEB_VERSION_DISPLAY
 Observed users:     $CLIENT_OBSERVED_USERS
 Current version:    $CLIENT_CURRENT_USERS
 Other versions:     $CLIENT_OTHER_USERS

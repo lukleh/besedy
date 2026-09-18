@@ -8,13 +8,17 @@ const weeklyReport = readFileSync(
 );
 
 describe('web update email report', () => {
-  it('reads the deployed version from the production web container', () => {
+  it('reads the deployed version without making the web container a report dependency', () => {
     expect(weeklyReport).toContain(
-      'WEB_CONTAINER_ID="$(compose_cmd ps -q web)"',
+      'WEB_CONTAINER_ID="$(compose_cmd ps -q web 2>/dev/null || true)"',
     );
-    expect(weeklyReport).toContain('printenv WEB_VERSION');
+    expect(weeklyReport).toContain('printenv WEB_VERSION 2>/dev/null || true');
     expect(weeklyReport).toContain(
-      'Production web container returned an invalid WEB_VERSION',
+      'CURRENT_WEB_VERSION_DISPLAY="${CURRENT_WEB_VERSION:-unknown}"',
+    );
+    expect(weeklyReport).toContain('CLIENT_CURRENT_USERS="unavailable"');
+    expect(weeklyReport).not.toContain(
+      'Production web container is not running.',
     );
   });
 
