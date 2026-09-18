@@ -1,5 +1,5 @@
 import type { AccessLevel } from "@/generated/prisma/client";
-import { accessLevelAtLeast } from "@/lib/policy/access-level";
+import { grantHasPermission } from "@/lib/policy/catalog-permissions";
 
 export interface CatalogTabPolicyContext {
   canBrowseRecordings: boolean;
@@ -37,17 +37,19 @@ export function canSeePublicationControls(
 }
 
 export function canSeeReleaseState(context: EventColumnPolicyContext): boolean {
-  return (
-    context.isCatalogAdmin ||
-    (context.catalogGrant !== null &&
-      accessLevelAtLeast(context.catalogGrant, "VIEWER"))
+  // Whoever may see unreleased events is who the indicator is for.
+  return grantHasPermission(
+    context.catalogGrant,
+    context.isCatalogAdmin,
+    "see_unreleased"
   );
 }
 
 export function canSeeAllEventColumns(context: EventColumnPolicyContext): boolean {
-  return (
-    context.isCatalogAdmin ||
-    (context.catalogGrant !== null &&
-      accessLevelAtLeast(context.catalogGrant, "OWNER"))
+  // The administrative columns describe work only an event manager does.
+  return grantHasPermission(
+    context.catalogGrant,
+    context.isCatalogAdmin,
+    "manage_events"
   );
 }
