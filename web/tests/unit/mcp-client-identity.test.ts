@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMcpClientMetadataOrigin } from '@/app/auth/mcp-client-identity';
+import { getMcpClientMetadataOrigin } from '@/app/(app)/auth/mcp-client-identity';
 
 describe('MCP client identity provenance', () => {
   it('identifies only credential-free HTTPS metadata origins', () => {

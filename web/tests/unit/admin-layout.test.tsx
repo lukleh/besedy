@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import AdminLayout from "@/app/admin/layout";
+import AdminLayout from "@/app/(app)/admin/layout";
 
 const mocks = vi.hoisted(() => ({
   requireAdminPageAccessMock: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock("@/lib/access/require-admin-page", () => ({
   requireAdminPageAccess: mocks.requireAdminPageAccessMock,
 }));
 
-vi.mock("@/app/admin/admin-layout-client", () => ({
+vi.mock("@/app/(app)/admin/admin-layout-client", () => ({
   default: ({ children }: { children: ReactNode }) => (
     <div data-testid="admin-layout-client">{children}</div>
   ),

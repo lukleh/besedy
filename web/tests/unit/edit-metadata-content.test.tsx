@@ -1,7 +1,7 @@
 import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import EditMetadataContent from "@/app/catalog/[catalogId]/recording/[hash]/edit/edit-metadata-content";
+import EditMetadataContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/edit/edit-metadata-content";
 import { ApiError } from "@/lib/api/fetch-json";
 
 const useQueryMock = vi.fn();

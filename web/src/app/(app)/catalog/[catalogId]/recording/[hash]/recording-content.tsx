@@ -6,6 +6,12 @@ import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
 import { fetchJson } from "@/lib/api/fetch-json";
+import {
+  buildAudioDownloadUrl,
+  buildAudioSourcePreferenceUrl,
+  buildAudioSourcesUrl,
+  buildAudioUrl,
+} from "@/lib/api/recording-urls";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
 import {
   RecordingAudioSection,
@@ -69,24 +75,6 @@ const audioSourcePreferenceSchema = z.object({
   sourceId: z.string().nullable(),
 });
 
-function buildAudioUrl(
-  catalogId: string,
-  hash: string,
-  audioSource: string,
-  sources: AudioSource[]
-) {
-  const selectedSource = sources.find((source) => source.id === audioSource);
-  if (selectedSource?.type === "listening" && selectedSource.variant) {
-    const params = new URLSearchParams({
-      source: "listening",
-      variant: selectedSource.variant,
-    });
-    return `/api/catalogs/${catalogId}/recordings/${hash}/audio?${params.toString()}`;
-  }
-
-  return `/api/catalogs/${catalogId}/recordings/${hash}/audio`;
-}
-
 export default function RecordingContent({
   params,
   afterAudioPlayer,
@@ -129,10 +117,9 @@ export default function RecordingContent({
   const { data: savedPreference } = useQuery<AudioSourcePreference>({
     queryKey: ["audio-source-preference", hash, groupKey],
     queryFn: async () => {
-      const params = new URLSearchParams({ hash, group: catalogId });
       try {
         return await fetchJson<AudioSourcePreference>(
-          `/api/preferences/audio-source?${params.toString()}`,
+          buildAudioSourcePreferenceUrl(catalogId, hash),
           {
             schema: audioSourcePreferenceSchema,
           }
@@ -150,7 +137,7 @@ export default function RecordingContent({
     queryFn: async () => {
       try {
         return await fetchJson<AudioSourcesResponse>(
-          `/api/catalogs/${catalogId}/recordings/${hash}/audio/sources`,
+          buildAudioSourcesUrl(catalogId, hash),
           {
             schema: audioSourcesResponseSchema,
           }
@@ -252,12 +239,8 @@ export default function RecordingContent({
 
   // Audio download handler
   const handleAudioDownload = (source: "original" | "archived") => {
-    const params = new URLSearchParams({
-      download: "true",
-      source,
-    });
     window.open(
-      `/api/catalogs/${catalogId}/recordings/${hash}/audio?${params.toString()}`,
+      buildAudioDownloadUrl(catalogId, hash, source),
       "_blank"
     );
   };
@@ -284,6 +267,7 @@ export default function RecordingContent({
         onAudioEnded={handleAudioEnded}
         onDurationChange={handleDurationChange}
         onPlayingChange={handlePlayingChange}
+        onSeek={handleSeek}
         onSourceChange={handleSourceChange}
         permissions={data ?? {}}
         recording={recording}

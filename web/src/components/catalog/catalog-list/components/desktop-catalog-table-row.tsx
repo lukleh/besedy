@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatPartialDate } from "@/lib/date-format";
 import { parseDateFromString } from "@/lib/date-utils";
-import { CacheStatusCell } from "@/components/catalog/cache-status-cell";
+import { DownloadButton } from "@/components/offline/download-button";
 import {
   CheckboxCellEditor,
   DateCellEditor,
@@ -526,7 +526,7 @@ export function DesktopCatalogTableRow({
       {columnVisibility.offline && (
         <TableCell className="w-12" onClick={(event) => event.stopPropagation()}>
           {entry.isActionable && activeCatalogId && (
-            <CacheStatusCell hash={entry.hash} catalogId={activeCatalogId} />
+            <DownloadButton catalogId={activeCatalogId} hash={entry.hash} size="sm" />
           )}
         </TableCell>
       )}

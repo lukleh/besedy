@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import CatalogSettingsPage from "@/app/catalog/[catalogId]/settings/page";
+import CatalogSettingsPage from "@/app/(app)/catalog/[catalogId]/settings/page";
 
 const mocks = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {
@@ -22,7 +22,7 @@ vi.mock("@/lib/access/catalog-page-access", () => ({
 }));
 
 vi.mock(
-  "@/app/catalog/[catalogId]/settings/catalog-settings-content",
+  "@/app/(app)/catalog/[catalogId]/settings/catalog-settings-content",
   () => ({
     default: ({
       catalogId,

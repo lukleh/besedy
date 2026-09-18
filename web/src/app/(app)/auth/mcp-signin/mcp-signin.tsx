@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { signInForMcpAuthorization } from '@/lib/auth/client';
-import { useValidatedMcpAuthorizationRequest } from '@/app/auth/use-validated-mcp-authorization-request';
-import { McpClientIdentity } from '@/app/auth/mcp-client-identity';
+import { useValidatedMcpAuthorizationRequest } from '@/app/(app)/auth/use-validated-mcp-authorization-request';
+import { McpClientIdentity } from '@/app/(app)/auth/mcp-client-identity';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
