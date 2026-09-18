@@ -47,21 +47,43 @@ SET "workflow_group_id" = (
   WHERE m."album_id" = a."id"
 );
 
--- 3. Park unreferenced rows in the default catalog, falling back to the oldest.
-UPDATE "recorders" SET "workflow_group_id" = COALESCE(
-  (SELECT "id" FROM "workflow_group" WHERE "is_default" = true ORDER BY "id" LIMIT 1),
-  (SELECT "id" FROM "workflow_group" ORDER BY "id" LIMIT 1)
-) WHERE "workflow_group_id" IS NULL;
+-- 3. Park unreferenced rows in the active default catalog, falling back to the
+--    oldest active catalog. If rows need parking but no active catalog exists,
+--    fail here with an actionable error instead of reaching an opaque NOT NULL
+--    violation later in the migration.
+DO $$
+DECLARE
+  parking_catalog_id VARCHAR(15);
+BEGIN
+  SELECT "id"
+  INTO parking_catalog_id
+  FROM "workflow_group"
+  WHERE "is_active" = true
+  ORDER BY "is_default" DESC, "id"
+  LIMIT 1;
 
-UPDATE "locations" SET "workflow_group_id" = COALESCE(
-  (SELECT "id" FROM "workflow_group" WHERE "is_default" = true ORDER BY "id" LIMIT 1),
-  (SELECT "id" FROM "workflow_group" ORDER BY "id" LIMIT 1)
-) WHERE "workflow_group_id" IS NULL;
+  IF EXISTS (SELECT 1 FROM "recorders" WHERE "workflow_group_id" IS NULL)
+    OR EXISTS (SELECT 1 FROM "locations" WHERE "workflow_group_id" IS NULL)
+    OR EXISTS (SELECT 1 FROM "albums" WHERE "workflow_group_id" IS NULL)
+  THEN
+    IF parking_catalog_id IS NULL THEN
+      RAISE EXCEPTION
+        'Cannot scope metadata lookups: unreferenced lookup rows exist but no active catalog is available';
+    END IF;
 
-UPDATE "albums" SET "workflow_group_id" = COALESCE(
-  (SELECT "id" FROM "workflow_group" WHERE "is_default" = true ORDER BY "id" LIMIT 1),
-  (SELECT "id" FROM "workflow_group" ORDER BY "id" LIMIT 1)
-) WHERE "workflow_group_id" IS NULL;
+    UPDATE "recorders"
+    SET "workflow_group_id" = parking_catalog_id
+    WHERE "workflow_group_id" IS NULL;
+
+    UPDATE "locations"
+    SET "workflow_group_id" = parking_catalog_id
+    WHERE "workflow_group_id" IS NULL;
+
+    UPDATE "albums"
+    SET "workflow_group_id" = parking_catalog_id
+    WHERE "workflow_group_id" IS NULL;
+  END IF;
+END $$;
 
 -- 4. Retire the global uniqueness on name before copying, or the copies would
 --    collide with the rows they are copied from.
