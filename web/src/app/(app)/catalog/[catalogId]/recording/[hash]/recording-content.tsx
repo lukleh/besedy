@@ -25,6 +25,7 @@ import { useRecordingPlayback } from "./use-recording-playback";
 interface RecordingContentProps {
   params: Promise<{ catalogId: string; hash: string }> | { catalogId: string; hash: string };
   afterAudioPlayer?: ReactNode;
+  downloadEventId?: number;
   headerActions?: ReactNode;
   headerIdentity?: ReactNode;
   hideDefaultRecorder?: boolean;
@@ -78,6 +79,7 @@ const audioSourcePreferenceSchema = z.object({
 export default function RecordingContent({
   params,
   afterAudioPlayer,
+  downloadEventId,
   headerActions,
   headerIdentity,
   hideDefaultRecorder = false,
@@ -261,6 +263,7 @@ export default function RecordingContent({
         audioUrl={audioUrl}
         autoPlayOnSeek={autoPlayOnSeek}
         catalogId={catalogId}
+        downloadEventId={downloadEventId}
         currentTimeSetter={setCurrentTime}
         hash={hash}
         onAudioDownload={handleAudioDownload}

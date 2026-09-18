@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { AlertCircle, Check, Download, Loader2, Pause } from "lucide-react";
+import { AlertCircle, Download, Loader2, Pause } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useToast } from "@/hooks/use-toast";
 import { useCatalogs } from "@/hooks/use-catalogs";
@@ -25,7 +25,8 @@ interface RecordingDownloadButtonProps extends DownloadButtonBaseProps {
 
 interface EventDownloadButtonProps extends DownloadButtonBaseProps {
   eventId: number;
-  hash?: never;
+  /** Preferred event recording when the control is rendered beside a player. */
+  hash?: string;
 }
 
 export type DownloadButtonProps = RecordingDownloadButtonProps | EventDownloadButtonProps;
@@ -65,6 +66,7 @@ export function DownloadButton(props: DownloadButtonProps) {
             catalogId,
             catalogLabel,
             eventId: props.eventId,
+            hash: props.hash,
           });
         } else {
           await downloadManager.enqueueRecording({
@@ -148,7 +150,7 @@ export function DownloadButton(props: DownloadButtonProps) {
       case "error":
         return <AlertCircle className={cn(iconClass, "text-destructive")} />;
       case "complete":
-        return <Check className={cn(iconClass, "text-muted-foreground")} />;
+        return <Download className={cn(iconClass, "text-foreground")} />;
       default:
         return <Download className={cn(iconClass, "text-muted-foreground")} />;
     }
