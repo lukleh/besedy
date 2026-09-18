@@ -150,10 +150,14 @@ backup or migration fails, the recipe exits with `web` and scheduled backups
 stopped; inspect the error and restore or retry before starting them again.
 
 Production builds retain immutable `besedy-web:<full-commit>` images in addition
-to the mutable deployment tag. They also snapshot the jobs image currently in
-production as `besedy-jobs:<full-commit>`; a coordinated build replaces that
-snapshot with the newly built jobs image. This keeps web-only and coordinated
-releases rollback-safe without rebuilding from another checkout. `prod-apply`
+to the mutable deployment tag. When a jobs image already exists, they also
+snapshot it as `besedy-jobs:<full-commit>`; a coordinated build replaces that
+snapshot with the newly built jobs image. A fresh host without a jobs image
+prints a warning instead of blocking the web build. On that host, the
+coordinated recipe builds and retains the jobs image before downtime; a web-only
+release has no coordinated rollback until a jobs image exists. This keeps normal
+web-only and coordinated releases rollback-safe without rebuilding from another
+checkout. `prod-apply`
 reads the web image's source-revision label and refuses to begin downtime unless
 it exactly matches the current checkout. The image checks load the same
 production web and jobs env files as Compose, so custom `BESEDY_WEB_IMAGE` and

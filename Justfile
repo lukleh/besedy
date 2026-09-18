@@ -476,9 +476,14 @@ prod-build:
         exit 1
     fi
     jobs_env="$(bash scripts/resolve_jobs_env_file.sh production)"
-    set -a
-    . "$jobs_env"
-    set +a
+    if [ ! -f "$jobs_env" ]; then
+        echo "Missing production jobs env file: $jobs_env" >&2
+        exit 1
+    fi
+    jobs_image="$(
+        . "$jobs_env"
+        printf '%s' "${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}"
+    )"
     bash scripts/validate_web_config_mount.sh production
     echo "Running web checks..."
     just web-check
@@ -522,14 +527,13 @@ prod-build:
     {{ prod_compose }} build --pull web
     docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}" "besedy-web:$GIT_COMMIT"
     echo "Retained production web image: besedy-web:$GIT_COMMIT"
-    jobs_image="${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}"
-    if ! docker image inspect "$jobs_image" >/dev/null; then
-        echo "Missing deployed jobs image: $jobs_image" >&2
-        echo "A rollback-safe release requires a snapshot of the jobs image currently in production." >&2
-        exit 1
+    if docker image inspect "$jobs_image" >/dev/null 2>&1; then
+        docker image tag "$jobs_image" "besedy-jobs:$GIT_COMMIT"
+        echo "Retained current production jobs image: besedy-jobs:$GIT_COMMIT"
+    else
+        echo "Warning: no deployed jobs image found at $jobs_image; skipping its rollback snapshot." >&2
+        echo "A coordinated deployment will build and retain the jobs image before downtime." >&2
     fi
-    docker image tag "$jobs_image" "besedy-jobs:$GIT_COMMIT"
-    echo "Retained current production jobs image: besedy-jobs:$GIT_COMMIT"
 
 # Stop the web writer and scheduled backup, create a verified backup, migrate,
 # and start the image previously produced by prod-build. A failure deliberately
