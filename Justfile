@@ -225,6 +225,22 @@ jobs-prod-build:
 jobs-prod-down:
     {{ jobs_prod_compose }} down
 
+# Pause the production jobs writers without removing their containers.
+jobs-prod-stop:
+    {{ jobs_prod_compose }} stop jobs-api prefect-worker
+
+# Start production jobs from the already-built image.
+jobs-prod-start:
+    {{ ensure_internal_network }}
+    {{ ensure_prefect_network }}
+    {{ jobs_prod_compose }} up -d --no-build jobs-api prefect-worker
+
+# Start production jobs with the narrowly scoped Codex auth overlay.
+jobs-prod-start-codex:
+    {{ ensure_internal_network }}
+    {{ ensure_prefect_network }}
+    {{ jobs_prod_codex_compose }} up -d --no-build jobs-api prefect-worker
+
 jobs-prod-logs:
     {{ jobs_prod_compose }} logs -f
 
@@ -440,8 +456,8 @@ prod-rebuild:
     {{ prod_compose }} build --pull --no-cache web
     {{ prod_compose }} up -d --no-deps web
 
-# Full production deployment: build, migrate, restart
-prod-deploy:
+# Build the production web image and run its checks without changing runtime.
+prod-build:
     #!/usr/bin/env bash
     set -euo pipefail
     bash scripts/validate_web_config_mount.sh production
@@ -469,9 +485,14 @@ prod-deploy:
     require_env AUTH_GOOGLE_SECRET
     require_env DATABASE_URL
     require_env VAPID_PUBLIC_KEY
+    require_env NEXT_PUBLIC_VAPID_PUBLIC_KEY
     require_env VAPID_PRIVATE_KEY
     if [ "$NEXT_PUBLIC_APP_URL" != "$AUTH_URL" ]; then
         echo "NEXT_PUBLIC_APP_URL must match AUTH_URL for production"
+        exit 1
+    fi
+    if [ "$NEXT_PUBLIC_VAPID_PUBLIC_KEY" != "$VAPID_PUBLIC_KEY" ]; then
+        echo "NEXT_PUBLIC_VAPID_PUBLIC_KEY must match VAPID_PUBLIC_KEY for production"
         exit 1
     fi
     echo "Building production with version tracking..."
@@ -480,24 +501,78 @@ prod-deploy:
     export WEB_VERSION
     export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     {{ prod_compose }} build --pull web
-    # Migrate before the new container starts, never after. The new image knows
-    # about columns the old schema lacks, and Prisma asks for every scalar of a
-    # model unless a query names a select, so starting it first leaves it serving
-    # against a schema it does not match until the restart. Migrating first means
-    # the old container meets the new schema instead, which additive migrations
-    # do not disturb. prod-migrate runs from the host against the db container,
-    # so it needs nothing from web.
+
+# Stop the web writer, create a verified backup, migrate, and start the image
+# previously produced by prod-build. A failure deliberately leaves web stopped.
+prod-apply:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd web
+    git_commit=$(git rev-parse HEAD)
+    # The application is deliberately unavailable during migration. Several
+    # permission migrations change constraints as well as adding columns, so
+    # neither the old nor new process may write while the schema is between
+    # versions.
+    echo "Stopping web service for database maintenance..."
+    {{ prod_compose }} stop web
+    echo "Creating a pre-migration backup..."
+    just prod-backup
     echo "Running migrations..."
     just prod-migrate
-    echo "Starting production services..."
+    echo "Starting the migrated web service..."
     {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web
-    # Kept although `up -d` recreates the container on a new image: it costs
-    # seconds and guarantees the running container matches the migrated schema
-    # even when the build produced an identical image.
-    echo "Restarting web service..."
-    {{ prod_compose }} restart web
-    echo "Deployment complete. Commit: ${GIT_COMMIT:0:7}"
+    echo "Deployment complete. Commit: ${git_commit:0:7}"
     echo "Verify: curl -s http://localhost:3000/api/version | jq"
+
+# Full production web deployment.
+prod-deploy:
+    just prod-build
+    just prod-apply
+
+# Coordinated deployment for revisions that change both web and jobs contracts.
+# Both images are built before downtime. The jobs worker is then stopped before
+# the web migration and restarted only after the migrated web service is up.
+prod-deploy-with-jobs:
+    just prod-build
+    just jobs-prod-build
+    just jobs-prod-stop
+    just prod-apply
+    just jobs-prod-start
+    just jobs-prod-deploy
+
+# The same coordinated deployment for model-chatgpt-* production profiles.
+prod-deploy-with-jobs-codex:
+    just prod-build
+    just jobs-prod-build
+    just jobs-prod-stop
+    just prod-apply
+    just jobs-prod-start-codex
+    just jobs-prod-deploy
+
+# Create and validate an immediate production database backup. This uses the
+# same credentials and host-mounted backup directory as the scheduled service.
+prod-backup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd web
+    {{ prod_compose }} run --rm --no-deps --entrypoint /bin/sh backup -c '
+        set -eu
+        FILENAME="/backups/besedy_$$(date +%Y%m%d_%H%M%S).sql.gz"
+        SQL_FILE="$${FILENAME%.gz}.tmp"
+        ARCHIVE="$$FILENAME.tmp"
+        cleanup() { rm -f "$$SQL_FILE" "$$ARCHIVE"; }
+        trap cleanup EXIT
+        echo "Creating backup: $$FILENAME"
+        pg_dump > "$$SQL_FILE"
+        test -s "$$SQL_FILE"
+        gzip -c "$$SQL_FILE" > "$$ARCHIVE"
+        gzip -t "$$ARCHIVE"
+        test -s "$$ARCHIVE"
+        mv "$$ARCHIVE" "$$FILENAME"
+        rm -f "$$SQL_FILE"
+        trap - EXIT
+        echo "Backup verified: $$FILENAME"
+    '
 
 # Check deployed version
 prod-version:

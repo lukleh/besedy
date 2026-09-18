@@ -10,11 +10,11 @@ For shared repo workflow and justfile commands see `AGENTS.md`.
 
 ## Environments
 
-| Environment | Web Port | DB Port | Preferred Command | Compose Overlay |
-|-------------|----------|---------|-------------------|-----------------|
-| Development | 3001 | 5433 | `just dev-up` | `docker-compose.dev.yml` + `mock-oauth` profile |
-| Test (E2E) | 3002 | 5434 | `just test-up` | `docker-compose.secure.yml` (production-style) |
-| Production | 3000 | 5432 | `just prod-up` | `docker-compose.secure.yml` + `docker-compose.production.yml` + `backup` profile |
+| Environment | Web Port | DB Port | Preferred Command | Compose Overlay                                                                  |
+| ----------- | -------- | ------- | ----------------- | -------------------------------------------------------------------------------- |
+| Development | 3001     | 5433    | `just dev-up`     | `docker-compose.dev.yml` + `mock-oauth` profile                                  |
+| Test (E2E)  | 3002     | 5434    | `just test-up`    | `docker-compose.secure.yml` (production-style)                                   |
+| Production  | 3000     | 5432    | `just prod-up`    | `docker-compose.secure.yml` + `docker-compose.production.yml` + `backup` profile |
 
 All three stacks can run simultaneously -- they use separate ports, volumes, and
 container name prefixes (`besedy-development-*`, `besedy-test-*`,
@@ -140,10 +140,83 @@ just prod-up
 just prod-deploy
 ```
 
-`prod-deploy` scopes `docker compose up` to the `web` service only, avoiding DB
-container recreation (which can corrupt indexes). Its `prod-migrate` step grants
-the app access to newly migrated tables and then re-applies the `audit_log`
-DELETE revoke.
+`prod-deploy` builds and checks the new image while the old service is still
+running. It then stops `web`, creates and validates an immediate database
+backup, applies migrations, and starts the already-built image. The maintenance
+window is deliberate: neither old nor new code writes while the schema is
+between versions. If backup or migration fails, the recipe exits with `web`
+stopped; inspect the error and restore or retry before starting it again.
+
+The start is scoped to the `web` service and does not recreate the database
+container (which can corrupt indexes). The `prod-migrate` step also grants the
+app access to newly migrated tables and re-applies the `audit_log` DELETE
+revoke. `just prod-backup` is available separately when an immediate verified
+backup is needed outside a deployment.
+
+For a release that changes the web/jobs contract, use
+`just prod-deploy-with-jobs`. It builds both images before downtime, stops the
+jobs API and worker, performs the web backup and migration, then starts web,
+jobs, and refreshes the Prefect deployment. Production profiles using
+`model-chatgpt-*` must use `just prod-deploy-with-jobs-codex` so the narrowly
+scoped Codex auth mount is retained.
+
+### Permissions rework rollout
+
+Deploy the lookup ownership change separately from the role cutover:
+
+1. Merge through migration `20260916090000_scope_metadata_lookups_to_catalog`
+   together with the lookup-route changes that write `workflow_group_id`, then
+   run `just prod-deploy`. Do not apply this migration while older lookup code
+   can create rows without a catalog.
+2. Verify every lookup has a catalog and every reference points to a lookup in
+   the same catalog:
+
+   ```sql
+   SELECT 'recorders' AS kind, count(*) FROM recorders WHERE workflow_group_id IS NULL
+   UNION ALL SELECT 'locations', count(*) FROM locations WHERE workflow_group_id IS NULL
+   UNION ALL SELECT 'albums', count(*) FROM albums WHERE workflow_group_id IS NULL;
+
+   SELECT count(*) AS mismatched_lookup_references
+   FROM (
+     SELECT 1 FROM audio_metadata m JOIN recorders r ON r.id = m.recorder_id
+       WHERE r.workflow_group_id <> m.workflow_group_id
+     UNION ALL
+     SELECT 1 FROM audio_metadata m JOIN locations l ON l.id = m.location_id
+       WHERE l.workflow_group_id <> m.workflow_group_id
+     UNION ALL
+     SELECT 1 FROM audio_metadata m JOIN albums a ON a.id = m.album_id
+       WHERE a.workflow_group_id <> m.workflow_group_id
+     UNION ALL
+     SELECT 1 FROM catalog_event e JOIN locations l ON l.id = e.location_id
+       WHERE l.workflow_group_id <> e.workflow_group_id
+   ) mismatches;
+   ```
+
+   Every count must be zero before continuing.
+
+3. Merge the remaining permission stack and deploy it as one coordinated
+   web/jobs maintenance release with `just prod-deploy-with-jobs` (or the
+   `-codex` variant). This applies the additive role columns and then assigns
+   every active and pending grant a role while no old worker is running.
+4. Verify the role backfill before accepting traffic as healthy:
+
+   ```sql
+   SELECT count(*) AS grants_without_role FROM catalog_access WHERE role IS NULL;
+   SELECT count(*) AS pending_without_role FROM pending_catalog_grant WHERE role IS NULL;
+   SELECT access_level, role, extra_permissions, count(*)
+     FROM catalog_access
+    GROUP BY access_level, role, extra_permissions
+    ORDER BY access_level, role;
+   ```
+
+   The first two counts must be zero. Compare the grouped mapping with the
+   preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
+   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
+
+Each maintenance run creates its own verified pre-migration backup. If a
+post-migration verification fails, stop web and jobs, preserve the failed-state
+database for diagnosis, restore that run's backup, and restart the previous
+images. Do not attempt an ad-hoc reverse migration.
 
 **Migrations run before the new container starts, and that order matters.** The
 new image knows about columns the old schema lacks, and Prisma asks for every
@@ -256,7 +329,7 @@ bash ../scripts/run_web_compose.sh production start web
 
 ## Deep Search Production Runtime
 
-Deep Search runs *outside* the Next.js app: a shared Prefect control plane plus a
+Deep Search runs _outside_ the Next.js app: a shared Prefect control plane plus a
 per-environment jobs runtime (jobs API + worker), all joined to the
 `besedy-internal` Docker network alongside production web. See
 [docker-container-topology.md](docker-container-topology.md) for the full
@@ -266,7 +339,11 @@ through the development runtime.
 
 ### Deploy Order
 
-1. **Web + migrations** -- `just prod-deploy` (see Production Deploy above).
+1. **Web + jobs contract changes** -- use `just prod-deploy-with-jobs` (or the
+   `-codex` variant for `model-chatgpt-*`). See Production Deploy above. This
+   coordinated path is required whenever a worker request/response contract or
+   its authorization context changes; do not migrate web while an old worker
+   can still issue writes or internal requests.
    Set `JOBS_API_BASE_URL=http://besedy-prod-jobs-api:8390` in the production web
    env file so web calls the production jobs API by container name. Do **not**
    use `besedy-jobs-api` (that DNS alias belongs to the dev runtime), and note the
@@ -277,7 +354,7 @@ through the development runtime.
    image and runs migrations, not because it is the only recipe that joins the
    network. `prod-up`, `prod-deploy`, and `jobs-prod-up` create the external
    `besedy-internal` network if it is missing.
-2. **Shared Prefect + production runtime:**
+2. **Initial shared Prefect + production runtime setup:**
 
    Before the first hardened deployment, create the output root and make it
    writable by `JOBS_CONTAINER_UID:JOBS_CONTAINER_GID` (defaults `1000:1000`):
@@ -407,14 +484,17 @@ sudo journalctl -u cloudflared -f
 ### Common Failures
 
 **Tunnel not connecting:**
+
 - Validate `/etc/cloudflared/config.yml` and credentials file path.
 - Inspect `journalctl -u cloudflared`.
 
 **502 / origin unavailable:**
+
 - Confirm the web container is healthy (`just prod-status`).
 - Confirm ingress points to `http://localhost:3000`.
 
 **Auth callback mismatch / DNS mismatch:**
+
 - `AUTH_URL` and `NEXT_PUBLIC_APP_URL` must exactly match the public hostname.
 - Rebuild or restart the web container after correcting the env file.
 
@@ -427,14 +507,14 @@ All monitoring scripts live in `web/scripts/`. Host backup setup assets live in
 
 ### Script Inventory
 
-| Script | Schedule | Alerts When | Logger Tag |
-|--------|----------|-------------|------------|
-| `mcp-usage-retention.sh` | Daily 05:50 | Failure; otherwise rolls up and prunes raw MCP telemetry | `besedy-mcp-retention` |
-| `audit-check.sh` | Daily 06:00 | Failed logins or access denials exceed thresholds; admin role changes | `besedy-audit` |
-| `weekly-report.sh` | Weekly Sun 06:30 | Every run (full 7-day activity summary) | `besedy-weekly` |
-| `backup-health-check.sh` | Daily 06:45 | Any backup health check fails | `besedy-backup` |
-| `host-backup-health-check.sh` | Daily 07:05 | Any required project/extra snapshot coverage check fails | `besedy-host-backup` |
-| `security-update-check.sh` | Monthly 1st 07:00 | Every run (subject varies by findings) | `besedy-security` |
+| Script                        | Schedule          | Alerts When                                                           | Logger Tag             |
+| ----------------------------- | ----------------- | --------------------------------------------------------------------- | ---------------------- |
+| `mcp-usage-retention.sh`      | Daily 05:50       | Failure; otherwise rolls up and prunes raw MCP telemetry              | `besedy-mcp-retention` |
+| `audit-check.sh`              | Daily 06:00       | Failed logins or access denials exceed thresholds; admin role changes | `besedy-audit`         |
+| `weekly-report.sh`            | Weekly Sun 06:30  | Every run (full 7-day activity summary)                               | `besedy-weekly`        |
+| `backup-health-check.sh`      | Daily 06:45       | Any backup health check fails                                         | `besedy-backup`        |
+| `host-backup-health-check.sh` | Daily 07:05       | Any required project/extra snapshot coverage check fails              | `besedy-host-backup`   |
+| `security-update-check.sh`    | Monthly 1st 07:00 | Every run (subject varies by findings)                                | `besedy-security`      |
 
 All scripts require Docker access, `jq`, production compose files, and the
 resolved production env file via `scripts/resolve_web_env_file.sh production`.
