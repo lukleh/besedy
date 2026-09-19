@@ -590,6 +590,9 @@ that gate.
 
 ## Deferred questions
 
+- Whether correction should later expand beyond primary event recordings, and
+  how newly eligible recordings would enter the publication gate without
+  unexpectedly losing their existing machine-transcript reader access.
 - The cross-recording corrector overview: personal work, remaining work,
   disagreements and discussion.
 - The detailed recording navigation and comment-thread presentation beyond the
