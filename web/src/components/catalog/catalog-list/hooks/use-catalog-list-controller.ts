@@ -383,9 +383,9 @@ export function useCatalogListController({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterOptions]);
 
-  const { data: allRecorders = [] } = useRecorders();
-  const { data: allLocations = [] } = useLocations();
-  const { data: allAlbums = [] } = useAlbums();
+  const { data: allRecorders = [] } = useRecorders(activeCatalogId ?? undefined);
+  const { data: allLocations = [] } = useLocations(activeCatalogId ?? undefined);
+  const { data: allAlbums = [] } = useAlbums(activeCatalogId ?? undefined);
 
   const { data, isLoading, isFetching, error, dataUpdatedAt } = useCatalogData({
     groupKey,

@@ -1,6 +1,6 @@
 # ADR 0007: Per-catalog metadata lookups
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-15
 - **Canonical references:** [Web data and database](../web/data-and-database.md#catalog-data-model), [ADR 0005](0005-catalog-permission-model.md)
 

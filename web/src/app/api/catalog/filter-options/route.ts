@@ -154,9 +154,18 @@ export async function GET(request: NextRequest) {
 
     // Load all recorders, locations, and albums for name lookup
     const [allRecorders, allLocations, allAlbums] = await Promise.all([
-      prisma.recorder.findMany({ orderBy: { name: "asc" } }),
-      prisma.location.findMany({ orderBy: { name: "asc" } }),
-      prisma.album.findMany({ orderBy: { name: "asc" } }),
+      prisma.recorder.findMany({
+        where: { workflowGroupId: group.id },
+        orderBy: { name: "asc" },
+      }),
+      prisma.location.findMany({
+        where: { workflowGroupId: group.id },
+        orderBy: { name: "asc" },
+      }),
+      prisma.album.findMany({
+        where: { workflowGroupId: group.id },
+        orderBy: { name: "asc" },
+      }),
     ]);
     const recorderById = new Map(allRecorders.map((r) => [r.id, r]));
     const locationById = new Map(allLocations.map((l) => [l.id, l]));

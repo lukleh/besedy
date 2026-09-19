@@ -20,7 +20,6 @@ export async function GET() {
       isSuperadmin: capability.isSuperadmin,
       isAdmin: capability.isAdmin,
       canAccessAdmin: capability.canAccessAdmin,
-      hasEditorOnAnyCatalog: capability.hasEditorOnAnyCatalog,
     });
   } catch (error) {
     if (error instanceof AuthError) {

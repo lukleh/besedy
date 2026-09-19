@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import {
-  requireAuth,
-  requireEditorOnAnyCatalog,
-} from "@/lib/auth/permissions";
+import { requireAuth } from "@/lib/auth/permissions";
+import { getCatalogCapability } from "@/lib/access/capabilities";
 import { handlePrismaError, notFound, badRequest, forbidden, conflict } from "./errors";
 import { validateRequestBody, validateParams, IntIdParamSchema } from "./validation";
 import { CreateEnumSchema, UpdateEnumSchema } from "@/lib/validation/schemas";
@@ -18,10 +16,19 @@ interface ItemRouteParams {
 }
 
 interface CatalogScopeResolution {
+  groupId: string;
   catalogHashes: Set<string>;
+  canEdit: boolean;
   response?: NextResponse;
 }
 
+/**
+ * Resolve the catalog these lookups belong to.
+ *
+ * Lookups are per catalog, so every read is filtered by the resolved catalog and
+ * every write both requires edit rights on it and files the row under it. Edit
+ * rights are `canEditMetadata` on this catalog, not editor anywhere.
+ */
 async function resolveCatalogScope(
   request: NextRequest,
   userId: string
@@ -32,14 +39,33 @@ async function resolveCatalogScope(
 
   if (!group || !hasAccess) {
     return {
+      groupId: "",
       catalogHashes: new Set<string>(),
+      canEdit: false,
       response: forbidden("Catalog access required"),
     };
   }
 
+  const capability = await getCatalogCapability(group.id, userId);
+
   return {
+    groupId: group.id,
     catalogHashes: await loadCatalogHashes(group.id),
+    canEdit: capability.canEditMetadata,
   };
+}
+
+/** Resolve the scope for a write, refusing when the actor may not edit here. */
+async function resolveEditScope(
+  request: NextRequest
+): Promise<CatalogScopeResolution> {
+  const userId = await requireAuth();
+  const scope = await resolveCatalogScope(request, userId);
+  if (scope.response) return scope;
+  if (!scope.canEdit) {
+    return { ...scope, response: forbidden("Editor access to this catalog required") };
+  }
+  return scope;
 }
 
 // =============================================================================
@@ -53,8 +79,8 @@ export const recorderCollectionHandlers = {
       const scope = await resolveCatalogScope(request, userId);
       if (scope.response) return scope.response;
 
-      // Get all recorders
       const items = await prisma.recorder.findMany({
+        where: { workflowGroupId: scope.groupId },
         orderBy: { name: "asc" },
         select: {
           id: true,
@@ -86,13 +112,16 @@ export const recorderCollectionHandlers = {
 
   async POST(request: NextRequest) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const result = await validateRequestBody(request, CreateEnumSchema);
       if (!result.success) return result.response;
       const { name } = result.data;
       const trimmedName = name.trim();
       if (trimmedName.length === 0) return badRequest("Name is required");
-      const item = await prisma.recorder.create({ data: { name: trimmedName } });
+      const item = await prisma.recorder.create({
+        data: { name: trimmedName, workflowGroupId: scope.groupId },
+      });
       return NextResponse.json(item, { status: 201 });
     } catch (error) {
       return handlePrismaError(error, "recorder", "create");
@@ -101,14 +130,16 @@ export const recorderCollectionHandlers = {
 };
 
 export const recorderItemHandlers = {
-  async GET(_request: NextRequest, { params }: ItemRouteParams) {
+  async GET(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireAuth();
+      const userId = await requireAuth();
+      const scope = await resolveCatalogScope(request, userId);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
-      const item = await prisma.recorder.findUnique({
-        where: { id },
+      const item = await prisma.recorder.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
         include: { _count: { select: { audioMetadata: true } } },
       });
       if (!item) return notFound("recorder");
@@ -120,7 +151,8 @@ export const recorderItemHandlers = {
 
   async PUT(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
@@ -128,6 +160,11 @@ export const recorderItemHandlers = {
       if (!bodyResult.success) return bodyResult.response;
       const { name } = bodyResult.data;
       if (!name || name.trim().length === 0) return badRequest("Name is required");
+      const existing = await prisma.recorder.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
+        select: { id: true },
+      });
+      if (!existing) return notFound("recorder");
       const item = await prisma.recorder.update({ where: { id }, data: { name: name.trim() } });
       return NextResponse.json(item);
     } catch (error) {
@@ -135,12 +172,18 @@ export const recorderItemHandlers = {
     }
   },
 
-  async DELETE(_request: NextRequest, { params }: ItemRouteParams) {
+  async DELETE(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
+      const existing = await prisma.recorder.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
+        select: { id: true },
+      });
+      if (!existing) return notFound("recorder");
       const referenceCount = await prisma.audioMetadata.count({ where: { recorderId: id } });
       if (referenceCount > 0) {
         return conflict("Cannot delete recorder: it is referenced by existing recordings");
@@ -164,8 +207,8 @@ export const locationCollectionHandlers = {
       const scope = await resolveCatalogScope(request, userId);
       if (scope.response) return scope.response;
 
-      // Get all locations
       const items = await prisma.location.findMany({
+        where: { workflowGroupId: scope.groupId },
         orderBy: { name: "asc" },
         select: {
           id: true,
@@ -197,13 +240,16 @@ export const locationCollectionHandlers = {
 
   async POST(request: NextRequest) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const result = await validateRequestBody(request, CreateEnumSchema);
       if (!result.success) return result.response;
       const { name } = result.data;
       const trimmedName = name.trim();
       if (trimmedName.length === 0) return badRequest("Name is required");
-      const item = await prisma.location.create({ data: { name: trimmedName } });
+      const item = await prisma.location.create({
+        data: { name: trimmedName, workflowGroupId: scope.groupId },
+      });
       return NextResponse.json(item, { status: 201 });
     } catch (error) {
       return handlePrismaError(error, "location", "create");
@@ -212,14 +258,16 @@ export const locationCollectionHandlers = {
 };
 
 export const locationItemHandlers = {
-  async GET(_request: NextRequest, { params }: ItemRouteParams) {
+  async GET(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireAuth();
+      const userId = await requireAuth();
+      const scope = await resolveCatalogScope(request, userId);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
-      const item = await prisma.location.findUnique({
-        where: { id },
+      const item = await prisma.location.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
         include: { _count: { select: { audioMetadata: true } } },
       });
       if (!item) return notFound("location");
@@ -231,7 +279,8 @@ export const locationItemHandlers = {
 
   async PUT(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
@@ -239,6 +288,11 @@ export const locationItemHandlers = {
       if (!bodyResult.success) return bodyResult.response;
       const { name } = bodyResult.data;
       if (!name || name.trim().length === 0) return badRequest("Name is required");
+      const existing = await prisma.location.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
+        select: { id: true },
+      });
+      if (!existing) return notFound("location");
       const item = await prisma.location.update({ where: { id }, data: { name: name.trim() } });
       return NextResponse.json(item);
     } catch (error) {
@@ -246,12 +300,18 @@ export const locationItemHandlers = {
     }
   },
 
-  async DELETE(_request: NextRequest, { params }: ItemRouteParams) {
+  async DELETE(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
+      const existing = await prisma.location.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
+        select: { id: true },
+      });
+      if (!existing) return notFound("location");
       const [metadataCount, eventCount] = await Promise.all([
         prisma.audioMetadata.count({ where: { locationId: id } }),
         prisma.catalogEvent.count({ where: { locationId: id } }),
@@ -278,8 +338,8 @@ export const albumCollectionHandlers = {
       const scope = await resolveCatalogScope(request, userId);
       if (scope.response) return scope.response;
 
-      // Get all albums
       const items = await prisma.album.findMany({
+        where: { workflowGroupId: scope.groupId },
         orderBy: { name: "asc" },
         select: {
           id: true,
@@ -311,13 +371,16 @@ export const albumCollectionHandlers = {
 
   async POST(request: NextRequest) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const result = await validateRequestBody(request, CreateEnumSchema);
       if (!result.success) return result.response;
       const { name } = result.data;
       const trimmedName = name.trim();
       if (trimmedName.length === 0) return badRequest("Name is required");
-      const item = await prisma.album.create({ data: { name: trimmedName } });
+      const item = await prisma.album.create({
+        data: { name: trimmedName, workflowGroupId: scope.groupId },
+      });
       return NextResponse.json(item, { status: 201 });
     } catch (error) {
       return handlePrismaError(error, "album", "create");
@@ -326,14 +389,16 @@ export const albumCollectionHandlers = {
 };
 
 export const albumItemHandlers = {
-  async GET(_request: NextRequest, { params }: ItemRouteParams) {
+  async GET(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireAuth();
+      const userId = await requireAuth();
+      const scope = await resolveCatalogScope(request, userId);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
-      const item = await prisma.album.findUnique({
-        where: { id },
+      const item = await prisma.album.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
         include: { _count: { select: { audioMetadata: true } } },
       });
       if (!item) return notFound("album");
@@ -345,7 +410,8 @@ export const albumItemHandlers = {
 
   async PUT(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
@@ -353,6 +419,11 @@ export const albumItemHandlers = {
       if (!bodyResult.success) return bodyResult.response;
       const { name } = bodyResult.data;
       if (!name || name.trim().length === 0) return badRequest("Name is required");
+      const existing = await prisma.album.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
+        select: { id: true },
+      });
+      if (!existing) return notFound("album");
       const item = await prisma.album.update({ where: { id }, data: { name: name.trim() } });
       return NextResponse.json(item);
     } catch (error) {
@@ -360,12 +431,18 @@ export const albumItemHandlers = {
     }
   },
 
-  async DELETE(_request: NextRequest, { params }: ItemRouteParams) {
+  async DELETE(request: NextRequest, { params }: ItemRouteParams) {
     try {
-      await requireEditorOnAnyCatalog();
+      const scope = await resolveEditScope(request);
+      if (scope.response) return scope.response;
       const paramsResult = validateParams(await params, IntIdParamSchema);
       if (!paramsResult.success) return paramsResult.response;
       const { id } = paramsResult.data;
+      const existing = await prisma.album.findFirst({
+        where: { id, workflowGroupId: scope.groupId },
+        select: { id: true },
+      });
+      if (!existing) return notFound("album");
       const referenceCount = await prisma.audioMetadata.count({ where: { albumId: id } });
       if (referenceCount > 0) {
         return conflict("Cannot delete album: it is referenced by existing recordings");

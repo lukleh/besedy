@@ -10,29 +10,6 @@ type CatalogAccessEntry = {
   accessLevel: AccessLevel;
 };
 
-export async function hasEditorAuthorityOnAnyCatalog(
-  actor: PortalActorContext
-): Promise<boolean> {
-  if (!actor.userId || !actor.canEnterPortal) {
-    return false;
-  }
-
-  if (hasSystemCatalogAuthority(actor)) {
-    return true;
-  }
-
-  const editorAccess = await prisma.catalogAccess.findFirst({
-    where: {
-      userId: actor.userId,
-      status: "ACTIVE",
-      accessLevel: { in: ["EDITOR", "OWNER"] },
-    },
-    select: { userId: true },
-  });
-
-  return editorAccess !== null;
-}
-
 export async function listUserCatalogAccessEntries(
   actor: PortalActorContext
 ): Promise<CatalogAccessEntry[]> {

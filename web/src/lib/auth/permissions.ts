@@ -1,10 +1,7 @@
 import prisma from "@/lib/db";
 import { getSession } from "./session";
 import { AccessLevel } from "@/generated/prisma/client";
-import {
-  hasEditorAuthorityOnAnyCatalog,
-  listUserCatalogAccessEntries,
-} from "@/lib/access/catalog-access-queries";
+import { listUserCatalogAccessEntries } from "@/lib/access/catalog-access-queries";
 import { accessLevelAtLeast } from "@/lib/policy/access-level";
 import {
   resolveCatalogActorContext,
@@ -148,31 +145,6 @@ export async function canManagePortalAdmissions(
   userId?: string
 ): Promise<boolean> {
   return isAdmin(userId);
-}
-
-/**
- * Check if user has EDITOR access on ANY catalog (for enum management)
- * This is a global permission - not tied to a specific catalog.
- * Used for managing Recorder and Location enumerations.
- */
-export async function hasEditorOnAnyCatalog(userId?: string): Promise<boolean> {
-  const actor = await resolvePortalActorContext(userId);
-  return hasEditorAuthorityOnAnyCatalog(actor);
-}
-
-/**
- * Require EDITOR access on any catalog - throws if not authorized
- * Used for enum management routes
- */
-export async function requireEditorOnAnyCatalog(): Promise<string> {
-  const userId = await requireAuth();
-
-  const hasAccess = await hasEditorOnAnyCatalog(userId);
-  if (!hasAccess) {
-    throw new AuthError("EDITOR access on at least one catalog required", 403);
-  }
-
-  return userId;
 }
 
 // ============================================================================
