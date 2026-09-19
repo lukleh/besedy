@@ -4,6 +4,12 @@
 # overlay only makes the production volume external so `docker compose down -v`
 # cannot delete it.
 
+services:
+  web:
+    # The mutable :prod tag is used for normal deploys. prod-build also retains
+    # the same image under its source commit for an exact rollback.
+    image: ${BESEDY_WEB_IMAGE:-besedy-web:prod}
+
 volumes:
   postgres_data:
     name: besedy_production_postgres

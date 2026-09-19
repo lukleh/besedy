@@ -74,6 +74,7 @@ function resolvePlaybackEnd(value: number | undefined): number | null {
 export function AudioPlayer({
   src,
   catalogId,
+  downloadEventId,
   onTimeUpdate,
   onDurationChange,
   onPlayingChange,
@@ -955,6 +956,7 @@ export function AudioPlayer({
       <AudioPlayerChrome
         bufferInfo={bufferInfo}
         catalogId={catalogId}
+        downloadEventId={downloadEventId}
         currentTime={currentTime}
         duration={duration}
         hash={hash}

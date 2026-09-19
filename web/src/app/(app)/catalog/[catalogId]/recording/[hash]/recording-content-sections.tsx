@@ -65,6 +65,7 @@ interface RecordingAudioSectionProps {
   audioUrl: string;
   autoPlayOnSeek: boolean;
   catalogId: string;
+  downloadEventId?: number;
   currentTimeSetter: (time: number) => void;
   hash: string;
   onAudioDownload: (source: "archived" | "original") => void;
@@ -205,6 +206,7 @@ export function RecordingAudioSection({
   audioUrl,
   autoPlayOnSeek,
   catalogId,
+  downloadEventId,
   currentTimeSetter,
   hash,
   onAudioDownload,
@@ -259,6 +261,7 @@ export function RecordingAudioSection({
       <AudioPlayer
         src={audioUrl}
         catalogId={catalogId}
+        downloadEventId={downloadEventId}
         onTimeUpdate={currentTimeSetter}
         onDurationChange={onDurationChange}
         onPlayingChange={onPlayingChange}
