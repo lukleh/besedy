@@ -15,8 +15,10 @@ import { resolveCatalogColbertIndexDir } from "@/app/api/catalogs/[id]/search/se
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,
+  deepSearchJobCanSeeRecording,
   formatDeepSearchMetadata,
   getCatalogRecordingMetadata,
+  resolveDeepSearchJobGrant,
 } from "../helpers";
 
 export const runtime = "nodejs";
@@ -25,6 +27,7 @@ export const dynamic = "force-dynamic";
 const CitationRequestSchema = z.object({
   catalogId: z.string().trim().min(1).max(128),
   chunkId: z.string().trim().min(1).max(256),
+  requestedById: z.string().trim().min(1).max(128).optional(),
   neighborCount: z.number().int().min(0).max(5).optional(),
 });
 
@@ -72,6 +75,14 @@ export async function POST(request: NextRequest) {
 
     const chunk = chunks[0];
     if (!chunk) {
+      return notFound("chunk");
+    }
+
+    const grant = await resolveDeepSearchJobGrant(
+      catalogId,
+      bodyResult.data.requestedById
+    );
+    if (!(await deepSearchJobCanSeeRecording(catalogId, chunk.audioHash, grant))) {
       return notFound("chunk");
     }
 

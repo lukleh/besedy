@@ -30,6 +30,12 @@ vi.mock("@/lib/db", () => ({
     audioMetadata: {
       findUnique: vi.fn(),
     },
+    catalogAccess: {
+      findUnique: vi.fn(),
+    },
+    catalogEntry: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -62,6 +68,10 @@ describe("internal deep-search citation and metadata routes", () => {
   it("returns citation context and metadata for a valid chunk", async () => {
     const prisma = (await import("@/lib/db")).default;
     vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.catalogEntry.findUnique).mockResolvedValue({
+      isActionable: true,
+      isPublished: true,
+    } as never);
     vi.mocked(prisma.audioMetadata.findUnique).mockResolvedValue({
       workflowGroupId: "catalog-1",
       audioHash: "hash-1",
@@ -155,9 +165,39 @@ describe("internal deep-search citation and metadata routes", () => {
     });
   });
 
+  // A job with no requester named is an older worker, and an unknown requester
+  // is not a reason to answer more broadly than a listener would be answered.
+  it("refuses metadata for an unpublished recording when the job names nobody", async () => {
+    const prisma = (await import("@/lib/db")).default;
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.catalogEntry.findUnique).mockResolvedValue({
+      isActionable: true,
+      isPublished: false,
+    } as never);
+
+    const { POST } = await import("@/app/api/internal/deep-search/metadata/route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/internal/deep-search/metadata", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-job-secret",
+        },
+        body: JSON.stringify({ catalogId: "catalog-1", audioHash: "hash-1" }),
+      })
+    );
+
+    expect(response.status).toBe(404);
+    expect(prisma.audioMetadata.findUnique).not.toHaveBeenCalled();
+  });
+
   it("returns null metadata payload when no curated metadata exists", async () => {
     const prisma = (await import("@/lib/db")).default;
     vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.catalogEntry.findUnique).mockResolvedValue({
+      isActionable: true,
+      isPublished: true,
+    } as never);
     vi.mocked(prisma.audioMetadata.findUnique).mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/internal/deep-search/metadata/route");

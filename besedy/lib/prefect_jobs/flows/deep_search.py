@@ -60,6 +60,7 @@ def validate_inputs(
     catalog_id: str,
     query: str,
     instructions: str | None = None,
+    requested_by_id: str | None = None,
     retrieval: JsonDict,
     execution: JsonDict,
 ) -> JsonDict:
@@ -74,6 +75,9 @@ def validate_inputs(
         "catalog_id": str(catalog_id).strip(),
         "query": str(query).strip(),
         "instructions": instructions_text,
+        # Carried through the whole flow: a job sees what the person who asked
+        # for it sees, and the retrieval calls say so on every request.
+        "requested_by_id": _string_or_none(requested_by_id),
         "retrieval": retrieval if isinstance(retrieval, dict) else {},
         "execution": execution if isinstance(execution, dict) else {},
     }
@@ -84,7 +88,9 @@ def validate_inputs(
 def run_initial_retrieval(inputs: JsonDict) -> JsonDict:
     query = str(inputs["query"])
     catalog_id = str(inputs["catalog_id"])
-    client = build_besedy_deep_search_client_from_env()
+    client = build_besedy_deep_search_client_from_env(
+        requested_by_id=_string_or_none(inputs.get("requested_by_id")),
+    )
     if client is None:
         time.sleep(0.1)
         return {
@@ -134,7 +140,9 @@ def expand_citations(inputs: JsonDict, initial_retrieval: JsonDict) -> list[Json
     if bool(initial_retrieval.get("stub")):
         return []
 
-    client = build_besedy_deep_search_client_from_env()
+    client = build_besedy_deep_search_client_from_env(
+        requested_by_id=_string_or_none(inputs.get("requested_by_id")),
+    )
     if client is None:
         raise DeepSearchFlowError(
             "Besedy deep-search client is not configured.",
@@ -193,7 +201,9 @@ def run_rlm_deep_search(
         has_stub_retrieval=bool(initial_retrieval.get("stub")),
     )
     if execution_mode == DeepSearchExecutionMode.RLM:
-        client = build_besedy_deep_search_client_from_env()
+        client = build_besedy_deep_search_client_from_env(
+        requested_by_id=_string_or_none(inputs.get("requested_by_id")),
+    )
         if client is None:
             raise DeepSearchFlowError(
                 "Besedy deep-search client is not configured.",
@@ -333,7 +343,7 @@ def deep_search_flow(
     retrieval: JsonDict | None = None,
     execution: JsonDict | None = None,
 ) -> JsonDict:
-    del requested_by_id, caller_scope
+    del caller_scope
     context = cast(Any, get_run_context())
     flow_run = getattr(context, "flow_run", None)
     if flow_run is None:
@@ -345,6 +355,7 @@ def deep_search_flow(
         catalog_id=catalog_id,
         query=query,
         instructions=instructions,
+        requested_by_id=requested_by_id,
         retrieval=retrieval or {},
         execution=execution or {},
     )

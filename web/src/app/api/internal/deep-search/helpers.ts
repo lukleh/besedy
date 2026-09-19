@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { unauthorized } from "@/lib/api";
 import { constantTimeEqual } from "@/lib/security/constant-time";
+import { getCatalogCapability } from "@/lib/access/capabilities";
+import {
+  grantForRole,
+  type CatalogGrant,
+} from "@/lib/policy/catalog-permissions";
+import {
+  canViewRecordingForAccessLevel,
+  requiresReadyRecordingScope,
+} from "@/lib/policy/recording";
 
 const BESEDY_JOB_SERVICE_SECRET = process.env.BESEDY_JOB_SERVICE_SECRET?.trim();
 
@@ -17,6 +26,61 @@ export function authorizeDeepSearchServiceRequest(
     return unauthorized("Unauthorized");
   }
   return null;
+}
+
+/**
+ * The visibility a deep-search job runs under.
+ *
+ * A job is asked for by a person, so it sees what that person sees. The service
+ * secret says the caller is our own worker; it says nothing about on whose
+ * behalf, which is why the request carries the requester.
+ *
+ * Two cases fail closed rather than passing `null`, which this search layer
+ * reads as "not scoped at all":
+ *
+ *   - no requester named, which is an older worker: the listener floor, so an
+ *     un-updated worker returns released material instead of everything;
+ *   - a requester with no access to the catalog: the same floor, since there is
+ *     no reason to answer them more broadly than anyone else.
+ *
+ * A catalog administrator is unscoped, which is what `null` is for.
+ */
+export async function resolveDeepSearchJobGrant(
+  catalogId: string,
+  requestedById: string | undefined,
+): Promise<CatalogGrant | null> {
+  if (!requestedById) return grantForRole("listener");
+
+  const capability = await getCatalogCapability(catalogId, requestedById);
+  if (capability.isCatalogAdmin) return null;
+  if (!capability.hasAccess || !capability.catalogGrant) {
+    return grantForRole("listener");
+  }
+  return capability.catalogGrant;
+}
+
+/**
+ * Whether a job running under this grant may see one recording.
+ *
+ * The search is scoped, so the identifiers a job holds are already ones it may
+ * see. This is the second lock on the same door: an expansion asked for by hash
+ * or by chunk answers to the same visibility the search did.
+ */
+export async function deepSearchJobCanSeeRecording(
+  catalogId: string,
+  audioHash: string,
+  grant: CatalogGrant | null,
+): Promise<boolean> {
+  if (!requiresReadyRecordingScope(grant)) return true;
+
+  const entry = await prisma.catalogEntry.findUnique({
+    where: {
+      workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash },
+    },
+    select: { isActionable: true, isPublished: true },
+  });
+
+  return !!entry && canViewRecordingForAccessLevel(grant, entry);
 }
 
 export async function catalogExists(catalogId: string): Promise<boolean> {

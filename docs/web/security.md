@@ -390,6 +390,28 @@ account revoking itself out of a catalog.
     was the unit a holder of `manage_access` could hand out nothing but
     `LISTENER`. The roles separate the two, so reading is grantable again.
 
+### Delivery and Background Jobs Are Scoped Like Reading
+
+Two paths used to hand over more than the account asking could read.
+
+**Bulk transcript export** exported every recording in the catalog. It now
+exports what the requester could have opened one recording at a time, using the
+same per-recording visibility as the single-transcript route. An administrator
+is unscoped and still gets everything.
+
+**Deep search** ran with no identity at all: the worker authenticated with the
+service secret and the internal search treated that as full visibility, so a
+report could quote unreleased material to someone who cannot read it. The job
+now carries the account it was asked for, and the internal search, citation and
+metadata routes scope to that account. Two cases fail closed to what a listener
+sees rather than opening up: a request naming no requester, which is an older
+worker, and a requester with no access to the catalog.
+
+The service secret still says only that the caller is our own worker. It is
+shared by the web-to-jobs client, the jobs API and the worker-to-web client, so
+one leaked value is worth treating as a full compromise of job submission and
+retrieval.
+
 ### CatalogAccess Retention for Blocked Users
 
 When a user is blocked, their `CatalogAccess` records are **retained**. Access
