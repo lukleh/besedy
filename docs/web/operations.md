@@ -204,6 +204,11 @@ just posters delete --catalog <catalog-id> --event <event-id> --actor <email-or-
   --poster <poster-id> --prod --yes
 ```
 
+`POSTERS_DIR` must belong to the shared `UPLOADS_GID` group and have mode
+`2770`. Poster writes preserve that shared group on descendant directories and
+use group-readable files so host-run CLI imports and the web container can read
+each other's candidates.
+
 For host-run commands, the CLI rewrites the container database hostname to the
 published `DB_PORT` binding from the selected environment file. Production
 mutations require the explicit `--yes` confirmation.

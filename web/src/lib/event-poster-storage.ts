@@ -12,6 +12,8 @@ export type PosterExtension = ".jpg" | ".png";
 export const MAX_POSTER_UPLOAD_BYTES = 30 * 1024 * 1024;
 export const MAX_POSTER_INPUT_PIXELS = 50_000_000;
 const ASPECT_RATIO_TOLERANCE = 0.025;
+const SHARED_POSTER_DIR_MODE = 0o2770;
+const SHARED_POSTER_FILE_MODE = 0o660;
 
 const TARGETS: Record<PosterVariant, { ratio: number; maxWidth: number; maxHeight: number }> = {
   square: { ratio: 1, maxWidth: 1600, maxHeight: 1600 },
@@ -173,7 +175,13 @@ export async function writePosterCandidateAssets(options: {
   landscape: ProcessedPosterAsset;
 }): Promise<string> {
   const eventDir = path.join(resolveEventPostersPath(options.catalogId), String(options.eventId));
-  await fs.mkdir(eventDir, { recursive: true });
+  await fs.mkdir(eventDir, { recursive: true, mode: SHARED_POSTER_DIR_MODE });
+  const relative = path.relative(getPostersDir(), eventDir).split(path.sep);
+  let current = getPostersDir();
+  for (const segment of relative) {
+    current = path.join(current, segment);
+    await fs.chmod(current, SHARED_POSTER_DIR_MODE).catch(() => undefined);
+  }
   const eventValidation = validatePath(eventDir);
   if (!eventValidation.valid) {
     throw new Error("Invalid event poster directory");
@@ -181,13 +189,20 @@ export async function writePosterCandidateAssets(options: {
 
   const finalDir = path.join(eventValidation.resolvedPath, options.posterId);
   const tempDir = path.join(eventValidation.resolvedPath, `.tmp-${options.posterId}-${randomUUID()}`);
-  await fs.mkdir(tempDir, { recursive: false });
+  await fs.mkdir(tempDir, { recursive: false, mode: SHARED_POSTER_DIR_MODE });
+  await fs.chmod(tempDir, SHARED_POSTER_DIR_MODE);
 
   try {
-    await fs.writeFile(path.join(tempDir, `square${options.square.extension}`), options.square.bytes, { flag: "wx" });
-    await fs.writeFile(path.join(tempDir, `landscape${options.landscape.extension}`), options.landscape.bytes, {
-      flag: "wx",
-    });
+    const squarePath = path.join(tempDir, `square${options.square.extension}`);
+    const landscapePath = path.join(tempDir, `landscape${options.landscape.extension}`);
+    await Promise.all([
+      fs.writeFile(squarePath, options.square.bytes, { flag: "wx", mode: SHARED_POSTER_FILE_MODE }),
+      fs.writeFile(landscapePath, options.landscape.bytes, { flag: "wx", mode: SHARED_POSTER_FILE_MODE }),
+    ]);
+    await Promise.all([
+      fs.chmod(squarePath, SHARED_POSTER_FILE_MODE),
+      fs.chmod(landscapePath, SHARED_POSTER_FILE_MODE),
+    ]);
     await fs.rename(tempDir, finalDir);
     return finalDir;
   } catch (error) {
