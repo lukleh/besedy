@@ -61,7 +61,9 @@ type DataAccessAction =
 type ContentAuditAction =
   | "METADATA_UPDATED"
   | "METADATA_VERIFIED"
-  | "METADATA_DELETED";
+  | "METADATA_DELETED"
+  | "RECORDING_INGEST_REQUESTED"
+  | "RECORDING_INGEST_REMOVED";
 
 export interface AuditLogParams {
   userId?: string | null;

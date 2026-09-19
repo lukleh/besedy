@@ -14,6 +14,9 @@ vi.mock("@/lib/config", () => ({
   getTextDataDir: () => {
     throw new Error("not configured");
   },
+  getUploadsDir: () => {
+    throw new Error("not configured");
+  },
 }));
 
 import {

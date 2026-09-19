@@ -311,7 +311,7 @@ than taken, which is what makes the role name worth reading.
 | `publish_recording`     | Recording publication state.                                                                                                                           |
 | `manage_events`         | Creating, editing and deleting events; attaching, detaching and choosing the primary recording.                                                        |
 | `release_events`        | Releasing an event to its audience.                                                                                                                    |
-| `manage_event_posters`  | List and preview poster candidates; create candidates and remove unselected candidates. See [ADR 0008](0008-event-poster-publication.md).              |
+| `manage_event_posters`  | List and preview poster candidates; create candidates and remove unselected candidates. See [ADR 0009](0009-event-poster-publication.md).              |
 | `publish_event_posters` | Select, replace, and unpublish an event's audience poster.                                                                                             |
 | `manage_event_sources`  | Event source records.                                                                                                                                  |
 
@@ -522,7 +522,7 @@ start empty.
   now rather than overlooked: the overlay identifies nobody, and attributing
   speech is a later phase built on the same span mechanism.
 - **Poster upload and poster publication are separate permissions, and sources
-  remain separate from both.** See [ADR 0008](0008-event-poster-publication.md).
+  remain separate from both.** See [ADR 0009](0009-event-poster-publication.md).
 - **Downloaded audio is the playable file.** Original masters are not part of
   any role.
 - **File delivery starts at `redaktor`.** No role describing an ordinary

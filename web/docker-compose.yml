@@ -48,6 +48,10 @@ services:
 
   web:
     container_name: besedy-${BESEDY_COMPOSE_INSTANCE:-unmanaged}-web
+    # Shared upload storage uses setgid directories instead of world-writable
+    # permissions. The host worker user must belong to this numeric group too.
+    group_add:
+      - '${UPLOADS_GID:-1000}'
     build:
       context: .
       target: ${BUILD_TARGET:-development}
@@ -125,6 +129,8 @@ services:
       - ${POSTERS_DIR:-./tests/e2e/fixtures/posters}:/data/posters:rw
       # Recording sources (writable)
       - ${SOURCES_DIR:-./tests/e2e/fixtures/sources}:/data/sources:rw
+      # Admin-uploaded recordings awaiting ingest (writable, shared with the host ingest worker)
+      - ${UPLOADS_DIR:-./tests/e2e/fixtures/uploads}:/data/uploads:rw
       # Audio files
       - ${AUDIO_DIR:-./tests/e2e/fixtures/audio}:/data/audio:ro
       # Original audio files for download

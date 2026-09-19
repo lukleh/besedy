@@ -1,4 +1,4 @@
-# ADR 0008: Versioned event posters and publication
+# ADR 0009: Versioned event posters and publication
 
 - **Status:** Proposed
 - **Date:** 2026-09-19

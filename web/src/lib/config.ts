@@ -8,6 +8,7 @@ interface BesedyPathsConfig {
   audio_artifacts_dir?: string;
   posters_dir?: string;
   sources_dir?: string;
+  uploads_dir?: string;
 }
 
 interface BesedyWebConfig {
@@ -75,6 +76,18 @@ export function getSourcesDir(): string {
     throw new Error("sources_dir is required in besedy.toml for recording sources.");
   }
   return sourcesDir;
+}
+
+/**
+ * Get the admin upload (ingest) directory from config.
+ */
+export function getUploadsDir(): string {
+  const config = getBesedyConfig();
+  const uploadsDir = config.paths.uploads_dir?.trim();
+  if (!uploadsDir) {
+    throw new Error("uploads_dir is required in besedy.toml for recording ingest.");
+  }
+  return uploadsDir;
 }
 
 /**

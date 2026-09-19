@@ -43,6 +43,7 @@ class TestCatalogParserStructure:
             "check",
             "check-durations",
             "clean",
+            "remove",
             "loudness",
             "validate",
             "stage-audio",

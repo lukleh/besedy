@@ -86,7 +86,7 @@ export interface DownloadRecord {
 export interface DownloadPosterPayload {
   blob: Blob;
   contentType: string;
-  /** `portrait` is retained only for bundles created before ADR 0008. */
+  /** `portrait` is retained only for bundles created before ADR 0009. */
   variant: 'square' | 'landscape' | 'portrait';
   posterId?: string;
 }
