@@ -3,6 +3,8 @@ import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   canDownloadCatalogContent,
   canEditCatalogMetadata,
+  canViewCatalogTranscripts,
+  hasCatalogPermission,
   hasCatalogManagementAuthority,
   canViewCatalog,
   type CatalogPolicyContext,
@@ -65,6 +67,34 @@ export function canViewRecordingForAccessLevel(
   state?: RecordingVisibilityState
 ): boolean {
   return canViewRecording(createRecordingVisibilityContext(catalogGrant), state);
+}
+
+/**
+ * Whether the actor sees that more than one machine transcript exists.
+ *
+ * Administrative: the alternatives are unevaluated model output, and every
+ * other role reads the one default backend. Covers the per-recording picker
+ * and the multi-backend stream view.
+ */
+export function canSeeTranscriptVariants(context: CatalogPolicyContext): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "see_transcript_variants")
+  );
+}
+
+/**
+ * Whether the actor sees the diarization overlay.
+ *
+ * Administrative for the same reason: it is unevaluated machine output that
+ * distinguishes turns without naming anyone. A candidate to open once speaker
+ * attribution becomes a phase of correction.
+ */
+export function canSeeSpeakers(context: CatalogPolicyContext): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "see_speakers")
+  );
 }
 
 export function scopeRecordingsForAccess<

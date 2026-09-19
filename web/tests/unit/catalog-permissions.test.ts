@@ -9,6 +9,7 @@ import {
   permissionsForRole,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
+import { canSeeSpeakers, canSeeTranscriptVariants } from "@/lib/policy/recording";
 import {
   canBatchEditCatalogMetadata,
   canDownloadCatalogContent,
@@ -171,6 +172,48 @@ describe("a grant resolves through its role", () => {
   it("gives an absent grant nothing", () => {
     expect(permissionsForGrant(null).size).toBe(0);
     expect(permissionsForGrant(undefined).size).toBe(0);
+  });
+});
+
+describe("administrative views of machine output", () => {
+  // Both sit with the catalog administrator alone: they show unevaluated model
+  // output, and every other role reads the one default backend and no speakers.
+  const ADMIN_ONLY = [
+    { name: "transcript variants", gate: canSeeTranscriptVariants },
+    { name: "speakers", gate: canSeeSpeakers },
+  ];
+
+  it.each(ADMIN_ONLY)("keeps $name from every level", ({ gate }) => {
+    for (const level of LEVELS) {
+      expect(gate(context(level))).toBe(false);
+    }
+    expect(gate(context(null, true))).toBe(true);
+  });
+
+  it.each(ADMIN_ONLY)("keeps $name from every role but the wildcard", ({ name }) => {
+    const permission = name === "speakers" ? "see_speakers" : "see_transcript_variants";
+    for (const role of ["listener", "reader", "corrector", "host", "curator"] as const) {
+      expect(permissionsForRole(role).has(permission as CatalogPermission)).toBe(false);
+    }
+    expect(permissionsForRole("catalog_admin").has(permission as CatalogPermission)).toBe(true);
+  });
+
+  it("refuses both to an actor who cannot read transcripts at all", () => {
+    // The overlay and the picker sit on a transcript, so they cannot outrun it
+    // even for an extra granted on its own.
+    const withExtraOnly = {
+      catalogExists: true,
+      canEnterPortal: true,
+      catalogGrant: {
+        level: null,
+        role: "listener" as const,
+        extras: ["see_transcript_variants", "see_speakers"],
+      },
+      isCatalogAdmin: false,
+    };
+
+    expect(canSeeTranscriptVariants(withExtraOnly)).toBe(false);
+    expect(canSeeSpeakers(withExtraOnly)).toBe(false);
   });
 });
 

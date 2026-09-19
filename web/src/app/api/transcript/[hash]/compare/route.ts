@@ -139,7 +139,18 @@ export async function GET(
     if (!access.ok) {
       return access.response;
     }
-    const { userId, group, transcriptsPath } = access;
+    const { userId, group, transcriptsPath, capability } = access;
+
+    // This is the multi-backend view in its entirety: every machine transcript
+    // side by side. It is the administrative surface, not a variation on the
+    // reading one.
+    if (!capability.canSeeTranscriptVariants) {
+      return NextResponse.json(
+        { error: "Comparing transcripts is not available for this account" },
+        { status: 403 }
+      );
+    }
+
     const priorities = await listTranscriptBackendPriorities();
     const available = await getAvailableTranscripts(transcriptsPath, hash, {
       priorities,

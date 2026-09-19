@@ -113,6 +113,10 @@ export interface TranscriptViewerProps {
   onSeek?: (time: number) => void;
   isPlaying?: boolean;
   canDownload?: boolean;
+  /** Administrative: the backend picker and the count of machine transcripts. */
+  canSeeTranscriptVariants?: boolean;
+  /** Administrative: the diarization overlay. */
+  canSeeSpeakers?: boolean;
 }
 
 export interface TranscriptContentProps {

@@ -86,9 +86,10 @@ test.describe("User Workflows", () => {
     await expect(transcriptHeading).toBeVisible({ timeout: 10000 });
 
     // Transcript availability depends on current backend fixture mapping.
-    // Viewers land on the transcript-stream view by default; when no stream
-    // exists it renders a "Transcript stream unavailable" heading. Accept
-    // both the stream and classic empty-state headings as "empty".
+    // Readers land on the reading view, which renders "No transcripts
+    // available" when there is nothing; the stream view is administrative and
+    // they never see it. The stream heading stays in this matcher for an
+    // administrator running the same check.
     const noTranscriptHeading = page
       .getByRole("heading", {
         name: /no transcripts available|transcript stream unavailable|přepisy nejsou|přepis.*není/i,

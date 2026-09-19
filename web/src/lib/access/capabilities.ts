@@ -26,6 +26,8 @@ import { canViewUnreleasedEvents } from "@/lib/policy/event";
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
+  canSeeSpeakers,
+  canSeeTranscriptVariants,
   canPublishRecording,
   canStreamRecording,
   canViewRecording,
@@ -77,6 +79,8 @@ export interface RecordingCapability extends CatalogCapability {
   canViewRecordingTranscripts: boolean;
   canDownloadRecording: boolean;
   canEditRecording: boolean;
+  canSeeTranscriptVariants: boolean;
+  canSeeSpeakers: boolean;
 }
 
 interface CatalogCapabilityOptions {
@@ -236,6 +240,11 @@ export async function getRecordingCapability(
     canViewRecordingTranscripts: false,
     canDownloadRecording: false,
     canEditRecording: catalogCapability.canEditMetadata,
+    // Administrative views of machine output. They do not depend on the
+    // recording's state, only on who is asking, so they are answered here
+    // rather than after the entry is loaded.
+    canSeeTranscriptVariants: canSeeTranscriptVariants(policyContext),
+    canSeeSpeakers: canSeeSpeakers(policyContext),
   };
 
   if (!catalogCapability.catalogExists || !catalogCapability.hasAccess) {

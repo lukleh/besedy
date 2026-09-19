@@ -142,6 +142,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canViewTranscripts: capability.canViewRecordingTranscripts,
       canEditMetadata: capability.canEditRecording,
       canDownload: capability.canDownloadRecording,
+      canSeeTranscriptVariants: capability.canSeeTranscriptVariants,
+      canSeeSpeakers: capability.canSeeSpeakers,
     });
   } catch (error) {
     if (isAuthError(error)) {

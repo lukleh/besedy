@@ -144,6 +144,10 @@ export interface CatalogEntryWithPermissions {
   canViewTranscripts: boolean;
   canEditMetadata: boolean;
   canDownload: boolean;
+  /** Administrative: that machine transcripts other than the default exist. */
+  canSeeTranscriptVariants?: boolean;
+  /** Administrative: the diarization overlay. */
+  canSeeSpeakers?: boolean;
 }
 
 /**

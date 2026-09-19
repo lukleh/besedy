@@ -83,6 +83,8 @@ interface RecordingAudioSectionProps {
 
 interface RecordingTranscriptSectionProps {
   canDownload?: boolean;
+  canSeeSpeakers?: boolean;
+  canSeeTranscriptVariants?: boolean;
   catalogId: string;
   currentTime: number;
   hash: string;
@@ -317,6 +319,8 @@ export function RecordingAudioSection({
 
 export function RecordingTranscriptSection({
   canDownload,
+  canSeeSpeakers = false,
+  canSeeTranscriptVariants = false,
   catalogId,
   currentTime,
   hash,
@@ -326,11 +330,16 @@ export function RecordingTranscriptSection({
   showTranscriptStream,
 }: RecordingTranscriptSectionProps) {
   const t = useTranslations();
+  // The stream view is every machine transcript side by side, so it is the
+  // administrative surface rather than a second way of reading. A stored
+  // preference from when it was shown to everyone does not reopen it.
+  const streamVisible = canSeeTranscriptVariants && showTranscriptStream;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{t("recording.transcript")}</h2>
+        {canSeeTranscriptVariants && (
         <div className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1">
           <span
             className={cn(
@@ -355,8 +364,9 @@ export function RecordingTranscriptSection({
             {t("recording.transcriptStream")}
           </span>
         </div>
+        )}
       </div>
-      {showTranscriptStream ? (
+      {streamVisible ? (
         <TranscriptStreamViewer
           hash={hash}
           groupId={catalogId}
@@ -372,6 +382,8 @@ export function RecordingTranscriptSection({
           onSeek={onSeek}
           isPlaying={isPlaying}
           canDownload={canDownload}
+          canSeeSpeakers={canSeeSpeakers}
+          canSeeTranscriptVariants={canSeeTranscriptVariants}
         />
       )}
     </div>
