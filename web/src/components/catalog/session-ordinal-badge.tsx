@@ -5,8 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface SessionOrdinalBadgeProps {
-  sessionIndex: number;
-  /** Events sharing this location and date. Undefined on records stored before the count existed. */
+  sessionOrdinal: number | undefined;
+  /** Events sharing this location and date. Undefined on older offline records. */
   sessionCount: number | undefined;
   className?: string;
 }
@@ -21,15 +21,15 @@ interface SessionOrdinalBadgeProps {
  * as tall as an unmarked one.
  */
 export function SessionOrdinalBadge({
-  sessionIndex,
+  sessionOrdinal,
   sessionCount,
   className,
 }: SessionOrdinalBadgeProps) {
   const t = useTranslations("events.session");
 
-  if (!sessionCount || sessionCount <= 1) return null;
+  if (!sessionOrdinal || !sessionCount || sessionCount <= 1) return null;
 
-  const spoken = t("ordinalAria", { index: sessionIndex, count: sessionCount });
+  const spoken = t("ordinalAria", { index: sessionOrdinal, count: sessionCount });
 
   return (
     <Badge
@@ -42,7 +42,7 @@ export function SessionOrdinalBadge({
       )}
     >
       <span aria-hidden="true">
-        {t("ordinal", { index: sessionIndex, count: sessionCount })}
+        {t("ordinal", { index: sessionOrdinal, count: sessionCount })}
       </span>
       <span className="sr-only">{spoken}</span>
     </Badge>

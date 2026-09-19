@@ -324,7 +324,7 @@ export function EventListResults({
                           {formattedDate}
                         </span>
                         <SessionOrdinalBadge
-                          sessionIndex={catalogEvent.sessionIndex}
+                          sessionOrdinal={catalogEvent.sessionOrdinal}
                           sessionCount={catalogEvent.sessionCount}
                         />
                       </div>
@@ -433,7 +433,7 @@ export function EventListResults({
                     </div>
                   </div>
                   <SessionOrdinalBadge
-                    sessionIndex={catalogEvent.sessionIndex}
+                    sessionOrdinal={catalogEvent.sessionOrdinal}
                     sessionCount={catalogEvent.sessionCount}
                   />
                   {renderDownloadMarker(catalogEvent.id)}

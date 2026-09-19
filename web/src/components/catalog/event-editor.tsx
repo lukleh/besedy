@@ -62,6 +62,7 @@ interface EventDetailResponse {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal: number;
   sessionCount: number;
   description: string | null;
   released: boolean;
@@ -401,7 +402,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
             <Badge variant="secondary">{t("unreleased")}</Badge>
           )}
           <SessionOrdinalBadge
-            sessionIndex={data.sessionIndex}
+            sessionOrdinal={data.sessionOrdinal}
             sessionCount={data.sessionCount}
           />
           {canManagePosters && (

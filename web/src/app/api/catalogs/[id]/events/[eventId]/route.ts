@@ -12,10 +12,9 @@ import {
   UpdateCatalogEventSchema,
 } from "@/lib/catalog-events/validation";
 import {
-  countSessionsByDate,
+  loadSessionOrdinals,
   loadReadableCatalogEvent,
   resolveReadableEventIds,
-  sessionDateKey,
 } from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
@@ -104,11 +103,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       });
 
     const readableEventIds = await resolveReadableEventIds(catalogId, catalogGrant);
-    const [catalogCapability, posterInfo, sessionCountByDate] = await Promise.all([
+    const [catalogCapability, posterInfo, sessionOrdinals] = await Promise.all([
       getCatalogCapability(catalogId, userId),
       getPosterInfo(catalogId, eventId),
-      countSessionsByDate(catalogId, readableEventIds, {}, [event]),
+      loadSessionOrdinals(catalogId, readableEventIds, [event]),
     ]);
+    const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
+      ordinal: 1,
+      count: 1,
+    };
     const canManagePosters = catalogCapability.canManageAccess;
     const canManageSources = catalogCapability.canManageAccess;
     const posterStatus = {
@@ -126,7 +129,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       dateMonth: event.dateMonth,
       dateDay: event.dateDay,
       sessionIndex: event.sessionIndex,
-      sessionCount: sessionCountByDate.get(sessionDateKey(event)) ?? 1,
+      sessionOrdinal: sessionOrdinal.ordinal,
+      sessionCount: sessionOrdinal.count,
       description: event.description,
       released: event.released,
       sortOrder: event.sortOrder,

@@ -52,10 +52,10 @@ export function deriveEventTitle(
  * more than one event, so an ordinary event is never annotated.
  */
 export function formatSessionOrdinal(
-  sessionIndex: number,
+  sessionOrdinal: number,
   sessionCount: number
 ): string | null {
-  return sessionCount > 1 ? `${sessionIndex}/${sessionCount}` : null;
+  return sessionCount > 1 ? `${sessionOrdinal}/${sessionCount}` : null;
 }
 
 export function normalizeOptionalString(value: string | null | undefined): string | null {

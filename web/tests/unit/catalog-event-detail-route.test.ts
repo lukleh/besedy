@@ -25,7 +25,7 @@ vi.mock("@/lib/db", () => ({
   default: {
     catalogEvent: {
       findFirst: vi.fn(),
-      groupBy: vi.fn(),
+      findMany: vi.fn(),
     },
     catalogEntry: {
       findMany: vi.fn(),
@@ -49,7 +49,7 @@ describe("catalog event detail route", () => {
   let prisma: {
     catalogEvent: {
       findFirst: ReturnType<typeof vi.fn>;
-      groupBy: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
     };
     catalogEntry: { findMany: ReturnType<typeof vi.fn> };
     audioMetadata: { findMany: ReturnType<typeof vi.fn> };
@@ -75,7 +75,16 @@ describe("catalog event detail route", () => {
     ).isPublishedVisibleEvent as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
-    prisma.catalogEvent.groupBy.mockResolvedValue([]);
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: eventId,
+        locationId: 7,
+        dateYear: 2024,
+        dateMonth: 4,
+        dateDay: 3,
+        sessionIndex: 1,
+      },
+    ]);
     (
       (await import("@/lib/catalog-events/visibility"))
         .getPublishedVisibleEventIds as ReturnType<typeof vi.fn>
@@ -103,6 +112,7 @@ describe("catalog event detail route", () => {
       dateYear: 2024,
       dateMonth: 4,
       dateDay: 3,
+      sessionIndex: 1,
       description: null,
       released: false,
       sortOrder: 1,
@@ -128,6 +138,8 @@ describe("catalog event detail route", () => {
     const body = await response.json();
     expect(body.released).toBe(false);
     expect(body.recordings).toHaveLength(0);
+    expect(body.sessionOrdinal).toBe(1);
+    expect(body.sessionCount).toBe(1);
     expect(body.canManagePosters).toBe(false);
     expect(body.canManageSources).toBe(false);
     expect(isPublishedVisibleEvent).not.toHaveBeenCalled();

@@ -335,7 +335,7 @@ function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
             </Badge>
             {event && (
               <SessionOrdinalBadge
-                sessionIndex={event.sessionIndex}
+                sessionOrdinal={event.sessionOrdinal}
                 sessionCount={event.sessionCount}
               />
             )}

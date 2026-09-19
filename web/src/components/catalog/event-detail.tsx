@@ -54,6 +54,7 @@ interface EventDetailResponse {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal: number;
   sessionCount: number;
   description: string | null;
   released: boolean;
@@ -181,7 +182,7 @@ export function EventDetail({
       )}
       {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
       <SessionOrdinalBadge
-        sessionIndex={data.sessionIndex}
+        sessionOrdinal={data.sessionOrdinal}
         sessionCount={data.sessionCount}
       />
       <Badge variant="outline">{recordingCountLabel}</Badge>
@@ -342,7 +343,7 @@ export function EventDetail({
             </h1>
             {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
             <SessionOrdinalBadge
-              sessionIndex={data.sessionIndex}
+              sessionOrdinal={data.sessionOrdinal}
               sessionCount={data.sessionCount}
             />
             <Badge variant="outline">{recordingCountLabel}</Badge>

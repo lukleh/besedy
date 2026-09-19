@@ -39,6 +39,7 @@ const BASE_PROPS = {
       dateMonth: 5,
       dateDay: 2,
       sessionIndex: 1,
+      sessionOrdinal: 1,
       sessionCount: 1,
       released: true,
       recordingCount: 3,
@@ -123,8 +124,20 @@ describe("EventListResults", () => {
       <EventListResults
         {...BASE_PROPS}
         events={[
-          { ...BASE_PROPS.events[0], id: 1, sessionIndex: 1, sessionCount: 2 },
-          { ...BASE_PROPS.events[0], id: 2, sessionIndex: 2, sessionCount: 2 },
+          {
+            ...BASE_PROPS.events[0],
+            id: 1,
+            sessionIndex: 1,
+            sessionOrdinal: 1,
+            sessionCount: 2,
+          },
+          {
+            ...BASE_PROPS.events[0],
+            id: 2,
+            sessionIndex: 3,
+            sessionOrdinal: 2,
+            sessionCount: 2,
+          },
         ]}
         showAllColumns
         showReleaseState
@@ -167,7 +180,14 @@ describe("EventListResults", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
-        events={[{ ...BASE_PROPS.events[0], sessionIndex: 2, sessionCount: 2 }]}
+        events={[
+          {
+            ...BASE_PROPS.events[0],
+            sessionIndex: 3,
+            sessionOrdinal: 2,
+            sessionCount: 2,
+          },
+        ]}
         showAllColumns
         showReleaseState
       />
