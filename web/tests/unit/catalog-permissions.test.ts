@@ -3,6 +3,7 @@ import type { AccessLevel } from "@/generated/prisma/client";
 import {
   grantHasPermission,
   permissionsForLevel,
+  permissionsForRole,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
 import {
@@ -13,6 +14,12 @@ import {
   canViewCatalogTranscripts,
   hasCatalogManagementAuthority,
 } from "@/lib/policy/catalog";
+
+const READER_PERMISSIONS: CatalogPermission[] = [
+  "stream_audio",
+  "read_transcripts",
+  "search_transcripts",
+];
 
 const LEVELS: AccessLevel[] = ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"];
 
@@ -70,6 +77,53 @@ describe("catalog permissions", () => {
       expect(grantHasPermission(level, false, "manage_catalog_config")).toBe(false);
     }
     expect(grantHasPermission("OWNER", true, "manage_catalog_config")).toBe(true);
+  });
+});
+
+describe("roles", () => {
+  // Nobody holds a role yet; these pin the definitions against
+  // docs/adr/0005-catalog-permission-model.md so the assignment step moves
+  // people onto a shape that was agreed rather than one that drifted.
+  it("builds every role on the reader's three permissions except the listener", () => {
+    for (const role of ["reader", "corrector", "host", "curator"] as const) {
+      for (const permission of READER_PERMISSIONS) {
+        expect(permissionsForRole(role).has(permission)).toBe(true);
+      }
+    }
+    expect([...permissionsForRole("listener")]).toEqual(["stream_audio"]);
+  });
+
+  it("separates the corrector from the host by one permission each", () => {
+    const corrector = permissionsForRole("corrector");
+    const host = permissionsForRole("host");
+
+    expect(corrector.has("correct_transcripts")).toBe(true);
+    expect(corrector.has("manage_access")).toBe(false);
+    expect(host.has("manage_access")).toBe(true);
+    expect(host.has("correct_transcripts")).toBe(false);
+  });
+
+  it("gives see_unreleased to the curator and to nobody below it", () => {
+    for (const role of ["listener", "reader", "corrector", "host"] as const) {
+      expect(permissionsForRole(role).has("see_unreleased")).toBe(false);
+    }
+    expect(permissionsForRole("curator").has("see_unreleased")).toBe(true);
+  });
+
+  it("keeps the administrative views out of every role but the wildcard", () => {
+    for (const role of ["listener", "reader", "corrector", "host", "curator"] as const) {
+      expect(permissionsForRole(role).has("see_transcript_variants")).toBe(false);
+      expect(permissionsForRole(role).has("see_speakers")).toBe(false);
+      expect(permissionsForRole(role).has("manage_catalog_config")).toBe(false);
+    }
+    for (const permission of ["see_transcript_variants", "see_speakers", "manage_catalog_config"] as const) {
+      expect(permissionsForRole("catalog_admin").has(permission)).toBe(true);
+    }
+  });
+
+  it("gives an absent role nothing", () => {
+    expect(permissionsForRole(null).size).toBe(0);
+    expect(permissionsForRole(undefined).size).toBe(0);
   });
 });
 

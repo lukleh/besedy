@@ -1,4 +1,4 @@
-import type { AccessLevel } from "@/generated/prisma/client";
+import type { AccessLevel, CatalogRole } from "@/generated/prisma/client";
 
 /**
  * What an actor may do in one catalog.
@@ -8,11 +8,11 @@ import type { AccessLevel } from "@/generated/prisma/client";
  * outside this module compares levels, so replacing the level scale with stored
  * roles later changes only the derivation.
  *
- * The set covers the checks that exist today and no more. Permissions the
- * design calls for but nothing yet asks about — correcting transcripts, seeing
- * backend variants — arrive with the step that introduces their check, and the
- * single `download` here splits into one permission per medium in the step that
- * splits the check.
+ * Some of these are not asked about anywhere yet. They exist because the roles
+ * below are defined over the whole vocabulary rather than over the part that
+ * happens to be wired, and a permission nothing checks simply grants nothing
+ * until its step wires the check. The single `download` splits into one
+ * permission per medium in the step that splits the check.
  */
 export type CatalogPermission =
   | "stream_audio"
@@ -31,7 +31,12 @@ export type CatalogPermission =
   | "manage_event_sources"
   | "use_deep_search"
   | "manage_access"
-  | "manage_catalog_config";
+  | "manage_catalog_config"
+  // Asked about by no gate yet; see the note above.
+  | "correct_transcripts"
+  | "publish_transcript"
+  | "see_transcript_variants"
+  | "see_speakers";
 
 /** What each level adds to everything the levels below it already carry. */
 const PERMISSIONS_BY_LEVEL: Record<AccessLevel, CatalogPermission[]> = {
@@ -61,6 +66,97 @@ const CUMULATIVE_BY_LEVEL = new Map<AccessLevel, ReadonlySet<CatalogPermission>>
 );
 
 const NO_PERMISSIONS: ReadonlySet<CatalogPermission> = new Set();
+
+/**
+ * Every permission there is.
+ *
+ * Written as a record keyed by the union so that adding a permission to the type
+ * fails to compile until it is listed here, which is what keeps the catalog
+ * administrator's wildcard honest without anyone having to remember it.
+ */
+const EVERY_PERMISSION: Record<CatalogPermission, true> = {
+  stream_audio: true,
+  browse_recordings: true,
+  see_unreleased: true,
+  read_transcripts: true,
+  search_transcripts: true,
+  download: true,
+  edit_metadata: true,
+  manage_lookups: true,
+  batch_edit_metadata: true,
+  publish_recording: true,
+  manage_events: true,
+  release_events: true,
+  manage_event_posters: true,
+  manage_event_sources: true,
+  use_deep_search: true,
+  manage_access: true,
+  manage_catalog_config: true,
+  correct_transcripts: true,
+  publish_transcript: true,
+  see_transcript_variants: true,
+  see_speakers: true,
+};
+
+const ALL_PERMISSIONS: ReadonlySet<CatalogPermission> = new Set(
+  Object.keys(EVERY_PERMISSION) as CatalogPermission[]
+);
+
+const READER: CatalogPermission[] = [
+  "stream_audio",
+  "read_transcripts",
+  "search_transcripts",
+];
+
+/**
+ * What each role carries, per docs/adr/0005-catalog-permission-model.md.
+ *
+ * Nobody holds a role yet: every grant still resolves through its access level.
+ * `catalog_admin` is deliberately absent — it is a wildcard rather than a list,
+ * so a permission added later accrues to it without anyone remembering to.
+ */
+export const ROLE_PERMISSIONS: Record<
+  Exclude<CatalogRole, "catalog_admin">,
+  CatalogPermission[]
+> = {
+  listener: ["stream_audio"],
+  reader: READER,
+  corrector: [...READER, "correct_transcripts"],
+  host: [...READER, "manage_access"],
+  curator: [
+    ...READER,
+    "see_unreleased",
+    "browse_recordings",
+    "correct_transcripts",
+    "publish_transcript",
+    "edit_metadata",
+    "batch_edit_metadata",
+    "manage_lookups",
+    "publish_recording",
+    "manage_events",
+    "release_events",
+    "manage_event_posters",
+    "manage_event_sources",
+    "use_deep_search",
+    "download",
+  ],
+};
+
+const PERMISSIONS_BY_ROLE = new Map<CatalogRole, ReadonlySet<CatalogPermission>>(
+  Object.entries(ROLE_PERMISSIONS).map(([role, permissions]) => [
+    role as CatalogRole,
+    new Set(permissions),
+  ])
+);
+
+/** Everything a role carries. A catalog administrator holds all of them. */
+export function permissionsForRole(
+  role: CatalogRole | null | undefined
+): ReadonlySet<CatalogPermission> {
+  if (role == null) return NO_PERMISSIONS;
+  if (role === "catalog_admin") return ALL_PERMISSIONS;
+  return PERMISSIONS_BY_ROLE.get(role) ?? NO_PERMISSIONS;
+}
 
 /**
  * Everything a level carries, including what the levels below it carry.
