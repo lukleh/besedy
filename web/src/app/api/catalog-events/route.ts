@@ -4,12 +4,10 @@ import prisma from "@/lib/db";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
 import { handlePrismaError, badRequest, conflict, notFound } from "@/lib/api";
 import { validateRequestBody } from "@/lib/api/validation";
-import { getPosterStatus, type PosterStatus } from "@/lib/event-posters";
+import { getEventPosterWorkflowStatuses, type PosterWorkflowStatus } from "@/lib/event-poster-service";
 import { readEventSources } from "@/lib/event-sources";
-import {
-  CatalogEventsGroupQuerySchema,
-  CreateCatalogEventSchema,
-} from "@/lib/catalog-events/validation";
+import { canViewEventPosterCandidates } from "@/lib/policy/event-poster";
+import { CatalogEventsGroupQuerySchema, CreateCatalogEventSchema } from "@/lib/catalog-events/validation";
 import {
   deriveEventTitle,
   normalizeOptionalString,
@@ -19,10 +17,7 @@ import {
   parsePositiveInt,
   parseSortDirection,
 } from "@/lib/catalog-events/utils";
-import {
-  selectEventPlaybackProgress,
-  summarizePlaybackProgress,
-} from "@/lib/playback-progress";
+import { selectEventPlaybackProgress, summarizePlaybackProgress } from "@/lib/playback-progress";
 import {
   buildReadableCatalogEventWhere,
   catalogEventVisibilityWhere,
@@ -33,28 +28,15 @@ import { resolveCatalogRecordingTitle } from "@/lib/catalog-recordings/read-serv
 
 export const dynamic = "force-dynamic";
 
-const EMPTY_POSTER_STATUS: PosterStatus = { portrait: false, landscape: false };
-
-async function loadEventAssetSummary(
-  workflowGroupId: string,
-  eventId: number
-): Promise<{ posterStatus: PosterStatus; sourceCount: number }> {
+async function loadEventAssetSummary(workflowGroupId: string, eventId: number): Promise<{ sourceCount: number }> {
   try {
-    const [posterStatus, sources] = await Promise.all([
-      getPosterStatus(workflowGroupId, eventId),
-      readEventSources(workflowGroupId, eventId),
-    ]);
+    const sources = await readEventSources(workflowGroupId, eventId);
     return {
-      posterStatus,
       sourceCount: sources.length,
     };
   } catch (error) {
-    console.warn(
-      `Failed to load event asset summary for ${workflowGroupId}/${eventId}:`,
-      error
-    );
+    console.warn(`Failed to load event asset summary for ${workflowGroupId}/${eventId}:`, error);
     return {
-      posterStatus: EMPTY_POSTER_STATUS,
       sourceCount: 0,
     };
   }
@@ -67,13 +49,7 @@ function parseReleasedParam(value: string | null): boolean | null {
 }
 
 function parseListOrderBy(
-  sortKey:
-    | "title"
-    | "date"
-    | "sortOrder"
-    | "recordingCount"
-    | "location"
-    | "released",
+  sortKey: "title" | "date" | "sortOrder" | "recordingCount" | "location" | "released",
   sortDir: "asc" | "desc"
 ): Prisma.CatalogEventOrderByWithRelationInput[] {
   if (sortKey === "title") {
@@ -123,7 +99,7 @@ export async function GET(request: NextRequest) {
     if (!group) {
       return notFound("catalog");
     }
-    const { catalogGrant, userId } = await requireCatalogEventsAccess(workflowGroupId, "view");
+    const { catalogGrant, userId, policyContext } = await requireCatalogEventsAccess(workflowGroupId, "view");
     const readableEventIds = await resolveReadableEventIds(
       workflowGroupId,
       catalogGrant
@@ -153,11 +129,7 @@ export async function GET(request: NextRequest) {
           }
         : {}),
     };
-    const where = buildReadableCatalogEventWhere(
-      workflowGroupId,
-      readableEventIds,
-      eventFilters
-    );
+    const where = buildReadableCatalogEventWhere(workflowGroupId, readableEventIds, eventFilters);
 
     if (sequenceOnly) {
       if (sequenceEventId === null) {
@@ -182,11 +154,8 @@ export async function GET(request: NextRequest) {
       }
 
       const previousId = index > 0 ? orderedIds[index - 1].id : null;
-      const nextId =
-        index < orderedIds.length - 1 ? orderedIds[index + 1].id : null;
-      const neighborIds = [previousId, nextId].filter(
-        (id): id is number => id !== null
-      );
+      const nextId = index < orderedIds.length - 1 ? orderedIds[index + 1].id : null;
+      const neighborIds = [previousId, nextId].filter((id): id is number => id !== null);
       const neighbors =
         neighborIds.length > 0
           ? await prisma.catalogEvent.findMany({
@@ -203,34 +172,27 @@ export async function GET(request: NextRequest) {
       const neighborById = new Map(neighbors.map((event) => [event.id, event]));
 
       return NextResponse.json({
-        previous: previousId === null ? null : neighborById.get(previousId) ?? null,
-        next: nextId === null ? null : neighborById.get(nextId) ?? null,
+        previous: previousId === null ? null : (neighborById.get(previousId) ?? null),
+        next: nextId === null ? null : (neighborById.get(nextId) ?? null),
         position: index + 1,
         total: orderedIds.length,
       });
     }
 
-    const isFiltered =
-      released !== null ||
-      locationId !== null ||
-      dateYear !== null ||
-      Boolean(search);
+    const isFiltered = released !== null || locationId !== null || dateYear !== null || Boolean(search);
 
     const [total, totalAllMaybe, events, yearRows, locationRows] = await Promise.all([
       prisma.catalogEvent.count({ where }),
       isFiltered
-        ? prisma.catalogEvent.count({ where: { workflowGroupId, ...visibilityWhere } })
+        ? prisma.catalogEvent.count({
+            where: { workflowGroupId, ...visibilityWhere },
+          })
         : Promise.resolve<number | null>(null),
-      listReadableCatalogEvents(
-        workflowGroupId,
-        readableEventIds,
-        eventFilters,
-        {
-          orderBy: parseListOrderBy(sortKey, sortDir),
-          skip: pagination.skip,
-          take: pagination.take,
-        }
-      ),
+      listReadableCatalogEvents(workflowGroupId, readableEventIds, eventFilters, {
+        orderBy: parseListOrderBy(sortKey, sortDir),
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
       prisma.catalogEvent.findMany({
         where: { workflowGroupId, ...visibilityWhere },
         distinct: ["dateYear"],
@@ -255,8 +217,7 @@ export async function GET(request: NextRequest) {
         events
           .map(
             (event) =>
-              event.recordings.find((recording) => recording.isPrimary)
-                ?.audioHash ?? event.recordings[0]?.audioHash
+              event.recordings.find((recording) => recording.isPrimary)?.audioHash ?? event.recordings[0]?.audioHash
           )
           .filter((hash): hash is string => typeof hash === "string")
       )
@@ -298,18 +259,18 @@ export async function GET(request: NextRequest) {
     const curatedTitleByHash = new Map(metadataRows.map((row) => [row.audioHash, row.title]));
     const playbackByHash = new Map(playbackRows.map((row) => [row.audioHash, row]));
     const eventAssetPairs = await Promise.all(
-      events.map(async (event) => [
-        event.id,
-        await loadEventAssetSummary(workflowGroupId, event.id),
-      ] as const)
+      events.map(async (event) => [event.id, await loadEventAssetSummary(workflowGroupId, event.id)] as const)
     );
     const eventAssetsById = new Map(eventAssetPairs);
+    const posterStatuses = await getEventPosterWorkflowStatuses(
+      workflowGroupId,
+      events.map((event) => event.id)
+    );
+    const canSeeDraftPosterState = canViewEventPosterCandidates(policyContext);
 
     const serialized = events.map((event) => {
       const primaryAudioHash =
-        event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
-        event.recordings[0]?.audioHash ??
-        null;
+        event.recordings.find((recording) => recording.isPrimary)?.audioHash ?? event.recordings[0]?.audioHash ?? null;
       const primaryTitle =
         primaryAudioHash === null
           ? null
@@ -318,15 +279,17 @@ export async function GET(request: NextRequest) {
               sourceTitle: sourceTitleByHash.get(primaryAudioHash),
             });
       const eventAssets = eventAssetsById.get(event.id) ?? {
-        posterStatus: EMPTY_POSTER_STATUS,
         sourceCount: 0,
       };
+      const rawPosterStatus = posterStatuses.get(event.id) ?? "none";
+      const posterStatus: PosterWorkflowStatus = canSeeDraftPosterState
+        ? rawPosterStatus
+        : rawPosterStatus === "published" || rawPosterStatus === "published-with-newer-drafts"
+          ? "published"
+          : "none";
       const playback = selectEventPlaybackProgress(
         event.recordings.map((recording) =>
-          summarizePlaybackProgress(
-            playbackByHash.get(recording.audioHash),
-            durationByHash.get(recording.audioHash)
-          )
+          summarizePlaybackProgress(playbackByHash.get(recording.audioHash), durationByHash.get(recording.audioHash))
         )
       );
 
@@ -347,15 +310,14 @@ export async function GET(request: NextRequest) {
         updatedAt: event.updatedAt,
         recordingCount: event.recordings.length,
         sourceCount: eventAssets.sourceCount,
-        posterStatus: eventAssets.posterStatus,
+        posterStatus,
         primaryAudioHash,
         primaryTitle,
         playback,
       };
     });
 
-    const totalPages =
-      pagination.limit === 0 ? 1 : Math.max(1, Math.ceil(total / pagination.limit));
+    const totalPages = pagination.limit === 0 ? 1 : Math.max(1, Math.ceil(total / pagination.limit));
 
     return NextResponse.json({
       events: serialized,
@@ -409,27 +371,23 @@ export async function POST(request: NextRequest) {
     }
     const sessionIndex =
       body.sessionIndex ??
-      ((await prisma.catalogEvent.findFirst({
-        where: {
-          workflowGroupId: body.workflowGroupId,
-          locationId: body.locationId,
-          dateYear: body.dateYear,
-          dateMonth: body.dateMonth ?? null,
-          dateDay: body.dateDay ?? null,
-        },
-        select: { sessionIndex: true },
-        orderBy: { sessionIndex: "desc" },
-      }))?.sessionIndex ?? 0) + 1;
+      ((
+        await prisma.catalogEvent.findFirst({
+          where: {
+            workflowGroupId: body.workflowGroupId,
+            locationId: body.locationId,
+            dateYear: body.dateYear,
+            dateMonth: body.dateMonth ?? null,
+            dateDay: body.dateDay ?? null,
+          },
+          select: { sessionIndex: true },
+          orderBy: { sessionIndex: "desc" },
+        })
+      )?.sessionIndex ?? 0) + 1;
 
     const title =
       body.title ??
-      deriveEventTitle(
-        location.name,
-        body.dateYear,
-        body.dateMonth ?? null,
-        body.dateDay ?? null,
-        sessionIndex
-      );
+      deriveEventTitle(location.name, body.dateYear, body.dateMonth ?? null, body.dateDay ?? null, sessionIndex);
 
     try {
       const created = await prisma.catalogEvent.create({

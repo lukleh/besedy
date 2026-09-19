@@ -39,7 +39,7 @@ describe('downloads database', () => {
         dateMonth: null,
         dateDay: null,
         sessionIndex: 1,
-        posterFiles: null,
+        publishedPoster: null,
       },
       recording: null,
       audioUrl: null,

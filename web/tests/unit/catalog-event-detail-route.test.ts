@@ -11,8 +11,8 @@ vi.mock("@/lib/access/capabilities", () => ({
   getCatalogCapability: vi.fn(),
 }));
 
-vi.mock("@/lib/event-posters", () => ({
-  getPosterInfo: vi.fn(),
+vi.mock("@/lib/event-poster-service", () => ({
+  getPublishedEventPoster: vi.fn(),
 }));
 
 vi.mock("@/lib/catalog-events/visibility", () => ({
@@ -41,7 +41,7 @@ describe("catalog event detail route", () => {
 
   let requireCatalogEventsAccess: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
-  let getPosterInfo: ReturnType<typeof vi.fn>;
+  let getPublishedEventPoster: ReturnType<typeof vi.fn>;
   let getPublishedAccessibleRecordingHashes: ReturnType<typeof vi.fn>;
   let isPublishedVisibleEvent: ReturnType<typeof vi.fn>;
   let prisma: {
@@ -53,21 +53,18 @@ describe("catalog event detail route", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
 
-    requireCatalogEventsAccess = (
-      await import("@/lib/catalog-events/access")
-    ).requireCatalogEventsAccess as ReturnType<typeof vi.fn>;
-    getCatalogCapability = (
-      await import("@/lib/access/capabilities")
-    ).getCatalogCapability as ReturnType<typeof vi.fn>;
-    getPosterInfo = (await import("@/lib/event-posters")).getPosterInfo as ReturnType<
+    requireCatalogEventsAccess = (await import("@/lib/catalog-events/access")).requireCatalogEventsAccess as ReturnType<
       typeof vi.fn
     >;
-    getPublishedAccessibleRecordingHashes = (
-      await import("@/lib/catalog-events/visibility")
-    ).getPublishedAccessibleRecordingHashes as ReturnType<typeof vi.fn>;
-    isPublishedVisibleEvent = (
-      await import("@/lib/catalog-events/visibility")
-    ).isPublishedVisibleEvent as ReturnType<typeof vi.fn>;
+    getCatalogCapability = (await import("@/lib/access/capabilities")).getCatalogCapability as ReturnType<typeof vi.fn>;
+    getPublishedEventPoster = (await import("@/lib/event-poster-service")).getPublishedEventPoster as ReturnType<
+      typeof vi.fn
+    >;
+    getPublishedAccessibleRecordingHashes = (await import("@/lib/catalog-events/visibility"))
+      .getPublishedAccessibleRecordingHashes as ReturnType<typeof vi.fn>;
+    isPublishedVisibleEvent = (await import("@/lib/catalog-events/visibility")).isPublishedVisibleEvent as ReturnType<
+      typeof vi.fn
+    >;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
     requireCatalogEventsAccess.mockResolvedValue({
@@ -77,11 +74,11 @@ describe("catalog event detail route", () => {
     });
     getCatalogCapability.mockResolvedValue({
       canManageAccess: false,
+      canViewPosterCandidates: false,
+      canManagePosters: false,
+      canPublishPosters: false,
     });
-    getPosterInfo.mockResolvedValue({
-      portrait: { exists: false, filename: null, uploadedAt: null, size: null },
-      landscape: { exists: false, filename: null, uploadedAt: null, size: null },
-    });
+    getPublishedEventPoster.mockResolvedValue(null);
     getPublishedAccessibleRecordingHashes.mockResolvedValue(new Set([primaryHash]));
     isPublishedVisibleEvent.mockResolvedValue(true);
     prisma.catalogEvent.findFirst.mockResolvedValue({
@@ -119,6 +116,9 @@ describe("catalog event detail route", () => {
     expect(body.released).toBe(false);
     expect(body.recordings).toHaveLength(0);
     expect(body.canManagePosters).toBe(false);
+    expect(body.canViewPosterCandidates).toBe(false);
+    expect(body.canPublishPosters).toBe(false);
+    expect(body.publishedPoster).toBeNull();
     expect(body.canManageSources).toBe(false);
     expect(isPublishedVisibleEvent).not.toHaveBeenCalled();
     expect(getPublishedAccessibleRecordingHashes).not.toHaveBeenCalled();

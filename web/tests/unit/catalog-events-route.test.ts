@@ -11,8 +11,12 @@ vi.mock("@/lib/catalog-events/visibility", () => ({
   getPublishedVisibleEventIds: vi.fn(),
 }));
 
-vi.mock("@/lib/event-posters", () => ({
-  getPosterStatus: vi.fn(),
+vi.mock("@/lib/event-poster-service", () => ({
+  getEventPosterWorkflowStatuses: vi.fn(),
+}));
+
+vi.mock("@/lib/policy/event-poster", () => ({
+  canViewEventPosterCandidates: vi.fn(),
 }));
 
 vi.mock("@/lib/event-sources", () => ({
@@ -49,7 +53,8 @@ describe("catalog events route", () => {
 
   let requireCatalogEventsAccess: ReturnType<typeof vi.fn>;
   let getPublishedVisibleEventIds: ReturnType<typeof vi.fn>;
-  let getPosterStatus: ReturnType<typeof vi.fn>;
+  let getEventPosterWorkflowStatuses: ReturnType<typeof vi.fn>;
+  let canViewEventPosterCandidates: ReturnType<typeof vi.fn>;
   let readEventSources: ReturnType<typeof vi.fn>;
   let prisma: {
     workflowGroup: { findFirst: ReturnType<typeof vi.fn> };
@@ -66,15 +71,16 @@ describe("catalog events route", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
 
-    requireCatalogEventsAccess = (await import("@/lib/catalog-events/access"))
-      .requireCatalogEventsAccess as ReturnType<typeof vi.fn>;
-    getPublishedVisibleEventIds = (
-      await import("@/lib/catalog-events/visibility")
-    ).getPublishedVisibleEventIds as ReturnType<typeof vi.fn>;
-    getPosterStatus = (await import("@/lib/event-posters"))
-      .getPosterStatus as ReturnType<typeof vi.fn>;
-    readEventSources = (await import("@/lib/event-sources"))
-      .readEventSources as ReturnType<typeof vi.fn>;
+    requireCatalogEventsAccess = (await import("@/lib/catalog-events/access")).requireCatalogEventsAccess as ReturnType<
+      typeof vi.fn
+    >;
+    getPublishedVisibleEventIds = (await import("@/lib/catalog-events/visibility"))
+      .getPublishedVisibleEventIds as ReturnType<typeof vi.fn>;
+    getEventPosterWorkflowStatuses = (await import("@/lib/event-poster-service"))
+      .getEventPosterWorkflowStatuses as ReturnType<typeof vi.fn>;
+    canViewEventPosterCandidates = (await import("@/lib/policy/event-poster"))
+      .canViewEventPosterCandidates as ReturnType<typeof vi.fn>;
+    readEventSources = (await import("@/lib/event-sources")).readEventSources as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
     requireCatalogEventsAccess.mockResolvedValue({
@@ -83,7 +89,8 @@ describe("catalog events route", () => {
       catalogGrant: grantFromLevel("OWNER"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([7]);
-    getPosterStatus.mockResolvedValue({ portrait: false, landscape: false });
+    getEventPosterWorkflowStatuses.mockResolvedValue(new Map([[7, "draft-only"]]));
+    canViewEventPosterCandidates.mockReturnValue(true);
     readEventSources.mockResolvedValue([]);
 
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: catalogId });
@@ -122,9 +129,7 @@ describe("catalog events route", () => {
   });
 
   it("keeps draft events visible for owner listings", async () => {
-    const response = await getCatalogEvents(
-      new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`),
-    );
+    const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
 
     expect(response.status).toBe(200);
     expect(getPublishedVisibleEventIds).not.toHaveBeenCalled();
@@ -145,13 +150,14 @@ describe("catalog events route", () => {
             orderBy: [{ sortOrder: "asc" }, { audioHash: "asc" }],
           },
         }),
-      }),
+      })
     );
 
     const body = await response.json();
     expect(body.events).toHaveLength(1);
     expect(body.events[0].id).toBe(7);
     expect(body.events[0].released).toBe(false);
+    expect(body.events[0].posterStatus).toBe("draft-only");
   });
 
   it("limits listener listings to published-visible event ids", async () => {
@@ -160,10 +166,9 @@ describe("catalog events route", () => {
       accessLevel: "LISTENER",
       catalogGrant: grantFromLevel("LISTENER"),
     });
+    canViewEventPosterCandidates.mockReturnValue(false);
 
-    const response = await getCatalogEvents(
-      new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`),
-    );
+    const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
 
     expect(response.status).toBe(200);
     expect(getPublishedVisibleEventIds).toHaveBeenCalledWith(prisma, catalogId);
@@ -173,13 +178,12 @@ describe("catalog events route", () => {
         id: { in: [7] },
       },
     });
+    expect((await response.json()).events[0].posterStatus).toBe("none");
   });
 
   it("applies the text search filter to event title and location name", async () => {
     const response = await getCatalogEvents(
-      new NextRequest(
-        `http://localhost/api/catalog-events?group=${catalogId}&search=%20Praha%20`,
-      ),
+      new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}&search=%20Praha%20`)
     );
 
     expect(response.status).toBe(200);
@@ -202,27 +206,25 @@ describe("catalog events route", () => {
             { location: { name: { contains: "Praha", mode: "insensitive" } } },
           ],
         },
-      }),
+      })
     );
   });
 
   it("returns a lean, ordered sequence for detail navigation", async () => {
     prisma.catalogEvent.findMany.mockReset();
-    prisma.catalogEvent.findMany
-      .mockResolvedValueOnce([{ id: 7 }, { id: 8 }])
-      .mockResolvedValueOnce([
-        {
-          id: 8,
-          dateYear: 2025,
-          dateMonth: 5,
-          dateDay: 4,
-          location: { id: 4, name: "Brno" },
-        },
-      ]);
+    prisma.catalogEvent.findMany.mockResolvedValueOnce([{ id: 7 }, { id: 8 }]).mockResolvedValueOnce([
+      {
+        id: 8,
+        dateYear: 2025,
+        dateMonth: 5,
+        dateDay: 4,
+        location: { id: 4, name: "Brno" },
+      },
+    ]);
     const response = await getCatalogEvents(
       new NextRequest(
-        `http://localhost/api/catalog-events?group=${catalogId}&sequence=true&current=7&sort=date&dir=asc`,
-      ),
+        `http://localhost/api/catalog-events?group=${catalogId}&sequence=true&current=7&sort=date&dir=asc`
+      )
     );
 
     expect(response.status).toBe(200);
@@ -237,7 +239,7 @@ describe("catalog events route", () => {
           { id: "asc" },
         ],
         select: { id: true },
-      }),
+      })
     );
     expect(await response.json()).toMatchObject({
       previous: null,

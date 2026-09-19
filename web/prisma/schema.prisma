@@ -139,6 +139,10 @@ model User {
   catalogEventsCreated         CatalogEvent[]              @relation("CatalogEventCreatedBy")
   /// Events last updated by this user
   catalogEventsUpdated         CatalogEvent[]              @relation("CatalogEventUpdatedBy")
+  /// Event poster candidates created by this user
+  catalogEventPostersCreated   CatalogEventPoster[]        @relation("CatalogEventPosterCreatedBy")
+  /// Event poster publications performed by this user
+  eventPosterPublications      CatalogEventPosterPublication[] @relation("CatalogEventPosterPublishedBy")
   /// Deep-search jobs owned by this user and shared with others
   deepSearchSharesOwned        DeepSearchJobShare[]        @relation("DeepSearchJobShareOwner")
   /// Deep-search jobs shared with this user
@@ -751,10 +755,56 @@ model CatalogEvent {
   updatedBy          User                    @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
   recordings         CatalogEventRecording[]
   eventNotifications EventNotification[]
+  posterCandidates   CatalogEventPoster[]
+  posterPublication  CatalogEventPosterPublication?
 
   @@unique([id, workflowGroupId])
   @@index([workflowGroupId, released])
   @@map("catalog_event")
+}
+
+/// Immutable square + landscape poster proposal for one event.
+model CatalogEventPoster {
+  id                    String   @id @default(cuid())
+  eventId               Int      @map("event_id")
+  workflowGroupId       String   @map("workflow_group_id") @db.VarChar(15)
+  label                 String?  @db.VarChar(255)
+  squareExtension       String   @map("square_extension") @db.VarChar(8)
+  squareOriginalName    String   @map("square_original_name") @db.VarChar(255)
+  squareBytes           Int      @map("square_bytes")
+  squareSha256          String   @map("square_sha256") @db.VarChar(64)
+  landscapeExtension    String   @map("landscape_extension") @db.VarChar(8)
+  landscapeOriginalName String   @map("landscape_original_name") @db.VarChar(255)
+  landscapeBytes        Int      @map("landscape_bytes")
+  landscapeSha256       String   @map("landscape_sha256") @db.VarChar(64)
+  createdById           String   @map("created_by")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  event       CatalogEvent                   @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
+  createdBy   User                           @relation("CatalogEventPosterCreatedBy", fields: [createdById], references: [id])
+  publication CatalogEventPosterPublication?
+
+  @@unique([id, eventId, workflowGroupId])
+  @@index([workflowGroupId, eventId, createdAt])
+  @@map("catalog_event_poster")
+}
+
+/// Current audience poster selection for one event.
+model CatalogEventPosterPublication {
+  eventId         Int      @map("event_id")
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  posterId        String   @unique @map("poster_id")
+  publishedById   String   @map("published_by")
+  publishedAt     DateTime @default(now()) @map("published_at")
+
+  event       CatalogEvent       @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
+  poster      CatalogEventPoster @relation(fields: [posterId, eventId, workflowGroupId], references: [id, eventId, workflowGroupId], onDelete: NoAction)
+  publishedBy User               @relation("CatalogEventPosterPublishedBy", fields: [publishedById], references: [id])
+
+  @@id([workflowGroupId, eventId])
+  @@unique([eventId, workflowGroupId])
+  @@unique([posterId, eventId, workflowGroupId])
+  @@map("catalog_event_poster_publication")
 }
 
 /// Recording-to-event assignments; each recording belongs to at most one event per catalog.
@@ -917,6 +967,10 @@ enum AuditAction {
   METADATA_UPDATED
   METADATA_VERIFIED
   METADATA_DELETED
+  EVENT_POSTER_CREATED
+  EVENT_POSTER_DELETED
+  EVENT_POSTER_PUBLISHED
+  EVENT_POSTER_UNPUBLISHED
   // Security events
   ACCESS_DENIED
   SUPERADMIN_ACCESS

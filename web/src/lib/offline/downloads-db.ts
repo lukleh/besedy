@@ -37,9 +37,9 @@ export interface DownloadEventSnapshot {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
-  posterFiles: {
-    portrait: { exists: boolean; uploadedAt: string | null };
-    landscape: { exists: boolean; uploadedAt: string | null };
+  publishedPoster: {
+    id: string;
+    publishedAt: string;
   } | null;
 }
 
@@ -86,7 +86,9 @@ export interface DownloadRecord {
 export interface DownloadPosterPayload {
   blob: Blob;
   contentType: string;
-  variant: 'portrait' | 'landscape';
+  /** `portrait` is retained only for bundles created before ADR 0008. */
+  variant: 'square' | 'landscape' | 'portrait';
+  posterId?: string;
 }
 
 export interface DownloadBundlePayload {

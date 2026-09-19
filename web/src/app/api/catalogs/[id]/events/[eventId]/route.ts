@@ -8,16 +8,12 @@ import { sendEventPushNotifications } from "@/lib/notifications/push";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { handlePrismaError, badRequest, conflict, forbidden, notFound } from "@/lib/api";
 import { IntIdSchema, validateParams, validateRequestBody } from "@/lib/api/validation";
-import {
-  UpdateCatalogEventSchema,
-} from "@/lib/catalog-events/validation";
+import { UpdateCatalogEventSchema } from "@/lib/catalog-events/validation";
 import { loadReadableCatalogEvent } from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { getPosterInfo } from "@/lib/event-posters";
-import {
-  canReleaseEvent,
-} from "@/lib/policy/event";
+import { getPublishedEventPoster } from "@/lib/event-poster-service";
+import { canReleaseEvent } from "@/lib/policy/event";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
@@ -98,16 +94,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         return a.audioHash.localeCompare(b.audioHash);
       });
 
-    const [catalogCapability, posterInfo] = await Promise.all([
+    const [catalogCapability, publishedPoster] = await Promise.all([
       getCatalogCapability(catalogId, userId),
-      getPosterInfo(catalogId, eventId),
+      getPublishedEventPoster(catalogId, eventId),
     ]);
-    const canManagePosters = catalogCapability.canManageAccess;
+    const canViewPosterCandidates = catalogCapability.canViewPosterCandidates;
+    const canManagePosters = catalogCapability.canManagePosters;
+    const canPublishPosters = catalogCapability.canPublishPosters;
     const canManageSources = catalogCapability.canManageAccess;
-    const posterStatus = {
-      portrait: posterInfo.portrait.exists,
-      landscape: posterInfo.landscape.exists,
-    };
 
     return NextResponse.json({
       id: event.id,
@@ -127,10 +121,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
       recordings,
+      canViewPosterCandidates,
       canManagePosters,
+      canPublishPosters,
       canManageSources,
-      posterStatus,
-      posterFiles: posterInfo,
+      publishedPoster,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog event", "fetch");
@@ -154,11 +149,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!bodyResult.success) return bodyResult.response;
     const body = bodyResult.data;
 
-    if (
-      body.released !== undefined &&
-      access.policyContext !== undefined &&
-      !canReleaseEvent(access.policyContext)
-    ) {
+    if (body.released !== undefined && access.policyContext !== undefined && !canReleaseEvent(access.policyContext)) {
       return forbidden("Owner or admin access required to change event release state");
     }
 
@@ -193,8 +184,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         const nextLocationId = body.locationId ?? existing.locationId;
         const nextDateYear = body.dateYear ?? existing.dateYear;
-        const nextDateMonth =
-          body.dateMonth !== undefined ? body.dateMonth : existing.dateMonth;
+        const nextDateMonth = body.dateMonth !== undefined ? body.dateMonth : existing.dateMonth;
         const nextDateDay = body.dateDay !== undefined ? body.dateDay : existing.dateDay;
         const nextSessionIndex = body.sessionIndex ?? existing.sessionIndex;
 
@@ -229,10 +219,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           }
         }
 
-        const isFirstRelease =
-          body.released === true &&
-          !existing.released &&
-          existing.publishedNotifiedAt == null;
+        const isFirstRelease = body.released === true && !existing.released && existing.publishedNotifiedAt == null;
 
         const updateData: {
           locationId?: number;
@@ -263,13 +250,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         if (body.title !== undefined) {
           updateData.title =
             body.title ??
-            deriveEventTitle(
-              locationName,
-              nextDateYear,
-              nextDateMonth ?? null,
-              nextDateDay ?? null,
-              nextSessionIndex
-            );
+            deriveEventTitle(locationName, nextDateYear, nextDateMonth ?? null, nextDateDay ?? null, nextSessionIndex);
         }
 
         const updated = await tx.catalogEvent.update({
@@ -285,23 +266,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           await publishReleasedEventRecordings(tx, catalogId, eventId);
         }
 
-        const notificationPayload =
-          isFirstRelease
-            ? await createEventNotifications(tx, {
-                catalogId,
-                eventId,
-                title: updated.title,
-              }).then((result) =>
-                result.recipientUserIds.length > 0
-                  ? {
-                      catalogId,
-                      eventId,
-                      eventTitle: updated.title,
-                      recipientUserIds: result.recipientUserIds,
-                    }
-                  : null
-              )
-            : null;
+        const notificationPayload = isFirstRelease
+          ? await createEventNotifications(tx, {
+              catalogId,
+              eventId,
+              title: updated.title,
+            }).then((result) =>
+              result.recipientUserIds.length > 0
+                ? {
+                    catalogId,
+                    eventId,
+                    eventTitle: updated.title,
+                    recipientUserIds: result.recipientUserIds,
+                  }
+                : null
+            )
+          : null;
 
         return {
           kind: "updated",

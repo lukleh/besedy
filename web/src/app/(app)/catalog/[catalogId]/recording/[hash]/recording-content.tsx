@@ -24,6 +24,7 @@ import { useRecordingPlayback } from "./use-recording-playback";
 
 interface RecordingContentProps {
   params: Promise<{ catalogId: string; hash: string }> | { catalogId: string; hash: string };
+  beforeAudioPlayer?: ReactNode;
   afterAudioPlayer?: ReactNode;
   downloadEventId?: number;
   headerActions?: ReactNode;
@@ -78,6 +79,7 @@ const audioSourcePreferenceSchema = z.object({
 
 export default function RecordingContent({
   params,
+  beforeAudioPlayer,
   afterAudioPlayer,
   downloadEventId,
   headerActions,
@@ -87,9 +89,7 @@ export default function RecordingContent({
 }: RecordingContentProps) {
   // Owns recording-detail query orchestration and state selection, while
   // playback behavior and view sections live in sibling modules.
-  const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params)
-    ? use(params)
-    : params;
+  const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
   const queryClient = useQueryClient();
   // Keep the legacy key so existing users keep their saved transcript view preference.
@@ -122,12 +122,9 @@ export default function RecordingContent({
     queryKey: ["audio-source-preference", hash, groupKey],
     queryFn: async () => {
       try {
-        return await fetchJson<AudioSourcePreference>(
-          buildAudioSourcePreferenceUrl(catalogId, hash),
-          {
-            schema: audioSourcePreferenceSchema,
-          }
-        );
+        return await fetchJson<AudioSourcePreference>(buildAudioSourcePreferenceUrl(catalogId, hash), {
+          schema: audioSourcePreferenceSchema,
+        });
       } catch {
         return { hash, sourceId: null };
       }
@@ -140,12 +137,9 @@ export default function RecordingContent({
     queryKey: ["audio-variants", hash, groupKey],
     queryFn: async () => {
       try {
-        return await fetchJson<AudioSourcesResponse>(
-          buildAudioSourcesUrl(catalogId, hash),
-          {
-            schema: audioSourcesResponseSchema,
-          }
-        );
+        return await fetchJson<AudioSourcesResponse>(buildAudioSourcesUrl(catalogId, hash), {
+          schema: audioSourcesResponseSchema,
+        });
       } catch {
         return { hash, sources: [], defaultSource: "archived" };
       }
@@ -163,7 +157,9 @@ export default function RecordingContent({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["audio-source-preference", hash, groupKey] });
+      queryClient.invalidateQueries({
+        queryKey: ["audio-source-preference", hash, groupKey],
+      });
     },
   });
 
@@ -180,14 +176,7 @@ export default function RecordingContent({
   };
 
   // Fetch single catalog entry with permissions
-  const {
-    data,
-    cachedData,
-    isLoading,
-    isValidatingAccess,
-    error,
-    isError,
-  } = useRecordingEntry({
+  const { data, cachedData, isLoading, isValidatingAccess, error, isError } = useRecordingEntry({
     catalogId,
     hash,
     groupKey,
@@ -243,10 +232,7 @@ export default function RecordingContent({
 
   // Audio download handler
   const handleAudioDownload = (source: "original" | "archived") => {
-    window.open(
-      buildAudioDownloadUrl(catalogId, hash, source),
-      "_blank"
-    );
+    window.open(buildAudioDownloadUrl(catalogId, hash, source), "_blank");
   };
   const audioUrl = buildAudioUrl(catalogId, hash, audioSource, sourcesData?.sources ?? []);
 
@@ -260,6 +246,7 @@ export default function RecordingContent({
         hideDefaultRecorder={hideDefaultRecorder}
       />
       <RecordingAudioSection
+        beforeAudioPlayer={beforeAudioPlayer}
         afterAudioPlayer={afterAudioPlayer}
         audioSource={audioSource}
         audioUrl={audioUrl}

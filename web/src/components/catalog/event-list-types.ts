@@ -27,10 +27,7 @@ export interface CatalogEventRow {
   released: boolean;
   recordingCount: number;
   sourceCount: number;
-  posterStatus: {
-    portrait: boolean;
-    landscape: boolean;
-  };
+  posterStatus: "none" | "draft-only" | "published" | "published-with-newer-drafts";
   primaryTitle: string | null;
   playback: PlaybackProgressSummary | null;
 }
@@ -71,10 +68,7 @@ export const catalogEventRowSchema = z.object({
   released: z.boolean(),
   recordingCount: z.number(),
   sourceCount: z.number(),
-  posterStatus: z.object({
-    portrait: z.boolean(),
-    landscape: z.boolean(),
-  }),
+  posterStatus: z.enum(["none", "draft-only", "published", "published-with-newer-drafts"]),
   primaryTitle: z.string().nullable(),
   playback: z
     .object({
@@ -132,9 +126,7 @@ export interface StoredEventListState {
   page?: number;
 }
 
-export function toPaginationInfo(
-  pagination: EventListResponse["pagination"],
-): PaginationInfo {
+export function toPaginationInfo(pagination: EventListResponse["pagination"]): PaginationInfo {
   return {
     page: pagination.page,
     limit: pagination.limit,
