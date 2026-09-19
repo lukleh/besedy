@@ -62,8 +62,8 @@ Reading end to end is an editorial statement about the whole document and cannot
 be made span by span.
 
 So the work is granular and the publication is not, and the record has to keep
-both. A coverage figure derived from the spans is what stands for a transcript
-until it is published.
+both. A coverage figure derived from the spans — duration checked against total
+duration — is what stands for a transcript until it is published.
 
 **On the verb.** The existing system already splits two verbs by entity:
 recordings are published (`CatalogEntry.isPublished`, gated by
@@ -92,6 +92,39 @@ plus a hash of its source text**. The segment index is stored as a hint, never
 as the identity. Rows are created lazily on the first human touch; an untouched
 span has no row.
 
+### Correction works against a frozen source
+
+When a recording is taken on for correction, the machine transcript it is being
+corrected against is **snapshotted**, and that snapshot is what every span is
+anchored to for the life of the work. Re-transcription can happen whenever it
+likes and cannot touch it.
+
+This is fundamental rather than convenient. A published transcript means *a
+human verified this text*, and that statement is only meaningful against a fixed
+thing. Transcript artifacts look immutable but are not reliably so — re-running
+transcription with `--overwrite` replaces them in place — so without a snapshot
+the baseline a person checked could be swapped out from under the record of
+their having checked it.
+
+Two consequences follow, and both remove machinery rather than adding it:
+
+- **Corrections can never be disturbed by re-transcription**, so nothing has to
+  relocate spans by time overlap and text similarity, and no span is ever marked
+  stale for a person to resolve. That whole class of problem is designed out.
+- **A published transcript stays published**, whatever is re-transcribed
+  afterwards. It outranks every backend already, and a newer machine transcript
+  is simply a better proposal underneath something a person has verified.
+
+Adopting a new transcription for a recording already under correction is
+therefore a deliberate act of **starting again** — abandoning the work against
+the old snapshot and taking a new one — and never something that happens to a
+corrector while they are working.
+
+The design now holds two immutable snapshots per corrected recording, at the two
+ends of the work: **the source** the corrections were made against, taken when
+the work begins, and **the resolved transcript** materialized when it is
+published. Everything between them lives in the database.
+
 ### Approving is the only positive action, and what is stored is a count
 
 A person working on a span does one of two things: they fix the text, or they
@@ -117,6 +150,12 @@ Approvals are bound to a hash of the text they approve. If someone rewrites a
 span, earlier approvals no longer describe what is there — nobody approved words
 they never saw — so they stop counting by hash mismatch rather than by deletion,
 and the history of who approved what survives.
+
+The count is of **distinct people**. Writing an edit is itself your approval of
+it, so nobody reaches the required number alone by coming back to their own work
+later. And because the source snapshot is immutable, the machine's original
+wording is recoverable for ever: restoring a span somebody mangled is an
+ordinary edit, not a special operation.
 
 The three words the tool may use for that count are labels over it, not stored
 state:
@@ -298,17 +337,27 @@ The reconciliation belongs to the server, not to the client, so that every
 client and every future tool produces the same result and the rule can be tested
 directly.
 
-### Segment boundaries change only by recombination
+### Segment boundaries never move
 
-Text edits never move a span's boundaries. A span may be **split at a word
-boundary**, using the timing the transcript already records, and adjacent spans
-may be **merged**. Both operations only recombine boundaries that already exist,
-so the invariant that spans tile the recording's timeline without gaps or
-overlaps survives, and citations stay resolvable. Arbitrary boundary dragging is
-out of scope.
+A span's boundaries are the machine's and stay the machine's. There is no
+splitting, no merging, no dragging. Correction changes text inside a fixed
+tiling of the timeline, which keeps the invariant that spans cover the recording
+without gaps or overlaps true by construction, and keeps every citation
+resolvable without anything having to be checked.
 
-ASR segmentation is frequently wrong — a sentence cut in half, two speakers
-merged — so split and merge belong in the first version, not a later one.
+This is a deliberate simplification and it has a cost. ASR segmentation is often
+wrong — a sentence cut in half, two speakers run together — and none of that
+gets fixed. A sentence broken across two spans stays broken across two spans.
+
+What remains possible, because it is only text: a corrector can move a word from
+the end of one span to the start of the next by editing both. The words end up
+attributed to the adjacent span's time range, which the timing reconciliation
+below absorbs approximately rather than exactly. That is a clumsy substitute for
+a real split and it is accepted as one.
+
+Splitting and merging can be added later without invalidating anything decided
+here, because they only ever recombine boundaries that already exist. Starting
+without them is what keeps the first version small.
 
 ### Correction is its own surface
 
@@ -359,8 +408,8 @@ queue to feed, nothing to lease, and no anonymity to preserve. They are the righ
 design for a corps and the wrong thing to build for a pilot.
 
 What the pilot does need is the one surface with its four actions, the
-unintelligible route, split and merge, and a way to stop in the middle of a
-three-hour recording and resume.
+unintelligible route, and a way to stop in the middle of a three-hour recording
+and resume.
 
 ### Two people on one span
 
@@ -373,9 +422,9 @@ useful action available.
 
 Every write carries the hash of the text it was based on. If the span has moved
 on, the write is refused and the author is shown what is there now. The hash is
-already in the model for attestations, so this costs nothing to add and it
+already in the model for approvals, so this costs nothing to add and it
 prevents the quiet loss that last-write-wins would otherwise produce: a second
-editor overwriting text a first was working on, the first's attestation voided by
+editor overwriting text a first was working on, the first's approval voided by
 mismatch, and their work visible only in the edit history.
 
 The queue hands out spans under a short lease so two people are not sent to the
@@ -387,6 +436,13 @@ on its own and the hash check remains the thing that guarantees correctness.
 Publication is a deliberate act by a person holding `publish_transcript`, never
 an automatic consequence of the last span being verified. A fully verified
 transcript sits and waits until somebody says it is ready to be read.
+
+Nothing goes looking for that person. There are no notifications and no "ready
+to publish" surface for correctors: a transcript that has reached every span
+verified appears in the administrative section for transcript corrections, and
+that is the whole mechanism. At this size the people doing the work tell each
+other, and building a queue to announce an event that happens a few times a year
+would be machinery serving nobody.
 
 **Publishing runs one job**: it materializes the resolved transcript, renders the
 format files and refreshes the index, and the transcript is presented as
@@ -402,13 +458,20 @@ after an unpublish what is exposed is the better text rather than the machine
 text. Hiding is the safe direction and never needs to wait for a job, so the flag
 flips and the reading surfaces revert at once.
 
+**The artifact is a snapshot; the database is the live version.** Publishing
+freezes the current state into the artifact, and correction may carry on
+afterwards. An edit made to a published transcript therefore changes nothing a
+reader sees: the published artifact stands until somebody republishes, exactly
+as a published document can have a draft behind it. This is what makes
+publication a statement rather than a mode.
+
 Two consequences worth stating:
 
 - Republishing a transcript nobody has touched is free. The artifact and the
-  index entry never went anywhere, so it is the flag flipping back. Only an edit
-  made while unpublished forces the job to run again on the way back in — and
-  that edit voids its span's attestations, so the transcript cannot be
-  republished until it is verified again.
+  index entry never went anywhere, so it is the flag flipping back. An edit made
+  in the meantime forces the job to run again on the way back in — and that edit
+  voids its span's approvals, so the transcript cannot be republished until it is
+  verified again.
 - **Unpublish means "not ready to be read as a document." It does not mean "this
   text must stop being reachable."** If a name is badly wrong, or a speaker asks
   to be taken out, that is a different action with different consequences and it
@@ -439,7 +502,7 @@ transcript, chunking reads it exactly as it reads any transcript,
 `docs/schemas/transcript.schema.json` validates it. Merging lives once, in the
 runtime that owns the database.
 
-Beyond the canonical fields it carries only how many attestations each span
+Beyond the canonical fields it carries only how many approvals each span
 carries. Words a person wrote already carry `confidence: null` and an
 estimated-timing marker from the reconciliation rule above. Whether a transcript
 is published is database state and is not written into the artifact, because the
@@ -544,11 +607,11 @@ than documentation written afterwards.
   a second flow with a second deployment, and the publish handler has to call the
   jobs API the way the deep-search route does. Until both exist, nothing can be
   published.
-- Corrections are anchored to text that re-transcription can change. On a
-  mismatch the span is relocated by time overlap and text similarity; a confident
-  relocation is applied and recorded, and anything less leaves the span marked
-  stale for a person to resolve. Corrections are never applied silently to text
-  they were not written against.
+- Corrections are never disturbed by re-transcription, because they are
+  anchored to a frozen snapshot of the transcript they were written against. No
+  span is relocated, none is marked stale, and nothing is ever applied to text it
+  was not written for. Taking up a newer transcription means starting the
+  recording again against a new snapshot, deliberately.
 - Speaker attribution is a separate concern. Transcripts carry no speaker names;
   the diarization overlay distinguishes turns without identifying who is
   speaking. Attributing speech is a later phase using the same span mechanism
@@ -559,8 +622,11 @@ than documentation written afterwards.
   asymmetry is the documented MCP position — the transcript is a source there,
   not a document — and is not to be closed by gating `get_transcript`.
 - Until a transcript is published a reader is shown how far checking has got,
-  rather than an empty panel or the machine text. That figure is the only thing a
-  `čtenář` learns about a transcript in progress.
+  rather than an empty panel or the machine text. That figure is **duration
+  checked against total duration**, not spans counted, because spans run from a
+  few seconds to a minute and a count of them would misrepresent the real
+  position. It is the only thing a `čtenář` learns about a transcript in
+  progress.
 - The correction page is desktop-first. Typing against running audio on a phone
   is not a workflow worth pretending to support, though confirming a span may be.
 - The reward that motivates correction arrives with the first published
@@ -579,7 +645,7 @@ than documentation written afterwards.
 
 - **Corrections are stored as events, not only as final text.**
 - **The two-person rule applies to the current exact text**; changing the text
-  voids prior attestations and the span returns to needing them again.
+  voids prior approvals and the span returns to needing them again.
 - **The verb is publish, and unpublish moves only a flag.**
 - **What is stored per span is a count, not a state**, and nothing may ever be
   gated on the middle value.
@@ -591,6 +657,11 @@ than documentation written afterwards.
   comment, approve, disapprove.
 - **An unintelligible passage is cleared, not guessed at**, and the fact that it
   was unintelligible does not leave the database.
+- **Correction works against a frozen snapshot of the machine transcript**, so
+  re-transcription can never disturb work in progress or a publication.
+- **Span boundaries never move.** No splitting, no merging, in this version.
+- **The artifact is a snapshot and the database is the live version**, so an
+  edit to a published transcript changes nothing until somebody republishes.
 - **The system is tried before it is opened.** Two or three primary recordings,
   two correctors each, before listeners are promoted to readers.
 
@@ -607,8 +678,11 @@ than documentation written afterwards.
   sit unnoticed, or whether the count in the correction surface is enough.
 - **The correction data model** — spans, approvals, disapprovals, comments and
   the edit log — is not in this record and has to be written before any of it is
-  built.
+  built. It is the next thing to write.
+- **The editorial convention** correctors follow, which this record has called a
+  prerequisite since the first draft and which nobody has written.
 
 Closed since the first draft: what the second pass produces (nothing special —
-every pass offers the same four actions), and how an unintelligible passage is
-marked (the text is cleared and the fact stays in the database).
+every pass offers the same four actions); how an unintelligible passage is marked
+(the text is cleared and the fact stays in the database); and whether
+re-transcription disturbs corrections (it cannot, because the source is frozen).
