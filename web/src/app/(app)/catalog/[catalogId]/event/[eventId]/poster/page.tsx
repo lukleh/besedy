@@ -265,7 +265,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
               disabled={isBusy}
             />
           </label>
-          <div className="grid gap-5 md:grid-cols-[9fr_16fr]">
+          <div className="grid gap-5 md:grid-cols-[9fr_16fr] md:gap-x-5 md:gap-y-2">
             <PosterFileInput
               title={t("square")}
               hint={t("squareHint")}
@@ -432,7 +432,7 @@ function PosterFileInput({
   disabled: boolean;
 }) {
   return (
-    <label className="space-y-2 text-sm">
+    <label className="space-y-2 text-sm md:row-span-4 md:grid md:grid-rows-subgrid md:space-y-0">
       <span className="font-medium">{title}</span>
       <span className="block text-xs text-muted-foreground">{hint}</span>
       <div className={`${aspectClass} overflow-hidden rounded-lg border bg-muted`}>

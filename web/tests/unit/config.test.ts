@@ -160,6 +160,25 @@ superadmin_email = "override@example.org"
   });
 });
 
+describe("getPostersDir", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it("uses the host poster path without loading a container-only config path", async () => {
+    vi.stubEnv("POSTERS_DIR", " /host/besedy-posters ");
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const { getPostersDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(getPostersDir()).toBe("/host/besedy-posters");
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+});
+
 describe("getDeepSearchDefaultInstructions", () => {
   beforeEach(() => {
     vi.resetModules();

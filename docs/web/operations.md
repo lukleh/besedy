@@ -184,16 +184,25 @@ migrating.
 
 ### Event poster cutover
 
+The poster migration was amended before its first production deployment to
+remove schema drift. Prisma does not reapply an amended migration that a
+database already records as applied. Anyone who tested an earlier version of
+`20260919120000_add_event_poster_publication` must recreate the affected
+development database with `just dev-down-clean` or the test database with
+`just test-reset` before validating this release. These commands delete local
+data and must never be used against production. The intended first production
+deployment applies the migration normally; any environment that has never
+recorded the migration as applied needs no reset.
+
 The first deployment of event poster publication intentionally unpublishes all
 legacy posters. The migration creates an empty publication table and the new
 reader has no fallback to fixed legacy files. After `just prod-deploy` succeeds,
 import the old files as **unpublished candidates** for editorial review:
 
 ```bash
-cd web
-npm run posters -- inventory --catalog <catalog-id> --prod
-npm run posters -- import-legacy --catalog <catalog-id> --actor <email-or-id> --dry-run --prod
-npm run posters -- import-legacy --catalog <catalog-id> --actor <email-or-id> --prod --yes
+just posters inventory --catalog <catalog-id> --prod
+just posters import-legacy --catalog <catalog-id> --actor <email-or-id> --dry-run --prod
+just posters import-legacy --catalog <catalog-id> --actor <email-or-id> --prod --yes
 ```
 
 Repeat all three commands for every production catalog. Keep the inventory and
