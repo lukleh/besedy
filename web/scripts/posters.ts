@@ -51,7 +51,8 @@ function usage(): never {
   npm run posters -- inventory --catalog <id> [--event <id>] [--prod]
   npm run posters -- import-legacy --catalog <id> --actor <email-or-id> [--event <id>] [--dry-run] [--prod] [--yes]
 
-Production mutations require --yes. Import never removes legacy files.`);
+Production mutations require --yes. Import creates unpublished candidates only,
+refuses catalogs with a publication, and never removes legacy files.`);
   process.exit(0);
 }
 
@@ -331,8 +332,16 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (!canManage || !canPublish) {
-      throw new Error("Actor must be allowed to create and publish event posters");
+    if (!canManage) {
+      throw new Error("Actor must be allowed to create event poster candidates");
+    }
+    const publicationCount = await prisma.catalogEventPosterPublication.count({
+      where: { workflowGroupId: args.catalogId },
+    });
+    if (publicationCount > 0) {
+      throw new Error(
+        `Legacy import requires an unpublished catalog, but found ${publicationCount} published poster(s)`
+      );
     }
     const inventory = await inventoryEvents(prisma, args.catalogId, args.eventId);
     printInventory(inventory);
@@ -340,30 +349,15 @@ async function main(): Promise<void> {
       if (!item.importable) continue;
       const square = item.assets.find((asset) => asset.shape === "square")!;
       const landscape = item.assets.find((asset) => asset.shape === "landscape")!;
-      const [existing, publication] = await Promise.all([
-        prisma.catalogEventPoster.findMany({
-          where: { workflowGroupId: args.catalogId, eventId: item.eventId },
-          select: {
-            id: true,
-            label: true,
-            squareSha256: true,
-            landscapeSha256: true,
-          },
-        }),
-        prisma.catalogEventPosterPublication.findUnique({
-          where: {
-            workflowGroupId_eventId: {
-              workflowGroupId: args.catalogId,
-              eventId: item.eventId,
-            },
-          },
-          select: { posterId: true },
-        }),
-      ]);
-      if (publication) {
-        console.log(`event=${item.eventId} skipped: poster=${publication.posterId} is already published`);
-        continue;
-      }
+      const existing = await prisma.catalogEventPoster.findMany({
+        where: { workflowGroupId: args.catalogId, eventId: item.eventId },
+        select: {
+          id: true,
+          label: true,
+          squareSha256: true,
+          landscapeSha256: true,
+        },
+      });
       const interruptedImports = existing.filter((candidate) => candidate.label === LEGACY_IMPORT_LABEL);
       if (interruptedImports.length > 0) {
         const normalizedSquare = await posterStorage.processPosterAsset(
@@ -393,24 +387,7 @@ async function main(): Promise<void> {
         }
         if (matchingInterruptedImports.length === 1) {
           const posterId = matchingInterruptedImports[0].id;
-          if (args.dryRun) {
-            console.log(`event=${item.eventId} would resume publication of poster=${posterId}`);
-            continue;
-          }
-          const result = await service.publishEventPoster({
-            catalogId: args.catalogId,
-            eventId: item.eventId,
-            posterId,
-            userId: user.id,
-            replaceExisting: false,
-          });
-          if (!result.changed && result.previousPosterId !== posterId) {
-            console.log(
-              `event=${item.eventId} skipped: poster=${result.previousPosterId} was published concurrently`
-            );
-            continue;
-          }
-          console.log(`event=${item.eventId} resumed poster=${posterId}`);
+          console.log(`event=${item.eventId} already imported unpublished candidate=${posterId}`);
           continue;
         }
       }
@@ -419,7 +396,7 @@ async function main(): Promise<void> {
         continue;
       }
       if (args.dryRun) {
-        console.log(`event=${item.eventId} would import and publish`);
+        console.log(`event=${item.eventId} would import as an unpublished candidate`);
         continue;
       }
       const candidate = await service.createEventPosterCandidate({
@@ -436,20 +413,7 @@ async function main(): Promise<void> {
           originalName: path.basename(landscape.filePath),
         },
       });
-      const result = await service.publishEventPoster({
-        catalogId: args.catalogId,
-        eventId: item.eventId,
-        posterId: candidate.id,
-        userId: user.id,
-        replaceExisting: false,
-      });
-      if (!result.changed && result.previousPosterId !== candidate.id) {
-        console.log(
-          `event=${item.eventId} imported candidate=${candidate.id}, but kept concurrently published poster=${result.previousPosterId}`
-        );
-        continue;
-      }
-      console.log(`event=${item.eventId} imported poster=${candidate.id}`);
+      console.log(`event=${item.eventId} imported unpublished candidate=${candidate.id}`);
     }
   } finally {
     await prisma.$disconnect();

@@ -1,6 +1,6 @@
 # Web Operations
 
-> **Last Updated:** 2026-09-17
+> **Last Updated:** 2026-09-19
 
 Operational reference for deploying, monitoring, and running the Besedy web app.
 For security hardening details see `docs/web/security.md`.
@@ -181,6 +181,49 @@ before stopping the worker. If a run is queued or active, deployment refuses to
 continue; wait for it to finish or cancel it explicitly. If a run races the
 first check, the unchanged web and jobs API containers are restarted without
 migrating.
+
+### Event poster cutover
+
+The first deployment of event poster publication intentionally unpublishes all
+legacy posters. The migration creates an empty publication table and the new
+reader has no fallback to fixed legacy files. After `just prod-deploy` succeeds,
+import the old files as **unpublished candidates** for editorial review:
+
+```bash
+cd web
+npm run posters -- inventory --catalog <catalog-id> --prod
+npm run posters -- import-legacy --catalog <catalog-id> --actor <email-or-id> --dry-run --prod
+npm run posters -- import-legacy --catalog <catalog-id> --actor <email-or-id> --prod --yes
+```
+
+Repeat all three commands for every production catalog. Keep the inventory and
+dry-run output with the deployment record. The import refuses to run when its
+catalog has any published poster and never writes the publication table.
+
+Before allowing editors to publish candidates, verify that the import produced
+drafts and no publication rows:
+
+```sql
+SELECT workflow_group_id, count(*) AS candidates
+  FROM catalog_event_poster
+ GROUP BY workflow_group_id
+ ORDER BY workflow_group_id;
+
+SELECT count(*) AS published_posters
+  FROM catalog_event_poster_publication;
+```
+
+`published_posters` must be zero. Compare candidate counts and import output to
+the retained inventory, resolving every skipped or ambiguous event explicitly.
+
+Once the production import and backup are verified, make a follow-up cleanup
+release that removes the temporary `inventory` and `import-legacy` commands,
+their legacy path/filename parsing, and the poster handling in
+`migrate-recording-assets-to-events.ts`. That release should add a migration
+which drops the obsolete `poster_status` table while retaining its historical
+create migration. Remove the old fixed-file directories only after verifying
+candidate/file parity and retaining a backup. The normal poster CLI, UI,
+candidate storage, and publication code are not legacy and stay.
 
 ### Permissions rework rollout
 

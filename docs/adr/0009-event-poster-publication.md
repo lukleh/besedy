@@ -278,30 +278,59 @@ data model or its first delivery.
 
 ## Migration
 
-1. Add the relational candidate/publication schema and poster-specific typed
-   capabilities without changing the current reader path.
+1. Add the relational candidate/publication schema and switch readers to it.
+   The new publication table starts empty, so deployment makes every legacy
+   poster unavailable to ordinary viewers.
 2. Run a read-only inventory that reports every event/legacy directory, actual
    dimensions and aspect ratio, missing partner asset, duplicate pair, orphan,
    and ambiguous recording-to-event mapping.
 3. For each valid square/landscape pair, create one immutable candidate and
-   select it so currently visible posters stay visible.
+   leave it unpublished. Importing legacy material must never create, replace,
+   or remove a publication row.
 4. Do not infer shape from `portrait`/`landscape` filenames. Ambiguous or
    incomplete material remains in a reported legacy holding area until an
    editor classifies or replaces it. Do not center-crop it automatically.
 5. Switch reads, event detail, event list, offline download, and management UI
    to candidates and publication.
-6. Verify database/filesystem parity and responsive behavior, then remove the
-   fixed-file write path. Retain the old migration only as documented historical
-   tooling or replace it with the new idempotent import command.
+6. Verify database/filesystem parity and responsive behavior. After the
+   production import is complete and backed up, remove the temporary legacy
+   inventory/import code, the poster branch of the old recording-asset
+   migration, and the obsolete fixed-file tree in a follow-up cleanup. Add a
+   migration that drops the unused `poster_status` table; retain its historical
+   create migration so fresh databases still have a valid migration chain. The
+   normal candidate-management and publication code remains.
 
 The migration uses an import label plus both normalized asset hashes so a retry
-can recognize a candidate created before an interrupted publication step and
-finish publishing it. A label match alone is never sufficient. A retry never
-replaces an existing publication, and ambiguous matching candidates are
-reported and skipped instead of aborting the whole import. It refuses to add a
-legacy candidate when unrelated candidates already exist. It starts with
-`--dry-run`; any cleanup is a separate, explicit operation after backup
-verification.
+can recognize a candidate created before an interrupted import and leave it
+unchanged. A label match alone is never sufficient. Import never changes
+publication state, and ambiguous matching candidates are reported and skipped
+instead of aborting the whole import. It refuses to add a legacy candidate when
+unrelated candidates already exist. It starts with `--dry-run`; any cleanup is
+a separate, explicit operation after backup verification.
+
+### Deployment cutover and legacy retirement
+
+The production cutover is deliberately two-phase:
+
+1. Deploy the schema migration and application together. The new publication
+   table is empty, and the new reader has no legacy fixed-file fallback, so all
+   existing posters become unpublished at the cutover.
+2. Run `posters inventory` for every production catalog and retain its output.
+3. Run `posters import-legacy --dry-run`, resolve every ambiguous or incomplete
+   pair, then run the confirmed import. Imported posters are candidates only;
+   the publication table must still be empty when the import finishes.
+4. Editors may publish reviewed candidates through the normal UI or CLI after
+   the cutover has been verified.
+5. In a follow-up cleanup, remove the `inventory` and `import-legacy`
+   subcommands and their legacy path/filename parsing, remove the poster branch
+   from `migrate-recording-assets-to-events.ts`, add a migration that drops the
+   obsolete `poster_status` table, and remove the old fixed-file poster
+   directories only after a backup and candidate/file parity check.
+
+The cleanup in step 5 cannot ship before the production import: those temporary
+readers are what convert the legacy files. It should not be delayed beyond the
+verified cutover, because keeping two storage interpretations invites future
+accidental use of the retired format.
 
 ## Alternatives considered
 
