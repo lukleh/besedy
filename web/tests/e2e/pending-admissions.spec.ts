@@ -229,9 +229,9 @@ test.describe("Pending Admission Management", () => {
     });
   });
 
-  test.describe("Catalog pending grant (owner flow)", () => {
-    test("owner can invite a user with a role-only grant", async ({ page }) => {
-      await loginAs(page, "owner");
+  test.describe("Catalog pending grants", () => {
+    test("admin can invite a user with a role-only grant", async ({ page }) => {
+      await loginAs(page, "admin");
 
       // Navigate to catalog settings
       await page.goto(URLS.catalogSettings);
@@ -250,7 +250,7 @@ test.describe("Pending Admission Management", () => {
       const userSearch = dialog.getByRole("combobox").first();
       await expect(userSearch).toBeVisible({ timeout: 5000 });
 
-      const email = uniqueEmail("role-only-dialog");
+      const email = uniqueEmail("admin-role-only-dialog");
       await userSearch.fill(email);
       await page.getByRole("button", { name: `Invite ${email}` }).click();
 
