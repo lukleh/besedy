@@ -45,7 +45,12 @@ export default async function CatalogPage({
       redirect(`/catalog/${catalogId}`);
     }
 
-    if (requestedTab === "recordings" && !featureData.data.features.events.showTabs) {
+    // Asked about browsing rather than about the switcher: whether this
+    // account may see the recordings list is a question about the list.
+    if (
+      requestedTab === "recordings" &&
+      !featureData.data.features.recordings.canBrowse
+    ) {
       redirect(`/catalog/${catalogId}`);
     }
   }

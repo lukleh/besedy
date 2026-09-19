@@ -154,6 +154,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // The recordings list is a surface of its own. Hiding the tab is not the
+    // same as refusing the list, and this is the list.
+    if (!capability.canBrowseRecordings) {
+      await logAccessDenied(userId, "catalog", group.id, {
+        reason: "Browsing recordings not permitted",
+      });
+      return NextResponse.json(
+        { error: "Browsing recordings is not permitted for this catalog" },
+        { status: 403 }
+      );
+    }
+
     // LISTENER can only see published items - force the ready-status filter
     // Other filters (recorder, location, date, etc.) still apply normally
     let effectiveStatusFilter = statusFilter;

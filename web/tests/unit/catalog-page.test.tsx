@@ -57,6 +57,7 @@ describe("CatalogPage", () => {
             showAllColumns: false,
             showReleaseState: true,
           },
+          recordings: { canBrowse: false },
         },
       },
     });
@@ -76,6 +77,7 @@ describe("CatalogPage", () => {
             showAllColumns: false,
             showReleaseState: true,
           },
+          recordings: { canBrowse: true },
         },
       },
     });
@@ -109,6 +111,7 @@ describe("CatalogPage", () => {
             showAllColumns: false,
             showReleaseState: true,
           },
+          recordings: { canBrowse: false },
         },
       },
     });

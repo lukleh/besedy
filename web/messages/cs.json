@@ -1387,6 +1387,7 @@
       "validationSessionIndexRequired": "Číslo sezení musí být 1 nebo vyšší"
     },
     "list": {
+      "noSurfaceAvailable": "V tomto katalogu není co procházet.",
       "title": "Katalog",
       "count": "({total} událostí)",
       "countFiltered": "({filtered}/{total} událostí)",

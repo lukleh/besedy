@@ -120,6 +120,9 @@ export function buildCatalogFeaturesResponse(
         }),
         canUseRagSearch: canUseCatalogRag(catalogPolicyContext),
       },
+      recordings: {
+        canBrowse: recordingBrowse,
+      },
       deepSearch: {
         rollout: deepSearchRollout,
         enabled: deepSearchEnabled,

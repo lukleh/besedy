@@ -142,7 +142,7 @@ describe("event and ui policies", () => {
     expect(requiresReleasedEventVisibilityScope(grantFromLevel("OWNER"))).toBe(false);
   });
 
-  it("shows tabs only for actors who can browse both surfaces and edit events", () => {
+  it("shows tabs to whoever can browse both surfaces, editing or not", () => {
     const tabContext = {
       canBrowseRecordings: true,
       canBrowseEvents: true,
@@ -152,11 +152,25 @@ describe("event and ui policies", () => {
     expect(canUseCatalogTabSwitcher(tabContext)).toBe(true);
     expect(canSeeEventsTab(tabContext)).toBe(true);
     expect(canSeeRecordingsTab(tabContext)).toBe(true);
+
+    // Editing events has nothing to do with whether there are two surfaces to
+    // move between. Demanding it here is what hid the recordings list from
+    // everyone below an owner.
     expect(
       canUseCatalogTabSwitcher({
         canBrowseRecordings: true,
         canBrowseEvents: true,
         canEditEvents: false,
+      })
+    ).toBe(true);
+
+    // Browsing recordings is now its own permission, so an actor without it
+    // has one surface and needs no switch.
+    expect(
+      canUseCatalogTabSwitcher({
+        canBrowseRecordings: false,
+        canBrowseEvents: true,
+        canEditEvents: true,
       })
     ).toBe(false);
     expect(

@@ -285,10 +285,11 @@ means the capability is qualified.
 | Grant / revoke admin role | SUPERADMIN |
 | Labs toggle, notification preferences, playback progress | any authenticated user |
 
-[^tabs]: `canUseCatalogTabSwitcher` requires browse-recordings **and** browse-events
-    **and** edit-events. With the `events` feature at `public` rollout, every
-    level below OWNER is therefore locked to the events view and has no UI path
-    to the recordings list, even though `/api/catalog` itself allows LISTENER.
+[^tabs]: `canUseCatalogTabSwitcher` asks whether there are two surfaces to move
+    between: browse-recordings **and** browse-events. It used to require
+    edit-events as well, which locked every level below OWNER to the events
+    view with no path to the recordings list at all — the accident that made
+    browsing recordings a side effect rather than a decision.
 
 [^cache]: The offline cache button carries no capability check, but the fetches
     it triggers go through the gated audio and transcript routes, so it cannot
@@ -411,6 +412,25 @@ The service secret still says only that the caller is our own worker. It is
 shared by the web-to-jobs client, the jobs API and the worker-to-web client, so
 one leaked value is worth treating as a full compromise of job submission and
 retrieval.
+
+### Browsing Recordings Is a Surface, Not Catalog Access
+
+`browse_recordings` covers the recordings list. `/api/catalog` and
+`/api/catalog/filter-options` refuse without it, the tab switcher appears only
+when both surfaces are available, and a `?tab=recordings` deep link asks the
+same permission rather than asking about the switcher.
+
+**Only the list.** A single recording stays reachable: the events surface
+renders the recording page inside itself for an event's recordings, search
+results link straight to a recording at a timestamp, and radio plays one. Those
+answer to `canAccessRecording`, `stream_audio` and `read_transcripts` as before.
+What the permission decides is whether the whole catalog is browsable as a list
+of recordings, which is the editorial view of the archive rather than the way it
+is listened to.
+
+Of the roles, only `curator` and `catalog_admin` carry it, so the catalog is
+events-only for everyone else. That is a real change for one account, named and
+accepted in [ADR 0005](../adr/0005-catalog-permission-model.md).
 
 ### Machine-Output Views Are Administrative
 

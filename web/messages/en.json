@@ -1388,6 +1388,7 @@
       "validationSessionIndexRequired": "Session number must be 1 or higher"
     },
     "list": {
+      "noSurfaceAvailable": "Nothing to browse in this catalog.",
       "title": "Catalog",
       "count": "({total} events)",
       "countFiltered": "({filtered}/{total} events)",

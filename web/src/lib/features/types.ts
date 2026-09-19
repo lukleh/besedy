@@ -19,10 +19,16 @@ export interface DeepSearchFeatureCapability {
   canView: boolean;
 }
 
+/** The recordings list as a surface, rather than a feature with a rollout. */
+export interface RecordingsCapability {
+  canBrowse: boolean;
+}
+
 export interface CatalogFeaturesResponse {
   labsEnabled: boolean;
   features: {
     events: FeatureCapability;
     deepSearch: DeepSearchFeatureCapability;
+    recordings: RecordingsCapability;
   };
 }
