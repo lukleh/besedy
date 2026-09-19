@@ -75,6 +75,9 @@ describe("transcript compare route", () => {
     getRecordingCapability.mockResolvedValue({
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
+      // Comparing transcripts is the multi-backend view, which is
+      // administrative; the rest of this file describes what it shows.
+      canSeeTranscriptVariants: true,
     });
     resolveTranscriptsPath.mockReturnValue("/transcripts");
     getAvailableTranscripts.mockResolvedValue({

@@ -412,6 +412,28 @@ shared by the web-to-jobs client, the jobs API and the worker-to-web client, so
 one leaked value is worth treating as a full compromise of job submission and
 retrieval.
 
+### Machine-Output Views Are Administrative
+
+Two permissions sit with the catalog administrator alone, and with no role.
+
+`see_transcript_variants` covers the fact that more than one machine transcript
+exists. Without it, `GET /api/transcript/:hash` lists only the default backend
+and refuses to serve any other, `GET /api/transcript/:hash/compare` — the
+multi-backend stream view in its entirety — is refused, and the picker, the
+variant counts and the stream switch are not rendered. **Reading is now the
+default view**; the stream used to be, and a stored preference saying so does
+not reopen it.
+
+`see_speakers` covers the diarization overlay. Without it,
+`GET /api/transcript/:hash/speakers` reports no backends, the `speaker` on each
+transcript segment is dropped from the response, and the toggle, the overlay and
+the detected-speaker count are not rendered.
+
+Both are about unevaluated model output rather than about release state, so
+neither reaches unreleased material and neither is a substitute for
+`see_unreleased`. Both are candidates to open later — diarization once speaker
+attribution becomes a phase of correction.
+
 ### CatalogAccess Retention for Blocked Users
 
 When a user is blocked, their `CatalogAccess` records are **retained**. Access

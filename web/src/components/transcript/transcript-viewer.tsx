@@ -68,6 +68,8 @@ export function TranscriptViewer({
   onSeek,
   isPlaying = false,
   canDownload = false,
+  canSeeTranscriptVariants = false,
+  canSeeSpeakers = false,
 }: TranscriptViewerProps) {
   const t = useTranslations("transcript");
   const { toast } = useToast();
@@ -80,6 +82,9 @@ export function TranscriptViewer({
   const [autoScroll, setAutoScroll] = useHydratedBoolean(AUTO_SCROLL_PREF_KEY, true);
   const [showSpeakers, setShowSpeakers] = useHydratedBoolean(SPEAKER_LABELS_PREF_KEY, true);
   const [showTimestamps, setShowTimestamps] = useHydratedBoolean(TIMESTAMPS_PREF_KEY, true);
+  // The overlay is administrative, so a stored preference from when it was
+  // shown to everyone does not bring it back.
+  const speakersVisible = canSeeSpeakers && showSpeakers;
 
   const handleBackendChange = useCallback((backend: TranscriptBackend) => {
     setSelectedBackend(backend);
@@ -223,10 +228,11 @@ export function TranscriptViewer({
           schema: diarizationSchema,
         }
       ),
-    enabled: !!effectiveDiarizationBackend && showSpeakers,
+    enabled: !!effectiveDiarizationBackend && speakersVisible,
   });
 
-  const hasDiarization = (availableDiarizations?.backends.length ?? 0) > 0;
+  const hasDiarization =
+    canSeeSpeakers && (availableDiarizations?.backends.length ?? 0) > 0;
 
   if (loadingBackends) {
     return <TranscriptSkeleton />;
@@ -247,6 +253,8 @@ export function TranscriptViewer({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        {canSeeTranscriptVariants && (
+          <>
         <span className="text-sm font-medium">{t("source")}:</span>
         <ResponsiveMenu>
           <ResponsiveMenuTrigger asChild>
@@ -272,6 +280,8 @@ export function TranscriptViewer({
             ))}
           </ResponsiveMenuContent>
         </ResponsiveMenu>
+          </>
+        )}
         <Button
           variant="outline"
           size="icon"
@@ -319,7 +329,7 @@ export function TranscriptViewer({
             </ResponsiveMenuContent>
           </ResponsiveMenu>
         )}
-        {available.backends.length > 1 && (
+        {canSeeTranscriptVariants && available.backends.length > 1 && (
           <Badge variant="secondary" className="sm:hidden">
             {t("sourcesPlural", { count: available.backends.length })}
           </Badge>
@@ -359,7 +369,7 @@ export function TranscriptViewer({
               {t("autoScroll")}
             </Label>
           </div>
-          {available.backends.length > 0 && (
+          {canSeeTranscriptVariants && available.backends.length > 0 && (
             <Badge variant="secondary" className="hidden sm:inline-flex">
               {available.backends.length === 1
                 ? t("sources", { count: 1 })
@@ -369,7 +379,7 @@ export function TranscriptViewer({
         </div>
       </div>
 
-      {showSpeakers && diarization && diarization.numSpeakers > 0 && (
+      {speakersVisible && diarization && diarization.numSpeakers > 0 && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Users className="h-3 w-3" />
           <span>
@@ -388,7 +398,7 @@ export function TranscriptViewer({
           currentTime={currentTime}
           onSeek={onSeek}
           autoScroll={autoScroll && isPlaying}
-          diarization={showSpeakers ? diarization : undefined}
+          diarization={speakersVisible ? diarization : undefined}
           showTimestamps={showTimestamps}
           scrollToTime={scrollToTime}
           onScrollComplete={() => setScrollToTime(null)}

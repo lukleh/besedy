@@ -32,6 +32,10 @@ const catalogEntryWithPermissionsSchema = z.object({
   canViewTranscripts: z.boolean(),
   canEditMetadata: z.boolean(),
   canDownload: z.boolean(),
+  // Optional so a page served by an older build still parses; absent reads as
+  // false everywhere it is consumed, which is the closed answer.
+  canSeeTranscriptVariants: z.boolean().optional(),
+  canSeeSpeakers: z.boolean().optional(),
 }).passthrough();
 
 export function useRecordingEntry({
