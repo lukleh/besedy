@@ -351,6 +351,7 @@ export async function GET(request: NextRequest) {
       canEditMetadata: capability.canEditMetadata,
       canBatchEditMetadata: capability.canBatchEditMetadata,
       canManageAccess: capability.canManageAccess,
+      canPublishRecording: capability.canPublishRecording,
       accessLevel: capability.accessLevel,
       canUseRagSearch: capability.canUseRagSearch,
     });

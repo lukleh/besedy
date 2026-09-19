@@ -43,7 +43,7 @@ interface DesktopCatalogTableRowProps {
   allAlbums: MetadataAlbum[];
   allLocations: MetadataLocation[];
   allRecorders: MetadataRecorder[];
-  canManageAccess?: boolean;
+  canPublishRecording?: boolean;
   columnResize: UseColumnResizeReturn;
   columnVisibility: Record<ColumnKey, boolean>;
   entry: CatalogEntry;
@@ -65,7 +65,7 @@ export function DesktopCatalogTableRow({
   allAlbums,
   allLocations,
   allRecorders,
-  canManageAccess,
+  canPublishRecording,
   columnResize,
   columnVisibility,
   entry,
@@ -470,7 +470,7 @@ export function DesktopCatalogTableRow({
               </Badge>
             )}
 
-            {canManageAccess && entry.isActionable && (
+            {canPublishRecording && entry.isActionable && (
               <Button
                 type="button"
                 variant="ghost"

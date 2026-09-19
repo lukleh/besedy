@@ -35,7 +35,7 @@ interface DesktopCatalogTableProps {
   availableStatuses: CountedValueOption<"ready" | "incomplete">[];
   availableVerified: CountedValueOption<boolean>[];
   availableYears: CountedValueOption<number>[];
-  canManageAccess?: boolean;
+  canPublishRecording?: boolean;
   columnResize: UseColumnResizeReturn;
   columnVisibility: Record<ColumnKey, boolean>;
   duplicateCounts: CountedValueOption<number>[];
@@ -68,7 +68,7 @@ export function DesktopCatalogTable({
   availableStatuses,
   availableVerified,
   availableYears,
-  canManageAccess,
+  canPublishRecording,
   columnResize,
   columnVisibility,
   duplicateCounts,
@@ -119,7 +119,7 @@ export function DesktopCatalogTable({
               allAlbums={allAlbums}
               allLocations={allLocations}
               allRecorders={allRecorders}
-              canManageAccess={canManageAccess}
+              canPublishRecording={canPublishRecording}
               columnResize={columnResize}
               columnVisibility={columnVisibility}
               entry={entry}

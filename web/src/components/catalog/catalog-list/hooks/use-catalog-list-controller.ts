@@ -180,7 +180,7 @@ interface CatalogListControllerReady extends CatalogListControllerBase {
     availableStatuses: ReturnType<typeof getFilterOptionLists>["availableStatuses"];
     availableVerified: ReturnType<typeof getFilterOptionLists>["availableVerified"];
     availableYears: ReturnType<typeof getFilterOptionLists>["availableYears"];
-    canManageAccess: boolean | undefined;
+    canPublishRecording: boolean | undefined;
     columnResize: ReturnType<typeof useColumnResize>;
     columnVisibility: Record<ColumnKey, boolean>;
     duplicateCounts: ReturnType<typeof getFilterOptionLists>["duplicateCounts"];
@@ -254,6 +254,9 @@ export function useCatalogListController({
   const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
   const [accessLevel, setAccessLevel] = useState<string | undefined>(undefined);
   const [canManageAccess, setCanManageAccess] = useState<boolean | undefined>(undefined);
+  const [canPublishRecording, setCanPublishRecording] = useState<boolean | undefined>(
+    undefined
+  );
 
   const {
     catalogId: activeCatalogId,
@@ -448,7 +451,10 @@ export function useCatalogListController({
     if (typeof data?.canManageAccess === "boolean") {
       setCanManageAccess(data.canManageAccess);
     }
-  }, [data?.accessLevel, data?.canManageAccess]);
+    if (typeof data?.canPublishRecording === "boolean") {
+      setCanPublishRecording(data.canPublishRecording);
+    }
+  }, [data?.accessLevel, data?.canManageAccess, data?.canPublishRecording]);
 
   const canUseRagSearch = data?.canUseRagSearch ?? false;
 
@@ -776,7 +782,7 @@ export function useCatalogListController({
           availableStatuses,
           availableVerified,
           availableYears,
-          canManageAccess,
+          canPublishRecording,
           columnResize,
           columnVisibility: columnVisibilityStateReady,
           duplicateCounts,

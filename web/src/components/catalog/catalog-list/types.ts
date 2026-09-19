@@ -61,6 +61,7 @@ export interface CatalogResponse {
   pagination: PaginationInfo;
   canBatchEditMetadata?: boolean;
   canManageAccess?: boolean;
+  canPublishRecording?: boolean;
   canUseRagSearch?: boolean;
   accessLevel?: string;
 }
@@ -145,6 +146,7 @@ export const catalogResponseSchema = z.object({
   }),
   canBatchEditMetadata: z.boolean().optional(),
   canManageAccess: z.boolean().optional(),
+  canPublishRecording: z.boolean().optional(),
   canUseRagSearch: z.boolean().optional(),
   accessLevel: z.string().optional(),
 });

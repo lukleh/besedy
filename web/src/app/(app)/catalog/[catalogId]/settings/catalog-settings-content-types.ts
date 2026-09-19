@@ -216,7 +216,22 @@ export const ACCESS_LEVEL_COLORS: Record<AccessLevel, string> = {
 
 export const ACCESS_LEVEL_VALUES = Object.values(AccessLevel);
 
+/**
+ * Which cards of the settings page the actor may see.
+ *
+ * Decided by the server page from the catalog capability, because the page is
+ * no longer one permission: a host manages access without seeing the catalog's
+ * configuration, and somebody granted an export sees neither.
+ */
+export interface CatalogSettingsCards {
+  transcriptExports: boolean;
+  configuration: boolean;
+  eventHealth: boolean;
+  access: boolean;
+}
+
 export interface CatalogSettingsContentProps {
   catalogId: string;
+  cards: CatalogSettingsCards;
   skipCatalogValidation?: boolean;
 }
