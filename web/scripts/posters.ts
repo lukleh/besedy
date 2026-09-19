@@ -8,6 +8,8 @@ import { getDatabaseUrlOrThrow, loadScriptEnv, redactDatabaseUrl } from "../src/
 
 type Command = "list" | "create" | "publish" | "unpublish" | "delete" | "inventory" | "import-legacy";
 
+const LEGACY_IMPORT_LABEL = "Imported legacy poster";
+
 interface Args {
   command: Command;
   catalogId: string;
@@ -330,10 +332,30 @@ async function main(): Promise<void> {
     printInventory(inventory);
     for (const item of inventory) {
       if (!item.importable) continue;
-      const existing = await prisma.catalogEventPoster.count({
+      const existing = await prisma.catalogEventPoster.findMany({
         where: { workflowGroupId: args.catalogId, eventId: item.eventId },
+        select: { id: true, label: true },
       });
-      if (existing > 0) {
+      const interruptedImports = existing.filter((candidate) => candidate.label === LEGACY_IMPORT_LABEL);
+      if (interruptedImports.length > 1) {
+        throw new Error(`event=${item.eventId} has multiple legacy import candidates; resolve them manually`);
+      }
+      if (interruptedImports.length === 1) {
+        const posterId = interruptedImports[0].id;
+        if (args.dryRun) {
+          console.log(`event=${item.eventId} would resume publication of poster=${posterId}`);
+          continue;
+        }
+        await service.publishEventPoster({
+          catalogId: args.catalogId,
+          eventId: item.eventId,
+          posterId,
+          userId: user.id,
+        });
+        console.log(`event=${item.eventId} resumed poster=${posterId}`);
+        continue;
+      }
+      if (existing.length > 0) {
         console.log(`event=${item.eventId} skipped: candidates already exist`);
         continue;
       }
@@ -347,7 +369,7 @@ async function main(): Promise<void> {
         catalogId: args.catalogId,
         eventId: item.eventId,
         userId: user.id,
-        label: "Imported legacy poster",
+        label: LEGACY_IMPORT_LABEL,
         square: {
           bytes: await fs.readFile(square.filePath),
           originalName: path.basename(square.filePath),

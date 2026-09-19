@@ -205,10 +205,12 @@ only to actors with draft visibility. The event list's poster status becomes
 `none`, `draft-only`, `published`, or `published-with-newer-drafts` for the
 editorial columns; ordinary list responses need no poster workflow state.
 
-The selected candidate ID is used as the browser cache version. Image responses
-remain private and revalidatable because catalog access and event visibility
-can change. Publication or unpublication must take effect on the next server
-validation rather than relying only on a long-lived cached URL.
+The selected candidate ID is used as the browser cache version. Audience image
+responses remain private and revalidatable so publication or unpublication
+takes effect on the next server validation. Immutable candidate previews may
+remain in the browser's private cache; the management UI still rechecks live
+candidate-view authority and stops rendering previews when that authority is
+lost.
 
 ### Presentation
 
@@ -291,9 +293,10 @@ data model or its first delivery.
    fixed-file write path. Retain the old migration only as documented historical
    tooling or replace it with the new idempotent import command.
 
-The migration is idempotent by recording imported legacy origin and digest, or
-by otherwise refusing to import a digest already represented for the event.
-It starts with `--dry-run`; any cleanup is a separate, explicit operation after
+The migration uses a reserved import label so a retry can recognize a candidate
+created before an interrupted publication step and finish publishing it. It
+refuses to add a legacy candidate when unrelated candidates already exist. It
+starts with `--dry-run`; any cleanup is a separate, explicit operation after
 backup verification.
 
 ## Alternatives considered

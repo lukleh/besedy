@@ -33,6 +33,11 @@ export interface ProcessedPosterAsset {
   height: number;
 }
 
+export interface StagedEventPosterAssetsRemoval {
+  originalPath: string;
+  stagedPath: string;
+}
+
 export class PosterAssetError extends Error {
   constructor(
     message: string,
@@ -201,6 +206,49 @@ export async function removePosterCandidateAssets(catalogId: string, eventId: nu
     const err = error as NodeJS.ErrnoException;
     if (err.code !== "ENOENT") throw error;
   }
+}
+
+/**
+ * Move every poster asset for an event out of its live path before deleting
+ * the event row. The rename stays on the same filesystem and can be rolled
+ * back if the database deletion fails.
+ */
+export async function stageEventPosterAssetsRemoval(
+  catalogId: string,
+  eventId: number
+): Promise<StagedEventPosterAssetsRemoval | null> {
+  const originalPath = path.join(resolveEventPostersPath(catalogId), String(eventId));
+  try {
+    await fs.lstat(originalPath);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") return null;
+    throw error;
+  }
+
+  const validation = validatePath(originalPath);
+  if (!validation.valid) {
+    throw new Error("Invalid event poster directory");
+  }
+
+  const stagedPath = path.join(
+    path.dirname(originalPath),
+    `.deleted-${eventId}-${randomUUID()}`
+  );
+  await fs.rename(originalPath, stagedPath);
+  return { originalPath, stagedPath };
+}
+
+export async function restoreStagedEventPosterAssets(
+  staged: StagedEventPosterAssetsRemoval
+): Promise<void> {
+  await fs.rename(staged.stagedPath, staged.originalPath);
+}
+
+export async function finalizeStagedEventPosterAssetsRemoval(
+  staged: StagedEventPosterAssetsRemoval
+): Promise<void> {
+  await fs.rm(staged.stagedPath, { recursive: true, force: true });
 }
 
 export async function readPosterAsset(filePath: string): Promise<{ bytes: Buffer; resolvedPath: string }> {

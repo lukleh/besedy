@@ -777,11 +777,11 @@ model CatalogEventPoster {
   landscapeOriginalName String   @map("landscape_original_name") @db.VarChar(255)
   landscapeBytes        Int      @map("landscape_bytes")
   landscapeSha256       String   @map("landscape_sha256") @db.VarChar(64)
-  createdById           String   @map("created_by")
+  createdById           String?  @map("created_by")
   createdAt             DateTime @default(now()) @map("created_at")
 
   event       CatalogEvent                   @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
-  createdBy   User                           @relation("CatalogEventPosterCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?                          @relation("CatalogEventPosterCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   publication CatalogEventPosterPublication?
 
   @@unique([id, eventId, workflowGroupId])
@@ -794,12 +794,12 @@ model CatalogEventPosterPublication {
   eventId         Int      @map("event_id")
   workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
   posterId        String   @unique @map("poster_id")
-  publishedById   String   @map("published_by")
+  publishedById   String?  @map("published_by")
   publishedAt     DateTime @default(now()) @map("published_at")
 
   event       CatalogEvent       @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
   poster      CatalogEventPoster @relation(fields: [posterId, eventId, workflowGroupId], references: [id, eventId, workflowGroupId], onDelete: NoAction)
-  publishedBy User               @relation("CatalogEventPosterPublishedBy", fields: [publishedById], references: [id])
+  publishedBy User?              @relation("CatalogEventPosterPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
 
   @@id([workflowGroupId, eventId])
   @@unique([eventId, workflowGroupId])

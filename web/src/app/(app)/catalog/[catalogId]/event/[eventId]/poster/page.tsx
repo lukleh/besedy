@@ -46,7 +46,7 @@ interface PosterCandidate {
   eventId: number;
   label: string | null;
   createdAt: string;
-  createdBy: { id: string; name: string | null; email: string | null };
+  createdBy: { id: string; name: string | null; email: string | null } | null;
   published: boolean;
   publishedAt: string | null;
   assets: {
@@ -97,6 +97,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   const canManage = detailQuery.data?.canManagePosters ?? false;
   const canPublish = detailQuery.data?.canPublishPosters ?? false;
   const canView = detailQuery.data?.canViewPosterCandidates ?? false;
+  const refetchDetail = detailQuery.refetch;
   const candidatesQuery = useQuery<CandidatesResponse>({
     queryKey: ["event-poster-candidates", catalogId, parsedEventId],
     queryFn: () => fetchJson(buildEventPosterCandidatesUrl(catalogId, parsedEventId)),
@@ -104,9 +105,17 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   });
   useEffect(() => {
     if (detailQuery.data && !canView) {
+      queryClient.removeQueries({
+        queryKey: ["event-poster-candidates", catalogId, parsedEventId],
+      });
       router.replace(`/catalog/${catalogId}/event/${parsedEventId}`);
     }
-  }, [canView, catalogId, detailQuery.data, parsedEventId, router]);
+  }, [canView, catalogId, detailQuery.data, parsedEventId, queryClient, router]);
+  useEffect(() => {
+    if (candidatesQuery.isError) {
+      void refetchDetail();
+    }
+  }, [candidatesQuery.isError, refetchDetail]);
 
   const refresh = async () => {
     await Promise.all([
@@ -290,6 +299,8 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
         </div>
         {candidatesQuery.isLoading ? (
           <Skeleton className="h-72 w-full" />
+        ) : candidatesQuery.isError ? (
+          <div className="rounded-xl border border-dashed p-8 text-sm text-destructive">{t("loadFailed")}</div>
         ) : candidates.length === 0 ? (
           <div className="rounded-xl border border-dashed p-8 text-sm text-muted-foreground">{t("empty")}</div>
         ) : (
@@ -309,7 +320,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t("createdMeta", {
                         date: new Date(candidate.createdAt).toLocaleString(),
-                        author: candidate.createdBy.name ?? candidate.createdBy.email ?? t("unknownAuthor"),
+                        author: candidate.createdBy?.name ?? candidate.createdBy?.email ?? t("unknownAuthor"),
                       })}
                     </p>
                   </div>

@@ -56,7 +56,7 @@ export interface EventPosterCandidateView {
   eventId: number;
   label: string | null;
   createdAt: string;
-  createdBy: { id: string; name: string | null; email: string | null };
+  createdBy: { id: string; name: string | null; email: string | null } | null;
   published: boolean;
   publishedAt: string | null;
   assets: {

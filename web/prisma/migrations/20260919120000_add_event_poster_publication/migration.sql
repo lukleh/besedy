@@ -16,7 +16,7 @@ CREATE TABLE "catalog_event_poster" (
     "landscape_original_name" VARCHAR(255) NOT NULL,
     "landscape_bytes" INTEGER NOT NULL,
     "landscape_sha256" VARCHAR(64) NOT NULL,
-    "created_by" TEXT NOT NULL,
+    "created_by" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "catalog_event_poster_pkey" PRIMARY KEY ("id"),
@@ -36,7 +36,7 @@ CREATE TABLE "catalog_event_poster_publication" (
     "event_id" INTEGER NOT NULL,
     "workflow_group_id" VARCHAR(15) NOT NULL,
     "poster_id" TEXT NOT NULL,
-    "published_by" TEXT NOT NULL,
+    "published_by" TEXT,
     "published_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "catalog_event_poster_publication_pkey" PRIMARY KEY ("workflow_group_id", "event_id")
@@ -60,7 +60,7 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "catalog_event_poster"
 ADD CONSTRAINT "catalog_event_poster_created_by_fkey"
 FOREIGN KEY ("created_by") REFERENCES "users"("id")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "catalog_event_poster_publication"
 ADD CONSTRAINT "catalog_event_poster_publication_event_id_workflow_group_id_fkey"
@@ -77,4 +77,4 @@ ON DELETE NO ACTION ON UPDATE CASCADE;
 ALTER TABLE "catalog_event_poster_publication"
 ADD CONSTRAINT "catalog_event_poster_publication_published_by_fkey"
 FOREIGN KEY ("published_by") REFERENCES "users"("id")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ON DELETE SET NULL ON UPDATE CASCADE;

@@ -13,6 +13,11 @@ import { loadReadableCatalogEvent } from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
 import { getPublishedEventPoster } from "@/lib/event-poster-service";
+import {
+  finalizeStagedEventPosterAssetsRemoval,
+  restoreStagedEventPosterAssets,
+  stageEventPosterAssetsRemoval,
+} from "@/lib/event-poster-storage";
 import { canReleaseEvent } from "@/lib/policy/event";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 
@@ -338,11 +343,29 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     await requireCatalogEventsAccess(catalogId, "edit");
 
-    const deleted = await prisma.catalogEvent.deleteMany({
-      where: { id: eventId, workflowGroupId: catalogId },
-    });
+    const stagedPosterAssets = await stageEventPosterAssetsRemoval(catalogId, eventId);
+    let deleted: { count: number };
+    try {
+      deleted = await prisma.catalogEvent.deleteMany({
+        where: { id: eventId, workflowGroupId: catalogId },
+      });
+    } catch (error) {
+      if (stagedPosterAssets) {
+        await restoreStagedEventPosterAssets(stagedPosterAssets);
+      }
+      throw error;
+    }
     if (deleted.count === 0) {
+      if (stagedPosterAssets) {
+        await restoreStagedEventPosterAssets(stagedPosterAssets);
+      }
       return notFound("catalog event");
+    }
+
+    if (stagedPosterAssets) {
+      await finalizeStagedEventPosterAssetsRemoval(stagedPosterAssets).catch((error) => {
+        console.error("Failed to finalize event poster cleanup:", error);
+      });
     }
 
     return NextResponse.json({ success: true });
