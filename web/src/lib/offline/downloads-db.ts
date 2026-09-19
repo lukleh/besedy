@@ -37,6 +37,8 @@ export interface DownloadEventSnapshot {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  /** Absent on records downloaded before the count was stored; the cue hides then. */
+  sessionCount?: number;
   posterFiles: {
     portrait: { exists: boolean; uploadedAt: string | null };
     landscape: { exists: boolean; uploadedAt: string | null };

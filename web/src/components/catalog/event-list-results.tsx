@@ -24,6 +24,7 @@ import {
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 import { EventPlaybackProgress } from "./event-playback-progress";
+import { SessionOrdinalBadge } from "./session-ordinal-badge";
 import type {
   CatalogEventRow,
   EventSortKey,
@@ -73,23 +74,6 @@ export function EventListResults({
   const t = useTranslations("events.list");
   const tDownloads = useTranslations("downloads");
   const downloadedEvents = useDownloadedEvents(catalogId);
-
-  // This label used to sit on a line of its own, which made the few
-  // multi-session rows taller than every other row. Both layouts now place it
-  // on a line that already exists, and `h-5` keeps it inside the 20px text
-  // line box on desktop and the card's reserved 56px text slot on mobile, so
-  // a row with a session reads exactly as tall as one without.
-  const renderSessionBadge = (sessionIndex: number) => {
-    if (sessionIndex <= 1) return null;
-    return (
-      <Badge
-        variant="outline"
-        className="h-5 shrink-0 px-2 py-0 leading-none align-middle"
-      >
-        {t("sessionLabel", { index: sessionIndex })}
-      </Badge>
-    );
-  };
 
   const renderDownloadMarker = (eventId: number) => {
     const status = downloadedEvents.get(eventId);
@@ -339,7 +323,10 @@ export function EventListResults({
                         <span className="font-semibold whitespace-nowrap">
                           {formattedDate}
                         </span>
-                        {renderSessionBadge(catalogEvent.sessionIndex)}
+                        <SessionOrdinalBadge
+                          sessionIndex={catalogEvent.sessionIndex}
+                          sessionCount={catalogEvent.sessionCount}
+                        />
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">
@@ -445,7 +432,10 @@ export function EventListResults({
                       </div>
                     </div>
                   </div>
-                  {renderSessionBadge(catalogEvent.sessionIndex)}
+                  <SessionOrdinalBadge
+                    sessionIndex={catalogEvent.sessionIndex}
+                    sessionCount={catalogEvent.sessionCount}
+                  />
                   {renderDownloadMarker(catalogEvent.id)}
                   <EventPlaybackProgress playback={catalogEvent.playback} />
                 </div>

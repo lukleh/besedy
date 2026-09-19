@@ -27,6 +27,7 @@ vi.mock("@/lib/db", () => ({
     catalogEvent: {
       count: vi.fn(),
       findMany: vi.fn(),
+      groupBy: vi.fn(),
     },
     location: {
       findMany: vi.fn(),
@@ -56,6 +57,7 @@ describe("catalog events route", () => {
     catalogEvent: {
       count: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
+      groupBy: ReturnType<typeof vi.fn>;
     };
     location: { findMany: ReturnType<typeof vi.fn> };
     catalogEntry: { findMany: ReturnType<typeof vi.fn> };
@@ -77,6 +79,7 @@ describe("catalog events route", () => {
       .readEventSources as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
+    prisma.catalogEvent.groupBy.mockResolvedValue([]);
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",

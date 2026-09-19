@@ -24,6 +24,7 @@ import {
   ResponsiveMenuRadioItem,
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
+import { SessionOrdinalBadge } from "./session-ordinal-badge";
 
 interface EventDetailProps {
   catalogId: string;
@@ -53,6 +54,7 @@ interface EventDetailResponse {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionCount: number;
   description: string | null;
   released: boolean;
   recordings: EventRecording[];
@@ -178,9 +180,10 @@ export function EventDetail({
         <DownloadButton catalogId={catalogId} eventId={eventId} size="default" />
       )}
       {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
-      {data.sessionIndex > 1 ? (
-        <Badge variant="outline">{t("sessionLabel", { index: data.sessionIndex })}</Badge>
-      ) : null}
+      <SessionOrdinalBadge
+        sessionIndex={data.sessionIndex}
+        sessionCount={data.sessionCount}
+      />
       <Badge variant="outline">{recordingCountLabel}</Badge>
       {canEdit && (
         <Button asChild variant="outline" size="sm">
@@ -338,9 +341,10 @@ export function EventDetail({
               {formattedDate} · {locationName}
             </h1>
             {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
-            {data.sessionIndex > 1 ? (
-              <Badge variant="outline">{t("sessionLabel", { index: data.sessionIndex })}</Badge>
-            ) : null}
+            <SessionOrdinalBadge
+              sessionIndex={data.sessionIndex}
+              sessionCount={data.sessionCount}
+            />
             <Badge variant="outline">{recordingCountLabel}</Badge>
           </div>
           {canEdit && (

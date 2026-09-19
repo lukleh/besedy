@@ -16,6 +16,9 @@ vi.mock("next-intl", () => ({
     if (key === "recordingsMobile") return `Recordings: ${values?.count ?? ""}`;
     if (key === "sourcesMobile") return `Sources: ${values?.count ?? ""}`;
     if (key === "postersMobile") return `Posters: ${values?.status ?? ""}`;
+    if (key === "ordinal") return `${values?.index}/${values?.count}`;
+    if (key === "ordinalAria")
+      return `Session ${values?.index} of ${values?.count}`;
     return key;
   },
 }));
@@ -36,6 +39,7 @@ const BASE_PROPS = {
       dateMonth: 5,
       dateDay: 2,
       sessionIndex: 1,
+      sessionCount: 1,
       released: true,
       recordingCount: 3,
       sourceCount: 2,
@@ -114,24 +118,40 @@ describe("EventListResults", () => {
     expect(within(mobileCard).queryByText("released")).not.toBeInTheDocument();
   });
 
-  it("shows the session label on both the desktop row and the mobile card", () => {
+  it("marks every event of a day that holds more than one, the first included", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
-        events={[{ ...BASE_PROPS.events[0], sessionIndex: 2 }]}
+        events={[
+          { ...BASE_PROPS.events[0], id: 1, sessionIndex: 1, sessionCount: 2 },
+          { ...BASE_PROPS.events[0], id: 2, sessionIndex: 2, sessionCount: 2 },
+        ]}
         showAllColumns
         showReleaseState
       />
     );
 
-    // One in the desktop table, one in the mobile card; both layouts render.
-    expect(screen.getAllByText("sessionLabel")).toHaveLength(2);
+    // Two layouts render in parallel, so each event contributes two badges.
+    const badges = screen.getAllByTestId("session-ordinal");
+    expect(badges).toHaveLength(4);
+    // Desktop table first, then mobile cards: 1/2 and 2/2 in each layout.
+    expect(badges.map((badge) => badge.textContent)).toEqual([
+      "1/2Session 1 of 2",
+      "2/2Session 2 of 2",
+      "1/2Session 1 of 2",
+      "2/2Session 2 of 2",
+    ]);
+
+    // The first session is marked as plainly as the second.
     expect(
-      within(screen.getByTestId("event-card-1")).getByText("sessionLabel")
+      within(screen.getByTestId("event-card-1")).getByTestId("session-ordinal")
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("event-card-2")).getByTestId("session-ordinal")
     ).toBeInTheDocument();
   });
 
-  it("omits the session label for a single-session event", () => {
+  it("leaves an ordinary single-event day unmarked", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
@@ -140,14 +160,14 @@ describe("EventListResults", () => {
       />
     );
 
-    expect(screen.queryByText("sessionLabel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("session-ordinal")).not.toBeInTheDocument();
   });
 
-  it("keeps the session label off its own line so rows stay the same height", () => {
+  it("keeps the badge off a line of its own so rows stay the same height", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
-        events={[{ ...BASE_PROPS.events[0], sessionIndex: 2 }]}
+        events={[{ ...BASE_PROPS.events[0], sessionIndex: 2, sessionCount: 2 }]}
         showAllColumns
         showReleaseState
       />
@@ -155,9 +175,7 @@ describe("EventListResults", () => {
 
     // The regression this guards: a badge in a block of its own made the few
     // multi-session rows taller than the rest.
-    for (const badge of screen.getAllByText("sessionLabel")) {
-      const row = badge.closest("td, button");
-      expect(row).not.toBeNull();
+    for (const badge of screen.getAllByTestId("session-ordinal")) {
       expect(badge.parentElement).toHaveClass("flex", "items-center");
       expect(badge).toHaveClass("h-5");
     }

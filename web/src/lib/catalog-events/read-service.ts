@@ -85,6 +85,62 @@ export async function listReadableCatalogEvents(
   });
 }
 
+/** The tuple the unique identity index groups sessions by, minus the index. */
+export interface SessionDateKey {
+  locationId: number;
+  dateYear: number;
+  dateMonth: number | null;
+  dateDay: number | null;
+}
+
+export function sessionDateKey(event: SessionDateKey): string {
+  return [
+    event.locationId,
+    event.dateYear,
+    event.dateMonth ?? '',
+    event.dateDay ?? '',
+  ].join(':');
+}
+
+/**
+ * How many events share each location and date.
+ *
+ * The count runs through the same visibility and filters as the listing that
+ * asked for it, because the cue it feeds promises the reader another event
+ * they can open. Counting events they cannot see would promise a row that is
+ * not there.
+ */
+export async function countSessionsByDate(
+  catalogId: string,
+  eventIds: ReadableEventIds,
+  filters: Prisma.CatalogEventWhereInput,
+  keys: SessionDateKey[],
+): Promise<Map<string, number>> {
+  const unique = new Map<string, SessionDateKey>();
+  for (const key of keys) {
+    unique.set(sessionDateKey(key), {
+      locationId: key.locationId,
+      dateYear: key.dateYear,
+      dateMonth: key.dateMonth,
+      dateDay: key.dateDay,
+    });
+  }
+  if (unique.size === 0) return new Map();
+
+  const rows = await prisma.catalogEvent.groupBy({
+    by: ['locationId', 'dateYear', 'dateMonth', 'dateDay'],
+    where: {
+      AND: [
+        buildReadableCatalogEventWhere(catalogId, eventIds, filters),
+        { OR: [...unique.values()] },
+      ],
+    },
+    _count: { _all: true },
+  });
+
+  return new Map(rows.map((row) => [sessionDateKey(row), row._count._all]));
+}
+
 export function catalogEventRecordingVisibilityWhere(
   eventIds: ReadableEventIds,
 ): Prisma.CatalogEventRecordingWhereInput {

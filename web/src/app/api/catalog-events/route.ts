@@ -26,8 +26,10 @@ import {
 import {
   buildReadableCatalogEventWhere,
   catalogEventVisibilityWhere,
+  countSessionsByDate,
   listReadableCatalogEvents,
   resolveReadableEventIds,
+  sessionDateKey,
 } from "@/lib/catalog-events/read-service";
 import { resolveCatalogRecordingTitle } from "@/lib/catalog-recordings/read-service";
 
@@ -291,6 +293,13 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
     ]);
 
+    const sessionCountByDate = await countSessionsByDate(
+      workflowGroupId,
+      readableEventIds,
+      eventFilters,
+      events
+    );
+
     const sourceTitleByHash = new Map(catalogRows.map((row) => [row.audioHash, row.sourceTitle]));
     const durationByHash = new Map(
       catalogRows.map((row) => [row.audioHash, parseDurationHmsToSeconds(row.durationHms)])
@@ -340,6 +349,7 @@ export async function GET(request: NextRequest) {
         dateMonth: event.dateMonth,
         dateDay: event.dateDay,
         sessionIndex: event.sessionIndex,
+        sessionCount: sessionCountByDate.get(sessionDateKey(event)) ?? 1,
         description: event.description,
         released: event.released,
         sortOrder: event.sortOrder,

@@ -38,6 +38,7 @@ import {
 import { cn } from '@/lib/utils';
 import { CircularBackLink } from '@/components/navigation/circular-back-control';
 import { OfflineDownloadDetail } from './download-detail';
+import { SessionOrdinalBadge } from '@/components/catalog/session-ordinal-badge';
 
 export function DownloadsContent() {
   const t = useTranslations('downloads');
@@ -332,10 +333,11 @@ function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
             <Badge variant="outline">
               {event ? t('eventLabel') : t('recordingLabel')}
             </Badge>
-            {event && event.sessionIndex > 1 && (
-              <Badge variant="outline">
-                {t('sessionLabel', { index: event.sessionIndex })}
-              </Badge>
+            {event && (
+              <SessionOrdinalBadge
+                sessionIndex={event.sessionIndex}
+                sessionCount={event.sessionCount}
+              />
             )}
             {record.status === 'complete' && (
               <Badge variant="secondary">

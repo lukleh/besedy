@@ -17,6 +17,7 @@ vi.mock("@/lib/event-posters", () => ({
 
 vi.mock("@/lib/catalog-events/visibility", () => ({
   getPublishedAccessibleRecordingHashes: vi.fn(),
+  getPublishedVisibleEventIds: vi.fn(),
   isPublishedVisibleEvent: vi.fn(),
 }));
 
@@ -24,6 +25,7 @@ vi.mock("@/lib/db", () => ({
   default: {
     catalogEvent: {
       findFirst: vi.fn(),
+      groupBy: vi.fn(),
     },
     catalogEntry: {
       findMany: vi.fn(),
@@ -45,7 +47,10 @@ describe("catalog event detail route", () => {
   let getPublishedAccessibleRecordingHashes: ReturnType<typeof vi.fn>;
   let isPublishedVisibleEvent: ReturnType<typeof vi.fn>;
   let prisma: {
-    catalogEvent: { findFirst: ReturnType<typeof vi.fn> };
+    catalogEvent: {
+      findFirst: ReturnType<typeof vi.fn>;
+      groupBy: ReturnType<typeof vi.fn>;
+    };
     catalogEntry: { findMany: ReturnType<typeof vi.fn> };
     audioMetadata: { findMany: ReturnType<typeof vi.fn> };
   };
@@ -70,6 +75,11 @@ describe("catalog event detail route", () => {
     ).isPublishedVisibleEvent as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
+    prisma.catalogEvent.groupBy.mockResolvedValue([]);
+    (
+      (await import("@/lib/catalog-events/visibility"))
+        .getPublishedVisibleEventIds as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([]);
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",

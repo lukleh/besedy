@@ -11,7 +11,12 @@ import { IntIdSchema, validateParams, validateRequestBody } from "@/lib/api/vali
 import {
   UpdateCatalogEventSchema,
 } from "@/lib/catalog-events/validation";
-import { loadReadableCatalogEvent } from "@/lib/catalog-events/read-service";
+import {
+  countSessionsByDate,
+  loadReadableCatalogEvent,
+  resolveReadableEventIds,
+  sessionDateKey,
+} from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
 import { getPosterInfo } from "@/lib/event-posters";
@@ -98,9 +103,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         return a.audioHash.localeCompare(b.audioHash);
       });
 
-    const [catalogCapability, posterInfo] = await Promise.all([
+    const readableEventIds = await resolveReadableEventIds(catalogId, catalogGrant);
+    const [catalogCapability, posterInfo, sessionCountByDate] = await Promise.all([
       getCatalogCapability(catalogId, userId),
       getPosterInfo(catalogId, eventId),
+      countSessionsByDate(catalogId, readableEventIds, {}, [event]),
     ]);
     const canManagePosters = catalogCapability.canManageAccess;
     const canManageSources = catalogCapability.canManageAccess;
@@ -119,6 +126,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       dateMonth: event.dateMonth,
       dateDay: event.dateDay,
       sessionIndex: event.sessionIndex,
+      sessionCount: sessionCountByDate.get(sessionDateKey(event)) ?? 1,
       description: event.description,
       released: event.released,
       sortOrder: event.sortOrder,
