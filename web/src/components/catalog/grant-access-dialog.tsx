@@ -54,7 +54,6 @@ interface InviteResponse {
 interface GrantAccessDialogProps {
   catalogId: string;
   manageableRoles: CatalogRole[];
-  canManageExtras: boolean;
   grantableExtraPermissions: GrantableExtraPermission[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -64,7 +63,6 @@ interface GrantAccessDialogProps {
 export function GrantAccessDialog({
   catalogId,
   manageableRoles,
-  canManageExtras,
   grantableExtraPermissions,
   open,
   onOpenChange,
@@ -331,7 +329,7 @@ export function GrantAccessDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="overflow-y-auto sm:max-w-2xl">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{t("dialogs.grantAccess.title")}</DialogTitle>
@@ -439,8 +437,6 @@ export function GrantAccessDialog({
                   notes={notes}
                   onNotesChange={setNotes}
                   manageableRoles={manageableRoles}
-                  canManageExtras={canManageExtras}
-                  grantableExtraPermissions={grantableExtraPermissions}
                   idPrefix="grant"
                   showAccessLevelHint
                 />
