@@ -55,6 +55,10 @@ class BesedyDeepSearchClientConfig:
     base_url: str
     bearer_token: str
     timeout_seconds: float = 15.0
+    # The account the job was asked for by. The bearer token says the caller is
+    # our own worker; this says on whose behalf, and the web app scopes the
+    # answer to what that account may see.
+    requested_by_id: str | None = None
 
 
 class BesedyDeepSearchClient:
@@ -70,6 +74,8 @@ class BesedyDeepSearchClient:
         self._base_url = base_url.rstrip("/")
         self._bearer_token = config.bearer_token.strip()
         self._timeout_seconds = max(1.0, config.timeout_seconds)
+        requested_by_id = (config.requested_by_id or "").strip()
+        self._requested_by_id = requested_by_id or None
 
     def search_catalog(
         self,
@@ -122,6 +128,11 @@ class BesedyDeepSearchClient:
         )
 
     def _post_json(self, path: str, payload: JsonDict) -> JsonDict:
+        # Carried on every call rather than on the ones that look like reads:
+        # a citation and a metadata lookup disclose the same material a search
+        # does, so they answer to the same visibility.
+        if self._requested_by_id is not None:
+            payload = {**payload, "requestedById": self._requested_by_id}
         url = urllib_parse.urljoin(f"{self._base_url}/", path.lstrip("/"))
         request = urllib_request.Request(
             url,
@@ -167,7 +178,10 @@ class BesedyDeepSearchClient:
             ) from exc
 
 
-def build_besedy_deep_search_client_from_env() -> DeepSearchClient | None:
+def build_besedy_deep_search_client_from_env(
+    *,
+    requested_by_id: str | None = None,
+) -> DeepSearchClient | None:
     base_url = os.getenv("BESEDY_INTERNAL_BASE_URL", "").strip()
     bearer_token = os.getenv("BESEDY_JOB_SERVICE_SECRET", "").strip()
     if not base_url or not bearer_token:
@@ -179,6 +193,7 @@ def build_besedy_deep_search_client_from_env() -> DeepSearchClient | None:
             base_url=base_url,
             bearer_token=bearer_token,
             timeout_seconds=max(1.0, timeout_ms / 1000.0),
+            requested_by_id=requested_by_id,
         )
     )
 

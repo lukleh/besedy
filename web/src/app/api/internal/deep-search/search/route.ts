@@ -13,6 +13,7 @@ import {
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,
+  resolveDeepSearchJobGrant,
 } from "../helpers";
 
 export const runtime = "nodejs";
@@ -21,6 +22,8 @@ export const dynamic = "force-dynamic";
 const InternalDeepSearchRequestSchema = SearchRequestSchema.extend({
   catalogId: z.string().trim().min(1).max(128),
   limit: z.number().int().min(1).max(200).optional(),
+  /** The account the job was asked for by; its visibility scopes the search. */
+  requestedById: z.string().trim().min(1).max(128).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -49,7 +52,10 @@ export async function POST(request: NextRequest) {
       neighborCount: bodyResult.data.neighborCount,
       maxPerAudio: bodyResult.data.dedupeByAudio ? 1 : (bodyResult.data.maxPerAudio ?? null),
       metadataFilters: bodyResult.data.metadataFilters ?? null,
-      catalogGrant: null,
+      catalogGrant: await resolveDeepSearchJobGrant(
+        bodyResult.data.catalogId,
+        bodyResult.data.requestedById
+      ),
       failOnMissingBundle: true,
       requestStartedAt,
     });

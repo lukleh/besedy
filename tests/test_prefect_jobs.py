@@ -1025,7 +1025,7 @@ def test_run_rlm_deep_search_uses_rlm_adapter_when_enabled(monkeypatch) -> None:
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: object(),
+        lambda **_: object(),
     )
     monkeypatch.setattr(
         deep_search_flow_module,
@@ -1080,7 +1080,7 @@ def test_run_rlm_deep_search_wraps_rlm_failure_with_partial_trace(monkeypatch) -
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: object(),
+        lambda **_: object(),
     )
     monkeypatch.setattr(
         deep_search_flow_module,
@@ -1951,7 +1951,7 @@ def test_run_initial_retrieval_marks_404_as_non_retryable(monkeypatch) -> None:
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: FailingClient(),
+        lambda **_: FailingClient(),
     )
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
@@ -1990,7 +1990,7 @@ def test_run_initial_retrieval_marks_504_as_retryable(monkeypatch) -> None:
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: FailingClient(),
+        lambda **_: FailingClient(),
     )
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
@@ -2045,7 +2045,7 @@ def test_expand_citations_preserves_partial_trace_on_failure(monkeypatch) -> Non
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: CitationClient(),
+        lambda **_: CitationClient(),
     )
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",

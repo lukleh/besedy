@@ -1,5 +1,10 @@
 import prisma from "@/lib/db";
 import {
+  canViewRecordingForAccessLevel,
+  requiresReadyRecordingScope,
+} from "@/lib/policy/recording";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
+import {
   mapArchivedPayloadToFullArchived,
   mapCatalogEntryRowToCatalogEntry,
   mapDuplicatePayloadToDuplicateEntry,
@@ -113,6 +118,37 @@ export async function loadCatalogHashes(groupId: string): Promise<Set<string>> {
     select: { audioHash: true },
   });
   return new Set(rows.map((row) => row.audioHash));
+}
+
+/**
+ * The recordings in a catalog that this grant may open.
+ *
+ * Delivery is never broader than reading: anything handed over in bulk has to
+ * be something the same account could have opened one at a time, which is what
+ * `canViewRecordingForAccessLevel` decides for a single recording.
+ */
+export async function loadVisibleCatalogHashes(
+  groupId: string,
+  catalogGrant: CatalogGrant | null
+): Promise<Set<string>> {
+  const rows = await prisma.catalogEntry.findMany({
+    where: { workflowGroupId: groupId },
+    select: { audioHash: true, isActionable: true, isPublished: true },
+  });
+
+  // An unscoped grant -- a catalog administrator -- sees everything. Asking the
+  // per-recording gate instead would answer no to all of them, because a null
+  // grant reads there as an actor with no access rather than as one with all of
+  // it.
+  if (!requiresReadyRecordingScope(catalogGrant)) {
+    return new Set(rows.map((row) => row.audioHash));
+  }
+
+  return new Set(
+    rows
+      .filter((row) => canViewRecordingForAccessLevel(catalogGrant, row))
+      .map((row) => row.audioHash)
+  );
 }
 
 export async function loadDuplicates(groupId: string): Promise<Map<string, DuplicateEntry[]>> {
