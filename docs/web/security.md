@@ -173,6 +173,23 @@ Authorization is centralized in `src/lib/policy/*`, `src/lib/access/*`, and
 
 Access level hierarchy: `LISTENER < VIEWER < MEMBER < EDITOR < OWNER`
 
+**Permissions no longer come from that scale.** Every grant carries a role, and
+the role is what it carries; the level is kept because the interface still names
+it, and because a level is what the API accepts when access is granted. The
+level a grant is given maps to a role on the way in:
+
+| Level | Role | What the role carries |
+|---|---|---|
+| `LISTENER` | `listener` | Listening |
+| `VIEWER` | `reader` | Listening, reading and searching transcripts |
+| `MEMBER` | `reader` | The same. Downloading is now an extra, granted per account |
+| `EDITOR` | `curator` | The editorial work of the archive, including `see_unreleased` |
+| `OWNER` | `host` | Reading, plus granting access, plus `download_transcripts` |
+
+An account may carry extra permissions beside its role. Extras are additive
+only, so the role name is always a lower bound on what the account may do, and
+an extra naming a permission this build does not know is ignored.
+
 ### System-Level Access Matrix
 
 | Feature | Superadmin | Admin | Owner | Editor | Member | Viewer | Listener |
@@ -255,8 +272,8 @@ means the capability is qualified.
 | Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
 |---|:-:|:-:|:-:|:-:|:-:|---|
 | Open catalog settings | Y | - | - | - | - | `canAccessCatalogSettings` |
-| Grant / revoke LISTENER access | Y | - | - | - | - | `canGrantCatalogAccessLevel` |
-| Grant or modify VIEWER and above | A | - | - | - | - | admin only [^protected] |
+| Grant / revoke up to MEMBER | Y | - | - | - | - | `canGrantCatalogAccessLevel` [^protected] |
+| Grant or modify EDITOR and OWNER | A | - | - | - | - | admin only |
 | Manage pending catalog grants | Y | - | - | - | - | `canAttemptCatalogManagement` |
 | Read / edit catalog configuration and paths | A | - | - | - | - | `canManageCatalogConfiguration` |
 
@@ -346,13 +363,14 @@ is classified without anyone editing the rule.
 **OWNER capabilities:**
 
 - View and manage catalog settings for their catalogs
-- Grant, update and revoke LISTENER access
-- Create and revoke pending catalog grants at LISTENER
+- Grant, update and revoke access up to MEMBER — all of which become `reader`
+  or `listener`, and carry no protected permission
+- Create and revoke pending catalog grants at those levels
 
 **OWNER restrictions:**
 
-- Cannot grant VIEWER or above: every level above LISTENER carries
-  `see_unreleased`, and OWNER itself also carries `manage_access` (Admin only)
+- Cannot grant EDITOR, which becomes `curator` and sees unreleased material,
+  or OWNER, which becomes `host` and grants access (Admin only)
 - Cannot modify or revoke access at those levels either — the same test applies
   to the access being replaced (Admin only)
 - Cannot change their own access at all, in any direction
@@ -367,11 +385,10 @@ account can pass on.
 Administrators are included, which also preserves the older guard against an
 account revoking itself out of a catalog.
 
-[^protected]: `VIEWER` and above carry `see_unreleased` under the legacy level
-    scale, which conflates reading with seeing unreleased material. The roles in
-    [ADR 0005](../adr/0005-catalog-permission-model.md) separate the two, so a
-    `hostitel` will again be able to hand out reading — as `čtenář`, which
-    carries no protected permission — once roles are assigned.
+[^protected]: The test is on the role a level becomes, not on the level. The
+    legacy scale conflated reading with seeing unreleased material, so while it
+    was the unit a holder of `manage_access` could hand out nothing but
+    `LISTENER`. The roles separate the two, so reading is grantable again.
 
 ### CatalogAccess Retention for Blocked Users
 

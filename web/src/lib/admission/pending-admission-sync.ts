@@ -1,6 +1,7 @@
 import type { AccessLevel, PortalAdmissionRevocationReason, PrismaClient } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { canonicalizeEmail } from "@/lib/email";
+import { roleFieldsForLevel } from "@/lib/policy/catalog-permissions";
 
 type PendingAdmissionSyncClient = Pick<
   PrismaClient,
@@ -117,6 +118,7 @@ export async function syncPendingAdmissionState(
         email,
         catalogId: input.catalogId,
         accessLevel: input.accessLevel,
+        ...roleFieldsForLevel(input.accessLevel),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,
@@ -124,6 +126,7 @@ export async function syncPendingAdmissionState(
       },
       update: {
         accessLevel: input.accessLevel,
+        ...roleFieldsForLevel(input.accessLevel),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,

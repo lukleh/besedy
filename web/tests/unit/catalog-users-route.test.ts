@@ -155,7 +155,7 @@ describe("catalog users search route", () => {
         where: expect.objectContaining({
           catalogId,
           status: "ACTIVE",
-          accessLevel: { in: ["LISTENER"] },
+          accessLevel: { in: ["LISTENER", "VIEWER", "MEMBER"] },
         }),
       })
     );
@@ -165,7 +165,7 @@ describe("catalog users search route", () => {
         where: expect.objectContaining({
           catalogId,
           status: "REVOKED",
-          accessLevel: { in: ["LISTENER"] },
+          accessLevel: { in: ["LISTENER", "VIEWER", "MEMBER"] },
         }),
       })
     );

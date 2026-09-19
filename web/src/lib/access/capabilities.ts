@@ -22,6 +22,7 @@ import {
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
+import { canViewUnreleasedEvents } from "@/lib/policy/event";
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
@@ -63,6 +64,7 @@ export interface CatalogCapability extends PortalCapability {
   canBatchEditMetadata: boolean;
   canManageAccess: boolean;
   canPublishRecording: boolean;
+  canSeeUnreleased: boolean;
   canAccessSettings: boolean;
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
@@ -111,6 +113,7 @@ export function buildCatalogCapability(
     canBatchEditMetadata: canBatchEditCatalogMetadata(policyContext),
     canManageAccess: hasCatalogManagementAuthority(policyContext),
     canPublishRecording: canPublishRecording(policyContext),
+    canSeeUnreleased: canViewUnreleasedEvents(policyContext),
     canAccessSettings: canAccessCatalogSettings(policyContext),
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),

@@ -407,10 +407,11 @@ model CatalogAccess {
   /// Workflow group (catalog) being accessed
   catalogId        String       @map("catalog_id") @db.VarChar(15)
   /// Access level: LISTENER < VIEWER < MEMBER < EDITOR < OWNER.
-  /// Authoritative until every grant carries a role.
+  /// Retired as a source of permissions; every grant carries a role. Kept
+  /// until the column is dropped, and still what the interface names.
   accessLevel      AccessLevel  @default(LISTENER) @map("access_level")
-  /// Role this grant carries; when set it replaces `accessLevel` as the source
-  /// of permissions. Nobody holds one until the accounts are migrated.
+  /// Role this grant carries. Authoritative: it is where permissions come
+  /// from, and `accessLevel` answers only for a row that predates it.
   role             CatalogRole? @map("role")
   /// Permissions granted to this account on top of its role, never subtracted.
   /// Stored as names so the set can grow without a migration; unknown names are
@@ -483,31 +484,36 @@ model PortalAdmission {
 
 /// Pending per-catalog grant for an email that does not yet have a claimed user
 model PendingCatalogGrant {
-  id           String                    @id @default(cuid())
+  id               String                    @id @default(cuid())
   /// Canonical email address used for first-claim matching
-  email        String
+  email            String
   /// Target catalog for the future grant
-  catalogId    String                    @map("catalog_id") @db.VarChar(15)
-  /// Access level to grant when consumed
-  accessLevel  AccessLevel               @map("access_level")
+  catalogId        String                    @map("catalog_id") @db.VarChar(15)
+  /// Access level to grant when consumed. Retired: the role below is what a
+  /// claim now copies. Kept until the column is dropped.
+  accessLevel      AccessLevel               @map("access_level")
+  /// Role to grant when consumed, and any permissions on top of it. A claim
+  /// copies both onto the CatalogAccess row it creates.
+  role             CatalogRole?              @map("role")
+  extraPermissions String[]                  @default([]) @map("extra_permissions")
   /// Pending-grant lifecycle
-  status       PendingCatalogGrantStatus
+  status           PendingCatalogGrantStatus
   /// User who created or last reset this pending grant
-  grantedById  String?                   @map("granted_by_id")
+  grantedById      String?                   @map("granted_by_id")
   /// When the grant was created or reset
-  grantedAt    DateTime                  @default(now()) @map("granted_at")
+  grantedAt        DateTime                  @default(now()) @map("granted_at")
   /// User who consumed this pending grant on first claim
-  consumedById String?                   @map("consumed_by_id")
+  consumedById     String?                   @map("consumed_by_id")
   /// When the grant was consumed
-  consumedAt   DateTime?                 @map("consumed_at")
+  consumedAt       DateTime?                 @map("consumed_at")
   /// User who revoked this pending grant
-  revokedById  String?                   @map("revoked_by_id")
+  revokedById      String?                   @map("revoked_by_id")
   /// When the grant was revoked
-  revokedAt    DateTime?                 @map("revoked_at")
+  revokedAt        DateTime?                 @map("revoked_at")
   /// Optional operator notes
-  notes        String?
-  createdAt    DateTime                  @default(now()) @map("created_at")
-  updatedAt    DateTime                  @updatedAt @map("updated_at")
+  notes            String?
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
 
   catalog    WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Restrict)
   grantedBy  User?         @relation("PendingCatalogGrantGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)

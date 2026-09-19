@@ -353,6 +353,7 @@ export async function GET(request: NextRequest) {
       canManageAccess: capability.canManageAccess,
       canPublishRecording: capability.canPublishRecording,
       accessLevel: capability.accessLevel,
+      canSeeUnreleased: capability.canSeeUnreleased,
       canUseRagSearch: capability.canUseRagSearch,
     });
   } catch (error) {

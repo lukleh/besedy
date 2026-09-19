@@ -1,6 +1,3 @@
-import type { AccessLevel } from "@/generated/prisma/client";
-import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import type { ColumnConfig, ColumnKey, SortDirection, StoredFilters } from "./types";
 
 export const COLUMNS: ColumnConfig[] = [
@@ -38,40 +35,35 @@ export function getDefaultVisibility(): Record<ColumnKey, boolean> {
 }
 
 /**
- * Get default column visibility for a specific access level.
- * Levels without unreleased visibility: status column hidden by default, since
- * every item they can see is published.
- * Others: standard defaults
+ * Default column visibility for an actor.
+ *
+ * Someone who cannot see unreleased material has the status column hidden by
+ * default, because every item they can see is published. The server decides
+ * that and sends the answer; the client used to work it out from the access
+ * level, which stopped being possible once permissions came from a role.
  */
-export function getDefaultVisibilityForRole(accessLevel: string | undefined): Record<ColumnKey, boolean> {
+export function getDefaultVisibilityForAccess(
+  canSeeUnreleased: boolean | undefined
+): Record<ColumnKey, boolean> {
   const defaults = getDefaultVisibility();
-  // The client knows only the level; the assignment step replaces this with a
-  // boolean the server computes.
-  if (lacksUnreleasedVisibility(grantFromLevel((accessLevel as AccessLevel) ?? null))) {
-    // Only published items are visible, so the status column is meaningless by default
+  if (canSeeUnreleased === false) {
     defaults.status = false;
   }
   return defaults;
 }
 
-export function getDefaultVisibilityForRoleWithAccess(
-  accessLevel: string | undefined
-): Record<ColumnKey, boolean> {
-  return getDefaultVisibilityForRole(accessLevel);
-}
-
 export function hasNonDefaultColumns(
   current: Record<ColumnKey, boolean>,
-  accessLevel?: string
+  canSeeUnreleased?: boolean
 ): boolean {
-  const defaults = getDefaultVisibilityForRoleWithAccess(accessLevel);
+  const defaults = getDefaultVisibilityForAccess(canSeeUnreleased);
   return COLUMNS.some((col) => current[col.key] !== defaults[col.key]);
 }
 
 export function loadColumnVisibility(
-  accessLevel?: string
+  canSeeUnreleased?: boolean
 ): Record<ColumnKey, boolean> {
-  const defaults = getDefaultVisibilityForRoleWithAccess(accessLevel);
+  const defaults = getDefaultVisibilityForAccess(canSeeUnreleased);
   if (typeof window === "undefined") return defaults;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);

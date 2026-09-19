@@ -4,6 +4,7 @@ import {
   grantFromLevel,
   grantHasPermission,
   permissionsForGrant,
+  roleForLevel,
   permissionsForLevel,
   permissionsForRole,
   type CatalogPermission,
@@ -182,19 +183,27 @@ describe("granting rule", () => {
   const host = context("OWNER");
   const admin = context(null, true);
 
-  it("protects exactly the two permissions the record names", () => {
-    for (const permission of PROTECTED) {
-      const carrier = LEVELS.find((level) => permissionsForLevel(level).has(permission));
-      expect(carrier, `no level carries ${permission}`).toBeDefined();
-      expect(canGrantCatalogAccessLevel(host, carrier!)).toBe(false);
+  it("refuses every level whose role carries a protected permission", () => {
+    for (const level of LEVELS) {
+      const { role, extras } = roleForLevel(level);
+      const carriesProtected = PROTECTED.some((p) =>
+        permissionsForGrant({ level, role, extras }).has(p)
+      );
+      expect(canGrantCatalogAccessLevel(host, level)).toBe(!carriesProtected);
     }
   });
 
-  it("lets a holder of manage_access give what carries neither", () => {
-    for (const level of LEVELS) {
-      const carriesProtected = PROTECTED.some((p) => permissionsForLevel(level).has(p));
-      expect(canGrantCatalogAccessLevel(host, level)).toBe(!carriesProtected);
-    }
+  // The point of testing the role rather than the level: reading stops being
+  // entangled with seeing unreleased material, so a host can hand it out.
+  it("lets a holder of manage_access give reading", () => {
+    expect(canGrantCatalogAccessLevel(host, "LISTENER")).toBe(true);
+    expect(canGrantCatalogAccessLevel(host, "VIEWER")).toBe(true);
+    expect(canGrantCatalogAccessLevel(host, "MEMBER")).toBe(true);
+  });
+
+  it("keeps the editorial and granting roles to administrators", () => {
+    expect(canGrantCatalogAccessLevel(host, "EDITOR")).toBe(false);
+    expect(canGrantCatalogAccessLevel(host, "OWNER")).toBe(false);
   });
 
   it("asks the same question about the access being replaced", () => {
@@ -208,7 +217,7 @@ describe("granting rule", () => {
   it("stops manage_access propagating itself", () => {
     // The point of protecting it: an account that grants cannot mint another.
     const grantingLevels = LEVELS.filter((level) =>
-      permissionsForLevel(level).has("manage_access")
+      permissionsForRole(roleForLevel(level).role).has("manage_access")
     );
     expect(grantingLevels.length).toBeGreaterThan(0);
     for (const level of grantingLevels) {

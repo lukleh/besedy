@@ -104,7 +104,8 @@ describe("policy access helpers", () => {
     expect(canGrantCatalogAccessLevel(ownerContext, "EDITOR")).toBe(false);
     expect(canGrantCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
     expect(canManageExistingCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "VIEWER")).toBe(false);
+    // VIEWER becomes `reader`, which carries neither protected permission.
+    expect(canManageExistingCatalogAccessLevel(ownerContext, "VIEWER")).toBe(true);
     expect(canManageExistingCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
     expect(canPublishRecording(ownerContext)).toBe(true);
     expect(requiresReadyRecordingScope(grantFromLevel("OWNER"))).toBe(false);

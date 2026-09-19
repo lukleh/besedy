@@ -5,7 +5,7 @@ import type { ColumnKey } from "../types";
 import {
   COLUMNS,
   STORAGE_KEY,
-  getDefaultVisibilityForRoleWithAccess,
+  getDefaultVisibilityForAccess,
   hasNonDefaultColumns as checkNonDefaultColumns,
   loadColumnVisibility,
 } from "../constants";
@@ -14,7 +14,7 @@ interface UseColumnVisibilityOptions {
   isHydrated: boolean;
   onFilterClear: (key: ColumnKey) => void;
   clearFilters: () => void;
-  accessLevel?: string;
+  canSeeUnreleased?: boolean;
   canManageAccess?: boolean;
 }
 
@@ -32,16 +32,16 @@ export function useColumnVisibility({
   isHydrated,
   onFilterClear,
   clearFilters,
-  accessLevel,
+  canSeeUnreleased,
   canManageAccess,
 }: UseColumnVisibilityOptions): UseColumnVisibilityReturn {
   // Column visibility state - initialize with role-specific defaults, load from localStorage after hydration
   const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(() =>
-    getDefaultVisibilityForRoleWithAccess(accessLevel)
+    getDefaultVisibilityForAccess(canSeeUnreleased)
   );
 
   const loadedRef = useRef(false);
-  const prevAccessLevelRef = useRef<string | undefined>(undefined);
+  const prevAccessRef = useRef<boolean | undefined>(undefined);
 
   // Load column visibility from localStorage after hydration
   // Intentional: hydration from localStorage runs once on mount
@@ -50,33 +50,33 @@ export function useColumnVisibility({
     if (!isHydrated || loadedRef.current) return;
     loadedRef.current = true;
 
-    const storedColumns = loadColumnVisibility(accessLevel);
-    const defaults = getDefaultVisibilityForRoleWithAccess(accessLevel);
+    const storedColumns = loadColumnVisibility(canSeeUnreleased);
+    const defaults = getDefaultVisibilityForAccess(canSeeUnreleased);
     const hasStoredColumns = COLUMNS.some(col => storedColumns[col.key] !== defaults[col.key]);
     if (hasStoredColumns) {
       setColumnVisibility(storedColumns);
     }
-  }, [isHydrated, accessLevel, canManageAccess]);
+  }, [isHydrated, canSeeUnreleased, canManageAccess]);
 
-  // When accessLevel changes (e.g., from undefined to actual role), reinitialize
+  // When canSeeUnreleased changes (e.g., from undefined to actual role), reinitialize
   // but only if user hasn't customized columns (localStorage is empty)
   // Intentional: role-based initialization runs once per role change
   useEffect(() => {
-    // Skip first render and skip if accessLevel hasn't changed
-    if (prevAccessLevelRef.current === accessLevel) return;
-    const wasUndefined = prevAccessLevelRef.current === undefined;
-    prevAccessLevelRef.current = accessLevel;
+    // Skip first render and skip if canSeeUnreleased hasn't changed
+    if (prevAccessRef.current === canSeeUnreleased) return;
+    const wasUndefined = prevAccessRef.current === undefined;
+    prevAccessRef.current = canSeeUnreleased;
 
     // Only reinitialize when transitioning from undefined to a real role
     // and only if there are no stored customizations
-    if (wasUndefined && (accessLevel || canManageAccess !== undefined)) {
+    if (wasUndefined && (canSeeUnreleased || canManageAccess !== undefined)) {
       const stored = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
       if (!stored) {
         // No stored customizations, apply role-specific defaults
-        setColumnVisibility(getDefaultVisibilityForRoleWithAccess(accessLevel));
+        setColumnVisibility(getDefaultVisibilityForAccess(canSeeUnreleased));
       }
     }
-  }, [accessLevel, canManageAccess]);
+  }, [canSeeUnreleased, canManageAccess]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const visibleColumns = useMemo(
@@ -105,13 +105,13 @@ export function useColumnVisibility({
   };
 
   const resetColumns = () => {
-    const defaults = getDefaultVisibilityForRoleWithAccess(accessLevel);
+    const defaults = getDefaultVisibilityForAccess(canSeeUnreleased);
     setColumnVisibility(defaults);
     localStorage.removeItem(STORAGE_KEY);
     clearFilters();
   };
 
-  const hasNonDefaultColumns = checkNonDefaultColumns(columnVisibility, accessLevel);
+  const hasNonDefaultColumns = checkNonDefaultColumns(columnVisibility, canSeeUnreleased);
 
   return {
     columnVisibility,

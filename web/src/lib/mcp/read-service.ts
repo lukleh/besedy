@@ -1,6 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
-import { grantFromLevel } from '@/lib/policy/catalog-permissions';
+import { grantForRole } from '@/lib/policy/catalog-permissions';
 import {
   catalogEventVisibilityWhere,
   catalogEventRecordingVisibilityWhere,
@@ -35,7 +35,7 @@ import { getMcpResourceUrl } from '@/lib/mcp/config';
 
 export type McpEventOrder = 'asc' | 'desc';
 
-const MCP_VISIBILITY_GRANT = grantFromLevel('LISTENER');
+const MCP_VISIBILITY_GRANT = grantForRole('listener');
 const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
 const MAX_FULL_TRANSCRIPT_SEGMENTS = 2_000;
 const MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS = 400_000;

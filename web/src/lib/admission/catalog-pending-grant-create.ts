@@ -19,6 +19,7 @@ import {
   conflict,
   handlePrismaError,
 } from "@/lib/api";
+import { roleFieldsForLevel } from "@/lib/policy/catalog-permissions";
 import {
   canAttemptCatalogManagement,
   canGrantCatalogAccessLevel,
@@ -91,6 +92,7 @@ export async function createPendingCatalogGrant(
           userId: existingUser.id,
           catalogId,
           accessLevel,
+          ...roleFieldsForLevel(accessLevel),
           grantedById: userId,
           notes: message || "Added via catalog settings",
         },

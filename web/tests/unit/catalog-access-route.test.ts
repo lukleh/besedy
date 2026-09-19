@@ -147,10 +147,10 @@ describe("catalog access routes", () => {
     });
   });
 
-  // see_unreleased is protected alongside manage_access, and every level above
-  // LISTENER carries it, so an owner may now hand out LISTENER and nothing else.
-  it.each(["VIEWER", "MEMBER", "EDITOR", "OWNER"] as const)(
-    "POST /api/catalogs/:id/access blocks %s for a non-admin, because it carries a protected permission",
+  // EDITOR becomes `curator`, which sees unreleased material; OWNER becomes
+  // `host`, which grants access. Both are protected, so both are admin-only.
+  it.each(["EDITOR", "OWNER"] as const)(
+    "POST /api/catalogs/:id/access blocks %s for a non-admin, because its role carries a protected permission",
     async (accessLevel) => {
       requireAuth.mockResolvedValue("owner-1");
       resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
@@ -168,6 +168,39 @@ describe("catalog access routes", () => {
 
       expect(response.status).toBe(403);
       expect(prisma.catalogAccess.create).not.toHaveBeenCalled();
+    }
+  );
+
+  // Reading is not seeing unreleased material once the level becomes a role, so
+  // a holder of manage_access hands it out without an administrator.
+  it.each(["LISTENER", "VIEWER", "MEMBER"] as const)(
+    "POST /api/catalogs/:id/access lets a non-admin grant %s",
+    async (accessLevel) => {
+      requireAuth.mockResolvedValue("owner-1");
+      resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
+      prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId });
+      prisma.user.findUnique.mockResolvedValue({ id: userId, email: "u@test.com" });
+      prisma.catalogAccess.findUnique.mockResolvedValue(null);
+      prisma.catalogAccess.create.mockResolvedValue({
+        id: "a",
+        userId,
+        catalogId,
+        accessLevel,
+        status: "ACTIVE",
+        createdAt: new Date(),
+        user: { id: userId, name: "U", email: "u@test.com" },
+      });
+
+      const response = await postAccess(
+        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
+          method: "POST",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ userId, accessLevel }),
+        }),
+        { params: Promise.resolve({ id: catalogId }) }
+      );
+
+      expect(response.status).toBe(201);
     }
   );
 
