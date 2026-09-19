@@ -76,3 +76,34 @@ describe("EventCreationConflictDialog", () => {
     expect(onCreateDistinct).toHaveBeenCalledOnce();
   });
 });
+
+describe("EventCreationConflictDialog titles", () => {
+  it("names a candidate by its event title when the recording has none", () => {
+    // The real same-day pair in the catalog resolves to an untitled recording,
+    // so the server sends null rather than "" and the row still reads.
+    render(
+      <EventCreationConflictDialog
+        candidateActionLabel="Attach"
+        conflict={{
+          reason: "EVENT_CREATION_REQUIRES_DECISION" as const,
+          candidates: [
+            {
+              id: 194,
+              title: "Wildenava, 4 Jul 2026",
+              sessionIndex: 1,
+              recordingCount: 1,
+              primaryTitle: null,
+            },
+          ],
+        }}
+        isPending={false}
+        onCancel={vi.fn()}
+        onCandidateAction={vi.fn()}
+        onCreateDistinct={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Wildenava, 4 Jul 2026")).toBeInTheDocument();
+    expect(screen.queryByText("Event 194")).not.toBeInTheDocument();
+  });
+});

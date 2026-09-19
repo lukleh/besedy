@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { EventCreationCandidate } from "@/lib/catalog-events/create-conflict";
 import { resolveCatalogRecordingTitle } from "@/lib/catalog-recordings/read-service";
+import { normalizeOptionalString } from "@/lib/catalog-events/utils";
 
 export interface EventCreationIdentity {
   workflowGroupId: string;
@@ -73,13 +74,19 @@ export async function loadEventCreationContext(
         title: event.title,
         sessionIndex: event.sessionIndex,
         recordingCount: event._count.recordings,
+        // resolveCatalogRecordingTitle falls back with ??, so a recording
+        // whose curated title is stored as an empty string resolves to "".
+        // Left as-is that reaches the dialog as a blank heading, so collapse
+        // it to null and let the caller fall back to the event title.
         primaryTitle:
           representativeHash === undefined
             ? null
-            : resolveCatalogRecordingTitle(representativeHash, {
-                curatedTitle: curatedTitleByHash.get(representativeHash),
-                sourceTitle: sourceTitleByHash.get(representativeHash),
-              }),
+            : normalizeOptionalString(
+                resolveCatalogRecordingTitle(representativeHash, {
+                  curatedTitle: curatedTitleByHash.get(representativeHash),
+                  sourceTitle: sourceTitleByHash.get(representativeHash),
+                })
+              ),
       };
     }),
     nextSessionIndex: (events.at(-1)?.sessionIndex ?? 0) + 1,
