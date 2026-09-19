@@ -305,53 +305,57 @@ describe('admin ingest removal', () => {
     await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
   });
 
-  it('recovers a cancelled ingest hash from its accepted sidecar', async () => {
-    const acceptedDir = await createAcceptedDir({
-      'talk.mp3': 'audio',
-      'talk.mp3.audiohash': `${HASH}  talk.mp3\n# besedy-audio-hash-algorithm: pcm-s16le-16000hz-mono-sha256-v1\n`,
-    });
-    prisma.recordingIntake.findUnique.mockResolvedValue(
-      row({
-        status: 'CANCELLED',
-        jobId: JOB_ID,
-        audioHash: null,
-        errorCode: 'worker_cancelled',
-      }),
-    );
-    prisma.recordingIntake.findUniqueOrThrow.mockResolvedValue(
-      row({ status: 'REMOVING', jobId: REMOVAL_JOB_ID, finishedAt: null }),
-    );
-    fetchJobsApi.mockResolvedValue({
-      id: REMOVAL_JOB_ID,
-      kind: 'INGEST',
-      status: 'QUEUED',
-      requested_by_id: 'admin-1',
-      catalog_id: CATALOG_ID,
-      payload: { intakeId: INTAKE_ID, audioHash: HASH, operation: 'remove' },
-    });
-
-    const response = await removeIntake(
-      adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
-      { params: Promise.resolve({ intakeId: INTAKE_ID }) },
-    );
-
-    expect(response.status).toBe(200);
-    expect(fetchJobsApi).toHaveBeenCalledWith(
-      `/catalogs/${CATALOG_ID}/ingest/removals`,
-      expect.objectContaining({
-        body: expect.objectContaining({ audioHash: HASH }),
-      }),
-    );
-    expect(prisma.recordingIntake.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 'REMOVING',
-          audioHash: HASH,
+  it.each(['SUCCEEDED', 'FAILED', 'CANCELLED'] as const)(
+    'recovers a null-hash %s intake from its accepted sidecar',
+    async (status) => {
+      const acceptedDir = await createAcceptedDir({
+        'talk.mp3': 'audio',
+        'talk.mp3.audiohash': `${HASH}  talk.mp3\n# besedy-audio-hash-algorithm: pcm-s16le-16000hz-mono-sha256-v1\n`,
+      });
+      prisma.recordingIntake.findUnique.mockResolvedValue(
+        row({
+          status,
+          jobId: JOB_ID,
+          audioHash: null,
+          errorCode: status === 'CANCELLED' ? 'worker_cancelled' : null,
         }),
-      }),
-    );
-    await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
-  });
+      );
+      prisma.recordingIntake.findUniqueOrThrow.mockResolvedValue(
+        row({ status: 'REMOVING', jobId: REMOVAL_JOB_ID, finishedAt: null }),
+      );
+      fetchJobsApi.mockResolvedValue({
+        id: REMOVAL_JOB_ID,
+        kind: 'INGEST',
+        status: 'QUEUED',
+        requested_by_id: 'admin-1',
+        catalog_id: CATALOG_ID,
+        payload: { intakeId: INTAKE_ID, audioHash: HASH, operation: 'remove' },
+      });
+
+      const response = await removeIntake(
+        adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
+        { params: Promise.resolve({ intakeId: INTAKE_ID }) },
+      );
+
+      expect(response.status).toBe(200);
+      expect(fetchJobsApi).toHaveBeenCalledWith(
+        `/catalogs/${CATALOG_ID}/ingest/removals`,
+        expect.objectContaining({
+          body: expect.objectContaining({ audioHash: HASH }),
+        }),
+      );
+      expect(prisma.recordingIntake.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: INTAKE_ID, status },
+          data: expect.objectContaining({
+            status: 'REMOVING',
+            audioHash: HASH,
+          }),
+        }),
+      );
+      await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
+    },
+  );
 
   it('uses files-only cleanup when cancellation interrupted acceptance before the sidecar', async () => {
     const acceptedDir = await createAcceptedDir({ 'talk.mp3': 'audio' });

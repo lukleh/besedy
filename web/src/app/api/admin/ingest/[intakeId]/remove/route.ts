@@ -65,7 +65,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     let removalHash = intake.audioHash;
-    if (intake.status === 'CANCELLED' && removalHash === null) {
+    if (removalHash === null) {
       try {
         removalHash = await recoverAcceptedIntakeAudioHash(
           intake.workflowGroupId,
