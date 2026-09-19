@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import type { Dirent } from 'fs';
 import path from 'path';
 import { Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
@@ -10,6 +11,7 @@ import {
   JobsApiConfigurationError,
   JobsApiError,
 } from '@/lib/jobs-api/server';
+import { HashSchema } from '@/lib/validation/schemas';
 import { removeRecordingWebState } from './removal';
 import type { RecordingIntakeDto, RecordingIntakeStatus } from './types';
 
@@ -72,6 +74,13 @@ export function resolveIntakeIncomingDir(
   intakeId: string,
 ): string {
   return path.join(getUploadsDir(), catalogId, 'incoming', intakeId);
+}
+
+export function resolveIntakeAcceptedDir(
+  catalogId: string,
+  intakeId: string,
+): string {
+  return path.join(getUploadsDir(), catalogId, 'accepted', intakeId);
 }
 
 export function resolveIntakeFilePath(row: {
@@ -152,6 +161,69 @@ export async function removeAllIntakeDirs(
       }),
     ),
   );
+}
+
+export class AcceptedIntakeIdentityError extends Error {
+  constructor() {
+    super('Accepted recording identity could not be recovered safely');
+    this.name = 'AcceptedIntakeIdentityError';
+  }
+}
+
+/**
+ * Recover the canonical audio hash after an ingest was cancelled without a
+ * completion report. `accept_file` publishes this sidecar atomically before
+ * `catalog_add` can start, so its presence is the durable hand-off marker.
+ *
+ * A lone source file means cancellation interrupted `accept_file` before that
+ * hand-off and is therefore still safe for files-only cleanup. Any other
+ * non-empty shape is ambiguous and must not be deleted automatically.
+ */
+export async function recoverAcceptedIntakeAudioHash(
+  catalogId: string,
+  intakeId: string,
+): Promise<string | null> {
+  const acceptedDir = resolveIntakeAcceptedDir(catalogId, intakeId);
+  let entries: Dirent<string>[];
+  try {
+    entries = await fs.readdir(acceptedDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+
+  const visible = entries.filter((entry) => !entry.name.startsWith('.'));
+  if (visible.length === 0) return null;
+
+  const sources = visible.filter(
+    (entry) => entry.isFile() && !entry.name.endsWith('.audiohash'),
+  );
+  const sidecars = visible.filter(
+    (entry) => entry.isFile() && entry.name.endsWith('.audiohash'),
+  );
+  if (visible.length === 1 && sources.length === 1 && sidecars.length === 0) {
+    return null;
+  }
+  if (
+    visible.length !== 2 ||
+    sources.length !== 1 ||
+    sidecars.length !== 1 ||
+    sidecars[0].name !== `${sources[0].name}.audiohash`
+  ) {
+    throw new AcceptedIntakeIdentityError();
+  }
+
+  const content = await fs.readFile(
+    path.join(acceptedDir, sidecars[0].name),
+    'utf8',
+  );
+  const firstLine = content.split(/\r?\n/, 1)[0] ?? '';
+  const match = /^([a-f0-9]{64})\s{2}(.+)$/i.exec(firstLine);
+  const parsedHash = HashSchema.safeParse(match?.[1]);
+  if (!match || match[2] !== sources[0].name || !parsedHash.success) {
+    throw new AcceptedIntakeIdentityError();
+  }
+  return parsedHash.data.toLowerCase();
 }
 
 export function serializeIntake(

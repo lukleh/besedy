@@ -125,6 +125,24 @@ function row(overrides: Record<string, unknown> = {}) {
   };
 }
 
+async function createAcceptedDir(
+  files: Record<string, string>,
+): Promise<string> {
+  const acceptedDir = path.join(
+    mocks.uploadsDir,
+    CATALOG_ID,
+    'accepted',
+    INTAKE_ID,
+  );
+  await fs.mkdir(acceptedDir, { recursive: true });
+  await Promise.all(
+    Object.entries(files).map(([name, content]) =>
+      fs.writeFile(path.join(acceptedDir, name), content),
+    ),
+  );
+  return acceptedDir;
+}
+
 describe('admin ingest removal', () => {
   let fetchJobsApi: ReturnType<typeof vi.fn>;
   let removeRecordingWebState: ReturnType<typeof vi.fn>;
@@ -228,6 +246,7 @@ describe('admin ingest removal', () => {
       data: {
         status: 'REMOVING',
         jobId: REMOVAL_JOB_ID,
+        audioHash: HASH,
         errorCode: null,
         errorMessage: null,
         finishedAt: null,
@@ -242,14 +261,7 @@ describe('admin ingest removal', () => {
   });
 
   it('retries catalog removal when a previous removal job was cancelled', async () => {
-    const acceptedDir = path.join(
-      mocks.uploadsDir,
-      CATALOG_ID,
-      'accepted',
-      INTAKE_ID,
-    );
-    await fs.mkdir(acceptedDir, { recursive: true });
-    await fs.writeFile(path.join(acceptedDir, 'talk.mp3'), 'audio');
+    const acceptedDir = await createAcceptedDir({ 'talk.mp3': 'audio' });
     prisma.recordingIntake.findUnique.mockResolvedValue(
       row({
         status: 'CANCELLED',
@@ -290,6 +302,132 @@ describe('admin ingest removal', () => {
         }),
       }),
     );
+    await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
+  });
+
+  it('recovers a cancelled ingest hash from its accepted sidecar', async () => {
+    const acceptedDir = await createAcceptedDir({
+      'talk.mp3': 'audio',
+      'talk.mp3.audiohash': `${HASH}  talk.mp3\n# besedy-audio-hash-algorithm: pcm-s16le-16000hz-mono-sha256-v1\n`,
+    });
+    prisma.recordingIntake.findUnique.mockResolvedValue(
+      row({
+        status: 'CANCELLED',
+        jobId: JOB_ID,
+        audioHash: null,
+        errorCode: 'worker_cancelled',
+      }),
+    );
+    prisma.recordingIntake.findUniqueOrThrow.mockResolvedValue(
+      row({ status: 'REMOVING', jobId: REMOVAL_JOB_ID, finishedAt: null }),
+    );
+    fetchJobsApi.mockResolvedValue({
+      id: REMOVAL_JOB_ID,
+      kind: 'INGEST',
+      status: 'QUEUED',
+      requested_by_id: 'admin-1',
+      catalog_id: CATALOG_ID,
+      payload: { intakeId: INTAKE_ID, audioHash: HASH, operation: 'remove' },
+    });
+
+    const response = await removeIntake(
+      adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
+      { params: Promise.resolve({ intakeId: INTAKE_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchJobsApi).toHaveBeenCalledWith(
+      `/catalogs/${CATALOG_ID}/ingest/removals`,
+      expect.objectContaining({
+        body: expect.objectContaining({ audioHash: HASH }),
+      }),
+    );
+    expect(prisma.recordingIntake.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'REMOVING',
+          audioHash: HASH,
+        }),
+      }),
+    );
+    await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
+  });
+
+  it('uses files-only cleanup when cancellation interrupted acceptance before the sidecar', async () => {
+    const acceptedDir = await createAcceptedDir({ 'talk.mp3': 'audio' });
+    prisma.recordingIntake.findUnique.mockResolvedValue(
+      row({
+        status: 'CANCELLED',
+        jobId: JOB_ID,
+        audioHash: null,
+        errorCode: 'worker_cancelled',
+      }),
+    );
+    prisma.recordingIntake.findUniqueOrThrow.mockResolvedValue(
+      row({ status: 'REMOVED', audioHash: null }),
+    );
+
+    const response = await removeIntake(
+      adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
+      { params: Promise.resolve({ intakeId: INTAKE_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchJobsApi).not.toHaveBeenCalled();
+    await expect(fs.stat(acceptedDir)).rejects.toThrow();
+  });
+
+  it('leaves a malformed accepted sidecar untouched after cancellation', async () => {
+    const acceptedDir = await createAcceptedDir({
+      'talk.mp3': 'audio',
+      'talk.mp3.audiohash': 'not-a-valid-sidecar',
+    });
+    prisma.recordingIntake.findUnique.mockResolvedValue(
+      row({
+        status: 'CANCELLED',
+        jobId: JOB_ID,
+        audioHash: null,
+        errorCode: 'worker_cancelled',
+      }),
+    );
+
+    const response = await removeIntake(
+      adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
+      { params: Promise.resolve({ intakeId: INTAKE_ID }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('nothing was deleted'),
+    });
+    expect(fetchJobsApi).not.toHaveBeenCalled();
+    expect(prisma.recordingIntake.updateMany).not.toHaveBeenCalled();
+    await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
+  });
+
+  it('leaves ambiguous accepted contents untouched after cancellation', async () => {
+    const acceptedDir = await createAcceptedDir({
+      'talk.mp3': 'audio',
+      'other.mp3': 'other audio',
+      'talk.mp3.audiohash': `${HASH}  talk.mp3\n`,
+    });
+    prisma.recordingIntake.findUnique.mockResolvedValue(
+      row({
+        status: 'CANCELLED',
+        jobId: JOB_ID,
+        audioHash: null,
+        errorCode: 'worker_cancelled',
+      }),
+    );
+
+    const response = await removeIntake(
+      adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
+      { params: Promise.resolve({ intakeId: INTAKE_ID }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(fetchJobsApi).not.toHaveBeenCalled();
+    expect(prisma.recordingIntake.updateMany).not.toHaveBeenCalled();
     await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
   });
 

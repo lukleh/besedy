@@ -14,7 +14,9 @@ import { ingestJobSchema } from '@/lib/jobs-api/schemas';
 import { fetchJobsApi } from '@/lib/jobs-api/server';
 import { CuidSchema } from '@/lib/validation/schemas';
 import {
+  AcceptedIntakeIdentityError,
   INTAKE_INCLUDE,
+  recoverAcceptedIntakeAudioHash,
   removeAllIntakeDirs,
   serializeIntake,
 } from '@/lib/ingest/server';
@@ -62,12 +64,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return conflict('Only finished intakes can be removed');
     }
 
+    let removalHash = intake.audioHash;
+    if (intake.status === 'CANCELLED' && removalHash === null) {
+      try {
+        removalHash = await recoverAcceptedIntakeAudioHash(
+          intake.workflowGroupId,
+          intake.id,
+        );
+      } catch (error) {
+        if (error instanceof AcceptedIntakeIdentityError) {
+          return conflict(`${error.message}; nothing was deleted`);
+        }
+        throw error;
+      }
+    }
+
     // A REJECTED intake's hash points at the *existing* recording it duplicated;
-    // that one must never be removed from here. CANCELLED intakes with a hash are
-    // removal attempts, so retry the idempotent catalog cleanup rather than
-    // deleting only the source directory that the catalog may still reference.
+    // that one must never be removed from here. CANCELLED intakes with a stored or
+    // recovered hash may have reached catalog_add, so run the idempotent catalog
+    // cleanup rather than deleting only the source directory it may reference.
     const reachedCatalog =
-      intake.audioHash !== null &&
+      removalHash !== null &&
       (intake.status === 'SUCCEEDED' ||
         intake.status === 'FAILED' ||
         intake.status === 'CANCELLED');
@@ -94,7 +111,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ intake: serializeIntake(removed) });
     }
 
-    const audioHash = intake.audioHash as string;
+    const audioHash = removalHash;
     let jobId: string;
     try {
       const job = await fetchJobsApi(
@@ -127,6 +144,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       data: {
         status: 'REMOVING',
         jobId,
+        audioHash,
         errorCode: null,
         errorMessage: null,
         finishedAt: null,
