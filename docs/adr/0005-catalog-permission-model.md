@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-15
+- **Revised:** 2026-09-20
 - **Canonical references:** [Web security](../web/security.md#access-control), [MCP server](../web/mcp-server.md#access-matrix)
 
 ## Context
@@ -32,17 +33,17 @@ per-recording publication scoping. The deep-search worker searches with
 
 An actor holds, per catalog, a **set of permissions**. Visibility is one of
 them: `see_unreleased` widens what exists for the actor from released events and
-published recordings to all material. It is not a separate value and not a
-position on a ladder, so gaining a capability never widens visibility and
-widening visibility never grants a capability.
+published recordings to all events and recordings. It is not a separate value
+and not a position on a ladder, so gaining a capability never widens visibility
+and widening visibility never grants a capability.
 
-Visibility here means precisely one thing: **the release state of the
-material**. On that axis `see_unreleased` is the only key, and nothing else
-opens it. Other permissions do widen what an actor can see along other axes —
-`correct_transcripts` shows unchecked text inside the correction surface,
-because one cannot correct what one cannot see, and `see_transcript_variants`
-shows the machine transcripts other than the default. Neither reaches unreleased
-material, which is what the orthogonality above is about.
+Transcript publication is a different axis. `see_unreleased` does not bypass
+the transcript reader's publication gate. Other explicit permissions widen what
+an actor can see for a particular purpose: `correct_transcripts` shows the live
+working text inside the correction surface, `see_transcript_variants` shows
+machine variants, and `download_original_transcript` delivers the frozen machine
+source. These are purpose-specific exceptions, not consequences of being able to
+see unreleased events and recordings.
 
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
@@ -131,41 +132,38 @@ describes the ordinary case and the exception is named.
 Offline caching therefore needs no permission of its own. It delivers bytes, but
 it delivers the same listening `stream_audio` already describes.
 
-### The span is the unit of work; the transcript is the unit of release
+### The span is the unit of work; the transcript is the unit of publication
 
 Correction proceeds span by span and improves the corpus continuously. Reading a
 transcript from end to end is a different act, and it opens only when the whole
-transcript has been checked and **released**.
+transcript has been checked and **published**.
 
 Those two facts are not in tension; they answer different questions. Correction
 in progress is kept apart: nothing a corrector writes leaves the correction
-surface until the transcript is released. Release is then the one moment at
-which the recording's transcript changes, and it changes for everyone at once —
-readers, search and agents alike. It is also an editorial statement about the
-whole of the transcript, which cannot be made span by span.
+surface until the transcript is published. Publication replaces the machine text
+for readers, search and agents with one fully checked snapshot. It is an
+editorial statement about the whole transcript and cannot be made span by span.
 
-So a transcript carries a release state, the third instance of a pattern this
-system already uses twice: a recording is published, an event is released, and
-now a transcript is released. In each case the state belongs to the material,
-not to the actor, and in each case a workflow invariant permits it — an event
-needs exactly one primary recording, and a transcript needs every span verified.
-Releasing is then a deliberate act by a person, not an automatic consequence of
-the last attestation landing.
+A transcript therefore carries publication pointers of its own. The state
+belongs to the material, not to the actor, and a workflow invariant permits it:
+every span needs two approvals for its current revision and no disapproval.
+Publishing is a deliberate act by a curator or catalog administrator, not an
+automatic consequence of the final approval.
 
 **Like the stance on file delivery, this gate decides how the text is offered,
-not whether it can be obtained.** Search returns passages from unreleased
+not whether it can be obtained.** Search returns passages from unpublished
 transcripts, and an agent asked through MCP will hand over the whole of one.
-What release withholds is the transcript _as a document to sit and read_. It is
+What publication withholds is the transcript _as a document to sit and read_. It is
 a statement about when a text is fit to be presented that way, not a boundary
 around the words.
 
 There is therefore still no permission for "corrected transcripts" as distinct
-from "all transcripts". A `čtenář` holds `read_transcripts` and reads released
-transcripts, exactly as they browse released events. Unchecked text stays
+from "all transcripts". A `čtenář` holds `read_transcripts` and reads published
+transcripts. Unchecked text stays
 reachable in the places where working on it is the point:
 
 - inside the correction surface, which `correct_transcripts` grants;
-- to `redaktor` and `catalogAdmin` through `see_unreleased`;
+- through explicitly privileged machine-variant and original-download surfaces;
 - through search and agents, which are not reading surfaces — see below.
 
 ### Search is scoped by the event, never by the transcript
@@ -175,20 +173,22 @@ every other read: it returns material from released events, and an actor holding
 `see_unreleased` searches the transcripts of unreleased ones too, in the web
 application and through MCP alike. There is no special rule.
 
-What does not enter into it is the transcript's own release state. Search works
-over the machine transcript until the transcript is released, and over the
-released transcript afterwards; corrections in progress reach it no more than
-they reach anyone else. Release gates _reading_ — the transcript view, its
-download, the bulk export — and nothing else: an unreleased transcript's machine
-text stays searchable, exactly as it is today.
+What does not enter into it is the transcript's reader-publication state. Search
+works over the machine transcript until the first successful publication and
+over the active search publication afterwards; corrections in progress reach it
+no more than they reach anyone else. Publication gates _reading_ — the
+transcript view, its ordinary download and the bulk export — and nothing else:
+an unpublished transcript's machine text stays searchable, exactly as it is
+today. Ordinary unpublish removes the reader publication but deliberately keeps
+the corrected search publication.
 
 The invariant the code holds, that search must never be broader than transcript
 access, therefore has to be read at the level of the **catalog**: an actor may
 not search a catalog whose transcripts it may not read. It does not mean an
-actor may not search a transcript it cannot open, which under release gating is
-the normal case. The comment predates release being a state of the material
-rather than a property of the role, and rereading it the old way would gate
-search and undo this decision.
+actor may not search a transcript it cannot open, which under the publication
+gate is the normal case. The older comment predates transcript publication being
+a state of the material rather than a property of the role, and rereading it the
+old way would gate search and undo this decision.
 
 This is deliberate and it follows a decision the MCP server already records: the
 web transcript view hands a person the full text to read like a book, while
@@ -266,7 +266,7 @@ than taken, which is what makes the role name worth reading.
 
 | Permission       | Covers                                                                                                                                                      |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `see_unreleased` | Unreleased events, unpublished and non-actionable recordings, unreleased transcripts, and the release-state indicators that only make sense alongside them. |
+| `see_unreleased` | Unreleased events, unpublished and non-actionable recordings, and the state indicators that only make sense alongside them. It does not bypass transcript publication. |
 
 ### Browsing and audio
 
@@ -279,7 +279,7 @@ than taken, which is what makes the role name worth reading.
 
 | Permission                | Covers                                                                                                                                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `read_transcripts`        | Reading a recording's transcript, once it has been released.                                                                                                                                |
+| `read_transcripts`        | Reading a recording's transcript once it has been published. Before then the reader sees progress, not text.                                                                               |
 | `see_transcript_variants` | That more than one machine backend exists: the per-recording picker and the multi-backend stream view. Administrative only; every other role reads the default backend.                     |
 | `see_speakers`            | The diarization overlay. Administrative for the same reason as the line above: it is unevaluated machine output, it names nobody, and it currently tells an ordinary reader nothing useful. |
 
@@ -287,14 +287,14 @@ than taken, which is what makes the role name worth reading.
 
 | Permission            | Covers                                                                                                                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `correct_transcripts` | The correction surface: editing spans, proposing corrections, attesting, and reading the original text within that surface.                                                                 |
-| `publish_transcript`  | Releasing a checked transcript for reading, and settling disagreements between correctors along the way. Both are the same person's job: whoever owns a transcript's correction to its end. |
+| `correct_transcripts` | The correction surface: editing spans, approving, disapproving, commenting, and reading the frozen source within that surface. |
+| `publish_transcript`  | Publishing, republishing and unpublishing a transcript that already satisfies the correction invariant. It grants no adjudication or override. |
 
 ### Search
 
 | Permission           | Covers                                                                                                                                   |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `search_transcripts` | Semantic and lexical search over every transcript in the catalog, released or not. Unlike `read_transcripts` it is not gated on release. |
+| `search_transcripts` | Semantic and lexical search over every transcript in the catalog, published or not. Unlike `read_transcripts` it is not gated on transcript publication. |
 | `use_deep_search`    | Running and reading deep-search jobs. Per-job sharing stays a property of the job.                                                       |
 
 ### Curated metadata
@@ -320,7 +320,7 @@ than taken, which is what makes the role name worth reading.
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `manage_access`         | Granting and revoking access, including pending grants for accounts that have never signed in.                 |
 | `manage_lookups`        | Recorder, location and album rows for this catalog, as established by [ADR 0007](0007-per-catalog-lookups.md). |
-| `manage_catalog_config` | Catalog paths, sync, default and active flags. `catalogAdmin` only.                                            |
+| `manage_catalog_config` | Catalog paths, sync, default and active flags, and the correction guide. `catalogAdmin` only.                  |
 
 ### File delivery — `redaktor` and above, or an individual grant
 
@@ -328,23 +328,25 @@ Held by `redaktor` and `catalogAdmin`. For any role below them these are extras
 granted to a named account, and since only `catalogAdmin` grants extras, such a
 grant comes from `catalogAdmin`.
 
-**Delivery is never broader than reading.** These permissions decide whether an
-account may take files out, not which material it may take: the scope is always
-whatever that account can read. A `redaktor` holds `see_unreleased` and so
-downloads unreleased transcripts too; a `čtenář` granted a download takes
-released ones only. Audio follows the same rule against what the account may
-stream, and so does the bulk export, so no download carries a release test of
-its own.
+**Ordinary delivery is never broader than reading.** These permissions decide
+whether an account may take files out, not which ordinary material it may take:
+`download_transcripts` and bulk export contain active reader publications only.
+Audio follows the existing event and recording visibility rules.
+
+`download_original_transcript` is the deliberate exception. It serves the
+frozen machine source to a curator or catalog administrator before or after
+publication. It does not make that source readable on the ordinary transcript
+page.
 
 A `korektor` is not an exception to this. Their access to unchecked text is
 access to a working surface, not a right to read it, so a `korektor` granted a
-download still takes released transcripts only.
+download still takes published transcripts only.
 
 | Permission                     | Covers                                                                                                                      |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | `download_audio`               | The playable audio file. Original masters stay inside the `catalogAdmin` wildcard.                                          |
 | `download_transcripts`         | File delivery of a transcript the account can already read.                                                                 |
-| `download_original_transcript` | The machine text underneath, as a variant of that same download — for a released transcript, what the corrections replaced. |
+| `download_original_transcript` | The frozen machine source underneath correction, available before or after publication to its editorial roles.           |
 | `bulk_export_transcripts`      | Catalog-wide export. The highest-impact permission in the catalogue: one request yields the whole corpus as data.           |
 
 ### Outside the catalog scope
@@ -378,22 +380,21 @@ start empty.
 
 ## Consequences
 
-- A transcript gains a stored release state alongside `CatalogEntry.isPublished`
-  and `CatalogEvent.released`, and the reading surfaces consult it. Every span
-  being verified is the workflow invariant that permits setting it; setting it
-  is an editorial act, and neither is an authorization decision.
+- A transcript gains stored reader and search publication pointers alongside
+  `CatalogEntry.isPublished` and `CatalogEvent.released`. Every span being done is
+  the workflow invariant that permits publication; publishing is an editorial
+  act, and neither is an authorization decision.
 - Because correction substitutes rather than gates, search needs no notion of
   correction state for authorization. It needs the index to be refreshed when a
   transcript changes, which the incremental per-`audio_hash` sync keyed on
   `transcript_fingerprint` already does. This is existing machinery, not new
   index work.
-- Keeping corrections apart until release removes work rather than adding it.
-  Before release every surface — the transcript view, its download, the bulk
-  export, search and MCP — serves the machine transcript; after release all of
-  them serve the released one, which has been fully verified, materialized and
-  rendered. No reader anywhere merges partially corrected text, and the only
-  resolution rule is "the released transcript if there is one, otherwise the
-  default backend". See [ADR 0006](0006-transcript-correction.md).
+- Keeping corrections apart until publication removes work rather than adding
+  it. Before first publication the reader and ordinary downloads serve no text,
+  while search and MCP serve the machine transcript. After publication those
+  surfaces resolve immutable corrected snapshots according to their separate
+  reader and search pointers. No consumer merges partially corrected text. See
+  [ADR 0006](0006-transcript-correction.md).
 - The catalog settings page is one permission today and mixes access management,
   catalog configuration, event health and bulk transcript export. Splitting the
   roles requires splitting that page into separately gated cards.
@@ -445,12 +446,12 @@ start empty.
   the work rather than the history.
 - `curator` starts empty, so the editorial rights it names sit with the
   `catalog_admin` until somebody is given them.
-- **The release gate must not ship with the permission rework.** It can only
+- **The transcript publication gate must not ship with the permission rework.** It can only
   arrive together with the correction system, because until then nothing is
-  released and nothing can release anything. Switching it on earlier would take
+  published and nothing can publish anything. Switching it on earlier would take
   transcripts away from every account that reads them today without
-  `see_unreleased` — measured in production that is one, and it would be all 77
-  listeners the moment they were made readers. Until corrections exist,
+  a reader publication — measured in production that is one, and it would be all
+  77 listeners the moment they were made readers. Until corrections exist,
   `read_transcripts` means what it means today: read the transcript. This is a
   condition on the order of work, not an implicit consequence of it.
 
@@ -477,10 +478,10 @@ start empty.
   and `korektor` and nothing else — to other people, and to accounts that do not
   already hold a protected role.
 - **No transcript is readable at launch, and that is accepted.** Nothing is
-  released until a whole transcript has been checked, and a recording runs to
+  published until a whole transcript has been checked, and a recording runs to
   three hours and several hundred spans, so the first one a reader can open is
   weeks of work by two people away. Nothing is backfilled and no machine
-  transcript is grandfathered into the released state.
+  transcript is grandfathered into reader publication.
 - **Listeners are made readers; they do not become them.** Nothing promotes
   anyone automatically. Someone changes each account, and the change waits until
   the correction system has been tried and trusted — not until it merely exists,
@@ -489,24 +490,25 @@ start empty.
   invisible to all but three accounts.
 - **What a new reader gets first is search, not reading.** `search_transcripts`
   works from the first day over every transcript; `read_transcripts` returns
-  nothing until a transcript is released, and at twenty to thirty-five
+  nothing until a transcript is published, and at twenty to thirty-five
   person-hours per recording across 198 recordings, most never will be. That is
   a coherent product — searching works, reading arrives one transcript at a time
   — but it should not be promised as anything else.
 - **Unchecked text is withheld from reading, not from use.** A `čtenář` opening
-  a recording whose transcript is not yet released sees how far checking has
+  a recording whose transcript is not yet published sees how far checking has
   got, not the machine text. The same machine text still reaches them through
   search and through an agent's answer, where it is a source rather than a
   document, and where the caution the MCP server asks agents to give still
-  applies. Releasing is what turns a transcript into something to read.
+  applies. Publishing is what turns a transcript into something to read.
 - **Corrections in progress reach nobody outside the correction surface.** Not
-  the reading surfaces, not search, not agents. Release is the single moment the
-  transcript changes, and it changes everywhere at once.
-- **Release is one pattern used three times.** A recording is published, an
-  event is released, a transcript is released. Each is a state of the material
-  rather than of the actor, each is permitted by a workflow invariant, and each
-  is performed deliberately by a person. Keeping the three alike is worth more
-  than tailoring any one of them.
+  the reading surfaces, not search, not agents. Publication is the moment a
+  complete corrected snapshot becomes eligible for those consumers. Reader and
+  search pointers may later diverge by explicit unpublish, never by exposing a
+  partial draft.
+- **Publication follows the recording vocabulary.** A recording is published,
+  an event is released, and a transcript is published. Each is a state of the
+  material rather than of the actor, each is permitted by a workflow invariant,
+  and each is performed deliberately by a person.
 - **Machine-output views are administrative.** Two permissions sit with
   `catalogAdmin` alone for the same reason: they expose raw model output that
   has not been evaluated and that tells an ordinary user nothing useful yet.
@@ -516,7 +518,7 @@ start empty.
   without naming anyone. Both are candidates to open later — diarization once
   speaker attribution becomes a phase of correction — but neither earns a place
   in a role today.
-- **A released transcript therefore carries no speaker information for its
+- **A published transcript therefore carries no speaker information for its
   audience**, in material that is by its nature discussion. This is accepted for
   now rather than overlooked: the overlay identifies nobody, and attributing
   speech is a later phase built on the same span mechanism.

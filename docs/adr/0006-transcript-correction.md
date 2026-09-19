@@ -2,687 +2,548 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-15
-- **Revised:** 2026-09-19
-- **Canonical references:** [Data model](../data-model.md), [RAG system](../rag-system.md), [ADR 0002](0002-artifact-generations.md), [ADR 0003](0003-web-catalog-projection.md), [ADR 0005](0005-catalog-permission-model.md)
+- **Revised:** 2026-09-20
+- **Canonical references:** [Data model](../data-model.md), [RAG system](../rag-system.md), [ADR 0002](0002-artifact-generations.md), [ADR 0003](0003-web-catalog-projection.md), [ADR 0004](0004-system-boundaries.md), [ADR 0005](0005-catalog-permission-model.md)
 
 ## Context
 
-Besedy transcripts are machine output and are not always accurate. Nothing in
-the system lets a person fix them: every transcript route is read-only and no
-table holds transcript text.
+Besedy transcripts are machine output and are not always accurate. The system
+currently has no correction surface and no database record of transcript text.
+Every transcript route reads immutable-looking pipeline artifacts directly.
 
-What the material looks like, measured in production on 2026-09-15: one catalog,
-253 recordings, 198 of them primary recordings of events, 606.7 hours in those
-198 — an average of just over three hours each. Nine transcript variants exist
-per recording, of which one is the configured default.
+The production corpus measured on 2026-09-15 contains one catalog, 253
+recordings and 198 primary recordings of events. Those primary recordings total
+606.7 hours and average just over three hours. Nine machine transcript variants
+exist for each recording, with one configured default. Complete corpus coverage
+is therefore not a realistic first goal. The useful unit of commitment is one
+recording corrected from beginning to end.
 
-What the existing system offers:
+The permission rework has already introduced the vocabulary this feature needs:
+`correct_transcripts`, `publish_transcript`, `see_transcript_variants` and
+`download_original_transcript`. The `corrector` role carries correction but not
+publication. Curators and catalog administrators carry publication. These
+permissions currently have no correction feature to govern.
 
-- Segment and word level `confidence` in every transcript.
-- No segment identifiers. A segment is addressable only by its time range, its
-  text, and its position in an array.
-- Transcript artifacts are immutable within a generation, and re-running
-  transcription with `--overwrite` replaces them in place.
-- Transcript reads go through two functions in `lib/transcript`:
-  `loadTranscript()` for the recording page, the backend comparison view and
-  MCP, and `readTranscriptFile()` for the transcript download route and the bulk
-  export.
-- Diarization is already merged into the reading view as an overlay resolved at
-  render time, from a separate artifact.
-- Agent-facing guidance already tells an agent to qualify a quotation when a
-  passage looks badly transcribed, which is a workaround for the absence of any
-  way to fix it.
-- The permission rework has shipped the scaffolding this system needs:
-  `correct_transcripts`, `publish_transcript` and `download_original_transcript`
-  exist in `web/src/lib/policy/catalog-permissions.ts`, and `corrector` is a
-  role a holder of `manage_access` can hand out. All of them gate nothing yet.
-  Nothing here waits on that rework any longer.
+This record assumes the initial group remains small: about eighty users, mostly
+people who know one another and can resolve disagreements by talking. The first
+version should be simple and durable, not machinery for an anonymous moderation
+corps.
 
 ## Decision
 
-### Corrections are database records; artifacts stay immutable
-
-Corrections are authoritative PostgreSQL rows. Transcript JSON on disk is never
-rewritten, which keeps [ADR 0002](0002-artifact-generations.md) intact and
-follows [ADR 0003](0003-web-catalog-projection.md), where user-authored state is
-authoritative in PostgreSQL rather than reconstructed from pipeline output.
-
 ### The span is the unit of work; the transcript is the unit of publication
 
-Per [ADR 0005](0005-catalog-permission-model.md), correction substitutes at the
-level of the **span**. A recording has one transcript in which each span is
-either machine output or verified text, and a partly corrected recording is the
-normal state for years rather than a transitional one.
-
-That improving text stays inside the correction surface. Nothing a corrector
-writes reaches a reader, search or an agent until every span has been verified
-and a person **publishes** the transcript; publication is the one moment the
-recording's transcript changes, and it changes for every surface at once.
-Reading end to end is an editorial statement about the whole document and cannot
-be made span by span.
-
-So the work is granular and the publication is not, and the record has to keep
-both. A coverage figure derived from the spans — duration checked against total
-duration — is what stands for a transcript until it is published.
-
-**On the verb.** The existing system already splits two verbs by entity:
-recordings are published (`CatalogEntry.isPublished`, gated by
-`publish_recording`) and events are released (`CatalogEvent.released`, gated by
-`release_events`). A transcript hangs off a recording, and the permission that
-has already shipped is `publish_transcript`. This record therefore says
-**publish**, not release, everywhere it speaks about transcripts.
-
-### The unit is a segment of the default backend, anchored by time
-
-Correction happens on one backend — the configured default — because correcting
-nine variants of the same speech is not work anyone will do. The verified layer
-that results is keyed by **time**, not by backend: it records what was said
-between two moments, and the machine transcripts become proposals underneath it.
-
-A published transcript therefore ranks **above** `TranscriptBackendPriority`
-rather than inside it. Resolution is: the published corrected transcript if
-there is one, otherwise the highest-priority backend. Reordering that table
-changes which machine transcript stands in for the recordings nobody has
-finished, and cannot disturb one that has been published — which follows from
-the verified layer belonging to the recording rather than to the backend it
-started from.
-
-Because segments carry no identifiers, a span is anchored by its **time range
-plus a hash of its source text**. The segment index is stored as a hint, never
-as the identity. Rows are created lazily on the first human touch; an untouched
-span has no row.
-
-### Correction works against a frozen source
-
-When a recording is taken on for correction, the machine transcript it is being
-corrected against is **snapshotted**, and that snapshot is what every span is
-anchored to for the life of the work. Re-transcription can happen whenever it
-likes and cannot touch it.
-
-This is fundamental rather than convenient. A published transcript means *a
-human verified this text*, and that statement is only meaningful against a fixed
-thing. Transcript artifacts look immutable but are not reliably so — re-running
-transcription with `--overwrite` replaces them in place — so without a snapshot
-the baseline a person checked could be swapped out from under the record of
-their having checked it.
-
-Two consequences follow, and both remove machinery rather than adding it:
-
-- **Corrections can never be disturbed by re-transcription**, so nothing has to
-  relocate spans by time overlap and text similarity, and no span is ever marked
-  stale for a person to resolve. That whole class of problem is designed out.
-- **A published transcript stays published**, whatever is re-transcribed
-  afterwards. It outranks every backend already, and a newer machine transcript
-  is simply a better proposal underneath something a person has verified.
-
-Adopting a new transcription for a recording already under correction is
-therefore a deliberate act of **starting again** — abandoning the work against
-the old snapshot and taking a new one — and never something that happens to a
-corrector while they are working.
-
-The design now holds two immutable snapshots per corrected recording, at the two
-ends of the work: **the source** the corrections were made against, taken when
-the work begins, and **the resolved transcript** materialized when it is
-published. Everything between them lives in the database.
-
-### Approving is the only positive action, and what is stored is a count
-
-A person working on a span does one of two things: they fix the text, or they
-leave it because it is already right. **Both end in the same act** — approving
-whatever text is there when they move on.
-
-What the record keeps per span is therefore not a state but a number: **how many
-people have approved the text that is there right now.** The required count is
-configurable per catalog and defaults to two. One person mishears, skims, or is
-tired; two people independently content with the same exact words is the quality
-bar, and that is the whole of the two-person rule.
-
-Nothing caps the number of people who may look at a span. More eyes on a
-difficult passage are welcome, whether to help or to settle an argument, and
-approvals beyond the required count are simply surplus. What extra people cannot
-do is **outvote a disapproval**: the rule below is that a live disapproval
-blocks regardless of how many approvals accumulate around it. Settling a
-disagreement means the objector is persuaded or the text changes, never that
-enough other people disagreed with them. Anything else would be adjudication by
-vote, which is exactly what the next section declines to build.
-
-Approvals are bound to a hash of the text they approve. If someone rewrites a
-span, earlier approvals no longer describe what is there — nobody approved words
-they never saw — so they stop counting by hash mismatch rather than by deletion,
-and the history of who approved what survives.
-
-The count is of **distinct people**. Writing an edit is itself your approval of
-it, so nobody reaches the required number alone by coming back to their own work
-later. And because the source snapshot is immutable, the machine's original
-wording is recoverable for ever: restoring a span somebody mangled is an
-ordinary edit, not a special operation.
-
-The three words the tool may use for that count are labels over it, not stored
-state:
-
-| label | means | what it controls |
-| --- | --- | --- |
-| machine | zero approvals — untouched | nothing |
-| reviewed | one approval | nothing |
-| verified | the required number of approvals | a transcript may be published when every span is verified |
-
-**Only the full count gates anything, and it gates exactly one thing:
-publication.** The other two values control nothing at all; they are a progress
-readout, driving the coverage figure a reader sees and telling a corrector where
-the work has got to.
-
-Because the labels are a rendering of a number, the tool is free to show the
-number instead — "one of two" on a span, "812 of 3140" on a recording — and
-probably should, rather than teaching anyone new vocabulary. The firm rule
-either way is that **nothing may ever be gated on the middle value**. The moment
-something is, the label starts doing work of its own and can drift from the
-count it exists to describe.
-
-A reader sees none of this. Nothing from a transcript reaches the reading
-surface until every span is verified and the transcript is published, so the
-counts are visible to correctors and to the progress figure, not to a `čtenář`
-waiting for the document.
-
-**Nothing leaves the correction surface before publication.** Corrections in
-progress are visible only to correctors; search, agents and readers keep the
-machine transcript until the whole transcript is published. Holding
-`correct_transcripts` is therefore not the power to change what anyone else
-sees: it is access to a tool. This is what makes it safe to hand the permission
-out widely, and it has to hold whatever the roles look like.
-
-### Four actions, and only one of them blocks
-
-Everyone working on a transcript has the same four actions, whichever pass they
-are on: **change** the text, **comment**, **approve**, **disapprove**.
-
-A **comment** is a thread on the side, anchored to a span, the way comments work
-in a shared document. It exists so that discussion has somewhere to live and
-survives as a record of it. **A comment does not block publication.** If it did,
-people would weigh whether a remark is worth holding up the document and would
-stop making them, which loses the communication the comment was for. Threads are
-resolved as housekeeping, not as a gate, and a published transcript may carry
-open ones.
-
-A **disapproval** is the blocking signal, and it has to be an unambiguous
-deliberate act rather than something inferred from the presence of discussion.
-It may well be carried on a comment — a thumb down, a minus, some mark on the
-thread — or it may be its own control; that is an interface question and it is
-not settled here. What is settled is that blocking requires an explicit signal
-and that leaving a remark is never one.
-
-Disapproval proposes nothing. It says this is wrong, without requiring the
-objector to guess at what was actually said — which is the common case when
-listening, and the only action cheap enough to take without stopping the audio.
-
-It uses the same hash binding as an approval:
-
-- If the text is rewritten, the disapproval stops applying, exactly as an
-  approval does. The new text starts clean at one approval, and the objector
-  reads it and either approves or disapproves again.
-- If the text is not rewritten, the span carries an approval and a disapproval
-  **on the same words**. That is the disagreement, recorded and visible: one says
-  yes, one says no, about this exact text.
-
-A span is publishable when it carries the required approvals and **no live
-disapproval**. A disapproval is cleared only by the objector approving the
-current text, or by the text changing underneath it.
-
-The comment and the disapproval it may ride on have **different lifetimes**, and
-this is deliberate. The disapproval lapses when the text changes, because the
-objection was to particular words. The comment does not, because it is anchored
-to the span rather than to the text: somebody writes "I think that is a village,
-not a surname," the text is edited in response, and it would be perverse for the
-edit to destroy the thread that prompted it. The reasoning persists; the
-objection has to be made again against the new words.
-
-**There is no adjudication.** A disapproved span stays blocked until the people
-involved agree. This is deliberately an opening to deadlock, and it is accepted
-as the starting premise: people need to agree in order to continue.
-
-Two things make that premise survivable at the size it is starting at. Most real
-disagreement comes from unclear audio rather than from two people confidently
-hearing different intelligible words, and for that the route below — agreeing
-the passage is unintelligible — is already a resolution that publishes. What is
-left with no exit is audible speech that two people each read differently and
-neither will move on, which between two people who can talk to each other is a
-conversation rather than a system problem.
-
-At twenty correctors who do not know each other it will not be. Adjudication —
-someone with `publish_transcript` deciding, that act supplying the approvals,
-available only on a span whose history shows a real dispute, and counted so a
-transcript published with forty of them says something — is the shape the answer
-will take. It is deferred, not rejected. Revisit it when the corps grows beyond
-people who can settle it by talking.
-
-### Passages nobody can make out
-
-Where nobody can make out what was said, the corrector **clears the text** and
-records that the span is unintelligible. The machine's guess is discarded rather
-than kept: a plausible-looking wrong sentence is worse than an acknowledged gap,
-because a reader can detect the gap and cannot detect the error.
-
-- The span stays. It keeps its time range and simply holds no text, so spans
-  still tile the timeline without gaps and citations still resolve.
-- It needs the same approvals as any other span. Two people agreeing that nobody
-  can make it out is an editorial statement like any other, so this is not an
-  exception to the rule — it is an ordinary edit whose result happens to be
-  empty. That is also what keeps the publication gate reachable for recordings
-  with bad audio, which are exactly the ones that most need a person.
-- Word timings inside such a span are gone, which is correct: we do not know
-  when anything was said.
-- The fact that the span was unintelligible, and any comment about it, is
-  **correctors-only metadata and does not travel**. It stays in the database. The
-  sidecar carries an empty span and nothing else, so chunking, search and MCP see
-  a segment with no text and treat it as nothing. What consumes text finds no
-  text.
-
-A reader of a published transcript therefore sees a gap where such a span was:
-the rendered `txt`, `srt` and `vtt` show nothing at all, with no bracketed
-marker standing in. Keep it simple until it proves to be a problem for real
-readers, and solve it then.
-
-That last point works because **publication is what makes empty unambiguous.** A
-transcript can only be published when every span is resolved, so an empty span in
-a published transcript can only mean that two people agreed nothing intelligible
-is there. The context supplies the meaning and a marker would be redundant, which
-also keeps the sidecar a plain canonical transcript with nothing extra for any
-consumer to understand.
-
-Machine transcripts support this by essentially never containing empty segments:
-`transcribe_qwen3_asr.py` drops them outright, and `transcribe_nemo.py` emits
-them but records `segment_text_empty` as a defect reason. One consequence follows
-for whoever writes validation over the published sidecar: an empty span **there**
-is intentional, and a check copied from the transcription side will fire on every
-corrected transcript that contains one.
-
-### Every pass is the same surface
-
-There is no first-pass tool and second-pass tool. Every pass presents the same
-screen and the same four actions, and what differs between them is only what is
-already on the document when a person arrives: the first meets machine text, the
-second meets corrections and approvals, a third meets open threads and
-disagreements. Nobody switches modes and nobody learns a second keyboard.
-
-That is what makes the later passes cheap, which is what makes a two-person rule
-affordable at all. A reviewer follows one continuous text with the audio running
-and acts only where something needs it — and the acts available are the same ones
-the first pass used.
-
-Corrections are shown in a distinct colour so that a later pass can read straight
-through as though it were the original text while still seeing where a person has
-already been. A span carrying a live disagreement is marked likewise. Colour
-carries orientation only: it says the text was changed, never who changed it.
-
-One safeguard against rubber-stamping survives this: **an approval cannot be
-recorded for audio the player has not actually played.** The other one the
-earlier design had — hiding from a reviewer who worked on the span before them —
-is gone, because named discussion threads and anonymity cannot both exist and
-discussion is worth more. That leaves the played-audio requirement carrying the
-weight on its own, which is worth knowing when it comes to be built.
-
-### What an edit does to word timings
-
-Word timings are a reading convenience; **segment boundaries are load-bearing**,
-because they are what citations, retrieval chunks, subtitles and MCP URLs are
-built from.
-
-Within a span, an edit is reconciled by a word-level diff. Words that did not
-change keep their exact timings. Changed runs are redistributed proportionally
-across the interval bounded by the nearest unchanged words on either side; where
-that interval is degenerate, the redistribution borrows from those neighbours.
-Words a person wrote carry no `confidence`, because no model proposed them, and
-redistributed timings are marked as estimated rather than measured.
-
-The reconciliation belongs to the server, not to the client, so that every
-client and every future tool produces the same result and the rule can be tested
-directly.
-
-### Segment boundaries never move
-
-A span's boundaries are the machine's and stay the machine's. There is no
-splitting, no merging, no dragging. Correction changes text inside a fixed
-tiling of the timeline, which keeps the invariant that spans cover the recording
-without gaps or overlaps true by construction, and keeps every citation
-resolvable without anything having to be checked.
-
-This is a deliberate simplification and it has a cost. ASR segmentation is often
-wrong — a sentence cut in half, two speakers run together — and none of that
-gets fixed. A sentence broken across two spans stays broken across two spans.
-
-What remains possible, because it is only text: a corrector can move a word from
-the end of one span to the start of the next by editing both. The words end up
-attributed to the adjacent span's time range, which the timing reconciliation
-below absorbs approximately rather than exactly. That is a clumsy substitute for
-a real split and it is accepted as one.
-
-Splitting and merging can be added later without invalidating anything decided
-here, because they only ever recombine boundaries that already exist. Starting
-without them is what keeps the first version small.
-
-### Correction is its own surface
-
-Correction lives on its own page rather than as extra controls on the recording
-page. The reading page serves people who are listening; the correction page
-needs the transcript to be the whole screen, a different keyboard model, a
-different permission, and data the reading page does not load.
-
-The player is already a controlled component and already supports playing an
-excerpt and stopping at a chosen time, which is exactly the segment-playback
-primitive this needs. Two things it does not support: being paused from outside,
-and keyboard transport while focus is in a text field — its shortcuts
-deliberately stand down inside inputs. The correction page therefore owns its
-own transport, and the player gains an imperative handle. That is the only
-change required to an existing component.
-
-The timeline mechanics needed for a progress-and-navigation ribbon — tick
-spacing, active-item lookup, playhead interpolation between the browser's
-throttled time updates — already exist inside the backend comparison view and
-should be extracted rather than rewritten.
-
-### Edits are recorded as events
-
-The store keeps the history of edits — who, when, from what text to what text,
-and how long was spent on the span — not only the resulting text. Comments,
-approvals and disapprovals are part of that history. Without this the first real use of the tool
-produces an impression; with it, it produces the numbers that decide whether the
-two-person rule is worth its cost, how much correction time a minute of audio
-costs, and how much two people actually differ.
-
-That history is also what identifies a dispute. A span whose text has oscillated
-between variants, or that has accumulated several edits without ever reaching the
-required count, **is** a disagreement. Detecting one is a query over data the
-design already keeps, not a new concept to store.
-
-### The first version is a pilot, not a small version of the system
-
-The first correction is done by two people — one enrolled corrector and the
-person running the project — on one recording, in order to find out what the
-workflow actually is. What is being tested is the tool and the flow through it,
-not the throughput of a corps.
-
-That matters because several mechanisms described here **do not exist at that
-size and should not be built first**: the queue that hands spans to whoever is
-free, the leases that stop two people being sent to the same span, and the
-anonymity of the second reviewer. With two people on one recording there is no
-queue to feed, nothing to lease, and no anonymity to preserve. They are the right
-design for a corps and the wrong thing to build for a pilot.
-
-What the pilot does need is the one surface with its four actions, the
-unintelligible route, and a way to stop in the middle of a three-hour recording
-and resume.
-
-### Two people on one span
-
-Once there is a corps, the queue of spans awaiting a second opinion exists
-precisely to send several people to the same span, so simultaneous work on one is
-the main flow rather than an edge case. It is then the default view for a
-corrector — the spans waiting for a second opinion **within the recordings
-already under way** — because finishing someone else's work is the cheapest
-useful action available.
-
-Every write carries the hash of the text it was based on. If the span has moved
-on, the write is refused and the author is shown what is there now. The hash is
-already in the model for approvals, so this costs nothing to add and it
-prevents the quiet loss that last-write-wins would otherwise produce: a second
-editor overwriting text a first was working on, the first's approval voided by
-mismatch, and their work visible only in the edit history.
-
-The queue hands out spans under a short lease so two people are not sent to the
-same one to begin with. A lease is an ergonomic measure, not a lock: it expires
-on its own and the hash check remains the thing that guarantees correctness.
-
-### Publishing and unpublishing
-
-Publication is a deliberate act by a person holding `publish_transcript`, never
-an automatic consequence of the last span being verified. A fully verified
-transcript sits and waits until somebody says it is ready to be read.
-
-Nothing goes looking for that person. There are no notifications and no "ready
-to publish" surface for correctors: a transcript that has reached every span
-verified appears in the administrative section for transcript corrections, and
-that is the whole mechanism. At this size the people doing the work tell each
-other, and building a queue to announce an event that happens a few times a year
-would be machinery serving nobody.
-
-**Publishing runs one job**: it materializes the resolved transcript, renders the
-format files and refreshes the index, and the transcript is presented as
-published only once that job has completed. One job rather than several, because
-separate triggers would let the surfaces drift apart, which is the outcome
-materialization exists to prevent.
-
-**Unpublishing runs nothing.** It stops the transcript being shown to readers and
-moves nothing else: the materialized artifact stays on disk, and the search index
-keeps the corrected text. This is consistent with the position that search and
-MCP are never gated on publication — the exposure already exists by design, and
-after an unpublish what is exposed is the better text rather than the machine
-text. Hiding is the safe direction and never needs to wait for a job, so the flag
-flips and the reading surfaces revert at once.
-
-**The artifact is a snapshot; the database is the live version.** Publishing
-freezes the current state into the artifact, and correction may carry on
-afterwards. An edit made to a published transcript therefore changes nothing a
-reader sees: the published artifact stands until somebody republishes, exactly
-as a published document can have a draft behind it. This is what makes
-publication a statement rather than a mode.
-
-Two consequences worth stating:
-
-- Republishing a transcript nobody has touched is free. The artifact and the
-  index entry never went anywhere, so it is the flag flipping back. An edit made
-  in the meantime forces the job to run again on the way back in — and that edit
-  voids its span's approvals, so the transcript cannot be republished until it is
-  verified again.
-- **Unpublish means "not ready to be read as a document." It does not mean "this
-  text must stop being reachable."** If a name is badly wrong, or a speaker asks
-  to be taken out, that is a different action with different consequences and it
-  must not be smuggled into this one. Nothing here builds it.
-
-### The sidecar is a resolved transcript, not a list of changes
-
-The artifact that crosses into the Python runtime is a **complete transcript in
-the canonical schema** — the published transcript, every span verified and
-substituted in. It is written at publication and at no other time, and
-unpublishing does not remove it.
-
-It lives in its own writable tree, keyed by the generation it resolves against
-and then by `audio_hash`, the way posters and sources already have writable
-directories of their own. It is not written inside the transcript generation.
-[ADR 0002](0002-artifact-generations.md) treats a generation's contents as
-published artifacts whose only mutable coordination state is the symlink, so
-writing corrections into one would break rollback: repointing the symlink would
-leave corrections attached to a generation nobody is reading. Keying by
-generation also stops a re-transcription from silently inheriting a sidecar
-resolved against a different segmentation.
-
-Making it a diff would put merge logic on both sides of the boundary, where the
-two implementations could disagree. As a resolved transcript it needs none: the
-export step renders `txt`, `srt` and `vtt` from it exactly as it does from any
-transcript, chunking reads it exactly as it reads any transcript,
-`readTranscriptFile()` resolves by pointing at its directory, and
-`docs/schemas/transcript.schema.json` validates it. Merging lives once, in the
-runtime that owns the database.
-
-Beyond the canonical fields it carries only how many approvals each span
-carries. Words a person wrote already carry `confidence: null` and an
-estimated-timing marker from the reconciliation rule above. Whether a transcript
-is published is database state and is not written into the artifact, because the
-artifact outlives an unpublish; **the flag is authoritative and the artifact's
-existence means nothing on its own.**
-
-One thing the schema does not yet accommodate: `meta.backend` is a closed
-enumeration of the five ASR backends, and `meta` requires `model` and
-`generation_params`. A resolved transcript has no honest value for any of them.
-Either the enumeration gains a value for corrected output, or the sidecar keeps
-the originating backend and carries a marker beside it. This has to be decided
-before the sidecar can be written, and it is the one place where the claim that
-the existing schema validates the artifact unchanged does not hold.
-
-### Scope and what to correct first
-
-Only primary recordings of events are in scope: 198 recordings, 606.7 hours. A
-secondary recording is in practice a second microphone on the same speech; it
-has its own `audio_hash` and its own timings, so a correction never transfers
-between the two. Nothing here addresses them and nothing needs to yet.
-
-At a playback speed of one, two passes over that cannot cost less than 1213
-person-hours, and realistically cost several times that. Complete coverage of
-the **corpus** is therefore not a goal. Complete coverage of any **recording**
-that is taken on is not optional: a half-checked beseda is of no use to a reader
-and can never be published, so a recording is gone through from end to end or not
-started.
-
-That settles what the two signals the system already has are for, and it is not
-selecting spans. Low `confidence` directs **attention inside a pass** — it is
-where the tool pauses and waits rather than playing on — and it is read with
-reserve, because a model's certainty is not the same as being right. Citation
-telemetry and search logs choose **which recording to take next**, not which
-parts of one to bother with.
-
-Scattering corrections across the corpus at low-confidence spots would improve
-search and publish nothing, which is the opposite of the trade this design makes.
-
-An average recording runs over three hours, so the unit a person commits to in
-one sitting cannot be a recording. Progress is tracked and resumed inside one.
-
-### An editorial policy precedes the code
-
-Two correctors who disagree about whether to keep "ehm", whether to remove false
-starts, how to punctuate, whether to write numbers as words, and how to mark
-inaudible passages will register disagreement about spans where nobody actually
-misheard anything. With disapprovals blocking publication and no adjudication to
-break them, that is not a cosmetic problem: it stalls the document. A short
-written convention, visible inside the correction tool, is a prerequisite rather
-than documentation written afterwards.
+Correction works one source segment at a time. Publication always publishes a
+complete transcript. Partially corrected text never leaks into a reading,
+download, search or MCP response.
+
+A transcript becomes eligible for publication only when every span is done. A
+span is done when two distinct people have explicitly approved its current text
+revision and no current disapproval applies. Eligibility does not publish
+anything automatically: a curator or catalog administrator must deliberately
+publish the transcript.
+
+Only primary recordings of events are in scope for the first version. Secondary
+recordings have distinct audio hashes and timing and do not inherit corrections
+from a primary recording.
+
+### Four consumers deliberately resolve different text
+
+There is no single permissive "best transcript" resolver. Each surface follows
+an explicit rule:
+
+| Consumer | Resolution |
+| --- | --- |
+| Reader and ordinary download | The active reader publication. With no active reader publication, return no transcript text. |
+| Search and MCP | The active search publication, otherwise the configured default machine transcript. |
+| Correction UI | The live database workspace. |
+| Privileged original access | The frozen machine source, or another machine variant where `see_transcript_variants` permits it. |
+
+This separation is a safety property. The machine fallback required by MCP must
+never accidentally become a fallback for the normal reading page.
+
+Before a transcript has ever been published, a reader sees correction progress
+but not transcript text. Ordinary transcript downloads and bulk export do not
+include it. Search and MCP continue to use the machine transcript; users already
+understand that an agent uses transcription as a fallible source rather than as
+a verbatim document.
+
+Explicit administrative machine-output permissions are exceptions to the
+reading gate:
+
+- `see_transcript_variants` allows a catalog administrator to inspect machine
+  variants through the backend picker and comparison surface, including before
+  publication.
+- `download_original_transcript` allows a curator or catalog administrator to
+  download the frozen machine source, including before publication.
+
+`see_unreleased` alone does not expose an unpublished transcript through the
+ordinary reader. Correctors see the source through the correction UI. Curators
+and administrators can also enter that UI because their roles carry
+`correct_transcripts`.
+
+After publication, the published corrected transcript is the primary reader
+transcript. A catalog administrator may still compare it with machine variants,
+and a curator or administrator may download its frozen machine source. A live
+post-publication draft remains visible only in the correction UI.
+
+### Search and MCP see a newer version, not a corrected transcript type
+
+A corrected transcript is not another backend and not a parallel search
+document. It replaces the machine text under the same logical recording and
+backend identity. Search keeps one set of chunks for the audio hash.
+
+The indexing input resolver chooses the active search publication for an audio
+hash when one exists and the configured machine transcript otherwise. The
+published text changes the existing `transcript_fingerprint`, so the current
+incremental sync replaces the chunks for that audio hash in a staged bundle and
+atomically switches the bundle pointer. It must not index machine and corrected
+chunks side by side.
+
+MCP receives the resolved canonical transcript and treats it like any other
+transcript. It has no correction-specific branch, response field or presentation
+rule.
+
+### Correction works against one frozen machine source
+
+Any person holding `correct_transcripts` may deliberately start correction for
+an eligible primary recording. Merely opening a page creates nothing. The start
+action shows which configured default machine transcript will be frozen.
+
+Starting creates one permanent workspace for that recording. A database
+constraint prevents concurrent start requests from creating duplicates. The
+workspace has no owner or assignment in the first version; the initiator is
+recorded only as history.
+
+The start operation succeeds only after both of these exist and agree:
+
+1. An immutable copy of the complete canonical source `transcript.json`, with a
+   recorded fingerprint. This preserves metadata, confidence and word timing for
+   provenance and exact original downloads.
+2. Eager database span rows containing stable span IDs, order, fixed start and
+   end times, original text and its hash, and the initial current revision.
+
+Rows are not created lazily. A recording that has not been started costs no span
+rows, while a started recording is fully independent of later filesystem state.
+Re-transcription, backend-priority changes and source-file replacement cannot
+change the workspace.
+
+There is no normal restart or rebase operation. If the wrong source was selected,
+an administrator may exceptionally archive the workspace and create a new one;
+the abandoned workspace and all of its history remain available for audit. There
+is no fuzzy relocation of corrections to new machine segments.
+
+### Current state and immutable history coexist
+
+PostgreSQL is authoritative for work in progress. It keeps efficient current
+projections and immutable history rather than reconstructing every page from a
+generic event stream.
+
+The logical records are:
+
+- **Workspace:** recording, frozen source identity and fingerprint, current
+  pointers and lifecycle.
+- **Span:** stable source order and time range, original text, and current text
+  revision pointer.
+- **Text revision:** immutable normalized text, previous revision, author and
+  timestamp.
+- **Decision:** immutable approve, disapprove or withdraw action by one person
+  against one text revision.
+- **Comment:** discussion attached to a span, with the revision visible when it
+  was written.
+- **Publication:** immutable candidate and result, publisher, status, artifact
+  fingerprint and job state.
+- **Publication span:** the exact text revision used for every span in a
+  publication.
+- **Guide revision:** immutable versions of the catalog correction guide.
+
+Current pointers make the page and publication check straightforward. Immutable
+records preserve who did what and when. Action timestamps are kept; active
+"time spent" is not measured because idle tabs and interruptions make it
+misleading.
+
+### Text revisions, not reusable hashes, carry decisions
+
+Approvals and disapprovals reference an immutable revision ID and retain that
+revision's text hash as an integrity check. Binding only to a hash would allow an
+old approval to become valid again after text changed from A to B and later back
+to A. That is not allowed: every edit invalidates prior decisions, including a
+later return to identical wording.
+
+The server normalizes text before deciding whether it changed: Unicode form,
+line endings, leading and trailing whitespace, and repeated whitespace are
+canonicalized. Capitalization, punctuation and words remain meaningful. Saving
+text that normalizes to the current value is a no-op and creates no revision.
+
+The first version has no special unintelligible state and no marker such as
+`[unintelligible]`. A publishable text revision is non-empty. If a corrector
+cannot determine the words, they disapprove and may comment rather than guess.
+This can be revisited if real recordings demonstrate a need for an explicit
+empty-text outcome.
+
+### Approval is explicit and fixed at two people
+
+The first version always requires approvals from two distinct accounts. The
+threshold is not configurable and has no administrative UI. Each publication
+still records `required_approvals: 2` so the historical policy is explicit and a
+future versioned policy can be introduced without ambiguity.
+
+Playback never creates an approval. The system does not attempt to prove that a
+person played a segment, watched a timer or kept the tab focused. This group can
+be trusted to use the tool honestly, and such telemetry would complicate the
+first version without making the statement materially stronger.
+
+An unchanged span has an explicit **Approve and continue** action. An edited
+span has **Save, approve and continue**. The latter creates the revision and the
+editor's approval in one transaction. There is no persistent save-without-
+decision action: an unfinished edit remains a local draft. An uncertain person
+leaves the current text intact, disapproves it and may add a comment.
+
+Every reviewer uses this same workflow. There is no first-pass and second-pass
+mode and no continuous-playback shortcut that approves spans merely because the
+playhead passed them. Later reviews are faster because correct text requires
+only one deliberate action.
+
+The primary keyboard action is `Ctrl+Enter` or `Cmd+Enter`, which performs the
+same approve or edit-and-approve command as the visible button. Approval is not
+a casual single-key action. Disapprove and withdraw remain explicit buttons.
+After a successful approval the surface advances to and plays the next span.
+
+### Decisions are visible, reversible by their author and never outvoted
+
+For each person, their latest decision on the current revision counts. Approving
+after disapproving replaces that person's effective disapproval; withdrawing
+leaves them with no effective decision. Withdrawal appends history and never
+deletes the earlier action. Nobody, including an administrator, can withdraw or
+erase another person's decision.
+
+A current disapproval blocks the span regardless of how many approvals it also
+has. Extra approvals do not outvote an objection. Text must change, or the
+objector must approve or withdraw. There is no adjudication or publisher
+override in the first version.
+
+Comments are optional and never block publication. They belong primarily to the
+span, record which revision the author saw, and remain visible after later
+edits. Their exact thread, resolution and overview experience is left to the UI
+design; their persistence and non-blocking semantics are not.
+
+Correctors are not anonymous to one another. The span history makes clear who
+created each revision, approved, disapproved, withdrew or commented and when.
+The main flow may show a quiet "one approval" label, but identities remain
+available before another person acts. Transparency and direct communication are
+more useful here than blind review.
+
+### Span state is derived
+
+No mutable workflow status duplicates the decisions. The UI derives four
+states for the current revision:
+
+| State | Meaning |
+| --- | --- |
+| Not reviewed | No current approval. |
+| Needs second approval | One distinct person has approved. |
+| Done | Two distinct people have approved and nobody currently disapproves. |
+| Needs attention | At least one current disapproval; publication is blocked. |
+
+Whether text is unchanged machine text or human-edited is separate information,
+not a workflow state. "Done" appears only after the second approval. Editing
+creates a new revision with the editor's explicit approval, so the new revision
+normally starts at "Needs second approval."
+
+### Concurrent work uses revision checks, not leases
+
+Every decision or edit command carries the revision ID the user saw. The server
+locks the span for the short transaction and rejects the command if the current
+revision differs. It preserves no last-write-wins path and does not auto-merge
+short transcript text.
+
+On conflict, the UI retains the local draft and shows the newer text so the
+author can decide whether to reapply the change. Commands also carry an
+idempotency key, so double-clicks and network retries cannot create duplicate
+decisions.
+
+There are no queue leases in the first version. Optimistic revision checking is
+the correctness guarantee; leases would add expiry and recovery state only to
+reduce a rare ergonomic collision.
+
+Comments do not fail merely because the text changed while they were written.
+They attach to the span and record the revision the author had seen.
+
+### Correction changes text, not timing
+
+Source segment boundaries remain fixed. The first version has no split, merge,
+boundary dragging or word-timing reconciliation. Correction identity is the
+stable database span; citations and playback continue to use the source start
+and end times.
+
+Published corrected segments contain:
+
+- the fixed source `start` and `end`;
+- the approved current `text`;
+- `confidence: null`;
+- `words: []`.
+
+The reader already falls back to whole-segment highlighting when word arrays are
+empty. Its diarization overlay resolves the speaker at the segment start, so
+text-only publication does not require reconstructed word timing or speaker
+changes. Speaker attribution itself remains out of scope.
+
+### Correction has its own large-screen surface
+
+Correction lives on a dedicated page rather than as controls added to the
+reader. The page owns segment playback, keyboard handling, text editing and
+history.
+
+Correction is supported only on desktop and on a tablet in landscape
+orientation. A phone or portrait tablet shows an explanation to use a larger
+landscape screen; it does not load the working transcript or render correction
+controls. This is a product-support constraint, not an authorization boundary:
+all write commands still enforce permission, revision and workflow invariants
+on the server.
+
+The larger corrector dashboard—how people see all of their work, what remains,
+other people's decisions and discussion across recordings—is intentionally not
+settled here. The pilot should determine what overview is actually useful. A
+recording-level surface must at least support stopping and resuming within a
+multi-hour recording.
+
+### Readers see two progress measures before first publication
+
+With no reader publication, the reader page shows no transcript text and no
+corrector identities or disputed-span detail. It shows:
+
+- **Reviewed once:** duration covered by spans that have at least one current
+  approval or disapproval.
+- **Fully approved:** duration covered by done spans.
+
+Both are divided by the total duration covered by source spans. Duration is more
+representative than span count because machine segments vary greatly in length.
+If no workspace exists, the page says correction has not started.
+
+Once a reader publication exists, readers keep seeing that immutable snapshot
+while later work proceeds. Draft progress is no longer shown on the reader page.
+
+### Publication authority remains separate from correction
+
+The `corrector` role does not carry `publish_transcript`. Curators and catalog
+administrators may publish, republish and unpublish. Completing the second
+approval only makes a transcript eligible; it never promotes the corrector or
+publishes automatically.
+
+A publisher may also happen to be one of the two approvers because their curator
+or administrator role includes correction, but publication is not a third
+review. The server rechecks every current revision, two distinct approvals and
+the absence of disapproval when publication starts. Publication cannot override
+an incomplete or disputed span.
+
+### Publications are immutable snapshots over a live workspace
+
+The correction workspace remains editable after publication. A publication is
+an immutable manifest of one exact revision for every span. Editing one span
+after publication invalidates decisions only for the new revision of that span;
+unchanged spans retain their decisions. Readers, search and MCP keep the prior
+snapshot until the changed transcript is eligible and deliberately republished.
+
+Published artifacts are versioned by publication and never overwritten:
+
+```text
+corrections/
+  <workspace-id>/
+    source/
+      transcript.json
+    publications/
+      <publication-id>/
+        transcript.json
+        transcript.txt
+        transcript.srt
+        transcript.vtt
+```
+
+The exact storage root follows the existing writable-artifact conventions. The
+important invariant is the workspace/publication identity, not these literal
+directory names. Database pointers choose active artifacts; file existence alone
+never means a transcript is published.
+
+### Reader and search publication pointers are separate
+
+One `published` boolean cannot represent the chosen unpublish behavior. A
+workspace therefore has two nullable active pointers:
+
+- **Reader publication:** used by the reader, ordinary download and bulk export.
+- **Search publication:** used to resolve text for search indexing and MCP.
+
+The first successful publication sets both to the new snapshot. A normal
+unpublish clears only the reader pointer. Search and MCP keep the last corrected
+snapshot, and the immutable artifacts remain. Republishing an unchanged snapshot
+restores the reader pointer without rendering or indexing again.
+
+If text changed, republishing creates a new publication and moves both pointers
+only after the job succeeds. Exceptional removal of corrected text from search
+or MCP is a separate administrator operation that clears or replaces the search
+pointer and refreshes the index. It is intentionally not part of ordinary
+unpublish and need not have a first-version UI.
+
+### Publication is one durable, retryable job
+
+Starting publication creates a `pending` publication with the exact span-
+revision manifest and briefly locks workspace writes. One job then:
+
+1. Materializes and validates the canonical corrected JSON in the publication's
+   staging directory.
+2. Renders `txt`, `srt` and `vtt` from that JSON.
+3. Builds and validates an incremental search update that replaces the same
+   audio hash in the same logical backend scope.
+4. Switches the staged index bundle.
+5. Marks the publication successful, moves the database pointers and unlocks
+   the workspace.
+
+The reader pointer is never moved before artifacts and indexing are ready. The
+filesystem/index switch and PostgreSQL cannot form one transaction, so the job
+is idempotent and reconciles the only possible crash window: search may briefly
+contain the verified new snapshot while database consumers still point to the
+old one. That is the safe direction under the access policy. A retry recognizes
+the indexed fingerprint and completes pointer activation.
+
+Failure records the error, leaves active database pointers unchanged and
+unlocks the workspace. Failed artifacts are never resolved by a consumer. Job
+attempts are recorded separately from the logical publication. If the workspace
+is unchanged, an administrator may retry the same publication; after another
+edit, a new publication candidate is required.
+
+Unpublishing starts no job. It clears the reader pointer immediately.
+
+### The canonical JSON carries minimal provenance
+
+The resolved transcript remains valid under the canonical transcript schema.
+It keeps the source transcript's honest `meta.backend`, `meta.model` and
+`meta.generation_params`, rebuilds derived transcript text from the published
+segments, and adds a small provenance block:
+
+```json
+{
+  "meta": {
+    "correction": {
+      "schema_version": 1,
+      "workspace_id": "...",
+      "publication_id": "...",
+      "source_fingerprint": "...",
+      "published_at": "...",
+      "required_approvals": 2
+    }
+  }
+}
+```
+
+The JSON does not carry corrector names, comments, decision history or redundant
+per-segment approval counts. PostgreSQL owns that audit history. Search and MCP
+ignore `meta.correction`; for them this is simply the newer version of the same
+transcript.
+
+### The correction guide is catalog data
+
+Correctors need a short shared convention before the pilot. The active guide is
+stored as Markdown in PostgreSQL with immutable revisions. Every corrector may
+read it; only a catalog administrator may edit it, using the existing
+`manage_catalog_config` authority. A guide edit becomes active immediately and
+does not invalidate decisions. Each publication records the active guide
+revision for audit.
+
+The initial convention is a faithful, readable transcript:
+
+- correct misheard words, names, numbers, capitalization and punctuation;
+- preserve meaning, wording, uncertainty and meaningful repetition;
+- do not improve style or correct factual and grammatical mistakes the speaker
+  actually made;
+- use ordinary orthography without erasing meaningful dialect or unusual word
+  choice;
+- omit incidental fillers or false starts only when meaning, emphasis and
+  character are unchanged;
+- do not guess when audio is unclear—disapprove and optionally comment;
+- do not introduce ad-hoc markers such as `[unintelligible]`.
+
+The UI copy may refine examples during the pilot without changing these
+principles.
+
+### The first release is a narrow pilot
+
+The complete correction and publication path ships before the role is assigned
+widely. Two trusted people correct two or three representative primary
+recordings: an easy one, a difficult one, and preferably one with names,
+specialized language or poor audio. A curator or administrator publishes them
+and verifies the reader, formats, search, MCP, original access, republishing and
+unpublishing.
+
+The pilot asks whether explicit span approval is comfortable, where people
+disagree despite the guide, whether comments suffice, what navigation is
+actually missing, and whether indexing replaces rather than duplicates the
+recording. Stored action counts and timestamps support that review; direct
+conversation supplies the interpretation.
+
+No existing machine transcript is grandfathered into reader publication.
 
 ## Consequences
 
-- Done means two things at two levels, and the record keeps them apart. A
-  **span** is done when its current text carries the required approvals and no
-  live disapproval. A **transcript** is done when every span is and a person has
-  published it, which is a stored state alongside `CatalogEntry.isPublished` and
-  `CatalogEvent.released`. Every span verified is the invariant that permits
-  publication, not the publication itself. Until then a derived coverage figure
-  stands for the transcript, and it is computed from the spans rather than stored
-  beside them, so the two can never disagree.
-- Keeping corrections apart until publication spares every reader a resolution
-  rule. Partially corrected text never leaves the correction surface, so neither
-  `loadTranscript()` — on the recording page, in the comparison view and behind
-  MCP's `get_transcript` — nor `readTranscriptFile()` on the download and export
-  paths has to merge anything. Each points at the materialized artifact of a
-  published transcript, which is already whole, or at the default backend's
-  machine transcript when there is none. What each still needs is to know whether
-  a transcript is published and where its artifact is.
-- Retrieval needs no notion of correction state. Publishing changes the
-  transcript fingerprint, and the existing incremental per-`audio_hash` sync
-  already adds, refreshes and prunes on that basis. Unpublishing changes nothing
-  in the index by decision, so there is no reverse path to build.
-- Corrections must reach the Python side without either runtime reaching into
-  the other's storage, which [ADR 0004](0004-system-boundaries.md) forbids. At
-  publication they are materialized into the writable tree described above, and
-  the export and chunking steps read it from there.
-- That materialization is also what answers the download path, so the two are
-  one mechanism rather than two. Once the resolved transcript is materialized and
-  the export step renders the format files from it, `readTranscriptFile()`
-  resolves by pointing at the corrected artifact and needs no renderer of its own.
-  The alternative — rendering formats on the fly in the web app — would duplicate
-  subtitle rendering that already exists in Python and put it on the wrong side of
-  the boundary. It also means downloads and search become correct at the same
-  moment, both driven by materialization, rather than drifting apart.
-- Before a transcript has ever been published no surface differs from any other:
-  the transcript view, its download, the bulk export, web search and every MCP
-  tool serve the machine transcript, and corrections in progress are visible only
-  inside the correction surface. **After an unpublish they do differ** — the
-  reading surfaces show the machine transcript while search and MCP continue to
-  serve the corrected text. That is the accepted consequence of unpublish moving
-  nothing but a flag.
-- The interval between publishing and the corrected text being available is
-  hidden rather than accepted: the transcript is presented as published only once
-  the job has materialized, rendered and indexed it, so no surface ever finds a
-  published transcript without its artifact or its index entry. Formats are never
-  rendered on the fly in the web app, and the job is never a person remembering
-  to run `just catalog export-transcripts`.
-- That job is a dependency, not existing machinery. Prefect runs in production
-  and owns one flow today, deep search, which the web application already starts
-  through the jobs API. Materializing, rendering and reindexing on publication is
-  a second flow with a second deployment, and the publish handler has to call the
-  jobs API the way the deep-search route does. Until both exist, nothing can be
+- The database is authoritative for correction work and audit history. Generated
+  JSON and format files are immutable publication artifacts.
+- A stable source copy and eager span import make the workspace independent of
+  retranscription and backend priority changes.
+- Publication eligibility is derived from revision-bound decisions. There is no
+  mutable span status that can drift from its approvals and disapprovals.
+- The two-person rule is explicit and fixed. Editing and approving are atomic,
+  playback is not evidence, and users may withdraw only their own decisions.
+- Correctors see one another's identities and activity. The design relies on a
+  small group being able to communicate rather than on anonymity, voting or
+  adjudication.
+- The first version corrects text only. Segment timing remains useful for audio
+  following, citations and subtitle cues; word timing and segmentation quality
+  remain machine output limitations.
+- Reader access and search/MCP resolution intentionally diverge before first
+  publication and after unpublish. That is the product decision, not propagation
+  lag.
+- Explicit original/variant permissions remain useful before publication and do
+  not turn machine text into the ordinary reader transcript.
+- Search sees one logical transcript per recording. A publication changes its
+  fingerprint and replaces its chunks; it never creates a corrected backend.
+- Publication requires a new durable job that materializes, renders, indexes and
+  activates one immutable snapshot. Until that job exists, nothing can be
   published.
-- Corrections are never disturbed by re-transcription, because they are
-  anchored to a frozen snapshot of the transcript they were written against. No
-  span is relocated, none is marked stale, and nothing is ever applied to text it
-  was not written for. Taking up a newer transcription means starting the
-  recording again against a new snapshot, deliberately.
-- Speaker attribution is a separate concern. Transcripts carry no speaker names;
-  the diarization overlay distinguishes turns without identifying who is
-  speaking. Attributing speech is a later phase using the same span mechanism
-  rather than part of text correction.
-- Publication gates the reading surfaces only: the transcript view, its download
-  and the bulk export. Search and MCP are never gated on it, so a reader can
-  obtain an unpublished transcript's machine text by asking an agent for it. That
-  asymmetry is the documented MCP position — the transcript is a source there,
-  not a document — and is not to be closed by gating `get_transcript`.
-- Until a transcript is published a reader is shown how far checking has got,
-  rather than an empty panel or the machine text. That figure is **duration
-  checked against total duration**, not spans counted, because spans run from a
-  few seconds to a minute and a count of them would misrepresent the real
-  position. It is the only thing a `čtenář` learns about a transcript in
-  progress.
-- The correction page is desktop-first. Typing against running audio on a phone
-  is not a workflow worth pretending to support, though confirming a span may be.
-- The reward that motivates correction arrives with the first published
-  transcript, not with the promotion of the listeners. Publication replaces the
-  machine text everywhere at once, and every active account holds the MCP tools,
-  so the answers an agent gives all 81 of them improve immediately. Reading the
-  transcript as a document still waits for someone to make the listeners readers,
-  but correction stops being work without an audience the moment one recording is
-  finished.
-- Nothing here is cheap. One recording averages just over three hours, so two
-  passes over the first one is six person-hours at the theoretical floor and
-  realistically fifteen to twenty-five. Nothing improves for anyone until that
-  first transcript is published. This is accepted as the cost of starting.
+- The correction page is unavailable on phones and portrait tablets. The normal
+  reader and MCP behavior remain responsive as they are today.
+- ADR 0005 consequently uses **publish** for transcripts, grants publishers no
+  adjudication, and describes explicit privileged-original access rather than
+  treating `see_unreleased` as a general transcript bypass.
 
 ## Settled points
 
-- **Corrections are stored as events, not only as final text.**
-- **The two-person rule applies to the current exact text**; changing the text
-  voids prior approvals and the span returns to needing them again.
-- **The verb is publish, and unpublish moves only a flag.**
-- **What is stored per span is a count, not a state**, and nothing may ever be
-  gated on the middle value.
-- **Only a disapproval blocks; a comment never does.** Blocking takes an
-  explicit signal, and an open thread is not one.
-- **There is no adjudication and no outvoting.** People have to agree. This is a
-  starting premise to revisit when the corps outgrows talking to each other.
-- **Every pass is the same surface with the same four actions** — change,
-  comment, approve, disapprove.
-- **An unintelligible passage is cleared, not guessed at**, and the fact that it
-  was unintelligible does not leave the database.
-- **Correction works against a frozen snapshot of the machine transcript**, so
-  re-transcription can never disturb work in progress or a publication.
-- **Span boundaries never move.** No splitting, no merging, in this version.
-- **The artifact is a snapshot and the database is the live version**, so an
-  edit to a published transcript changes nothing until somebody republishes.
-- **The system is tried before it is opened.** Two or three primary recordings,
-  two correctors each, before listeners are promoted to readers.
+- Corrections are current database projections plus immutable history.
+- A workspace eagerly imports and freezes one configured default source.
+- Every persisted text edit is paired atomically with the editor's approval.
+- Two distinct explicit approvals and no current disapproval make a span done.
+- Decisions bind to a revision ID and hash; old decisions never revive.
+- Comments are optional, survive edits and never block publication.
+- Correctors see who edited, approved, disapproved, withdrew and commented.
+- Optimistic revision checks prevent lost updates; v1 has no leases.
+- There is no unintelligible marker or empty-text outcome in v1.
+- Span boundaries stay fixed; v1 has no split, merge or word-timing repair.
+- Correctors cannot publish. Curators and catalog administrators can.
+- A publication is an immutable snapshot while the workspace stays live.
+- Reader and search publication pointers are separate; ordinary unpublish clears
+  only the reader pointer.
+- Search and MCP treat corrected text as a newer version of the same transcript.
+- The JSON carries minimal `meta.correction` provenance; detailed audit remains
+  in PostgreSQL.
+- Correction guide revisions live in PostgreSQL and only catalog administrators
+  edit them.
+- Correction is available only on desktop and landscape tablet layouts.
+- The system is piloted with two correctors on two or three primary recordings
+  before correction access is widened.
 
-## Open questions
+## Deferred questions
 
-- **How `meta.backend`, `meta.model` and `meta.generation_params` are filled for
-  a resolved transcript**, per the sidecar section above. This one blocks the
-  sidecar being written at all.
-- **How a disapproval is expressed in the interface** — a mark on a comment
-  thread, or a control of its own. The rule it has to satisfy is settled: an
-  explicit deliberate signal, never inferred from a thread existing.
-- **Whether a transcript carrying disagreements is shown as stalled** somewhere
-  above the span, so that a document one objection away from publishable does not
-  sit unnoticed, or whether the count in the correction surface is enough.
-- **The correction data model** — spans, approvals, disapprovals, comments and
-  the edit log — is not in this record and has to be written before any of it is
-  built. It is the next thing to write.
-- **The editorial convention** correctors follow, which this record has called a
-  prerequisite since the first draft and which nobody has written.
-
-Closed since the first draft: what the second pass produces (nothing special —
-every pass offers the same four actions); how an unintelligible passage is marked
-(the text is cleared and the fact stays in the database); and whether
-re-transcription disturbs corrections (it cannot, because the source is frozen).
+- The cross-recording corrector overview: personal work, remaining work,
+  disagreements and discussion.
+- The detailed recording navigation and comment-thread presentation beyond the
+  persistence and workflow rules fixed here.
+- Whether real use requires an explicit unintelligible/intentional-empty outcome.
+- Whether a larger, less personal correction corps eventually needs assignments,
+  leases, blind review, notifications, configurable thresholds or adjudication.
