@@ -11,7 +11,11 @@ import {
   canViewCatalog,
   canViewCatalogTranscripts,
 } from "@/lib/policy/catalog";
-import { canViewUnreleasedEvents } from "@/lib/policy/event";
+import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import {
+  canViewUnreleasedEvents,
+  requiresReleasedEventVisibilityScope,
+} from "@/lib/policy/event";
 import {
   canPublishRecording,
   requiresReadyRecordingScope,
@@ -140,5 +144,70 @@ describe("policy access helpers", () => {
     expect(canGrantCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
     expect(canManageExistingCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
     expect(canPublishRecording(viewerContext)).toBe(false);
+  });
+});
+
+describe("unreleased-visibility threshold", () => {
+  // Asked of every level rather than of the lowest one, so that a level inserted
+  // below VIEWER has to declare which side of the threshold it falls on.
+  it.each([
+    ["LISTENER", true],
+    ["VIEWER", false],
+    ["MEMBER", false],
+    ["EDITOR", false],
+    ["OWNER", false],
+  ] as const)("scopes %s to released material: %s", (level, scoped) => {
+    expect(lacksUnreleasedVisibility(level)).toBe(scoped);
+    expect(requiresReadyRecordingScope(level)).toBe(scoped);
+    expect(requiresReleasedEventVisibilityScope(level)).toBe(scoped);
+  });
+
+  it.each([[null], [undefined]] as const)(
+    "leaves a %s grant unscoped, since it is a catalog admin or has no access",
+    (grant) => {
+      expect(lacksUnreleasedVisibility(grant)).toBe(false);
+      expect(requiresReadyRecordingScope(grant)).toBe(false);
+      expect(requiresReleasedEventVisibilityScope(grant)).toBe(false);
+    }
+  );
+
+  it.each([
+    ["LISTENER", false],
+    ["VIEWER", true],
+    ["MEMBER", true],
+    ["EDITOR", true],
+    ["OWNER", true],
+  ] as const)(
+    "lets %s open an unpublished recording directly: %s",
+    (level, visible) => {
+      const context = {
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: level,
+        isCatalogAdmin: false,
+      };
+      expect(
+        canViewRecording(context, { isActionable: true, isPublished: false })
+      ).toBe(visible);
+      // The per-recording gate must agree with the list scope, or a level
+      // hidden from the list could still be reached by direct URL.
+      expect(visible).toBe(!requiresReadyRecordingScope(level));
+    }
+  );
+
+  it("keeps both scopes answering alike for every input", () => {
+    for (const grant of [
+      "LISTENER",
+      "VIEWER",
+      "MEMBER",
+      "EDITOR",
+      "OWNER",
+      null,
+      undefined,
+    ] as const) {
+      expect(requiresReadyRecordingScope(grant)).toBe(
+        requiresReleasedEventVisibilityScope(grant)
+      );
+    }
   });
 });
