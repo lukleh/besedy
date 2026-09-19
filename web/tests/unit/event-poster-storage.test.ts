@@ -27,6 +27,7 @@ import {
   resolveEventPostersPath,
   restoreStagedEventPosterAssets,
   stageEventPosterAssetsRemoval,
+  writePosterCandidateAssets,
 } from "@/lib/event-poster-storage";
 
 async function png(width: number, height: number): Promise<Buffer> {
@@ -99,6 +100,42 @@ describe("event poster storage", () => {
     ).rejects.toMatchObject({
       code: "INVALID_FILE",
     } satisfies Partial<PosterAssetError>);
+  });
+
+  it("writes assets with shared-group permissions under a restrictive umask", async () => {
+    const square = await processPosterAsset(
+      { bytes: await png(800, 800), originalName: "square.png" },
+      "square"
+    );
+    const landscape = await processPosterAsset(
+      { bytes: await png(1600, 900), originalName: "landscape.png" },
+      "landscape"
+    );
+    const originalUmask = process.umask(0o077);
+
+    try {
+      const candidateDir = await writePosterCandidateAssets({
+        catalogId: "20260919_120000",
+        eventId: 7,
+        posterId: "00000000-0000-4000-8000-000000000007",
+        square,
+        landscape,
+      });
+      const eventDir = path.dirname(candidateDir);
+      const [eventStat, candidateStat, squareStat, landscapeStat] = await Promise.all([
+        fs.stat(eventDir),
+        fs.stat(candidateDir),
+        fs.stat(path.join(candidateDir, "square.png")),
+        fs.stat(path.join(candidateDir, "landscape.png")),
+      ]);
+
+      expect(eventStat.mode & 0o7777).toBe(0o2770);
+      expect(candidateStat.mode & 0o7777).toBe(0o2770);
+      expect(squareStat.mode & 0o777).toBe(0o660);
+      expect(landscapeStat.mode & 0o777).toBe(0o660);
+    } finally {
+      process.umask(originalUmask);
+    }
   });
 
   it("returns no staging record when the event poster directory is absent", async () => {
