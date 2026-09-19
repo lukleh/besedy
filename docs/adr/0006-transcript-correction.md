@@ -43,9 +43,12 @@ revision and no current disapproval applies. Eligibility does not publish
 anything automatically: a curator or catalog administrator must deliberately
 publish the transcript.
 
-Only primary recordings of events are in scope for the first version. Secondary
-recordings have distinct audio hashes and timing and do not inherit corrections
-from a primary recording.
+Only primary recordings of events are in scope for the first version. Every
+other recording, including a secondary recording, has its own audio hash and
+timing and does not inherit corrections from a primary recording. Because these
+recordings cannot enter the correction workflow, they also do not enter its
+publication gate: their reader and ordinary-download behavior remains the
+configured default machine transcript.
 
 ### Four consumers deliberately resolve different text
 
@@ -54,19 +57,21 @@ an explicit rule:
 
 | Consumer | Resolution |
 | --- | --- |
-| Reader and ordinary download | The active reader publication. With no active reader publication, return no transcript text. |
+| Reader and ordinary download | For a correction-eligible primary recording, the active reader publication; with none, return no transcript text. For a recording outside correction scope, the configured default machine transcript. |
 | Search and MCP | The active search publication, otherwise the configured default machine transcript. |
-| Correction UI | The live database workspace. |
+| Correction UI | The live database workspace for an eligible primary recording. |
 | Privileged original access | Before a workspace exists, the current configured default machine transcript. Once correction starts, the frozen machine source. `see_transcript_variants` may additionally expose other machine variants. |
 
 This separation is a safety property. The machine fallback required by MCP must
 never accidentally become a fallback for the normal reading page.
 
-Before a transcript has ever been published, a reader sees correction progress
-but not transcript text. Ordinary transcript downloads and bulk export do not
-include it. Search and MCP continue to use the machine transcript; users already
-understand that an agent uses transcription as a fallible source rather than as
-a verbatim document.
+Before a correction-eligible primary transcript has ever been published, a
+reader sees correction progress but not transcript text. Ordinary transcript
+downloads and bulk export do not include it. Search and MCP continue to use the
+machine transcript; users already understand that an agent uses transcription
+as a fallible source rather than as a verbatim document. Recordings outside
+correction scope remain ordinary machine-transcript reads and downloads because
+v1 offers no path to correct or publish them.
 
 Explicit administrative machine-output permissions are exceptions to the
 reading gate:
@@ -85,10 +90,10 @@ ordinary reader. Correctors see the source through the correction UI. Curators
 and administrators can also enter that UI because their roles carry
 `correct_transcripts`.
 
-After publication, the published corrected transcript is the primary reader
-transcript. A catalog administrator may still compare it with machine variants,
-and a curator or administrator may download its frozen machine source. A live
-post-publication draft remains visible only in the correction UI.
+After publication, the published corrected transcript is the reader transcript
+for that primary recording. A catalog administrator may still compare it with
+machine variants, and a curator or administrator may download its frozen machine
+source. A live post-publication draft remains visible only in the correction UI.
 
 ### Search and MCP see a newer version, not a corrected transcript type
 
@@ -96,12 +101,17 @@ A corrected transcript is not another backend and not a parallel search
 document. It replaces the machine text under the same logical recording and
 backend identity. Search keeps one set of chunks for the audio hash.
 
-The indexing input resolver chooses the active search publication for an audio
-hash when one exists and the configured machine transcript otherwise. The
-published text changes the existing `transcript_fingerprint`, so the current
-incremental sync replaces the chunks for that audio hash in a staged bundle and
-atomically switches the bundle pointer. It must not index machine and corrected
-chunks side by side.
+Every full or incremental index build uses one indexing input resolver. For an
+audio hash it chooses an `activating` publication first, then the active search
+publication, and otherwise the configured machine transcript. Considering the
+activation intent prevents a routine sync in the crash window from reverting
+the new text before its database pointer is committed.
+
+This resolver and its integration into every sync entry point are new work. The
+resolved source then reuses the existing content-derived
+`transcript_fingerprint`, per-`audio_hash` delta, staged bundle validation and
+atomic bundle switch. It replaces the chunks under the same logical backend
+scope and must not index machine and corrected chunks side by side.
 
 MCP receives the resolved canonical transcript and treats it like any other
 transcript. It has no correction-specific branch, response field or presentation
@@ -113,10 +123,11 @@ Any person holding `correct_transcripts` may deliberately start correction for
 an eligible primary recording. Merely opening a page creates nothing. The start
 action shows which configured default machine transcript will be frozen.
 
-Starting creates one permanent workspace for that recording. A database
-constraint prevents concurrent start requests from creating duplicates. The
-workspace has no owner or assignment in the first version; the initiator is
-recorded only as history.
+Starting creates one active workspace for that recording. A partial database
+uniqueness constraint permits at most one non-archived workspace per recording,
+preventing concurrent start requests from creating duplicates while preserving
+archived workspaces for audit. The workspace has no owner or assignment in the
+first version; the initiator is recorded only as history.
 
 The start operation succeeds only after both of these exist and agree:
 
@@ -312,8 +323,9 @@ multi-hour recording.
 
 ### Readers see two progress measures before first publication
 
-With no reader publication, the reader page shows no transcript text and no
-corrector identities or disputed-span detail. It shows:
+For a correction-eligible primary recording with no reader publication, the
+reader page shows no transcript text and no corrector identities or
+disputed-span detail. It shows:
 
 - **Reviewed once:** duration covered by spans that have at least one current
   approval or disapproval.
@@ -321,7 +333,9 @@ corrector identities or disputed-span detail. It shows:
 
 Both are divided by the total duration covered by source spans. Duration is more
 representative than span count because machine segments vary greatly in length.
-If no workspace exists, the page says correction has not started.
+If no workspace exists, the page says correction has not started. Recordings
+outside correction scope do not show this permanent progress state; they retain
+their existing machine-transcript reader.
 
 Once a reader publication exists, readers keep seeing that immutable snapshot
 while later work proceeds. Draft progress is no longer shown on the reader page.
@@ -397,8 +411,8 @@ revision manifest and locks workspace writes. One job then:
 2. Renders `txt`, `srt` and `vtt` from that JSON.
 3. Builds and validates an incremental search update that replaces the same
    audio hash in the same logical backend scope.
-4. Records the publication as `activating`, including the expected index bundle
-   and transcript fingerprint.
+4. Records the publication as `activating`, including the expected transcript
+   fingerprint and the previous effective source needed for rollback.
 5. Switches the staged index bundle.
 6. Moves the database pointers, marks the publication successful and unlocks
    the workspace.
@@ -417,14 +431,25 @@ edit, a new publication candidate is required.
 
 Once a publication is `activating`, a failed job attempt does not fail the
 logical publication or unlock the workspace. A retry or reconciliation worker
-compares the active index bundle with the recorded fingerprint. If the old
-bundle is still active, it performs the cutover; if the new bundle is active, it
-completes database pointer activation. The workspace remains locked until this
-succeeds. An explicit rollback may unlock it only after restoring the old index
-bundle. Job attempts and their errors are recorded separately from the logical
+reads the active bundle's source state for this audio hash. If it contains the
+recorded transcript fingerprint, the worker completes database pointer
+activation. Otherwise it stages the same replacement against whatever bundle is
+currently active, switches it and checks again. Bundle identity is irrelevant,
+so unrelated successful syncs cannot strand the workspace. The workspace
+remains locked until reconciliation succeeds.
+
+An explicit rollback likewise operates on the latest active bundle: it restores
+the previous effective transcript only for this audio hash, verifies that
+fingerprint, then abandons the candidate and unlocks the workspace. It never
+reactivates an old whole bundle and therefore does not discard unrelated index
+updates. Job attempts and their errors are recorded separately from the logical
 publication.
 
-Unpublishing starts no job. It clears the reader pointer immediately.
+Unpublishing starts no indexing job and clears the reader pointer immediately,
+but it is rejected while any publication for the workspace is `pending` or
+`activating`. This simple serialization prevents a finishing publication from
+silently reversing a curator's unpublish. The curator may unpublish immediately
+after the publication completes.
 
 ### The canonical JSON carries minimal provenance
 
@@ -497,7 +522,9 @@ actually missing, and whether indexing replaces rather than duplicates the
 recording. Stored action counts and timestamps support that review; direct
 conversation supplies the interpretation.
 
-No existing machine transcript is grandfathered into reader publication.
+No existing correction-eligible primary machine transcript is grandfathered
+into reader publication. Recordings outside correction scope remain outside
+that gate.
 
 ## Consequences
 
@@ -515,13 +542,16 @@ No existing machine transcript is grandfathered into reader publication.
 - The first version corrects text only. Segment timing remains useful for audio
   following, citations and subtitle cues; word timing and segmentation quality
   remain machine output limitations.
-- Reader access and search/MCP resolution intentionally diverge before first
-  publication and after unpublish. That is the product decision, not propagation
-  lag.
+- Reader access and search/MCP resolution intentionally diverge for eligible
+  primary recordings before first publication and after unpublish. That is the
+  product decision, not propagation lag. Recordings outside correction scope
+  remain on the configured machine transcript in v1.
 - Explicit original/variant permissions remain useful before publication and do
   not turn machine text into the ordinary reader transcript.
 - Search sees one logical transcript per recording. A publication changes its
   fingerprint and replaces its chunks; it never creates a corrected backend.
+- Every index build resolves the same effective source, including an activation
+  intent, so routine sync cannot revert corrected chunks during publication.
 - Publication requires a new durable job that materializes, renders, indexes and
   activates one immutable snapshot. Until that job exists, nothing can be
   published.
@@ -535,6 +565,8 @@ No existing machine transcript is grandfathered into reader publication.
 
 - Corrections are current database projections plus immutable history.
 - A workspace eagerly imports and freezes one configured default source.
+- At most one non-archived workspace exists per recording; archived attempts
+  remain available for audit.
 - Every persisted text edit is paired atomically with the editor's approval.
 - Two distinct explicit approvals and no current disapproval make a span done.
 - Decisions bind to a revision ID and hash; old decisions never revive.
@@ -546,7 +578,7 @@ No existing machine transcript is grandfathered into reader publication.
 - Correctors cannot publish. Curators and catalog administrators can.
 - A publication is an immutable snapshot while the workspace stays live.
 - Reader and search publication pointers are separate; ordinary unpublish clears
-  only the reader pointer.
+  only the reader pointer and is rejected during publication activation.
 - Search and MCP treat corrected text as a newer version of the same transcript.
 - The JSON carries minimal `meta.correction` provenance; detailed audit remains
   in PostgreSQL.
