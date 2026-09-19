@@ -13,6 +13,7 @@ type CreateFromRecordingResult =
   | { kind: "recording_not_found" }
   | { kind: "non_actionable" }
   | { kind: "already_assigned"; eventId: number }
+  | { kind: "duplicate_event"; eventId: number }
   | { kind: "missing_metadata" };
 
 export async function POST(request: NextRequest) {
@@ -82,7 +83,9 @@ export async function POST(request: NextRequest) {
           return { kind: "missing_metadata" };
         }
 
-        const latestSession = await tx.catalogEvent.findFirst({
+        // Recording metadata is the only input here, so a match means the
+        // recording belongs on the existing event rather than beside it.
+        const existing = await tx.catalogEvent.findFirst({
           where: {
             workflowGroupId: body.workflowGroupId,
             locationId: metadata.location.id,
@@ -90,10 +93,15 @@ export async function POST(request: NextRequest) {
             dateMonth: metadata.dateMonth ?? null,
             dateDay: metadata.dateDay ?? null,
           },
-          select: { sessionIndex: true },
+          select: { id: true },
           orderBy: { sessionIndex: "desc" },
         });
-        const sessionIndex = (latestSession?.sessionIndex ?? 0) + 1;
+
+        if (existing) {
+          return { kind: "duplicate_event", eventId: existing.id };
+        }
+
+        const sessionIndex = 1;
 
         const title = deriveEventTitle(
           metadata.location.name,
@@ -147,6 +155,12 @@ export async function POST(request: NextRequest) {
       }
       if (result.kind === "already_assigned") {
         return conflict(`Recording is already assigned to event ${result.eventId}`);
+      }
+      if (result.kind === "duplicate_event") {
+        return conflict(
+          `Event ${result.eventId} already covers this recording's location and date. ` +
+            `Attach the recording to that event instead.`
+        );
       }
       if (result.kind === "missing_metadata") {
         return badRequest("Recording requires location and year metadata before creating an event");

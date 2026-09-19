@@ -142,7 +142,7 @@ describe("catalog events create-from-recording route", () => {
     });
   });
 
-  it("creates the next session when a same-place same-day event already exists", async () => {
+  it("returns 409 instead of a second session when a same-place same-day event exists", async () => {
     prisma.catalogEntry.findFirst.mockResolvedValue({
       audioHash,
       isActionable: true,
@@ -157,17 +157,7 @@ describe("catalog events create-from-recording route", () => {
       },
     });
     prisma.catalogEventRecording.findUnique.mockResolvedValue(null);
-    prisma.catalogEvent.findFirst.mockResolvedValue({ sessionIndex: 1 });
-    prisma.catalogEvent.create.mockResolvedValue({
-      id: 89,
-      title: "Praha, 3 Apr 2024, session 2",
-    });
-    prisma.catalogEventRecording.create.mockResolvedValue({
-      eventId: 89,
-      workflowGroupId: catalogId,
-      audioHash,
-      isPrimary: true,
-    });
+    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 88 });
 
     const request = new NextRequest("http://localhost/api/catalog-events/from-recording", {
       method: "POST",
@@ -179,7 +169,7 @@ describe("catalog events create-from-recording route", () => {
     });
     const response = await createFromRecording(request);
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(409);
     expect(prisma.catalogEvent.findFirst).toHaveBeenCalledWith({
       where: {
         workflowGroupId: catalogId,
@@ -188,27 +178,14 @@ describe("catalog events create-from-recording route", () => {
         dateMonth: 4,
         dateDay: 3,
       },
-      select: { sessionIndex: true },
+      select: { id: true },
       orderBy: { sessionIndex: "desc" },
-    });
-    expect(prisma.catalogEvent.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        sessionIndex: 2,
-        title: "Praha, 3 Apr 2024, session 2",
-      }),
-      select: {
-        id: true,
-        title: true,
-      },
     });
 
     const body = await response.json();
-    expect(body).toEqual({
-      eventId: 89,
-      audioHash,
-      title: "Praha, 3 Apr 2024, session 2",
-      sessionIndex: 2,
-    });
+    expect(body.error).toMatch(/Event 88 already covers/i);
+    expect(prisma.catalogEvent.create).not.toHaveBeenCalled();
+    expect(prisma.catalogEventRecording.create).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the recording lacks required event metadata", async () => {

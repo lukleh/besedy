@@ -420,19 +420,31 @@ export async function POST(request: NextRequest) {
     if (!location) {
       return notFound("location");
     }
-    const sessionIndex =
-      body.sessionIndex ??
-      ((await prisma.catalogEvent.findFirst({
-        where: {
-          workflowGroupId: body.workflowGroupId,
-          locationId: body.locationId,
-          dateYear: body.dateYear,
-          dateMonth: body.dateMonth ?? null,
-          dateDay: body.dateDay ?? null,
-        },
-        select: { sessionIndex: true },
-        orderBy: { sessionIndex: "desc" },
-      }))?.sessionIndex ?? 0) + 1;
+    // Silently bumping the session would hide a mistyped date behind a second
+    // event the catalog list renders identically. Make the caller say so.
+    const existing =
+      body.sessionIndex === undefined
+        ? await prisma.catalogEvent.findFirst({
+            where: {
+              workflowGroupId: body.workflowGroupId,
+              locationId: body.locationId,
+              dateYear: body.dateYear,
+              dateMonth: body.dateMonth ?? null,
+              dateDay: body.dateDay ?? null,
+            },
+            select: { id: true, sessionIndex: true },
+            orderBy: { sessionIndex: "desc" },
+          })
+        : null;
+
+    if (existing) {
+      return conflict(
+        `Event ${existing.id} already covers this location and date. ` +
+          `Pass sessionIndex ${existing.sessionIndex + 1} to add another session.`
+      );
+    }
+
+    const sessionIndex = body.sessionIndex ?? 1;
 
     const title =
       body.title ??
