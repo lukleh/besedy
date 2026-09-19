@@ -98,9 +98,11 @@ describe("policy access helpers", () => {
     expect(hasCatalogManagementAuthority(ownerContext)).toBe(true);
     expect(canAccessCatalogSettings(ownerContext)).toBe(true);
     expect(canManageCatalogConfiguration(ownerContext)).toBe(false);
-    expect(canGrantCatalogAccessLevel(ownerContext, "EDITOR")).toBe(true);
+    expect(canGrantCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
+    expect(canGrantCatalogAccessLevel(ownerContext, "EDITOR")).toBe(false);
     expect(canGrantCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "VIEWER")).toBe(true);
+    expect(canManageExistingCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
+    expect(canManageExistingCatalogAccessLevel(ownerContext, "VIEWER")).toBe(false);
     expect(canManageExistingCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
     expect(canPublishRecording(ownerContext)).toBe(true);
     expect(requiresReadyRecordingScope("OWNER")).toBe(false);

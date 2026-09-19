@@ -79,7 +79,7 @@ interface AccessGrant {
 interface AccessTableProps {
   catalogId: string;
   accessList: AccessGrant[];
-  canManageOwnerAccess: boolean;
+  manageableAccessLevels: AccessLevel[];
   accessLevelFilter?: AccessLevel | "all" | "revoked";
   searchQuery?: string;
   onSuccess: () => void;
@@ -88,7 +88,7 @@ interface AccessTableProps {
 export function AccessTable({
   catalogId,
   accessList,
-  canManageOwnerAccess,
+  manageableAccessLevels,
   accessLevelFilter = "all",
   searchQuery = "",
   onSuccess,
@@ -315,8 +315,8 @@ export function AccessTable({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-1">
-                  {/* Can edit if admin or if not OWNER level */}
-                  {(canManageOwnerAccess || grant.accessLevel !== "OWNER") && (
+                  {/* Only access the actor may act on carries actions */}
+                  {manageableAccessLevels.includes(grant.accessLevel) && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -326,8 +326,7 @@ export function AccessTable({
                       <Pencil className="h-4 w-4" />
                     </Button>
                   )}
-                  {/* Can revoke if admin or if not OWNER level */}
-                  {(canManageOwnerAccess || grant.accessLevel !== "OWNER") && (
+                  {manageableAccessLevels.includes(grant.accessLevel) && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -448,7 +447,7 @@ export function AccessTable({
                 onAccessLevelChange={setEditAccessLevel}
                 notes={editNotes}
                 onNotesChange={setEditNotes}
-                canManageOwnerAccess={canManageOwnerAccess}
+                manageableAccessLevels={manageableAccessLevels}
                 idPrefix="edit"
               />
             </div>

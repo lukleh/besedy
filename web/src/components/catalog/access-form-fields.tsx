@@ -12,9 +12,7 @@ import {
   ResponsiveSelectTrigger,
   ResponsiveSelectValue,
 } from "@/components/ui/responsive-select";
-import { AccessLevel } from "@/generated/prisma/enums";
-
-const ACCESS_LEVEL_VALUES = Object.values(AccessLevel);
+import type { AccessLevel } from "@/generated/prisma/enums";
 
 interface AccessFormFieldsProps {
   userName: string;
@@ -23,7 +21,7 @@ interface AccessFormFieldsProps {
   onAccessLevelChange: (value: AccessLevel) => void;
   notes: string;
   onNotesChange: (value: string) => void;
-  canManageOwnerAccess: boolean;
+  manageableAccessLevels: AccessLevel[];
   /** Prefix for unique form field IDs (e.g., "grant" or "edit") */
   idPrefix?: string;
   /** Show hint text below access level select */
@@ -37,7 +35,7 @@ export function AccessFormFields({
   onAccessLevelChange,
   notes,
   onNotesChange,
-  canManageOwnerAccess,
+  manageableAccessLevels,
   idPrefix = "access",
   showAccessLevelHint = false,
 }: AccessFormFieldsProps) {
@@ -84,9 +82,7 @@ export function AccessFormFields({
             <ResponsiveSelectValue displayValue={getAccessLevelName(accessLevel)} />
           </ResponsiveSelectTrigger>
           <ResponsiveSelectContent title={t("dialogs.grantAccess.accessLevelLabel")}>
-            {ACCESS_LEVEL_VALUES.filter(
-              (level) => canManageOwnerAccess || level !== "OWNER"
-            ).map((level) => (
+            {manageableAccessLevels.map((level) => (
               <ResponsiveSelectItem key={level} value={level} className="py-2">
                 <div className="flex flex-col items-start gap-0.5">
                   <span>{getAccessLevelName(level)}</span>
@@ -98,11 +94,13 @@ export function AccessFormFields({
             ))}
           </ResponsiveSelectContent>
         </ResponsiveSelect>
-        {showAccessLevelHint && (
+        {showAccessLevelHint && manageableAccessLevels.length > 0 && (
+          // Named from the list rather than from the actor's own standing, so
+          // the hint cannot drift from what the server will accept.
           <p className="mt-1 text-xs text-muted-foreground">
-            {canManageOwnerAccess
-              ? t("dialogs.grantAccess.adminHint")
-              : t("dialogs.grantAccess.ownerHint")}
+            {t("dialogs.grantAccess.levelsHint", {
+              levels: manageableAccessLevels.map(getAccessLevelName).join(", "),
+            })}
           </p>
         )}
       </div>

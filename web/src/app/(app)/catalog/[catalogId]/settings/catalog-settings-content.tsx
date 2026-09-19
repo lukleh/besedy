@@ -58,7 +58,6 @@ import { CatalogSettingsPendingUsersCard } from "./catalog-settings-pending-user
 import { CatalogSettingsTranscriptExportsCard } from "./catalog-settings-transcript-exports-card";
 import {
   ACCESS_LEVEL_COLORS,
-  ACCESS_LEVEL_VALUES,
   catalogAccessResponseSchema,
   catalogConfigSchema,
   catalogSyncResponseSchema,
@@ -122,6 +121,10 @@ export default function CatalogSettingsContent({
     retry: false, // Don't retry on error (403 is expected for unauthorized users)
     ...AUTH_SENSITIVE_QUERY_OPTIONS,
   });
+
+  // Until the payload arrives, offer nothing: an empty list hides controls the
+  // server may refuse, where a full one would show controls that then fail.
+  const manageableAccessLevels = data?.manageableAccessLevels ?? [];
 
   // Fetch catalog configuration only when policy allows config management.
   const { data: catalogConfig, isLoading: loadingConfig, error: configError } =
@@ -594,7 +597,7 @@ export default function CatalogSettingsContent({
       <CatalogSettingsPendingUsersCard
         accessLevelColors={ACCESS_LEVEL_COLORS}
         accessLevelFilter={accessLevelFilter}
-        canManageOwnerAccess={data?.canManageOwnerAccess ?? false}
+        manageableAccessLevels={manageableAccessLevels}
         onEditPendingUser={openEditPendingDialog}
         onRemovePendingUser={setRemoveDialog}
         pendingUsersData={pendingUsersData}
@@ -606,7 +609,7 @@ export default function CatalogSettingsContent({
       <AccessTable
         catalogId={catalogId}
         accessList={data?.accessList ?? []}
-        canManageOwnerAccess={data?.canManageOwnerAccess ?? false}
+        manageableAccessLevels={manageableAccessLevels}
         accessLevelFilter={accessLevelFilter}
         searchQuery={search}
         onSuccess={() => {
@@ -617,7 +620,7 @@ export default function CatalogSettingsContent({
       {/* Grant Access Dialog */}
       <GrantAccessDialog
         catalogId={catalogId}
-        canManageOwnerAccess={data?.canManageOwnerAccess ?? false}
+        manageableAccessLevels={manageableAccessLevels}
         open={grantDialogOpen}
         onOpenChange={setGrantDialogOpen}
         onSuccess={() => {
@@ -680,9 +683,7 @@ export default function CatalogSettingsContent({
                   <ResponsiveSelectValue displayValue={t(`accessLevels.${editPendingForm.accessLevel.toLowerCase()}`)} />
                 </ResponsiveSelectTrigger>
                 <ResponsiveSelectContent title={t("dialogs.grantAccess.accessLevelLabel")}>
-                  {ACCESS_LEVEL_VALUES.filter(
-                    (level) => data?.canManageOwnerAccess || level !== "OWNER"
-                  ).map((level) => (
+                  {manageableAccessLevels.map((level) => (
                     <ResponsiveSelectItem key={level} value={level}>
                       {t(`accessLevels.${level.toLowerCase()}`)}
                     </ResponsiveSelectItem>

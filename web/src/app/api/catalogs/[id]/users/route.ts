@@ -4,7 +4,7 @@ import prisma from "@/lib/db";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   canAttemptCatalogManagement,
-  canManageExistingCatalogAccessLevel,
+  manageableCatalogAccessLevels,
 } from "@/lib/policy/catalog";
 import { TimestampIdParamSchema, UserSearchQuerySchema } from "@/lib/validation/schemas";
 import { validateParams, validateSearchParams, forbidden, notFound, handlePrismaError } from "@/lib/api";
@@ -67,17 +67,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const searchTerm = search.trim().toLowerCase();
-    const canManageOwnerAccess = canManageExistingCatalogAccessLevel(
-      access.policyContext,
-      "OWNER"
-    );
+    // Someone the actor cannot act on should not be offered to them at all.
+    const manageableLevels = manageableCatalogAccessLevels(access.policyContext);
 
     // Get users with ACTIVE access to this catalog (for update option)
     const activeAccess = await prisma.catalogAccess.findMany({
       where: {
         catalogId,
         status: "ACTIVE",
-        ...(canManageOwnerAccess ? {} : { accessLevel: { not: "OWNER" } }),
+        accessLevel: { in: manageableLevels },
         OR: [
           { user: { email: { contains: searchTerm, mode: "insensitive" } } },
           { user: { name: { contains: searchTerm, mode: "insensitive" } } },
@@ -98,7 +96,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: {
         catalogId,
         status: "REVOKED",
-        ...(canManageOwnerAccess ? {} : { accessLevel: { not: "OWNER" } }),
+        accessLevel: { in: manageableLevels },
         OR: [
           { user: { email: { contains: searchTerm, mode: "insensitive" } } },
           { user: { name: { contains: searchTerm, mode: "insensitive" } } },

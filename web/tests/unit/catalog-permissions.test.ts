@@ -10,9 +10,12 @@ import {
   canBatchEditCatalogMetadata,
   canDownloadCatalogContent,
   canEditCatalogMetadata,
+  canGrantCatalogAccessLevel,
   canManageCatalogConfiguration,
+  canManageExistingCatalogAccessLevel,
   canViewCatalogTranscripts,
   hasCatalogManagementAuthority,
+  isSelfCatalogAccessChange,
 } from "@/lib/policy/catalog";
 
 const READER_PERMISSIONS: CatalogPermission[] = [
@@ -124,6 +127,75 @@ describe("roles", () => {
   it("gives an absent role nothing", () => {
     expect(permissionsForRole(null).size).toBe(0);
     expect(permissionsForRole(undefined).size).toBe(0);
+  });
+});
+
+describe("granting rule", () => {
+  // docs/adr/0005-catalog-permission-model.md: manage_access and see_unreleased
+  // are protected, the same test applies to the access being replaced, and
+  // nobody changes their own.
+  const PROTECTED: CatalogPermission[] = ["manage_access", "see_unreleased"];
+
+  const host = context("OWNER");
+  const admin = context(null, true);
+
+  it("protects exactly the two permissions the record names", () => {
+    for (const permission of PROTECTED) {
+      const carrier = LEVELS.find((level) => permissionsForLevel(level).has(permission));
+      expect(carrier, `no level carries ${permission}`).toBeDefined();
+      expect(canGrantCatalogAccessLevel(host, carrier!)).toBe(false);
+    }
+  });
+
+  it("lets a holder of manage_access give what carries neither", () => {
+    for (const level of LEVELS) {
+      const carriesProtected = PROTECTED.some((p) => permissionsForLevel(level).has(p));
+      expect(canGrantCatalogAccessLevel(host, level)).toBe(!carriesProtected);
+    }
+  });
+
+  it("asks the same question about the access being replaced", () => {
+    for (const level of LEVELS) {
+      expect(canManageExistingCatalogAccessLevel(host, level)).toBe(
+        canGrantCatalogAccessLevel(host, level)
+      );
+    }
+  });
+
+  it("stops manage_access propagating itself", () => {
+    // The point of protecting it: an account that grants cannot mint another.
+    const grantingLevels = LEVELS.filter((level) =>
+      permissionsForLevel(level).has("manage_access")
+    );
+    expect(grantingLevels.length).toBeGreaterThan(0);
+    for (const level of grantingLevels) {
+      expect(canGrantCatalogAccessLevel(host, level)).toBe(false);
+    }
+  });
+
+  it("lets a catalog administrator give and replace anything", () => {
+    for (const level of LEVELS) {
+      expect(canGrantCatalogAccessLevel(admin, level)).toBe(true);
+      expect(canManageExistingCatalogAccessLevel(admin, level)).toBe(true);
+    }
+  });
+
+  it("gives nothing to an actor without manage_access", () => {
+    const reader = context("VIEWER");
+    for (const level of LEVELS) {
+      expect(canGrantCatalogAccessLevel(reader, level)).toBe(false);
+      expect(canManageExistingCatalogAccessLevel(reader, level)).toBe(false);
+    }
+  });
+
+  it("treats a change to the actor's own access as their own, administrator or not", () => {
+    expect(isSelfCatalogAccessChange("user-1", "user-1")).toBe(true);
+    expect(isSelfCatalogAccessChange("user-1", "user-2")).toBe(false);
+  });
+
+  it("treats a subject with no account as nobody's self", () => {
+    expect(isSelfCatalogAccessChange("user-1", null)).toBe(false);
+    expect(isSelfCatalogAccessChange(null, null)).toBe(false);
   });
 });
 

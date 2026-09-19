@@ -68,7 +68,7 @@ export async function deletePendingCatalogRecord(
     }
 
     if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, pendingGrant.accessLevel)) {
-      return forbidden("Only administrators can revoke OWNER access");
+      return forbidden("Only administrators can revoke this level of access");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -161,11 +161,11 @@ export async function updatePendingCatalogRecord(
     }
 
     if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant OWNER access");
+      return forbidden("Only administrators can grant this level of access");
     }
 
     if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, pendingGrant.accessLevel)) {
-      return forbidden("Only administrators can modify OWNER access");
+      return forbidden("Only administrators can modify this level of access");
     }
 
     const normalizedNotes = notes ?? null;

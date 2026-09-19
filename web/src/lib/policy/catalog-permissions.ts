@@ -102,6 +102,30 @@ const ALL_PERMISSIONS: ReadonlySet<CatalogPermission> = new Set(
   Object.keys(EVERY_PERMISSION) as CatalogPermission[]
 );
 
+/**
+ * Permissions that only a catalog administrator may pass on.
+ *
+ * `manage_access` is protected so that granting cannot propagate itself: the
+ * account that can mint accounts which grant is the administrator, and nobody
+ * below can widen that circle. `see_unreleased` is protected so that sight of
+ * unreleased material stays an administrative decision — a curator sees it but
+ * cannot hand it on.
+ *
+ * The test is on what a grant carries rather than on its name, so a role or a
+ * level added later is classified without touching this list.
+ */
+const PROTECTED_PERMISSIONS: CatalogPermission[] = [
+  "manage_access",
+  "see_unreleased",
+];
+
+/** Whether a set of permissions contains anything only an administrator may give. */
+export function carriesProtectedPermission(
+  permissions: ReadonlySet<CatalogPermission>
+): boolean {
+  return PROTECTED_PERMISSIONS.some((permission) => permissions.has(permission));
+}
+
 const READER: CatalogPermission[] = [
   "stream_audio",
   "read_transcripts",

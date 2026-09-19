@@ -143,6 +143,106 @@ describe("catalog access routes", () => {
     });
   });
 
+  // see_unreleased is protected alongside manage_access, and every level above
+  // LISTENER carries it, so an owner may now hand out LISTENER and nothing else.
+  it.each(["VIEWER", "MEMBER", "EDITOR", "OWNER"] as const)(
+    "POST /api/catalogs/:id/access blocks %s for a non-admin, because it carries a protected permission",
+    async (accessLevel) => {
+      requireAuth.mockResolvedValue("owner-1");
+      resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
+      prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId });
+      prisma.user.findUnique.mockResolvedValue({ id: userId });
+
+      const response = await postAccess(
+        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
+          method: "POST",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ userId, accessLevel }),
+        }),
+        { params: Promise.resolve({ id: catalogId }) }
+      );
+
+      expect(response.status).toBe(403);
+      expect(prisma.catalogAccess.create).not.toHaveBeenCalled();
+    }
+  );
+
+  // Nobody changes their own access, administrators included.
+  it("POST /api/catalogs/:id/access refuses a grant to the actor themselves", async () => {
+    requireAuth.mockResolvedValue(userId);
+    resolveCatalogManagementActor.mockResolvedValue(
+      makeManagementAccess({ resolvedUserId: userId, isCatalogAdmin: true })
+    );
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId });
+    prisma.user.findUnique.mockResolvedValue({ id: userId });
+
+    const response = await postAccess(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
+        method: "POST",
+        headers: browserMutationHeaders,
+        body: JSON.stringify({ userId, accessLevel: "OWNER" }),
+      }),
+      { params: Promise.resolve({ id: catalogId }) }
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.catalogAccess.create).not.toHaveBeenCalled();
+  });
+
+  it("PUT /api/catalogs/:id/access/:userId refuses any change to the actor's own access", async () => {
+    requireAuth.mockResolvedValue(userId);
+    resolveCatalogManagementActor.mockResolvedValue(
+      makeManagementAccess({ resolvedUserId: userId, isCatalogAdmin: true })
+    );
+    prisma.catalogAccess.findUnique.mockResolvedValue({
+      userId,
+      catalogId,
+      // A lateral move the old self-check let through: it fired only when an
+      // OWNER was leaving OWNER.
+      accessLevel: "MEMBER",
+      status: "ACTIVE",
+      user: { id: userId, email: "self@test.com" },
+    });
+
+    const response = await putAccess(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
+        method: "PUT",
+        headers: browserMutationHeaders,
+        body: JSON.stringify({ accessLevel: "EDITOR" }),
+      }),
+      { params: Promise.resolve({ id: catalogId, userId }) }
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.catalogAccess.update).not.toHaveBeenCalled();
+  });
+
+  it("PATCH /api/catalogs/:id/access/:userId refuses to restore the actor's own access", async () => {
+    requireAuth.mockResolvedValue(userId);
+    resolveCatalogManagementActor.mockResolvedValue(
+      makeManagementAccess({ resolvedUserId: userId, isCatalogAdmin: true })
+    );
+    prisma.catalogAccess.findUnique.mockResolvedValue({
+      userId,
+      catalogId,
+      accessLevel: "OWNER",
+      status: "REVOKED",
+      user: { email: "self@test.com" },
+    });
+
+    const response = await patchAccess(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
+        method: "PATCH",
+        headers: browserMutationHeaders,
+        body: JSON.stringify({ action: "restore" }),
+      }),
+      { params: Promise.resolve({ id: catalogId, userId }) }
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.catalogAccess.update).not.toHaveBeenCalled();
+  });
+
   it("POST /api/catalogs/:id/access blocks restoring revoked OWNER access for non-admin", async () => {
     requireAuth.mockResolvedValue("owner-1");
     resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
@@ -157,14 +257,16 @@ describe("catalog access routes", () => {
       new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
         method: "POST",
         headers: browserMutationHeaders,
-        body: JSON.stringify({ userId, accessLevel: "EDITOR" }),
+        // A level the owner may hand out, so the refusal comes from the access
+        // being restored rather than from the one being assigned.
+        body: JSON.stringify({ userId, accessLevel: "LISTENER" }),
       }),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringMatching(/restore OWNER access/i),
+      error: expect.stringMatching(/restore this level of access/i),
     });
     expect(prisma.catalogAccess.update).not.toHaveBeenCalled();
   });
@@ -334,7 +436,7 @@ describe("catalog access routes", () => {
         ],
         canManageAccess: true,
         canManageCatalogConfig: true,
-        canManageOwnerAccess: true,
+        manageableAccessLevels: ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"],
       });
     });
 
@@ -356,7 +458,7 @@ describe("catalog access routes", () => {
         id: "new-access",
         userId,
         catalogId,
-        accessLevel: "VIEWER",
+        accessLevel: "LISTENER",
         status: "ACTIVE",
         grantedById: "owner-1",
         createdAt: new Date(),
@@ -369,7 +471,7 @@ describe("catalog access routes", () => {
           headers: browserMutationHeaders,
           body: JSON.stringify({
             userId,
-            accessLevel: "VIEWER",
+            accessLevel: "LISTENER",
             userName: "Updated User",
           }),
         }),
@@ -382,7 +484,7 @@ describe("catalog access routes", () => {
         data: { name: "Updated User" },
       });
       await expect(response.json()).resolves.toMatchObject({
-        accessLevel: "VIEWER",
+        accessLevel: "LISTENER",
         status: "ACTIVE",
       });
     });
@@ -426,8 +528,11 @@ describe("catalog access routes", () => {
     });
 
     it("PUT /api/catalogs/:id/access/:userId updates access level successfully", async () => {
-      requireAuth.mockResolvedValue("owner-1");
-      resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
+      // Both levels are protected, so only an administrator may make this move.
+      requireAuth.mockResolvedValue("admin-1");
+      resolveCatalogManagementActor.mockResolvedValue(
+        makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
+      );
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
@@ -459,8 +564,10 @@ describe("catalog access routes", () => {
     });
 
     it("PUT /api/catalogs/:id/access/:userId clears notes when an empty string is submitted", async () => {
-      requireAuth.mockResolvedValue("owner-1");
-      resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
+      requireAuth.mockResolvedValue("admin-1");
+      resolveCatalogManagementActor.mockResolvedValue(
+        makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
+      );
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
@@ -506,14 +613,14 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId: targetUserId,
         catalogId,
-        accessLevel: "VIEWER",
+        accessLevel: "LISTENER",
         status: "ACTIVE",
         user: { id: targetUserId, email: "user@test.com" },
       });
       prisma.catalogAccess.update.mockResolvedValue({
         userId: targetUserId,
         catalogId,
-        accessLevel: "VIEWER",
+        accessLevel: "LISTENER",
         status: "REVOKED",
       });
 

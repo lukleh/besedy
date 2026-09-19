@@ -137,7 +137,7 @@ describe("catalog users search route", () => {
     });
   });
 
-  it("excludes owner-level grants from search results when the actor cannot manage owner access", async () => {
+  it("offers only grants the actor may act on", async () => {
     prisma.catalogAccess.findMany.mockResolvedValue([]);
     prisma.user.findMany.mockResolvedValue([]);
     prisma.user.findFirst.mockResolvedValue(null);
@@ -154,7 +154,7 @@ describe("catalog users search route", () => {
         where: expect.objectContaining({
           catalogId,
           status: "ACTIVE",
-          accessLevel: { not: "OWNER" },
+          accessLevel: { in: ["LISTENER"] },
         }),
       })
     );
@@ -164,7 +164,7 @@ describe("catalog users search route", () => {
         where: expect.objectContaining({
           catalogId,
           status: "REVOKED",
-          accessLevel: { not: "OWNER" },
+          accessLevel: { in: ["LISTENER"] },
         }),
       })
     );
