@@ -31,6 +31,54 @@ export function getDatabaseUrlOrThrow(): string {
   );
 }
 
+/**
+ * Resolve a database URL for operator scripts that run on the host while the
+ * application DATABASE_URL names the Compose-only `db` service. DB_PORT uses
+ * the same host binding syntax as docker-compose.yml (for example
+ * `127.0.0.1:5432` or just `5432`).
+ */
+export function resolveHostDatabaseUrl(
+  connectionString: string,
+  publishedAddress: string | undefined
+): string {
+  const binding = publishedAddress?.trim();
+  if (!binding) return connectionString;
+
+  let host = "127.0.0.1";
+  let port = binding;
+  if (!/^\d+$/.test(binding)) {
+    const ipv6Match = binding.match(/^\[([^\]]+)]:(\d+)$/);
+    const hostMatch = binding.match(/^([^:]+):(\d+)$/);
+    if (ipv6Match) {
+      [, host, port] = ipv6Match;
+    } else if (hostMatch) {
+      [, host, port] = hostMatch;
+    } else {
+      throw new Error(`DB_PORT must be a port or host:port binding, received: ${binding}`);
+    }
+  }
+
+  const portNumber = Number(port);
+  if (
+    !Number.isSafeInteger(portNumber) ||
+    portNumber < 1 ||
+    portNumber > 65535
+  ) {
+    throw new Error(`DB_PORT contains an invalid port: ${port}`);
+  }
+  if (host === "0.0.0.0") host = "127.0.0.1";
+  if (host === "::") host = "::1";
+
+  const url = new URL(connectionString);
+  const serializedHost = host.includes(":") ? `[${host}]` : host;
+  url.host = `${serializedHost}:${portNumber}`;
+  return url.toString();
+}
+
+export function getHostDatabaseUrlOrThrow(): string {
+  return resolveHostDatabaseUrl(getDatabaseUrlOrThrow(), process.env.DB_PORT);
+}
+
 export function redactDatabaseUrl(connectionString: string): string {
   const schemeSeparatorIndex = connectionString.indexOf("://");
   if (schemeSeparatorIndex === -1) {

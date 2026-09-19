@@ -1,6 +1,6 @@
 # ADR 0009: Versioned event posters and publication
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-19
 - **Canonical references:** [Catalog permission model](0005-catalog-permission-model.md), [Web catalog serving projection](0003-web-catalog-projection.md), [Web security](../web/security.md#access-control), [Offline mode](../web/offline.md)
 
@@ -295,10 +295,10 @@ data model or its first delivery.
 6. Verify database/filesystem parity and responsive behavior. After the
    production import is complete and backed up, remove the temporary legacy
    inventory/import code, the poster branch of the old recording-asset
-   migration, and the obsolete fixed-file tree in a follow-up cleanup. Add a
-   migration that drops the unused `poster_status` table; retain its historical
-   create migration so fresh databases still have a valid migration chain. The
-   normal candidate-management and publication code remains.
+   migration, and the obsolete fixed-file tree in a follow-up cleanup. Confirm
+   that the existing `20260218100000_drop_poster_status` migration has already
+   removed the unused table; do not add a duplicate migration. The normal
+   candidate-management and publication code remains.
 
 The migration uses an import label plus both normalized asset hashes so a retry
 can recognize a candidate created before an interrupted import and leave it
@@ -310,27 +310,28 @@ a separate, explicit operation after backup verification.
 
 ### Deployment cutover and legacy retirement
 
-The production cutover is deliberately two-phase:
+The production cutover was completed on 2026-09-19 in two phases:
 
-1. Deploy the schema migration and application together. The new publication
+1. The schema migration and application were deployed together. The new publication
    table is empty, and the new reader has no legacy fixed-file fallback, so all
    existing posters become unpublished at the cutover.
-2. Run `posters inventory` for every production catalog and retain its output.
-3. Run `posters import-legacy --dry-run`, resolve every ambiguous or incomplete
-   pair, then run the confirmed import. Imported posters are candidates only;
-   the publication table must still be empty when the import finishes.
+2. The production catalog was inventoried and its three legacy poster versions
+   were retained in a verified archive.
+3. The incomplete aspect-ratio pairs were reviewed explicitly. Missing variants
+   were created with padding, without cropping source content, and imported as
+   three unpublished candidates: two for event 154 and one for event 168.
 4. Editors may publish reviewed candidates through the normal UI or CLI after
    the cutover has been verified.
-5. In a follow-up cleanup, remove the `inventory` and `import-legacy`
-   subcommands and their legacy path/filename parsing, remove the poster branch
-   from `migrate-recording-assets-to-events.ts`, add a migration that drops the
-   obsolete `poster_status` table, and remove the old fixed-file poster
-   directories only after a backup and candidate/file parity check.
+5. The follow-up cleanup removes the temporary `inventory` and `import-legacy`
+   subcommands and their legacy path/filename parsing, removes the poster branch
+   from `migrate-recording-assets-to-events.ts`, and removes the old fixed-file
+   poster directories only after a candidate/file parity check. The historical
+   `20260218100000_drop_poster_status` migration had already removed the obsolete
+   table, so no duplicate schema migration is needed.
 
-The cleanup in step 5 cannot ship before the production import: those temporary
-readers are what convert the legacy files. It should not be delayed beyond the
-verified cutover, because keeping two storage interpretations invites future
-accidental use of the retired format.
+The retained archive and deployment record are operational artifacts rather
+than repository data. The normal candidate-management CLI and event-scoped
+storage remain; only the one-time legacy interpretation is retired.
 
 ## Alternatives considered
 

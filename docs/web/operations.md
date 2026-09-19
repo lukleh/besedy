@@ -184,55 +184,39 @@ migrating.
 
 ### Event poster cutover
 
-The poster migration was amended before its first production deployment to
-remove schema drift. Prisma does not reapply an amended migration that a
-database already records as applied. Anyone who tested an earlier version of
-`20260919120000_add_event_poster_publication` must recreate the affected
-development database with `just dev-down-clean` or the test database with
-`just test-reset` before validating this release. These commands delete local
-data and must never be used against production. The intended first production
-deployment applies the migration normally; any environment that has never
-recorded the migration as applied needs no reset.
+The production cutover completed on 2026-09-19. The fixed recording-scoped
+files were backed up, reviewed, and imported as three unpublished event poster
+candidates. Candidate/file hashes matched, the publication table remained
+empty, and the temporary legacy inventory/import commands were then retired.
+The obsolete `poster_status` table was already absent through migration
+`20260218100000_drop_poster_status`.
 
-The first deployment of event poster publication intentionally unpublishes all
-legacy posters. The migration creates an empty publication table and the new
-reader has no fallback to fixed legacy files. After `just prod-deploy` succeeds,
-import the old files as **unpublished candidates** for editorial review:
+Use the retained poster CLI for normal event poster operations:
 
 ```bash
-just posters inventory --catalog <catalog-id> --prod
-just posters import-legacy --catalog <catalog-id> --actor <email-or-id> --dry-run --prod
-just posters import-legacy --catalog <catalog-id> --actor <email-or-id> --prod --yes
+just posters list --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod
+just posters create --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --square <file> --landscape <file> --label <text> --prod --yes
+just posters publish --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --poster <poster-id> --prod --yes
+just posters unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
+just posters delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --poster <poster-id> --prod --yes
 ```
 
-Repeat all three commands for every production catalog. Keep the inventory and
-dry-run output with the deployment record. The import refuses to run when its
-catalog has any published poster and never writes the publication table.
+For host-run commands, the CLI rewrites the container database hostname to the
+published `DB_PORT` binding from the selected environment file. Production
+mutations require the explicit `--yes` confirmation.
 
-Before allowing editors to publish candidates, verify that the import produced
-drafts and no publication rows:
+To verify that no poster is currently published:
 
 ```sql
-SELECT workflow_group_id, count(*) AS candidates
-  FROM catalog_event_poster
- GROUP BY workflow_group_id
- ORDER BY workflow_group_id;
-
 SELECT count(*) AS published_posters
   FROM catalog_event_poster_publication;
 ```
 
-`published_posters` must be zero. Compare candidate counts and import output to
-the retained inventory, resolving every skipped or ambiguous event explicitly.
-
-Once the production import and backup are verified, make a follow-up cleanup
-release that removes the temporary `inventory` and `import-legacy` commands,
-their legacy path/filename parsing, and the poster handling in
-`migrate-recording-assets-to-events.ts`. That release should add a migration
-which drops the obsolete `poster_status` table while retaining its historical
-create migration. Remove the old fixed-file directories only after verifying
-candidate/file parity and retaining a backup. The normal poster CLI, UI,
-candidate storage, and publication code are not legacy and stay.
+The result must be zero when the deployment policy requires every poster to
+remain unpublished.
 
 ### Permissions rework rollout
 
