@@ -226,11 +226,12 @@ async function main(): Promise<void> {
     throw new Error("Production poster mutations require --yes");
   }
 
-  const [{ default: prisma }, service, posterPolicy, actorPolicy] = await Promise.all([
+  const [{ default: prisma }, service, posterPolicy, actorPolicy, posterStorage] = await Promise.all([
     import("../src/lib/db"),
     import("../src/lib/event-poster-service"),
     import("../src/lib/policy/event-poster"),
     import("../src/lib/policy/actor"),
+    import("../src/lib/event-poster-storage"),
   ]);
 
   try {
@@ -332,28 +333,81 @@ async function main(): Promise<void> {
     printInventory(inventory);
     for (const item of inventory) {
       if (!item.importable) continue;
-      const existing = await prisma.catalogEventPoster.findMany({
-        where: { workflowGroupId: args.catalogId, eventId: item.eventId },
-        select: { id: true, label: true },
-      });
-      const interruptedImports = existing.filter((candidate) => candidate.label === LEGACY_IMPORT_LABEL);
-      if (interruptedImports.length > 1) {
-        throw new Error(`event=${item.eventId} has multiple legacy import candidates; resolve them manually`);
+      const square = item.assets.find((asset) => asset.shape === "square")!;
+      const landscape = item.assets.find((asset) => asset.shape === "landscape")!;
+      const [existing, publication] = await Promise.all([
+        prisma.catalogEventPoster.findMany({
+          where: { workflowGroupId: args.catalogId, eventId: item.eventId },
+          select: {
+            id: true,
+            label: true,
+            squareSha256: true,
+            landscapeSha256: true,
+          },
+        }),
+        prisma.catalogEventPosterPublication.findUnique({
+          where: {
+            workflowGroupId_eventId: {
+              workflowGroupId: args.catalogId,
+              eventId: item.eventId,
+            },
+          },
+          select: { posterId: true },
+        }),
+      ]);
+      if (publication) {
+        console.log(`event=${item.eventId} skipped: poster=${publication.posterId} is already published`);
+        continue;
       }
-      if (interruptedImports.length === 1) {
-        const posterId = interruptedImports[0].id;
-        if (args.dryRun) {
-          console.log(`event=${item.eventId} would resume publication of poster=${posterId}`);
+      const interruptedImports = existing.filter((candidate) => candidate.label === LEGACY_IMPORT_LABEL);
+      if (interruptedImports.length > 0) {
+        const normalizedSquare = await posterStorage.processPosterAsset(
+          {
+            bytes: await fs.readFile(square.filePath),
+            originalName: path.basename(square.filePath),
+          },
+          "square"
+        );
+        const normalizedLandscape = await posterStorage.processPosterAsset(
+          {
+            bytes: await fs.readFile(landscape.filePath),
+            originalName: path.basename(landscape.filePath),
+          },
+          "landscape"
+        );
+        const matchingInterruptedImports = interruptedImports.filter(
+          (candidate) =>
+            candidate.squareSha256 === normalizedSquare.sha256 &&
+            candidate.landscapeSha256 === normalizedLandscape.sha256
+        );
+        if (matchingInterruptedImports.length > 1) {
+          console.error(
+            `event=${item.eventId} skipped: multiple matching legacy import candidates; resolve them manually`
+          );
           continue;
         }
-        await service.publishEventPoster({
-          catalogId: args.catalogId,
-          eventId: item.eventId,
-          posterId,
-          userId: user.id,
-        });
-        console.log(`event=${item.eventId} resumed poster=${posterId}`);
-        continue;
+        if (matchingInterruptedImports.length === 1) {
+          const posterId = matchingInterruptedImports[0].id;
+          if (args.dryRun) {
+            console.log(`event=${item.eventId} would resume publication of poster=${posterId}`);
+            continue;
+          }
+          const result = await service.publishEventPoster({
+            catalogId: args.catalogId,
+            eventId: item.eventId,
+            posterId,
+            userId: user.id,
+            replaceExisting: false,
+          });
+          if (!result.changed && result.previousPosterId !== posterId) {
+            console.log(
+              `event=${item.eventId} skipped: poster=${result.previousPosterId} was published concurrently`
+            );
+            continue;
+          }
+          console.log(`event=${item.eventId} resumed poster=${posterId}`);
+          continue;
+        }
       }
       if (existing.length > 0) {
         console.log(`event=${item.eventId} skipped: candidates already exist`);
@@ -363,8 +417,6 @@ async function main(): Promise<void> {
         console.log(`event=${item.eventId} would import and publish`);
         continue;
       }
-      const square = item.assets.find((asset) => asset.shape === "square")!;
-      const landscape = item.assets.find((asset) => asset.shape === "landscape")!;
       const candidate = await service.createEventPosterCandidate({
         catalogId: args.catalogId,
         eventId: item.eventId,
@@ -379,12 +431,19 @@ async function main(): Promise<void> {
           originalName: path.basename(landscape.filePath),
         },
       });
-      await service.publishEventPoster({
+      const result = await service.publishEventPoster({
         catalogId: args.catalogId,
         eventId: item.eventId,
         posterId: candidate.id,
         userId: user.id,
+        replaceExisting: false,
       });
+      if (!result.changed && result.previousPosterId !== candidate.id) {
+        console.log(
+          `event=${item.eventId} imported candidate=${candidate.id}, but kept concurrently published poster=${result.previousPosterId}`
+        );
+        continue;
+      }
       console.log(`event=${item.eventId} imported poster=${candidate.id}`);
     }
   } finally {

@@ -1,6 +1,9 @@
 import { logAccessDenied } from "@/lib/audit/logger";
 import { AuthError } from "@/lib/auth/permissions";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
+import { isPublishedVisibleEvent } from "@/lib/catalog-events/visibility";
+import prisma from "@/lib/db";
+import { requiresReleasedEventVisibilityScope } from "@/lib/policy/event";
 import {
   canManageEventPosterCandidates,
   canPublishEventPosters,
@@ -29,6 +32,18 @@ export async function requireEventPosterAccess(
       reason: "Missing event poster authority",
     });
     throw new AuthError("Access denied to event poster candidates", 403);
+  }
+
+  if (
+    requiresReleasedEventVisibilityScope(access.catalogGrant) &&
+    !(await isPublishedVisibleEvent(prisma, catalogId, eventId))
+  ) {
+    await logAccessDenied(access.userId, "event_poster", String(eventId), {
+      catalogId,
+      mode,
+      reason: "Event is outside the actor's visibility scope",
+    });
+    throw new AuthError("Event not found", 404);
   }
   return { userId: access.userId };
 }

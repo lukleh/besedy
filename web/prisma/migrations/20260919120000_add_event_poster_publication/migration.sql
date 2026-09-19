@@ -4,7 +4,7 @@ ALTER TYPE "AuditAction" ADD VALUE 'EVENT_POSTER_PUBLISHED';
 ALTER TYPE "AuditAction" ADD VALUE 'EVENT_POSTER_UNPUBLISHED';
 
 CREATE TABLE "catalog_event_poster" (
-    "id" TEXT NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "event_id" INTEGER NOT NULL,
     "workflow_group_id" VARCHAR(15) NOT NULL,
     "label" VARCHAR(255),
@@ -35,7 +35,7 @@ ON "catalog_event_poster"("workflow_group_id", "event_id", "created_at");
 CREATE TABLE "catalog_event_poster_publication" (
     "event_id" INTEGER NOT NULL,
     "workflow_group_id" VARCHAR(15) NOT NULL,
-    "poster_id" TEXT NOT NULL,
+    "poster_id" UUID NOT NULL,
     "published_by" TEXT,
     "published_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

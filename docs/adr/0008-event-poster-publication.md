@@ -150,15 +150,16 @@ Under ADR 0005's permission-set model:
 | Operation | Required authority |
 | --- | --- |
 | Read the selected poster | Permission to view the event |
-| List or preview unpublished candidates | `see_unreleased`, `manage_event_posters`, or `publish_event_posters` |
-| Create and delete an unselected candidate | `manage_event_posters` |
-| Select, replace, or unpublish the selected candidate | `publish_event_posters` |
+| List or preview unpublished candidates | Permission to view the event, plus `see_unreleased`, `manage_event_posters`, or `publish_event_posters` |
+| Create and delete an unselected candidate | Permission to view the event, plus `manage_event_posters` |
+| Select, replace, or unpublish the selected candidate | Permission to view the event, plus `publish_event_posters` |
 | Delete the selected candidate | Never directly; unpublish it first |
 
 `curator` receives both poster permissions and `catalog_admin` receives them
 through its wildcard. Lower roles receive neither by default, but a catalog
 administrator may add either permission to a named account. Giving upload
-permission does not implicitly give publication permission.
+permission does not implicitly give publication permission, and neither poster
+permission bypasses the event's released/unreleased visibility scope.
 
 ADR 0005 is implemented, so route code asks these poster-specific permissions
 directly. The legacy access-level compatibility mapping gives both mutation
@@ -293,11 +294,14 @@ data model or its first delivery.
    fixed-file write path. Retain the old migration only as documented historical
    tooling or replace it with the new idempotent import command.
 
-The migration uses a reserved import label so a retry can recognize a candidate
-created before an interrupted publication step and finish publishing it. It
-refuses to add a legacy candidate when unrelated candidates already exist. It
-starts with `--dry-run`; any cleanup is a separate, explicit operation after
-backup verification.
+The migration uses an import label plus both normalized asset hashes so a retry
+can recognize a candidate created before an interrupted publication step and
+finish publishing it. A label match alone is never sufficient. A retry never
+replaces an existing publication, and ambiguous matching candidates are
+reported and skipped instead of aborting the whole import. It refuses to add a
+legacy candidate when unrelated candidates already exist. It starts with
+`--dry-run`; any cleanup is a separate, explicit operation after backup
+verification.
 
 ## Alternatives considered
 

@@ -145,6 +145,7 @@ describe("catalog event poster routes", () => {
   it("requires both shapes when creating an immutable candidate", async () => {
     const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
       method: "POST",
+      headers: { "content-length": "1024" },
     });
     vi.spyOn(request, "formData").mockResolvedValue({
       get: vi.fn(() => null),
@@ -175,6 +176,7 @@ describe("catalog event poster routes", () => {
     };
     const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
       method: "POST",
+      headers: { "content-length": "1024" },
     });
     vi.spyOn(request, "formData").mockResolvedValue({
       get: vi.fn((name: string) => {
@@ -198,6 +200,38 @@ describe("catalog event poster routes", () => {
         landscape: expect.objectContaining({ originalName: "landscape.jpg" }),
       })
     );
+  });
+
+  it("rejects an upload without a content length before buffering it", async () => {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
+      method: "POST",
+    });
+    const formData = vi.spyOn(request, "formData");
+
+    const response = await createPosterCandidate(request, context);
+
+    expect(response.status).toBe(411);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "CONTENT_LENGTH_REQUIRED",
+    });
+    expect(formData).not.toHaveBeenCalled();
+    expect(requireEventPosterAccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed content length before buffering the upload", async () => {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
+      method: "POST",
+      headers: { "content-length": "1e3" },
+    });
+    const formData = vi.spyOn(request, "formData");
+
+    const response = await createPosterCandidate(request, context);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "INVALID_CONTENT_LENGTH",
+    });
+    expect(formData).not.toHaveBeenCalled();
   });
 
   it("publishes a selected candidate through the separate publish capability", async () => {

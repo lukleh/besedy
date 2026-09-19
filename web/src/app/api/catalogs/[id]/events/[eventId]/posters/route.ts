@@ -37,7 +37,26 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    const contentLengthHeader = request.headers.get("content-length");
+    if (contentLengthHeader === null) {
+      return NextResponse.json(
+        {
+          error: "Poster uploads require a Content-Length header",
+          code: "CONTENT_LENGTH_REQUIRED",
+        },
+        { status: 411 }
+      );
+    }
+    const contentLength = Number(contentLengthHeader);
+    if (!/^\d+$/.test(contentLengthHeader) || !Number.isSafeInteger(contentLength) || contentLength < 0) {
+      return NextResponse.json(
+        {
+          error: "Poster upload has an invalid Content-Length header",
+          code: "INVALID_CONTENT_LENGTH",
+        },
+        { status: 400 }
+      );
+    }
     if (contentLength > MAX_POSTER_UPLOAD_BYTES * 2 + 1024 * 1024) {
       return NextResponse.json({ error: "Poster upload is too large", code: "UPLOAD_TOO_LARGE" }, { status: 413 });
     }

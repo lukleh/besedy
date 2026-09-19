@@ -765,7 +765,7 @@ model CatalogEvent {
 
 /// Immutable square + landscape poster proposal for one event.
 model CatalogEventPoster {
-  id                    String   @id @default(cuid())
+  id                    String   @id @default(uuid()) @db.Uuid
   eventId               Int      @map("event_id")
   workflowGroupId       String   @map("workflow_group_id") @db.VarChar(15)
   label                 String?  @db.VarChar(255)
@@ -793,7 +793,7 @@ model CatalogEventPoster {
 model CatalogEventPosterPublication {
   eventId         Int      @map("event_id")
   workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
-  posterId        String   @unique @map("poster_id")
+  posterId        String   @unique @map("poster_id") @db.Uuid
   publishedById   String?  @map("published_by")
   publishedAt     DateTime @default(now()) @map("published_at")
 

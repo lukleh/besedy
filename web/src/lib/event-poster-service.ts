@@ -4,14 +4,18 @@ import prisma from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit/logger";
 import {
   getPosterContentType,
+  finalizeStagedEventPosterAssetsRemoval,
   processPosterAsset,
   readPosterAsset,
   removePosterCandidateAssets,
   resolveEventPosterAssetPath,
+  restoreStagedEventPosterAssets,
+  stagePosterCandidateAssetsRemoval,
   writePosterCandidateAssets,
   type PosterExtension,
   type PosterUploadInput,
   type PosterVariant,
+  type StagedPosterCandidateAssetsRemoval,
 } from "@/lib/event-poster-storage";
 
 export class EventPosterServiceError extends Error {
@@ -244,6 +248,7 @@ export async function publishEventPoster(options: {
   eventId: number;
   posterId: string;
   userId: string;
+  replaceExisting?: boolean;
 }): Promise<{ changed: boolean; previousPosterId: string | null }> {
   const result = await prisma.$transaction(async (tx) => {
     await lockEvent(tx, options.catalogId, options.eventId);
@@ -270,6 +275,9 @@ export async function publishEventPoster(options: {
       select: { posterId: true },
     });
     if (current?.posterId === options.posterId) {
+      return { changed: false, previousPosterId: current.posterId };
+    }
+    if (current && options.replaceExisting === false) {
       return { changed: false, previousPosterId: current.posterId };
     }
 
@@ -356,26 +364,34 @@ export async function deleteEventPosterCandidate(options: {
   posterId: string;
   userId: string;
 }): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await lockEvent(tx, options.catalogId, options.eventId);
-    const candidate = await tx.catalogEventPoster.findFirst({
-      where: {
-        id: options.posterId,
-        eventId: options.eventId,
-        workflowGroupId: options.catalogId,
-      },
-      select: { id: true, publication: { select: { posterId: true } } },
+  let stagedAssets: StagedPosterCandidateAssetsRemoval | null = null;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await lockEvent(tx, options.catalogId, options.eventId);
+      const candidate = await tx.catalogEventPoster.findFirst({
+        where: {
+          id: options.posterId,
+          eventId: options.eventId,
+          workflowGroupId: options.catalogId,
+        },
+        select: { id: true, publication: { select: { posterId: true } } },
+      });
+      if (!candidate) {
+        throw new EventPosterServiceError("Poster candidate not found", 404);
+      }
+      if (candidate.publication) {
+        throw new EventPosterServiceError("Published poster must be unpublished before deletion", 409);
+      }
+      stagedAssets = await stagePosterCandidateAssetsRemoval(options.catalogId, options.eventId, options.posterId);
+      await tx.catalogEventPoster.delete({ where: { id: options.posterId } });
     });
-    if (!candidate) {
-      throw new EventPosterServiceError("Poster candidate not found", 404);
+  } catch (error) {
+    if (stagedAssets) {
+      await restoreStagedEventPosterAssets(stagedAssets);
     }
-    if (candidate.publication) {
-      throw new EventPosterServiceError("Published poster must be unpublished before deletion", 409);
-    }
-    await tx.catalogEventPoster.delete({ where: { id: options.posterId } });
-  });
+    throw error;
+  }
 
-  await removePosterCandidateAssets(options.catalogId, options.eventId, options.posterId);
   await logPosterAudit({
     action: "EVENT_POSTER_DELETED",
     userId: options.userId,
@@ -383,6 +399,11 @@ export async function deleteEventPosterCandidate(options: {
     eventId: options.eventId,
     posterId: options.posterId,
   });
+  if (stagedAssets) {
+    await finalizeStagedEventPosterAssetsRemoval(stagedAssets).catch((error) => {
+      console.error("Failed to finalize poster candidate cleanup:", error);
+    });
+  }
 }
 
 async function findPosterAssetRecord(options: {
@@ -452,6 +473,7 @@ export async function loadEventPosterAsset(options: {
     extension
   );
   const asset = await readPosterAsset(filePath);
+  if (!asset) return null;
   return {
     bytes: asset.bytes,
     contentType: getPosterContentType(extension),

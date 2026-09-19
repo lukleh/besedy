@@ -38,6 +38,8 @@ export interface StagedEventPosterAssetsRemoval {
   stagedPath: string;
 }
 
+export type StagedPosterCandidateAssetsRemoval = StagedEventPosterAssetsRemoval;
+
 export class PosterAssetError extends Error {
   constructor(
     message: string,
@@ -208,16 +210,10 @@ export async function removePosterCandidateAssets(catalogId: string, eventId: nu
   }
 }
 
-/**
- * Move every poster asset for an event out of its live path before deleting
- * the event row. The rename stays on the same filesystem and can be rolled
- * back if the database deletion fails.
- */
-export async function stageEventPosterAssetsRemoval(
-  catalogId: string,
-  eventId: number
+async function stagePosterDirectoryRemoval(
+  originalPath: string,
+  tombstoneName: string
 ): Promise<StagedEventPosterAssetsRemoval | null> {
-  const originalPath = path.join(resolveEventPostersPath(catalogId), String(eventId));
   try {
     await fs.lstat(originalPath);
   } catch (error) {
@@ -231,33 +227,80 @@ export async function stageEventPosterAssetsRemoval(
     throw new Error("Invalid event poster directory");
   }
 
-  const stagedPath = path.join(
-    path.dirname(originalPath),
-    `.deleted-${eventId}-${randomUUID()}`
-  );
+  const stagedPath = path.join(path.dirname(originalPath), tombstoneName);
   await fs.rename(originalPath, stagedPath);
   return { originalPath, stagedPath };
 }
 
-export async function restoreStagedEventPosterAssets(
-  staged: StagedEventPosterAssetsRemoval
-): Promise<void> {
-  await fs.rename(staged.stagedPath, staged.originalPath);
+export async function stagePosterCandidateAssetsRemoval(
+  catalogId: string,
+  eventId: number,
+  posterId: string
+): Promise<StagedPosterCandidateAssetsRemoval | null> {
+  return stagePosterDirectoryRemoval(
+    resolveEventPosterDir(catalogId, eventId, posterId),
+    `.deleted-${posterId}-${randomUUID()}`
+  );
 }
 
-export async function finalizeStagedEventPosterAssetsRemoval(
-  staged: StagedEventPosterAssetsRemoval
-): Promise<void> {
+/**
+ * Move every poster asset for an event out of its live path before deleting
+ * the event row. The rename stays on the same filesystem and can be rolled
+ * back if the database deletion fails.
+ */
+export async function stageEventPosterAssetsRemoval(
+  catalogId: string,
+  eventId: number
+): Promise<StagedEventPosterAssetsRemoval | null> {
+  const originalPath = path.join(resolveEventPostersPath(catalogId), String(eventId));
+  return stagePosterDirectoryRemoval(originalPath, `.deleted-${eventId}-${randomUUID()}`);
+}
+
+export async function restoreStagedEventPosterAssets(staged: StagedEventPosterAssetsRemoval): Promise<void> {
+  try {
+    await fs.rename(staged.stagedPath, staged.originalPath);
+    return;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "EEXIST" && err.code !== "ENOTEMPTY") throw error;
+  }
+
+  const stagedEntries = await fs.readdir(staged.stagedPath);
+  const liveEntries = new Set(await fs.readdir(staged.originalPath));
+  const collision = stagedEntries.find((entry) => liveEntries.has(entry));
+  if (collision) {
+    throw new Error(`Cannot restore event poster assets because ${collision} already exists`);
+  }
+  for (const entry of stagedEntries) {
+    await fs.rename(path.join(staged.stagedPath, entry), path.join(staged.originalPath, entry));
+  }
+  await fs.rmdir(staged.stagedPath);
+}
+
+export async function finalizeStagedEventPosterAssetsRemoval(staged: StagedEventPosterAssetsRemoval): Promise<void> {
   await fs.rm(staged.stagedPath, { recursive: true, force: true });
 }
 
-export async function readPosterAsset(filePath: string): Promise<{ bytes: Buffer; resolvedPath: string }> {
+export async function readPosterAsset(filePath: string): Promise<{ bytes: Buffer; resolvedPath: string } | null> {
   const validation = validatePath(filePath);
   if (!validation.valid) {
+    try {
+      await fs.lstat(filePath);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") return null;
+      throw error;
+    }
     throw new Error("Poster asset is missing or outside the poster root");
   }
-  return {
-    bytes: await fs.readFile(validation.resolvedPath),
-    resolvedPath: validation.resolvedPath,
-  };
+  try {
+    return {
+      bytes: await fs.readFile(validation.resolvedPath),
+      resolvedPath: validation.resolvedPath,
+    };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") return null;
+    throw error;
+  }
 }
