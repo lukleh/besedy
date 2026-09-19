@@ -248,7 +248,6 @@ export async function publishEventPoster(options: {
   eventId: number;
   posterId: string;
   userId: string;
-  replaceExisting?: boolean;
 }): Promise<{ changed: boolean; previousPosterId: string | null }> {
   const result = await prisma.$transaction(async (tx) => {
     await lockEvent(tx, options.catalogId, options.eventId);
@@ -277,10 +276,6 @@ export async function publishEventPoster(options: {
     if (current?.posterId === options.posterId) {
       return { changed: false, previousPosterId: current.posterId };
     }
-    if (current && options.replaceExisting === false) {
-      return { changed: false, previousPosterId: current.posterId };
-    }
-
     await tx.catalogEventPosterPublication.upsert({
       where: {
         workflowGroupId_eventId: {

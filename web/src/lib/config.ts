@@ -59,15 +59,21 @@ export function getTextDataDir(): string {
 }
 
 /**
- * Get the posters directory. Host-run operator tools use POSTERS_DIR from the
- * selected web environment; the container uses its mounted besedy.toml.
+ * Get the posters directory. The application config is authoritative when it
+ * is available. Host-run operator tools fall back to POSTERS_DIR because the
+ * selected production environment points BESEDY_CONFIG at a container-only
+ * path.
  */
 export function getPostersDir(): string {
-  const environmentPath = process.env.POSTERS_DIR?.trim();
-  if (environmentPath) return environmentPath;
+  try {
+    const config = getBesedyConfig();
+    return config.paths.posters_dir || config.paths.text_data_dir;
+  } catch (configError) {
+    const environmentPath = process.env.POSTERS_DIR?.trim();
+    if (environmentPath) return environmentPath;
 
-  const config = getBesedyConfig();
-  return config.paths.posters_dir || config.paths.text_data_dir;
+    throw configError;
+  }
 }
 
 /**

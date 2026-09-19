@@ -102,25 +102,6 @@ describe("event poster service", () => {
     );
   });
 
-  it("can publish only when no different poster is already selected", async () => {
-    tx.catalogEventPoster.findFirst.mockResolvedValue({ id: "imported-poster" });
-    tx.catalogEventPosterPublication.findUnique.mockResolvedValue({
-      posterId: "curator-poster",
-    });
-
-    const result = await publishEventPoster({
-      catalogId: "20260101_000000",
-      eventId: 7,
-      posterId: "imported-poster",
-      userId: "owner-1",
-      replaceExisting: false,
-    });
-
-    expect(result).toEqual({ changed: false, previousPosterId: "curator-poster" });
-    expect(tx.catalogEventPosterPublication.upsert).not.toHaveBeenCalled();
-    expect(logAuditEvent).not.toHaveBeenCalled();
-  });
-
   it("fails publication when the scoped event does not exist", async () => {
     tx.$queryRaw.mockResolvedValue([]);
 
