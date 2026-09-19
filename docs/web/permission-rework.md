@@ -1,12 +1,13 @@
 # Permission Rework Progress
 
-> **Last Updated:** 2026-09-16
+> **Last Updated:** 2026-09-19
 
 **All eleven steps are written and in review.** They are stacked in order, each
 on the one before: #109 → #111 → #112 → #113 → #115 → #116 → #117 → #118 →
 #119 → #120 → #121 → #122. Two more sit beside them on `main`: this file, and
-[#114](https://github.com/lukleh/besedy/pull/114), which fixes the deploy
-ordering described below.
+the now-merged
+[#114](https://github.com/lukleh/besedy/pull/114), which provides the deployment
+and rollback workflow described below.
 
 Order and state for the rework decided in
 [ADR 0005](../adr/0005-catalog-permission-model.md) and
@@ -97,15 +98,26 @@ them.
 
 ## How this reaches production
 
-The merges are not deployed one at a time; the whole rework goes out in a single
-deploy. So the bar a pull request has to clear is that it can be **reviewed and
-reverted on its own**, not that it could run in production alone. An
-intermediate state the plan passes through — a role that exists before the page
-it needs, say — costs review clarity rather than working software.
+The rollout has two application deployments, with no deployment of the
+intermediate role-model steps:
 
-What has to be checked before that deploy is therefore the whole of it against
-the real grants, not each step in turn: what the new model gives every account
-compared with what it has today.
+1. Merge steps 1 and 2 (#109 and #111), deploy them with `just prod-deploy`,
+   then verify that every metadata lookup belongs to a catalog and every lookup
+   reference stays inside that catalog. This isolates the lookup ownership
+   migration from the permission cutover.
+2. Merge steps 3 through 11 in order without deploying between them, then ship
+   their final combined state with `just prod-deploy-with-jobs` (or the Codex
+   variant). The web and jobs contract changes together at the top of the
+   stack, so this phase is one coordinated maintenance release.
+
+The bar each pull request has to clear is that it can be **reviewed and reverted
+on its own**, not that every intermediate role-model state should run in
+production. A role that exists before the page it needs, for example, costs
+review clarity rather than creating a supported deployment state.
+
+Before the second deployment, the whole permission model must be checked
+against the real grants: what the new model gives every account compared with
+what it has today.
 
 One constraint the deploy order used to impose on the steps that carry a
 migration, and how it was removed.
@@ -119,11 +131,11 @@ of `catalog_access` name none, so the new code would have asked for `role` and
 `extra_permissions` before the migration created them — every one of those reads
 failing until the restart.
 
-[#114](https://github.com/lukleh/besedy/pull/114) moves the migration before the
-new container starts, which removes the constraint rather than working around
-it. Besedy is not a high-availability deployment, so the short window where the
-old container serves against the new schema is acceptable, and a destructive
-migration should stop `web` rather than rely on a two-stage deploy.
+[#114](https://github.com/lukleh/besedy/pull/114) is merged. It builds and
+retains the release before downtime, then stops `web` and scheduled backups,
+creates a verified retained backup, applies migrations, and starts the matching
+image. Revisions that change the web/jobs contract use its coordinated recipe,
+which also refuses downtime while Prefect work is queued or running.
 
 ## The UI follows every split
 
@@ -209,25 +221,29 @@ listeners the moment they are made readers. Until corrections exist,
 listeners readers is a separate condition with its own bar — the correction
 system tried and trusted — and it constrains the promotion, not the gate.
 
-## Before the deploy
+## Before the deployments
 
-The whole rework goes out at once, so the check is the whole of it against the
-real grants rather than each step in turn. What to confirm, in order:
+What to confirm, in order:
 
-1. **The grant distribution still matches.** The migration's mapping was written
-   against 77 `LISTENER`, one `MEMBER`, two `OWNER`, and no `VIEWER` or
-   `EDITOR`, read on 2026-09-16. A `VIEWER` or `EDITOR` added since would be
-   mapped by the same rule but nobody has decided that it should be. Re-reading
-   this was attempted while the steps were being written and production was
-   unreachable, so it is worth doing once more rather than assumed.
-2. **Run the migration against a copy first.** It was verified against a
+1. **Deploy the #114 workflow first.** The production checkout must contain the
+   merged build/apply, retained-backup, image-identity, and rollback guards
+   before either migration phase begins.
+2. **Exercise the lookup migration against a copy first.** Then deploy #109 and
+   #111 with `just prod-deploy` and run the lookup ownership and cross-catalog
+   reference checks documented in [operations](operations.md#permissions-rework-rollout).
+   Do not start the role cutover until every count is zero.
+3. **The grant distribution must still match before the role cutover.** The
+   migration's mapping was written against 77 `LISTENER`, one `MEMBER`, two
+   `OWNER`, and no `VIEWER` or `EDITOR`, read on 2026-09-16. A `VIEWER` or
+   `EDITOR` added since would be mapped by the same rule but nobody has decided
+   that it should be. Re-reading this was attempted while the steps were being
+   written and production was unreachable, so it is worth doing once more
+   rather than assumed.
+4. **Exercise the role migration against a copy.** It was verified against a
    throwaway PostgreSQL 18 with a grant and a pending grant at every level: it
    is idempotent, it leaves a row that already carries a role alone, and it
    leaves no grant without one.
-3. **Deploy [#114](https://github.com/lukleh/besedy/pull/114) or merge it
-   first.** Two migrations land here, and the old ordering ran them after the
-   new container started.
-4. **Tell the three accounts whose access changes what changed**, before they
+5. **Tell the three accounts whose access changes what changed**, before they
    find out by looking. The one member loses unreleased visibility and
    downloading; the two hosts keep reading, granting access and transcript
    downloads, and lose the editorial rights, the recordings list and deep
