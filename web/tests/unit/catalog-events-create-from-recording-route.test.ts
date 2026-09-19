@@ -11,13 +11,15 @@ vi.mock("@/lib/db", () => ({
     $transaction: vi.fn(),
     catalogEntry: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       updateMany: vi.fn(),
     },
     audioMetadata: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     catalogEvent: {
-      findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
     },
     catalogEventRecording: {
@@ -36,13 +38,15 @@ describe("catalog events create-from-recording route", () => {
     $transaction: ReturnType<typeof vi.fn>;
     catalogEntry: {
       findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
     };
     audioMetadata: {
       findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
     };
     catalogEvent: {
-      findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
     };
     catalogEventRecording: {
@@ -82,7 +86,7 @@ describe("catalog events create-from-recording route", () => {
       },
     });
     prisma.catalogEventRecording.findUnique.mockResolvedValue(null);
-    prisma.catalogEvent.findFirst.mockResolvedValue(null);
+    prisma.catalogEvent.findMany.mockResolvedValue([]);
     prisma.catalogEvent.create.mockResolvedValue({
       id: 88,
       title: "Praha, 3 Apr 2024",
@@ -170,12 +174,26 @@ describe("catalog events create-from-recording route", () => {
 
   it("asks for confirmation instead of silently adding a second session", async () => {
     mockActionableRecordingAt();
-    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 88, sessionIndex: 1 });
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: 88,
+        title: "Existing discussion",
+        sessionIndex: 1,
+        recordings: [{ audioHash: "b".repeat(64) }],
+        _count: { recordings: 1 },
+      },
+    ]);
+    prisma.catalogEntry.findMany.mockResolvedValue([
+      { audioHash: "b".repeat(64), sourceTitle: "Existing source" },
+    ]);
+    prisma.audioMetadata.findMany.mockResolvedValue([
+      { audioHash: "b".repeat(64), title: "Existing primary" },
+    ]);
 
     const response = await createFromRecording(buildRequest());
 
     expect(response.status).toBe(409);
-    expect(prisma.catalogEvent.findFirst).toHaveBeenCalledWith({
+    expect(prisma.catalogEvent.findMany).toHaveBeenCalledWith({
       where: {
         workflowGroupId: catalogId,
         locationId: 7,
@@ -183,20 +201,49 @@ describe("catalog events create-from-recording route", () => {
         dateMonth: 4,
         dateDay: 3,
       },
-      select: { id: true, sessionIndex: true },
-      orderBy: { sessionIndex: "desc" },
+      select: {
+        id: true,
+        title: true,
+        sessionIndex: true,
+        recordings: {
+          orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
+          take: 1,
+          select: { audioHash: true },
+        },
+        _count: { select: { recordings: true } },
+      },
+      orderBy: { sessionIndex: "asc" },
     });
 
     const body = await response.json();
-    expect(body.error).toMatch(/Event 88 already covers/i);
-    // The caller must be able to act on the answer without re-deriving it.
-    expect(body.details).toEqual({ eventId: 88, nextSessionIndex: 2 });
+    expect(body.error).toMatch(/events already cover/i);
+    expect(body.details).toEqual({
+      reason: "EVENT_CREATION_REQUIRES_DECISION",
+      candidates: [
+        {
+          id: 88,
+          title: "Existing discussion",
+          sessionIndex: 1,
+          recordingCount: 1,
+          primaryTitle: "Existing primary",
+        },
+      ],
+    });
     expect(prisma.catalogEvent.create).not.toHaveBeenCalled();
     expect(prisma.catalogEventRecording.create).not.toHaveBeenCalled();
   });
 
   it("creates the separate session once the caller confirms it", async () => {
     mockActionableRecordingAt();
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: 88,
+        title: "Existing discussion",
+        sessionIndex: 1,
+        recordings: [],
+        _count: { recordings: 0 },
+      },
+    ]);
     prisma.catalogEvent.create.mockResolvedValue({
       id: 89,
       title: "Praha, 3 Apr 2024, session 2",
@@ -208,11 +255,12 @@ describe("catalog events create-from-recording route", () => {
       isPrimary: true,
     });
 
-    const response = await createFromRecording(buildRequest({ sessionIndex: 2 }));
+    const response = await createFromRecording(
+      buildRequest({ intent: "create_distinct" })
+    );
 
     expect(response.status).toBe(201);
-    // A confirmed session skips the guard; the identity index still arbitrates.
-    expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
+    expect(prisma.catalogEvent.findMany).toHaveBeenCalled();
     expect(prisma.catalogEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         sessionIndex: 2,

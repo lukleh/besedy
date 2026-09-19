@@ -20,14 +20,21 @@ vi.mock("@/lib/event-sources", () => ({
 
 vi.mock("@/lib/db", () => ({
   default: {
+    $transaction: vi.fn(),
     workflowGroup: {
       findFirst: vi.fn(),
     },
     location: {
       findFirst: vi.fn(),
     },
+    catalogEntry: {
+      findMany: vi.fn(),
+    },
+    audioMetadata: {
+      findMany: vi.fn(),
+    },
     catalogEvent: {
-      findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
     },
   },
@@ -38,10 +45,13 @@ describe("catalog events create route", () => {
 
   let requireCatalogEventsAccess: ReturnType<typeof vi.fn>;
   let prisma: {
+    $transaction: ReturnType<typeof vi.fn>;
     workflowGroup: { findFirst: ReturnType<typeof vi.fn> };
     location: { findFirst: ReturnType<typeof vi.fn> };
+    catalogEntry: { findMany: ReturnType<typeof vi.fn> };
+    audioMetadata: { findMany: ReturnType<typeof vi.fn> };
     catalogEvent: {
-      findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
     };
   };
@@ -74,10 +84,13 @@ describe("catalog events create route", () => {
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: catalogId });
     prisma.location.findFirst.mockResolvedValue({ id: 7, name: "Praha" });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma)
+    );
   });
 
   it("creates the first session at a free location and date", async () => {
-    prisma.catalogEvent.findFirst.mockResolvedValue(null);
+    prisma.catalogEvent.findMany.mockResolvedValue([]);
     prisma.catalogEvent.create.mockResolvedValue({
       id: 88,
       title: "Praha, 3 Apr 2024",
@@ -98,41 +111,87 @@ describe("catalog events create route", () => {
   });
 
   it("returns 409 instead of silently adding a second session", async () => {
-    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 88, sessionIndex: 1 });
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: 88,
+        title: "Existing discussion",
+        sessionIndex: 1,
+        recordings: [],
+        _count: { recordings: 0 },
+      },
+    ]);
 
     const response = await createCatalogEvent(buildRequest({}));
 
     expect(response.status).toBe(409);
     const body = await response.json();
-    expect(body.error).toMatch(/Event 88 already covers/i);
-    expect(body.error).toMatch(/sessionIndex 2/);
-    expect(body.details).toEqual({ eventId: 88, nextSessionIndex: 2 });
+    expect(body.error).toMatch(/events already cover/i);
+    expect(body.details).toEqual({
+      reason: "EVENT_CREATION_REQUIRES_DECISION",
+      candidates: [
+        {
+          id: 88,
+          title: "Existing discussion",
+          sessionIndex: 1,
+          recordingCount: 0,
+          primaryTitle: null,
+        },
+      ],
+    });
     expect(prisma.catalogEvent.create).not.toHaveBeenCalled();
   });
 
-  it("names the next free session when several already exist", async () => {
-    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 90, sessionIndex: 3 });
+  it("returns every matching event so the caller can choose", async () => {
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: 88,
+        title: "Morning discussion",
+        sessionIndex: 1,
+        recordings: [],
+        _count: { recordings: 1 },
+      },
+      {
+        id: 90,
+        title: "Afternoon discussion",
+        sessionIndex: 3,
+        recordings: [],
+        _count: { recordings: 2 },
+      },
+    ]);
 
     const response = await createCatalogEvent(buildRequest({}));
 
     expect(response.status).toBe(409);
     const body = await response.json();
-    expect(body.error).toMatch(/sessionIndex 4/);
+    expect(body.details.candidates).toHaveLength(2);
+    expect(body.details.candidates.map((candidate: { id: number }) => candidate.id)).toEqual([
+      88,
+      90,
+    ]);
   });
 
   it("creates the extra session when the caller asks for one explicitly", async () => {
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: 88,
+        title: "Existing discussion",
+        sessionIndex: 1,
+        recordings: [],
+        _count: { recordings: 0 },
+      },
+    ]);
     prisma.catalogEvent.create.mockResolvedValue({
       id: 89,
       title: "Praha, 3 Apr 2024, session 2",
       _count: { recordings: 0 },
     });
 
-    const response = await createCatalogEvent(buildRequest({ sessionIndex: 2 }));
+    const response = await createCatalogEvent(
+      buildRequest({ intent: "create_distinct" })
+    );
 
     expect(response.status).toBe(201);
-    // An explicit sessionIndex is deliberate, so the guard lookup is skipped
-    // and the unique identity index remains the only arbiter.
-    expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
+    expect(prisma.catalogEvent.findMany).toHaveBeenCalled();
     expect(prisma.catalogEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -144,11 +203,22 @@ describe("catalog events create route", () => {
   });
 
   it("still reports the identity conflict when an explicit session is taken", async () => {
+    prisma.catalogEvent.findMany.mockResolvedValue([
+      {
+        id: 88,
+        title: "Existing discussion",
+        sessionIndex: 1,
+        recordings: [],
+        _count: { recordings: 0 },
+      },
+    ]);
     prisma.catalogEvent.create.mockRejectedValue(
       Object.assign(new Error("Unique constraint failed"), { code: "P2002" })
     );
 
-    const response = await createCatalogEvent(buildRequest({ sessionIndex: 2 }));
+    const response = await createCatalogEvent(
+      buildRequest({ intent: "create_distinct" })
+    );
 
     expect(response.status).toBe(409);
     const body = await response.json();
@@ -156,7 +226,7 @@ describe("catalog events create route", () => {
   });
 
   it("treats a partial date as its own identity slot", async () => {
-    prisma.catalogEvent.findFirst.mockResolvedValue(null);
+    prisma.catalogEvent.findMany.mockResolvedValue([]);
     prisma.catalogEvent.create.mockResolvedValue({
       id: 91,
       title: "Praha, 2024",
@@ -168,7 +238,7 @@ describe("catalog events create route", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(prisma.catalogEvent.findFirst).toHaveBeenCalledWith(
+    expect(prisma.catalogEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           workflowGroupId: catalogId,

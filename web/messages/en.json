@@ -1542,8 +1542,6 @@
       "fieldMonthPlaceholder": "1-12",
       "fieldDay": "Day",
       "fieldDayPlaceholder": "1-31",
-      "fieldSessionIndexOptional": "Session number (optional)",
-      "fieldSessionIndexPlaceholder": "Next available",
       "fieldTitleOptional": "Title (optional)",
       "fieldTitlePlaceholder": "Auto-derived when empty",
       "fieldDescriptionOptional": "Description (optional)",
@@ -1551,6 +1549,7 @@
       "create": "Create",
       "toastCreated": "Event created",
       "toastCreateFailed": "Failed to create event",
+      "openExistingEvent": "Open event",
       "loadNextError": "Failed to load next events",
       "loadAllError": "Failed to load all events",
       "loading": "Loading events...",
@@ -1640,6 +1639,14 @@
       "cancel": "Cancel",
       "saveChanges": "Save Changes"
     },
+    "creationConflict": {
+      "title": "Choose where this belongs",
+      "description": "One or more events already have this location and date. Choose the matching discussion, or confirm that this is a distinct event.",
+      "eventFallback": "Event {id}",
+      "candidateMeta": "Event {id} · session {index} · {count, plural, one {# recording} other {# recordings}}",
+      "createDistinct": "Create a distinct event",
+      "cancel": "Cancel"
+    },
     "unassignedPage": {
       "title": "Unassigned Recordings",
       "description": "Review catalog recordings that are not attached to any event yet.",
@@ -1653,11 +1660,7 @@
       "toastCreateFailed": "Failed to create event from recording",
       "loading": "Loading unassigned recordings...",
       "loadError": "Failed to load unassigned recordings: {message}",
-      "sessionConflictTitle": "An event already covers this date",
-      "sessionConflictDescription": "Event {eventId} is already recorded at this location and date. Attach the recording to it if they are the same discussion, or create session {index} if this is a separate one.",
-      "sessionConflictOpenEvent": "Open existing event",
-      "sessionConflictCreate": "Create separate session",
-      "sessionConflictCancel": "Cancel"
+      "attachToEvent": "Attach"
     }
   },
   "catalogSettings": {

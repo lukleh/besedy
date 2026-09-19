@@ -1541,8 +1541,6 @@
       "fieldMonthPlaceholder": "1-12",
       "fieldDay": "Den",
       "fieldDayPlaceholder": "1-31",
-      "fieldSessionIndexOptional": "Číslo sezení (volitelné)",
-      "fieldSessionIndexPlaceholder": "Další volné",
       "fieldTitleOptional": "Název (volitelné)",
       "fieldTitlePlaceholder": "Při prázdném se odvodí automaticky",
       "fieldDescriptionOptional": "Popis (volitelné)",
@@ -1550,6 +1548,7 @@
       "create": "Vytvořit",
       "toastCreated": "Událost vytvořena",
       "toastCreateFailed": "Nepodařilo se vytvořit událost",
+      "openExistingEvent": "Otevřít událost",
       "loadNextError": "Nepodařilo se načíst další události",
       "loadAllError": "Nepodařilo se načíst všechny události",
       "loading": "Načítání událostí...",
@@ -1639,6 +1638,14 @@
       "cancel": "Zrušit",
       "saveChanges": "Uložit změny"
     },
+    "creationConflict": {
+      "title": "Vyberte, kam nahrávka patří",
+      "description": "Na tomto místě a datu už existuje jedna nebo více událostí. Vyberte odpovídající besedu, nebo potvrďte, že jde o samostatnou událost.",
+      "eventFallback": "Událost {id}",
+      "candidateMeta": "Událost {id} · sezení {index} · {count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
+      "createDistinct": "Vytvořit samostatnou událost",
+      "cancel": "Zrušit"
+    },
     "unassignedPage": {
       "title": "Nepřiřazené nahrávky",
       "description": "Projděte katalogové nahrávky, které ještě nejsou připojené k žádné události.",
@@ -1652,11 +1659,7 @@
       "toastCreateFailed": "Nepodařilo se vytvořit událost z nahrávky",
       "loading": "Načítání nepřiřazených nahrávek...",
       "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}",
-      "sessionConflictTitle": "Událost k tomuto datu už existuje",
-      "sessionConflictDescription": "Událost {eventId} je již vedena na tomto místě a datu. Pokud jde o stejnou besedu, připojte k ní nahrávku; pokud jde o jinou, vytvořte sezení {index}.",
-      "sessionConflictOpenEvent": "Otevřít existující událost",
-      "sessionConflictCreate": "Vytvořit samostatné sezení",
-      "sessionConflictCancel": "Zrušit"
+      "attachToEvent": "Připojit"
     }
   },
   "catalogSettings": {

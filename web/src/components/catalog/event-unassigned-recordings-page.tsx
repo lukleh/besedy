@@ -6,21 +6,17 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { ApiError, fetchJson } from "@/lib/api/fetch-json";
+import { fetchJson } from "@/lib/api/fetch-json";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { CatalogPagination } from "@/components/catalog/catalog-list/components/pagination";
 import { type PaginationInfo } from "@/components/catalog/catalog-list/types";
+import { EventCreationConflictDialog } from "@/components/catalog/event-creation-conflict-dialog";
+import {
+  CREATE_DISTINCT_EVENT_INTENT,
+  type EventCreationConflictDetails,
+} from "@/lib/catalog-events/create-conflict";
+import { readEventCreationConflict } from "@/lib/catalog-events/create-conflict-client";
 import {
   UnassignedRecordingsTable,
   type UnassignedEntry,
@@ -55,28 +51,9 @@ function canCreateEventFromEntry(entry: UnassignedEntry): boolean {
   return entry.locationId !== null && entry.dateYear !== null;
 }
 
-interface SessionConflict {
+interface CreationDecision {
   entry: UnassignedEntry;
-  eventId: number;
-  nextSessionIndex: number;
-}
-
-/**
- * The create route answers 409 when an event already covers the recording's
- * location and date, and names the session index that would follow.
- */
-function readSessionConflict(
-  error: unknown,
-  entry: UnassignedEntry
-): SessionConflict | null {
-  if (!(error instanceof ApiError) || error.status !== 409) return null;
-  const details = (error.payload as { details?: unknown } | null)?.details;
-  if (typeof details !== "object" || details === null) return null;
-  const { eventId, nextSessionIndex } = details as Record<string, unknown>;
-  if (typeof eventId !== "number" || typeof nextSessionIndex !== "number") {
-    return null;
-  }
-  return { entry, eventId, nextSessionIndex };
+  conflict: EventCreationConflictDetails;
 }
 
 export function EventUnassignedRecordingsPage({
@@ -87,7 +64,7 @@ export function EventUnassignedRecordingsPage({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [page, setPage] = useState(1);
-  const [sessionConflict, setSessionConflict] = useState<SessionConflict | null>(
+  const [creationDecision, setCreationDecision] = useState<CreationDecision | null>(
     null
   );
 
@@ -110,13 +87,24 @@ export function EventUnassignedRecordingsPage({
     },
   });
 
+  async function refreshEventQueries() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["catalog-events", catalogId] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog-events-health", catalogId] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog-event-unassigned", catalogId] }),
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-event-unassigned-page", catalogId],
+      }),
+    ]);
+  }
+
   const createMutation = useMutation({
     mutationFn: async ({
       entry,
-      sessionIndex,
+      intent,
     }: {
       entry: UnassignedEntry;
-      sessionIndex?: number;
+      intent?: typeof CREATE_DISTINCT_EVENT_INTENT;
     }) => {
       return fetchJson<CreateEventFromRecordingResponse>(
         "/api/catalog-events/from-recording",
@@ -126,34 +114,54 @@ export function EventUnassignedRecordingsPage({
           body: JSON.stringify({
             workflowGroupId: catalogId,
             audioHash: entry.audioHash,
-            ...(sessionIndex !== undefined ? { sessionIndex } : {}),
+            ...(intent !== undefined ? { intent } : {}),
           }),
         }
       );
     },
     onSuccess: async (result) => {
-      setSessionConflict(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["catalog-events", catalogId] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog-events-health", catalogId] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog-event-unassigned", catalogId] }),
-        queryClient.invalidateQueries({
-          queryKey: ["catalog-event-unassigned-page", catalogId],
-        }),
-      ]);
+      setCreationDecision(null);
+      await refreshEventQueries();
       router.push(`/catalog/${catalogId}/event/${result.eventId}/edit`);
     },
     onError: (error: Error, variables) => {
-      // Only an unconfirmed create can be resolved by choosing a session; a
-      // conflict on a confirmed one is a genuine failure.
-      const conflict =
-        variables.sessionIndex === undefined
-          ? readSessionConflict(error, variables.entry)
-          : null;
+      const conflict = readEventCreationConflict(error);
       if (conflict) {
-        setSessionConflict(conflict);
+        setCreationDecision({ entry: variables.entry, conflict });
         return;
       }
+      toast({
+        title: t("toastCreateFailed"),
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const attachMutation = useMutation({
+    mutationFn: async ({
+      entry,
+      eventId,
+    }: {
+      entry: UnassignedEntry;
+      eventId: number;
+    }) => {
+      await fetchJson(
+        `/api/catalogs/${catalogId}/events/${eventId}/recordings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audioHashes: [entry.audioHash] }),
+        }
+      );
+      return { eventId };
+    },
+    onSuccess: async ({ eventId }) => {
+      setCreationDecision(null);
+      await refreshEventQueries();
+      router.push(`/catalog/${catalogId}/event/${eventId}/edit`);
+    },
+    onError: (error: Error) => {
       toast({
         title: t("toastCreateFailed"),
         description: error.message,
@@ -229,7 +237,7 @@ export function EventUnassignedRecordingsPage({
           });
           return `/catalog/${catalogId}/recording/${entry.audioHash}?${params.toString()}`;
         }}
-        isBusy={createMutation.isPending}
+        isBusy={createMutation.isPending || attachMutation.isPending}
         isActionPending={(entry) =>
           createMutation.isPending &&
           createMutation.variables?.entry.audioHash === entry.audioHash
@@ -246,48 +254,26 @@ export function EventUnassignedRecordingsPage({
         />
       ) : null}
 
-      <AlertDialog open={sessionConflict !== null}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("sessionConflictTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("sessionConflictDescription", {
-                eventId: sessionConflict?.eventId ?? 0,
-                index: sessionConflict?.nextSessionIndex ?? 0,
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:gap-0">
-            <AlertDialogCancel
-              onClick={() => setSessionConflict(null)}
-              disabled={createMutation.isPending}
-            >
-              {t("sessionConflictCancel")}
-            </AlertDialogCancel>
-            {sessionConflict ? (
-              <Button asChild variant="outline">
-                <Link
-                  href={`/catalog/${catalogId}/event/${sessionConflict.eventId}/edit`}
-                >
-                  {t("sessionConflictOpenEvent")}
-                </Link>
-              </Button>
-            ) : null}
-            <AlertDialogAction
-              onClick={() => {
-                if (!sessionConflict) return;
-                createMutation.mutate({
-                  entry: sessionConflict.entry,
-                  sessionIndex: sessionConflict.nextSessionIndex,
-                });
-              }}
-              disabled={createMutation.isPending}
-            >
-              {t("sessionConflictCreate")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <EventCreationConflictDialog
+        candidateActionLabel={t("attachToEvent")}
+        conflict={creationDecision?.conflict ?? null}
+        isPending={createMutation.isPending || attachMutation.isPending}
+        onCancel={() => setCreationDecision(null)}
+        onCandidateAction={(candidate) => {
+          if (!creationDecision) return;
+          attachMutation.mutate({
+            entry: creationDecision.entry,
+            eventId: candidate.id,
+          });
+        }}
+        onCreateDistinct={() => {
+          if (!creationDecision) return;
+          createMutation.mutate({
+            entry: creationDecision.entry,
+            intent: CREATE_DISTINCT_EVENT_INTENT,
+          });
+        }}
+      />
     </div>
   );
 }
