@@ -97,6 +97,8 @@ export async function consumePortalAdmissionForUser(
       select: {
         catalogId: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         grantedById: true,
         notes: true,
       },
@@ -134,6 +136,10 @@ export async function consumePortalAdmissionForUser(
           userId: user.id,
           catalogId: grant.catalogId,
           accessLevel: grant.accessLevel,
+          // The role is what the grant is; carrying only the level would land
+          // a row with no permissions at all.
+          role: grant.role,
+          extraPermissions: grant.extraPermissions,
           grantedById: grant.grantedById,
           notes: grant.notes,
         })),

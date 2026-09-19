@@ -1,5 +1,6 @@
 import type { AccessLevel, PrismaClient } from "../src/generated/prisma/client";
 import { canonicalizeEmail } from "../src/lib/email";
+import { roleFieldsForLevel } from "../src/lib/policy/catalog-permissions";
 
 type SeedPendingAdmissionClient = Pick<PrismaClient, "portalAdmission" | "pendingCatalogGrant">;
 
@@ -79,6 +80,7 @@ export async function syncSeedPendingAdmissions(
         email,
         catalogId: input.catalogId,
         accessLevel: input.accessLevel,
+        ...roleFieldsForLevel(input.accessLevel),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,
@@ -90,6 +92,7 @@ export async function syncSeedPendingAdmissions(
       },
       update: {
         accessLevel: input.accessLevel,
+        ...roleFieldsForLevel(input.accessLevel),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,

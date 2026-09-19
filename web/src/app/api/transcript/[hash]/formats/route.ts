@@ -83,7 +83,7 @@ export async function GET(
       hash,
       backend,
       formats: result.formats,
-      canDownload: capability.canDownloadRecording,
+      canDownload: capability.canDownloadTranscripts,
     });
   } catch (error) {
     if (isAuthError(error)) {

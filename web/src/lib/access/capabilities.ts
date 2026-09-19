@@ -11,7 +11,12 @@ import {
 import {
   canBatchEditCatalogMetadata,
   canAccessCatalogSettings,
-  canDownloadCatalogContent,
+  canBrowseRecordings,
+  canBulkExportTranscripts,
+  canDownloadAudio,
+  canDownloadOriginalAudio,
+  canDownloadOriginalTranscript,
+  canDownloadTranscripts,
   canEditCatalogMetadata,
   canManageCatalogConfiguration,
   canUseCatalogRag,
@@ -21,9 +26,13 @@ import {
   hasCatalogAccess,
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
+import { canViewUnreleasedEvents } from "@/lib/policy/event";
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
+  canSeeSpeakers,
+  canSeeTranscriptVariants,
   canPublishRecording,
   canStreamRecording,
   canViewRecording,
@@ -51,17 +60,24 @@ export interface CatalogDiscoveryCapability extends PortalCapability {
 export interface CatalogCapability extends PortalCapability {
   catalogId: string;
   catalogExists: boolean;
-  catalogGrant: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   accessLevel: AccessLevel | null;
   isCatalogAdmin: boolean;
   hasAccess: boolean;
   canViewCatalog: boolean;
+  canBrowseRecordings: boolean;
   canViewTranscripts: boolean;
-  canDownload: boolean;
+  // One per thing delivered; there is no general "may download" any more.
+  canDownloadAudio: boolean;
+  canDownloadOriginalAudio: boolean;
+  canDownloadTranscripts: boolean;
+  canDownloadOriginalTranscript: boolean;
+  canBulkExportTranscripts: boolean;
   canEditMetadata: boolean;
   canBatchEditMetadata: boolean;
   canManageAccess: boolean;
   canPublishRecording: boolean;
+  canSeeUnreleased: boolean;
   canAccessSettings: boolean;
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
@@ -74,6 +90,8 @@ export interface RecordingCapability extends CatalogCapability {
   canViewRecordingTranscripts: boolean;
   canDownloadRecording: boolean;
   canEditRecording: boolean;
+  canSeeTranscriptVariants: boolean;
+  canSeeSpeakers: boolean;
 }
 
 interface CatalogCapabilityOptions {
@@ -84,7 +102,7 @@ export function buildCatalogCapability(
   portal: PortalCapability,
   catalogId: string,
   catalogExists: boolean,
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
   accessLevel: AccessLevel | null,
   isCatalogAdmin: boolean
 ): CatalogCapability {
@@ -104,12 +122,18 @@ export function buildCatalogCapability(
     isCatalogAdmin,
     hasAccess: hasCatalogAccess(policyContext),
     canViewCatalog: canViewCatalog(policyContext),
+    canBrowseRecordings: canBrowseRecordings(policyContext),
     canViewTranscripts: canViewCatalogTranscripts(policyContext),
-    canDownload: canDownloadCatalogContent(policyContext),
+    canDownloadAudio: canDownloadAudio(policyContext),
+    canDownloadOriginalAudio: canDownloadOriginalAudio(policyContext),
+    canDownloadTranscripts: canDownloadTranscripts(policyContext),
+    canDownloadOriginalTranscript: canDownloadOriginalTranscript(policyContext),
+    canBulkExportTranscripts: canBulkExportTranscripts(policyContext),
     canEditMetadata: canEditCatalogMetadata(policyContext),
     canBatchEditMetadata: canBatchEditCatalogMetadata(policyContext),
     canManageAccess: hasCatalogManagementAuthority(policyContext),
     canPublishRecording: canPublishRecording(policyContext),
+    canSeeUnreleased: canViewUnreleasedEvents(policyContext),
     canAccessSettings: canAccessCatalogSettings(policyContext),
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),
@@ -196,8 +220,10 @@ export async function getCatalogCapability(
     canEnterPortal: actor.canEnterPortal,
   };
 
+  // The level still names the grant for payloads and badges; permissions no
+  // longer come from it.
   const accessLevel =
-    actor.catalogGrant ?? (actor.isCatalogAdmin ? "OWNER" : null);
+    actor.catalogGrant?.level ?? (actor.isCatalogAdmin ? "OWNER" : null);
 
   return buildCatalogCapability(
     portal,
@@ -230,6 +256,11 @@ export async function getRecordingCapability(
     canViewRecordingTranscripts: false,
     canDownloadRecording: false,
     canEditRecording: catalogCapability.canEditMetadata,
+    // Administrative views of machine output. They do not depend on the
+    // recording's state, only on who is asking, so they are answered here
+    // rather than after the entry is loaded.
+    canSeeTranscriptVariants: canSeeTranscriptVariants(policyContext),
+    canSeeSpeakers: canSeeSpeakers(policyContext),
   };
 
   if (!catalogCapability.catalogExists || !catalogCapability.hasAccess) {

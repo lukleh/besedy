@@ -1,45 +1,52 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { CheckIcon, ChevronDownIcon, Loader2Icon, PencilIcon, UserPlusIcon, RotateCcwIcon } from "lucide-react"
+import * as React from "react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  Loader2Icon,
+  PencilIcon,
+  UserPlusIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 
-import { cn } from "@/lib/utils"
-import { Popover, PopoverAnchor, PopoverContent } from "./popover"
-import { Input } from "./input"
+import { cn } from "@/lib/utils";
+import { Popover, PopoverAnchor, PopoverContent } from "./popover";
+import { Input } from "./input";
 
 export interface ComboboxOption {
-  id: string
-  label: string
-  description?: string
-  type: "active" | "available" | "revoked" | "invite"
-  image?: string | null
-  currentAccessLevel?: string
-  previousAccessLevel?: string
+  id: string;
+  label: string;
+  description?: string;
+  type: "active" | "available" | "revoked" | "invite";
+  image?: string | null;
+  currentAccessLabel?: string;
+  previousAccessLabel?: string;
 }
 
 interface ComboboxProps {
-  value: string
-  onValueChange: (value: string) => void
-  searchValue: string
-  onSearchChange: (value: string) => void
-  options: ComboboxOption[]
-  isLoading?: boolean
-  placeholder?: string
-  searchPlaceholder?: string
-  emptyMessage?: string
-  activeSectionLabel?: string
-  revokedSectionLabel?: string
-  availableSectionLabel?: string
-  inviteLabel?: string
-  shortSearchMessage?: string
-  currentAccessPrefix?: string
-  previousAccessPrefix?: string
-  showInviteOption?: boolean
-  inviteEmail?: string
-  onInvite?: () => void
-  onSelect: (option: ComboboxOption) => void
-  disabled?: boolean
-  className?: string
+  value: string;
+  onValueChange: (value: string) => void;
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  options: ComboboxOption[];
+  isLoading?: boolean;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+  activeSectionLabel?: string;
+  revokedSectionLabel?: string;
+  availableSectionLabel?: string;
+  inviteLabel?: string;
+  shortSearchMessage?: string;
+  currentAccessPrefix?: string;
+  previousAccessPrefix?: string;
+  showInviteOption?: boolean;
+  inviteEmail?: string;
+  onInvite?: () => void;
+  onSelect: (option: ComboboxOption) => void;
+  disabled?: boolean;
+  className?: string;
 }
 
 export function Combobox({
@@ -66,77 +73,81 @@ export function Combobox({
   disabled = false,
   className,
 }: ComboboxProps) {
-  const [open, setOpen] = React.useState(false)
-  const [highlightedIndex, setHighlightedIndex] = React.useState(0)
-  const inputRef = React.useRef<HTMLInputElement>(null)
-  const listRef = React.useRef<HTMLDivElement>(null)
-  const inputPlaceholder = placeholder ?? searchPlaceholder
+  const [open, setOpen] = React.useState(false);
+  const [highlightedIndex, setHighlightedIndex] = React.useState(0);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const listRef = React.useRef<HTMLDivElement>(null);
+  const inputPlaceholder = placeholder ?? searchPlaceholder;
 
   // Group options by type
-  const activeOptions = options.filter((o) => o.type === "active")
-  const revokedOptions = options.filter((o) => o.type === "revoked")
-  const availableOptions = options.filter((o) => o.type === "available")
+  const activeOptions = options.filter((o) => o.type === "active");
+  const revokedOptions = options.filter((o) => o.type === "revoked");
+  const availableOptions = options.filter((o) => o.type === "available");
 
   // All selectable items (for keyboard navigation)
   const allItems: Array<ComboboxOption | { type: "invite"; id: string }> = [
     ...activeOptions,
     ...revokedOptions,
     ...availableOptions,
-    ...(showInviteOption && inviteEmail ? [{ type: "invite" as const, id: "invite" }] : []),
-  ]
+    ...(showInviteOption && inviteEmail
+      ? [{ type: "invite" as const, id: "invite" }]
+      : []),
+  ];
 
   // Reset highlight when options change
   React.useEffect(() => {
-    setHighlightedIndex(0)
-  }, [options, showInviteOption])
+    setHighlightedIndex(0);
+  }, [options, showInviteOption]);
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!open) {
       if (e.key === "ArrowDown" || e.key === "Enter") {
-        setOpen(true)
-        e.preventDefault()
+        setOpen(true);
+        e.preventDefault();
       }
-      return
+      return;
     }
 
     switch (e.key) {
       case "ArrowDown":
-        e.preventDefault()
-        setHighlightedIndex((i) => Math.min(i + 1, allItems.length - 1))
-        break
+        e.preventDefault();
+        setHighlightedIndex((i) => Math.min(i + 1, allItems.length - 1));
+        break;
       case "ArrowUp":
-        e.preventDefault()
-        setHighlightedIndex((i) => Math.max(i - 1, 0))
-        break
+        e.preventDefault();
+        setHighlightedIndex((i) => Math.max(i - 1, 0));
+        break;
       case "Enter":
-        e.preventDefault()
+        e.preventDefault();
         if (allItems.length > 0) {
-          const item = allItems[highlightedIndex]
+          const item = allItems[highlightedIndex];
           if (item.type === "invite" && onInvite) {
-            onInvite()
+            onInvite();
           } else if (item.type !== "invite") {
-            onSelect(item)
+            onSelect(item);
           }
-          setOpen(false)
+          setOpen(false);
         }
-        break
+        break;
       case "Escape":
-        e.preventDefault()
-        setOpen(false)
-        break
+        e.preventDefault();
+        setOpen(false);
+        break;
     }
-  }
+  };
 
   // Scroll highlighted item into view
   React.useEffect(() => {
     if (open && listRef.current) {
-      const highlightedEl = listRef.current.querySelector(`[data-index="${highlightedIndex}"]`)
+      const highlightedEl = listRef.current.querySelector(
+        `[data-index="${highlightedIndex}"]`
+      );
       if (highlightedEl) {
-        highlightedEl.scrollIntoView({ block: "nearest" })
+        highlightedEl.scrollIntoView({ block: "nearest" });
       }
     }
-  }, [highlightedIndex, open])
+  }, [highlightedIndex, open]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -149,8 +160,8 @@ export function Combobox({
             aria-haspopup="listbox"
             value={searchValue}
             onChange={(e) => {
-              onSearchChange(e.target.value)
-              if (!open) setOpen(true)
+              onSearchChange(e.target.value);
+              if (!open) setOpen(true);
             }}
             onFocus={() => setOpen(true)}
             onKeyDown={handleKeyDown}
@@ -174,7 +185,7 @@ export function Combobox({
         // See: https://github.com/radix-ui/primitives/issues/2578
         translate="no"
         onOpenAutoFocus={(e) => {
-          e.preventDefault()
+          e.preventDefault();
         }}
       >
         <div ref={listRef} className="max-h-60 overflow-y-auto p-1">
@@ -192,8 +203,8 @@ export function Combobox({
                   isHighlighted={highlightedIndex === index}
                   isSelected={value === option.id}
                   onSelect={() => {
-                    onSelect(option)
-                    setOpen(false)
+                    onSelect(option);
+                    setOpen(false);
                   }}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   icon={<PencilIcon className="size-4 text-sky-600" />}
@@ -218,13 +229,17 @@ export function Combobox({
                   key={option.id}
                   option={option}
                   index={activeOptions.length + index}
-                  isHighlighted={highlightedIndex === activeOptions.length + index}
+                  isHighlighted={
+                    highlightedIndex === activeOptions.length + index
+                  }
                   isSelected={value === option.id}
                   onSelect={() => {
-                    onSelect(option)
-                    setOpen(false)
+                    onSelect(option);
+                    setOpen(false);
                   }}
-                  onMouseEnter={() => setHighlightedIndex(activeOptions.length + index)}
+                  onMouseEnter={() =>
+                    setHighlightedIndex(activeOptions.length + index)
+                  }
                   icon={<RotateCcwIcon className="size-4 text-amber-500" />}
                   currentAccessPrefix={currentAccessPrefix}
                   previousAccessPrefix={previousAccessPrefix}
@@ -243,7 +258,8 @@ export function Combobox({
                 {availableSectionLabel}
               </div>
               {availableOptions.map((option, index) => {
-                const itemIndex = activeOptions.length + revokedOptions.length + index
+                const itemIndex =
+                  activeOptions.length + revokedOptions.length + index;
                 return (
                   <ComboboxItem
                     key={option.id}
@@ -252,14 +268,14 @@ export function Combobox({
                     isHighlighted={highlightedIndex === itemIndex}
                     isSelected={value === option.id}
                     onSelect={() => {
-                      onSelect(option)
-                      setOpen(false)
+                      onSelect(option);
+                      setOpen(false);
                     }}
                     onMouseEnter={() => setHighlightedIndex(itemIndex)}
                     currentAccessPrefix={currentAccessPrefix}
                     previousAccessPrefix={previousAccessPrefix}
                   />
-                )
+                );
               })}
             </>
           )}
@@ -267,7 +283,9 @@ export function Combobox({
           {/* Invite new user option */}
           {showInviteOption && inviteEmail && (
             <>
-              {(activeOptions.length > 0 || revokedOptions.length > 0 || availableOptions.length > 0) && (
+              {(activeOptions.length > 0 ||
+                revokedOptions.length > 0 ||
+                availableOptions.length > 0) && (
                 <div className="bg-border -mx-1 my-1 h-px" />
               )}
               <button
@@ -280,25 +298,29 @@ export function Combobox({
                     : "hover:bg-accent hover:text-accent-foreground"
                 )}
                 onClick={() => {
-                  onInvite?.()
-                  setOpen(false)
+                  onInvite?.();
+                  setOpen(false);
                 }}
                 onMouseEnter={() => setHighlightedIndex(allItems.length - 1)}
               >
                 <UserPlusIcon className="size-4 text-green-500" />
                 <span>
-                  {inviteLabel} <span className="font-medium">{inviteEmail}</span>
+                  {inviteLabel}{" "}
+                  <span className="font-medium">{inviteEmail}</span>
                 </span>
               </button>
             </>
           )}
 
           {/* Empty state */}
-          {!isLoading && options.length === 0 && !showInviteOption && searchValue.length >= 2 && (
-            <div className="text-muted-foreground py-6 text-center text-sm">
-              {emptyMessage}
-            </div>
-          )}
+          {!isLoading &&
+            options.length === 0 &&
+            !showInviteOption &&
+            searchValue.length >= 2 && (
+              <div className="text-muted-foreground py-6 text-center text-sm">
+                {emptyMessage}
+              </div>
+            )}
 
           {/* Hint when search is too short */}
           {searchValue.length < 2 && (
@@ -309,19 +331,19 @@ export function Combobox({
         </div>
       </PopoverContent>
     </Popover>
-  )
+  );
 }
 
 interface ComboboxItemProps {
-  option: ComboboxOption
-  index: number
-  isHighlighted: boolean
-  isSelected: boolean
-  onSelect: () => void
-  onMouseEnter: () => void
-  icon?: React.ReactNode
-  currentAccessPrefix?: string
-  previousAccessPrefix?: string
+  option: ComboboxOption;
+  index: number;
+  isHighlighted: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
+  onMouseEnter: () => void;
+  icon?: React.ReactNode;
+  currentAccessPrefix?: string;
+  previousAccessPrefix?: string;
 }
 
 function ComboboxItem({
@@ -343,7 +365,9 @@ function ComboboxItem({
       data-index={index}
       className={cn(
         "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none select-none",
-        isHighlighted ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground",
+        isHighlighted
+          ? "bg-accent text-accent-foreground"
+          : "hover:bg-accent hover:text-accent-foreground",
         option.type === "revoked" && "opacity-70"
       )}
       onClick={onSelect}
@@ -357,14 +381,14 @@ function ComboboxItem({
             {option.description}
           </span>
         )}
-        {option.type === "revoked" && option.previousAccessLevel && (
+        {option.type === "revoked" && option.previousAccessLabel && (
           <span className="text-amber-700 text-xs">
-            {previousAccessPrefix}: {option.previousAccessLevel}
+            {previousAccessPrefix}: {option.previousAccessLabel}
           </span>
         )}
-        {option.type === "active" && option.currentAccessLevel && (
+        {option.type === "active" && option.currentAccessLabel && (
           <span className="text-sky-700 text-xs">
-            {currentAccessPrefix}: {option.currentAccessLevel}
+            {currentAccessPrefix}: {option.currentAccessLabel}
           </span>
         )}
       </div>
@@ -374,5 +398,5 @@ function ComboboxItem({
         </span>
       )}
     </button>
-  )
+  );
 }

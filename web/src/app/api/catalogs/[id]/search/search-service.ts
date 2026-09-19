@@ -1,4 +1,4 @@
-import type { AccessLevel } from "@/generated/prisma/client";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import prisma from "@/lib/db";
 import {
   applyMaxPerAudio,
@@ -110,7 +110,7 @@ export interface ExecuteCatalogSearchInput {
   neighborCount?: number;
   maxPerAudio?: number | null;
   metadataFilters?: SearchMetadataFilters | null;
-  accessLevel?: AccessLevel | null;
+  catalogGrant?: CatalogGrant | null;
   config?: SearchConfig;
   requestStartedAt?: number;
   authMs?: number;
@@ -126,7 +126,7 @@ export interface ExecuteCatalogLexicalSearchInput {
   neighborCount?: number;
   maxPerAudio: number;
   metadataFilters?: SearchMetadataFilters | null;
-  accessLevel?: AccessLevel | null;
+  catalogGrant?: CatalogGrant | null;
   config?: SearchConfig;
   requestStartedAt?: number;
   authMs?: number;
@@ -189,7 +189,7 @@ export async function executeCatalogSearch(
 
   const requiredColbertRows = config.rerankEnabled ? rerankCandidateLimit : limit;
   const baseColbertK = Math.max(config.colbertTopK, requiredColbertRows, limit);
-  const maxColbertK = shouldOverfetchColbertResults(input.accessLevel, metadataFilters)
+  const maxColbertK = shouldOverfetchColbertResults(input.catalogGrant, metadataFilters)
     ? resolveColbertFetchLimit(baseColbertK)
     : baseColbertK;
   let requestedColbertK = baseColbertK;
@@ -209,7 +209,7 @@ export async function executeCatalogSearch(
   let allowedAudioQuery = buildAllowedAudioHashesQuery(
     input.catalogId,
     Array.from(new Set(lookedUpChunks.map((chunk) => chunk.audioHash))),
-    input.accessLevel,
+    input.catalogGrant,
     metadataFilters,
   );
   let allowedAudioRows = allowedAudioQuery
@@ -243,7 +243,7 @@ export async function executeCatalogSearch(
     allowedAudioQuery = buildAllowedAudioHashesQuery(
       input.catalogId,
       Array.from(new Set(lookedUpChunks.map((chunk) => chunk.audioHash))),
-      input.accessLevel,
+      input.catalogGrant,
       metadataFilters,
     );
     allowedAudioRows = allowedAudioQuery
@@ -353,7 +353,7 @@ export async function executeCatalogLexicalSearch(
   const allowedRows = await prisma.$queryRaw<AllowedAudioHashRow[]>(
     buildEligibleAudioHashesQuery(
       input.catalogId,
-      input.accessLevel,
+      input.catalogGrant,
       input.metadataFilters ?? null,
     ),
   );

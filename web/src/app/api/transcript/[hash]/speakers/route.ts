@@ -57,7 +57,14 @@ export async function GET(
     if (!access.ok) {
       return access.response;
     }
-    const { transcriptsPath } = access;
+    const { transcriptsPath, capability } = access;
+
+    // The overlay is unevaluated machine output and names nobody, so it is
+    // administrative. An account without it is told there is nothing, rather
+    // than that there is something it may not have.
+    if (!capability.canSeeSpeakers) {
+      return NextResponse.json({ hash, backends: [] });
+    }
 
     // If no backend specified, return available backends
     if (!backend) {

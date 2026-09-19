@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminStatus } from "@/hooks/use-admin-status";
 import { useCatalogs } from "@/hooks/use-catalogs";
-import { AccessLevel, UserStatus } from "@/generated/prisma/enums";
+import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { FRESH_QUERY_PROFILE } from "@/lib/query/profiles";
 import { UsersCreateDialog, UsersDialogs } from "./users-content-dialogs";
@@ -64,7 +64,7 @@ export default function UsersPageContent() {
     user: User;
   } | null>(null);
   const [newCatalogId, setNewCatalogId] = useState<string>("");
-  const [newAccessLevel, setNewAccessLevel] = useState<AccessLevel>("LISTENER");
+  const [newCatalogRole, setNewCatalogRole] = useState<CatalogRole>("listener");
 
   // Edit pending admission dialog
   const [editAdmissionDialog, setEditAdmissionDialog] = useState<{
@@ -72,7 +72,7 @@ export default function UsersPageContent() {
     admission: PendingPortalAdmission;
   } | null>(null);
   const [editAdmissionForm, setEditAdmissionForm] = useState({
-    accessLevel: "" as AccessLevel | "",
+    role: "" as CatalogRole | "",
     notes: "",
   });
 
@@ -88,7 +88,7 @@ export default function UsersPageContent() {
   );
   const [newEmail, setNewEmail] = useState("");
   const [selectedCatalog, setSelectedCatalog] = useState<string>("");
-  const [selectedRole, setSelectedRole] = useState<AccessLevel | "">("");
+  const [selectedRole, setSelectedRole] = useState<CatalogRole | "">("");
 
   // Fetch available catalogs
   const { data: catalogs } = useCatalogs();
@@ -98,17 +98,20 @@ export default function UsersPageContent() {
   // to allow users to clear the catalog selection
   useEffect(() => {
     if (createDialogOpen && catalogs && catalogs.length > 0) {
-      const defaultCatalog = catalogs.find((catalog) => catalog.isDefault) || catalogs[0];
+      const defaultCatalog =
+        catalogs.find((catalog) => catalog.isDefault) || catalogs[0];
       if (defaultCatalog) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: setting form defaults when dialog opens
         setSelectedCatalog(defaultCatalog.id);
-        setSelectedRole(AccessLevel.LISTENER);
+        setSelectedRole("listener");
       }
     }
   }, [createDialogOpen, catalogs]);
 
   // Fetch user's catalog access when dialog opens
-  const { data: userCatalogAccess, isLoading: isLoadingAccess } = useQuery<CatalogAccess[]>({
+  const { data: userCatalogAccess, isLoading: isLoadingAccess } = useQuery<
+    CatalogAccess[]
+  >({
     queryKey: ["user-catalog-access", catalogAccessDialog?.user.id],
     queryFn: async () => {
       if (!catalogAccessDialog?.user.id) return [];
@@ -126,7 +129,9 @@ export default function UsersPageContent() {
   });
 
   // Fetch users or pending admissions (depending on status filter)
-  const { data: usersOrAdmissions, isLoading } = useQuery<UserOrPortalAdmission[]>({
+  const { data: usersOrAdmissions, isLoading } = useQuery<
+    UserOrPortalAdmission[]
+  >({
     queryKey: ["admin-users", statusFilter, search],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -141,14 +146,22 @@ export default function UsersPageContent() {
       if (statusFilter && statusFilter !== "all") {
         params.set("status", statusFilter);
       }
-      return fetchJson<UserOrPortalAdmission[]>(`/api/admin/users?${params.toString()}`);
+      return fetchJson<UserOrPortalAdmission[]>(
+        `/api/admin/users?${params.toString()}`
+      );
     },
     ...FRESH_QUERY_PROFILE,
   });
 
   // Update user status
   const updateStatus = useMutation({
-    mutationFn: async ({ userId, status }: { userId: string; status: UserStatus }) => {
+    mutationFn: async ({
+      userId,
+      status,
+    }: {
+      userId: string;
+      status: UserStatus;
+    }) => {
       return fetchJson(`/api/admin/users/${userId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -225,16 +238,16 @@ export default function UsersPageContent() {
     mutationFn: async ({
       userId,
       catalogId,
-      accessLevel,
+      role,
     }: {
       userId: string;
       catalogId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}/access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, accessLevel }),
+        body: JSON.stringify({ userId, role, extraPermissions: [] }),
       });
     },
     onSuccess: () => {
@@ -243,7 +256,7 @@ export default function UsersPageContent() {
       });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setNewCatalogId("");
-      setNewAccessLevel("VIEWER");
+      setNewCatalogRole("reader");
       toast({
         title: t("toasts.accessGranted"),
         description: t("toasts.accessHasBeenGranted"),
@@ -258,21 +271,23 @@ export default function UsersPageContent() {
     },
   });
 
-  // Update catalog access level
+  // Update catalog role while preserving any explicit exceptions.
   const updateCatalogAccess = useMutation({
     mutationFn: async ({
       userId,
       catalogId,
-      accessLevel,
+      role,
+      extraPermissions,
     }: {
       userId: string;
       catalogId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
+      extraPermissions: string[];
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}/access/${userId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessLevel }),
+        body: JSON.stringify({ role, extraPermissions }),
       });
     },
     onSuccess: () => {
@@ -354,17 +369,19 @@ export default function UsersPageContent() {
   const updatePendingAdmission = useMutation({
     mutationFn: async ({
       admission,
-      accessLevel,
+      role,
+      extraPermissions,
       notes,
     }: {
       admission: PendingPortalAdmission;
-      accessLevel?: AccessLevel;
+      role?: CatalogRole;
+      extraPermissions?: string[];
       notes?: string | null;
     }) => {
       return fetchJson(getPendingPortalAdmissionMutationPath(admission), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessLevel, notes }),
+        body: JSON.stringify({ role, extraPermissions, notes }),
       });
     },
     onSuccess: () => {
@@ -411,7 +428,11 @@ export default function UsersPageContent() {
 
   // Create user (add to allowlist)
   const createUser = useMutation({
-    mutationFn: async (data: { email: string; catalogId?: string; accessLevel?: AccessLevel }) => {
+    mutationFn: async (data: {
+      email: string;
+      catalogId?: string;
+      role?: CatalogRole;
+    }) => {
       return fetchJson("/api/admin/portal-admissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -425,17 +446,21 @@ export default function UsersPageContent() {
       setNewEmail("");
       setSelectedCatalog("");
       setSelectedRole("");
-      const catalogName = catalogs?.find((catalog) => catalog.id === variables.catalogId)?.label;
+      const catalogName = catalogs?.find(
+        (catalog) => catalog.id === variables.catalogId
+      )?.label;
       toast({
         title: t("pendingAdmissions.toast.userAdded"),
         description:
-          catalogName && variables.accessLevel
+          catalogName && variables.role
             ? t("pendingAdmissions.toast.userAddedWithAccess", {
-              email: variables.email,
-              level: variables.accessLevel,
-              catalog: catalogName,
-            })
-            : t("pendingAdmissions.toast.userAddedSimple", { email: variables.email }),
+                email: variables.email,
+                level: getCatalogRoleLabel(variables.role),
+                catalog: catalogName,
+              })
+            : t("pendingAdmissions.toast.userAddedSimple", {
+                email: variables.email,
+              }),
       });
     },
     onError: (error: Error) => {
@@ -447,15 +472,12 @@ export default function UsersPageContent() {
     },
   });
 
-  // Helper function to get translated access level label
-  const getAccessLevelLabel = (level: AccessLevel): string => {
-    const key = level.toLowerCase() as "listener" | "viewer" | "member" | "editor" | "owner";
-    return t(`accessLevels.${key}`);
+  const getCatalogRoleLabel = (role: CatalogRole): string => {
+    return t(`catalogRoles.${role}`);
   };
 
-  const getAccessLevelDesc = (level: AccessLevel): string => {
-    const key = level.toLowerCase() as "listener" | "viewer" | "member" | "editor" | "owner";
-    return t(`accessLevels.${key}Desc`);
+  const getCatalogRoleDesc = (role: CatalogRole): string => {
+    return t(`catalogRoles.${role}Desc`);
   };
 
   const handleCreate = (e: FormEvent) => {
@@ -463,17 +485,18 @@ export default function UsersPageContent() {
     if (newEmail.trim()) {
       createUser.mutate({
         email: newEmail.trim(),
-        ...(selectedCatalog && selectedRole && {
-          catalogId: selectedCatalog,
-          accessLevel: selectedRole as AccessLevel,
-        }),
+        ...(selectedCatalog &&
+          selectedRole && {
+            catalogId: selectedCatalog,
+            role: selectedRole as CatalogRole,
+          }),
       });
     }
   };
 
   const handleCreateCatalogChange = (value: string) => {
     setSelectedCatalog(value);
-    setSelectedRole(value ? AccessLevel.LISTENER : "");
+    setSelectedRole(value ? "listener" : "");
   };
 
   const handleDialogClose = (open: boolean) => {
@@ -485,7 +508,11 @@ export default function UsersPageContent() {
     }
   };
 
-  const handleStatusChange = (userId: string, status: UserStatus, userName: string) => {
+  const handleStatusChange = (
+    userId: string,
+    status: UserStatus,
+    userName: string
+  ) => {
     if (status === "BLOCKED") {
       setConfirmDialog({ open: true, userId, action: status, userName });
     } else {
@@ -511,23 +538,23 @@ export default function UsersPageContent() {
 
   const openCatalogAccessDialog = (user: User) => {
     setNewCatalogId("");
-    setNewAccessLevel("VIEWER");
+    setNewCatalogRole("reader");
     setCatalogAccessDialog({ open: true, user });
   };
 
   const handleAddCatalogAccess = () => {
-    if (catalogAccessDialog && newCatalogId && newAccessLevel) {
+    if (catalogAccessDialog && newCatalogId && newCatalogRole) {
       addCatalogAccess.mutate({
         userId: catalogAccessDialog.user.id,
         catalogId: newCatalogId,
-        accessLevel: newAccessLevel,
+        role: newCatalogRole,
       });
     }
   };
 
   const openEditAdmissionDialog = (admission: PendingPortalAdmission) => {
     setEditAdmissionForm({
-      accessLevel: admission.accessLevel || "",
+      role: admission.role || "",
       notes: admission.notes || "",
     });
     setEditAdmissionDialog({ open: true, admission });
@@ -535,12 +562,17 @@ export default function UsersPageContent() {
 
   const handleEditAdmissionSubmit = () => {
     if (editAdmissionDialog) {
-      const multiGrantAdmissionEdit = editAdmissionDialog.admission.pendingGrantCount > 1;
+      const multiGrantAdmissionEdit =
+        editAdmissionDialog.admission.pendingGrantCount > 1;
       updatePendingAdmission.mutate({
         admission: editAdmissionDialog.admission,
-        accessLevel: multiGrantAdmissionEdit
+        role: multiGrantAdmissionEdit
           ? undefined
-          : editAdmissionForm.accessLevel || undefined,
+          : editAdmissionForm.role || undefined,
+        extraPermissions: multiGrantAdmissionEdit
+          ? undefined
+          : (editAdmissionDialog.admission.pendingGrants[0]?.extraPermissions ??
+            []),
         notes: editAdmissionForm.notes || null,
       });
     }
@@ -578,8 +610,8 @@ export default function UsersPageContent() {
           catalogs={catalogs}
           createDialogOpen={createDialogOpen}
           createUserPending={createUser.isPending}
-          getAccessLevelDesc={getAccessLevelDesc}
-          getAccessLevelLabel={getAccessLevelLabel}
+          getCatalogRoleDesc={getCatalogRoleDesc}
+          getCatalogRoleLabel={getCatalogRoleLabel}
           newEmail={newEmail}
           onCatalogChange={handleCreateCatalogChange}
           onDialogOpenChange={handleDialogClose}
@@ -607,7 +639,7 @@ export default function UsersPageContent() {
 
       <UsersTable
         adminStatusIsSuperadmin={adminStatus.isSuperadmin}
-        getAccessLevelLabel={getAccessLevelLabel}
+        getCatalogRoleLabel={getCatalogRoleLabel}
         isLoading={isLoading}
         onDeleteUser={(user) => setDeleteDialog({ open: true, user })}
         onEditAdmission={openEditAdmissionDialog}
@@ -632,25 +664,33 @@ export default function UsersPageContent() {
         deleteUserPending={deleteUser.isPending}
         editAdmissionDialog={editAdmissionDialog}
         editAdmissionForm={editAdmissionForm}
-        getAccessLevelLabel={getAccessLevelLabel}
+        getCatalogRoleLabel={getCatalogRoleLabel}
         isLoadingAccess={isLoadingAccess}
-        newAccessLevel={newAccessLevel}
+        newCatalogRole={newCatalogRole}
         newCatalogId={newCatalogId}
         onAddCatalogAccess={handleAddCatalogAccess}
-        onAdminRoleDialogOpenChange={(open) => !open && setAdminRoleDialog(null)}
+        onAdminRoleDialogOpenChange={(open) =>
+          !open && setAdminRoleDialog(null)
+        }
         onAdminRoleFormChange={(isAdmin) => setAdminRoleForm({ isAdmin })}
         onAdminRoleSubmit={handleAdminRoleSubmit}
         onBlockDialogOpenChange={(open) => !open && setConfirmDialog(null)}
-        onCatalogAccessDialogOpenChange={(open) => !open && setCatalogAccessDialog(null)}
+        onCatalogAccessDialogOpenChange={(open) =>
+          !open && setCatalogAccessDialog(null)
+        }
         onConfirmBlock={confirmStatusChange}
         onDeleteDialogOpenChange={(open) => !open && setDeleteDialog(null)}
-        onDeleteUser={() => deleteDialog && deleteUser.mutate(deleteDialog.user.id)}
-        onEditAdmissionDialogOpenChange={(open) => !open && setEditAdmissionDialog(null)}
+        onDeleteUser={() =>
+          deleteDialog && deleteUser.mutate(deleteDialog.user.id)
+        }
+        onEditAdmissionDialogOpenChange={(open) =>
+          !open && setEditAdmissionDialog(null)
+        }
         onEditAdmissionFormChange={(value) =>
           setEditAdmissionForm((prev) => ({ ...prev, ...value }))
         }
         onEditAdmissionSubmit={handleEditAdmissionSubmit}
-        onNewAccessLevelChange={setNewAccessLevel}
+        onNewCatalogRoleChange={setNewCatalogRole}
         onNewCatalogIdChange={setNewCatalogId}
         onRemoveCatalogAccess={(catalogId) =>
           catalogAccessDialog &&
@@ -663,13 +703,16 @@ export default function UsersPageContent() {
           revokeAdmissionDialog &&
           revokePendingAdmission.mutate(revokeAdmissionDialog.admission)
         }
-        onRevokeAdmissionDialogOpenChange={(open) => !open && setRevokeAdmissionDialog(null)}
-        onUpdateCatalogAccess={(catalogId, accessLevel) =>
+        onRevokeAdmissionDialogOpenChange={(open) =>
+          !open && setRevokeAdmissionDialog(null)
+        }
+        onUpdateCatalogAccess={(catalogId, role, extraPermissions) =>
           catalogAccessDialog &&
           updateCatalogAccess.mutate({
             userId: catalogAccessDialog.user.id,
             catalogId,
-            accessLevel,
+            role,
+            extraPermissions,
           })
         }
         revokeAdmissionDialog={revokeAdmissionDialog}

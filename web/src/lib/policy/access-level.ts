@@ -1,22 +1,7 @@
-import type { AccessLevel } from "@/generated/prisma/client";
-import { permissionsForLevel } from "@/lib/policy/catalog-permissions";
-
-const ACCESS_LEVEL_ORDER: AccessLevel[] = [
-  "LISTENER",
-  "VIEWER",
-  "MEMBER",
-  "EDITOR",
-  "OWNER",
-];
-
-export function accessLevelAtLeast(
-  level: AccessLevel,
-  required: AccessLevel
-): boolean {
-  return (
-    ACCESS_LEVEL_ORDER.indexOf(level) >= ACCESS_LEVEL_ORDER.indexOf(required)
-  );
-}
+import {
+  permissionsForGrant,
+  type CatalogGrant,
+} from "@/lib/policy/catalog-permissions";
 
 /**
  * Whether a grant lacks the permission to see unreleased material, and so has to
@@ -28,7 +13,7 @@ export function accessLevelAtLeast(
  * `grantHasPermission` with an administrator flag it does not have.
  */
 export function lacksUnreleasedVisibility(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): boolean {
-  return catalogGrant != null && !permissionsForLevel(catalogGrant).has("see_unreleased");
+  return catalogGrant != null && !permissionsForGrant(catalogGrant).has("see_unreleased");
 }

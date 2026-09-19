@@ -1,4 +1,4 @@
-import type { AccessLevel } from "@/generated/prisma/client";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import prisma from "@/lib/db";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import {
@@ -8,18 +8,23 @@ import {
 } from "@/lib/features/labs";
 import { type FeatureKey, getFeatureRollout } from "@/lib/features/rollout";
 import { type CatalogFeaturesResponse } from "@/lib/features/types";
-import { canBrowseRecordings, canUseCatalogRag } from "@/lib/policy/catalog";
 import {
-  canBrowseEvents,
-  canEditCatalogEvents,
-} from "@/lib/policy/event";
+  canBrowseRecordings,
+  canUseCatalogRag,
+  canViewCatalogTranscripts,
+  hasCatalogPermission,
+} from "@/lib/policy/catalog";
+import { canBrowseEvents, canEditCatalogEvents } from "@/lib/policy/event";
 import {
   canSeeAllEventColumns,
   canSeeReleaseState,
   canUseCatalogTabSwitcher,
 } from "@/lib/policy/ui";
 
-export function isFeatureEnabledForUser(feature: FeatureKey, labsEnabled: boolean): boolean {
+export function isFeatureEnabledForUser(
+  feature: FeatureKey,
+  labsEnabled: boolean
+): boolean {
   const rollout = getFeatureRollout(feature);
   if (rollout === "public") return true;
   if (rollout === "off") return false;
@@ -59,7 +64,7 @@ export async function getLabsPreferenceForUser(
 }
 
 export function buildCatalogFeaturesResponse(
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
   labsEnabled: boolean,
   isCatalogAdmin: boolean,
   options: {
@@ -67,8 +72,10 @@ export function buildCatalogFeaturesResponse(
     canEnterPortal?: boolean;
   } = {}
 ): CatalogFeaturesResponse {
-  const catalogExists = options.catalogExists ?? (catalogGrant !== null || isCatalogAdmin);
-  const canEnterPortal = options.canEnterPortal ?? (catalogGrant !== null || isCatalogAdmin);
+  const catalogExists =
+    options.catalogExists ?? (catalogGrant !== null || isCatalogAdmin);
+  const canEnterPortal =
+    options.canEnterPortal ?? (catalogGrant !== null || isCatalogAdmin);
   const rollout = getFeatureRollout("events");
   const featureEnabled = isFeatureEnabledForUser("events", labsEnabled);
   const deepSearchRollout = getFeatureRollout("deep-search");
@@ -116,6 +123,9 @@ export function buildCatalogFeaturesResponse(
         }),
         canUseRagSearch: canUseCatalogRag(catalogPolicyContext),
       },
+      recordings: {
+        canBrowse: recordingBrowse,
+      },
       deepSearch: {
         rollout: deepSearchRollout,
         enabled: deepSearchEnabled,
@@ -123,7 +133,8 @@ export function buildCatalogFeaturesResponse(
           deepSearchEnabled &&
           catalogExists &&
           canEnterPortal &&
-          (isCatalogAdmin || catalogGrant === "OWNER"),
+          canViewCatalogTranscripts(catalogPolicyContext) &&
+          hasCatalogPermission(catalogPolicyContext, "use_deep_search"),
       },
     },
   };

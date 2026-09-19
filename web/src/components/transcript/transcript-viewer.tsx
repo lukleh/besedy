@@ -29,8 +29,19 @@ import {
   buildTranscriptUrl,
 } from "@/lib/api/recording-urls";
 import { formatModelLabel } from "@/lib/transcript-labels";
-import { Check, ChevronDown, Clock, Copy, Download, FileText, Users } from "lucide-react";
-import { TranscriptContent, TranscriptSkeleton } from "./transcript-viewer-content";
+import {
+  Check,
+  ChevronDown,
+  Clock,
+  Copy,
+  Download,
+  FileText,
+  Users,
+} from "lucide-react";
+import {
+  TranscriptContent,
+  TranscriptSkeleton,
+} from "./transcript-viewer-content";
 import {
   AUTO_SCROLL_PREF_KEY,
   SPEAKER_LABELS_PREF_KEY,
@@ -68,30 +79,49 @@ export function TranscriptViewer({
   onSeek,
   isPlaying = false,
   canDownload = false,
+  canSeeTranscriptVariants = false,
+  canSeeSpeakers = false,
 }: TranscriptViewerProps) {
   const t = useTranslations("transcript");
   const { toast } = useToast();
   const groupKey = groupId || "default";
-  const [selectedBackend, setSelectedBackend] = useState<TranscriptBackend | null>(null);
+  const [selectedBackend, setSelectedBackend] =
+    useState<TranscriptBackend | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const copyResetRef = useRef<number | null>(null);
   const [scrollToTime, setScrollToTime] = useState<number | null>(null);
   const prevBackendRef = useRef<TranscriptBackend | null>(null);
-  const [autoScroll, setAutoScroll] = useHydratedBoolean(AUTO_SCROLL_PREF_KEY, true);
-  const [showSpeakers, setShowSpeakers] = useHydratedBoolean(SPEAKER_LABELS_PREF_KEY, true);
-  const [showTimestamps, setShowTimestamps] = useHydratedBoolean(TIMESTAMPS_PREF_KEY, true);
+  const [autoScroll, setAutoScroll] = useHydratedBoolean(
+    AUTO_SCROLL_PREF_KEY,
+    true
+  );
+  const [showSpeakers, setShowSpeakers] = useHydratedBoolean(
+    SPEAKER_LABELS_PREF_KEY,
+    true
+  );
+  const [showTimestamps, setShowTimestamps] = useHydratedBoolean(
+    TIMESTAMPS_PREF_KEY,
+    true
+  );
+  // The overlay is administrative, so a stored preference from when it was
+  // shown to everyone does not bring it back.
+  const speakersVisible = canSeeSpeakers && showSpeakers;
 
   const handleBackendChange = useCallback((backend: TranscriptBackend) => {
     setSelectedBackend(backend);
   }, []);
 
-  const { data: available, isLoading: loadingBackends } = useQuery<AvailableTranscripts>({
-    queryKey: ["transcript-backends", hash, groupKey],
-    queryFn: async () =>
-      fetchJson<AvailableTranscripts>(buildTranscriptBackendsUrl(hash, groupId), {
-        schema: availableTranscriptsSchema,
-      }),
-  });
+  const { data: available, isLoading: loadingBackends } =
+    useQuery<AvailableTranscripts>({
+      queryKey: ["transcript-backends", hash, groupKey],
+      queryFn: async () =>
+        fetchJson<AvailableTranscripts>(
+          buildTranscriptBackendsUrl(hash, groupId),
+          {
+            schema: availableTranscriptsSchema,
+          }
+        ),
+    });
 
   const effectiveBackend = selectedBackend || available?.backends[0] || null;
 
@@ -137,19 +167,26 @@ export function TranscriptViewer({
       if (groupId) {
         params.set("group", groupId);
       }
-      window.open(`/api/transcript/${hash}/download?${params.toString()}`, "_blank");
+      window.open(
+        `/api/transcript/${hash}/download?${params.toString()}`,
+        "_blank"
+      );
     },
-    [hash, effectiveBackend, groupId],
+    [hash, effectiveBackend, groupId]
   );
 
-  const { data: transcript, isLoading: loadingTranscript } = useQuery<Transcript>({
-    queryKey: ["transcript", hash, groupKey, effectiveBackend],
-    queryFn: async () =>
-      fetchJson<Transcript>(buildTranscriptUrl(hash, groupId, effectiveBackend ?? ""), {
-        schema: transcriptSchema,
-      }),
-    enabled: !!effectiveBackend,
-  });
+  const { data: transcript, isLoading: loadingTranscript } =
+    useQuery<Transcript>({
+      queryKey: ["transcript", hash, groupKey, effectiveBackend],
+      queryFn: async () =>
+        fetchJson<Transcript>(
+          buildTranscriptUrl(hash, groupId, effectiveBackend ?? ""),
+          {
+            schema: transcriptSchema,
+          }
+        ),
+      enabled: !!effectiveBackend,
+    });
 
   const transcriptPlainText = useMemo(() => {
     if (!transcript?.segments?.length) return "";
@@ -209,10 +246,11 @@ export function TranscriptViewer({
     },
   });
 
-  const effectiveDiarizationBackend =
-    availableDiarizations?.backends.includes("pyannote")
-      ? "pyannote"
-      : availableDiarizations?.backends[0] || null;
+  const effectiveDiarizationBackend = availableDiarizations?.backends.includes(
+    "pyannote"
+  )
+    ? "pyannote"
+    : availableDiarizations?.backends[0] || null;
 
   const { data: diarization } = useQuery<Diarization>({
     queryKey: ["diarization", hash, groupKey, effectiveDiarizationBackend],
@@ -223,10 +261,11 @@ export function TranscriptViewer({
           schema: diarizationSchema,
         }
       ),
-    enabled: !!effectiveDiarizationBackend && showSpeakers,
+    enabled: !!effectiveDiarizationBackend && speakersVisible,
   });
 
-  const hasDiarization = (availableDiarizations?.backends.length ?? 0) > 0;
+  const hasDiarization =
+    canSeeSpeakers && (availableDiarizations?.backends.length ?? 0) > 0;
 
   if (loadingBackends) {
     return <TranscriptSkeleton />;
@@ -247,31 +286,37 @@ export function TranscriptViewer({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">{t("source")}:</span>
-        <ResponsiveMenu>
-          <ResponsiveMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              title={effectiveBackend ?? undefined}
-            >
-              {effectiveBackend ? formatModelLabel(effectiveBackend) : "..."}
-              <ChevronDown className="h-4 w-4 opacity-50" />
-            </Button>
-          </ResponsiveMenuTrigger>
-          <ResponsiveMenuContent title={t("source")}>
-            {available.backends.map((backend) => (
-              <ResponsiveMenuItem
-                key={backend}
-                onClick={() => handleBackendChange(backend)}
-                title={backend}
-              >
-                {formatModelLabel(backend)}
-              </ResponsiveMenuItem>
-            ))}
-          </ResponsiveMenuContent>
-        </ResponsiveMenu>
+        {canSeeTranscriptVariants && (
+          <>
+            <span className="text-sm font-medium">{t("source")}:</span>
+            <ResponsiveMenu>
+              <ResponsiveMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  title={effectiveBackend ?? undefined}
+                >
+                  {effectiveBackend
+                    ? formatModelLabel(effectiveBackend)
+                    : "..."}
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </ResponsiveMenuTrigger>
+              <ResponsiveMenuContent title={t("source")}>
+                {available.backends.map((backend) => (
+                  <ResponsiveMenuItem
+                    key={backend}
+                    onClick={() => handleBackendChange(backend)}
+                    title={backend}
+                  >
+                    {formatModelLabel(backend)}
+                  </ResponsiveMenuItem>
+                ))}
+              </ResponsiveMenuContent>
+            </ResponsiveMenu>
+          </>
+        )}
         <Button
           variant="outline"
           size="icon"
@@ -285,41 +330,55 @@ export function TranscriptViewer({
           onClick={handleTranscriptCopy}
           disabled={!transcriptPlainText || loadingTranscript}
         >
-          {copySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          {copySuccess ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
         </Button>
-        {canDownload && effectiveBackend && availableFormats?.formats?.length && (
-          <ResponsiveMenu>
-            <ResponsiveMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Download className="h-4 w-4" />
-                {t("download")}
-              </Button>
-            </ResponsiveMenuTrigger>
-            <ResponsiveMenuContent title={t("download")}>
-              {availableFormats.formats.includes("json") && (
-                <ResponsiveMenuItem onClick={() => handleTranscriptDownload("json")}>
-                  JSON
-                </ResponsiveMenuItem>
-              )}
-              {availableFormats.formats.includes("txt") && (
-                <ResponsiveMenuItem onClick={() => handleTranscriptDownload("txt")}>
-                  {t("plainText")}
-                </ResponsiveMenuItem>
-              )}
-              {availableFormats.formats.includes("srt") && (
-                <ResponsiveMenuItem onClick={() => handleTranscriptDownload("srt")}>
-                  SRT
-                </ResponsiveMenuItem>
-              )}
-              {availableFormats.formats.includes("vtt") && (
-                <ResponsiveMenuItem onClick={() => handleTranscriptDownload("vtt")}>
-                  VTT
-                </ResponsiveMenuItem>
-              )}
-            </ResponsiveMenuContent>
-          </ResponsiveMenu>
-        )}
-        {available.backends.length > 1 && (
+        {canDownload &&
+          effectiveBackend &&
+          availableFormats?.formats?.length && (
+            <ResponsiveMenu>
+              <ResponsiveMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Download className="h-4 w-4" />
+                  {t("download")}
+                </Button>
+              </ResponsiveMenuTrigger>
+              <ResponsiveMenuContent title={t("download")}>
+                {availableFormats.formats.includes("json") && (
+                  <ResponsiveMenuItem
+                    onClick={() => handleTranscriptDownload("json")}
+                  >
+                    JSON
+                  </ResponsiveMenuItem>
+                )}
+                {availableFormats.formats.includes("txt") && (
+                  <ResponsiveMenuItem
+                    onClick={() => handleTranscriptDownload("txt")}
+                  >
+                    {t("plainText")}
+                  </ResponsiveMenuItem>
+                )}
+                {availableFormats.formats.includes("srt") && (
+                  <ResponsiveMenuItem
+                    onClick={() => handleTranscriptDownload("srt")}
+                  >
+                    SRT
+                  </ResponsiveMenuItem>
+                )}
+                {availableFormats.formats.includes("vtt") && (
+                  <ResponsiveMenuItem
+                    onClick={() => handleTranscriptDownload("vtt")}
+                  >
+                    VTT
+                  </ResponsiveMenuItem>
+                )}
+              </ResponsiveMenuContent>
+            </ResponsiveMenu>
+          )}
+        {canSeeTranscriptVariants && available.backends.length > 1 && (
           <Badge variant="secondary" className="sm:hidden">
             {t("sourcesPlural", { count: available.backends.length })}
           </Badge>
@@ -332,7 +391,10 @@ export function TranscriptViewer({
                 checked={showSpeakers}
                 onCheckedChange={setShowSpeakers}
               />
-              <Label htmlFor="show-speakers" className="text-sm cursor-pointer flex items-center gap-1">
+              <Label
+                htmlFor="show-speakers"
+                className="text-sm cursor-pointer flex items-center gap-1"
+              >
                 <Users className="h-3 w-3" />
                 {t("speakers")}
               </Label>
@@ -344,7 +406,10 @@ export function TranscriptViewer({
               checked={showTimestamps}
               onCheckedChange={setShowTimestamps}
             />
-            <Label htmlFor="show-timestamps" className="text-sm cursor-pointer flex items-center gap-1">
+            <Label
+              htmlFor="show-timestamps"
+              className="text-sm cursor-pointer flex items-center gap-1"
+            >
               <Clock className="h-3 w-3" />
               {t("timestamps")}
             </Label>
@@ -359,7 +424,7 @@ export function TranscriptViewer({
               {t("autoScroll")}
             </Label>
           </div>
-          {available.backends.length > 0 && (
+          {canSeeTranscriptVariants && available.backends.length > 0 && (
             <Badge variant="secondary" className="hidden sm:inline-flex">
               {available.backends.length === 1
                 ? t("sources", { count: 1 })
@@ -369,7 +434,7 @@ export function TranscriptViewer({
         </div>
       </div>
 
-      {showSpeakers && diarization && diarization.numSpeakers > 0 && (
+      {speakersVisible && diarization && diarization.numSpeakers > 0 && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Users className="h-3 w-3" />
           <span>
@@ -388,7 +453,7 @@ export function TranscriptViewer({
           currentTime={currentTime}
           onSeek={onSeek}
           autoScroll={autoScroll && isPlaying}
-          diarization={showSpeakers ? diarization : undefined}
+          diarization={speakersVisible ? diarization : undefined}
           showTimestamps={showTimestamps}
           scrollToTime={scrollToTime}
           onScrollComplete={() => setScrollToTime(null)}

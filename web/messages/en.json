@@ -169,10 +169,10 @@
       "actions": {
         "newJob": "New job",
         "newFromInputs": "New from inputs",
-    "cancel": "Cancel",
-    "submit": "Submit",
-    "openInPrefect": "Open in Prefect",
-    "close": "Close"
+        "cancel": "Cancel",
+        "submit": "Submit",
+        "openInPrefect": "Open in Prefect",
+        "close": "Close"
       },
       "newJob": "New deep-search job",
       "jobFallback": "Deep-search job",
@@ -188,17 +188,17 @@
       "list": {
         "loading": "Loading jobs",
         "loadErrorTitle": "Could not load deep-search jobs",
-    "emptyTitle": "No deep-search jobs yet",
-    "emptyDescription": "Submit a query to start a catalog-scoped deep search. Your jobs stay scoped to your account.",
-    "mineReadOnlyEmptyDescription": "You do not have owned deep-search jobs in this catalog.",
-    "sharedEmptyTitle": "No shared jobs",
-    "sharedEmptyDescription": "Deep-search jobs shared with you for this catalog will appear here.",
-    "tabs": {
-      "ariaLabel": "Deep-search job lists",
-      "mine": "My jobs",
-      "shared": "Shared with me"
-    },
-    "columns": {
+        "emptyTitle": "No deep-search jobs yet",
+        "emptyDescription": "Submit a query to start a catalog-scoped deep search. Your jobs stay scoped to your account.",
+        "mineReadOnlyEmptyDescription": "You do not have owned deep-search jobs in this catalog.",
+        "sharedEmptyTitle": "No shared jobs",
+        "sharedEmptyDescription": "Deep-search jobs shared with you for this catalog will appear here.",
+        "tabs": {
+          "ariaLabel": "Deep-search job lists",
+          "mine": "My jobs",
+          "shared": "Shared with me"
+        },
+        "columns": {
           "query": "Query",
           "status": "Status",
           "created": "Created",
@@ -206,34 +206,34 @@
           "actions": "Actions"
         }
       },
-  "dialog": {
-    "description": "The job will run against {catalogLabel} and appear only in your job list.",
+      "dialog": {
+        "description": "The job will run against {catalogLabel} and appear only in your job list.",
         "queryLabel": "Query",
-    "instructionsLabel": "Instructions",
-    "submitErrorTitle": "Could not submit job"
-  },
-  "share": {
-    "title": "Share deep-search job",
-    "openDialog": "Share job",
-    "openDialogShort": "Share",
-    "description": "Share this job read-only with another user who already has access to this catalog.",
-    "descriptionWithQuery": "Share “{query}” read-only with another user who already has access to this catalog.",
-    "currentShares": "Shared with",
-    "loadingShares": "Loading shares",
-    "noShares": "This job is not shared with anyone yet.",
-    "addUserLabel": "Add user",
-    "userSearchPlaceholder": "Search by name or email",
-    "availableUsers": "Users with catalog access",
-    "shortSearchMessage": "Type at least 2 characters to search",
-    "noUserResults": "No matching catalog users",
-    "addUser": "Add",
-    "removeShare": "Remove share",
-    "addSuccess": "Job shared",
-    "addError": "Could not share job",
-    "removeSuccess": "Share removed",
-    "removeError": "Could not remove share"
-  },
-  "detail": {
+        "instructionsLabel": "Instructions",
+        "submitErrorTitle": "Could not submit job"
+      },
+      "share": {
+        "title": "Share deep-search job",
+        "openDialog": "Share job",
+        "openDialogShort": "Share",
+        "description": "Share this job read-only with another user who already has access to this catalog.",
+        "descriptionWithQuery": "Share “{query}” read-only with another user who already has access to this catalog.",
+        "currentShares": "Shared with",
+        "loadingShares": "Loading shares",
+        "noShares": "This job is not shared with anyone yet.",
+        "addUserLabel": "Add user",
+        "userSearchPlaceholder": "Search by name or email",
+        "availableUsers": "Users with catalog access",
+        "shortSearchMessage": "Type at least 2 characters to search",
+        "noUserResults": "No matching catalog users",
+        "addUser": "Add",
+        "removeShare": "Remove share",
+        "addSuccess": "Job shared",
+        "addError": "Could not share job",
+        "removeSuccess": "Share removed",
+        "removeError": "Could not remove share"
+      },
+      "detail": {
         "loading": "Loading job",
         "loadErrorTitle": "Could not load deep-search job",
         "cancelErrorTitle": "Could not cancel job",
@@ -710,7 +710,8 @@
       "noName": "No name",
       "never": "Never",
       "pendingUser": "Pending User",
-      "addedAt": "Added {time}"
+      "addedAt": "Added {time}",
+      "multipleCatalogRoles": "{count} catalog roles"
     },
     "userDetail": {
       "backToUsers": "Back to Users",
@@ -726,7 +727,8 @@
       "addCatalogAccess": "Add Catalog Access",
       "selectCatalog": "Select catalog",
       "enterName": "Enter name",
-      "accessLevel": "Access Level"
+      "accessLevel": "Access Level",
+      "role": "Role"
     },
     "actions": {
       "viewDetails": "View Details",
@@ -773,13 +775,15 @@
         "noAccessYet": "No catalog access granted yet.",
         "addAccess": "Add Catalog Access",
         "selectCatalog": "Select catalog",
-        "accessLevel": "Access Level"
+        "accessLevel": "Access Level",
+        "role": "Role"
       },
       "editPendingAdmission": {
         "title": "Edit Pending Admission",
         "description": "Update the pending admission for {email}",
         "accessLevel": "Access Level",
         "selectAccessLevel": "Select access level",
+        "role": "Role",
         "notes": "Notes",
         "notesPlaceholder": "Optional notes about this pending admission...",
         "multiGrantNotice": "This email already has pending grants in multiple catalogs. You can update the shared admission notes here, but catalog-specific grant changes belong in catalog settings.",
@@ -819,7 +823,9 @@
         "catalog": "Catalog",
         "noCatalog": "No catalog (add later)",
         "accessLevel": "Access Level",
-        "selectAccessLevel": "Select access level"
+        "selectAccessLevel": "Select access level",
+        "role": "Role",
+        "selectRole": "Select role"
       },
       "toast": {
         "userAdded": "User added",
@@ -863,6 +869,20 @@
       "editorDesc": "Can edit metadata",
       "owner": "Owner",
       "ownerDesc": "Full access including download"
+    },
+    "catalogRoles": {
+      "listener": "Listener",
+      "listenerDesc": "Listen to released audio",
+      "reader": "Reader",
+      "readerDesc": "Listen and read or search transcripts",
+      "corrector": "Corrector",
+      "correctorDesc": "Reader access plus transcript correction",
+      "host": "Host",
+      "hostDesc": "Reader access plus management of ordinary grants",
+      "curator": "Curator",
+      "curatorDesc": "Editorial control, downloads, deep search, and unreleased content",
+      "catalog_admin": "Catalog admin",
+      "catalog_adminDesc": "All catalog permissions and protected grants"
     },
     "invitations": {
       "title": "Add Users",
@@ -1388,6 +1408,7 @@
       "validationSessionIndexRequired": "Session number must be 1 or higher"
     },
     "list": {
+      "noSurfaceAvailable": "Nothing to browse in this catalog.",
       "title": "Catalog",
       "count": "({total} events)",
       "countFiltered": "({filtered}/{total} events)",
@@ -1594,6 +1615,11 @@
     },
     "stats": {
       "totalUsers": "Total Users",
+      "catalogAdmins": "Catalog admins",
+      "curators": "Curators",
+      "hosts": "Hosts",
+      "correctors": "Correctors",
+      "readers": "Readers",
       "owners": "Owners",
       "editors": "Editors",
       "members": "Members",
@@ -1606,6 +1632,7 @@
       "description": "Users who have been added but haven't logged in yet",
       "email": "Email",
       "accessLevel": "Access Level",
+      "role": "Role",
       "addedBy": "Added By"
     },
     "accessControl": {
@@ -1654,6 +1681,8 @@
         "emailLabel": "Email Address",
         "emailPlaceholder": "user@example.com",
         "accessLevelLabel": "Access Level",
+        "roleLabel": "Role",
+        "extraPermissionsLabel": "Additional permissions",
         "noteLabel": "Note (optional)",
         "notePlaceholder": "Add a note for this user...",
         "adminHint": "As an admin, you can grant any access level including OWNER.",
@@ -1682,6 +1711,8 @@
         "nameLabel": "Display Name",
         "namePlaceholder": "Enter display name...",
         "accessLevelLabel": "Access Level",
+        "roleLabel": "Role",
+        "extraPermissionsLabel": "Additional permissions",
         "notesLabel": "Notes (optional)",
         "notesPlaceholder": "Reason for granting access...",
         "levelsHint": "You can grant: {levels}.",
@@ -1731,6 +1762,34 @@
       "editorDesc": "Edit metadata",
       "owner": "OWNER",
       "ownerDesc": "Full access"
+    },
+    "catalogRoles": {
+      "listener": "Listener",
+      "listenerDesc": "Listen to released audio",
+      "reader": "Reader",
+      "readerDesc": "Listen and read or search transcripts",
+      "corrector": "Corrector",
+      "correctorDesc": "Reader access plus transcript correction",
+      "host": "Host",
+      "hostDesc": "Reader access plus management of ordinary catalog grants",
+      "curator": "Curator",
+      "curatorDesc": "Editorial control, downloads, deep search, and unreleased content",
+      "catalog_admin": "Catalog admin",
+      "catalog_adminDesc": "All catalog permissions, configuration, and protected grants"
+    },
+    "extraPermissions": {
+      "browse_recordings": "Browse recordings",
+      "browse_recordingsDesc": "Show the recording-oriented catalog view",
+      "use_deep_search": "Use deep search",
+      "use_deep_searchDesc": "Run transcript-derived deep-search jobs",
+      "download_audio": "Download audio",
+      "download_audioDesc": "Download the listening audio file",
+      "download_original_audio": "Download original audio",
+      "download_original_audioDesc": "Download the source-quality audio file",
+      "download_transcripts": "Download transcripts",
+      "download_transcriptsDesc": "Download individual transcript files",
+      "bulk_export_transcripts": "Bulk export transcripts",
+      "bulk_export_transcriptsDesc": "Export the catalog transcript corpus"
     },
     "toasts": {
       "settingsUpdated": "Catalog settings updated",

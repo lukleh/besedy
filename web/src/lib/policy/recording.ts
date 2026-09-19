@@ -1,8 +1,10 @@
-import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
-  canDownloadCatalogContent,
+  canDownloadAudio,
   canEditCatalogMetadata,
+  canViewCatalogTranscripts,
+  hasCatalogPermission,
   hasCatalogManagementAuthority,
   canViewCatalog,
   type CatalogPolicyContext,
@@ -15,13 +17,13 @@ export interface RecordingVisibilityState {
 }
 
 export function requiresReadyRecordingScope(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): boolean {
   return lacksUnreleasedVisibility(catalogGrant);
 }
 
 function createRecordingVisibilityContext(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): CatalogPolicyContext {
   return {
     catalogExists: catalogGrant !== null && catalogGrant !== undefined,
@@ -61,17 +63,45 @@ export function canViewRecordingTranscript(
 }
 
 export function canViewRecordingForAccessLevel(
-  catalogGrant: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   state?: RecordingVisibilityState
 ): boolean {
   return canViewRecording(createRecordingVisibilityContext(catalogGrant), state);
+}
+
+/**
+ * Whether the actor sees that more than one machine transcript exists.
+ *
+ * Administrative: the alternatives are unevaluated model output, and every
+ * other role reads the one default backend. Covers the per-recording picker
+ * and the multi-backend stream view.
+ */
+export function canSeeTranscriptVariants(context: CatalogPolicyContext): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "see_transcript_variants")
+  );
+}
+
+/**
+ * Whether the actor sees the diarization overlay.
+ *
+ * Administrative for the same reason: it is unevaluated machine output that
+ * distinguishes turns without naming anyone. A candidate to open once speaker
+ * attribution becomes a phase of correction.
+ */
+export function canSeeSpeakers(context: CatalogPolicyContext): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "see_speakers")
+  );
 }
 
 export function scopeRecordingsForAccess<
   T extends RecordingVisibilityState,
 >(
   entries: T[],
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): T[] {
   if (!requiresReadyRecordingScope(catalogGrant)) {
     return entries;
@@ -80,8 +110,9 @@ export function scopeRecordingsForAccess<
   return entries.filter((entry) => canViewRecordingForAccessLevel(catalogGrant, entry));
 }
 
+/** The playable file. The master is a separate permission. */
 export function canDownloadRecording(context: CatalogPolicyContext): boolean {
-  return canDownloadCatalogContent(context);
+  return canDownloadAudio(context);
 }
 
 export function canEditRecordingMetadata(context: CatalogPolicyContext): boolean {

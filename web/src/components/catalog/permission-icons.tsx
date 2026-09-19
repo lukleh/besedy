@@ -1,6 +1,10 @@
 "use client";
 
-import { AccessLevel } from "@/generated/prisma/enums";
+import type { CatalogRole } from "@/generated/prisma/enums";
+import {
+  permissionsForGrant,
+  type CatalogPermission,
+} from "@/lib/policy/catalog-permissions";
 import {
   Headphones,
   FileText,
@@ -24,59 +28,73 @@ type PermissionKey =
 interface PermissionConfig {
   key: PermissionKey;
   icon: LucideIcon;
-  levels: AccessLevel[];
+  permissions: CatalogPermission[];
 }
 
 const PERMISSION_ICONS: PermissionConfig[] = [
   {
     key: "stream",
     icon: Headphones,
-    levels: ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"],
+    permissions: ["stream_audio"],
   },
   {
     key: "viewTranscripts",
     icon: FileText,
-    levels: ["VIEWER", "MEMBER", "EDITOR", "OWNER"],
+    permissions: ["read_transcripts"],
   },
   {
     key: "download",
     icon: Download,
-    levels: ["MEMBER", "EDITOR", "OWNER"],
+    permissions: [
+      "download_audio",
+      "download_transcripts",
+      "bulk_export_transcripts",
+    ],
   },
   {
     key: "editMetadata",
     icon: PenLine,
-    levels: ["EDITOR", "OWNER"],
+    permissions: ["edit_metadata"],
   },
   {
     key: "manageAccess",
     icon: Users,
-    levels: ["OWNER"],
+    permissions: ["manage_access"],
   },
   {
     key: "inviteUsers",
     icon: UserPlus,
-    levels: ["OWNER"],
+    permissions: ["manage_access"],
   },
 ];
 
 interface PermissionIconsProps {
-  accessLevel: AccessLevel;
+  role: CatalogRole;
+  extraPermissions?: string[];
   className?: string;
 }
 
-export function PermissionIcons({ accessLevel, className }: PermissionIconsProps) {
+export function PermissionIcons({
+  role,
+  extraPermissions = [],
+  className,
+}: PermissionIconsProps) {
   const t = useTranslations("permissions");
+  const permissions = permissionsForGrant({
+    level: null,
+    role,
+    extras: extraPermissions,
+  });
 
   return (
     <div className={cn("flex items-center gap-0.5", className)}>
-      {PERMISSION_ICONS.filter((p) => p.levels.includes(accessLevel)).map(
-        ({ key, icon: Icon }) => (
-          <span key={key} title={t(key)} className="inline-flex cursor-help">
-            <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-          </span>
-        )
-      )}
+      {PERMISSION_ICONS.filter((item) =>
+        item.permissions.some((permission) => permissions.has(permission))
+      ).map(({ key, icon: Icon }) => (
+        <span key={key} title={t(key)} className="inline-flex cursor-help">
+          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        </span>
+      ))}
     </div>
   );
 }

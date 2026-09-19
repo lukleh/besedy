@@ -123,10 +123,10 @@ export async function GET(request: NextRequest) {
     if (!group) {
       return notFound("catalog");
     }
-    const { accessLevel, userId } = await requireCatalogEventsAccess(workflowGroupId, "view");
+    const { catalogGrant, userId } = await requireCatalogEventsAccess(workflowGroupId, "view");
     const readableEventIds = await resolveReadableEventIds(
       workflowGroupId,
-      accessLevel
+      catalogGrant
     );
     const visibilityWhere = catalogEventVisibilityWhere(readableEventIds);
 

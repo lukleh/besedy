@@ -141,7 +141,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       entry: toCatalogEntryResponse(enrichedEntry),
       canViewTranscripts: capability.canViewRecordingTranscripts,
       canEditMetadata: capability.canEditRecording,
-      canDownload: capability.canDownloadRecording,
+      canDownloadAudio: capability.canDownloadRecording,
+      canDownloadOriginalAudio: capability.canDownloadOriginalAudio,
+      canDownloadTranscripts: capability.canDownloadTranscripts,
+      canSeeTranscriptVariants: capability.canSeeTranscriptVariants,
+      canSeeSpeakers: capability.canSeeSpeakers,
     });
   } catch (error) {
     if (isAuthError(error)) {

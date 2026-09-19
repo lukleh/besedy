@@ -458,10 +458,17 @@ def test_deep_search_submit_request_defaults_instructions(monkeypatch) -> None:
         lambda: TEST_DEEP_SEARCH_INSTRUCTIONS,
     )
 
-    request = DeepSearchSubmitRequest.from_payload({"query": "who mentions Brno?"})
+    request = DeepSearchSubmitRequest.from_payload(
+        {"query": "who mentions Brno?", "requestedById": "admin-1"}
+    )
 
     assert request.query == "who mentions Brno?"
     assert request.instructions == TEST_DEEP_SEARCH_INSTRUCTIONS
+
+
+def test_deep_search_submit_request_requires_requester() -> None:
+    with pytest.raises(ValueError, match="requestedById is required"):
+        DeepSearchSubmitRequest.from_payload({"query": "who mentions Brno?"})
 
 
 def test_deep_search_submit_request_rejects_empty_instructions() -> None:
@@ -493,6 +500,7 @@ def test_prefect_jobs_service_submit_preserves_optional_instructions() -> None:
             payload={
                 "query": "who mentions Brno?",
                 "instructions": f" {TEST_DEEP_SEARCH_INSTRUCTIONS} ",
+                "requestedById": "admin-1",
             },
         )
 
@@ -516,6 +524,7 @@ def test_prefect_jobs_service_submit_maps_lm_profiles(monkeypatch) -> None:
             catalog_id="catalog-1",
             payload={
                 "query": "who mentions Brno?",
+                "requestedById": "admin-1",
                 "lmProfile": "custom-main",
                 "subLmProfile": "custom-sub",
             },
@@ -657,7 +666,23 @@ def test_deep_search_flow_validate_inputs_requires_instructions() -> None:
         deep_search_flow_module.validate_inputs.fn(
             catalog_id="catalog-1",
             query="who mentions Brno?",
+            requested_by_id="admin-1",
             instructions=None,
+            retrieval={},
+            execution={},
+        )
+
+
+@pytest.mark.parametrize("requested_by_id", [None, ""])
+def test_deep_search_flow_validate_inputs_requires_requester(
+    requested_by_id: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="requested_by_id must not be empty"):
+        deep_search_flow_module.validate_inputs.fn(
+            catalog_id="catalog-1",
+            query="who mentions Brno?",
+            requested_by_id=requested_by_id,
+            instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
             retrieval={},
             execution={},
         )
@@ -943,6 +968,7 @@ def test_deep_search_tasks_use_besedy_internal_retrieval_when_configured(
         inputs = deep_search_flow_module.validate_inputs.fn(
             catalog_id="catalog-1",
             query="test query",
+            requested_by_id="admin-1",
             instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
             retrieval={"top_k": 2},
             execution={"citation_limit": 2, "citation_neighbor_count": 1},
@@ -975,6 +1001,7 @@ def test_deep_search_tasks_use_besedy_internal_retrieval_when_configured(
             "limit": 2,
             "includeNeighbors": True,
             "neighborCount": 1,
+            "requestedById": "admin-1",
         }
     finally:
         server.shutdown()
@@ -989,6 +1016,7 @@ def test_deep_search_tasks_fall_back_to_stub_without_besedy_client(monkeypatch) 
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
         query="stub query",
+        requested_by_id="admin-1",
         instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
         retrieval={},
         execution={},
@@ -1025,7 +1053,7 @@ def test_run_rlm_deep_search_uses_rlm_adapter_when_enabled(monkeypatch) -> None:
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: object(),
+        lambda **_: object(),
     )
     monkeypatch.setattr(
         deep_search_flow_module,
@@ -1036,6 +1064,7 @@ def test_run_rlm_deep_search_uses_rlm_adapter_when_enabled(monkeypatch) -> None:
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
         query="who mentions Brno?",
+        requested_by_id="admin-1",
         instructions="Write a concise report.",
         retrieval={
             "top_k": 2,
@@ -1080,7 +1109,7 @@ def test_run_rlm_deep_search_wraps_rlm_failure_with_partial_trace(monkeypatch) -
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: object(),
+        lambda **_: object(),
     )
     monkeypatch.setattr(
         deep_search_flow_module,
@@ -1103,6 +1132,7 @@ def test_run_rlm_deep_search_wraps_rlm_failure_with_partial_trace(monkeypatch) -
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
         query="who mentions Brno?",
+        requested_by_id="admin-1",
         instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
         retrieval={},
         execution={"mode": "rlm"},
@@ -1919,6 +1949,7 @@ def test_run_initial_retrieval_surfaces_upstream_besedy_error(monkeypatch) -> No
         inputs = deep_search_flow_module.validate_inputs.fn(
             catalog_id="catalog-1",
             query="broken query",
+            requested_by_id="admin-1",
             instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
             retrieval={},
             execution={},
@@ -1951,11 +1982,12 @@ def test_run_initial_retrieval_marks_404_as_non_retryable(monkeypatch) -> None:
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: FailingClient(),
+        lambda **_: FailingClient(),
     )
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
         query="broken query",
+        requested_by_id="admin-1",
         instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
         retrieval={},
         execution={},
@@ -1990,11 +2022,12 @@ def test_run_initial_retrieval_marks_504_as_retryable(monkeypatch) -> None:
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: FailingClient(),
+        lambda **_: FailingClient(),
     )
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
         query="slow query",
+        requested_by_id="admin-1",
         instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
         retrieval={},
         execution={},
@@ -2045,11 +2078,12 @@ def test_expand_citations_preserves_partial_trace_on_failure(monkeypatch) -> Non
     monkeypatch.setattr(
         deep_search_flow_module,
         "build_besedy_deep_search_client_from_env",
-        lambda: CitationClient(),
+        lambda **_: CitationClient(),
     )
     inputs = deep_search_flow_module.validate_inputs.fn(
         catalog_id="catalog-1",
         query="test query",
+        requested_by_id="admin-1",
         instructions=TEST_DEEP_SEARCH_INSTRUCTIONS,
         retrieval={},
         execution={"citation_limit": 2, "citation_neighbor_count": 1},
@@ -2145,6 +2179,7 @@ def test_deep_search_flow_persists_partial_bundle_on_citation_failure(monkeypatc
             deep_search_flow_module.deep_search_flow.fn(
                 catalog_id="catalog-1",
                 query="test query",
+                requested_by_id="admin-1",
             )
 
         bundle_dir = Path(tmp_dir) / "flow-run-1"
@@ -2231,6 +2266,7 @@ def test_deep_search_flow_persists_rlm_partial_trace_on_failure(monkeypatch) -> 
             deep_search_flow_module.deep_search_flow.fn(
                 catalog_id="catalog-1",
                 query="test query",
+                requested_by_id="admin-1",
             )
 
         bundle_dir = Path(tmp_dir) / "flow-run-rlm"

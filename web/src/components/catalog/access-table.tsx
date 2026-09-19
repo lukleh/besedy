@@ -43,16 +43,25 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { AccessLevel, AccessStatus } from "@/generated/prisma/enums";
+import {
+  AccessLevel,
+  AccessStatus,
+  CatalogRole,
+} from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 import { fetchJson } from "@/lib/api/fetch-json";
+import {
+  roleForLevel,
+  type GrantableExtraPermission,
+} from "@/lib/policy/catalog-permissions";
 
-const ACCESS_LEVEL_COLORS: Record<AccessLevel, string> = {
-  LISTENER: "bg-slate-600 text-white",
-  VIEWER: "bg-gray-600 text-white",
-  MEMBER: "bg-blue-700 text-white",
-  EDITOR: "bg-amber-700 text-white",
-  OWNER: "bg-emerald-700 text-white",
+const ROLE_COLORS: Record<CatalogRole, string> = {
+  listener: "bg-slate-600 text-white",
+  reader: "bg-gray-600 text-white",
+  corrector: "bg-blue-700 text-white",
+  host: "bg-violet-700 text-white",
+  curator: "bg-amber-700 text-white",
+  catalog_admin: "bg-emerald-700 text-white",
 };
 
 interface UserInfo {
@@ -67,6 +76,10 @@ interface AccessGrant {
   id: string;
   userId: string;
   accessLevel: AccessLevel;
+  role: CatalogRole | null;
+  extraPermissions: string[];
+  canManage: boolean;
+  canRevoke: boolean;
   status: AccessStatus;
   notes: string | null;
   createdAt: string;
@@ -79,8 +92,10 @@ interface AccessGrant {
 interface AccessTableProps {
   catalogId: string;
   accessList: AccessGrant[];
-  manageableAccessLevels: AccessLevel[];
-  accessLevelFilter?: AccessLevel | "all" | "revoked";
+  manageableRoles: CatalogRole[];
+  canManageExtras: boolean;
+  grantableExtraPermissions: GrantableExtraPermission[];
+  roleFilter?: CatalogRole | "all" | "revoked";
   searchQuery?: string;
   onSuccess: () => void;
 }
@@ -88,8 +103,10 @@ interface AccessTableProps {
 export function AccessTable({
   catalogId,
   accessList,
-  manageableAccessLevels,
-  accessLevelFilter = "all",
+  manageableRoles,
+  canManageExtras,
+  grantableExtraPermissions,
+  roleFilter = "all",
   searchQuery = "",
   onSuccess,
 }: AccessTableProps) {
@@ -103,7 +120,10 @@ export function AccessTable({
   const [restoreDialog, setRestoreDialog] = useState<AccessGrant | null>(null);
 
   // Edit form state
-  const [editAccessLevel, setEditAccessLevel] = useState<AccessLevel>("LISTENER");
+  const [editRole, setEditRole] = useState<CatalogRole>("listener");
+  const [editExtraPermissions, setEditExtraPermissions] = useState<
+    GrantableExtraPermission[]
+  >([]);
   const [editUserName, setEditUserName] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
@@ -111,23 +131,27 @@ export function AccessTable({
   const updateAccess = useMutation({
     mutationFn: async ({
       userId,
-      accessLevel,
+      role,
+      extraPermissions,
       notes,
       userName,
     }: {
       userId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
+      extraPermissions: GrantableExtraPermission[];
       notes?: string;
       userName?: string;
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}/access/${userId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessLevel, notes, userName }),
+        body: JSON.stringify({ role, extraPermissions, notes, userName }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-access", catalogId],
+      });
       setEditDialog(null);
       onSuccess();
       toast({
@@ -152,7 +176,9 @@ export function AccessTable({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-access", catalogId],
+      });
       setDeleteDialog(null);
       onSuccess();
       toast({
@@ -179,7 +205,9 @@ export function AccessTable({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-access", catalogId],
+      });
       setRestoreDialog(null);
       onSuccess();
       toast({
@@ -197,7 +225,14 @@ export function AccessTable({
   });
 
   const openEditDialog = (grant: AccessGrant) => {
-    setEditAccessLevel(grant.accessLevel);
+    setEditRole(grant.role ?? roleForLevel(grant.accessLevel).role);
+    setEditExtraPermissions(
+      grant.extraPermissions.filter((permission) =>
+        grantableExtraPermissions.includes(
+          permission as GrantableExtraPermission
+        )
+      ) as GrantableExtraPermission[]
+    );
     setEditUserName(grant.user.name || "");
     setEditNotes(grant.notes || "");
     setEditDialog(grant);
@@ -209,7 +244,8 @@ export function AccessTable({
 
     updateAccess.mutate({
       userId: editDialog.userId,
-      accessLevel: editAccessLevel,
+      role: editRole,
+      extraPermissions: editExtraPermissions,
       notes: editNotes || undefined,
       userName: editUserName || undefined,
     });
@@ -241,18 +277,22 @@ export function AccessTable({
   };
 
   // Separate active and revoked users based on filter
-  const isRevokedFilter = accessLevelFilter === "revoked";
+  const roleOf = (grant: AccessGrant) =>
+    grant.role ?? roleForLevel(grant.accessLevel).role;
+  const isRevokedFilter = roleFilter === "revoked";
   const activeUsers = isRevokedFilter
     ? []
-    : accessList.filter((g) =>
-        g.status === "ACTIVE" &&
-        (accessLevelFilter === "all" || g.accessLevel === accessLevelFilter) &&
-        matchesSearch(g)
+    : accessList.filter(
+        (g) =>
+          g.status === "ACTIVE" &&
+          (roleFilter === "all" || roleOf(g) === roleFilter) &&
+          matchesSearch(g)
       );
-  const revokedUsers = accessList.filter((g) =>
-    g.status === "REVOKED" &&
-    (isRevokedFilter || accessLevelFilter === "all" || g.accessLevel === accessLevelFilter) &&
-    matchesSearch(g)
+  const revokedUsers = accessList.filter(
+    (g) =>
+      g.status === "REVOKED" &&
+      (isRevokedFilter || roleFilter === "all" || roleOf(g) === roleFilter) &&
+      matchesSearch(g)
   );
 
   return (
@@ -269,152 +309,179 @@ export function AccessTable({
         </TableHeader>
         <TableBody>
           {/* Active users */}
-          {activeUsers.map((grant) => (
-            <TableRow key={grant.id}>
-              <TableCell>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                    {getInitials(grant.user.name, grant.user.email)}
+          {activeUsers.map((grant) => {
+            const role = roleOf(grant);
+            return (
+              <TableRow key={grant.id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                      {getInitials(grant.user.name, grant.user.email)}
+                    </div>
+                    <div>
+                      <div className="font-medium">
+                        {grant.user.name || t("table.noName")}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {grant.user.email}
+                      </div>
+                      {grant.user.status === "PENDING" && (
+                        <Badge variant="outline" className="mt-1 text-xs">
+                          {t("table.pending")}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-medium">
-                      {grant.user.name || t("table.noName")}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {grant.user.email}
-                    </div>
-                    {grant.user.status === "PENDING" && (
-                      <Badge variant="outline" className="mt-1 text-xs">
-                        {t("table.pending")}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <Badge className={cn(ACCESS_LEVEL_COLORS[grant.accessLevel], "text-white")}>
-                    {t(`accessLevels.${grant.accessLevel.toLowerCase()}`)}
-                  </Badge>
-                  <PermissionIcons accessLevel={grant.accessLevel} />
-                </div>
-              </TableCell>
-              <TableCell>
-                {grant.grantedBy ? (
-                  <span className="text-sm">
-                    {grant.grantedBy.name || grant.grantedBy.email}
-                  </span>
-                ) : (
-                  <span className="text-sm text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <span className="text-sm text-muted-foreground">
-                  {grant.notes || "—"}
-                </span>
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-1">
-                  {/* Only access the actor may act on carries actions */}
-                  {manageableAccessLevels.includes(grant.accessLevel) && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEditDialog(grant)}
-                      aria-label={t("buttons.edit")}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  )}
-                  {manageableAccessLevels.includes(grant.accessLevel) && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteDialog(grant)}
-                      aria-label={t("buttons.revoke")}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-
-          {/* Revoked users */}
-          {revokedUsers.map((grant) => (
-            <TableRow key={grant.id} className={isRevokedFilter ? "" : "bg-muted/30"}>
-              <TableCell>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                    {getInitials(grant.user.name, grant.user.email)}
-                  </div>
-                  <div>
-                    <div className="font-medium text-foreground">
-                      {grant.user.name || t("table.noName")}
-                    </div>
-                    <div className="text-sm text-foreground/70">
-                      {grant.user.email}
-                    </div>
-                    <Badge variant="outline" className="mt-1 text-xs border-amber-700 text-amber-900">
-                      {t("table.revoked")}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Badge className={cn(ROLE_COLORS[role], "text-white")}>
+                      {t(`catalogRoles.${role}`)}
                     </Badge>
+                    <PermissionIcons
+                      role={role}
+                      extraPermissions={grant.extraPermissions}
+                    />
                   </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-foreground/70">
-                    {t(`accessLevels.${grant.accessLevel.toLowerCase()}`)}
-                  </Badge>
-                  <PermissionIcons accessLevel={grant.accessLevel} className="text-foreground/70" />
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="space-y-0.5">
-                  {grant.grantedBy && (
-                    <span className="text-sm text-muted-foreground">
+                </TableCell>
+                <TableCell>
+                  {grant.grantedBy ? (
+                    <span className="text-sm">
                       {grant.grantedBy.name || grant.grantedBy.email}
                     </span>
-                  )}
-                  {grant.revokedBy && (
-                    <div className="text-xs text-amber-700">
-                      {t("table.revokedByUser", { name: grant.revokedBy.name ?? grant.revokedBy.email ?? "—" })}
-                    </div>
-                  )}
-                  {!grant.grantedBy && !grant.revokedBy && (
+                  ) : (
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="space-y-0.5">
-                  {grant.notes && (
-                    <span className="text-sm text-muted-foreground">{grant.notes}</span>
-                  )}
-                  {grant.revokedAt && (
-                    <div className="text-xs text-muted-foreground">
-                      {formatRelativeTime(grant.revokedAt, locale)}
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm text-muted-foreground">
+                    {grant.notes || "—"}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    {/* Only access the actor may act on carries actions */}
+                    {grant.canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(grant)}
+                        aria-label={t("buttons.edit")}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {grant.canRevoke && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteDialog(grant)}
+                        aria-label={t("buttons.revoke")}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+
+          {/* Revoked users */}
+          {revokedUsers.map((grant) => {
+            const role = roleOf(grant);
+            return (
+              <TableRow
+                key={grant.id}
+                className={isRevokedFilter ? "" : "bg-muted/30"}
+              >
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                      {getInitials(grant.user.name, grant.user.email)}
                     </div>
-                  )}
-                  {!grant.notes && !grant.revokedAt && (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setRestoreDialog(grant)}
-                  className="text-amber-900 hover:text-amber-950"
-                >
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  {t("buttons.restore")}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+                    <div>
+                      <div className="font-medium text-foreground">
+                        {grant.user.name || t("table.noName")}
+                      </div>
+                      <div className="text-sm text-foreground/70">
+                        {grant.user.email}
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="mt-1 text-xs border-amber-700 text-amber-900"
+                      >
+                        {t("table.revoked")}
+                      </Badge>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-foreground/70">
+                      {t(`catalogRoles.${role}`)}
+                    </Badge>
+                    <PermissionIcons
+                      role={role}
+                      extraPermissions={grant.extraPermissions}
+                      className="text-foreground/70"
+                    />
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="space-y-0.5">
+                    {grant.grantedBy && (
+                      <span className="text-sm text-muted-foreground">
+                        {grant.grantedBy.name || grant.grantedBy.email}
+                      </span>
+                    )}
+                    {grant.revokedBy && (
+                      <div className="text-xs text-amber-700">
+                        {t("table.revokedByUser", {
+                          name:
+                            grant.revokedBy.name ??
+                            grant.revokedBy.email ??
+                            "—",
+                        })}
+                      </div>
+                    )}
+                    {!grant.grantedBy && !grant.revokedBy && (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="space-y-0.5">
+                    {grant.notes && (
+                      <span className="text-sm text-muted-foreground">
+                        {grant.notes}
+                      </span>
+                    )}
+                    {grant.revokedAt && (
+                      <div className="text-xs text-muted-foreground">
+                        {formatRelativeTime(grant.revokedAt, locale)}
+                      </div>
+                    )}
+                    {!grant.notes && !grant.revokedAt && (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRestoreDialog(grant)}
+                    className="text-amber-900 hover:text-amber-950"
+                    disabled={!grant.canManage}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    {t("buttons.restore")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
 
           {accessList.length === 0 && (
             <TableRow>
@@ -428,7 +495,10 @@ export function AccessTable({
       </Table>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
+      <Dialog
+        open={!!editDialog}
+        onOpenChange={(open) => !open && setEditDialog(null)}
+      >
         <DialogContent>
           <form onSubmit={handleEditSubmit}>
             <DialogHeader>
@@ -443,11 +513,15 @@ export function AccessTable({
               <AccessFormFields
                 userName={editUserName}
                 onUserNameChange={setEditUserName}
-                accessLevel={editAccessLevel}
-                onAccessLevelChange={setEditAccessLevel}
+                role={editRole}
+                onRoleChange={setEditRole}
+                extraPermissions={editExtraPermissions}
+                onExtraPermissionsChange={setEditExtraPermissions}
                 notes={editNotes}
                 onNotesChange={setEditNotes}
-                manageableAccessLevels={manageableAccessLevels}
+                manageableRoles={manageableRoles}
+                canManageExtras={canManageExtras}
+                grantableExtraPermissions={grantableExtraPermissions}
                 idPrefix="edit"
               />
             </div>
@@ -460,7 +534,9 @@ export function AccessTable({
                 {t("buttons.cancel")}
               </Button>
               <Button type="submit" disabled={updateAccess.isPending}>
-                {updateAccess.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {updateAccess.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 {t("buttons.save")}
               </Button>
             </DialogFooter>
@@ -469,23 +545,31 @@ export function AccessTable({
       </Dialog>
 
       {/* Revoke Confirmation Dialog */}
-      <AlertDialog open={!!deleteDialog} onOpenChange={(open) => !open && setDeleteDialog(null)}>
+      <AlertDialog
+        open={!!deleteDialog}
+        onOpenChange={(open) => !open && setDeleteDialog(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("dialogs.revoke.title")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("dialogs.revoke.description", {
-                name: deleteDialog?.user.name ?? deleteDialog?.user.email ?? "—",
+                name:
+                  deleteDialog?.user.name ?? deleteDialog?.user.email ?? "—",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("buttons.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteDialog && revokeAccess.mutate(deleteDialog.userId)}
+              onClick={() =>
+                deleteDialog && revokeAccess.mutate(deleteDialog.userId)
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {revokeAccess.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {revokeAccess.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {t("dialogs.revoke.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -493,23 +577,33 @@ export function AccessTable({
       </AlertDialog>
 
       {/* Restore Confirmation Dialog */}
-      <AlertDialog open={!!restoreDialog} onOpenChange={(open) => !open && setRestoreDialog(null)}>
+      <AlertDialog
+        open={!!restoreDialog}
+        onOpenChange={(open) => !open && setRestoreDialog(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("dialogs.restore.title")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("dialogs.restore.description", {
-                name: restoreDialog?.user.name ?? restoreDialog?.user.email ?? "—",
-                level: restoreDialog?.accessLevel ? t(`accessLevels.${restoreDialog.accessLevel.toLowerCase()}`) : "—",
+                name:
+                  restoreDialog?.user.name ?? restoreDialog?.user.email ?? "—",
+                level: restoreDialog
+                  ? t(`catalogRoles.${roleOf(restoreDialog)}`)
+                  : "—",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("buttons.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => restoreDialog && restoreAccess.mutate(restoreDialog.userId)}
+              onClick={() =>
+                restoreDialog && restoreAccess.mutate(restoreDialog.userId)
+              }
             >
-              {restoreAccess.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {restoreAccess.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {t("dialogs.restore.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>

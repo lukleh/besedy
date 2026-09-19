@@ -155,6 +155,8 @@ describe("admission auth claim", () => {
       select: {
         catalogId: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         grantedById: true,
         notes: true,
       },

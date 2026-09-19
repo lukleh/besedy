@@ -23,11 +23,19 @@ const deepSearchFeatureCapabilitySchema = z.object({
   canView: z.boolean(),
 });
 
+const recordingsCapabilitySchema = z.object({
+  // Optional so a page served by an older build still parses; absent reads as
+  // "cannot browse", which shows the events surface rather than a list that
+  // would be refused.
+  canBrowse: z.boolean().optional().default(false),
+});
+
 export const catalogFeaturesResponseSchema = z.object({
   labsEnabled: z.boolean(),
   features: z.object({
     events: featureCapabilitySchema,
     deepSearch: deepSearchFeatureCapabilitySchema,
+    recordings: recordingsCapabilitySchema.optional().default({ canBrowse: false }),
   }),
 });
 

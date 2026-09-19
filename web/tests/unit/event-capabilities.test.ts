@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogFeaturesResponse } from "@/lib/features/capabilities";
+import { grantForRole, grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 function deepSearch(enabled: boolean, canView: boolean) {
   return {
@@ -10,8 +11,14 @@ function deepSearch(enabled: boolean, canView: boolean) {
 }
 
 describe("event capabilities", () => {
+  // Browsing recordings is a permission now, and no role below the curator
+  // carries it, so these two have one surface and need no switch.
   it("keeps listeners on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse("LISTENER", false, false);
+    const result = buildCatalogFeaturesResponse(
+      grantForRole("listener"),
+      false,
+      false
+    );
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -26,13 +33,18 @@ describe("event capabilities", () => {
           showReleaseState: false,
           canUseRagSearch: false,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(false, false),
       },
     });
   });
 
-  it("keeps viewers on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse("VIEWER", false, false);
+  it("keeps readers on the events-first view without a tab switcher", () => {
+    const result = buildCatalogFeaturesResponse(
+      grantForRole("reader"),
+      false,
+      false
+    );
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -44,16 +56,23 @@ describe("event capabilities", () => {
           canEdit: false,
           showTabs: false,
           showAllColumns: false,
-          showReleaseState: true,
+          // A reader reads; seeing unreleased material is a curator's, so the
+          // release-state indicator has nothing to indicate.
+          showReleaseState: false,
           canUseRagSearch: true,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(false, false),
       },
     });
   });
 
   it("lets owners edit events and use both catalog tabs", () => {
-    const result = buildCatalogFeaturesResponse("OWNER", false, false);
+    const result = buildCatalogFeaturesResponse(
+      grantFromLevel("OWNER"),
+      false,
+      false
+    );
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -68,15 +87,34 @@ describe("event capabilities", () => {
           showReleaseState: true,
           canUseRagSearch: true,
         },
+        recordings: { canBrowse: true },
         deepSearch: deepSearch(false, false),
       },
     });
   });
 
   it("lets owners use deep search only when Labs is enabled", () => {
-    const result = buildCatalogFeaturesResponse("OWNER", true, false);
+    const result = buildCatalogFeaturesResponse(
+      grantFromLevel("OWNER"),
+      true,
+      false
+    );
 
     expect(result.features.deepSearch).toEqual(deepSearch(true, true));
+  });
+
+  it("requires transcript read permission for deep search", () => {
+    const result = buildCatalogFeaturesResponse(
+      {
+        level: null,
+        role: "listener",
+        extras: ["use_deep_search"],
+      },
+      true,
+      false
+    );
+
+    expect(result.features.deepSearch).toEqual(deepSearch(true, false));
   });
 
   it("lets catalog admins browse and edit events without an explicit catalog grant", () => {
@@ -95,6 +133,7 @@ describe("event capabilities", () => {
           showReleaseState: true,
           canUseRagSearch: true,
         },
+        recordings: { canBrowse: true },
         deepSearch: deepSearch(false, false),
       },
     });
@@ -122,16 +161,22 @@ describe("event capabilities", () => {
           showReleaseState: false,
           canUseRagSearch: false,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(false, false),
       },
     });
   });
 
   it("never reports event access when admission or catalog state is impossible", () => {
-    const result = buildCatalogFeaturesResponse("LISTENER", true, false, {
-      catalogExists: false,
-      canEnterPortal: false,
-    });
+    const result = buildCatalogFeaturesResponse(
+      grantFromLevel("LISTENER"),
+      true,
+      false,
+      {
+        catalogExists: false,
+        canEnterPortal: false,
+      }
+    );
 
     expect(result).toEqual({
       labsEnabled: true,
@@ -146,6 +191,7 @@ describe("event capabilities", () => {
           showReleaseState: false,
           canUseRagSearch: false,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(true, false),
       },
     });

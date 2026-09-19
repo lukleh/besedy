@@ -68,7 +68,6 @@ function normalizeManagementActor(
     ...actor,
     catalogGrant: null,
     hasCatalogAccess: false,
-    isCatalogOwner: false,
     isCatalogAdmin: true,
   };
 }

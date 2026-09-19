@@ -40,7 +40,9 @@ describe("admin user catalog access route", () => {
     vi.clearAllMocks();
     const permissionsModule = await import("@/lib/auth/permissions");
     const accessModule = await import("@/lib/access/capabilities");
-    getAdminCapability = accessModule.getAdminCapability as ReturnType<typeof vi.fn>;
+    getAdminCapability = accessModule.getAdminCapability as ReturnType<
+      typeof vi.fn
+    >;
     requireAuth = permissionsModule.requireAuth as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
@@ -76,6 +78,8 @@ describe("admin user catalog access route", () => {
         catalogId: "cat-1",
         catalogLabel: "Catalog A",
         accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
       },
     ]);
   });

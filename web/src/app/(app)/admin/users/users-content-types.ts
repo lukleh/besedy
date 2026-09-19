@@ -1,20 +1,25 @@
 "use client";
 
 import { Ban, Clock, UserCheck } from "lucide-react";
-import { AccessLevel, UserStatus } from "@/generated/prisma/enums";
+import { AccessLevel, CatalogRole, UserStatus } from "@/generated/prisma/enums";
+import { CATALOG_ROLES } from "@/lib/policy/catalog-permissions";
 
-export const ACCESS_LEVEL_VALUES = Object.values(AccessLevel);
+export const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 
 export interface CatalogAccess {
   catalogId: string;
   catalogLabel: string | null;
   accessLevel: AccessLevel;
+  role: CatalogRole;
+  extraPermissions: string[];
 }
 
 export interface PendingPortalAdmissionGrant {
   catalogId: string;
   catalogLabel: string;
   accessLevel: AccessLevel;
+  role: CatalogRole;
+  extraPermissions: string[];
   grantedAt: string;
   grantedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;
@@ -32,7 +37,7 @@ export interface User {
   lastLoginAt: string | null;
   createdAt: string;
   activatedAt: string | null;
-  highestAccessLevel: AccessLevel | null;
+  catalogRoles: CatalogRole[];
   catalogNames: string[];
 }
 
@@ -46,7 +51,7 @@ export interface PendingPortalAdmission {
   pendingGrantCount: number;
   catalogId: string | null;
   catalogLabel: string | null;
-  accessLevel: AccessLevel | null;
+  role: CatalogRole | null;
   invitedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;
 }
@@ -104,6 +109,8 @@ export function summarizeCatalogNames(catalogNames: string[]) {
   return `${catalogNames.slice(0, 2).join(", ")} +${catalogNames.length - 2}`;
 }
 
-export function getPendingPortalAdmissionMutationPath(admission: PendingPortalAdmission) {
+export function getPendingPortalAdmissionMutationPath(
+  admission: PendingPortalAdmission
+) {
   return `/api/admin/portal-admissions/${admission.id}`;
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createPendingCatalogGrant } from "@/lib/admission/catalog-pending-grant-create";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 const CATALOG_ID = "20260101_000000";
 
@@ -36,7 +37,9 @@ vi.mock("@/lib/db", () => ({
     pendingCatalogGrant: {
       findUnique: vi.fn(),
     },
-    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<void>) => callback({})),
+    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
+      callback({})
+    ),
   },
 }));
 
@@ -54,9 +57,8 @@ describe("catalog pending grant create", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    requireAuth = (await import("@/lib/auth/permissions")).requireAuth as ReturnType<
-      typeof vi.fn
-    >;
+    requireAuth = (await import("@/lib/auth/permissions"))
+      .requireAuth as ReturnType<typeof vi.fn>;
     resolveCatalogManagementActor = (
       await import("@/lib/access/catalog-management-route-access")
     ).resolveCatalogManagementActor as ReturnType<typeof vi.fn>;
@@ -74,7 +76,7 @@ describe("catalog pending grant create", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: false,
       },
     });
@@ -103,7 +105,8 @@ describe("catalog pending grant create", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: "owner@example.com",
-            accessLevel: "LISTENER",
+            role: "listener",
+            extraPermissions: [],
           }),
         }
       ),
@@ -126,7 +129,8 @@ describe("catalog pending grant create", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: "newcomer@example.com",
-            accessLevel: "LISTENER",
+            role: "listener",
+            extraPermissions: [],
           }),
         }
       ),
@@ -153,7 +157,8 @@ describe("catalog pending grant create", () => {
             email: "pending@example.com",
             // A level the owner may hand out, so the refusal comes from the
             // grant being reopened rather than from the one being assigned.
-            accessLevel: "LISTENER",
+            role: "listener",
+            extraPermissions: [],
           }),
         }
       ),
@@ -162,7 +167,7 @@ describe("catalog pending grant create", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only administrators can modify this level of access",
+      error: "Only catalog administrators can modify this access",
       code: "FORBIDDEN",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();

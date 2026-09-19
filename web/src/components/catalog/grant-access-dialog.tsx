@@ -19,8 +19,12 @@ import { Label } from "@/components/ui/label";
 import { AccessFormFields } from "@/components/catalog/access-form-fields";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
-import { AccessLevel } from "@/generated/prisma/enums";
+import { AccessLevel, CatalogRole } from "@/generated/prisma/enums";
 import { fetchJson } from "@/lib/api/fetch-json";
+import {
+  roleForLevel,
+  type GrantableExtraPermission,
+} from "@/lib/policy/catalog-permissions";
 
 interface UserSearchResult {
   id: string;
@@ -30,6 +34,9 @@ interface UserSearchResult {
   type: "active" | "available" | "revoked";
   currentAccessLevel?: AccessLevel;
   previousAccessLevel?: AccessLevel;
+  currentRole?: CatalogRole | null;
+  previousRole?: CatalogRole | null;
+  extraPermissions?: string[];
   notes?: string | null;
 }
 
@@ -46,7 +53,9 @@ interface InviteResponse {
 
 interface GrantAccessDialogProps {
   catalogId: string;
-  manageableAccessLevels: AccessLevel[];
+  manageableRoles: CatalogRole[];
+  canManageExtras: boolean;
+  grantableExtraPermissions: GrantableExtraPermission[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
@@ -54,7 +63,9 @@ interface GrantAccessDialogProps {
 
 export function GrantAccessDialog({
   catalogId,
-  manageableAccessLevels,
+  manageableRoles,
+  canManageExtras,
+  grantableExtraPermissions,
   open,
   onOpenChange,
   onSuccess,
@@ -66,8 +77,13 @@ export function GrantAccessDialog({
   // Form state
   const [searchValue, setSearchValue] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
-  const [accessLevel, setAccessLevel] = useState<AccessLevel>("LISTENER");
+  const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(
+    null
+  );
+  const [role, setRole] = useState<CatalogRole>("listener");
+  const [extraPermissions, setExtraPermissions] = useState<
+    GrantableExtraPermission[]
+  >([]);
   const [userName, setUserName] = useState("");
   const [notes, setNotes] = useState("");
   const [mode, setMode] = useState<"search" | "invite" | "grant">("search");
@@ -81,7 +97,8 @@ export function GrantAccessDialog({
       setSearchValue("");
       setSelectedUserId("");
       setSelectedUser(null);
-      setAccessLevel("LISTENER");
+      setRole("listener");
+      setExtraPermissions([]);
       setUserName("");
       setNotes("");
       setMode("search");
@@ -89,24 +106,26 @@ export function GrantAccessDialog({
   }, [open]);
 
   // Search users query
-  const { data: searchResults, isLoading: isSearching } = useQuery<UserSearchResponse>({
-    queryKey: ["user-search", catalogId, debouncedSearch],
-    queryFn: async () => {
-      if (debouncedSearch.length < 2) {
-        return { users: [], canInvite: false };
-      }
-      return fetchJson<UserSearchResponse>(
-        `/api/catalogs/${catalogId}/users?search=${encodeURIComponent(debouncedSearch)}`
-      );
-    },
-    enabled: open && debouncedSearch.length >= 2,
-  });
+  const { data: searchResults, isLoading: isSearching } =
+    useQuery<UserSearchResponse>({
+      queryKey: ["user-search", catalogId, debouncedSearch],
+      queryFn: async () => {
+        if (debouncedSearch.length < 2) {
+          return { users: [], canInvite: false };
+        }
+        return fetchJson<UserSearchResponse>(
+          `/api/catalogs/${catalogId}/users?search=${encodeURIComponent(debouncedSearch)}`
+        );
+      },
+      enabled: open && debouncedSearch.length >= 2,
+    });
 
   // Grant access mutation (for existing users and restore)
   const grantAccess = useMutation({
     mutationFn: async (data: {
       userId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
+      extraPermissions: GrantableExtraPermission[];
       notes?: string;
       userName?: string;
     }) => {
@@ -122,7 +141,8 @@ export function GrantAccessDialog({
   const updateAccess = useMutation({
     mutationFn: async (data: {
       userId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
+      extraPermissions: GrantableExtraPermission[];
       notes?: string;
       userName?: string;
     }) => {
@@ -130,7 +150,8 @@ export function GrantAccessDialog({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accessLevel: data.accessLevel,
+          role: data.role,
+          extraPermissions: data.extraPermissions,
           notes: data.notes,
           userName: data.userName,
         }),
@@ -140,7 +161,12 @@ export function GrantAccessDialog({
 
   // Invite new user mutation
   const inviteUser = useMutation({
-    mutationFn: async (data: { email: string; accessLevel: AccessLevel; message?: string }) => {
+    mutationFn: async (data: {
+      email: string;
+      role: CatalogRole;
+      extraPermissions: GrantableExtraPermission[];
+      message?: string;
+    }) => {
       return fetchJson<InviteResponse>(
         `/api/catalogs/${catalogId}/pending-catalog-grants`,
         {
@@ -153,15 +179,25 @@ export function GrantAccessDialog({
   });
 
   // Convert search results to combobox options
-  const options: ComboboxOption[] = (searchResults?.users ?? []).map((user) => ({
-    id: user.id,
-    label: user.name || user.email || user.id,
-    description: user.name ? user.email || undefined : undefined,
-    type: user.type,
-    image: user.image,
-    currentAccessLevel: user.currentAccessLevel,
-    previousAccessLevel: user.previousAccessLevel,
-  }));
+  const options: ComboboxOption[] = (searchResults?.users ?? []).map(
+    (user) => ({
+      id: user.id,
+      label: user.name || user.email || user.id,
+      description: user.name ? user.email || undefined : undefined,
+      type: user.type,
+      image: user.image,
+      currentAccessLabel: user.currentRole
+        ? t(`catalogRoles.${user.currentRole}`)
+        : user.currentAccessLevel
+          ? t(`accessLevels.${user.currentAccessLevel.toLowerCase()}`)
+          : undefined,
+      previousAccessLabel: user.previousRole
+        ? t(`catalogRoles.${user.previousRole}`)
+        : user.previousAccessLevel
+          ? t(`accessLevels.${user.previousAccessLevel.toLowerCase()}`)
+          : undefined,
+    })
+  );
 
   const handleSelectUser = (option: ComboboxOption) => {
     const user = searchResults?.users.find((u) => u.id === option.id);
@@ -169,7 +205,18 @@ export function GrantAccessDialog({
       setSelectedUserId(user.id);
       setSelectedUser(user);
       setUserName(user.name || "");
-      setAccessLevel(user.currentAccessLevel || user.previousAccessLevel || "LISTENER");
+      const legacyLevel =
+        user.currentAccessLevel || user.previousAccessLevel || "LISTENER";
+      setRole(
+        user.currentRole ?? user.previousRole ?? roleForLevel(legacyLevel).role
+      );
+      setExtraPermissions(
+        (user.extraPermissions ?? []).filter((permission) =>
+          grantableExtraPermissions.includes(
+            permission as GrantableExtraPermission
+          )
+        ) as GrantableExtraPermission[]
+      );
       setNotes(user.notes || "");
       setMode("grant");
     }
@@ -178,7 +225,8 @@ export function GrantAccessDialog({
   const handleInviteNew = () => {
     if (searchResults?.inviteEmail) {
       setMode("invite");
-      setAccessLevel("LISTENER");
+      setRole("listener");
+      setExtraPermissions([]);
       setUserName(searchResults.inviteEmail.split("@")[0]);
       setNotes("");
     }
@@ -191,12 +239,17 @@ export function GrantAccessDialog({
       if (mode === "invite" && searchResults?.inviteEmail) {
         const result = await inviteUser.mutateAsync({
           email: searchResults.inviteEmail,
-          accessLevel,
+          role,
+          extraPermissions,
           message: notes || undefined,
         });
 
-        queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
-        queryClient.invalidateQueries({ queryKey: ["catalog-pending-users", catalogId] });
+        queryClient.invalidateQueries({
+          queryKey: ["catalog-access", catalogId],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["catalog-pending-users", catalogId],
+        });
         onSuccess();
         onOpenChange(false);
 
@@ -221,12 +274,15 @@ export function GrantAccessDialog({
       if (selectedUser.type === "active") {
         await updateAccess.mutateAsync({
           userId: selectedUserId,
-          accessLevel,
+          role,
+          extraPermissions,
           notes,
           userName: userName || undefined,
         });
 
-        queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
+        queryClient.invalidateQueries({
+          queryKey: ["catalog-access", catalogId],
+        });
         queryClient.invalidateQueries({ queryKey: ["user-search", catalogId] });
         onSuccess();
         onOpenChange(false);
@@ -239,12 +295,15 @@ export function GrantAccessDialog({
 
       await grantAccess.mutateAsync({
         userId: selectedUserId,
-        accessLevel,
+        role,
+        extraPermissions,
         notes: notes || undefined,
         userName: userName || undefined,
       });
 
-      queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-access", catalogId],
+      });
       queryClient.invalidateQueries({ queryKey: ["user-search", catalogId] });
       onSuccess();
       onOpenChange(false);
@@ -267,7 +326,8 @@ export function GrantAccessDialog({
     }
   };
 
-  const isSubmitting = grantAccess.isPending || inviteUser.isPending || updateAccess.isPending;
+  const isSubmitting =
+    grantAccess.isPending || inviteUser.isPending || updateAccess.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -295,9 +355,13 @@ export function GrantAccessDialog({
                   emptyMessage={t("dialogs.grantAccess.noResults")}
                   activeSectionLabel={t("dialogs.grantAccess.activeSection")}
                   revokedSectionLabel={t("dialogs.grantAccess.revokedSection")}
-                  availableSectionLabel={t("dialogs.grantAccess.availableSection")}
+                  availableSectionLabel={t(
+                    "dialogs.grantAccess.availableSection"
+                  )}
                   inviteLabel={t("dialogs.grantAccess.inviteLabel")}
-                  shortSearchMessage={t("dialogs.grantAccess.shortSearchMessage")}
+                  shortSearchMessage={t(
+                    "dialogs.grantAccess.shortSearchMessage"
+                  )}
                   currentAccessPrefix={t("dialogs.grantAccess.currentPrefix")}
                   previousAccessPrefix={t("dialogs.grantAccess.previousPrefix")}
                   showInviteOption={searchResults?.canInvite ?? false}
@@ -315,23 +379,52 @@ export function GrantAccessDialog({
                 <div className="rounded-md bg-muted p-3">
                   <p className="text-sm font-medium">
                     {mode === "invite"
-                      ? t("dialogs.grantAccess.invitingNew", { email: searchResults?.inviteEmail ?? "" })
+                      ? t("dialogs.grantAccess.invitingNew", {
+                          email: searchResults?.inviteEmail ?? "",
+                        })
                       : selectedUser?.type === "active"
-                      ? t("dialogs.grantAccess.updatingAccess", { name: selectedUser?.name ?? selectedUser?.email ?? "—" })
-                      : selectedUser?.type === "revoked"
-                      ? t("dialogs.grantAccess.restoringAccess", { name: selectedUser?.name ?? selectedUser?.email ?? "—" })
-                      : t("dialogs.grantAccess.grantingTo", { name: selectedUser?.name ?? selectedUser?.email ?? "—" })}
+                        ? t("dialogs.grantAccess.updatingAccess", {
+                            name:
+                              selectedUser?.name ?? selectedUser?.email ?? "—",
+                          })
+                        : selectedUser?.type === "revoked"
+                          ? t("dialogs.grantAccess.restoringAccess", {
+                              name:
+                                selectedUser?.name ??
+                                selectedUser?.email ??
+                                "—",
+                            })
+                          : t("dialogs.grantAccess.grantingTo", {
+                              name:
+                                selectedUser?.name ??
+                                selectedUser?.email ??
+                                "—",
+                            })}
                   </p>
-                  {selectedUser?.type === "active" && selectedUser?.currentAccessLevel && (
+                  {selectedUser?.type === "active" && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t("dialogs.grantAccess.currentLevel", {
-                        level: t(`accessLevels.${selectedUser.currentAccessLevel.toLowerCase()}`),
+                        level: selectedUser.currentRole
+                          ? t(`catalogRoles.${selectedUser.currentRole}`)
+                          : t(
+                              `accessLevels.${(
+                                selectedUser.currentAccessLevel ?? "LISTENER"
+                              ).toLowerCase()}`
+                            ),
                       })}
                     </p>
                   )}
-                  {selectedUser?.type === "revoked" && selectedUser?.previousAccessLevel && (
+                  {selectedUser?.type === "revoked" && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      {t("dialogs.grantAccess.previousLevel", { level: t(`accessLevels.${selectedUser.previousAccessLevel.toLowerCase()}`) })}
+                      {t("dialogs.grantAccess.previousLevel", {
+                        level: selectedUser.previousRole
+                          ? t(`catalogRoles.${selectedUser.previousRole}`)
+                          : t(
+                              `accessLevels.${(
+                                selectedUser.previousAccessLevel ?? "LISTENER"
+                              ).toLowerCase()}`
+                            ),
+                      })}
                     </p>
                   )}
                 </div>
@@ -339,11 +432,15 @@ export function GrantAccessDialog({
                 <AccessFormFields
                   userName={userName}
                   onUserNameChange={setUserName}
-                  accessLevel={accessLevel}
-                  onAccessLevelChange={setAccessLevel}
+                  role={role}
+                  onRoleChange={setRole}
+                  extraPermissions={extraPermissions}
+                  onExtraPermissionsChange={setExtraPermissions}
                   notes={notes}
                   onNotesChange={setNotes}
-                  manageableAccessLevels={manageableAccessLevels}
+                  manageableRoles={manageableRoles}
+                  canManageExtras={canManageExtras}
+                  grantableExtraPermissions={grantableExtraPermissions}
                   idPrefix="grant"
                   showAccessLevelHint
                 />
@@ -358,7 +455,8 @@ export function GrantAccessDialog({
                     setMode("search");
                     setSelectedUserId("");
                     setSelectedUser(null);
-                    setAccessLevel("LISTENER");
+                    setRole("listener");
+                    setExtraPermissions([]);
                     setUserName("");
                     setNotes("");
                   }}
@@ -378,18 +476,17 @@ export function GrantAccessDialog({
             >
               {t("buttons.cancel")}
             </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting || mode === "search"}
-            >
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" disabled={isSubmitting || mode === "search"}>
+              {isSubmitting && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {mode === "invite"
                 ? t("dialogs.grantAccess.inviteButton")
                 : selectedUser?.type === "active"
-                ? t("dialogs.grantAccess.updateButton")
-                : selectedUser?.type === "revoked"
-                ? t("dialogs.grantAccess.restoreButton")
-                : t("dialogs.grantAccess.grantButton")}
+                  ? t("dialogs.grantAccess.updateButton")
+                  : selectedUser?.type === "revoked"
+                    ? t("dialogs.grantAccess.restoreButton")
+                    : t("dialogs.grantAccess.grantButton")}
             </Button>
           </DialogFooter>
         </form>

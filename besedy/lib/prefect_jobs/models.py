@@ -88,10 +88,10 @@ def prefect_state_names_for_job_status(status: JobStatus) -> list[str]:
 class DeepSearchSubmitRequest:
     query: str
     instructions: str
+    requested_by_id: str
     top_k: int = DEFAULT_DEEP_SEARCH_TOP_K
     lm_profile: str | None = None
     sub_lm_profile: str | None = None
-    requested_by_id: str | None = None
     caller_scope: str | None = None
 
     @classmethod
@@ -130,10 +130,8 @@ class DeepSearchSubmitRequest:
             raise ValueError("subLmProfile must be a non-empty string when provided.")
 
         requested_by_id = payload.get("requestedById")
-        if requested_by_id is not None and (
-            not isinstance(requested_by_id, str) or not requested_by_id.strip()
-        ):
-            raise ValueError("requestedById must be a non-empty string when provided.")
+        if not isinstance(requested_by_id, str) or not requested_by_id.strip():
+            raise ValueError("requestedById is required and must be a non-empty string.")
 
         caller_scope = payload.get("callerScope")
         if caller_scope is not None and (
@@ -147,7 +145,7 @@ class DeepSearchSubmitRequest:
             top_k=top_k,
             lm_profile=lm_profile.strip() if isinstance(lm_profile, str) else None,
             sub_lm_profile=sub_lm_profile.strip() if isinstance(sub_lm_profile, str) else None,
-            requested_by_id=requested_by_id.strip() if isinstance(requested_by_id, str) else None,
+            requested_by_id=requested_by_id.strip(),
             caller_scope=caller_scope.strip() if isinstance(caller_scope, str) else None,
         )
 

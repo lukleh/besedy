@@ -26,7 +26,7 @@ vi.mock("@/lib/audit/logger", () => ({
 }));
 
 vi.mock("@/lib/catalog", () => ({
-  loadCatalogHashes: vi.fn(),
+  loadVisibleCatalogHashes: vi.fn(),
 }));
 
 vi.mock("@/lib/paths", () => ({
@@ -62,7 +62,7 @@ const HASH_B = "b".repeat(64);
 describe("catalog transcript export route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
-  let loadCatalogHashes: ReturnType<typeof vi.fn>;
+  let loadVisibleCatalogHashes: ReturnType<typeof vi.fn>;
   let resolveTranscriptsPath: ReturnType<typeof vi.fn>;
   let getRagBackendKey: ReturnType<typeof vi.fn>;
   let readTranscriptFile: ReturnType<typeof vi.fn>;
@@ -81,7 +81,7 @@ describe("catalog transcript export route", () => {
     getCatalogCapability = (
       await import("@/lib/access/capabilities")
     ).getCatalogCapability as ReturnType<typeof vi.fn>;
-    loadCatalogHashes = (await import("@/lib/catalog")).loadCatalogHashes as ReturnType<
+    loadVisibleCatalogHashes = (await import("@/lib/catalog")).loadVisibleCatalogHashes as ReturnType<
       typeof vi.fn
     >;
     resolveTranscriptsPath = (
@@ -106,7 +106,7 @@ describe("catalog transcript export route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      canDownload: false,
+      canBulkExportTranscripts: false,
       canViewTranscripts: true,
     });
 
@@ -130,7 +130,7 @@ describe("catalog transcript export route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      canDownload: false,
+      canBulkExportTranscripts: false,
       canViewTranscripts: true,
     });
 
@@ -152,11 +152,11 @@ describe("catalog transcript export route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      canDownload: true,
+      canBulkExportTranscripts: true,
       canViewTranscripts: true,
     });
     getRagBackendKey.mockReturnValue("faster-whisper/large-v3@silero_vad_v6");
-    loadCatalogHashes.mockResolvedValue(new Set([HASH_A, HASH_B]));
+    loadVisibleCatalogHashes.mockResolvedValue(new Set([HASH_A, HASH_B]));
     resolveTranscriptsPath.mockReturnValue(`/data/transcripts_${CATALOG_ID}`);
     prisma.audioMetadata.findMany.mockResolvedValue([
       {

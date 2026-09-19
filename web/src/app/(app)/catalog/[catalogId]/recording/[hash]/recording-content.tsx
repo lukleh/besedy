@@ -93,9 +93,11 @@ export default function RecordingContent({
   const { catalogId, hash } = resolvedParams;
   const queryClient = useQueryClient();
   // Keep the legacy key so existing users keep their saved transcript view preference.
+  // Reading is the default view. The stream is the administrative one, and is
+  // only reachable by an account that may see the transcripts behind it.
   const [showTranscriptStream, setShowTranscriptStream] = useHydratedBoolean(
     "besedy-transcript-enabled",
-    true
+    false
   );
   const { groupKey, catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
     skipCatalogValidation,
@@ -280,7 +282,9 @@ export default function RecordingContent({
       />
       {data?.canViewTranscripts && (
         <RecordingTranscriptSection
-          canDownload={data.canDownload}
+          canDownloadTranscripts={data.canDownloadTranscripts ?? false}
+          canSeeSpeakers={data.canSeeSpeakers ?? false}
+          canSeeTranscriptVariants={data.canSeeTranscriptVariants ?? false}
           catalogId={catalogId}
           currentTime={currentTime}
           hash={hash}

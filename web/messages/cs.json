@@ -169,10 +169,10 @@
       "actions": {
         "newJob": "Nová úloha",
         "newFromInputs": "Nová úloha ze vstupů",
-    "cancel": "Zrušit",
-    "submit": "Spustit",
-    "openInPrefect": "Otevřít v Prefectu",
-    "close": "Zavřít"
+        "cancel": "Zrušit",
+        "submit": "Spustit",
+        "openInPrefect": "Otevřít v Prefectu",
+        "close": "Zavřít"
       },
       "newJob": "Nové výzkumné hledání",
       "jobFallback": "Úloha výzkumného hledání",
@@ -188,17 +188,17 @@
       "list": {
         "loading": "Načítání úloh",
         "loadErrorTitle": "Úlohy výzkumného hledání se nepodařilo načíst",
-    "emptyTitle": "Zatím žádné úlohy výzkumného hledání",
-    "emptyDescription": "Zadejte dotaz a spusťte výzkumné hledání nad tímto katalogem. Vaše úlohy zůstanou dostupné jen ve vašem seznamu.",
-    "mineReadOnlyEmptyDescription": "V tomto katalogu nemáte vlastní úlohy výzkumného hledání.",
-    "sharedEmptyTitle": "Žádné sdílené úlohy",
-    "sharedEmptyDescription": "Tady se zobrazí úlohy výzkumného hledání sdílené s vámi pro tento katalog.",
-    "tabs": {
-      "ariaLabel": "Seznamy úloh výzkumného hledání",
-      "mine": "Moje úlohy",
-      "shared": "Sdílené se mnou"
-    },
-    "columns": {
+        "emptyTitle": "Zatím žádné úlohy výzkumného hledání",
+        "emptyDescription": "Zadejte dotaz a spusťte výzkumné hledání nad tímto katalogem. Vaše úlohy zůstanou dostupné jen ve vašem seznamu.",
+        "mineReadOnlyEmptyDescription": "V tomto katalogu nemáte vlastní úlohy výzkumného hledání.",
+        "sharedEmptyTitle": "Žádné sdílené úlohy",
+        "sharedEmptyDescription": "Tady se zobrazí úlohy výzkumného hledání sdílené s vámi pro tento katalog.",
+        "tabs": {
+          "ariaLabel": "Seznamy úloh výzkumného hledání",
+          "mine": "Moje úlohy",
+          "shared": "Sdílené se mnou"
+        },
+        "columns": {
           "query": "Dotaz",
           "status": "Stav",
           "created": "Vytvořeno",
@@ -206,34 +206,34 @@
           "actions": "Akce"
         }
       },
-  "dialog": {
-    "description": "Úloha poběží nad katalogem {catalogLabel} a zobrazí se pouze ve vašem seznamu úloh.",
+      "dialog": {
+        "description": "Úloha poběží nad katalogem {catalogLabel} a zobrazí se pouze ve vašem seznamu úloh.",
         "queryLabel": "Dotaz",
-    "instructionsLabel": "Instrukce",
-    "submitErrorTitle": "Úlohu se nepodařilo odeslat"
-  },
-  "share": {
-    "title": "Sdílet úlohu výzkumného hledání",
-    "openDialog": "Sdílet úlohu",
-    "openDialogShort": "Sdílet",
-    "description": "Sdílejte tuto úlohu jen pro čtení s dalším uživatelem, který už má přístup ke stejnému katalogu.",
-    "descriptionWithQuery": "Sdílejte „{query}“ jen pro čtení s dalším uživatelem, který už má přístup ke stejnému katalogu.",
-    "currentShares": "Sdíleno s",
-    "loadingShares": "Načítání sdílení",
-    "noShares": "Tato úloha zatím není s nikým sdílená.",
-    "addUserLabel": "Přidat uživatele",
-    "userSearchPlaceholder": "Hledat podle jména nebo e-mailu",
-    "availableUsers": "Uživatelé s přístupem ke katalogu",
-    "shortSearchMessage": "Pro hledání napište alespoň 2 znaky",
-    "noUserResults": "Žádní odpovídající uživatelé katalogu",
-    "addUser": "Přidat",
-    "removeShare": "Odebrat sdílení",
-    "addSuccess": "Úloha byla sdílena",
-    "addError": "Úlohu se nepodařilo sdílet",
-    "removeSuccess": "Sdílení odebráno",
-    "removeError": "Sdílení se nepodařilo odebrat"
-  },
-  "detail": {
+        "instructionsLabel": "Instrukce",
+        "submitErrorTitle": "Úlohu se nepodařilo odeslat"
+      },
+      "share": {
+        "title": "Sdílet úlohu výzkumného hledání",
+        "openDialog": "Sdílet úlohu",
+        "openDialogShort": "Sdílet",
+        "description": "Sdílejte tuto úlohu jen pro čtení s dalším uživatelem, který už má přístup ke stejnému katalogu.",
+        "descriptionWithQuery": "Sdílejte „{query}“ jen pro čtení s dalším uživatelem, který už má přístup ke stejnému katalogu.",
+        "currentShares": "Sdíleno s",
+        "loadingShares": "Načítání sdílení",
+        "noShares": "Tato úloha zatím není s nikým sdílená.",
+        "addUserLabel": "Přidat uživatele",
+        "userSearchPlaceholder": "Hledat podle jména nebo e-mailu",
+        "availableUsers": "Uživatelé s přístupem ke katalogu",
+        "shortSearchMessage": "Pro hledání napište alespoň 2 znaky",
+        "noUserResults": "Žádní odpovídající uživatelé katalogu",
+        "addUser": "Přidat",
+        "removeShare": "Odebrat sdílení",
+        "addSuccess": "Úloha byla sdílena",
+        "addError": "Úlohu se nepodařilo sdílet",
+        "removeSuccess": "Sdílení odebráno",
+        "removeError": "Sdílení se nepodařilo odebrat"
+      },
+      "detail": {
         "loading": "Načítání úlohy",
         "loadErrorTitle": "Úlohu výzkumného hledání se nepodařilo načíst",
         "cancelErrorTitle": "Úlohu se nepodařilo zrušit",
@@ -710,7 +710,8 @@
       "noName": "Bez jména",
       "never": "Nikdy",
       "pendingUser": "Čekající uživatel",
-      "addedAt": "Přidán {time}"
+      "addedAt": "Přidán {time}",
+      "multipleCatalogRoles": "Role v {count} katalozích"
     },
     "userDetail": {
       "backToUsers": "Zpět na uživatele",
@@ -726,7 +727,8 @@
       "addCatalogAccess": "Přidat přístup ke katalogu",
       "selectCatalog": "Vybrat katalog",
       "enterName": "Zadejte jméno",
-      "accessLevel": "Úroveň přístupu"
+      "accessLevel": "Úroveň přístupu",
+      "role": "Role"
     },
     "actions": {
       "viewDetails": "Zobrazit podrobnosti",
@@ -773,13 +775,15 @@
         "noAccessYet": "Zatím nebyl udělen přístup k žádnému katalogu.",
         "addAccess": "Přidat přístup ke katalogu",
         "selectCatalog": "Vybrat katalog",
-        "accessLevel": "Úroveň přístupu"
+        "accessLevel": "Úroveň přístupu",
+        "role": "Role"
       },
       "editPendingAdmission": {
         "title": "Upravit čekající přijetí",
         "description": "Aktualizovat čekající přijetí pro {email}",
         "accessLevel": "Úroveň přístupu",
         "selectAccessLevel": "Vyberte úroveň přístupu",
+        "role": "Role",
         "notes": "Poznámky",
         "notesPlaceholder": "Volitelné poznámky k čekajícímu přijetí...",
         "multiGrantNotice": "Tento email už má čekající granty ve více katalozích. Zde můžete upravit společné poznámky k přijetí, ale změny konkrétních grantů patří do nastavení katalogu.",
@@ -819,7 +823,9 @@
         "catalog": "Katalog",
         "noCatalog": "Bez katalogu (přidat později)",
         "accessLevel": "Úroveň přístupu",
-        "selectAccessLevel": "Vybrat úroveň přístupu"
+        "selectAccessLevel": "Vybrat úroveň přístupu",
+        "role": "Role",
+        "selectRole": "Vybrat roli"
       },
       "toast": {
         "userAdded": "Uživatel přidán",
@@ -863,6 +869,20 @@
       "editorDesc": "Může upravovat metadata",
       "owner": "Vlastník",
       "ownerDesc": "Plný přístup včetně stahování"
+    },
+    "catalogRoles": {
+      "listener": "Posluchač",
+      "listenerDesc": "Poslech zveřejněného audia",
+      "reader": "Čtenář",
+      "readerDesc": "Poslech a čtení nebo vyhledávání v přepisech",
+      "corrector": "Korektor",
+      "correctorDesc": "Přístup čtenáře a opravy přepisů",
+      "host": "Hostitel",
+      "hostDesc": "Přístup čtenáře a správa běžných oprávnění",
+      "curator": "Kurátor",
+      "curatorDesc": "Redakční správa, stahování, hloubkové vyhledávání a nezveřejněný obsah",
+      "catalog_admin": "Správce katalogu",
+      "catalog_adminDesc": "Všechna katalogová oprávnění a chráněné přístupy"
     },
     "invitations": {
       "title": "Přidat uživatele",
@@ -1387,6 +1407,7 @@
       "validationSessionIndexRequired": "Číslo sezení musí být 1 nebo vyšší"
     },
     "list": {
+      "noSurfaceAvailable": "V tomto katalogu není co procházet.",
       "title": "Katalog",
       "count": "({total} událostí)",
       "countFiltered": "({filtered}/{total} událostí)",
@@ -1593,6 +1614,11 @@
     },
     "stats": {
       "totalUsers": "Celkem uživatelů",
+      "catalogAdmins": "Správci katalogu",
+      "curators": "Kurátoři",
+      "hosts": "Hostitelé",
+      "correctors": "Korektoři",
+      "readers": "Čtenáři",
       "owners": "Vlastníci",
       "editors": "Editoři",
       "members": "Členové",
@@ -1605,6 +1631,7 @@
       "description": "Uživatelé, kteří byli přidáni, ale ještě se nepřihlásili",
       "email": "E-mail",
       "accessLevel": "Úroveň přístupu",
+      "role": "Role",
       "addedBy": "Přidal"
     },
     "accessControl": {
@@ -1653,6 +1680,8 @@
         "emailLabel": "E-mailová adresa",
         "emailPlaceholder": "uzivatel@example.com",
         "accessLevelLabel": "Úroveň přístupu",
+        "roleLabel": "Role",
+        "extraPermissionsLabel": "Dodatečná oprávnění",
         "noteLabel": "Poznámka (volitelné)",
         "notePlaceholder": "Přidejte poznámku pro tohoto uživatele...",
         "adminHint": "Jako admin můžete udělit jakoukoli úroveň přístupu včetně VLASTNÍK.",
@@ -1681,6 +1710,8 @@
         "nameLabel": "Zobrazované jméno",
         "namePlaceholder": "Zadejte zobrazované jméno...",
         "accessLevelLabel": "Úroveň přístupu",
+        "roleLabel": "Role",
+        "extraPermissionsLabel": "Dodatečná oprávnění",
         "notesLabel": "Poznámky (volitelné)",
         "notesPlaceholder": "Důvod udělení přístupu...",
         "levelsHint": "Můžete udělit: {levels}.",
@@ -1730,6 +1761,34 @@
       "editorDesc": "Editace metadat",
       "owner": "VLASTNÍK",
       "ownerDesc": "Plný přístup"
+    },
+    "catalogRoles": {
+      "listener": "Posluchač",
+      "listenerDesc": "Poslech zveřejněného audia",
+      "reader": "Čtenář",
+      "readerDesc": "Poslech a čtení nebo vyhledávání v přepisech",
+      "corrector": "Korektor",
+      "correctorDesc": "Přístup čtenáře a opravy přepisů",
+      "host": "Hostitel",
+      "hostDesc": "Přístup čtenáře a správa běžných katalogových oprávnění",
+      "curator": "Kurátor",
+      "curatorDesc": "Redakční správa, stahování, hloubkové vyhledávání a nezveřejněný obsah",
+      "catalog_admin": "Správce katalogu",
+      "catalog_adminDesc": "Všechna katalogová oprávnění, konfigurace a chráněné přístupy"
+    },
+    "extraPermissions": {
+      "browse_recordings": "Procházet nahrávky",
+      "browse_recordingsDesc": "Zobrazit katalog podle jednotlivých nahrávek",
+      "use_deep_search": "Používat hloubkové vyhledávání",
+      "use_deep_searchDesc": "Spouštět hloubkové vyhledávání nad přepisy",
+      "download_audio": "Stahovat audio",
+      "download_audioDesc": "Stáhnout poslechový audio soubor",
+      "download_original_audio": "Stahovat původní audio",
+      "download_original_audioDesc": "Stáhnout audio soubor ve zdrojové kvalitě",
+      "download_transcripts": "Stahovat přepisy",
+      "download_transcriptsDesc": "Stahovat jednotlivé soubory přepisů",
+      "bulk_export_transcripts": "Hromadně exportovat přepisy",
+      "bulk_export_transcriptsDesc": "Exportovat korpus přepisů katalogu"
     },
     "toasts": {
       "settingsUpdated": "Nastavení katalogu aktualizováno",

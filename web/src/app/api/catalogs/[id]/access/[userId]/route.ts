@@ -1,15 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/permissions";
 import prisma from "@/lib/db";
+import {
+  grantFieldsForRole,
+  mergeGrantableExtraPermissions,
+} from "@/lib/policy/catalog-permissions";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   canAttemptCatalogManagement,
-  canGrantCatalogAccessLevel,
-  canManageExistingCatalogAccessLevel,
+  canGrantCatalogGrant,
+  canManageExistingCatalogGrant,
+  canRevokeExistingCatalogGrant,
   isSelfCatalogAccessChange,
 } from "@/lib/policy/catalog";
-import { CatalogUserParamSchema, UpdateAccessWithNameSchema, RestoreAccessSchema } from "@/lib/validation/schemas";
-import { validateMutationSource, validateParams, validateRequestBody, forbidden, notFound, badRequest, handlePrismaError } from "@/lib/api";
+import {
+  CatalogUserParamSchema,
+  UpdateAccessWithNameSchema,
+  RestoreAccessSchema,
+} from "@/lib/validation/schemas";
+import {
+  validateMutationSource,
+  validateParams,
+  validateRequestBody,
+  forbidden,
+  notFound,
+  badRequest,
+  handlePrismaError,
+} from "@/lib/api";
 import { logCatalogAccessEvent } from "@/lib/audit/logger";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +36,10 @@ interface RouteParams {
 }
 
 /**
- * PUT /api/catalogs/:id/access/:userId - Update user's access level and optionally their name
- * Body: { accessLevel: AccessLevel, notes?: string, userName?: string }
- * Admin can update to any level including OWNER
- * OWNER can update LISTENER/VIEWER/MEMBER/EDITOR but not OWNER
+ * PUT /api/catalogs/:id/access/:userId - Update a user's catalog grant.
+ * Body: { role: CatalogRole, extraPermissions?: string[], notes?: string, userName?: string }
+ * Catalog administrators may update any grant. Hosts may update only grants
+ * whose old and new roles carry no protected permission and no extras.
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
@@ -37,9 +54,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!paramsResult.success) return paramsResult.response;
     const { id: catalogId, userId: targetUserId } = paramsResult.data;
 
-    const bodyResult = await validateRequestBody(request, UpdateAccessWithNameSchema);
+    const bodyResult = await validateRequestBody(
+      request,
+      UpdateAccessWithNameSchema
+    );
     if (!bodyResult.success) return bodyResult.response;
-    const { accessLevel, notes, userName } = bodyResult.data;
+    const { role, extraPermissions, notes, userName } = bodyResult.data;
 
     // Check permissions first to prevent information disclosure
     // (unauthorized users shouldn't learn whether a grant exists)
@@ -56,7 +76,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
     // Check if access grant exists
@@ -75,22 +95,45 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Cannot update REVOKED access - use POST to restore
     if (existingAccess.status === "REVOKED") {
-      return badRequest("Cannot update revoked access. Use POST to restore access.");
+      return badRequest(
+        "Cannot update revoked access. Use POST to restore access."
+      );
     }
 
     // Only administrators may hand out protected access, and the same test
     // applies to the access being replaced.
-    if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant this level of access");
+    if (
+      !canGrantCatalogGrant(
+        managementAccess.policyContext,
+        role,
+        extraPermissions
+      )
+    ) {
+      return forbidden(
+        "Only catalog administrators can grant this role or extras"
+      );
     }
 
-    if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, existingAccess.accessLevel)) {
-      return forbidden("Only administrators can modify this level of access");
+    if (
+      !canManageExistingCatalogGrant(managementAccess.policyContext, {
+        level: existingAccess.accessLevel,
+        role: existingAccess.role,
+        extras: existingAccess.extraPermissions,
+      })
+    ) {
+      return forbidden("Only catalog administrators can modify this access");
     }
 
     if (isSelfCatalogAccessChange(currentUserId, targetUserId)) {
-      return badRequest("Cannot change your own access. Ask another admin or owner to do this.");
+      return badRequest(
+        "Cannot change your own access. Ask another admin or owner to do this."
+      );
     }
+
+    const storedExtraPermissions = mergeGrantableExtraPermissions(
+      existingAccess.extraPermissions,
+      extraPermissions
+    );
 
     const updatedAccess = await prisma.$transaction(async (tx) => {
       if (userName !== undefined) {
@@ -105,7 +148,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           userId_catalogId: { userId: targetUserId, catalogId },
         },
         data: {
-          accessLevel,
+          ...grantFieldsForRole(role, storedExtraPermissions),
           notes: notes !== undefined ? notes || null : existingAccess.notes,
           grantedById: currentUserId, // Track who made the change
         },
@@ -124,13 +167,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       targetUserId,
       targetEmail: existingAccess.user.email,
       catalogId,
-      accessLevel,
+      accessLevel: updatedAccess.accessLevel,
       details: {
         targetUserId,
         targetEmail: existingAccess.user.email,
         catalogId,
-        previousAccessLevel: existingAccess.accessLevel,
-        newAccessLevel: accessLevel,
+        previousRole: existingAccess.role,
+        previousExtraPermissions: existingAccess.extraPermissions,
+        newRole: role,
+        newExtraPermissions: storedExtraPermissions,
       },
     });
 
@@ -175,7 +220,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
     // Check if access grant exists
@@ -197,12 +242,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Only administrators may restore protected access.
-    if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, existingAccess.accessLevel)) {
-      return forbidden("Only administrators can restore this level of access");
+    if (
+      !canManageExistingCatalogGrant(managementAccess.policyContext, {
+        level: existingAccess.accessLevel,
+        role: existingAccess.role,
+        extras: existingAccess.extraPermissions,
+      })
+    ) {
+      return forbidden("Only catalog administrators can restore this access");
     }
 
     if (isSelfCatalogAccessChange(currentUserId, targetUserId)) {
-      return badRequest("Cannot change your own access. Ask another admin or owner to do this.");
+      return badRequest(
+        "Cannot change your own access. Ask another admin or owner to do this."
+      );
     }
 
     // Restore access
@@ -235,7 +288,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         targetUserId,
         targetEmail: existingAccess.user.email,
         catalogId,
-        accessLevel: existingAccess.accessLevel,
+        role: existingAccess.role,
+        extraPermissions: existingAccess.extraPermissions,
         restored: true,
       },
     });
@@ -248,8 +302,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 /**
  * DELETE /api/catalogs/:id/access/:userId - Revoke user's access (soft-delete)
- * Admin can revoke any access
- * OWNER can revoke LISTENER/VIEWER/MEMBER/EDITOR but not OWNER
+ * Catalog administrators may revoke any grant.
+ * Hosts may revoke only grants they are allowed to assign.
  */
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -279,7 +333,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
     // Check if access grant exists
@@ -302,12 +356,20 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     }
 
     // Only administrators may revoke protected access.
-    if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, existingAccess.accessLevel)) {
-      return forbidden("Only administrators can revoke this level of access");
+    if (
+      !canRevokeExistingCatalogGrant(managementAccess.policyContext, {
+        level: existingAccess.accessLevel,
+        role: existingAccess.role,
+        extras: existingAccess.extraPermissions,
+      })
+    ) {
+      return forbidden("Only catalog administrators can revoke this access");
     }
 
     if (isSelfCatalogAccessChange(currentUserId, targetUserId)) {
-      return badRequest("Cannot revoke your own access. Ask another admin or owner to do this.");
+      return badRequest(
+        "Cannot revoke your own access. Ask another admin or owner to do this."
+      );
     }
 
     // Soft-delete: set status to REVOKED
@@ -335,7 +397,8 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
         targetUserId,
         targetEmail: existingAccess.user.email,
         catalogId,
-        accessLevel: existingAccess.accessLevel,
+        role: existingAccess.role,
+        extraPermissions: existingAccess.extraPermissions,
       },
     });
 

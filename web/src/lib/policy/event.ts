@@ -1,5 +1,6 @@
 import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   hasCatalogAccess,
   hasCatalogPermission,
@@ -19,7 +20,7 @@ export interface ReleasedVisibleEventState {
 }
 
 export function requiresReleasedEventVisibilityScope(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): boolean {
   return lacksUnreleasedVisibility(catalogGrant);
 }
@@ -39,12 +40,18 @@ export function canViewUnreleasedEvents(
   );
 }
 
+/**
+ * Whether the actor may browse events.
+ *
+ * Browsing events is not browsing recordings, and asking for
+ * `browse_recordings` here made it look like it was. Under the level scale the
+ * two were indistinguishable because every level carried that permission; under
+ * the roles they are not, and a listener asked for a permission only the curator
+ * holds would lose the events view, which is the surface the archive is used
+ * through. Events are what an account with access to the catalog sees.
+ */
 export function canBrowseEvents(context: EventFeaturePolicyContext): boolean {
-  return (
-    context.featureEnabled &&
-    hasCatalogAccess(context) &&
-    hasCatalogPermission(context, "browse_recordings")
-  );
+  return context.featureEnabled && hasCatalogAccess(context);
 }
 
 export function canViewCatalogEvents(context: EventFeaturePolicyContext): boolean {

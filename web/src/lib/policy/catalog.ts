@@ -1,15 +1,18 @@
-import type { AccessLevel } from "@/generated/prisma/client";
+import type { CatalogRole } from "@/generated/prisma/client";
 import {
+  CATALOG_ROLES,
   carriesProtectedPermission,
   grantHasPermission,
-  permissionsForLevel,
+  permissionsForGrant,
+  type CatalogGrant,
+  type GrantableExtraPermission,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
 
 export interface CatalogPolicyContext {
   catalogExists: boolean;
   canEnterPortal: boolean;
-  catalogGrant: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   isCatalogAdmin: boolean;
 }
 
@@ -43,26 +46,102 @@ export function canViewCatalog(context: CatalogPolicyContext): boolean {
   return hasCatalogAccess(context);
 }
 
+/**
+ * Whether the actor may browse the recordings list.
+ *
+ * A choice rather than a side effect. It used to be "anyone who can open the
+ * catalog", which was then narrowed by accident: the tab switcher demanded
+ * event-edit rights, so everybody below an owner was locked to events with no
+ * path here at all. The permission says who the surface is for, and the
+ * switcher asks about browsing rather than about editing.
+ */
 export function canBrowseRecordings(context: CatalogPolicyContext): boolean {
-  return canViewCatalog(context);
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "browse_recordings")
+  );
 }
 
-export function canViewCatalogTranscripts(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogPermission(context, "read_transcripts");
+export function canViewCatalogTranscripts(
+  context: CatalogPolicyContext
+): boolean {
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "read_transcripts")
+  );
 }
 
-export function canDownloadCatalogContent(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogPermission(context, "download");
+/**
+ * File delivery, one permission per thing delivered.
+ *
+ * There is no general "may download". Taking a file out of Besedy serves a
+ * specific purpose, and which purpose decides which permission -- so an account
+ * given transcripts does not thereby get audio, and neither of them gets the
+ * whole corpus in one request.
+ *
+ * Each of these is never broader than reading: they decide whether an account
+ * may take out what it can already open, not what it may open.
+ */
+export function canDownloadAudio(context: CatalogPolicyContext): boolean {
+  return (
+    hasCatalogAccess(context) && hasCatalogPermission(context, "download_audio")
+  );
+}
+
+/** The master, which no role carries; a catalog administrator holds it. */
+export function canDownloadOriginalAudio(
+  context: CatalogPolicyContext
+): boolean {
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "download_original_audio")
+  );
+}
+
+export function canDownloadTranscripts(context: CatalogPolicyContext): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "download_transcripts")
+  );
+}
+
+/**
+ * The machine text under a corrected transcript. No role carries it, and
+ * nothing serves it yet: there are no corrections, so there is no text
+ * underneath one. Named and gated now so the correction work has a permission
+ * to hang the variant on rather than inventing one then.
+ */
+export function canDownloadOriginalTranscript(
+  context: CatalogPolicyContext
+): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "download_original_transcript")
+  );
+}
+
+/** The whole corpus as data: the highest-impact permission in the catalogue. */
+export function canBulkExportTranscripts(
+  context: CatalogPolicyContext
+): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "bulk_export_transcripts")
+  );
 }
 
 export function canEditCatalogMetadata(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogPermission(context, "edit_metadata");
+  return (
+    hasCatalogAccess(context) && hasCatalogPermission(context, "edit_metadata")
+  );
 }
 
 export function hasCatalogManagementAuthority(
   context: CatalogPolicyContext
 ): boolean {
-  return hasCatalogAccess(context) && hasCatalogPermission(context, "manage_access");
+  return (
+    hasCatalogAccess(context) && hasCatalogPermission(context, "manage_access")
+  );
 }
 
 export function canAccessCatalogSettings(
@@ -74,80 +153,74 @@ export function canAccessCatalogSettings(
 export function canManageCatalogConfiguration(
   context: CatalogPolicyContext
 ): boolean {
-  return hasCatalogAccess(context) && hasCatalogPermission(context, "manage_catalog_config");
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "manage_catalog_config")
+  );
 }
 
 export function canAttemptCatalogManagement(
   context: CatalogPolicyContext
 ): boolean {
-  return context.canEnterPortal && hasCatalogPermission(context, "manage_access");
-}
-
-/**
- * Whether the actor may hand out this much access.
- *
- * A catalog administrator may give anything. Everyone else may give only what
- * carries no protected permission, which is what stops `manage_access` from
- * propagating itself and keeps unreleased material an administrative decision.
- */
-export function canGrantCatalogAccessLevel(
-  context: CatalogPolicyContext,
-  accessLevel: AccessLevel
-): boolean {
-  return mayPassOnAccessLevel(context, accessLevel);
-}
-
-/**
- * Whether the actor may change or revoke access that is already held.
- *
- * The same test as granting, asked about the access being replaced. Without it
- * the rule would stop privilege spreading upward while still letting an account
- * strip one above it, which is the same authority wearing a different hat.
- */
-export function canManageExistingCatalogAccessLevel(
-  context: CatalogPolicyContext,
-  accessLevel: AccessLevel
-): boolean {
-  return mayPassOnAccessLevel(context, accessLevel);
-}
-
-/**
- * The one test both sides of an access change ask, written once so that the
- * assigned side and the replaced side cannot drift apart.
- */
-function mayPassOnAccessLevel(
-  context: CatalogPolicyContext,
-  accessLevel: AccessLevel
-): boolean {
-  if (!canAttemptCatalogManagement(context)) return false;
   return (
-    context.isCatalogAdmin ||
-    !carriesProtectedPermission(permissionsForLevel(accessLevel))
+    context.canEnterPortal && hasCatalogPermission(context, "manage_access")
   );
 }
 
-/**
- * Every access level this actor may hand out or take away.
- *
- * The UI needs the set rather than the test so that it can offer exactly what
- * the server will accept: a level the actor cannot assign is not shown, and a
- * grant the actor cannot touch carries no edit or revoke action. One list
- * serves both sides because the granting rule asks the same question of the
- * access being assigned and the access being replaced.
- */
-export function manageableCatalogAccessLevels(
-  context: CatalogPolicyContext
-): AccessLevel[] {
-  return ACCESS_LEVELS.filter((level) => mayPassOnAccessLevel(context, level));
+/** Whether the actor may assign this complete role-native grant. */
+export function canGrantCatalogGrant(
+  context: CatalogPolicyContext,
+  role: CatalogRole,
+  extras: readonly GrantableExtraPermission[] = []
+): boolean {
+  return mayPassOnGrant(context, { level: null, role, extras: [...extras] });
 }
 
-const ACCESS_LEVELS: AccessLevel[] = [
-  "LISTENER",
-  "VIEWER",
-  "MEMBER",
-  "EDITOR",
-  "OWNER",
-];
+/** Whether the actor may update or restore an existing grant. */
+export function canManageExistingCatalogGrant(
+  context: CatalogPolicyContext,
+  grant: CatalogGrant
+): boolean {
+  return mayPassOnGrant(context, grant);
+}
+
+/**
+ * Whether the actor may revoke an existing grant.
+ *
+ * Revocation only removes access, so unknown or administrator-assigned extras
+ * do not make an otherwise manageable role impossible for a host to cut off.
+ * Protected roles remain administrator-only.
+ */
+export function canRevokeExistingCatalogGrant(
+  context: CatalogPolicyContext,
+  grant: CatalogGrant
+): boolean {
+  return mayPassOnGrant(context, { ...grant, extras: [] });
+}
+
+/** Roles the access UI may offer to this actor. */
+export function manageableCatalogRoles(
+  context: CatalogPolicyContext
+): CatalogRole[] {
+  return CATALOG_ROLES.filter((role) => canGrantCatalogGrant(context, role));
+}
+
+/** Extras are exceptions and only catalog administrators may assign them. */
+export function canManageCatalogGrantExtras(
+  context: CatalogPolicyContext
+): boolean {
+  return canAttemptCatalogManagement(context) && context.isCatalogAdmin;
+}
+
+function mayPassOnGrant(
+  context: CatalogPolicyContext,
+  grant: CatalogGrant
+): boolean {
+  if (!canAttemptCatalogManagement(context)) return false;
+  if (context.isCatalogAdmin) return true;
+  if ((grant.extras?.length ?? 0) > 0) return false;
+  return !carriesProtectedPermission(permissionsForGrant(grant));
+}
 
 /**
  * Whether the actor is the subject of this change.
@@ -171,8 +244,13 @@ export function isSelfCatalogAccessChange(
   return actorUserId === subjectUserId;
 }
 
-export function canBatchEditCatalogMetadata(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context) && hasCatalogPermission(context, "batch_edit_metadata");
+export function canBatchEditCatalogMetadata(
+  context: CatalogPolicyContext
+): boolean {
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "batch_edit_metadata")
+  );
 }
 
 export function canUseCatalogRag(context: CatalogPolicyContext): boolean {

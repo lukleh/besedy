@@ -59,7 +59,7 @@ describe("CatalogSettingsPage", () => {
   const capability = (overrides: Record<string, boolean> = {}) => ({
     catalogExists: true,
     hasAccess: true,
-    canDownload: false,
+    canBulkExportTranscripts: false,
     canViewTranscripts: false,
     canManageCatalogConfiguration: false,
     canManageAccess: false,
@@ -87,7 +87,7 @@ describe("CatalogSettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     withCapability({
-      canDownload: true,
+      canBulkExportTranscripts: true,
       canViewTranscripts: true,
       canManageCatalogConfiguration: true,
       canManageAccess: true,
@@ -154,7 +154,7 @@ describe("CatalogSettingsPage", () => {
   }> = [
     {
       name: "transcript exports",
-      capability: { canDownload: true, canViewTranscripts: true },
+      capability: { canBulkExportTranscripts: true },
       events: false,
       cards: "transcriptExports",
     },
@@ -185,10 +185,4 @@ describe("CatalogSettingsPage", () => {
     expect(await renderPage()).toHaveAttribute("data-cards", cards);
   });
 
-  it("hides transcript exports from a downloader who cannot read transcripts", async () => {
-    withCapability({ canDownload: true, canManageAccess: true });
-    withEventEditing(false);
-
-    expect(await renderPage()).toHaveAttribute("data-cards", "access");
-  });
 });

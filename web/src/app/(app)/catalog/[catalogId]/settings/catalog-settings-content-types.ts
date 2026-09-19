@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { AccessLevel, AccessStatus } from "@/generated/prisma/enums";
+import {
+  AccessLevel,
+  AccessStatus,
+  CatalogRole,
+} from "@/generated/prisma/enums";
+import {
+  GRANTABLE_EXTRA_PERMISSIONS,
+  roleForLevel,
+  type GrantableExtraPermission,
+} from "@/lib/policy/catalog-permissions";
 
 export interface UserInfo {
   id: string;
@@ -13,6 +22,10 @@ export interface AccessGrant {
   id: string;
   userId: string;
   accessLevel: AccessLevel;
+  role: CatalogRole | null;
+  extraPermissions: string[];
+  canManage: boolean;
+  canRevoke: boolean;
   status: AccessStatus;
   notes: string | null;
   createdAt: string;
@@ -31,8 +44,10 @@ export interface CatalogAccessResponse {
   catalog: CatalogInfo;
   accessList: AccessGrant[];
   canManageCatalogConfig?: boolean;
-  /** The access levels this actor may assign and act on. */
-  manageableAccessLevels?: AccessLevel[];
+  /** The roles this actor may assign. */
+  manageableRoles?: CatalogRole[];
+  canManageExtras?: boolean;
+  grantableExtraPermissions?: GrantableExtraPermission[];
 }
 
 export interface WorkflowVariant {
@@ -72,6 +87,9 @@ export interface PendingCatalogGrant {
   type: "pending_catalog_grant";
   email: string;
   accessLevel: AccessLevel;
+  role: CatalogRole | null;
+  extraPermissions: string[];
+  canManage: boolean;
   notes: string | null;
   createdAt: string;
   grantedBy: { id: string; name: string | null; email: string | null } | null;
@@ -128,6 +146,10 @@ export const accessGrantSchema = z.object({
   id: z.string(),
   userId: z.string(),
   accessLevel: z.nativeEnum(AccessLevel),
+  role: z.nativeEnum(CatalogRole).nullable(),
+  extraPermissions: z.array(z.string()),
+  canManage: z.boolean(),
+  canRevoke: z.boolean(),
   status: z.nativeEnum(AccessStatus),
   notes: z.string().nullable(),
   createdAt: z.string(),
@@ -146,7 +168,11 @@ export const catalogAccessResponseSchema = z.object({
   catalog: catalogInfoSchema,
   accessList: z.array(accessGrantSchema),
   canManageCatalogConfig: z.boolean().optional(),
-  manageableAccessLevels: z.array(z.nativeEnum(AccessLevel)).optional(),
+  manageableRoles: z.array(z.nativeEnum(CatalogRole)).optional(),
+  canManageExtras: z.boolean().optional(),
+  grantableExtraPermissions: z
+    .array(z.enum(GRANTABLE_EXTRA_PERMISSIONS))
+    .optional(),
 });
 
 export const workflowVariantSchema = z.object({
@@ -176,6 +202,9 @@ export const pendingCatalogGrantSchema = z.object({
   type: z.literal("pending_catalog_grant"),
   email: z.string(),
   accessLevel: z.nativeEnum(AccessLevel),
+  role: z.nativeEnum(CatalogRole).nullable(),
+  extraPermissions: z.array(z.string()),
+  canManage: z.boolean(),
   notes: z.string().nullable(),
   createdAt: z.string(),
   grantedBy: actorInfoSchema.nullable(),
@@ -207,15 +236,23 @@ export const catalogSyncResponseSchema = z.object({
   results: z.array(catalogSyncResultSchema),
 });
 
-export const ACCESS_LEVEL_COLORS: Record<AccessLevel, string> = {
-  LISTENER: "bg-slate-600 text-white",
-  VIEWER: "bg-gray-600 text-white",
-  MEMBER: "bg-blue-700 text-white",
-  EDITOR: "bg-amber-700 text-white",
-  OWNER: "bg-emerald-700 text-white",
+export const CATALOG_ROLE_COLORS: Record<CatalogRole, string> = {
+  listener: "bg-slate-600 text-white",
+  reader: "bg-gray-600 text-white",
+  corrector: "bg-blue-700 text-white",
+  host: "bg-violet-700 text-white",
+  curator: "bg-amber-700 text-white",
+  catalog_admin: "bg-emerald-700 text-white",
 };
 
-export const ACCESS_LEVEL_VALUES = Object.values(AccessLevel);
+export const CATALOG_ROLE_VALUES = Object.values(CatalogRole);
+
+export function resolvedCatalogRole(
+  role: CatalogRole | null,
+  accessLevel: AccessLevel
+): CatalogRole {
+  return role ?? roleForLevel(accessLevel).role;
+}
 
 /**
  * Which cards of the settings page the actor may see.

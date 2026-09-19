@@ -30,7 +30,30 @@ vi.mock("@/lib/db", () => ({
     audioMetadata: {
       findUnique: vi.fn(),
     },
+    catalogAccess: {
+      findUnique: vi.fn(),
+    },
+    catalogEntry: {
+      findUnique: vi.fn(),
+    },
   },
+}));
+
+vi.mock("@/lib/access/capabilities", () => ({
+  getCatalogCapability: vi.fn().mockResolvedValue({
+    catalogExists: true,
+    hasAccess: true,
+    canViewTranscripts: true,
+    isCatalogAdmin: false,
+    catalogGrant: {
+      level: "VIEWER",
+      role: "reader",
+      extras: [],
+    },
+    accessLevel: "VIEWER",
+    catalogRole: "reader",
+    catalogExtraPermissions: [],
+  }),
 }));
 
 function jsonResponse(payload: unknown) {
@@ -44,12 +67,13 @@ function jsonResponse(payload: unknown) {
 describe("internal deep-search citation and metadata routes", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
     process.env = { ...originalEnv };
     process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
-    process.env.RAG_COLBERT_INDEX_DIR = "/workspace/besedy/tmp/rag-colbert-test/index/colbert_index";
+    process.env.RAG_COLBERT_INDEX_DIR =
+      "/workspace/besedy/tmp/rag-colbert-test/index/colbert_index";
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -61,7 +85,13 @@ describe("internal deep-search citation and metadata routes", () => {
 
   it("returns citation context and metadata for a valid chunk", async () => {
     const prisma = (await import("@/lib/db")).default;
-    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
+    vi.mocked(prisma.catalogEntry.findUnique).mockResolvedValue({
+      isActionable: true,
+      isPublished: true,
+    } as never);
     vi.mocked(prisma.audioMetadata.findUnique).mockResolvedValue({
       workflowGroupId: "catalog-1",
       audioHash: "hash-1",
@@ -72,70 +102,80 @@ describe("internal deep-search citation and metadata routes", () => {
       recorder: { id: 2, name: "Archivist" },
     } as never);
 
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const endpoint = String(url);
-      const body = JSON.parse(String(init?.body ?? "{}"));
+    fetchMock.mockImplementation(
+      async (url: string | URL, init?: RequestInit) => {
+        const endpoint = String(url);
+        const body = JSON.parse(String(init?.body ?? "{}"));
 
-      if (endpoint.endsWith("/resolve")) {
-        return jsonResponse({
-          colbert_index_dir: process.env.RAG_COLBERT_INDEX_DIR,
-        });
-      }
-      if (endpoint.endsWith("/lookup")) {
-        expect(body.chunk_ids).toEqual(["chunk-1"]);
-        return jsonResponse({
-          chunks: [
-            {
-              chunk_id: "chunk-1",
-              audio_hash: "hash-1",
-              start_sec: 10,
-              end_sec: 20,
-              text: "primary evidence",
-              run_id: "run-123",
-              chunk_version: "v2",
+        if (endpoint.endsWith("/resolve")) {
+          return jsonResponse({
+            colbert_index_dir: process.env.RAG_COLBERT_INDEX_DIR,
+          });
+        }
+        if (endpoint.endsWith("/lookup")) {
+          expect(body.chunk_ids).toEqual(["chunk-1"]);
+          return jsonResponse({
+            chunks: [
+              {
+                chunk_id: "chunk-1",
+                audio_hash: "hash-1",
+                start_sec: 10,
+                end_sec: 20,
+                text: "primary evidence",
+                run_id: "run-123",
+                chunk_version: "v2",
+              },
+            ],
+          });
+        }
+        if (endpoint.endsWith("/neighbors")) {
+          return jsonResponse({
+            neighbors: {
+              "chunk-1": {
+                before: [
+                  {
+                    chunk_id: "chunk-0",
+                    audio_hash: "hash-1",
+                    start_sec: 0,
+                    end_sec: 10,
+                    text: "before",
+                  },
+                ],
+                after: [
+                  {
+                    chunk_id: "chunk-2",
+                    audio_hash: "hash-1",
+                    start_sec: 20,
+                    end_sec: 30,
+                    text: "after",
+                  },
+                ],
+              },
             },
-          ],
-        });
+          });
+        }
+        throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
       }
-      if (endpoint.endsWith("/neighbors")) {
-        return jsonResponse({
-          neighbors: {
-            "chunk-1": {
-              before: [
-                {
-                  chunk_id: "chunk-0",
-                  audio_hash: "hash-1",
-                  start_sec: 0,
-                  end_sec: 10,
-                  text: "before",
-                },
-              ],
-              after: [
-                {
-                  chunk_id: "chunk-2",
-                  audio_hash: "hash-1",
-                  start_sec: 20,
-                  end_sec: 30,
-                  text: "after",
-                },
-              ],
-            },
-          },
-        });
-      }
-      throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
-    });
+    );
 
-    const { POST } = await import("@/app/api/internal/deep-search/citation/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/citation", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-job-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        catalogId: "catalog-1",
-        chunkId: "chunk-1",
-        neighborCount: 1,
-      }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/citation/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/citation",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          requestedById: "user-1",
+          chunkId: "chunk-1",
+          neighborCount: 1,
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(200);
@@ -155,20 +195,61 @@ describe("internal deep-search citation and metadata routes", () => {
     });
   });
 
+  it("refuses metadata when the job names no requester", async () => {
+    const prisma = (await import("@/lib/db")).default;
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
+    vi.mocked(prisma.catalogEntry.findUnique).mockResolvedValue({
+      isActionable: true,
+      isPublished: false,
+    } as never);
+
+    const { POST } =
+      await import("@/app/api/internal/deep-search/metadata/route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/internal/deep-search/metadata", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-job-secret",
+        },
+        body: JSON.stringify({ catalogId: "catalog-1", audioHash: "hash-1" }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.audioMetadata.findUnique).not.toHaveBeenCalled();
+  });
+
   it("returns null metadata payload when no curated metadata exists", async () => {
     const prisma = (await import("@/lib/db")).default;
-    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
+    vi.mocked(prisma.catalogEntry.findUnique).mockResolvedValue({
+      isActionable: true,
+      isPublished: true,
+    } as never);
     vi.mocked(prisma.audioMetadata.findUnique).mockResolvedValue(null);
 
-    const { POST } = await import("@/app/api/internal/deep-search/metadata/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/metadata", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-job-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        catalogId: "catalog-1",
-        audioHash: "hash-1",
-      }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/metadata/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/metadata",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          requestedById: "user-1",
+          audioHash: "hash-1",
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(200);
@@ -181,7 +262,9 @@ describe("internal deep-search citation and metadata routes", () => {
 
   it("preserves upstream retrieval errors for citation lookups", async () => {
     const prisma = (await import("@/lib/db")).default;
-    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
 
     fetchMock.mockImplementation(async (url: string | URL) => {
       const endpoint = String(url);
@@ -204,15 +287,23 @@ describe("internal deep-search citation and metadata routes", () => {
       throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
     });
 
-    const { POST } = await import("@/app/api/internal/deep-search/citation/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/citation", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-job-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        catalogId: "catalog-1",
-        chunkId: "chunk-1",
-      }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/citation/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/citation",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          requestedById: "user-1",
+          chunkId: "chunk-1",
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(502);

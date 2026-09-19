@@ -3,7 +3,11 @@ import { requireAuth } from "@/lib/auth/permissions";
 import { listPendingCatalogUsers } from "@/lib/admission/catalog-read-models";
 import { createPendingCatalogGrant } from "@/lib/admission/catalog-pending-grant-create";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
-import { canAttemptCatalogManagement } from "@/lib/policy/catalog";
+import {
+  canAttemptCatalogManagement,
+  canManageExistingCatalogGrant,
+} from "@/lib/policy/catalog";
+import { roleForLevel } from "@/lib/policy/catalog-permissions";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
 import {
   forbidden,
@@ -34,7 +38,10 @@ async function withPendingCatalogGrantType(response: Response) {
   return NextResponse.json(
     {
       ...body,
-      type: body.userStatus === "PENDING" ? "pending_catalog_grant" : "catalog_access",
+      type:
+        body.userStatus === "PENDING"
+          ? "pending_catalog_grant"
+          : "catalog_access",
     },
     {
       status: response.status,
@@ -66,10 +73,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(access.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
-    const pendingUsers = await listPendingCatalogUsers(catalogId);
+    const pendingUsers = (await listPendingCatalogUsers(catalogId)).map(
+      (grant) => ({
+        ...grant,
+        canManage: canManageExistingCatalogGrant(access.policyContext, {
+          level: grant.accessLevel,
+          role: grant.role ?? roleForLevel(grant.accessLevel).role,
+          extras: grant.extraPermissions,
+        }),
+      })
+    );
     return NextResponse.json({ pendingUsers });
   } catch (error) {
     return handlePrismaError(error, "catalog pending grants", "fetch");
@@ -81,6 +97,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (!paramsResult.success) {
     return paramsResult.response;
   }
-  const response = await createPendingCatalogGrant(request, paramsResult.data.id);
+  const response = await createPendingCatalogGrant(
+    request,
+    paramsResult.data.id
+  );
   return withPendingCatalogGrantType(response);
 }

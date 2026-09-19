@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogUsers } from "@/app/api/catalogs/[id]/users/route";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
@@ -33,14 +34,16 @@ describe("catalog users search route", () => {
   let prisma: {
     workflowGroup: { findUnique: ReturnType<typeof vi.fn> };
     catalogAccess: { findMany: ReturnType<typeof vi.fn> };
-    user: { findMany: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
+    user: {
+      findMany: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+    };
   };
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    requireAuth = (await import("@/lib/auth/permissions")).requireAuth as ReturnType<
-      typeof vi.fn
-    >;
+    requireAuth = (await import("@/lib/auth/permissions"))
+      .requireAuth as ReturnType<typeof vi.fn>;
     resolveCatalogManagementActor = (
       await import("@/lib/access/catalog-management-route-access")
     ).resolveCatalogManagementActor as ReturnType<typeof vi.fn>;
@@ -55,7 +58,7 @@ describe("catalog users search route", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: false,
       },
     });
@@ -64,7 +67,9 @@ describe("catalog users search route", () => {
 
   it("returns empty results for short search queries", async () => {
     const response = await getCatalogUsers(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/users?search=a`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/users?search=a`
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -100,7 +105,10 @@ describe("catalog users search route", () => {
     prisma.catalogAccess.findMany
       .mockResolvedValueOnce([
         {
+          id: "grant-1",
           accessLevel: "VIEWER",
+          role: "reader",
+          extraPermissions: [],
           notes: "existing notes",
           user: {
             id: "user-2",
@@ -115,7 +123,9 @@ describe("catalog users search route", () => {
     prisma.user.findFirst.mockResolvedValue({ id: "user-2" });
 
     const response = await getCatalogUsers(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/users?search=viewer`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/users?search=viewer`
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -129,6 +139,8 @@ describe("catalog users search route", () => {
           image: null,
           type: "active",
           currentAccessLevel: "VIEWER",
+          currentRole: "reader",
+          extraPermissions: [],
           notes: "existing notes",
         },
       ],
@@ -143,7 +155,9 @@ describe("catalog users search route", () => {
     prisma.user.findFirst.mockResolvedValue(null);
 
     const response = await getCatalogUsers(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/users?search=owner`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/users?search=owner`
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -154,7 +168,6 @@ describe("catalog users search route", () => {
         where: expect.objectContaining({
           catalogId,
           status: "ACTIVE",
-          accessLevel: { in: ["LISTENER"] },
         }),
       })
     );
@@ -164,8 +177,76 @@ describe("catalog users search route", () => {
         where: expect.objectContaining({
           catalogId,
           status: "REVOKED",
-          accessLevel: { in: ["LISTENER"] },
         }),
+      })
+    );
+    expect(prisma.catalogAccess.findMany.mock.calls[0][0]).toMatchObject({
+      take: 50,
+      orderBy: { id: "asc" },
+    });
+    expect(prisma.catalogAccess.findMany.mock.calls[1][0]).toMatchObject({
+      take: 50,
+      orderBy: { id: "asc" },
+    });
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { not: "user-1" } }),
+      })
+    );
+  });
+
+  it("pages past unmanageable grants without loading an unbounded result", async () => {
+    const protectedPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `protected-${String(index).padStart(2, "0")}`,
+      accessLevel: "OWNER",
+      role: "catalog_admin",
+      extraPermissions: [],
+      notes: null,
+      user: {
+        id: `admin-${index}`,
+        name: `Admin ${index}`,
+        email: `admin${index}@example.com`,
+        image: null,
+      },
+    }));
+    prisma.catalogAccess.findMany.mockImplementation(async (args) => {
+      if (args.where.status === "REVOKED") return [];
+      if (!args.cursor) return protectedPage;
+      return [
+        {
+          id: "reader-grant",
+          accessLevel: "VIEWER",
+          role: "reader",
+          extraPermissions: [],
+          notes: null,
+          user: {
+            id: "reader-1",
+            name: "Reader",
+            email: "reader@example.com",
+            image: null,
+          },
+        },
+      ];
+    });
+    prisma.user.findMany.mockResolvedValue([]);
+    prisma.user.findFirst.mockResolvedValue(null);
+
+    const response = await getCatalogUsers(
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/users?search=reader`
+      ),
+      { params: Promise.resolve({ id: catalogId }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).users).toEqual([
+      expect.objectContaining({ id: "reader-1", type: "active" }),
+    ]);
+    expect(prisma.catalogAccess.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursor: { id: "protected-49" },
+        skip: 1,
+        take: 50,
       })
     );
   });

@@ -35,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AccessLevel, UserStatus } from "@/generated/prisma/enums";
+import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import {
   getUserInitials,
   isPendingPortalAdmission,
@@ -48,14 +48,18 @@ import {
 
 interface UsersTableProps {
   adminStatusIsSuperadmin: boolean;
-  getAccessLevelLabel: (level: AccessLevel) => string;
+  getCatalogRoleLabel: (role: CatalogRole) => string;
   isLoading: boolean;
   onDeleteUser: (user: User) => void;
   onEditAdmission: (admission: PendingPortalAdmission) => void;
   onManageAdminRole: (user: User) => void;
   onManageCatalogAccess: (user: User) => void;
   onRevokeAdmission: (admission: PendingPortalAdmission) => void;
-  onStatusChange: (userId: string, status: UserStatus, userName: string) => void;
+  onStatusChange: (
+    userId: string,
+    status: UserStatus,
+    userName: string
+  ) => void;
   statusFilter: string;
   usersOrAdmissions?: UserOrPortalAdmission[];
 }
@@ -66,7 +70,7 @@ interface UsersTableProps {
  */
 export function UsersTable({
   adminStatusIsSuperadmin,
-  getAccessLevelLabel,
+  getCatalogRoleLabel,
   isLoading,
   onDeleteUser,
   onEditAdmission,
@@ -127,7 +131,7 @@ export function UsersTable({
               isPendingPortalAdmission(item) ? (
                 <PendingAdmissionRow
                   key={item.id}
-                  getAccessLevelLabel={getAccessLevelLabel}
+                  getCatalogRoleLabel={getCatalogRoleLabel}
                   admission={item}
                   locale={locale}
                   onEditAdmission={onEditAdmission}
@@ -137,7 +141,7 @@ export function UsersTable({
                 <UserRow
                   key={item.id}
                   adminStatusIsSuperadmin={adminStatusIsSuperadmin}
-                  getAccessLevelLabel={getAccessLevelLabel}
+                  getCatalogRoleLabel={getCatalogRoleLabel}
                   locale={locale}
                   onDeleteUser={onDeleteUser}
                   onManageAdminRole={onManageAdminRole}
@@ -155,13 +159,13 @@ export function UsersTable({
 }
 
 function PendingAdmissionRow({
-  getAccessLevelLabel,
+  getCatalogRoleLabel,
   admission,
   locale,
   onEditAdmission,
   onRevokeAdmission,
 }: {
-  getAccessLevelLabel: (level: AccessLevel) => string;
+  getCatalogRoleLabel: (role: CatalogRole) => string;
   admission: PendingPortalAdmission;
   locale: string;
   onEditAdmission: (admission: PendingPortalAdmission) => void;
@@ -201,13 +205,24 @@ function PendingAdmissionRow({
         </span>
       </TableCell>
       <TableCell className="hidden md:table-cell landscape-mobile:hidden">
-        {admission.accessLevel ? (
+        {admission.role ? (
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-muted-foreground">
-              {getAccessLevelLabel(admission.accessLevel)}
+              {getCatalogRoleLabel(admission.role)}
             </Badge>
-            <PermissionIcons accessLevel={admission.accessLevel} />
+            <PermissionIcons
+              role={admission.role}
+              extraPermissions={
+                admission.pendingGrants[0]?.extraPermissions ?? []
+              }
+            />
           </div>
+        ) : admission.pendingGrantCount > 1 ? (
+          <span className="text-sm text-muted-foreground">
+            {t("users.multipleCatalogRoles", {
+              count: admission.pendingGrantCount,
+            })}
+          </span>
         ) : (
           <span className="text-muted-foreground">-</span>
         )}
@@ -216,7 +231,11 @@ function PendingAdmissionRow({
         {catalogSummary ? (
           <span
             className="text-sm"
-            title={admission.catalogNames.length > 0 ? admission.catalogNames.join(", ") : undefined}
+            title={
+              admission.catalogNames.length > 0
+                ? admission.catalogNames.join(", ")
+                : undefined
+            }
           >
             {catalogSummary}
           </span>
@@ -230,7 +249,11 @@ function PendingAdmissionRow({
       <TableCell>
         <ResponsiveMenu>
           <ResponsiveMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t("users.table.actions")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("users.table.actions")}
+            >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </ResponsiveMenuTrigger>
@@ -258,7 +281,7 @@ function PendingAdmissionRow({
 
 function UserRow({
   adminStatusIsSuperadmin,
-  getAccessLevelLabel,
+  getCatalogRoleLabel,
   locale,
   onDeleteUser,
   onManageAdminRole,
@@ -267,12 +290,16 @@ function UserRow({
   user,
 }: {
   adminStatusIsSuperadmin: boolean;
-  getAccessLevelLabel: (level: AccessLevel) => string;
+  getCatalogRoleLabel: (role: CatalogRole) => string;
   locale: string;
   onDeleteUser: (user: User) => void;
   onManageAdminRole: (user: User) => void;
   onManageCatalogAccess: (user: User) => void;
-  onStatusChange: (userId: string, status: UserStatus, userName: string) => void;
+  onStatusChange: (
+    userId: string,
+    status: UserStatus,
+    userName: string
+  ) => void;
   user: User;
 }) {
   const t = useTranslations("admin");
@@ -284,12 +311,11 @@ function UserRow({
     <Badge variant="secondary" className="text-indigo-600 border-indigo-300">
       {t("users.roles.admin")}
     </Badge>
-  ) : user.highestAccessLevel ? (
+  ) : user.catalogRoles.length > 0 ? (
     <div className="flex items-center gap-2">
       <Badge variant="outline" className="text-muted-foreground">
-        {getAccessLevelLabel(user.highestAccessLevel)}
+        {user.catalogRoles.map(getCatalogRoleLabel).join(", ")}
       </Badge>
-      <PermissionIcons accessLevel={user.highestAccessLevel} />
     </div>
   ) : (
     <span className="text-muted-foreground">-</span>
@@ -349,7 +375,11 @@ function UserRow({
       <TableCell>
         <ResponsiveMenu>
           <ResponsiveMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t("users.table.actions")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("users.table.actions")}
+            >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </ResponsiveMenuTrigger>
@@ -363,7 +393,9 @@ function UserRow({
             <ResponsiveMenuSeparator />
             {user.status !== "ACTIVE" && (
               <ResponsiveMenuItem
-                onClick={() => onStatusChange(user.id, "ACTIVE", user.name || user.email)}
+                onClick={() =>
+                  onStatusChange(user.id, "ACTIVE", user.name || user.email)
+                }
               >
                 <UserCheck className="mr-2 h-4 w-4" />
                 {t("actions.activate")}
@@ -371,7 +403,9 @@ function UserRow({
             )}
             {user.status !== "BLOCKED" && !user.isSuperadmin && (
               <ResponsiveMenuItem
-                onClick={() => onStatusChange(user.id, "BLOCKED", user.name || user.email)}
+                onClick={() =>
+                  onStatusChange(user.id, "BLOCKED", user.name || user.email)
+                }
                 className="text-destructive"
               >
                 <Ban className="mr-2 h-4 w-4" />

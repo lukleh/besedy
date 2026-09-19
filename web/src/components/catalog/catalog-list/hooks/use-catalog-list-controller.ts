@@ -252,7 +252,9 @@ export function useCatalogListController({
   }, []);
 
   const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
-  const [accessLevel, setAccessLevel] = useState<string | undefined>(undefined);
+  const [canSeeUnreleased, setCanSeeUnreleased] = useState<boolean | undefined>(
+    undefined
+  );
   const [canManageAccess, setCanManageAccess] = useState<boolean | undefined>(undefined);
   const [canPublishRecording, setCanPublishRecording] = useState<boolean | undefined>(
     undefined
@@ -302,7 +304,7 @@ export function useCatalogListController({
     isHydrated,
     onFilterClear: filters.clearFilterForColumn,
     clearFilters: filters.clearFilters,
-    accessLevel,
+    canSeeUnreleased,
     canManageAccess,
   });
 
@@ -445,8 +447,8 @@ export function useCatalogListController({
   }, [loadMore.error, toast]);
 
   useEffect(() => {
-    if (data?.accessLevel) {
-      setAccessLevel(data.accessLevel);
+    if (typeof data?.canSeeUnreleased === "boolean") {
+      setCanSeeUnreleased(data.canSeeUnreleased);
     }
     if (typeof data?.canManageAccess === "boolean") {
       setCanManageAccess(data.canManageAccess);
@@ -454,7 +456,7 @@ export function useCatalogListController({
     if (typeof data?.canPublishRecording === "boolean") {
       setCanPublishRecording(data.canPublishRecording);
     }
-  }, [data?.accessLevel, data?.canManageAccess, data?.canPublishRecording]);
+  }, [data?.canSeeUnreleased, data?.canManageAccess, data?.canPublishRecording]);
 
   const canUseRagSearch = data?.canUseRagSearch ?? false;
 

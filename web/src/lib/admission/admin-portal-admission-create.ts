@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { AddUserSchema } from "@/lib/validation/schemas";
-import {
-  validateRequestBody,
-  conflict,
-  handlePrismaError,
-} from "@/lib/api";
+import { validateRequestBody, conflict, handlePrismaError } from "@/lib/api";
 import {
   logPendingCatalogGrantEvent,
   logPortalAdmissionEvent,
 } from "@/lib/audit/logger";
-import {
-  syncPendingAdmissionState,
-} from "@/lib/admission/pending-admission-sync";
+import { syncPendingAdmissionState } from "@/lib/admission/pending-admission-sync";
 import { requireAdminCapability } from "@/lib/access/require-admin";
+import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 
 export async function createPortalAdmission(request: NextRequest) {
   try {
@@ -23,7 +18,7 @@ export async function createPortalAdmission(request: NextRequest) {
 
     const bodyResult = await validateRequestBody(request, AddUserSchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { email, catalogId, accessLevel } = bodyResult.data;
+    const { email, catalogId, role, extraPermissions = [] } = bodyResult.data;
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -51,7 +46,8 @@ export async function createPortalAdmission(request: NextRequest) {
         createdById: userId,
         createdAt: new Date(),
         catalogId: catalogId ?? null,
-        accessLevel: catalogId && accessLevel ? accessLevel : null,
+        role: catalogId && role ? role : null,
+        extraPermissions: catalogId && role ? extraPermissions : [],
         notes: null,
       };
 
@@ -64,18 +60,19 @@ export async function createPortalAdmission(request: NextRequest) {
       );
     });
 
-    if (catalogId && accessLevel) {
+    if (catalogId && role) {
       await logPendingCatalogGrantEvent({
         actorId: userId,
         action: "PENDING_CATALOG_GRANT_CREATED",
         resourceId: `${email}:${catalogId}`,
         email,
         catalogId,
-        accessLevel,
+        accessLevel: grantFieldsForRole(role, extraPermissions).accessLevel,
         details: {
           email,
           catalogId,
-          accessLevel,
+          role,
+          extraPermissions,
         },
       });
     } else {
@@ -95,7 +92,7 @@ export async function createPortalAdmission(request: NextRequest) {
       id: email,
       email,
       status: "PENDING",
-      catalogAccess: catalogId ? { catalogId, accessLevel } : null,
+      catalogAccess: catalogId ? { catalogId, role, extraPermissions } : null,
     });
   } catch (error) {
     return handlePrismaError(error, "portal admission", "create");

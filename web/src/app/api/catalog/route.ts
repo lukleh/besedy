@@ -154,17 +154,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // The recordings list is a surface of its own. Hiding the tab is not the
+    // same as refusing the list, and this is the list.
+    if (!capability.canBrowseRecordings) {
+      await logAccessDenied(userId, "catalog", group.id, {
+        reason: "Browsing recordings not permitted",
+      });
+      return NextResponse.json(
+        { error: "Browsing recordings is not permitted for this catalog" },
+        { status: 403 }
+      );
+    }
+
     // LISTENER can only see published items - force the ready-status filter
     // Other filters (recorder, location, date, etc.) still apply normally
     let effectiveStatusFilter = statusFilter;
-    if (requiresReadyRecordingScope(capability.accessLevel)) {
+    if (requiresReadyRecordingScope(capability.catalogGrant)) {
       effectiveStatusFilter = "ready";
     }
 
     const enrichedEntries = await loadEnrichedCatalogEntries(group.id);
     const visibleEntries = scopeCatalogEntriesForAccess(
       enrichedEntries,
-      capability.accessLevel
+      capability.catalogGrant
     );
 
     const totalAll = visibleEntries.length;
@@ -347,12 +359,13 @@ export async function GET(request: NextRequest) {
         hasNextPage: page < totalPages,
         hasPrevPage: page > 1,
       },
-      canDownload: capability.canDownload,
+      canDownload: capability.canDownloadAudio,
       canEditMetadata: capability.canEditMetadata,
       canBatchEditMetadata: capability.canBatchEditMetadata,
       canManageAccess: capability.canManageAccess,
       canPublishRecording: capability.canPublishRecording,
       accessLevel: capability.accessLevel,
+      canSeeUnreleased: capability.canSeeUnreleased,
       canUseRagSearch: capability.canUseRagSearch,
     });
   } catch (error) {

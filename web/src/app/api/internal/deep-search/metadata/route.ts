@@ -9,8 +9,10 @@ import {
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,
+  deepSearchJobCanSeeRecording,
   formatDeepSearchMetadata,
   getCatalogRecordingMetadata,
+  resolveDeepSearchJobGrant,
 } from "../helpers";
 
 export const runtime = "nodejs";
@@ -19,6 +21,7 @@ export const dynamic = "force-dynamic";
 const MetadataRequestSchema = z.object({
   catalogId: z.string().trim().min(1).max(128),
   audioHash: z.string().trim().min(1).max(128),
+  requestedById: z.string().trim().min(1).max(128),
 });
 
 export async function POST(request: NextRequest) {
@@ -35,6 +38,21 @@ export async function POST(request: NextRequest) {
     const { catalogId, audioHash } = bodyResult.data;
     if (!(await catalogExists(catalogId))) {
       return notFound("catalog");
+    }
+
+    const grantResolution = await resolveDeepSearchJobGrant(
+      catalogId,
+      bodyResult.data.requestedById
+    );
+    if (
+      !grantResolution.ok ||
+      !(await deepSearchJobCanSeeRecording(
+        catalogId,
+        audioHash,
+        grantResolution.grant
+      ))
+    ) {
+      return notFound("recording");
     }
 
     const metadataStartedAt = performance.now();
@@ -60,7 +78,7 @@ export async function POST(request: NextRequest) {
     };
     const response = NextResponse.json(
       { error: "Failed to load recording metadata" },
-      { status: 500 },
+      { status: 500 }
     );
     applyTimingHeaders(response, finalTimings);
     return response;

@@ -71,6 +71,7 @@ interface FakeServerOptions {
   /** Return a mismatched Content-Range header at this byte offset. */
   invalidRangeAtOffset?: number | null;
   canViewTranscripts?: boolean;
+  canDownloadTranscripts?: boolean;
   posterStatus?: number;
 }
 
@@ -118,6 +119,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
             duration: '01:00:00',
           },
           canViewTranscripts: options.canViewTranscripts ?? true,
+          canDownloadTranscripts: options.canDownloadTranscripts ?? true,
           canEditMetadata: false,
           canDownload: true,
         });
@@ -323,6 +325,100 @@ describe('download manager', () => {
     const bundle = await getDownloadBundle(done.key);
     expect(bundle?.transcriptBackend).toBe('whisperx/large');
     expect(bundle?.transcript?.segments).toEqual([]);
+  });
+
+  it('does not cache transcript data without transcript-download permission', async () => {
+    const server = createFakeServer({ canDownloadTranscripts: false });
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+    );
+
+    const done = downloadManager.getSnapshot().records[0];
+    expect(done.transcriptBackend).toBeNull();
+    expect(
+      server.fetchMock.mock.calls.some(([input]) =>
+        new URL(
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url,
+          window.location.origin,
+        ).pathname.startsWith('/api/transcript/'),
+      ),
+    ).toBe(false);
+
+    const { getDownloadBundle } = await import('@/lib/offline/downloads-db');
+    const bundle = await getDownloadBundle(done.key);
+    expect(bundle?.transcript).toBeNull();
+  });
+
+  it('removes a previously cached transcript after permission is narrowed', async () => {
+    const server = createFakeServer({ canDownloadTranscripts: false });
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'cached-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: 'whisperx/large',
+      hasPoster: true,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+    await db.putDownloadBundle({
+      key,
+      transcriptBackend: 'whisperx/large',
+      transcript: { backend: 'whisperx/large', segments: [] },
+      diarization: {
+        hash: HASH,
+        model: 'pyannote',
+        numSpeakers: 0,
+        segments: [],
+      },
+      poster: {
+        blob: new Blob(['poster'], { type: 'image/jpeg' }),
+        contentType: 'image/jpeg',
+        variant: 'portrait',
+      },
+      updatedAt: now,
+    });
+
+    const { downloadManager } = await loadManager();
+    downloadManager.setUserId('user-1');
+    await downloadManager.hydrate();
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.transcriptBackend === null,
+    );
+
+    const bundle = await db.getDownloadBundle(key);
+    expect(bundle).toMatchObject({
+      transcriptBackend: null,
+      transcript: null,
+      diarization: null,
+      poster: { contentType: 'image/jpeg', variant: 'portrait' },
+    });
   });
 
   it('resumes a network-paused download from the last stored chunk on reconnect', async () => {

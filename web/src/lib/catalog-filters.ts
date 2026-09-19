@@ -1,4 +1,3 @@
-import type { AccessLevel } from "@/generated/prisma/client";
 import { scopeRecordingsForAccess } from "@/lib/policy/recording";
 import { parseDateFromString } from "./date-utils";
 import type {
@@ -7,6 +6,7 @@ import type {
   EnrichedCatalogEntry,
 } from "./catalog-types";
 import { EMPTY_FILTER, EMPTY_STRING_FILTER } from "./catalog-types";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 
 export function parseDuration(duration?: string): number | undefined {
   if (!duration) return undefined;
@@ -36,8 +36,8 @@ export function isCatalogEntryReady(
 
 export function scopeCatalogEntriesForAccess<
   T extends Pick<CatalogEntry, "isActionable" | "isPublished">,
->(entries: T[], accessLevel: AccessLevel | null | undefined): T[] {
-  return scopeRecordingsForAccess(entries, accessLevel);
+>(entries: T[], catalogGrant: CatalogGrant | null | undefined): T[] {
+  return scopeRecordingsForAccess(entries, catalogGrant);
 }
 
 export function extractDateParts(entry: EnrichedCatalogEntry): {

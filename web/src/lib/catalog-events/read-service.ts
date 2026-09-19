@@ -1,4 +1,4 @@
-import type { AccessLevel, Prisma } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
 import {
   getPublishedAccessibleRecordingHashes,
@@ -7,6 +7,7 @@ import {
 } from '@/lib/catalog-events/visibility';
 import { requiresReleasedEventVisibilityScope } from '@/lib/policy/event';
 import { requiresReadyRecordingScope } from '@/lib/policy/recording';
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 
 const EMPTY_EVENT_ID_SENTINEL = -1;
 
@@ -36,7 +37,7 @@ export type ReadableEventIds = number[] | null;
 
 export async function resolveReadableEventIds(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
 ): Promise<ReadableEventIds> {
   return requiresReleasedEventVisibilityScope(catalogGrant)
     ? getPublishedVisibleEventIds(prisma, catalogId)
@@ -94,7 +95,7 @@ export function catalogEventRecordingVisibilityWhere(
 
 export async function resolveReadableRecordingHashes(
   catalogId: string,
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
   audioHashes: string[],
 ): Promise<Set<string>> {
   if (audioHashes.length === 0) return new Set();
@@ -111,7 +112,7 @@ export async function resolveReadableRecordingHashes(
 export async function loadReadableCatalogEvent(
   catalogId: string,
   eventId: number,
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
 ) {
   if (
     requiresReleasedEventVisibilityScope(catalogGrant) &&

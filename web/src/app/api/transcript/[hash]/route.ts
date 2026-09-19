@@ -62,15 +62,31 @@ export async function GET(
     if (!access.ok) {
       return access.response;
     }
-    const { userId, group, transcriptsPath } = access;
+    const { userId, group, transcriptsPath, capability } = access;
 
-    // If no backend specified, return available backends
+    const priorities = await listTranscriptBackendPriorities();
+    const available = await getAvailableTranscripts(transcriptsPath, hash, {
+      priorities,
+    });
+    // Ordered by configured priority, so the first is the default one.
+    const defaultBackend = available.backends[0] ?? null;
+
+    // Without the administrative view, there is one transcript: the default.
+    // The alternatives are unevaluated machine output, so they are neither
+    // listed nor servable, and hiding the picker alone would not achieve that.
     if (!backend) {
-      const priorities = await listTranscriptBackendPriorities();
-      const available = await getAvailableTranscripts(transcriptsPath, hash, {
-        priorities,
-      });
-      return NextResponse.json(available);
+      return NextResponse.json(
+        capability.canSeeTranscriptVariants || defaultBackend === null
+          ? available
+          : { ...available, backends: [defaultBackend] }
+      );
+    }
+
+    if (!capability.canSeeTranscriptVariants && backend !== defaultBackend) {
+      return NextResponse.json(
+        { error: "Only the default transcript is available for this account" },
+        { status: 403 }
+      );
     }
 
     // Load transcript
@@ -85,6 +101,19 @@ export async function GET(
 
     // Log transcript access
     await logTranscriptViewed(userId, hash, group.id, backend);
+
+    // Some transcripts carry a speaker on each segment, which is the same
+    // disclosure the overlay makes, reached by a different route.
+    if (!capability.canSeeSpeakers) {
+      return NextResponse.json({
+        ...transcript,
+        segments: transcript.segments.map((segment) => {
+          const withoutSpeaker = { ...segment };
+          delete withoutSpeaker.speaker;
+          return withoutSpeaker;
+        }),
+      });
+    }
 
     return NextResponse.json(transcript);
   } catch (error) {

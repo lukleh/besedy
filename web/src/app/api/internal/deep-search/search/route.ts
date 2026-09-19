@@ -13,6 +13,7 @@ import {
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,
+  resolveDeepSearchJobGrant,
 } from "../helpers";
 
 export const runtime = "nodejs";
@@ -21,13 +22,18 @@ export const dynamic = "force-dynamic";
 const InternalDeepSearchRequestSchema = SearchRequestSchema.extend({
   catalogId: z.string().trim().min(1).max(128),
   limit: z.number().int().min(1).max(200).optional(),
+  /** The account the job was asked for by; its visibility scopes the search. */
+  requestedById: z.string().trim().min(1).max(128),
 });
 
 export async function POST(request: NextRequest) {
   const unauthorizedResponse = authorizeDeepSearchServiceRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
 
-  const bodyResult = await validateRequestBody(request, InternalDeepSearchRequestSchema);
+  const bodyResult = await validateRequestBody(
+    request,
+    InternalDeepSearchRequestSchema
+  );
   if (!bodyResult.success) return bodyResult.response;
 
   const config = getSearchConfig();
@@ -39,6 +45,14 @@ export async function POST(request: NextRequest) {
       return notFound("catalog");
     }
 
+    const grantResolution = await resolveDeepSearchJobGrant(
+      bodyResult.data.catalogId,
+      bodyResult.data.requestedById
+    );
+    if (!grantResolution.ok) {
+      return notFound("deep search requester");
+    }
+
     const execution = await executeCatalogSearch({
       config,
       catalogId: bodyResult.data.catalogId,
@@ -47,9 +61,11 @@ export async function POST(request: NextRequest) {
       candidateLimit: bodyResult.data.candidateLimit,
       includeNeighbors: bodyResult.data.includeNeighbors ?? false,
       neighborCount: bodyResult.data.neighborCount,
-      maxPerAudio: bodyResult.data.dedupeByAudio ? 1 : (bodyResult.data.maxPerAudio ?? null),
+      maxPerAudio: bodyResult.data.dedupeByAudio
+        ? 1
+        : (bodyResult.data.maxPerAudio ?? null),
       metadataFilters: bodyResult.data.metadataFilters ?? null,
-      accessLevel: null,
+      catalogGrant: grantResolution.grant,
       failOnMissingBundle: true,
       requestStartedAt,
     });
@@ -76,14 +92,17 @@ export async function POST(request: NextRequest) {
       totalMs: elapsedMs(requestStartedAt),
     };
     if (error instanceof RagServiceError) {
-      const response = NextResponse.json({ error: error.message }, { status: error.status });
+      const response = NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
       applyTimingHeaders(response, finalTimings);
       return response;
     }
     console.error("Internal deep-search retrieval failed:", error);
     const response = NextResponse.json(
       { error: "Failed to execute internal deep-search retrieval" },
-      { status: 500 },
+      { status: 500 }
     );
     applyTimingHeaders(response, finalTimings);
     return response;

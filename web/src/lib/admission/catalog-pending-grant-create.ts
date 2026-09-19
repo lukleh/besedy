@@ -19,10 +19,11 @@ import {
   conflict,
   handlePrismaError,
 } from "@/lib/api";
+import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 import {
   canAttemptCatalogManagement,
-  canGrantCatalogAccessLevel,
-  canManageExistingCatalogAccessLevel,
+  canGrantCatalogGrant,
+  canManageExistingCatalogGrant,
   isSelfCatalogAccessChange,
 } from "@/lib/policy/catalog";
 
@@ -42,15 +43,26 @@ export async function createPendingCatalogGrant(
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
-    const bodyResult = await validateRequestBody(request, CreatePendingCatalogGrantSchema);
+    const bodyResult = await validateRequestBody(
+      request,
+      CreatePendingCatalogGrantSchema
+    );
     if (!bodyResult.success) return bodyResult.response;
-    const { email, accessLevel, message } = bodyResult.data;
+    const { email, role, extraPermissions, message } = bodyResult.data;
 
-    if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant this level of access");
+    if (
+      !canGrantCatalogGrant(
+        managementAccess.policyContext,
+        role,
+        extraPermissions
+      )
+    ) {
+      return forbidden(
+        "Only catalog administrators can grant this role or extras"
+      );
     }
 
     const catalog = await prisma.workflowGroup.findUnique({
@@ -69,7 +81,7 @@ export async function createPendingCatalogGrant(
         status: true,
         catalogAccess: {
           where: { catalogId },
-          select: { accessLevel: true },
+          select: { role: true },
         },
       },
     });
@@ -78,7 +90,9 @@ export async function createPendingCatalogGrant(
     // so it is an access change like any other and answers to the same rule.
     // An address with no account cannot be the actor: they are signed in.
     if (isSelfCatalogAccessChange(userId, existingUser?.id)) {
-      return badRequest("Cannot grant yourself access. Ask another admin or owner to do this.");
+      return badRequest(
+        "Cannot grant yourself access. Ask another admin or owner to do this."
+      );
     }
 
     if (existingUser?.catalogAccess && existingUser.catalogAccess.length > 0) {
@@ -90,7 +104,7 @@ export async function createPendingCatalogGrant(
         data: {
           userId: existingUser.id,
           catalogId,
-          accessLevel,
+          ...grantFieldsForRole(role, extraPermissions),
           grantedById: userId,
           notes: message || "Added via catalog settings",
         },
@@ -104,12 +118,13 @@ export async function createPendingCatalogGrant(
         targetEmail: email,
         catalogId,
         catalogLabel: catalog.label,
-        accessLevel,
+        accessLevel: newAccess.accessLevel,
         details: {
           targetUserId: existingUser.id,
           email,
           catalogId,
-          accessLevel,
+          role,
+          extraPermissions,
           catalogLabel: catalog.label,
           userStatus: existingUser.status,
         },
@@ -118,7 +133,8 @@ export async function createPendingCatalogGrant(
       return NextResponse.json({
         id: newAccess.id,
         email,
-        accessLevel,
+        role,
+        extraPermissions,
         catalogId,
         catalogLabel: catalog.label,
         userStatus: existingUser.status,
@@ -142,6 +158,8 @@ export async function createPendingCatalogGrant(
         },
         select: {
           accessLevel: true,
+          role: true,
+          extraPermissions: true,
           status: true,
         },
       }),
@@ -149,12 +167,13 @@ export async function createPendingCatalogGrant(
 
     if (
       existingPendingGrant &&
-      !canManageExistingCatalogAccessLevel(
-        managementAccess.policyContext,
-        existingPendingGrant.accessLevel
-      )
+      !canManageExistingCatalogGrant(managementAccess.policyContext, {
+        level: existingPendingGrant.accessLevel,
+        role: existingPendingGrant.role,
+        extras: existingPendingGrant.extraPermissions,
+      })
     ) {
-      return forbidden("Only administrators can modify this level of access");
+      return forbidden("Only catalog administrators can modify this access");
     }
 
     if (existingAdmission?.status === "CLAIMED") {
@@ -167,7 +186,8 @@ export async function createPendingCatalogGrant(
       const pendingAdmissionInput = {
         email,
         catalogId,
-        accessLevel,
+        role,
+        extraPermissions,
         createdById: userId,
         createdAt: new Date(),
         notes: message || "Added via catalog settings",
@@ -191,12 +211,13 @@ export async function createPendingCatalogGrant(
       email,
       catalogId,
       catalogLabel: catalog.label,
-      accessLevel,
+      accessLevel: grantFieldsForRole(role, extraPermissions).accessLevel,
       details: {
         email,
         portalAdmissionResourceId: email,
         catalogId,
-        accessLevel,
+        role,
+        extraPermissions,
         catalogLabel: catalog.label,
       },
     });
@@ -204,7 +225,8 @@ export async function createPendingCatalogGrant(
     return NextResponse.json({
       id: email,
       email,
-      accessLevel,
+      role,
+      extraPermissions,
       catalogId,
       catalogLabel: catalog.label,
       userStatus: "PENDING",
@@ -213,7 +235,9 @@ export async function createPendingCatalogGrant(
     });
   } catch (error) {
     if (error instanceof AdminDeniedAdmissionReopenError) {
-      return forbidden("Only administrators can reopen admin-denied admissions");
+      return forbidden(
+        "Only administrators can reopen admin-denied admissions"
+      );
     }
     return handlePrismaError(error, "pending catalog grant", "create");
   }

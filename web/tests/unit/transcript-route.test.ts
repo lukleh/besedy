@@ -88,6 +88,114 @@ describe("transcript route", () => {
       );
     });
 
+    // Machine transcripts other than the default are administrative: they are
+    // unevaluated model output, and an ordinary reader reads the one default.
+    it("lists only the default transcript without the administrative view", async () => {
+      requireAuth.mockResolvedValue("user-1");
+      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      getRecordingCapability.mockResolvedValue({
+        canAccessRecording: true,
+        canViewRecordingTranscripts: true,
+        canSeeTranscriptVariants: false,
+      });
+      resolveTranscriptsPath.mockResolvedValue("/transcripts");
+      getAvailableTranscripts.mockResolvedValue({
+        hash: VALID_HASH,
+        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+      });
+
+      const response = await getTranscript(
+        new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
+        { params: Promise.resolve({ hash: VALID_HASH }) }
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        backends: ["faster-whisper/large-v3@silero_vad_v6"],
+      });
+    });
+
+    it("lists every transcript for the administrative view", async () => {
+      requireAuth.mockResolvedValue("user-1");
+      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      getRecordingCapability.mockResolvedValue({
+        canAccessRecording: true,
+        canViewRecordingTranscripts: true,
+        canSeeTranscriptVariants: true,
+      });
+      resolveTranscriptsPath.mockResolvedValue("/transcripts");
+      getAvailableTranscripts.mockResolvedValue({
+        hash: VALID_HASH,
+        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+      });
+
+      const response = await getTranscript(
+        new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
+        { params: Promise.resolve({ hash: VALID_HASH }) }
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+      });
+    });
+
+    it("refuses a transcript other than the default without the administrative view", async () => {
+      requireAuth.mockResolvedValue("user-1");
+      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      getRecordingCapability.mockResolvedValue({
+        canAccessRecording: true,
+        canViewRecordingTranscripts: true,
+        canSeeTranscriptVariants: false,
+      });
+      resolveTranscriptsPath.mockResolvedValue("/transcripts");
+      getAvailableTranscripts.mockResolvedValue({
+        hash: VALID_HASH,
+        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+      });
+
+      const response = await getTranscript(
+        new NextRequest(
+          `http://localhost/api/transcript/${VALID_HASH}?backend=whisperx/large-v3@pyannote_v3`
+        ),
+        { params: Promise.resolve({ hash: VALID_HASH }) }
+      );
+
+      expect(response.status).toBe(403);
+      expect(loadTranscript).not.toHaveBeenCalled();
+    });
+
+    it("strips the speaker on each segment without the speaker view", async () => {
+      requireAuth.mockResolvedValue("user-1");
+      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      getRecordingCapability.mockResolvedValue({
+        canAccessRecording: true,
+        canViewRecordingTranscripts: true,
+        canSeeTranscriptVariants: true,
+        canSeeSpeakers: false,
+      });
+      resolveTranscriptsPath.mockResolvedValue("/transcripts");
+      getAvailableTranscripts.mockResolvedValue({
+        hash: VALID_HASH,
+        backends: ["faster-whisper/large-v3@silero_vad_v6"],
+      });
+      loadTranscript.mockResolvedValue({
+        segments: [{ start: 0, end: 1, text: "Hello", speaker: "SPEAKER_00" }],
+        language: "cs",
+      });
+
+      const response = await getTranscript(
+        new NextRequest(
+          `http://localhost/api/transcript/${VALID_HASH}?backend=faster-whisper/large-v3@silero_vad_v6`
+        ),
+        { params: Promise.resolve({ hash: VALID_HASH }) }
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.segments[0]).toEqual({ start: 0, end: 1, text: "Hello" });
+    });
+
     it("denies access when user cannot access the audio hash", async () => {
       requireAuth.mockResolvedValue("user-1");
       resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
@@ -112,7 +220,10 @@ describe("transcript route", () => {
         canViewRecordingTranscripts: true,
       });
       resolveTranscriptsPath.mockResolvedValue("/transcripts");
-      getAvailableTranscripts.mockResolvedValue({ hash: VALID_HASH, backends: [] });
+      getAvailableTranscripts.mockResolvedValue({
+        hash: VALID_HASH,
+        backends: ["faster-whisper/large-v3@silero_vad_v6"],
+      });
       loadTranscript.mockResolvedValue({
         segments: [{ start: 0, end: 1, text: "Hello" }],
         language: "en",

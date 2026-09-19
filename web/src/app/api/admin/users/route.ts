@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { UserStatus, AccessLevel } from "@/generated/prisma/client";
+import { UserStatus } from "@/generated/prisma/client";
 import { UserListQuerySchema } from "@/lib/validation/schemas";
 import { validateSearchParams, handlePrismaError } from "@/lib/api";
 import { requireAdminCapability } from "@/lib/access/require-admin";
-
-// Access level hierarchy (higher index = higher privilege)
-const ACCESS_LEVEL_ORDER: AccessLevel[] = ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"];
+import { roleForLevel } from "@/lib/policy/catalog-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +16,19 @@ export async function GET(request: NextRequest) {
   try {
     await requireAdminCapability({ message: "Unauthorized" });
 
-    const queryResult = validateSearchParams(request.nextUrl.searchParams, UserListQuerySchema);
+    const queryResult = validateSearchParams(
+      request.nextUrl.searchParams,
+      UserListQuerySchema
+    );
     if (!queryResult.success) return queryResult.response;
     const { status, search } = queryResult.data;
 
     const where: {
       status?: UserStatus;
-      OR?: Array<{ email?: { contains: string; mode: "insensitive" }; name?: { contains: string; mode: "insensitive" } }>;
+      OR?: Array<{
+        email?: { contains: string; mode: "insensitive" };
+        name?: { contains: string; mode: "insensitive" };
+      }>;
     } = {};
 
     if (status) {
@@ -57,6 +61,7 @@ export async function GET(request: NextRequest) {
           },
           select: {
             accessLevel: true,
+            role: true,
             catalog: {
               select: { id: true, label: true },
             },
@@ -66,23 +71,15 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Calculate highest access level and extract catalog names for each user
+    // Roles are deliberately not ordered. Return the distinct roles rather
+    // than inventing a misleading "highest" one.
     const usersWithCatalogInfo = users.map((user) => {
-      let highestAccessLevel: AccessLevel | null = null;
       const catalogNames: string[] = [];
+      const catalogRoles = new Set<string>();
 
-      if (user.catalogAccess.length > 0) {
-        let highestIndex = -1;
-        for (const access of user.catalogAccess) {
-          // Track highest access level
-          const index = ACCESS_LEVEL_ORDER.indexOf(access.accessLevel);
-          if (index > highestIndex) {
-            highestIndex = index;
-            highestAccessLevel = access.accessLevel;
-          }
-          // Collect catalog names
-          catalogNames.push(access.catalog.label || access.catalog.id);
-        }
+      for (const access of user.catalogAccess) {
+        catalogRoles.add(access.role ?? roleForLevel(access.accessLevel).role);
+        catalogNames.push(access.catalog.label || access.catalog.id);
       }
 
       // Return user without the full catalogAccess array
@@ -91,7 +88,7 @@ export async function GET(request: NextRequest) {
       return {
         ...userWithoutAccess,
         type: "user" as const,
-        highestAccessLevel,
+        catalogRoles: Array.from(catalogRoles),
         catalogNames,
       };
     });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import {
   canAttachRecordingToEvent,
   canBrowseEvents,
@@ -27,7 +28,7 @@ describe("event and ui policies", () => {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "LISTENER",
+        catalogGrant: grantFromLevel("LISTENER"),
         isCatalogAdmin: false,
       })
     ).toBe(true);
@@ -36,7 +37,7 @@ describe("event and ui policies", () => {
         featureEnabled: false,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: true,
       })
     ).toBe(false);
@@ -48,7 +49,7 @@ describe("event and ui policies", () => {
         featureEnabled: true,
         catalogExists: false,
         canEnterPortal: true,
-        catalogGrant: "LISTENER",
+        catalogGrant: grantFromLevel("LISTENER"),
         isCatalogAdmin: false,
       })
     ).toBe(false);
@@ -57,7 +58,7 @@ describe("event and ui policies", () => {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: false,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: false,
       })
     ).toBe(false);
@@ -68,7 +69,7 @@ describe("event and ui policies", () => {
       featureEnabled: true,
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "OWNER" as const,
+      catalogGrant: grantFromLevel("OWNER"),
       isCatalogAdmin: false,
     };
 
@@ -115,7 +116,7 @@ describe("event and ui policies", () => {
           featureEnabled: true,
           catalogExists: true,
           canEnterPortal: true,
-          catalogGrant: "LISTENER",
+          catalogGrant: grantFromLevel("LISTENER"),
           isCatalogAdmin: false,
         },
         visibleState
@@ -127,7 +128,7 @@ describe("event and ui policies", () => {
           featureEnabled: true,
           catalogExists: true,
           canEnterPortal: true,
-          catalogGrant: "LISTENER",
+          catalogGrant: grantFromLevel("LISTENER"),
           isCatalogAdmin: false,
         },
         {
@@ -137,11 +138,11 @@ describe("event and ui policies", () => {
         }
       )
     ).toBe(false);
-    expect(requiresReleasedEventVisibilityScope("LISTENER")).toBe(true);
-    expect(requiresReleasedEventVisibilityScope("OWNER")).toBe(false);
+    expect(requiresReleasedEventVisibilityScope(grantFromLevel("LISTENER"))).toBe(true);
+    expect(requiresReleasedEventVisibilityScope(grantFromLevel("OWNER"))).toBe(false);
   });
 
-  it("shows tabs only for actors who can browse both surfaces and edit events", () => {
+  it("shows tabs to whoever can browse both surfaces, editing or not", () => {
     const tabContext = {
       canBrowseRecordings: true,
       canBrowseEvents: true,
@@ -151,27 +152,41 @@ describe("event and ui policies", () => {
     expect(canUseCatalogTabSwitcher(tabContext)).toBe(true);
     expect(canSeeEventsTab(tabContext)).toBe(true);
     expect(canSeeRecordingsTab(tabContext)).toBe(true);
+
+    // Editing events has nothing to do with whether there are two surfaces to
+    // move between. Demanding it here is what hid the recordings list from
+    // everyone below an owner.
     expect(
       canUseCatalogTabSwitcher({
         canBrowseRecordings: true,
         canBrowseEvents: true,
         canEditEvents: false,
       })
+    ).toBe(true);
+
+    // Browsing recordings is now its own permission, so an actor without it
+    // has one surface and needs no switch.
+    expect(
+      canUseCatalogTabSwitcher({
+        canBrowseRecordings: false,
+        canBrowseEvents: true,
+        canEditEvents: true,
+      })
     ).toBe(false);
     expect(
-      canSeeAllEventColumns({ catalogGrant: "OWNER", isCatalogAdmin: false })
+      canSeeAllEventColumns({ catalogGrant: grantFromLevel("OWNER"), isCatalogAdmin: false })
     ).toBe(true);
     expect(
       canSeeAllEventColumns({ catalogGrant: null, isCatalogAdmin: true })
     ).toBe(true);
     expect(
-      canSeeReleaseState({ catalogGrant: "VIEWER", isCatalogAdmin: false })
+      canSeeReleaseState({ catalogGrant: grantFromLevel("VIEWER"), isCatalogAdmin: false })
     ).toBe(true);
     expect(
       canSeeReleaseState({ catalogGrant: null, isCatalogAdmin: true })
     ).toBe(true);
     expect(
-      canSeeReleaseState({ catalogGrant: "LISTENER", isCatalogAdmin: false })
+      canSeeReleaseState({ catalogGrant: grantFromLevel("LISTENER"), isCatalogAdmin: false })
     ).toBe(false);
   });
 });

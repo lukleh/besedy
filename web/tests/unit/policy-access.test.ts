@@ -3,15 +3,16 @@ import {
   canAccessCatalogSettings,
   canBrowseRecordings,
   canAttemptCatalogManagement,
-  canGrantCatalogAccessLevel,
+  canGrantCatalogGrant,
   canManageCatalogConfiguration,
-  canManageExistingCatalogAccessLevel,
+  canManageExistingCatalogGrant,
   canUseCatalogRag,
   hasCatalogManagementAuthority,
   canViewCatalog,
   canViewCatalogTranscripts,
 } from "@/lib/policy/catalog";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import {
   canViewUnreleasedEvents,
   requiresReleasedEventVisibilityScope,
@@ -33,7 +34,8 @@ describe("policy access helpers", () => {
     ["OWNER", true],
   ] as const)(
     "keeps transcript, search, and unreleased-event access aligned for %s",
-    (catalogGrant, canReadTranscriptContent) => {
+    (level, canReadTranscriptContent) => {
+      const catalogGrant = grantFromLevel(level);
       const context = {
         catalogExists: true,
         canEnterPortal: true,
@@ -44,7 +46,7 @@ describe("policy access helpers", () => {
       expect(canViewCatalogTranscripts(context)).toBe(canReadTranscriptContent);
       expect(canUseCatalogRag(context)).toBe(canReadTranscriptContent);
       expect(canViewUnreleasedEvents(context)).toBe(
-        catalogGrant !== "LISTENER"
+        level !== "LISTENER"
       );
     }
   );
@@ -53,7 +55,7 @@ describe("policy access helpers", () => {
     const listenerContext = {
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "LISTENER" as const,
+      catalogGrant: grantFromLevel("LISTENER"),
       isCatalogAdmin: false,
     };
 
@@ -76,14 +78,14 @@ describe("policy access helpers", () => {
         isPublished: true,
       })
     ).toBe(false);
-    expect(requiresReadyRecordingScope("LISTENER")).toBe(true);
+    expect(requiresReadyRecordingScope(grantFromLevel("LISTENER"))).toBe(true);
   });
 
   it("grants owner-level management while keeping transcript access role-based", () => {
     const ownerContext = {
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "OWNER" as const,
+      catalogGrant: grantFromLevel("OWNER"),
       isCatalogAdmin: false,
     };
 
@@ -98,14 +100,33 @@ describe("policy access helpers", () => {
     expect(hasCatalogManagementAuthority(ownerContext)).toBe(true);
     expect(canAccessCatalogSettings(ownerContext)).toBe(true);
     expect(canManageCatalogConfiguration(ownerContext)).toBe(false);
-    expect(canGrantCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
-    expect(canGrantCatalogAccessLevel(ownerContext, "EDITOR")).toBe(false);
-    expect(canGrantCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "VIEWER")).toBe(false);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
+    expect(canGrantCatalogGrant(ownerContext, "listener")).toBe(true);
+    expect(canGrantCatalogGrant(ownerContext, "curator")).toBe(false);
+    expect(canGrantCatalogGrant(ownerContext, "host")).toBe(false);
+    expect(
+      canManageExistingCatalogGrant(ownerContext, {
+        level: null,
+        role: "listener",
+        extras: [],
+      })
+    ).toBe(true);
+    // The reader role carries neither protected permission.
+    expect(
+      canManageExistingCatalogGrant(ownerContext, {
+        level: null,
+        role: "reader",
+        extras: [],
+      })
+    ).toBe(true);
+    expect(
+      canManageExistingCatalogGrant(ownerContext, {
+        level: null,
+        role: "host",
+        extras: [],
+      })
+    ).toBe(false);
     expect(canPublishRecording(ownerContext)).toBe(true);
-    expect(requiresReadyRecordingScope("OWNER")).toBe(false);
+    expect(requiresReadyRecordingScope(grantFromLevel("OWNER"))).toBe(false);
   });
 
   it("lets catalog admins manage access even without relying on owner-only checks", () => {
@@ -125,8 +146,14 @@ describe("policy access helpers", () => {
     expect(hasCatalogManagementAuthority(adminContext)).toBe(true);
     expect(canAccessCatalogSettings(adminContext)).toBe(true);
     expect(canManageCatalogConfiguration(adminContext)).toBe(true);
-    expect(canGrantCatalogAccessLevel(adminContext, "OWNER")).toBe(true);
-    expect(canManageExistingCatalogAccessLevel(adminContext, "OWNER")).toBe(true);
+    expect(canGrantCatalogGrant(adminContext, "catalog_admin")).toBe(true);
+    expect(
+      canManageExistingCatalogGrant(adminContext, {
+        level: null,
+        role: "catalog_admin",
+        extras: [],
+      })
+    ).toBe(true);
     expect(canPublishRecording(adminContext)).toBe(true);
     expect(requiresReadyRecordingScope(null)).toBe(false);
   });
@@ -135,7 +162,7 @@ describe("policy access helpers", () => {
     const viewerContext = {
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "VIEWER" as const,
+      catalogGrant: grantFromLevel("VIEWER"),
       isCatalogAdmin: false,
     };
 
@@ -143,8 +170,14 @@ describe("policy access helpers", () => {
     expect(canUseCatalogRag(viewerContext)).toBe(true);
     expect(canViewUnreleasedEvents(viewerContext)).toBe(true);
     expect(hasCatalogManagementAuthority(viewerContext)).toBe(false);
-    expect(canGrantCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
-    expect(canManageExistingCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
+    expect(canGrantCatalogGrant(viewerContext, "reader")).toBe(false);
+    expect(
+      canManageExistingCatalogGrant(viewerContext, {
+        level: null,
+        role: "reader",
+        extras: [],
+      })
+    ).toBe(false);
     expect(canPublishRecording(viewerContext)).toBe(false);
   });
 });
@@ -159,9 +192,10 @@ describe("unreleased-visibility threshold", () => {
     ["EDITOR", false],
     ["OWNER", false],
   ] as const)("scopes %s to released material: %s", (level, scoped) => {
-    expect(lacksUnreleasedVisibility(level)).toBe(scoped);
-    expect(requiresReadyRecordingScope(level)).toBe(scoped);
-    expect(requiresReleasedEventVisibilityScope(level)).toBe(scoped);
+    const grant = grantFromLevel(level);
+    expect(lacksUnreleasedVisibility(grant)).toBe(scoped);
+    expect(requiresReadyRecordingScope(grant)).toBe(scoped);
+    expect(requiresReleasedEventVisibilityScope(grant)).toBe(scoped);
   });
 
   it.each([[null], [undefined]] as const)(
@@ -185,7 +219,7 @@ describe("unreleased-visibility threshold", () => {
       const context = {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: level,
+        catalogGrant: grantFromLevel(level),
         isCatalogAdmin: false,
       };
       expect(
@@ -193,20 +227,20 @@ describe("unreleased-visibility threshold", () => {
       ).toBe(visible);
       // The per-recording gate must agree with the list scope, or a level
       // hidden from the list could still be reached by direct URL.
-      expect(visible).toBe(!requiresReadyRecordingScope(level));
+      expect(visible).toBe(!requiresReadyRecordingScope(grantFromLevel(level)));
     }
   );
 
   it("keeps both scopes answering alike for every input", () => {
     for (const grant of [
-      "LISTENER",
-      "VIEWER",
-      "MEMBER",
-      "EDITOR",
-      "OWNER",
+      grantFromLevel("LISTENER"),
+      grantFromLevel("VIEWER"),
+      grantFromLevel("MEMBER"),
+      grantFromLevel("EDITOR"),
+      grantFromLevel("OWNER"),
       null,
       undefined,
-    ] as const) {
+    ]) {
       expect(requiresReadyRecordingScope(grant)).toBe(
         requiresReleasedEventVisibilityScope(grant)
       );

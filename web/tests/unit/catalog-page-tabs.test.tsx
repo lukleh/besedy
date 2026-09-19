@@ -104,7 +104,10 @@ describe("CatalogPageTabs", () => {
     expect(screen.queryByTestId("event-list")).not.toBeInTheDocument();
   });
 
-  it("falls back to the catalog list when the features query fails", () => {
+  // Browsing recordings is a permission the server enforces, so falling back
+  // to the list when we do not know whether it is held renders a list the
+  // server would refuse. Saying nothing is the honest failure.
+  it("offers neither surface when the features query fails", () => {
     mocks.useCatalogFeaturesMock.mockReturnValue({
       data: undefined,
       isPending: false,
@@ -114,7 +117,7 @@ describe("CatalogPageTabs", () => {
 
     render(<CatalogPageTabs catalogId="20260101_120000" />);
 
-    expect(screen.getByTestId("catalog-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("catalog-list")).not.toBeInTheDocument();
     expect(screen.queryByTestId("event-list")).not.toBeInTheDocument();
   });
 
@@ -132,6 +135,7 @@ describe("CatalogPageTabs", () => {
             showReleaseState: true,
             canUseRagSearch: false,
           },
+          recordings: { canBrowse: false },
         },
       },
       isPending: false,
@@ -161,6 +165,7 @@ describe("CatalogPageTabs", () => {
             showReleaseState: true,
             canUseRagSearch: true,
           },
+          recordings: { canBrowse: true },
         },
       },
       isPending: false,
@@ -193,6 +198,7 @@ describe("CatalogPageTabs", () => {
             showReleaseState: true,
             canUseRagSearch: true,
           },
+          recordings: { canBrowse: true },
         },
       },
       isPending: false,
@@ -229,6 +235,7 @@ describe("CatalogPageTabs", () => {
             showReleaseState: true,
             canUseRagSearch: true,
           },
+          recordings: { canBrowse: false },
         },
       },
       isPending: false,

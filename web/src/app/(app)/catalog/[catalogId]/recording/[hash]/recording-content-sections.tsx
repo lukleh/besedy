@@ -29,7 +29,8 @@ import type { CatalogEntryResponse } from "@/types/catalog";
 import type { RecordingSeekRequest } from "./use-recording-playback";
 
 interface RecordingPermissions {
-  canDownload?: boolean;
+  canDownloadAudio?: boolean;
+  canDownloadOriginalAudio?: boolean;
   canEditMetadata?: boolean;
 }
 
@@ -82,7 +83,9 @@ interface RecordingAudioSectionProps {
 }
 
 interface RecordingTranscriptSectionProps {
-  canDownload?: boolean;
+  canDownloadTranscripts?: boolean;
+  canSeeSpeakers?: boolean;
+  canSeeTranscriptVariants?: boolean;
   catalogId: string;
   currentTime: number;
   hash: string;
@@ -274,8 +277,8 @@ export function RecordingAudioSection({
       />
 
       {(permissions.canEditMetadata ||
-        (permissions.canDownload &&
-          (recording.hasArchivedAudio || recording.hasOriginalAudio))) && (
+        (permissions.canDownloadAudio && recording.hasArchivedAudio) ||
+        (permissions.canDownloadOriginalAudio && recording.hasOriginalAudio)) && (
         <div className="flex flex-wrap items-center gap-2">
           {permissions.canEditMetadata && (
             <Button variant="outline" size="sm" asChild>
@@ -285,7 +288,8 @@ export function RecordingAudioSection({
               </Link>
             </Button>
           )}
-          {permissions.canDownload && (
+          {((permissions.canDownloadAudio && recording.hasArchivedAudio) ||
+            (permissions.canDownloadOriginalAudio && recording.hasOriginalAudio)) && (
             <ResponsiveMenu>
               <ResponsiveMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -294,12 +298,13 @@ export function RecordingAudioSection({
                 </Button>
               </ResponsiveMenuTrigger>
               <ResponsiveMenuContent align="end" title={t("recording.download")}>
-                {recording.hasArchivedAudio && (
+                {permissions.canDownloadAudio && recording.hasArchivedAudio && (
                   <ResponsiveMenuItem onClick={() => onAudioDownload("archived")}>
                     {t("recording.downloadArchived")}
                   </ResponsiveMenuItem>
                 )}
-                {recording.hasOriginalAudio && (
+                {/* The master belongs to no role, so it is its own item. */}
+                {permissions.canDownloadOriginalAudio && recording.hasOriginalAudio && (
                   <ResponsiveMenuItem onClick={() => onAudioDownload("original")}>
                     {t("recording.downloadOriginal")}
                   </ResponsiveMenuItem>
@@ -316,7 +321,9 @@ export function RecordingAudioSection({
 }
 
 export function RecordingTranscriptSection({
-  canDownload,
+  canDownloadTranscripts,
+  canSeeSpeakers = false,
+  canSeeTranscriptVariants = false,
   catalogId,
   currentTime,
   hash,
@@ -326,11 +333,16 @@ export function RecordingTranscriptSection({
   showTranscriptStream,
 }: RecordingTranscriptSectionProps) {
   const t = useTranslations();
+  // The stream view is every machine transcript side by side, so it is the
+  // administrative surface rather than a second way of reading. A stored
+  // preference from when it was shown to everyone does not reopen it.
+  const streamVisible = canSeeTranscriptVariants && showTranscriptStream;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{t("recording.transcript")}</h2>
+        {canSeeTranscriptVariants && (
         <div className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1">
           <span
             className={cn(
@@ -355,8 +367,9 @@ export function RecordingTranscriptSection({
             {t("recording.transcriptStream")}
           </span>
         </div>
+        )}
       </div>
-      {showTranscriptStream ? (
+      {streamVisible ? (
         <TranscriptStreamViewer
           hash={hash}
           groupId={catalogId}
@@ -371,7 +384,9 @@ export function RecordingTranscriptSection({
           currentTime={currentTime}
           onSeek={onSeek}
           isPlaying={isPlaying}
-          canDownload={canDownload}
+          canDownload={canDownloadTranscripts}
+          canSeeSpeakers={canSeeSpeakers}
+          canSeeTranscriptVariants={canSeeTranscriptVariants}
         />
       )}
     </div>

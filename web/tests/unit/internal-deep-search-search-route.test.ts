@@ -31,10 +31,30 @@ vi.mock("@/lib/db", () => ({
     audioMetadata: {
       findMany: vi.fn(),
     },
+    catalogAccess: {
+      findUnique: vi.fn(),
+    },
     catalogEventRecording: {
       findMany: vi.fn().mockResolvedValue([]),
     },
   },
+}));
+
+vi.mock("@/lib/access/capabilities", () => ({
+  getCatalogCapability: vi.fn().mockResolvedValue({
+    catalogExists: true,
+    hasAccess: true,
+    canViewTranscripts: true,
+    isCatalogAdmin: false,
+    catalogGrant: {
+      level: "VIEWER",
+      role: "reader",
+      extras: [],
+    },
+    accessLevel: "VIEWER",
+    catalogRole: "reader",
+    catalogExtraPermissions: [],
+  }),
 }));
 
 function sqlText(query: unknown): string {
@@ -53,12 +73,13 @@ function jsonResponse(payload: unknown) {
 describe("internal deep-search search route", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
     process.env = { ...originalEnv };
     process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
-    process.env.RAG_COLBERT_INDEX_DIR = "/workspace/besedy/tmp/rag-colbert-test/index/colbert_index";
+    process.env.RAG_COLBERT_INDEX_DIR =
+      "/workspace/besedy/tmp/rag-colbert-test/index/colbert_index";
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -72,12 +93,23 @@ describe("internal deep-search search route", () => {
     delete process.env.BESEDY_JOB_SERVICE_SECRET;
     vi.resetModules();
 
-    const { POST } = await import("@/app/api/internal/deep-search/search/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
-      method: "POST",
-      headers: { Authorization: "Bearer anything", "Content-Type": "application/json" },
-      body: JSON.stringify({ catalogId: "catalog-1", query: "brno" }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/search/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer anything",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          query: "brno",
+          requestedById: "user-1",
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(401);
@@ -86,12 +118,23 @@ describe("internal deep-search search route", () => {
   it("returns 401 when the bearer token is wrong (secret set)", async () => {
     // Secret is set in beforeEach; a wrong token must be rejected by the
     // constant-time comparison in authorizeDeepSearchServiceRequest.
-    const { POST } = await import("@/app/api/internal/deep-search/search/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
-      method: "POST",
-      headers: { Authorization: "Bearer wrong-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ catalogId: "catalog-1", query: "brno" }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/search/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer wrong-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          query: "brno",
+          requestedById: "user-1",
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(401);
@@ -101,20 +144,77 @@ describe("internal deep-search search route", () => {
     const prisma = (await import("@/lib/db")).default;
     vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue(null);
 
-    const { POST } = await import("@/app/api/internal/deep-search/search/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-job-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ catalogId: "catalog-1", query: "brno" }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/search/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          query: "brno",
+          requestedById: "user-1",
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(404);
   });
 
+  it("returns 404 when the requester cannot read transcripts", async () => {
+    const prisma = (await import("@/lib/db")).default;
+    const { getCatalogCapability } = await import("@/lib/access/capabilities");
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
+    vi.mocked(getCatalogCapability).mockResolvedValueOnce({
+      catalogExists: true,
+      hasAccess: true,
+      canViewTranscripts: false,
+      isCatalogAdmin: false,
+      catalogGrant: {
+        level: "LISTENER",
+        role: "listener",
+        extras: ["use_deep_search"],
+      },
+      accessLevel: "LISTENER",
+      catalogRole: "listener",
+      catalogExtraPermissions: ["use_deep_search"],
+    } as never);
+
+    const { POST } =
+      await import("@/app/api/internal/deep-search/search/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          query: "brno",
+          requestedById: "user-1",
+        }),
+      }
+    );
+
+    const response = await POST(request);
+    expect(response.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when the catalog has no resolved ColBERT bundle", async () => {
     const prisma = (await import("@/lib/db")).default;
-    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
 
     fetchMock.mockImplementation(async (url: string | URL) => {
       const endpoint = String(url);
@@ -128,12 +228,23 @@ describe("internal deep-search search route", () => {
       throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
     });
 
-    const { POST } = await import("@/app/api/internal/deep-search/search/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-job-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({ catalogId: "catalog-1", query: "brno" }),
-    });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/search/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          query: "brno",
+          requestedById: "user-1",
+        }),
+      }
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(404);
@@ -143,14 +254,16 @@ describe("internal deep-search search route", () => {
 
   it("returns search results for a valid internal request", async () => {
     const prisma = (await import("@/lib/db")).default;
-    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "catalog-1" } as never);
-    vi.mocked(prisma.$queryRaw).mockImplementation((((query: unknown) => {
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({
+      id: "catalog-1",
+    } as never);
+    vi.mocked(prisma.$queryRaw).mockImplementation(((query: unknown) => {
       const text = sqlText(query);
       if (text.includes("FROM catalog_entry ce")) {
         return Promise.resolve([{ audioHash: "hash-1" }]);
       }
       return Promise.resolve([]);
-    }) as never));
+    }) as never);
     vi.mocked(prisma.audioMetadata.findMany).mockResolvedValue([
       {
         audioHash: "hash-1",
@@ -174,71 +287,81 @@ describe("internal deep-search search route", () => {
       },
     ] as never);
 
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const endpoint = String(url);
-      const body = JSON.parse(String(init?.body ?? "{}"));
+    fetchMock.mockImplementation(
+      async (url: string | URL, init?: RequestInit) => {
+        const endpoint = String(url);
+        const body = JSON.parse(String(init?.body ?? "{}"));
 
-      if (endpoint.endsWith("/resolve")) {
-        return jsonResponse({
-          colbert_index_dir: process.env.RAG_COLBERT_INDEX_DIR,
-        });
-      }
+        if (endpoint.endsWith("/resolve")) {
+          return jsonResponse({
+            colbert_index_dir: process.env.RAG_COLBERT_INDEX_DIR,
+          });
+        }
 
-      if (endpoint.endsWith("/query")) {
-        return jsonResponse({
-          hits: [{ chunk_id: "chunk-1", score: 9.5 }],
-        });
-      }
+        if (endpoint.endsWith("/query")) {
+          return jsonResponse({
+            hits: [{ chunk_id: "chunk-1", score: 9.5 }],
+          });
+        }
 
-      if (endpoint.endsWith("/lookup")) {
-        expect(body.chunk_ids).toEqual(["chunk-1"]);
-        return jsonResponse({
-          chunks: [
-            {
-              chunk_id: "chunk-1",
-              audio_hash: "hash-1",
-              start_sec: 10,
-              end_sec: 20,
-              text: "primary evidence",
-              run_id: "run-123",
-              chunk_version: "v2",
+        if (endpoint.endsWith("/lookup")) {
+          expect(body.chunk_ids).toEqual(["chunk-1"]);
+          return jsonResponse({
+            chunks: [
+              {
+                chunk_id: "chunk-1",
+                audio_hash: "hash-1",
+                start_sec: 10,
+                end_sec: 20,
+                text: "primary evidence",
+                run_id: "run-123",
+                chunk_version: "v2",
+              },
+            ],
+          });
+        }
+
+        if (endpoint.endsWith("/neighbors")) {
+          return jsonResponse({
+            neighbors: {
+              "chunk-1": {
+                before: [
+                  {
+                    chunk_id: "chunk-0",
+                    audio_hash: "hash-1",
+                    start_sec: 0,
+                    end_sec: 10,
+                    text: "before",
+                  },
+                ],
+                after: [],
+              },
             },
-          ],
-        });
+          });
+        }
+
+        throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
       }
+    );
 
-      if (endpoint.endsWith("/neighbors")) {
-        return jsonResponse({
-          neighbors: {
-            "chunk-1": {
-              before: [
-                {
-                  chunk_id: "chunk-0",
-                  audio_hash: "hash-1",
-                  start_sec: 0,
-                  end_sec: 10,
-                  text: "before",
-                },
-              ],
-              after: [],
-            },
-          },
-        });
+    const { POST } =
+      await import("@/app/api/internal/deep-search/search/route");
+    const request = new NextRequest(
+      "http://localhost/api/internal/deep-search/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-job-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogId: "catalog-1",
+          requestedById: "user-1",
+          query: "who mentions Brno?",
+          includeNeighbors: true,
+        }),
       }
-
-      throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
-    });
-
-    const { POST } = await import("@/app/api/internal/deep-search/search/route");
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-job-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        catalogId: "catalog-1",
-        query: "who mentions Brno?",
-        includeNeighbors: true,
-      }),
-    });
+    );
 
     const response = await POST(request);
     expect(response.status).toBe(200);

@@ -9,16 +9,30 @@ import {
   syncPendingAdmissionState,
 } from "@/lib/admission/pending-admission-sync";
 import { canonicalizeEmail } from "@/lib/email";
-import { validateRequestBody, forbidden, notFound, handlePrismaError } from "@/lib/api";
+import {
+  validateRequestBody,
+  forbidden,
+  notFound,
+  handlePrismaError,
+} from "@/lib/api";
 import { z } from "zod";
 import {
+  CatalogRoleSchema,
+  GrantableExtraPermissionSchema,
+} from "@/lib/validation/schemas";
+import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
+import {
   canAttemptCatalogManagement,
-  canGrantCatalogAccessLevel,
-  canManageExistingCatalogAccessLevel,
+  canGrantCatalogGrant,
+  canManageExistingCatalogGrant,
 } from "@/lib/policy/catalog";
 
 const UpdatePendingCatalogGrantSchema = z.object({
-  accessLevel: z.enum(["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"]),
+  role: CatalogRoleSchema,
+  extraPermissions: z
+    .array(GrantableExtraPermissionSchema)
+    .optional()
+    .default([]),
   notes: z.string().max(500).optional().nullable(),
 });
 
@@ -42,7 +56,7 @@ export async function deletePendingCatalogRecord(
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage pending catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
     const pendingEmail = canonicalizeEmail(email);
@@ -57,6 +71,8 @@ export async function deletePendingCatalogRecord(
         email: true,
         catalogId: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         grantedById: true,
         grantedAt: true,
         notes: true,
@@ -67,8 +83,14 @@ export async function deletePendingCatalogRecord(
       return notFound("pending catalog grant");
     }
 
-    if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, pendingGrant.accessLevel)) {
-      return forbidden("Only administrators can revoke this level of access");
+    if (
+      !canManageExistingCatalogGrant(managementAccess.policyContext, {
+        level: pendingGrant.accessLevel,
+        role: pendingGrant.role,
+        extras: pendingGrant.extraPermissions,
+      })
+    ) {
+      return forbidden("Only catalog administrators can revoke this access");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -76,7 +98,8 @@ export async function deletePendingCatalogRecord(
         {
           email: pendingGrant.email,
           catalogId: pendingGrant.catalogId,
-          accessLevel: pendingGrant.accessLevel,
+          role: pendingGrant.role,
+          extraPermissions: pendingGrant.extraPermissions,
           createdById: pendingGrant.grantedById,
           createdAt: pendingGrant.grantedAt,
           notes: pendingGrant.notes,
@@ -99,7 +122,8 @@ export async function deletePendingCatalogRecord(
       details: {
         email: pendingGrant.email,
         catalogId: pendingGrant.catalogId,
-        accessLevel: pendingGrant.accessLevel,
+        role: pendingGrant.role,
+        extraPermissions: pendingGrant.extraPermissions,
         revocationReason: "LAST_SPONSOR_REMOVED",
       },
     });
@@ -131,12 +155,15 @@ export async function updatePendingCatalogRecord(
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage pending catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
-    const bodyResult = await validateRequestBody(request, UpdatePendingCatalogGrantSchema);
+    const bodyResult = await validateRequestBody(
+      request,
+      UpdatePendingCatalogGrantSchema
+    );
     if (!bodyResult.success) return bodyResult.response;
-    const { accessLevel, notes } = bodyResult.data;
+    const { role, extraPermissions, notes } = bodyResult.data;
 
     const pendingEmail = canonicalizeEmail(email);
     const pendingGrant = await prisma.pendingCatalogGrant.findUnique({
@@ -150,6 +177,8 @@ export async function updatePendingCatalogRecord(
         email: true,
         catalogId: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         grantedById: true,
         grantedAt: true,
         notes: true,
@@ -160,12 +189,26 @@ export async function updatePendingCatalogRecord(
       return notFound("pending catalog grant");
     }
 
-    if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant this level of access");
+    if (
+      !canGrantCatalogGrant(
+        managementAccess.policyContext,
+        role,
+        extraPermissions
+      )
+    ) {
+      return forbidden(
+        "Only catalog administrators can grant this role or extras"
+      );
     }
 
-    if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, pendingGrant.accessLevel)) {
-      return forbidden("Only administrators can modify this level of access");
+    if (
+      !canManageExistingCatalogGrant(managementAccess.policyContext, {
+        level: pendingGrant.accessLevel,
+        role: pendingGrant.role,
+        extras: pendingGrant.extraPermissions,
+      })
+    ) {
+      return forbidden("Only catalog administrators can modify this access");
     }
 
     const normalizedNotes = notes ?? null;
@@ -174,7 +217,8 @@ export async function updatePendingCatalogRecord(
       const pendingAdmissionInput = {
         email: pendingGrant.email,
         catalogId: pendingGrant.catalogId,
-        accessLevel,
+        role,
+        extraPermissions,
         createdById: pendingGrant.grantedById,
         createdAt: pendingGrant.grantedAt,
         notes: normalizedNotes,
@@ -195,12 +239,14 @@ export async function updatePendingCatalogRecord(
       resourceId: `${pendingGrant.email}:${catalogId}`,
       email: pendingGrant.email,
       catalogId,
-      accessLevel,
+      accessLevel: grantFieldsForRole(role, extraPermissions).accessLevel,
       details: {
         email: pendingGrant.email,
         catalogId,
-        previousAccessLevel: pendingGrant.accessLevel,
-        newAccessLevel: accessLevel,
+        previousRole: pendingGrant.role,
+        previousExtraPermissions: pendingGrant.extraPermissions,
+        newRole: role,
+        newExtraPermissions: extraPermissions,
         previousNotes: pendingGrant.notes,
         newNotes: normalizedNotes,
       },
@@ -209,12 +255,15 @@ export async function updatePendingCatalogRecord(
     return NextResponse.json({
       id: pendingGrant.email,
       email: pendingGrant.email,
-      accessLevel,
+      role,
+      extraPermissions,
       notes: normalizedNotes,
     });
   } catch (error) {
     if (error instanceof AdminDeniedAdmissionReopenError) {
-      return forbidden("Only administrators can reopen admin-denied admissions");
+      return forbidden(
+        "Only administrators can reopen admin-denied admissions"
+      );
     }
     return handlePrismaError(error, "pending catalog grant", "update");
   }

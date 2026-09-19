@@ -140,8 +140,34 @@ describe("RecordingContent transcript toggle", () => {
     });
   });
 
+  const grantVariantAccess = (canSeeTranscriptVariants: boolean) => {
+    useRecordingEntryMock.mockReturnValue({
+      data: {
+        entry: {
+          hash: HASH,
+          filename: "recording.wav",
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: true,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownload: false,
+        canSeeTranscriptVariants,
+        canSeeSpeakers: false,
+      },
+      isLoading: false,
+      error: null,
+      isError: false,
+    });
+  };
+
   it("shows transcript stream when the stream view is enabled", () => {
     useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
+    grantVariantAccess(true);
 
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
@@ -155,6 +181,7 @@ describe("RecordingContent transcript toggle", () => {
 
   it("shows the plain transcript when the stream view is disabled", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    grantVariantAccess(true);
 
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
@@ -175,6 +202,19 @@ describe("RecordingContent transcript toggle", () => {
     expect(audioPlayerMock).toHaveBeenCalledWith(
       expect.objectContaining({ downloadEventId: 42 })
     );
+  });
+
+  // The stream view is every machine transcript side by side, so it belongs to
+  // the administrative view. A stored preference does not reopen it.
+  it("keeps the stream view and its switch away from an ordinary reader", () => {
+    useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
+    grantVariantAccess(false);
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(screen.queryByText("recording.transcriptStream")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("transcript-stream-viewer")).not.toBeInTheDocument();
+    expect(screen.getByTestId("transcript-viewer")).toBeInTheDocument();
   });
 
   it("shows the invalid catalog state when catalog validation fails", () => {

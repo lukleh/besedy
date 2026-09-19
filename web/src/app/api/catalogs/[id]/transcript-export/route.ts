@@ -5,7 +5,7 @@ import prisma from "@/lib/db";
 import { AuthError, requireAuth } from "@/lib/auth/permissions";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { logAccessDenied, logDataAccessEvent } from "@/lib/audit/logger";
-import { loadCatalogHashes } from "@/lib/catalog";
+import { loadVisibleCatalogHashes } from "@/lib/catalog";
 import { resolveTranscriptsPath } from "@/lib/paths";
 import { getRagBackendKey } from "@/lib/runtime-config";
 import { readTranscriptFile } from "@/lib/transcript";
@@ -216,12 +216,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (
       !capability.hasAccess ||
-      !capability.canDownload ||
-      !capability.canViewTranscripts
+      !capability.canBulkExportTranscripts
     ) {
       await logAccessDenied(userId, "transcript", catalogId, {
         groupId: catalogId,
-        reason: "Bulk transcript download requires MEMBER role or higher",
+        reason: "Bulk export requires bulk_export_transcripts",
       });
       return NextResponse.json(
         { error: "Download not permitted for this catalog" },
@@ -239,7 +238,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
     const backend = backendResult.data;
 
-    const hashes = Array.from(await loadCatalogHashes(catalogId)).sort();
+    // Scoped the same way a single transcript is: an export hands over what
+    // this account could have opened one recording at a time, and nothing more.
+    const hashes = Array.from(
+      await loadVisibleCatalogHashes(catalogId, capability.catalogGrant)
+    ).sort();
     if (hashes.length === 0) {
       return NextResponse.json(
         { error: "Catalog has no recordings to export" },
