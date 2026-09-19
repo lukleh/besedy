@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import AuthCompletePage from "@/app/auth/complete/page";
+import AuthCompletePage from "@/app/(app)/auth/complete/page";
 
 const mocks = vi.hoisted(() => ({
   headersMock: vi.fn(async () => new Headers()),
@@ -22,7 +22,7 @@ vi.mock("@/lib/auth/request-auth", () => ({
   resolveRequestAuthFromHeaders: mocks.resolveRequestAuthFromHeadersMock,
 }));
 
-vi.mock("@/app/auth/complete/auth-complete-client", () => ({
+vi.mock("@/app/(app)/auth/complete/auth-complete-client", () => ({
   default: ({
     callbackUrl,
     error,

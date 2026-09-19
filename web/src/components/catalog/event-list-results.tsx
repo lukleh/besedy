@@ -3,10 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  AlertCircle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Download,
+  Loader2,
+  Pause,
 } from "lucide-react";
+import { useDownloadedEvents } from "@/hooks/use-downloads";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -66,6 +71,50 @@ export function EventListResults({
   const locale = useLocale();
   const router = useRouter();
   const t = useTranslations("events.list");
+  const tDownloads = useTranslations("downloads");
+  const downloadedEvents = useDownloadedEvents(catalogId);
+
+  const renderDownloadMarker = (eventId: number) => {
+    const status = downloadedEvents.get(eventId);
+    if (!status) return null;
+    if (status === "complete") {
+      return (
+        <span
+          className="inline-flex shrink-0 items-center text-foreground"
+          aria-label={tDownloads("downloaded")}
+          title={tDownloads("downloaded")}
+          data-testid={`event-downloaded-${eventId}`}
+        >
+          <Download className="h-5 w-5" />
+        </span>
+      );
+    }
+    if (status === "queued" || status === "downloading")
+      return (
+        <span
+          className="inline-flex shrink-0 items-center text-muted-foreground"
+          aria-label={tDownloads("downloadInProgress")}
+          title={tDownloads("downloadInProgress")}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+      );
+    const isPaused = status === "paused";
+    const label = tDownloads(isPaused ? "statusPaused" : "statusError");
+    return (
+      <span
+        className="inline-flex shrink-0 items-center text-muted-foreground"
+        aria-label={label}
+        title={label}
+      >
+        {isPaused ? (
+          <Pause className="h-4 w-4" />
+        ) : (
+          <AlertCircle className="h-4 w-4 text-destructive" />
+        )}
+      </span>
+    );
+  };
 
   const getSortIcon = (key: EventSortKey) => {
     if (sortKey !== key) {
@@ -310,7 +359,8 @@ export function EventListResults({
                       </>
                     ) : null}
                     <TableCell className="w-36 text-right">
-                      <div className="flex justify-end">
+                      <div className="flex items-center justify-end gap-2">
+                        {renderDownloadMarker(catalogEvent.id)}
                         <EventPlaybackProgress
                           playback={catalogEvent.playback}
                           layout="inline"
@@ -376,13 +426,9 @@ export function EventListResults({
                           {locationName}
                         </span>
                       </div>
-                      {catalogEvent.sessionIndex > 1 ? (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {t("sessionLabel", { index: catalogEvent.sessionIndex })}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
+                  {renderDownloadMarker(catalogEvent.id)}
                   <EventPlaybackProgress playback={catalogEvent.playback} />
                 </div>
               </button>

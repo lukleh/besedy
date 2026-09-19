@@ -69,6 +69,7 @@ jobs:
       - run: >-
           uv run pytest
           tests/test_prefect_jobs.py
+          tests/test_prefect_jobs_maintenance.py
           tests/test_jobs_production_hardening.py
           tests/test_rlm_integration.py
           -q

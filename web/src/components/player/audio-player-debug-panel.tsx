@@ -97,9 +97,9 @@ export function AudioPlayerDebugPanel({
           <span className={debugInfo.paused ? "text-red-500" : "text-foreground"}>{debugInfo.paused ? "YES" : "no"}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <HardDrive className={`h-3 w-3 ${cacheStatus === "cached" ? "text-green-500" : "text-muted-foreground/30"}`} />
+          <HardDrive className={`h-3 w-3 ${cacheStatus === "complete" ? "text-green-500" : "text-muted-foreground/30"}`} />
           <span className="text-muted-foreground">Cached:</span>
-          <span className={cacheStatus === "cached" ? "text-green-500" : "text-foreground"}>{cacheStatus}</span>
+          <span className={cacheStatus === "complete" ? "text-green-500" : "text-foreground"}>{cacheStatus}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <Download className="h-3 w-3 text-cyan-500" />

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildRecordingEntryUrl } from "@/lib/api/recording-urls";
 import {
   AUTH_SENSITIVE_QUERY_OPTIONS,
   getStableAccessData,
@@ -43,7 +44,7 @@ export function useRecordingEntry({
     queryKey: ["catalog-entry", hash, groupKey],
     queryFn: async () => {
       return fetchJson<CatalogEntryWithPermissions>(
-        `/api/catalogs/${catalogId}/recordings/${hash}/entry`,
+        buildRecordingEntryUrl(catalogId, hash),
         {
           schema: catalogEntryWithPermissionsSchema,
         }

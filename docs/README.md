@@ -1,6 +1,6 @@
 # Besedy Documentation
 
-> **Last Updated:** 2026-07-24
+> **Last Updated:** 2026-09-17
 
 AGENTS.md is the starting point. These docs extend it with context that is not obvious from the code.
 
@@ -12,10 +12,12 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [rag-system.md](rag-system.md) -- ColBERT retrieval architecture and incremental sync
 - [rag-oblique-eval.md](rag-oblique-eval.md) -- time-grounded evaluation for implicit retrieval queries
 - [backends.md](backends.md) -- ML backend infrastructure: serving, config tuning, verification
-- [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface, offline
+- [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface
+- [web/offline.md](web/offline.md) -- downloads, service worker caching, offline behavior
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
 - [web/security.md](web/security.md) -- auth model, access control, deployment hardening
+- [web/egress-control-retirement.md](web/egress-control-retirement.md) -- why the former Docker LAN egress control was removed and what a future design must address
 - [web/mcp-server.md](web/mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing
 - [web/mcp-tools.md](web/mcp-tools.md) -- per-tool MCP contract: arguments, result shapes, errors
 - [web/mcp-follow-ups.md](web/mcp-follow-ups.md) -- deferred MCP work with the reasons it was deferred

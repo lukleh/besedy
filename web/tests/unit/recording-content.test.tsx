@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import RecordingContent from "@/app/catalog/[catalogId]/recording/[hash]/recording-content";
+import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
@@ -10,6 +10,7 @@ const useHydratedBooleanMock = vi.fn();
 const useRecordingEntryMock = vi.fn();
 const useCatalogContextMock = vi.fn();
 const useRecordingPlaybackMock = vi.fn();
+const audioPlayerMock = vi.fn();
 
 const HASH = "a".repeat(64);
 const CATALOG_ID = "20260101_120000";
@@ -57,12 +58,15 @@ vi.mock("@/hooks/use-recording-entry", () => ({
   useRecordingEntry: (...args: unknown[]) => useRecordingEntryMock(...args),
 }));
 
-vi.mock("@/app/catalog/[catalogId]/recording/[hash]/use-recording-playback", () => ({
+vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback", () => ({
   useRecordingPlayback: (...args: unknown[]) => useRecordingPlaybackMock(...args),
 }));
 
 vi.mock("@/components/player/audio-player", () => ({
-  AudioPlayer: () => <div data-testid="audio-player" />,
+  AudioPlayer: (props: unknown) => {
+    audioPlayerMock(props);
+    return <div data-testid="audio-player" />;
+  },
 }));
 
 vi.mock("@/components/transcript/transcript-stream-viewer", () => ({
@@ -156,6 +160,21 @@ describe("RecordingContent transcript toggle", () => {
 
     expect(screen.getByTestId("transcript-viewer")).toBeInTheDocument();
     expect(screen.queryByTestId("transcript-stream-viewer")).not.toBeInTheDocument();
+  });
+
+  it("passes event download context to the embedded audio player", () => {
+    useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
+
+    render(
+      <RecordingContent
+        params={{ catalogId: CATALOG_ID, hash: HASH }}
+        downloadEventId={42}
+      />
+    );
+
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ downloadEventId: 42 })
+    );
   });
 
   it("shows the invalid catalog state when catalog validation fails", () => {

@@ -1,6 +1,6 @@
 # Web Application Documentation
 
-> **Last Updated:** 2026-04-09
+> **Last Updated:** 2026-09-17
 
 Documentation for the Besedy web app and adjacent service architecture.
 
@@ -9,6 +9,7 @@ Documentation for the Besedy web app and adjacent service architecture.
 - [docker-container-topology.md](docker-container-topology.md) -- Docker container, network, volume, and environment-sharing map for web, shared Prefect, jobs runtimes, and RAG
 - [data-and-database.md](data-and-database.md) -- web data model, migration safety, configuration
 - [security.md](security.md) -- auth model, access control, deployment hardening
+- [egress-control-retirement.md](egress-control-retirement.md) -- retirement record for the ineffective Docker LAN egress control
 - [mcp-server.md](mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing
 - [mcp-tools.md](mcp-tools.md) -- per-tool MCP contract: arguments, result shapes, errors
 - [mcp-follow-ups.md](mcp-follow-ups.md) -- deferred MCP work with the reasons it was deferred

@@ -106,6 +106,30 @@ describe("ServiceWorkerProvider", () => {
     }
   });
 
+  it("does not start the service-worker runtime in passive mode", async () => {
+    const serviceWorkerMock = {
+      controller: null,
+      register: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: serviceWorkerMock,
+      configurable: true
+    });
+
+    render(
+      <ServiceWorkerProvider passive>
+        <StateProbe />
+      </ServiceWorkerProvider>
+    );
+
+    await act(async () => {});
+
+    expect(serviceWorkerMock.register).not.toHaveBeenCalled();
+    expect(reportWebUpdateEvent).not.toHaveBeenCalled();
+  });
+
   it("clears persisted update state on controllerchange", async () => {
     const listeners = new Map<string, Set<() => void>>();
     const registrationMock = {

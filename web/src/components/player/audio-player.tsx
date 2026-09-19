@@ -62,7 +62,7 @@ import {
   safePlay,
 } from './audio-player-utils';
 import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
-import { useContentCache } from '@/hooks/use-content-cache';
+import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
 function resolvePlaybackEnd(value: number | undefined): number | null {
@@ -74,9 +74,11 @@ function resolvePlaybackEnd(value: number | undefined): number | null {
 export function AudioPlayer({
   src,
   catalogId,
+  downloadEventId,
   onTimeUpdate,
   onDurationChange,
   onPlayingChange,
+  onSeek,
   onEnded,
   seekTo,
   seekKey,
@@ -91,8 +93,9 @@ export function AudioPlayer({
     return extractRecordingHash(src);
   }, [src]);
 
-  // Cache status for buffer indicator (shows full ring when cached)
-  const { status: cacheStatus } = useContentCache(hash, src, catalogId ?? null);
+  // Download state drives the switch from network streaming to cached playback.
+  const downloadRecord = useDownloadRecord(catalogId ?? null, hash);
+  const cacheStatus = downloadRecord?.status ?? 'none';
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -741,8 +744,8 @@ export function AudioPlayer({
     updateDebugInfo,
   ]);
 
-  // Reload the audio element when caching completes so playback switches from
-  // the network stream to SW cache. If `src` changes before loadedmetadata
+  // Reload the audio element when a download completes so playback switches
+  // from the network stream to the service worker cache. If `src` changes before loadedmetadata
   // fires (e.g. user navigates to another recording), the cleanup removes the
   // restorePosition listener so we never apply the old position to the new
   // src.
@@ -753,7 +756,7 @@ export function AudioPlayer({
     const prevStatus = prevCacheStatusRef.current;
     prevCacheStatusRef.current = cacheStatus;
 
-    if (prevStatus !== 'caching' || cacheStatus !== 'cached') return;
+    if (prevStatus !== 'downloading' || cacheStatus !== 'complete') return;
 
     // Don't collide with a retry-in-flight. The retry effect already owns
     // the audio element and will call audio.load() itself; a second load()
@@ -820,6 +823,7 @@ export function AudioPlayer({
     playbackEndRef.current = null;
     audio.currentTime = value[0];
     setCurrentTime(value[0]);
+    onSeek?.(value[0]);
   };
 
   const handleVolumeChange = (value: number[]) => {
@@ -849,14 +853,20 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    audio.currentTime = Math.max(0, audio.currentTime - 10);
+    const time = Math.max(0, audio.currentTime - 10);
+    audio.currentTime = time;
+    setCurrentTime(time);
+    onSeek?.(time);
   };
 
   const skipForward = () => {
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    audio.currentTime = Math.min(duration, audio.currentTime + 10);
+    const time = Math.min(duration, audio.currentTime + 10);
+    audio.currentTime = time;
+    setCurrentTime(time);
+    onSeek?.(time);
   };
 
   // Keyboard shortcuts
@@ -868,9 +878,11 @@ export function AudioPlayer({
       // Don't capture keyboard events when user is typing in an input
       const target = e.target as HTMLElement;
       if (
+        e.defaultPrevented ||
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
+        target.isContentEditable ||
+        target.closest('[role="slider"]')
       ) {
         return;
       }
@@ -889,11 +901,15 @@ export function AudioPlayer({
           e.preventDefault();
           playbackEndRef.current = null;
           audio.currentTime = Math.max(0, audio.currentTime - 5);
+          setCurrentTime(audio.currentTime);
+          onSeek?.(audio.currentTime);
           break;
         case 'ArrowRight':
           e.preventDefault();
           playbackEndRef.current = null;
           audio.currentTime = Math.min(duration, audio.currentTime + 5);
+          setCurrentTime(audio.currentTime);
+          onSeek?.(audio.currentTime);
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -919,7 +935,7 @@ export function AudioPlayer({
           break;
       }
     },
-    [isPlaying, duration, volume, isMuted, logDebugEvent],
+    [isPlaying, duration, volume, isMuted, logDebugEvent, onSeek],
   );
 
   // Register keyboard shortcuts
@@ -939,12 +955,13 @@ export function AudioPlayer({
 
       <AudioPlayerChrome
         bufferInfo={bufferInfo}
-        cacheStatus={cacheStatus}
         catalogId={catalogId}
+        downloadEventId={downloadEventId}
         currentTime={currentTime}
         duration={duration}
         hash={hash}
         isBuffering={isBuffering}
+        isDownloaded={cacheStatus === 'complete'}
         isMuted={isMuted}
         isPlaying={isPlaying}
         isReconnecting={isReconnecting}
@@ -956,7 +973,6 @@ export function AudioPlayer({
         onTogglePlay={togglePlay}
         onVolumeChange={handleVolumeChange}
         showDebug={showDebug}
-        src={src}
         volume={volume}
       />
 

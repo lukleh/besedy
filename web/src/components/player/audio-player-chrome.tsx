@@ -13,7 +13,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { BufferIndicator } from "./buffer-indicator";
-import { CacheButton } from "./cache-button";
+import { DownloadButton } from "@/components/offline/download-button";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { formatAudioTime } from "./audio-player-utils";
@@ -24,12 +24,14 @@ interface AudioPlayerChromeProps {
     networkState: number;
     peakBuffer: number;
   };
-  cacheStatus: string;
   catalogId?: string;
+  downloadEventId?: number;
   currentTime: number;
   duration: number;
   hash: string | null;
   isBuffering: boolean;
+  /** True once the recording is fully downloaded and served from cache. */
+  isDownloaded: boolean;
   isMuted: boolean;
   isPlaying: boolean;
   isReconnecting: boolean;
@@ -41,18 +43,18 @@ interface AudioPlayerChromeProps {
   onTogglePlay: () => void;
   onVolumeChange: (value: number[]) => void;
   showDebug: boolean;
-  src: string;
   volume: number;
 }
 
 export function AudioPlayerChrome({
   bufferInfo,
-  cacheStatus,
   catalogId,
+  downloadEventId,
   currentTime,
   duration,
   hash,
   isBuffering,
+  isDownloaded,
   isMuted,
   isPlaying,
   isReconnecting,
@@ -64,10 +66,22 @@ export function AudioPlayerChrome({
   onTogglePlay,
   onVolumeChange,
   showDebug,
-  src,
   volume,
 }: AudioPlayerChromeProps) {
   const t = useTranslations("player");
+  const downloadControl =
+    hash && catalogId ? (
+      downloadEventId !== undefined ? (
+        <DownloadButton
+          catalogId={catalogId}
+          eventId={downloadEventId}
+          hash={hash}
+          size="player"
+        />
+      ) : (
+        <DownloadButton catalogId={catalogId} hash={hash} size="player" />
+      )
+    ) : null;
 
   return (
     <>
@@ -89,16 +103,14 @@ export function AudioPlayerChrome({
       <div className="flex flex-col items-center gap-2 sm:gap-0">
         <div className="relative flex w-full items-center justify-center gap-2 sm:gap-4">
           <div className="absolute left-0 hidden items-center gap-1 sm:flex">
-            {hash && catalogId && (
-              <CacheButton audioUrl={src} hash={hash} catalogId={catalogId} size="player" />
-            )}
+            {downloadControl}
             <BufferIndicator
               bufferAhead={bufferInfo.bufferAhead}
               peakBuffer={bufferInfo.peakBuffer}
               networkState={bufferInfo.networkState}
               isBuffering={isBuffering}
               isReconnecting={isReconnecting}
-              isCached={cacheStatus === "cached"}
+              isCached={isDownloaded}
             />
           </div>
 
@@ -190,9 +202,7 @@ export function AudioPlayerChrome({
           </button>
           <div className="grid w-[14.25rem] grid-cols-3 items-center justify-items-center gap-3">
             <div className="flex h-12 items-center justify-center">
-              {hash && catalogId && (
-                <CacheButton audioUrl={src} hash={hash} catalogId={catalogId} size="player" />
-              )}
+              {downloadControl}
             </div>
             <div className="flex h-12 items-center justify-center">
               <BufferIndicator
@@ -201,7 +211,7 @@ export function AudioPlayerChrome({
                 networkState={bufferInfo.networkState}
                 isBuffering={isBuffering}
                 isReconnecting={isReconnecting}
-                isCached={cacheStatus === "cached"}
+                isCached={isDownloaded}
               />
             </div>
             <Button

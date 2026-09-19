@@ -1,6 +1,6 @@
 # Web Operations
 
-> **Last Updated:** 2026-04-22
+> **Last Updated:** 2026-09-17
 
 Operational reference for deploying, monitoring, and running the Besedy web app.
 For security hardening details see `docs/web/security.md`.
@@ -10,11 +10,11 @@ For shared repo workflow and justfile commands see `AGENTS.md`.
 
 ## Environments
 
-| Environment | Web Port | DB Port | Preferred Command | Compose Overlay |
-|-------------|----------|---------|-------------------|-----------------|
-| Development | 3001 | 5433 | `just dev-up` | `docker-compose.dev.yml` + `mock-oauth` profile |
-| Test (E2E) | 3002 | 5434 | `just test-up` | `docker-compose.secure.yml` (production-style) |
-| Production | 3000 | 5432 | `just prod-up` | `docker-compose.secure.yml` + `docker-compose.production.yml` + `backup` profile |
+| Environment | Web Port | DB Port | Preferred Command | Compose Overlay                                                                  |
+| ----------- | -------- | ------- | ----------------- | -------------------------------------------------------------------------------- |
+| Development | 3001     | 5433    | `just dev-up`     | `docker-compose.dev.yml` + `mock-oauth` profile                                  |
+| Test (E2E)  | 3002     | 5434    | `just test-up`    | `docker-compose.secure.yml` (production-style)                                   |
+| Production  | 3000     | 5432    | `just prod-up`    | `docker-compose.secure.yml` + `docker-compose.production.yml` + `backup` profile |
 
 All three stacks can run simultaneously -- they use separate ports, volumes, and
 container name prefixes (`besedy-development-*`, `besedy-test-*`,
@@ -140,10 +140,121 @@ just prod-up
 just prod-deploy
 ```
 
-`prod-deploy` scopes `docker compose up` to the `web` service only, avoiding DB
-container recreation (which can corrupt indexes). Its `prod-migrate` step grants
-the app access to newly migrated tables and then re-applies the `audit_log`
-DELETE revoke.
+`prod-deploy` builds and checks the new image while the old service is still
+running. It then stops `web` and the scheduled backup service, creates and
+validates an immediate database backup, applies migrations, and starts the
+already-built image plus scheduled backups. The maintenance window is
+deliberate: neither old nor new code writes while the schema is between
+versions, and a scheduled `pg_dump` cannot hold locks across the migration. If
+backup or migration fails, the recipe exits with `web` and scheduled backups
+stopped; inspect the error and restore or retry before starting them again.
+
+Production builds retain immutable `besedy-web:<full-commit>` images in addition
+to the mutable deployment tag. When a jobs image already exists, they also
+snapshot it as `besedy-jobs:<full-commit>`; a coordinated build replaces that
+snapshot with the newly built jobs image. A fresh host without a jobs image
+prints a warning instead of blocking the web build. On that host, the
+coordinated recipe builds and retains the jobs image before downtime; a web-only
+release has no coordinated rollback until a jobs image exists. This keeps normal
+web-only and coordinated releases rollback-safe without rebuilding from another
+checkout. `prod-apply`
+reads the web image's source-revision label and refuses to begin downtime unless
+it exactly matches the current checkout. The image checks load the same
+production web and jobs env files as Compose, so custom `BESEDY_WEB_IMAGE` and
+`BESEDY_JOBS_IMAGE` values are checked and retained rather than silently falling
+back to the default tags.
+
+The start is scoped to the `web` service and does not recreate the database
+container (which can corrupt indexes). The `prod-migrate` step also grants the
+app access to newly migrated tables and re-applies the `audit_log` DELETE
+revoke. `just prod-backup` is available separately when an immediate verified
+backup is needed outside a deployment.
+
+For a release that changes the web/jobs contract, use
+`just prod-deploy-with-jobs`. It builds both images before downtime, stops the
+jobs API and worker, performs the web backup and migration, then starts web,
+jobs, and refreshes the Prefect deployment. Production profiles using
+`model-chatgpt-*` must use `just prod-deploy-with-jobs-codex` so the narrowly
+scoped Codex auth mount is retained. The coordinated recipes check the production
+Prefect deployment before downtime, then stop new submissions and check again
+before stopping the worker. If a run is queued or active, deployment refuses to
+continue; wait for it to finish or cancel it explicitly. If a run races the
+first check, the unchanged web and jobs API containers are restarted without
+migrating.
+
+### Permissions rework rollout
+
+Deploy the lookup ownership change separately from the role cutover:
+
+1. Merge through migration `20260916090000_scope_metadata_lookups_to_catalog`
+   together with the lookup-route changes that write `workflow_group_id`, then
+   run `just prod-deploy`. Do not apply this migration while older lookup code
+   can create rows without a catalog.
+2. Verify every lookup has a catalog and every reference points to a lookup in
+   the same catalog:
+
+   ```sql
+   SELECT 'recorders' AS kind, count(*) FROM recorders WHERE workflow_group_id IS NULL
+   UNION ALL SELECT 'locations', count(*) FROM locations WHERE workflow_group_id IS NULL
+   UNION ALL SELECT 'albums', count(*) FROM albums WHERE workflow_group_id IS NULL;
+
+   SELECT count(*) AS mismatched_lookup_references
+   FROM (
+     SELECT 1 FROM audio_metadata m JOIN recorders r ON r.id = m.recorder_id
+       WHERE r.workflow_group_id <> m.workflow_group_id
+     UNION ALL
+     SELECT 1 FROM audio_metadata m JOIN locations l ON l.id = m.location_id
+       WHERE l.workflow_group_id <> m.workflow_group_id
+     UNION ALL
+     SELECT 1 FROM audio_metadata m JOIN albums a ON a.id = m.album_id
+       WHERE a.workflow_group_id <> m.workflow_group_id
+     UNION ALL
+     SELECT 1 FROM catalog_event e JOIN locations l ON l.id = e.location_id
+       WHERE l.workflow_group_id <> e.workflow_group_id
+   ) mismatches;
+   ```
+
+   Every count must be zero before continuing.
+
+3. Merge the remaining permission stack and deploy it as one coordinated
+   web/jobs maintenance release with `just prod-deploy-with-jobs` (or the
+   `-codex` variant). This applies the additive role columns and then assigns
+   every active and pending grant a role while no old worker is running.
+4. Verify the role backfill before accepting traffic as healthy:
+
+   ```sql
+   SELECT count(*) AS grants_without_role FROM catalog_access WHERE role IS NULL;
+   SELECT count(*) AS pending_without_role FROM pending_catalog_grant WHERE role IS NULL;
+   SELECT access_level, role, extra_permissions, count(*)
+     FROM catalog_access
+    GROUP BY access_level, role, extra_permissions
+    ORDER BY access_level, role;
+   ```
+
+   The first two counts must be zero. Compare the grouped mapping with the
+   preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
+   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
+
+Each maintenance run creates its own verified pre-migration backup below
+`BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating
+seven daily files and remain until an operator removes them. If a post-migration
+verification fails, use the guarded rollback recipe described below; it
+preserves the failed-state database, restores that run's backup, and restarts
+the retained previous images. Do not attempt an ad-hoc reverse migration.
+
+**Migrations run before the new container starts, and that order matters.** The
+new image knows about columns the old schema lacks, and Prisma asks for every
+scalar of a model unless a query names a `select`, so starting it first would
+leave it serving against a schema it does not match until the restart. Migrating
+first has the old container meet the new schema instead, which additive
+migrations do not disturb. `prod-migrate` runs from the host against the `db`
+container, so it needs nothing from `web`.
+
+A migration that removes or narrows something the running code still uses breaks
+that reasoning in the other direction: no ordering saves it, because one of the
+two must meet a schema it does not match. Besedy is not a high-availability
+deployment, so the answer there is to stop `web`, migrate, and start it again,
+rather than to stage the change across two releases.
 
 **Version tracking:** The build keeps `GIT_COMMIT` for deployment diagnostics
 and derives `WEB_VERSION` from an allowlist of production web inputs plus the
@@ -165,10 +276,37 @@ This is only needed because older migrations create `vector` columns before late
 migrations remove them. Existing databases that already passed that point need
 nothing.
 
+**Required one-time cleanup for hosts with the retired LAN egress control:**
+
+Removing the repository files does not disable a unit or delete firewall rules
+previously installed on a host. Follow
+[Removing an Earlier Host Installation](egress-control-retirement.md#removing-an-earlier-host-installation)
+during a maintenance window. Do not consider the retirement complete until
+these checks succeed:
+
+```bash
+set -euo pipefail
+egress_units=$(systemctl list-unit-files --no-legend 'besedy-egress*')
+test -z "$egress_units"
+test ! -e /usr/local/bin/iptables-egress.sh
+docker_user_rules=$(sudo iptables -S DOCKER-USER)
+if grep -Fq besedy-egress <<<"$docker_user_rules"; then
+  echo "leftover besedy-egress rules in DOCKER-USER" >&2
+  exit 1
+fi
+if sudo iptables -S BESEDY-EGRESS >/dev/null 2>&1; then
+  echo "leftover BESEDY-EGRESS chain" >&2
+  exit 1
+fi
+```
+
+The last check also covers hosts where the unmerged dynamic reconciler was
+tested. Run this cleanup once per affected host; it is not part of routine
+releases.
+
 **First-deployment extras** (run once, not on every release):
 
-1. Install egress hardening: copy `web/setup/egress/` assets, enable `besedy-egress.service`.
-2. Install monitoring cron jobs (see Monitoring section below).
+1. Install monitoring cron jobs (see Monitoring section below).
 
 ### Post-Deploy Verification
 
@@ -179,7 +317,6 @@ nothing.
 - [ ] `just prod-monitor` (session health -- see below)
 - [ ] Backups appearing in `BACKUP_DIR`
 - [ ] Daily logs appearing in `WEB_LOGS_DIR`
-- [ ] `sudo systemctl status besedy-egress` confirms LAN blocked
 
 ### Session Health Monitor
 
@@ -197,26 +334,53 @@ errors, active/expired session counts, session endpoint health, deployed version
 
 ## Rollback
 
-1. Check out the previous known-good commit.
-2. Redeploy: `just prod-deploy`.
-3. If a migration must be reverted, restore the database from backup:
+Every production build keeps the web image and the jobs image paired with it
+tagged with the release's full source commit, and every maintenance deployment
+writes a verified backup under
+`BACKUP_DIR/deploy/`. For a coordinated web/jobs rollback, select the previous
+known-good commit and the backup created immediately before the failed release:
 
 ```bash
-cd web
-bash ../scripts/run_web_compose.sh production stop web
-gunzip -c /path/to/backup.sql.gz | \
-  bash ../scripts/run_web_compose.sh production \
-  exec -T db psql -U besedy -d besedy
-bash ../scripts/run_web_compose.sh production start web
+previous_commit=<full-40-character-commit>
+backup=deploy/besedy_deploy_<failed-commit>_<timestamp>.sql.gz
+CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
+  just prod-rollback "$previous_commit" "$backup"
 ```
 
-4. Verify rollback: `curl -s https://besedy.org/api/version | jq`.
+For a `model-chatgpt-*` production profile, retain the narrowly scoped Codex
+credential mount during rollback:
+
+```bash
+CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
+  just prod-rollback-codex "$previous_commit" "$backup"
+```
+
+The recipe verifies both retained images and that Prefect is idle, stops all
+writers and the scheduled backup service, creates another retained backup of
+the failed state, validates and restores the selected archive into a fresh
+database, then starts the exact previous web/jobs images, restarts scheduled
+backups, and re-registers that jobs deployment. A missing image, active job, bad
+archive, or mismatched confirmation stops before the database is replaced.
+
+For a database-only restore, stop web, the scheduled backup service, the jobs
+API, and the worker first, then repeat the exact archive path in the
+confirmation:
+
+```bash
+backup=deploy/besedy_deploy_<commit>_<timestamp>.sql.gz
+CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
+```
+
+After either path, verify `just prod-status`, `just jobs-prod-status`, the public
+version endpoint, authentication, and the permission backfill queries above.
+Remove old `BACKUP_DIR/deploy/` archives and `besedy-web:<commit>` /
+`besedy-jobs:<commit>` images only after the release is accepted.
 
 ---
 
 ## Deep Search Production Runtime
 
-Deep Search runs *outside* the Next.js app: a shared Prefect control plane plus a
+Deep Search runs _outside_ the Next.js app: a shared Prefect control plane plus a
 per-environment jobs runtime (jobs API + worker), all joined to the
 `besedy-internal` Docker network alongside production web. See
 [docker-container-topology.md](docker-container-topology.md) for the full
@@ -226,7 +390,11 @@ through the development runtime.
 
 ### Deploy Order
 
-1. **Web + migrations** -- `just prod-deploy` (see Production Deploy above).
+1. **Web + jobs contract changes** -- use `just prod-deploy-with-jobs` (or the
+   `-codex` variant for `model-chatgpt-*`). See Production Deploy above. This
+   coordinated path is required whenever a worker request/response contract or
+   its authorization context changes; do not migrate web while an old worker
+   can still issue writes or internal requests.
    Set `JOBS_API_BASE_URL=http://besedy-prod-jobs-api:8390` in the production web
    env file so web calls the production jobs API by container name. Do **not**
    use `besedy-jobs-api` (that DNS alias belongs to the dev runtime), and note the
@@ -237,7 +405,7 @@ through the development runtime.
    image and runs migrations, not because it is the only recipe that joins the
    network. `prod-up`, `prod-deploy`, and `jobs-prod-up` create the external
    `besedy-internal` network if it is missing.
-2. **Shared Prefect + production runtime:**
+2. **Initial shared Prefect + production runtime setup:**
 
    Before the first hardened deployment, create the output root and make it
    writable by `JOBS_CONTAINER_UID:JOBS_CONTAINER_GID` (defaults `1000:1000`):
@@ -367,14 +535,17 @@ sudo journalctl -u cloudflared -f
 ### Common Failures
 
 **Tunnel not connecting:**
+
 - Validate `/etc/cloudflared/config.yml` and credentials file path.
 - Inspect `journalctl -u cloudflared`.
 
 **502 / origin unavailable:**
+
 - Confirm the web container is healthy (`just prod-status`).
 - Confirm ingress points to `http://localhost:3000`.
 
 **Auth callback mismatch / DNS mismatch:**
+
 - `AUTH_URL` and `NEXT_PUBLIC_APP_URL` must exactly match the public hostname.
 - Rebuild or restart the web container after correcting the env file.
 
@@ -382,19 +553,19 @@ sudo journalctl -u cloudflared -f
 
 ## Monitoring & Alerts
 
-All monitoring scripts live in `web/scripts/`. Host setup assets (egress
-hardening) live in `web/setup/`.
+All monitoring scripts live in `web/scripts/`. Host backup setup assets live in
+`web/setup/backup/`.
 
 ### Script Inventory
 
-| Script | Schedule | Alerts When | Logger Tag |
-|--------|----------|-------------|------------|
-| `mcp-usage-retention.sh` | Daily 05:50 | Failure; otherwise rolls up and prunes raw MCP telemetry | `besedy-mcp-retention` |
-| `audit-check.sh` | Daily 06:00 | Failed logins or access denials exceed thresholds; admin role changes | `besedy-audit` |
-| `weekly-report.sh` | Weekly Sun 06:30 | Every run (full 7-day activity summary) | `besedy-weekly` |
-| `backup-health-check.sh` | Daily 06:45 | Any backup health check fails | `besedy-backup` |
-| `host-backup-health-check.sh` | Daily 07:05 | Any required project/extra snapshot coverage check fails | `besedy-host-backup` |
-| `security-update-check.sh` | Monthly 1st 07:00 | Every run (subject varies by findings) | `besedy-security` |
+| Script                        | Schedule          | Alerts When                                                           | Logger Tag             |
+| ----------------------------- | ----------------- | --------------------------------------------------------------------- | ---------------------- |
+| `mcp-usage-retention.sh`      | Daily 05:50       | Failure; otherwise rolls up and prunes raw MCP telemetry              | `besedy-mcp-retention` |
+| `audit-check.sh`              | Daily 06:00       | Failed logins or access denials exceed thresholds; admin role changes | `besedy-audit`         |
+| `weekly-report.sh`            | Weekly Sun 06:30  | Every run (full 7-day activity summary)                               | `besedy-weekly`        |
+| `backup-health-check.sh`      | Daily 06:45       | Any backup health check fails                                         | `besedy-backup`        |
+| `host-backup-health-check.sh` | Daily 07:05       | Any required project/extra snapshot coverage check fails              | `besedy-host-backup`   |
+| `security-update-check.sh`    | Monthly 1st 07:00 | Every run (subject varies by findings)                                | `besedy-security`      |
 
 All scripts require Docker access, `jq`, production compose files, and the
 resolved production env file via `scripts/resolve_web_env_file.sh production`.
@@ -482,6 +653,10 @@ script without sending email. Output goes to stdout.
 
 The `backup` compose service creates daily `besedy_YYYYMMDD_HHMMSS.sql.gz` files
 and retains seven days. Files land in the host path configured by `BACKUP_DIR`.
+Maintenance deployments additionally create
+`deploy/besedy_deploy_<commit>_<timestamp>.sql.gz`. The daily rotation does not
+touch that subdirectory; deployment backups are removed only by an operator
+after the rollback window closes.
 
 Host-side rsnapshot coverage is intentionally split:
 
@@ -515,17 +690,18 @@ sync success.
 
 ### Restore Procedure
 
+Use a retained deployment archive and the guarded restore recipe. It requires
+the web service, jobs API, and worker to already be stopped, verifies the gzip
+archive before replacing the database, and requires an exact confirmation:
+
 ```bash
-cd web
-bash ../scripts/run_web_compose.sh production stop web
-gunzip -c /path/to/backup.sql.gz | \
-  bash ../scripts/run_web_compose.sh production \
-  exec -T db psql -U besedy -d besedy
-bash ../scripts/run_web_compose.sh production start web
+backup=deploy/besedy_deploy_<commit>_<timestamp>.sql.gz
+CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
 ```
 
-After restore, verify with `just prod-status` and
-`curl -s https://besedy.org/api/version | jq`.
+Start the intended image versions only after the restore succeeds. For a full
+coordinated rollback, prefer `just prod-rollback` as described in the Rollback
+section. Then verify service status and the public version endpoint.
 
 ---
 

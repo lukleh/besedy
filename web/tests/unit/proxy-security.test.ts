@@ -68,6 +68,32 @@ describe("proxy security controls", () => {
     expect(response.headers.get("x-middleware-request-x-nonce")).toBe(cspNonce);
   });
 
+  it("allows only the Downloads warm-up document in a same-origin frame", async () => {
+    mocks.resolveRequestAuth.mockResolvedValue({
+      authenticated: true,
+      shouldInvalidateSession: false,
+      shouldClearCookies: false,
+      sessionId: "session-1",
+    });
+    const { proxy } = await import("@/proxy");
+
+    const warmResponse = await proxy(
+      new NextRequest("http://localhost/downloads?warm=1")
+    );
+    expect(warmResponse.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
+    expect(warmResponse.headers.get("Content-Security-Policy")).toContain(
+      "frame-ancestors 'self'"
+    );
+
+    const regularResponse = await proxy(
+      new NextRequest("http://localhost/downloads")
+    );
+    expect(regularResponse.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(regularResponse.headers.get("Content-Security-Policy")).toContain(
+      "frame-ancestors 'none'"
+    );
+  });
+
   it("does not trust forwarded IP headers by default for auth rate limiting", async () => {
     const { proxy } = await import("@/proxy");
 

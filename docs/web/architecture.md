@@ -342,24 +342,14 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
 
 ## Offline
 
-### What Works
+Offline mode is documented in [offline.md](offline.md). In short: users
+download events or recordings from the page-side download manager
+(`lib/offline/download-manager.ts`), the registry lives in IndexedDB, and the
+service worker (`public/sw.js`) serves downloaded audio and the dedicated
+session-free `/downloads` shell when the network is unavailable. Normal
+application pages and API responses are not cached for offline use; failed
+offline navigations are redirected to the device-local Downloads library.
 
-- **Manual audio caching:** `useContentCache` downloads audio in chunks via the Service Worker (`public/sw.js`).
-- **Offline banner:** fixed banner shown when offline (`components/offline-banner.tsx`).
-- **Catalog staleness markers:** `useCatalogStatus` stores `lastModifiedAt` in `localStorage` to detect server-side changes.
-
-### What Does Not Work Offline
-
-- Transcript and diarization requests (return `503`).
-- Reloading catalog into a browsable offline view.
-- Audio for recordings not previously cached.
-- Metadata edits and other write actions.
-- Fresh server-side search/filter data.
-
-Navigation requests use network-first `cache: "no-store"`. React Query data is treated as stale immediately and refetched on mount/focus.
-
-### Troubleshooting
-
-- **Service Worker issues:** DevTools -> Application -> Service Workers -> Unregister, then refresh. If the app was opened via plain `http://<LAN-IP>:3001`, the browser will not register the SW at all -- use `localhost` or an HTTPS origin for offline caching.
-- **Clear cached data:** DevTools -> Application -> Storage -> Clear site data, or browser privacy settings.
-- **Storage quota:** Large audio files consume significant storage. Clear old cached recordings and check browser storage settings.
+Catalog staleness markers are unrelated to downloads: `useCatalogStatus`
+stores `lastModifiedAt` in `localStorage` to detect server-side changes while
+online.

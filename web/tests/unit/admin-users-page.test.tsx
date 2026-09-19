@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import UsersPage from "@/app/admin/users/page";
+import UsersPage from "@/app/(app)/admin/users/page";
 
 const mocks = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {
@@ -22,7 +22,7 @@ vi.mock("@/lib/access/capabilities", () => ({
   getAdminCapability: mocks.getAdminCapabilityMock,
 }));
 
-vi.mock("@/app/admin/users/users-content", () => ({
+vi.mock("@/app/(app)/admin/users/users-content", () => ({
   default: () => <div data-testid="users-page-content" />,
 }));
 

@@ -1,6 +1,10 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventListResults } from "@/components/catalog/event-list-results";
+
+const { downloadedEvents } = vi.hoisted(() => ({
+  downloadedEvents: new Map<number, string>(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -14,6 +18,10 @@ vi.mock("next-intl", () => ({
     if (key === "postersMobile") return `Posters: ${values?.status ?? ""}`;
     return key;
   },
+}));
+
+vi.mock("@/hooks/use-downloads", () => ({
+  useDownloadedEvents: () => downloadedEvents,
 }));
 
 const BASE_PROPS = {
@@ -50,6 +58,10 @@ const BASE_PROPS = {
 };
 
 describe("EventListResults", () => {
+  beforeEach(() => {
+    downloadedEvents.clear();
+  });
+
   it("shows listener columns without owner-only fields", () => {
     render(
       <EventListResults
@@ -100,6 +112,39 @@ describe("EventListResults", () => {
     expect(within(mobileCard).queryByText("Recordings: 3")).not.toBeInTheDocument();
     expect(within(mobileCard).queryByText("Primary track")).not.toBeInTheDocument();
     expect(within(mobileCard).queryByText("released")).not.toBeInTheDocument();
+  });
+
+  it("does not add the session label to mobile event cards", () => {
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        events={[{ ...BASE_PROPS.events[0], sessionIndex: 2 }]}
+        showAllColumns
+        showReleaseState
+      />
+    );
+
+    expect(
+      within(screen.getByTestId("event-card-1")).queryByText("sessionLabel")
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the download icon on a downloaded event", () => {
+    downloadedEvents.set(1, "complete");
+
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        showAllColumns={false}
+        showReleaseState={false}
+      />
+    );
+
+    const marker = within(screen.getByTestId("event-card-1")).getByLabelText(
+      "downloaded"
+    );
+    expect(marker.querySelector(".lucide-download")).toBeInTheDocument();
+    expect(marker).toHaveClass("text-foreground");
   });
 
   it("shows the extra owner columns when enabled", () => {
