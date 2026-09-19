@@ -22,6 +22,7 @@ from besedy.lib.internal_ingest_client import IngestCompletionStatus
 from ..json_types import JsonDict
 from .ingest_recording import (
     COMPLETION_REPORT_FAILED_MARKER,
+    MAX_ERROR_MESSAGE_LENGTH,
     IngestFlowError,
     IngestPaths,
     _report_failure_best_effort,
@@ -101,7 +102,7 @@ def remove_recording_flow(
         "status": IngestCompletionStatus.REMOVED.value,
         "audioHash": audio_hash,
         "errorCode": "derived_refresh_failed" if warning else None,
-        "errorMessage": warning,
+        "errorMessage": warning[:MAX_ERROR_MESSAGE_LENGTH] if warning else None,
     }
     try:
         report_completion(paths.intake_id, outcome)

@@ -63,10 +63,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // A REJECTED intake's hash points at the *existing* recording it duplicated;
-    // that one must never be removed from here.
+    // that one must never be removed from here. CANCELLED intakes with a hash are
+    // removal attempts, so retry the idempotent catalog cleanup rather than
+    // deleting only the source directory that the catalog may still reference.
     const reachedCatalog =
       intake.audioHash !== null &&
-      (intake.status === 'SUCCEEDED' || intake.status === 'FAILED');
+      (intake.status === 'SUCCEEDED' ||
+        intake.status === 'FAILED' ||
+        intake.status === 'CANCELLED');
 
     if (!reachedCatalog) {
       await removeAllIntakeDirs(intake.workflowGroupId, intake.id);

@@ -241,6 +241,58 @@ describe('admin ingest removal', () => {
     );
   });
 
+  it('retries catalog removal when a previous removal job was cancelled', async () => {
+    const acceptedDir = path.join(
+      mocks.uploadsDir,
+      CATALOG_ID,
+      'accepted',
+      INTAKE_ID,
+    );
+    await fs.mkdir(acceptedDir, { recursive: true });
+    await fs.writeFile(path.join(acceptedDir, 'talk.mp3'), 'audio');
+    prisma.recordingIntake.findUnique.mockResolvedValue(
+      row({
+        status: 'CANCELLED',
+        jobId: JOB_ID,
+        errorCode: 'worker_cancelled',
+      }),
+    );
+    prisma.recordingIntake.findUniqueOrThrow.mockResolvedValue(
+      row({ status: 'REMOVING', jobId: REMOVAL_JOB_ID, finishedAt: null }),
+    );
+    fetchJobsApi.mockResolvedValue({
+      id: REMOVAL_JOB_ID,
+      kind: 'INGEST',
+      status: 'QUEUED',
+      requested_by_id: 'admin-1',
+      catalog_id: CATALOG_ID,
+      payload: { intakeId: INTAKE_ID, audioHash: HASH, operation: 'remove' },
+    });
+
+    const response = await removeIntake(
+      adminRequest(`/api/admin/ingest/${INTAKE_ID}/remove`),
+      {
+        params: Promise.resolve({ intakeId: INTAKE_ID }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intake: { status: 'REMOVING', jobId: REMOVAL_JOB_ID },
+    });
+    expect(fetchJobsApi).toHaveBeenCalledWith(
+      `/catalogs/${CATALOG_ID}/ingest/removals`,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          intakeId: INTAKE_ID,
+          audioHash: HASH,
+          idempotencyKey: JOB_ID,
+        }),
+      }),
+    );
+    await expect(fs.stat(acceptedDir)).resolves.toBeDefined();
+  });
+
   it('only deletes upload files for a rejected duplicate and never touches the existing recording', async () => {
     const rejectedDir = path.join(
       mocks.uploadsDir,

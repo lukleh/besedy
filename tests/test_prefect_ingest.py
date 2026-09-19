@@ -666,6 +666,20 @@ def test_removal_flow_reports_removed_with_warning_when_refresh_fails(
     assert reports == [result]
 
 
+def test_removal_flow_truncates_refresh_warning(monkeypatch, tmp_path: Path) -> None:
+    paths = _layout(tmp_path, hashes=[NEW_HASH])
+
+    result, _cli_calls, reports = _run_removal_flow(
+        monkeypatch,
+        paths,
+        refresh_error="x" * (ingest_module.MAX_ERROR_MESSAGE_LENGTH + 1),
+    )
+
+    assert result["errorCode"] == "derived_refresh_failed"
+    assert result["errorMessage"] == "x" * ingest_module.MAX_ERROR_MESSAGE_LENGTH
+    assert reports == [result]
+
+
 def test_removal_flow_reports_failure_when_remove_command_fails(
     monkeypatch, tmp_path: Path
 ) -> None:
