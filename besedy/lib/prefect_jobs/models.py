@@ -197,6 +197,7 @@ class DeepSearchSubmitRequest:
 _CATALOG_ID_RE = re.compile(r"^\d{8}_\d{6}$")
 _INTAKE_ID_RE = re.compile(r"^[a-z0-9]{16,64}$")
 _AUDIO_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_IDEMPOTENCY_KEY_RE = re.compile(r"^[a-zA-Z0-9-]{16,64}$")
 _FILENAME_FORBIDDEN_RE = re.compile(r"[/\\\x00]")
 MAX_ORIGINAL_FILENAME_LENGTH = 255
 
@@ -222,6 +223,13 @@ def validate_audio_hash(value: object) -> str:
     return rendered
 
 
+def validate_idempotency_key(value: object) -> str:
+    rendered = str(value or "").strip()
+    if not _IDEMPOTENCY_KEY_RE.fullmatch(rendered):
+        raise ValueError("idempotencyKey must be a stable UUID or intake identifier.")
+    return rendered
+
+
 def validate_original_filename(value: object) -> str:
     if not isinstance(value, str):
         raise ValueError("originalFilename must be a string.")
@@ -239,19 +247,17 @@ def validate_original_filename(value: object) -> str:
 class IngestSubmitRequest:
     intake_id: str
     original_filename: str
-    requested_by_id: str | None = None
+    requested_by_id: str
 
     @classmethod
     def from_payload(cls, payload: JsonDict) -> IngestSubmitRequest:
         requested_by_id = payload.get("requestedById")
-        if requested_by_id is not None and (
-            not isinstance(requested_by_id, str) or not requested_by_id.strip()
-        ):
-            raise ValueError("requestedById must be a non-empty string when provided.")
+        if not isinstance(requested_by_id, str) or not requested_by_id.strip():
+            raise ValueError("requestedById is required and must be a non-empty string.")
         return cls(
             intake_id=validate_intake_id(payload.get("intakeId")),
             original_filename=validate_original_filename(payload.get("originalFilename")),
-            requested_by_id=requested_by_id.strip() if isinstance(requested_by_id, str) else None,
+            requested_by_id=requested_by_id.strip(),
         )
 
     def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
@@ -267,19 +273,19 @@ class IngestSubmitRequest:
 class IngestRemovalRequest:
     intake_id: str
     audio_hash: str
-    requested_by_id: str | None = None
+    idempotency_key: str
+    requested_by_id: str
 
     @classmethod
     def from_payload(cls, payload: JsonDict) -> IngestRemovalRequest:
         requested_by_id = payload.get("requestedById")
-        if requested_by_id is not None and (
-            not isinstance(requested_by_id, str) or not requested_by_id.strip()
-        ):
-            raise ValueError("requestedById must be a non-empty string when provided.")
+        if not isinstance(requested_by_id, str) or not requested_by_id.strip():
+            raise ValueError("requestedById is required and must be a non-empty string.")
         return cls(
             intake_id=validate_intake_id(payload.get("intakeId")),
             audio_hash=validate_audio_hash(payload.get("audioHash")),
-            requested_by_id=requested_by_id.strip() if isinstance(requested_by_id, str) else None,
+            idempotency_key=validate_idempotency_key(payload.get("idempotencyKey")),
+            requested_by_id=requested_by_id.strip(),
         )
 
     def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:

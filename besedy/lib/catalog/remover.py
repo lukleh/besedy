@@ -39,6 +39,7 @@ CATALOG_CSV_SUFFIXES: tuple[str, ...] = (
     "_joined",
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_BASE_CATALOG_RE = re.compile(r"^audio_catalog_\d{8}_\d{6}\.csv$")
 
 
 class InvalidAudioHashError(ValueError):
@@ -64,6 +65,8 @@ class RemovalPlan:
     transcript_dirs: list[Path] = field(default_factory=list)
     diarization_dirs: list[Path] = field(default_factory=list)
     embedding_dirs: list[Path] = field(default_factory=list)
+    shared_catalog_refs: list[Path] = field(default_factory=list)
+    shared_source_files: list[Path] = field(default_factory=list)
 
     @property
     def files(self) -> list[Path]:
@@ -95,6 +98,26 @@ def derived_csv_paths(catalog_csv: Path) -> list[Path]:
     return [catalog_csv.with_name(f"{stem}{suffix}.csv") for suffix in CATALOG_CSV_SUFFIXES]
 
 
+def find_other_catalog_references(catalog_csv: Path, sha256: str) -> list[Path]:
+    """Return other base catalogs that still contain ``sha256``.
+
+    Transcript generations are catalog-scoped, but the speaker embedding cache
+    is shared by decoded-audio hash. Keep that cache while another catalog can
+    still use the recording.
+    """
+    sha256 = normalize_audio_hash(sha256)
+    current = catalog_csv.resolve()
+    references: list[Path] = []
+    for candidate in sorted(catalog_csv.parent.glob("audio_catalog_*.csv")):
+        if candidate.is_symlink() or not _BASE_CATALOG_RE.fullmatch(candidate.name):
+            continue
+        if candidate.resolve() == current:
+            continue
+        if _rows_for_hash(candidate, sha256):
+            references.append(candidate)
+    return references
+
+
 def _rows_for_hash(csv_path: Path, sha256: str) -> list[dict[str, str]]:
     columns, rows = load_csv(csv_path, encoding="utf-8")
     try:
@@ -114,6 +137,14 @@ def _existing_paths(rows: Iterable[dict[str, str]], column: str) -> list[Path]:
         if candidate.is_file() and candidate not in paths:
             paths.append(candidate)
     return paths
+
+
+def _shared_source_paths(catalogs: Sequence[Path], sha256: str) -> set[Path]:
+    return {
+        source.resolve()
+        for catalog in catalogs
+        for source in _existing_paths(_rows_for_hash(catalog, sha256), "Full Path")
+    }
 
 
 def find_embedding_dirs(
@@ -143,9 +174,15 @@ def build_removal_plan(
     transcripts_root: Path,
     embedding_roots: Sequence[Path] = (),
     delete_source: bool = False,
+    shared_catalog_refs: Sequence[Path] = (),
 ) -> RemovalPlan:
     sha256 = normalize_audio_hash(sha256)
-    plan = RemovalPlan(sha256=sha256, catalog_csv=catalog_csv)
+    plan = RemovalPlan(
+        sha256=sha256,
+        catalog_csv=catalog_csv,
+        shared_catalog_refs=list(shared_catalog_refs),
+    )
+    shared_sources = _shared_source_paths(plan.shared_catalog_refs, sha256)
 
     for csv_path in derived_csv_paths(catalog_csv):
         if not csv_path.is_file():
@@ -157,6 +194,9 @@ def build_removal_plan(
             continue
         if csv_path == catalog_csv and delete_source:
             for source in _existing_paths(rows, "Full Path"):
+                if source.resolve() in shared_sources:
+                    plan.shared_source_files.append(source)
+                    continue
                 plan.source_files.append(source)
                 sidecar = Path(f"{source}{AUDIO_HASH_SIDECAR_SUFFIX}")
                 if sidecar.is_file():
@@ -168,9 +208,10 @@ def build_removal_plan(
 
     plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
     plan.diarization_dirs = find_diarization_dirs(transcripts_root, sha256)
-    plan.embedding_dirs = find_embedding_dirs(
-        sha256, transcripts_root=transcripts_root, extra_roots=embedding_roots
-    )
+    if not plan.shared_catalog_refs:
+        plan.embedding_dirs = find_embedding_dirs(
+            sha256, transcripts_root=transcripts_root, extra_roots=embedding_roots
+        )
     return plan
 
 

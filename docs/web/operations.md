@@ -516,10 +516,10 @@ the host (not in the hardened jobs containers). Full runbook:
 
 Deploy additions on top of the Deep Search steps above:
 
-1. Web env file: set `UPLOADS_DIR` (writable by container UID 1001 and by the
-   worker user) and add `<host uploads dir>=/data/uploads` to
-   `BESEDY_PATH_MAPPINGS`; host `besedy.toml`: set `[paths].uploads_dir` to the
-   same host directory.
+1. Web env file: set `UPLOADS_DIR` and `UPLOADS_GID`, prepare that directory as
+   the shared group with mode `2770`, add the worker user to the group, and add
+   `<host uploads dir>=/data/uploads` to `BESEDY_PATH_MAPPINGS`; host
+   `besedy.toml`: set `[paths].uploads_dir` to the same host directory.
 2. `just prod-deploy` (includes the `recording_intake` migration) and
    `just jobs-prod-rebuild && just jobs-prod-deploy` (registers the
    `besedy-ingest-prod` pool and `ingest_recording_flow/ingest-prod`).

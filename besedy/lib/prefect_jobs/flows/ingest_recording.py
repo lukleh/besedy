@@ -1,8 +1,8 @@
 """Prefect flow that ingests a web-uploaded recording into a catalog.
 
 The flow runs on a host worker (it needs the operator's Docker/GPU access for
-the pipeline) and only trusts two validated tokens from the web app: the catalog
-id and the intake id. Every path is derived from the worker's own configuration.
+the pipeline). Every path is derived from the validated catalog and intake ids
+using the worker's own configuration; display metadata never selects a path.
 """
 
 from __future__ import annotations
@@ -241,6 +241,7 @@ def reject_file(source_path: str, rejected_dir: str) -> str:
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / source.name
     shutil.move(str(source), str(target))
+    shutil.rmtree(source.parent / ".chunks", ignore_errors=True)
     _remove_empty_dir(source.parent)
     return str(target)
 
@@ -273,6 +274,7 @@ def accept_file(
         filename=target.name,
         source_file_sha256=source_file_sha256(target),
     )
+    shutil.rmtree(source.parent / ".chunks", ignore_errors=True)
     _remove_empty_dir(source.parent)
     return str(target)
 
@@ -311,12 +313,12 @@ def _send_report(client: BesedyIngestClient, *, intake_id: str, report: JsonDict
     )
 
 
-def build_failure_report(exc: BaseException) -> JsonDict:
+def build_failure_report(exc: BaseException, *, audio_hash: str | None = None) -> JsonDict:
     error_code = exc.error_code if isinstance(exc, IngestFlowError) else "ingest_failed"
     message = str(exc).strip() or exc.__class__.__name__
     return {
         "status": IngestCompletionStatus.FAILED.value,
-        "audioHash": None,
+        "audioHash": audio_hash,
         "errorCode": error_code,
         "errorMessage": message[:MAX_ERROR_MESSAGE_LENGTH],
     }
@@ -332,23 +334,28 @@ def ingest_recording_flow(
     del requested_by_id
     original_filename = validate_original_filename(original_filename)
     paths = resolve_ingest_paths(catalog_id, intake_id)
+    audio_hash: str | None = None
 
     with catalog_ingest_lock(paths.lock_path):
         try:
             source = validate_intake(str(paths.incoming_dir), str(paths.catalog_csv))
             identity = check_duplicate(source, str(paths.catalog_csv))
-            audio_hash = str(identity["audio_hash"])
+            decoded_hash = str(identity["audio_hash"])
             if identity["duplicate"]:
                 reject_file(source, str(paths.rejected_dir))
                 outcome: JsonDict = {
                     "status": IngestCompletionStatus.REJECTED.value,
-                    "audioHash": audio_hash,
+                    "audioHash": decoded_hash,
                     "errorCode": "duplicate",
                     "errorMessage": (
                         "A recording with the same decoded audio is already in the catalog."
                     ),
                 }
             else:
+                # From this point the hash belongs to this intake rather than
+                # an existing duplicate. Preserve it in failure reports so a
+                # partial catalog add can be cleaned up safely.
+                audio_hash = decoded_hash
                 accept_file(source, str(paths.accepted_dir), original_filename, audio_hash)
                 catalog_add(str(paths.accepted_dir), str(paths.catalog_csv))
                 run_pipeline(str(paths.catalog_csv))
@@ -359,7 +366,7 @@ def ingest_recording_flow(
                     "errorMessage": None,
                 }
         except Exception as exc:
-            _report_failure_best_effort(paths.intake_id, exc)
+            _report_failure_best_effort(paths.intake_id, exc, audio_hash=audio_hash)
             raise
 
     try:
@@ -375,9 +382,14 @@ def ingest_recording_flow(
     return outcome
 
 
-def _report_failure_best_effort(intake_id: str, exc: BaseException) -> None:
+def _report_failure_best_effort(
+    intake_id: str,
+    exc: BaseException,
+    *,
+    audio_hash: str | None = None,
+) -> None:
     try:
-        report_completion(intake_id, build_failure_report(exc))
+        report_completion(intake_id, build_failure_report(exc, audio_hash=audio_hash))
     except Exception as report_exc:  # pragma: no cover - defensive runtime guard
         print(f"Failed to report ingest failure for intake {intake_id}: {report_exc}")
 

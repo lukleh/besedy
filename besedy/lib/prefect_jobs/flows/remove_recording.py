@@ -94,7 +94,7 @@ def remove_recording_flow(
             warning = refresh_derived_stores(str(paths.catalog_csv))
             remove_intake_dirs(_intake_dirs(paths))
         except Exception as exc:
-            _report_failure_best_effort(paths.intake_id, exc)
+            _report_failure_best_effort(paths.intake_id, exc, audio_hash=audio_hash)
             raise
 
     outcome: JsonDict = {

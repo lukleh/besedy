@@ -165,11 +165,9 @@ describe("internal ingest completion route", () => {
 
   it("keeps SUCCEEDED but flags sync failures", async () => {
     prisma.recordingIntake.findUnique.mockResolvedValue(row());
-    prisma.recordingIntake.update
-      .mockResolvedValueOnce(row({ status: "SUCCEEDED", audioHash: HASH }))
-      .mockResolvedValueOnce(
-        row({ status: "SUCCEEDED", audioHash: HASH, errorCode: "sync_failed" })
-      );
+    prisma.recordingIntake.update.mockResolvedValue(
+      row({ status: "SUCCEEDED", audioHash: HASH, errorCode: "sync_failed" })
+    );
     syncCatalogGroup.mockResolvedValue({
       groupId: CATALOG_ID,
       status: "error",
@@ -187,9 +185,13 @@ describe("internal ingest completion route", () => {
       ok: false,
       intake: { status: "SUCCEEDED", errorCode: "sync_failed" },
     });
-    expect(prisma.recordingIntake.update).toHaveBeenLastCalledWith(
+    expect(prisma.recordingIntake.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ errorCode: "sync_failed" }),
+        data: expect.objectContaining({
+          status: "SUCCEEDED",
+          errorCode: "sync_failed",
+          errorMessage: "Catalog sync failed: row count dropped",
+        }),
       })
     );
   });

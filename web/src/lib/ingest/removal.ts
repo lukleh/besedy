@@ -1,10 +1,11 @@
-import prisma from "@/lib/db";
+import prisma from '@/lib/db';
 
 export interface RecordingWebStateRemoval {
   detachedEventId: number | null;
   unreleasedEventId: number | null;
   metadataDeleted: number;
   progressDeleted: number;
+  progressRetained: boolean;
   notificationsDeleted: number;
 }
 
@@ -17,15 +18,21 @@ export interface RecordingWebStateRemoval {
  */
 export async function removeRecordingWebState(
   catalogId: string,
-  audioHash: string
+  audioHash: string,
 ): Promise<RecordingWebStateRemoval> {
   return prisma.$transaction(async (tx) => {
     let detachedEventId: number | null = null;
     let unreleasedEventId: number | null = null;
 
     const assignment = await tx.catalogEventRecording.findUnique({
-      where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash } },
-      select: { eventId: true, isPrimary: true, event: { select: { released: true } } },
+      where: {
+        workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash },
+      },
+      select: {
+        eventId: true,
+        isPrimary: true,
+        event: { select: { released: true } },
+      },
     });
     if (assignment) {
       // Serialize with release/detach operations on the same event row.
@@ -36,7 +43,9 @@ export async function removeRecordingWebState(
         FOR UPDATE
       `;
       await tx.catalogEventRecording.delete({
-        where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash } },
+        where: {
+          workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash },
+        },
       });
       detachedEventId = assignment.eventId;
       if (assignment.isPrimary && assignment.event.released) {
@@ -51,7 +60,15 @@ export async function removeRecordingWebState(
     const metadata = await tx.audioMetadata.deleteMany({
       where: { workflowGroupId: catalogId, audioHash },
     });
-    const progress = await tx.recordingPlaybackProgress.deleteMany({ where: { audioHash } });
+    const remainingCatalogRefs = await tx.catalogEntry.count({
+      where: { audioHash, workflowGroupId: { not: catalogId } },
+    });
+    const progress =
+      remainingCatalogRefs === 0
+        ? await tx.recordingPlaybackProgress.deleteMany({
+            where: { audioHash },
+          })
+        : { count: 0 };
     const notifications = await tx.recordingNotification.deleteMany({
       where: { catalogId, audioHash },
     });
@@ -66,6 +83,7 @@ export async function removeRecordingWebState(
       unreleasedEventId,
       metadataDeleted: metadata.count,
       progressDeleted: progress.count,
+      progressRetained: remainingCatalogRefs > 0,
       notificationsDeleted: notifications.count,
     };
   });

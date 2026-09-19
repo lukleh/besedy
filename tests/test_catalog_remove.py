@@ -188,6 +188,47 @@ def test_plan_without_delete_source_keeps_the_original(layout: Layout) -> None:
     assert plan.staged_files == [layout.staged[GONE]]
 
 
+def test_plan_scopes_transcripts_and_retains_shared_artifacts(layout: Layout) -> None:
+    other_ts = "20260202_120000"
+    other_catalog = layout.catalogs / f"audio_catalog_{other_ts}.csv"
+    _write_csv(
+        other_catalog,
+        ["Hash", "Full Path"],
+        [{"Hash": GONE, "Full Path": str(layout.sources[GONE])}],
+    )
+    other_transcript = _touch(
+        layout.transcripts_parent
+        / f"transcripts_{other_ts}"
+        / "faster-whisper"
+        / "large-v3@silero"
+        / GONE
+        / "transcript.json"
+    ).parent
+
+    references = remover.find_other_catalog_references(layout.catalog_csv, GONE)
+    plan = remover.build_removal_plan(
+        GONE,
+        catalog_csv=layout.catalog_csv,
+        transcripts_root=layout.transcripts_root,
+        embedding_roots=[layout.transcripts_parent / "speaker_embeddings"],
+        delete_source=True,
+        shared_catalog_refs=references,
+    )
+
+    assert references == [other_catalog]
+    assert other_transcript not in plan.transcript_dirs
+    assert plan.embedding_dirs == []
+    assert plan.source_files == []
+    assert plan.shared_source_files == [layout.sources[GONE]]
+
+    result = remover.execute_removal(plan)
+    assert result.ok
+    assert layout.sources[GONE].is_file()
+    assert Path(f"{layout.sources[GONE]}.audiohash").is_file()
+    assert other_transcript.is_dir()
+    assert layout.embedding_dirs[GONE].is_dir()
+
+
 def test_execute_removes_only_the_requested_hash(layout: Layout) -> None:
     plan = _plan(layout, GONE, delete_source=True)
     result = remover.execute_removal(plan)
@@ -269,7 +310,6 @@ def test_unknown_hash_yields_empty_plan(layout: Layout) -> None:
 def _run_cli(monkeypatch, layout: Layout, capsys, *argv: str) -> tuple[int, dict]:  # type: ignore[no-untyped-def]
     from besedy.commands.catalog import remove as remove_module
 
-    monkeypatch.setattr(remove_module, "resolve_transcripts_root", lambda: layout.transcripts_root)
     monkeypatch.setattr(
         remove_module, "resolve_transcripts_parent", lambda: layout.transcripts_parent
     )

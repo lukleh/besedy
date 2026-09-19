@@ -35,18 +35,22 @@ Three constraints shape the design:
 - That pool is served by a **host-resident** Prefect process worker running as
   the operator, beside the hardened container worker for deep search. The flow
   shells out to the same CLI the operator runs by hand.
-- The worker trusts only two validated tokens from the web app (`catalog_id`,
-  `intake_id`) and derives every path from its own configuration; no filesystem
-  paths cross the web/worker boundary ([ADR 0003](0003-web-catalog-projection.md)).
+- The worker derives every path from the validated `catalog_id` and `intake_id`;
+  no filesystem paths cross the web/worker boundary
+  ([ADR 0003](0003-web-catalog-projection.md)). Display metadata such as the
+  original filename and requesting user is carried separately and is never
+  used to resolve a path.
 - A file whose decoded-audio hash already exists in the catalog is rejected and
   moved aside before `catalog add` runs, so duplicates never enter the catalog
   or its duplicates report.
-- Removal is the mirror image: a hash-scoped `catalog remove` (CSV rows,
-  source, staged/archived audio, transcripts, diarization, embeddings) followed
-  by the normal pipeline pass, whose incremental ColBERT sync prunes the hash
-  and whose clustering step rebuilds without it - no index rebuild. The web app
-  then deletes its own rows for the hash and unreleases an event that loses its
-  primary recording rather than leaving listeners an event without audio.
+- Removal is catalog-scoped: a hash-scoped `catalog remove` deletes rows and
+  artifacts for the selected timestamped catalog, followed by the normal
+  pipeline pass, whose incremental ColBERT sync prunes the hash and whose
+  clustering step rebuilds without it - no index rebuild. Globally keyed
+  speaker embeddings and playback progress are retained while another catalog
+  still references the hash. The web app then deletes catalog-owned rows and
+  unreleases an event that loses its primary recording rather than leaving
+  listeners an event without audio.
 - The worker reports completion to an internal, bearer-authenticated web route,
   which updates the intake and re-syncs the catalog projection. The web app
   also reconciles queued/running intakes against Prefect so crashes surface.
@@ -57,7 +61,9 @@ Three constraints shape the design:
   running (systemd user unit) and that carries the operator's Docker access;
   its inputs are therefore restricted to validated identifiers.
 - Uploads are chunked because the production edge caps request bodies well
-  below typical recording sizes.
+  below typical recording sizes. Each part is published atomically as an
+  immutable file and the final source is assembled only after every part is
+  durably present.
 - The ingest and deep-search workers can still contend for the GPU; the pool
   limit only serialises ingests.
 - `run-pipeline` processes every pending catalog row, not just the upload; that

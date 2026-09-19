@@ -131,7 +131,9 @@ class PrefectJobsApiService:
                 requested_by_id=request.requested_by_id,
                 operation="remove",
             ),
-            idempotency_key=f"ingest-remove:{request.intake_id}:{request.audio_hash}",
+            idempotency_key=(
+                f"ingest-remove:{request.intake_id}:{request.audio_hash}:{request.idempotency_key}"
+            ),
         )
         return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
 

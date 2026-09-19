@@ -194,10 +194,10 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 |--------|----------|--------|-------------|
 | GET | `/api/admin/ingest?catalogId=&limit=` | Admin | List recording intakes (live Prefect state overlaid) |
 | POST | `/api/admin/ingest/uploads` | Admin | Open a chunked upload (`catalogId`, `filename`, `sizeBytes`) |
-| PUT | `/api/admin/ingest/uploads/:intakeId/chunks/:index` | Admin | Append one sequential raw-body chunk |
-| POST | `/api/admin/ingest/uploads/:intakeId/finalize` | Admin | Verify size and submit the ingest job |
+| PUT | `/api/admin/ingest/uploads/:intakeId/chunks/:index` | Admin | Store one sequential raw-body chunk as an immutable part |
+| POST | `/api/admin/ingest/uploads/:intakeId/finalize` | Admin | Assemble and verify the upload, then submit the ingest job |
 | DELETE | `/api/admin/ingest/uploads/:intakeId` | Admin | Abort an unsubmitted upload |
-| POST | `/api/admin/ingest/:intakeId/remove` | Admin | Remove an ingested recording and all derived data (worker flow), or just the upload files |
+| POST | `/api/admin/ingest/:intakeId/remove` | Admin | Remove an ingested recording and catalog-owned derived data (worker flow), or just the upload files |
 | POST | `/api/internal/ingest/:intakeId/complete` | Job service bearer | Worker completion callback; re-syncs the catalog on success |
 
 See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.

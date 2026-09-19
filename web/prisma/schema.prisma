@@ -161,7 +161,7 @@ model User {
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
   /// Recording uploads this user submitted for ingest
-  recordingIntakes             RecordingIntake[]       @relation("RecordingIntakeRequestedBy")
+  recordingIntakes             RecordingIntake[]           @relation("RecordingIntakeRequestedBy")
 
   @@map("users")
 }
@@ -608,7 +608,7 @@ model WorkflowGroup {
 model RecordingIntake {
   id                String                @id @default(cuid())
   workflowGroupId   String                @map("workflow_group_id") @db.VarChar(15)
-  requestedById     String                @map("requested_by_id")
+  requestedById     String?               @map("requested_by_id")
   originalFilename  String                @map("original_filename")
   /// File name inside <uploads>/<catalog>/incoming/<id>/ (extension only, no user input)
   storedFilename    String                @map("stored_filename")
@@ -627,7 +627,7 @@ model RecordingIntake {
   finishedAt        DateTime?             @map("finished_at")
 
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  requestedBy   User          @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  requestedBy   User?         @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
 
   @@index([workflowGroupId, status])
   @@index([createdAt])

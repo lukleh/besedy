@@ -39,11 +39,12 @@ UI: polls GET /api/admin/ingest while rows are QUEUED/RUNNING; those rows are
     cancelled and callback-less runs end, and undelivered outcomes are applied.
 ```
 
-Only `catalog_id` and `intake_id` travel from the web app to the worker; both
-are validated tokens and every path is derived from the worker's own
-`besedy.toml`. The web container and the host see the uploads root under
-different paths (`/data/uploads` vs. the host directory), which is why no path
-is ever passed across.
+Every filesystem path is derived from the validated `catalog_id` and
+`intake_id` using the worker's own `besedy.toml`. The request also carries
+non-path metadata (`original_filename` and `requested_by_id`), while removals
+carry the validated audio hash. The web container and the host see the uploads
+root under different paths (`/data/uploads` vs. the host directory), so no
+filesystem path is ever passed across.
 
 ## Paths and configuration
 
@@ -51,24 +52,27 @@ is ever passed across.
 | --- | --- | --- |
 | Host `besedy.toml` (worker + CLI) | `[paths].uploads_dir` | host directory, e.g. `/mnt/data/besedy_uploads` |
 | Web env file (`web.env.<mode>`) | `UPLOADS_DIR` | the same host directory; mounted rw at `/data/uploads` |
+| Web env file | `UPLOADS_GID` | numeric group shared by container UID 1001 and the host worker user |
 | Web env file | `BESEDY_PATH_MAPPINGS` | must include `<host uploads dir>=/data/uploads` because catalog rows point at the host path |
 | Web container toml (`web/besedy.docker.toml`) | `[paths].uploads_dir` | `/data/uploads` |
 | Web env file (optional) | `INGEST_CHUNK_BYTES` | default 50 MB; keep below the edge proxy body limit (Cloudflare: 100 MB) and Next's `experimental.proxyClientMaxBodySize` (100mb in `web/next.config.ts`) |
 | Web env file (optional) | `INGEST_MAX_UPLOAD_BYTES` | default 4 GB |
 | jobs env (`jobs.env.<env>`) | `PREFECT_INGEST_WORK_POOL`, `PREFECT_INGEST_DEPLOYMENT_NAME`, `PREFECT_INGEST_FULL_DEPLOYMENT_NAME`, `PREFECT_INGEST_CONCURRENCY_LIMIT` | defaults `besedy-ingest-<env>`, `ingest-<env>`, `ingest_recording_flow/ingest-<env>`, `1` |
 
-The uploads root must be writable by the web container user (UID 1001 in
-production) **and** by the host worker user. Every directory level the web app
-creates below it is chmod'ed to `0777` explicitly (the umask would otherwise mask
-`mkdir`'s mode), because the worker - a different UID - has to move files out of
-`incoming/<intake>/` and create `accepted/` and `rejected/` next to it.
+The uploads root must be owned by the `UPLOADS_GID` group, have mode `2770`, and
+be writable by the web container user (UID 1001 in production) **and** the host
+worker user. Add the worker user to that group. Compose adds the same numeric
+group to the web container, and the web app creates its subdirectories with
+setgid mode `2770`, so new content inherits the shared group without making the
+upload tree world-writable.
 
 Layout on disk:
 
 ```
 <uploads_dir>/
   <catalog_id>/
-    incoming/<intake_id>/source.mp3      # while uploading / queued
+    incoming/<intake_id>/.chunks/0.part  # immutable parts while uploading
+    incoming/<intake_id>/source.mp3      # assembled on finalize; queued input
     accepted/<intake_id>/<name>.mp3      # permanent; catalog Full Path, dir = Scan Root
     accepted/<intake_id>/<name>.mp3.audiohash
     rejected/<intake_id>/source.mp3      # duplicates, kept for inspection
@@ -119,10 +123,10 @@ just jobs-dev-deploy    # or jobs-test-deploy / jobs-prod-deploy
 `BESEDY_JOB_SERVICE_SECRET` must match the web environment the worker reports
 to (`BESEDY_INTERNAL_BASE_URL`, `http://127.0.0.1:3000` for production web).
 
-Security note: the worker runs with the operator's privileges. It accepts only
-`catalog_id` (`YYYYMMDD_HHMMSS`) and `intake_id` (lowercase alphanumeric) from
-the web app, sanitises the display filename, and never interpolates input into a
-shell (argv lists only).
+Security note: the worker runs with the operator's privileges. It resolves
+paths only from `catalog_id` (`YYYYMMDD_HHMMSS`) and `intake_id` (lowercase
+alphanumeric), validates the audio hash, sanitises the display filename, and
+never interpolates input into a shell (argv lists only).
 
 ## Statuses and error codes
 
@@ -136,7 +140,7 @@ shell (argv lists only).
 | `FAILED` | see `errorCode` |
 | `CANCELLED` | cancelled in the Prefect UI |
 | `REMOVING` | removal flow running on the host worker |
-| `REMOVED` | recording and all derived data deleted (row kept for the audit trail) |
+| `REMOVED` | recording removed from this catalog and its catalog-owned derived data deleted (row kept for the audit trail) |
 
 Error codes: `submit_failed` (the jobs API rejected the submit with a 4xx;
 file removed), `undecodable_audio`, `intake_missing`, `intake_invalid`,
@@ -163,9 +167,10 @@ admin poll applies that outcome and syncs the catalog.
   `transcript.json` that later runs treat as complete.
 - `run-pipeline` processes every pending row of the catalog, so an ingest can
   also finish work left over from manual runs. This is intentional.
-- Production preflight adds: `UPLOADS_DIR` + `BESEDY_PATH_MAPPINGS` in the web
-  env file, `uploads_dir` in the host toml, the `PREFECT_INGEST_*` entries in
-  `jobs.env.prod`, `just jobs-prod-deploy`, and the running host worker unit.
+- Production preflight adds: `UPLOADS_DIR`, `UPLOADS_GID` and
+  `BESEDY_PATH_MAPPINGS` in the web env file; a group-owned mode-`2770` uploads
+  root; `uploads_dir` in the host toml; the `PREFECT_INGEST_*` entries in
+  `jobs.env.prod`; `just jobs-prod-deploy`; and the running host worker unit.
 
 ## Removing an ingested recording
 
@@ -178,15 +183,20 @@ Every row on **Admin -> Ingest** in a finished state has a **Remove** action
   `catalog remove --hash <hash> --execute --delete-source` (drops the hash from
   `audio_catalog_<TS>.csv` and its `_loudness`, `_loudness_normalized`,
   `_loudness_archived`, `_duplicates` and `_joined` generations, deletes the
-  source file + `.audiohash`, the staged WAV, the archived audio, every
-  `transcripts/<backend>/<model>/<hash>/`, `speaker_diarization/*/<hash>/` and
-  `speaker_embeddings/*/file/<hash>/`), then `catalog run-pipeline --no-symlink`
+  source file + `.audiohash` unless another catalog references that same path,
+  the staged WAV, the archived audio, every
+  selected catalog's `transcripts_<TS>/<backend>/<model>/<hash>/` and
+  `speaker_diarization/*/<hash>/`, and deletes
+  `speaker_embeddings/*/file/<hash>/` only if no other catalog references the
+  hash), then `catalog run-pipeline --no-symlink`
   so the incremental ColBERT sync prunes the hash from the chunk store, FTS and
   PLAID index (no rebuild; the query server reloads on the next query) and
   `cluster-speakers` rebuilds without it, then removes the intake directories
   and reports `REMOVED`. The web app deletes the recording's event assignment
   (unreleasing an event that loses its primary recording), curated metadata,
-  playback progress and notifications, and re-syncs the projection.
+  catalog metadata and notifications. Playback progress is globally keyed by
+  hash, so it is deleted only if no other catalog still references the
+  recording. The projection is then re-synced.
 - The recording never reached the catalog (`REJECTED` duplicate, early failure,
   `CANCELLED`): only the upload files are deleted and the row becomes `REMOVED`
   immediately. A rejected intake's hash belongs to the *existing* recording it

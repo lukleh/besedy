@@ -48,6 +48,10 @@ services:
 
   web:
     container_name: besedy-${BESEDY_COMPOSE_INSTANCE:-unmanaged}-web
+    # Shared upload storage uses setgid directories instead of world-writable
+    # permissions. The host worker user must belong to this numeric group too.
+    group_add:
+      - '${UPLOADS_GID:-1000}'
     build:
       context: .
       target: ${BUILD_TARGET:-development}

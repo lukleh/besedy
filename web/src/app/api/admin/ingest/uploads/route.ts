@@ -1,26 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
-import { z } from "zod";
-import prisma from "@/lib/db";
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import prisma from '@/lib/db';
 import {
   badRequest,
   handlePrismaError,
   validateMutationSource,
   validateRequestBody,
-} from "@/lib/api";
-import { requireAdminCapability } from "@/lib/access/require-admin";
-import { validatePath } from "@/lib/security/path-validation";
-import { TimestampIdSchema } from "@/lib/validation/schemas";
+} from '@/lib/api';
+import { requireAdminCapability } from '@/lib/access/require-admin';
+import { validatePath } from '@/lib/security/path-validation';
+import { TimestampIdSchema } from '@/lib/validation/schemas';
 import {
   ensureSharedIntakeDir,
   getIngestChunkBytes,
   getIngestMaxUploadBytes,
   getSafeAudioExtension,
-} from "@/lib/ingest/server";
+} from '@/lib/ingest/server';
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const CreateUploadSchema = z.object({
   catalogId: TimestampIdSchema,
@@ -38,7 +36,9 @@ export async function POST(request: NextRequest) {
     const sourceError = validateMutationSource(request);
     if (sourceError) return sourceError;
 
-    const { userId } = await requireAdminCapability({ message: "Unauthorized" });
+    const { userId } = await requireAdminCapability({
+      message: 'Unauthorized',
+    });
 
     const bodyResult = await validateRequestBody(request, CreateUploadSchema);
     if (!bodyResult.success) return bodyResult.response;
@@ -46,10 +46,10 @@ export async function POST(request: NextRequest) {
 
     const extension = getSafeAudioExtension(filename);
     if (!extension) {
-      return badRequest("Unsupported file type");
+      return badRequest('Unsupported file type');
     }
     if (sizeBytes > getIngestMaxUploadBytes()) {
-      return NextResponse.json({ error: "Upload too large" }, { status: 413 });
+      return NextResponse.json({ error: 'Upload too large' }, { status: 413 });
     }
 
     const catalog = await prisma.workflowGroup.findFirst({
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     });
     if (!catalog) {
-      return badRequest("Catalog not found or inactive");
+      return badRequest('Catalog not found or inactive');
     }
 
     const intake = await prisma.recordingIntake.create({
@@ -75,15 +75,16 @@ export async function POST(request: NextRequest) {
     const dirValidation = validatePath(dir);
     if (!dirValidation.valid) {
       await prisma.recordingIntake.delete({ where: { id: intake.id } });
-      return NextResponse.json({ error: "Invalid uploads directory" }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Invalid uploads directory' },
+        { status: 500 },
+      );
     }
-    await fs.writeFile(path.join(dirValidation.resolvedPath, intake.storedFilename), "");
-
     return NextResponse.json(
       { intakeId: intake.id, chunkSizeBytes: getIngestChunkBytes() },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
-    return handlePrismaError(error, "recording ingest upload", "create");
+    return handlePrismaError(error, 'recording ingest upload', 'create');
   }
 }

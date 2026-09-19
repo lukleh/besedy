@@ -8,7 +8,7 @@ ALTER TYPE "AuditAction" ADD VALUE 'RECORDING_INGEST_REQUESTED';
 CREATE TABLE "recording_intake" (
     "id" TEXT NOT NULL,
     "workflow_group_id" VARCHAR(15) NOT NULL,
-    "requested_by_id" TEXT NOT NULL,
+    "requested_by_id" TEXT,
     "original_filename" TEXT NOT NULL,
     "stored_filename" TEXT NOT NULL,
     "mime_type" TEXT,
@@ -40,5 +40,4 @@ CREATE INDEX "recording_intake_created_at_idx" ON "recording_intake"("created_at
 ALTER TABLE "recording_intake" ADD CONSTRAINT "recording_intake_workflow_group_id_fkey" FOREIGN KEY ("workflow_group_id") REFERENCES "workflow_group"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "recording_intake" ADD CONSTRAINT "recording_intake_requested_by_id_fkey" FOREIGN KEY ("requested_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
+ALTER TABLE "recording_intake" ADD CONSTRAINT "recording_intake_requested_by_id_fkey" FOREIGN KEY ("requested_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;

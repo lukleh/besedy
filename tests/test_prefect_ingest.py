@@ -126,12 +126,18 @@ def test_ingest_submit_request_validates_tokens() -> None:
     }
 
     with pytest.raises(ValueError, match="intakeId"):
-        IngestSubmitRequest.from_payload({"intakeId": "../etc", "originalFilename": "a.mp3"})
+        IngestSubmitRequest.from_payload(
+            {"intakeId": "../etc", "originalFilename": "a.mp3", "requestedById": "admin-1"}
+        )
     with pytest.raises(ValueError, match="path separators"):
-        IngestSubmitRequest.from_payload({"intakeId": INTAKE_ID, "originalFilename": "../a.mp3"})
+        IngestSubmitRequest.from_payload(
+            {"intakeId": INTAKE_ID, "originalFilename": "../a.mp3", "requestedById": "admin-1"}
+        )
+    with pytest.raises(ValueError, match="requestedById is required"):
+        IngestSubmitRequest.from_payload({"intakeId": INTAKE_ID, "originalFilename": "a.mp3"})
     with pytest.raises(ValueError, match="catalog_id"):
         IngestSubmitRequest.from_payload(
-            {"intakeId": INTAKE_ID, "originalFilename": "a.mp3"}
+            {"intakeId": INTAKE_ID, "originalFilename": "a.mp3", "requestedById": "admin-1"}
         ).to_flow_parameters(catalog_id="../../etc")
 
 
@@ -339,6 +345,44 @@ def test_flow_rejects_duplicate_without_running_pipeline(monkeypatch, tmp_path: 
     assert reports == [(INTAKE_ID, result)]
 
 
+def test_duplicate_failure_never_marks_the_existing_hash_as_owned(
+    monkeypatch, tmp_path: Path
+) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    reports: list[dict[str, object]] = []
+
+    monkeypatch.setattr(ingest_module, "resolve_ingest_paths", lambda *_a, **_k: paths)
+    monkeypatch.setattr(ingest_module, "audio_content_sha256sum", lambda _path: KNOWN_HASH)
+
+    def fail_reject(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise ingest_module.IngestFlowError("reject move failed", error_code="reject_failed")
+
+    monkeypatch.setattr(ingest_module, "reject_file", fail_reject)
+    monkeypatch.setattr(
+        ingest_module,
+        "build_besedy_ingest_client_from_env",
+        lambda: SimpleNamespace(
+            report_completion=lambda *, intake_id, report: reports.append(report.to_payload())
+        ),
+    )
+
+    with pytest.raises(ingest_module.IngestFlowError):
+        ingest_module.ingest_recording_flow(
+            catalog_id=CATALOG_ID,
+            intake_id=INTAKE_ID,
+            original_filename="talk.mp3",
+        )
+
+    assert reports == [
+        {
+            "status": "FAILED",
+            "audioHash": None,
+            "errorCode": "reject_failed",
+            "errorMessage": "reject move failed",
+        }
+    ]
+
+
 def test_flow_accepts_new_recording_and_runs_cli(monkeypatch, tmp_path: Path) -> None:
     paths = _layout(tmp_path, hashes=[KNOWN_HASH])
 
@@ -394,7 +438,7 @@ def test_flow_reports_failure_before_reraising(monkeypatch, tmp_path: Path) -> N
     assert reports == [
         {
             "status": "FAILED",
-            "audioHash": None,
+            "audioHash": NEW_HASH,
             "errorCode": "catalog_add_failed",
             "errorMessage": "pipeline exploded",
         }
@@ -482,7 +526,12 @@ def test_removal_request_validates_hash_and_builds_parameters() -> None:
     from besedy.lib.prefect_jobs.models import IngestRemovalRequest
 
     request = IngestRemovalRequest.from_payload(
-        {"intakeId": INTAKE_ID, "audioHash": NEW_HASH.upper(), "requestedById": "admin-1"}
+        {
+            "intakeId": INTAKE_ID,
+            "audioHash": NEW_HASH.upper(),
+            "idempotencyKey": INTAKE_ID,
+            "requestedById": "admin-1",
+        }
     )
     assert request.to_flow_parameters(catalog_id=CATALOG_ID) == {
         "catalog_id": CATALOG_ID,
@@ -491,7 +540,22 @@ def test_removal_request_validates_hash_and_builds_parameters() -> None:
         "requested_by_id": "admin-1",
     }
     with pytest.raises(ValueError, match="audioHash"):
-        IngestRemovalRequest.from_payload({"intakeId": INTAKE_ID, "audioHash": "../x"})
+        IngestRemovalRequest.from_payload(
+            {
+                "intakeId": INTAKE_ID,
+                "audioHash": "../x",
+                "idempotencyKey": INTAKE_ID,
+                "requestedById": "admin-1",
+            }
+        )
+    with pytest.raises(ValueError, match="requestedById is required"):
+        IngestRemovalRequest.from_payload(
+            {
+                "intakeId": INTAKE_ID,
+                "audioHash": NEW_HASH,
+                "idempotencyKey": INTAKE_ID,
+            }
+        )
 
 
 def test_service_submits_removal_on_the_ingest_pool(tmp_path: Path) -> None:
@@ -503,12 +567,18 @@ def test_service_submits_removal_on_the_ingest_pool(tmp_path: Path) -> None:
     )
     created = service.submit_ingest_removal(
         catalog_id=CATALOG_ID,
-        payload={"intakeId": INTAKE_ID, "audioHash": NEW_HASH, "requestedById": "a1"},
+        payload={
+            "intakeId": INTAKE_ID,
+            "audioHash": NEW_HASH,
+            "idempotencyKey": INTAKE_ID,
+            "requestedById": "a1",
+        },
     )
     submit = fake_client.submit_calls[0]
     assert submit["deployment_name"] == "remove_recording_flow/ingest-remove-test"
     assert "operation:remove" in submit["tags"]
     assert submit["flow_run_name"].startswith(f"ingest-remove-{CATALOG_ID}")
+    assert submit["idempotency_key"] == f"ingest-remove:{INTAKE_ID}:{NEW_HASH}:{INTAKE_ID}"
     assert created["kind"] == "INGEST"
     assert created["payload"] == {
         "intakeId": INTAKE_ID,
@@ -625,7 +695,7 @@ def test_removal_flow_reports_failure_when_remove_command_fails(
     assert reports == [
         {
             "status": "FAILED",
-            "audioHash": None,
+            "audioHash": NEW_HASH,
             "errorCode": "catalog_remove_failed",
             "errorMessage": "remove exploded",
         }
