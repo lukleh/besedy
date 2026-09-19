@@ -13,6 +13,7 @@ import {
 import { CreatePendingCatalogGrantSchema } from "@/lib/validation/schemas";
 import {
   validateRequestBody,
+  badRequest,
   forbidden,
   notFound,
   conflict,
@@ -22,6 +23,7 @@ import {
   canAttemptCatalogManagement,
   canGrantCatalogAccessLevel,
   canManageExistingCatalogAccessLevel,
+  isSelfCatalogAccessChange,
 } from "@/lib/policy/catalog";
 
 export async function createPendingCatalogGrant(
@@ -48,7 +50,7 @@ export async function createPendingCatalogGrant(
     const { email, accessLevel, message } = bodyResult.data;
 
     if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant OWNER access");
+      return forbidden("Only administrators can grant this level of access");
     }
 
     const catalog = await prisma.workflowGroup.findUnique({
@@ -71,6 +73,13 @@ export async function createPendingCatalogGrant(
         },
       },
     });
+
+    // An invitation to an address that already has an account grants directly,
+    // so it is an access change like any other and answers to the same rule.
+    // An address with no account cannot be the actor: they are signed in.
+    if (isSelfCatalogAccessChange(userId, existingUser?.id)) {
+      return badRequest("Cannot grant yourself access. Ask another admin or owner to do this.");
+    }
 
     if (existingUser?.catalogAccess && existingUser.catalogAccess.length > 0) {
       return conflict("User already has access to this catalog");
@@ -145,7 +154,7 @@ export async function createPendingCatalogGrant(
         existingPendingGrant.accessLevel
       )
     ) {
-      return forbidden("Only administrators can modify OWNER access");
+      return forbidden("Only administrators can modify this level of access");
     }
 
     if (existingAdmission?.status === "CLAIMED") {

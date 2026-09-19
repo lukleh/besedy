@@ -1,6 +1,8 @@
 import type { AccessLevel } from "@/generated/prisma/client";
 import {
+  carriesProtectedPermission,
   grantHasPermission,
+  permissionsForLevel,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
 
@@ -81,18 +83,92 @@ export function canAttemptCatalogManagement(
   return context.canEnterPortal && hasCatalogPermission(context, "manage_access");
 }
 
+/**
+ * Whether the actor may hand out this much access.
+ *
+ * A catalog administrator may give anything. Everyone else may give only what
+ * carries no protected permission, which is what stops `manage_access` from
+ * propagating itself and keeps unreleased material an administrative decision.
+ */
 export function canGrantCatalogAccessLevel(
   context: CatalogPolicyContext,
   accessLevel: AccessLevel
 ): boolean {
-  return canAttemptCatalogManagement(context) && (accessLevel !== "OWNER" || context.isCatalogAdmin);
+  return mayPassOnAccessLevel(context, accessLevel);
 }
 
+/**
+ * Whether the actor may change or revoke access that is already held.
+ *
+ * The same test as granting, asked about the access being replaced. Without it
+ * the rule would stop privilege spreading upward while still letting an account
+ * strip one above it, which is the same authority wearing a different hat.
+ */
 export function canManageExistingCatalogAccessLevel(
   context: CatalogPolicyContext,
   accessLevel: AccessLevel
 ): boolean {
-  return canAttemptCatalogManagement(context) && (accessLevel !== "OWNER" || context.isCatalogAdmin);
+  return mayPassOnAccessLevel(context, accessLevel);
+}
+
+/**
+ * The one test both sides of an access change ask, written once so that the
+ * assigned side and the replaced side cannot drift apart.
+ */
+function mayPassOnAccessLevel(
+  context: CatalogPolicyContext,
+  accessLevel: AccessLevel
+): boolean {
+  if (!canAttemptCatalogManagement(context)) return false;
+  return (
+    context.isCatalogAdmin ||
+    !carriesProtectedPermission(permissionsForLevel(accessLevel))
+  );
+}
+
+/**
+ * Every access level this actor may hand out or take away.
+ *
+ * The UI needs the set rather than the test so that it can offer exactly what
+ * the server will accept: a level the actor cannot assign is not shown, and a
+ * grant the actor cannot touch carries no edit or revoke action. One list
+ * serves both sides because the granting rule asks the same question of the
+ * access being assigned and the access being replaced.
+ */
+export function manageableCatalogAccessLevels(
+  context: CatalogPolicyContext
+): AccessLevel[] {
+  return ACCESS_LEVELS.filter((level) => mayPassOnAccessLevel(context, level));
+}
+
+const ACCESS_LEVELS: AccessLevel[] = [
+  "LISTENER",
+  "VIEWER",
+  "MEMBER",
+  "EDITOR",
+  "OWNER",
+];
+
+/**
+ * Whether the actor is the subject of this change.
+ *
+ * Nobody changes their own access, administrators included: a holder of
+ * `manage_access` cannot assign themselves a role, protected or not, and an
+ * administrator's authority comes from their system role rather than from a
+ * grant, so refusing them costs nothing and keeps one rule instead of two.
+ * This generalizes the two narrow self-checks the routes carried before — one
+ * stopping an owner demoting itself, one stopping any account revoking its own.
+ *
+ * A subject with no account — a grant pending a first sign-in — is nobody's
+ * self: the actor is signed in, so they cannot be an account that does not
+ * exist yet.
+ */
+export function isSelfCatalogAccessChange(
+  actorUserId: string | null | undefined,
+  subjectUserId: string | null | undefined
+): boolean {
+  if (!actorUserId || !subjectUserId) return false;
+  return actorUserId === subjectUserId;
 }
 
 export function canBatchEditCatalogMetadata(context: CatalogPolicyContext): boolean {

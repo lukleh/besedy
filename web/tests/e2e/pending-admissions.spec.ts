@@ -256,7 +256,9 @@ test.describe("Pending Admission Management", () => {
         {
           data: {
             email,
-            accessLevel: "VIEWER",
+            // The only level an owner may hand out: everything above it carries
+            // see_unreleased, which is reserved to administrators.
+            accessLevel: "LISTENER",
           },
         }
       );
@@ -264,7 +266,7 @@ test.describe("Pending Admission Management", () => {
       expect(response.ok()).toBeTruthy();
       const result = await response.json();
       expect(result.email).toBe(email);
-      expect(result.accessLevel).toBe("VIEWER");
+      expect(result.accessLevel).toBe("LISTENER");
       // For new users, this creates pending first-login state.
       expect(result.userStatus).toBe("PENDING");
     });

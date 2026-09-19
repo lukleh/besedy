@@ -86,6 +86,57 @@ describe("catalog pending grant create", () => {
     prisma.portalAdmission.findUnique.mockResolvedValue(null);
   });
 
+  // An invitation to an address that already has an account grants directly, so
+  // inviting yourself is an access change like any other.
+  it("refuses an invitation to the actor's own address", async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: "owner-1",
+      status: "ACTIVE",
+      catalogAccess: [],
+    });
+
+    const response = await createPendingCatalogGrant(
+      new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/pending-catalog-grants`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: "owner@example.com",
+            accessLevel: "LISTENER",
+          }),
+        }
+      ),
+      CATALOG_ID
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(syncPendingAdmissionState).not.toHaveBeenCalled();
+  });
+
+  it("still invites an address with no account, which cannot be the actor", async () => {
+    prisma.pendingCatalogGrant.findUnique.mockResolvedValue(null);
+
+    const response = await createPendingCatalogGrant(
+      new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/pending-catalog-grants`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: "newcomer@example.com",
+            accessLevel: "LISTENER",
+          }),
+        }
+      ),
+      CATALOG_ID
+    );
+
+    expect(response.status).toBe(200);
+    expect(syncPendingAdmissionState).toHaveBeenCalled();
+  });
+
   it("blocks owners from reopening revoked pending OWNER grants through create", async () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
       accessLevel: "OWNER",
@@ -100,7 +151,9 @@ describe("catalog pending grant create", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: "pending@example.com",
-            accessLevel: "EDITOR",
+            // A level the owner may hand out, so the refusal comes from the
+            // grant being reopened rather than from the one being assigned.
+            accessLevel: "LISTENER",
           }),
         }
       ),
@@ -109,7 +162,7 @@ describe("catalog pending grant create", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only administrators can modify OWNER access",
+      error: "Only administrators can modify this level of access",
       code: "FORBIDDEN",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();

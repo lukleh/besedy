@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PermissionIcons } from "@/components/catalog/permission-icons";
+import type { AccessLevel } from "@/generated/prisma/enums";
 import type {
   PendingCatalogGrant,
   PendingUsersResponse,
@@ -14,7 +15,7 @@ import type {
 interface CatalogSettingsPendingUsersCardProps {
   accessLevelColors: Record<string, string>;
   accessLevelFilter: string;
-  canManageOwnerAccess: boolean;
+  manageableAccessLevels: AccessLevel[];
   onEditPendingUser: (pendingUser: PendingCatalogGrant) => void;
   onRemovePendingUser: (pendingUser: PendingCatalogGrant) => void;
   pendingUsersData?: PendingUsersResponse;
@@ -25,7 +26,7 @@ interface CatalogSettingsPendingUsersCardProps {
 export function CatalogSettingsPendingUsersCard({
   accessLevelColors,
   accessLevelFilter,
-  canManageOwnerAccess,
+  manageableAccessLevels,
   onEditPendingUser,
   onRemovePendingUser,
   pendingUsersData,
@@ -103,7 +104,7 @@ export function CatalogSettingsPendingUsersCard({
                       onClick={() => onRemovePendingUser(pendingUser)}
                       aria-label={t("buttons.removePendingUser")}
                       disabled={
-                        !canManageOwnerAccess && pendingUser.accessLevel === "OWNER"
+                        !manageableAccessLevels.includes(pendingUser.accessLevel)
                       }
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />

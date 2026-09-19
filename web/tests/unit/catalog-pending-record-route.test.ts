@@ -90,7 +90,7 @@ describe("catalog pending record route", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only administrators can revoke OWNER access",
+      error: "Only administrators can revoke this level of access",
       code: "FORBIDDEN",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -138,7 +138,9 @@ describe("catalog pending record route", () => {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessLevel: "EDITOR" }),
+        // A level the owner may hand out, so the refusal comes from the access
+        // being replaced rather than from the one being assigned.
+        body: JSON.stringify({ accessLevel: "LISTENER" }),
       }
     );
 
@@ -146,7 +148,7 @@ describe("catalog pending record route", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Only administrators can modify OWNER access",
+      error: "Only administrators can modify this level of access",
       code: "FORBIDDEN",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();

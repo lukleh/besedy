@@ -7,9 +7,11 @@ import {
   canAttemptCatalogManagement,
   canGrantCatalogAccessLevel,
   canManageExistingCatalogAccessLevel,
+  isSelfCatalogAccessChange,
+  manageableCatalogAccessLevels,
 } from "@/lib/policy/catalog";
 import { TimestampIdParamSchema, GrantAccessSchema } from "@/lib/validation/schemas";
-import { validateMutationSource, validateParams, validateRequestBody, forbidden, notFound, conflict, handlePrismaError } from "@/lib/api";
+import { validateMutationSource, validateParams, validateRequestBody, badRequest, forbidden, notFound, conflict, handlePrismaError } from "@/lib/api";
 import { logCatalogAccessEvent } from "@/lib/audit/logger";
 
 export const dynamic = "force-dynamic";
@@ -87,9 +89,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canManageCatalogConfig: canManageCatalogConfiguration(
         managementAccess.policyContext
       ),
-      canManageOwnerAccess: canManageExistingCatalogAccessLevel(
-        managementAccess.policyContext,
-        "OWNER"
+      // The levels the actor may assign and act on, so the client offers
+      // exactly what the server will accept.
+      manageableAccessLevels: manageableCatalogAccessLevels(
+        managementAccess.policyContext
       ),
     });
   } catch (error) {
@@ -153,7 +156,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant OWNER access");
+      return forbidden("Only administrators can grant this level of access");
+    }
+
+    if (isSelfCatalogAccessChange(currentUserId, userId)) {
+      return badRequest("Cannot grant yourself access. Ask another admin or owner to do this.");
     }
 
     // Check if user already has access (including revoked)
@@ -174,7 +181,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           existingAccess.accessLevel
         )
       ) {
-        return forbidden("Only administrators can restore OWNER access");
+        return forbidden("Only administrators can restore this level of access");
       }
     }
 

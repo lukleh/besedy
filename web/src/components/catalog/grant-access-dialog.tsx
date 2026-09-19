@@ -46,7 +46,7 @@ interface InviteResponse {
 
 interface GrantAccessDialogProps {
   catalogId: string;
-  canManageOwnerAccess: boolean;
+  manageableAccessLevels: AccessLevel[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
@@ -54,7 +54,7 @@ interface GrantAccessDialogProps {
 
 export function GrantAccessDialog({
   catalogId,
-  canManageOwnerAccess,
+  manageableAccessLevels,
   open,
   onOpenChange,
   onSuccess,
@@ -343,7 +343,7 @@ export function GrantAccessDialog({
                   onAccessLevelChange={setAccessLevel}
                   notes={notes}
                   onNotesChange={setNotes}
-                  canManageOwnerAccess={canManageOwnerAccess}
+                  manageableAccessLevels={manageableAccessLevels}
                   idPrefix="grant"
                   showAccessLevelHint
                 />

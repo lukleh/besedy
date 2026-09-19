@@ -31,7 +31,8 @@ export interface CatalogAccessResponse {
   catalog: CatalogInfo;
   accessList: AccessGrant[];
   canManageCatalogConfig?: boolean;
-  canManageOwnerAccess?: boolean;
+  /** The access levels this actor may assign and act on. */
+  manageableAccessLevels?: AccessLevel[];
 }
 
 export interface WorkflowVariant {
@@ -145,7 +146,7 @@ export const catalogAccessResponseSchema = z.object({
   catalog: catalogInfoSchema,
   accessList: z.array(accessGrantSchema),
   canManageCatalogConfig: z.boolean().optional(),
-  canManageOwnerAccess: z.boolean().optional(),
+  manageableAccessLevels: z.array(z.nativeEnum(AccessLevel)).optional(),
 });
 
 export const workflowVariantSchema = z.object({

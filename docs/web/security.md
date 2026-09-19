@@ -255,8 +255,8 @@ means the capability is qualified.
 | Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
 |---|:-:|:-:|:-:|:-:|:-:|---|
 | Open catalog settings | Y | - | - | - | - | `canAccessCatalogSettings` |
-| Grant / revoke access up to EDITOR | Y | - | - | - | - | `canGrantCatalogAccessLevel` |
-| Grant or modify OWNER access | A | - | - | - | - | admin only |
+| Grant / revoke LISTENER access | Y | - | - | - | - | `canGrantCatalogAccessLevel` |
+| Grant or modify VIEWER and above | A | - | - | - | - | admin only [^protected] |
 | Manage pending catalog grants | Y | - | - | - | - | `canAttemptCatalogManagement` |
 | Read / edit catalog configuration and paths | A | - | - | - | - | `canManageCatalogConfiguration` |
 
@@ -338,24 +338,40 @@ does not take effect.
 
 ### Access Management Rules
 
+Two permissions are **protected**: `manage_access` and `see_unreleased`. Access
+that carries either is reserved to administrators, and the test is on what the
+access carries rather than on what it is called, so a level or role added later
+is classified without anyone editing the rule.
+
 **OWNER capabilities:**
 
 - View and manage catalog settings for their catalogs
-- Grant LISTENER, VIEWER, MEMBER, or EDITOR access
-- Update non-OWNER access levels
-- Revoke non-OWNER access
-- Create and revoke pending catalog grants (non-OWNER levels)
+- Grant, update and revoke LISTENER access
+- Create and revoke pending catalog grants at LISTENER
 
 **OWNER restrictions:**
 
-- Cannot grant OWNER access (Admin only)
-- Cannot modify existing OWNER access (Admin only)
-- Cannot revoke OWNER access (Admin only)
-- Cannot demote or revoke their own access
+- Cannot grant VIEWER or above: every level above LISTENER carries
+  `see_unreleased`, and OWNER itself also carries `manage_access` (Admin only)
+- Cannot modify or revoke access at those levels either — the same test applies
+  to the access being replaced (Admin only)
+- Cannot change their own access at all, in any direction
 
-**Why OWNER cannot grant OWNER:** This prevents privilege escalation chains. An
-Owner could otherwise grant Owner to another user, who could then propagate
-Owner further, rapidly expanding access without admin oversight.
+**Why the two permissions are protected:** `manage_access` prevents privilege
+escalation chains — an account that grants could otherwise mint another account
+that grants, propagating without admin oversight. `see_unreleased` keeps sight
+of unreleased material an administrative decision rather than something an
+account can pass on.
+
+**Why nobody changes their own access:** a role is conferred rather than taken.
+Administrators are included, which also preserves the older guard against an
+account revoking itself out of a catalog.
+
+[^protected]: `VIEWER` and above carry `see_unreleased` under the legacy level
+    scale, which conflates reading with seeing unreleased material. The roles in
+    [ADR 0005](../adr/0005-catalog-permission-model.md) separate the two, so a
+    `hostitel` will again be able to hand out reading — as `čtenář`, which
+    carries no protected permission — once roles are assigned.
 
 ### CatalogAccess Retention for Blocked Users
 

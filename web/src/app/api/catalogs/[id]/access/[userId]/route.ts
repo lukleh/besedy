@@ -6,6 +6,7 @@ import {
   canAttemptCatalogManagement,
   canGrantCatalogAccessLevel,
   canManageExistingCatalogAccessLevel,
+  isSelfCatalogAccessChange,
 } from "@/lib/policy/catalog";
 import { CatalogUserParamSchema, UpdateAccessWithNameSchema, RestoreAccessSchema } from "@/lib/validation/schemas";
 import { validateMutationSource, validateParams, validateRequestBody, forbidden, notFound, badRequest, handlePrismaError } from "@/lib/api";
@@ -77,18 +78,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return badRequest("Cannot update revoked access. Use POST to restore access.");
     }
 
-    // Only admins can promote to OWNER
+    // Only administrators may hand out protected access, and the same test
+    // applies to the access being replaced.
     if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant OWNER access");
+      return forbidden("Only administrators can grant this level of access");
     }
 
     if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, existingAccess.accessLevel)) {
-      return forbidden("Only administrators can modify OWNER access");
+      return forbidden("Only administrators can modify this level of access");
     }
 
-    // Prevent removing your own OWNER access (would lock yourself out)
-    if (currentUserId === targetUserId && existingAccess.accessLevel === "OWNER" && accessLevel !== "OWNER") {
-      return badRequest("Cannot demote yourself from OWNER. Ask another admin or owner to do this.");
+    if (isSelfCatalogAccessChange(currentUserId, targetUserId)) {
+      return badRequest("Cannot change your own access. Ask another admin or owner to do this.");
     }
 
     const updatedAccess = await prisma.$transaction(async (tx) => {
@@ -195,9 +196,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return badRequest("Access is already active");
     }
 
-    // Only admins can restore OWNER access
+    // Only administrators may restore protected access.
     if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, existingAccess.accessLevel)) {
-      return forbidden("Only administrators can restore OWNER access");
+      return forbidden("Only administrators can restore this level of access");
+    }
+
+    if (isSelfCatalogAccessChange(currentUserId, targetUserId)) {
+      return badRequest("Cannot change your own access. Ask another admin or owner to do this.");
     }
 
     // Restore access
@@ -296,13 +301,12 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return badRequest("Access is already revoked");
     }
 
-    // Only admins can revoke OWNER access
+    // Only administrators may revoke protected access.
     if (!canManageExistingCatalogAccessLevel(managementAccess.policyContext, existingAccess.accessLevel)) {
-      return forbidden("Only administrators can revoke OWNER access");
+      return forbidden("Only administrators can revoke this level of access");
     }
 
-    // Prevent revoking your own access
-    if (currentUserId === targetUserId) {
+    if (isSelfCatalogAccessChange(currentUserId, targetUserId)) {
       return badRequest("Cannot revoke your own access. Ask another admin or owner to do this.");
     }
 
