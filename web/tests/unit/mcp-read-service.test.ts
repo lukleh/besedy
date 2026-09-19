@@ -11,7 +11,7 @@ import {
   executeCatalogSearch,
 } from '@/app/api/catalogs/[id]/search/search-service';
 import { RagServiceError } from '@/app/api/catalogs/[id]/search/search-route-helpers';
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   getMcpEvent,
   findMcpTranscriptMentions,
@@ -1037,7 +1037,7 @@ describe('MCP read service', () => {
       neighborCount: 1,
       maxPerAudio: 2,
       metadataFilters: filters,
-      catalogGrant: grantFromLevel('LISTENER'),
+      catalogGrant: grantForRole('listener'),
       failOnMissingBundle: true,
     });
     expect(result).toEqual({
@@ -1142,7 +1142,7 @@ describe('MCP read service', () => {
       neighborCount: 1,
       maxPerAudio: 2,
       metadataFilters: filters,
-      catalogGrant: grantFromLevel('LISTENER'),
+      catalogGrant: grantForRole('listener'),
       failOnMissingBundle: true,
     });
     expect(result.retrieval).toEqual({

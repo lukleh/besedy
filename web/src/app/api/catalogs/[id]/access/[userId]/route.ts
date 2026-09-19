@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/permissions";
 import prisma from "@/lib/db";
+import { roleFieldsForLevel } from "@/lib/policy/catalog-permissions";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   canAttemptCatalogManagement,
@@ -106,6 +107,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         },
         data: {
           accessLevel,
+          ...roleFieldsForLevel(accessLevel),
           notes: notes !== undefined ? notes || null : existingAccess.notes,
           grantedById: currentUserId, // Track who made the change
         },

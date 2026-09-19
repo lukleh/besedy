@@ -61,6 +61,8 @@ export interface CatalogResponse {
   pagination: PaginationInfo;
   canBatchEditMetadata?: boolean;
   canManageAccess?: boolean;
+  /** Whether unreleased material is visible to this actor. */
+  canSeeUnreleased?: boolean;
   canPublishRecording?: boolean;
   canUseRagSearch?: boolean;
   accessLevel?: string;
@@ -146,6 +148,7 @@ export const catalogResponseSchema = z.object({
   }),
   canBatchEditMetadata: z.boolean().optional(),
   canManageAccess: z.boolean().optional(),
+  canSeeUnreleased: z.boolean().optional(),
   canPublishRecording: z.boolean().optional(),
   canUseRagSearch: z.boolean().optional(),
   accessLevel: z.string().optional(),

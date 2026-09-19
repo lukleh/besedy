@@ -18,6 +18,7 @@
 
 import { PrismaClient, UserStatus, AccessLevel } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { roleFieldsForLevel } from "../src/lib/policy/catalog-permissions";
 import {
   TEST_AUDIO_FILES,
   TEST_CATALOG_ID,
@@ -55,6 +56,22 @@ const DIRECT_USERS: Array<{
   { email: TEST_USERS.listener.email, name: TEST_USERS.listener.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE", catalogAccess: "LISTENER" },
   { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE" },
 ];
+
+/**
+ * The role each seeded account carries.
+ *
+ * Mostly the same mapping the assignment migration uses, with one exception:
+ * the member account exists to prove that downloading works, and downloading is
+ * no longer something a role reaches by being high enough on a scale. It is an
+ * extra, granted per account, so the seed grants it as one.
+ */
+function roleFieldsForSeededLevel(level: AccessLevel) {
+  const fields = roleFieldsForLevel(level);
+  if (level === "MEMBER") {
+    return { ...fields, extraPermissions: [...fields.extraPermissions, "download"] };
+  }
+  return fields;
+}
 
 // Pending admissions to keep allowlist workflows testable
 const INVITED_USERS = [
@@ -150,11 +167,13 @@ async function main() {
           },
           update: {
             accessLevel: userData.catalogAccess,
+            ...roleFieldsForSeededLevel(userData.catalogAccess),
           },
           create: {
             userId: user.id,
             catalogId: workflowGroup.id,
             accessLevel: userData.catalogAccess,
+            ...roleFieldsForSeededLevel(userData.catalogAccess),
             grantedById: user.id, // Self-granted for test setup
           },
         });

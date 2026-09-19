@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/permissions";
 import prisma from "@/lib/db";
+import { roleFieldsForLevel } from "@/lib/policy/catalog-permissions";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   canManageCatalogConfiguration,
@@ -201,6 +202,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
           data: {
             accessLevel,
+            ...roleFieldsForLevel(accessLevel),
             status: "ACTIVE",
             notes: notes || null,
             grantedById: currentUserId,
@@ -220,6 +222,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           userId,
           catalogId,
           accessLevel,
+          ...roleFieldsForLevel(accessLevel),
           notes: notes || null,
           grantedById: currentUserId,
         },

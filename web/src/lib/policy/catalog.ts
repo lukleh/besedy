@@ -2,7 +2,8 @@ import type { AccessLevel } from "@/generated/prisma/client";
 import {
   carriesProtectedPermission,
   grantHasPermission,
-  permissionsForLevel,
+  permissionsForGrant,
+  roleForLevel,
   type CatalogGrant,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
@@ -121,9 +122,14 @@ function mayPassOnAccessLevel(
   accessLevel: AccessLevel
 ): boolean {
   if (!canAttemptCatalogManagement(context)) return false;
-  return (
-    context.isCatalogAdmin ||
-    !carriesProtectedPermission(permissionsForLevel(accessLevel))
+  if (context.isCatalogAdmin) return true;
+
+  // The interface still names a level, but what a grant carries is the role it
+  // becomes, so that is what the test asks about. It is also what lets a host
+  // hand out reading again: VIEWER carried see_unreleased, `reader` does not.
+  const { role, extras } = roleForLevel(accessLevel);
+  return !carriesProtectedPermission(
+    permissionsForGrant({ level: accessLevel, role, extras })
   );
 }
 

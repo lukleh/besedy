@@ -4,7 +4,7 @@ import {
   type RecordingVisibilityState,
 } from "@/lib/policy/recording";
 import { canViewEvent, type ReleasedVisibleEventState } from "@/lib/policy/event";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 type VisibilityClient = Pick<PrismaClient, "$queryRaw" | "catalogEntry">;
 type EventVisibilityRow = {
@@ -17,7 +17,7 @@ type EventVisibilityRow = {
 function isListenerVisibleRecordingState(
   state: RecordingVisibilityState | undefined
 ): boolean {
-  return canViewRecordingForAccessLevel(grantFromLevel("LISTENER"), state);
+  return canViewRecordingForAccessLevel(grantForRole("listener"), state);
 }
 
 function isListenerVisibleEventRow(row: EventVisibilityRow): boolean {
@@ -32,7 +32,7 @@ function isListenerVisibleEventRow(row: EventVisibilityRow): boolean {
       featureEnabled: true,
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
       isCatalogAdmin: false,
     },
     state

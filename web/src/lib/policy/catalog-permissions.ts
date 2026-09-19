@@ -214,11 +214,59 @@ export interface CatalogGrant {
 }
 
 /**
+ * The role a legacy access level becomes, and what it carries on top.
+ *
+ * This mirrors the mapping in
+ * `prisma/migrations/20260916170000_assign_catalog_roles`, and the two must
+ * stay the same: that one moved the grants that existed, this one decides what
+ * a grant written today becomes. The interface still names levels, so every
+ * write path passes through here; the step that replaces the level picker with
+ * a role picker is what retires it.
+ */
+export function roleForLevel(level: AccessLevel): {
+  role: CatalogRole;
+  extras: CatalogPermission[];
+} {
+  switch (level) {
+    case "LISTENER":
+      return { role: "listener", extras: [] };
+    case "VIEWER":
+    case "MEMBER":
+      return { role: "reader", extras: [] };
+    case "EDITOR":
+      return { role: "curator", extras: [] };
+    case "OWNER":
+      return { role: "host", extras: ["download_transcripts"] };
+  }
+}
+
+/**
+ * The role fields to store beside a level, ready to spread into a write.
+ */
+export function roleFieldsForLevel(level: AccessLevel): {
+  role: CatalogRole;
+  extraPermissions: string[];
+} {
+  const { role, extras } = roleForLevel(level);
+  return { role, extraPermissions: extras };
+}
+
+/**
+ * A grant that carries nothing but a role.
+ *
+ * Used for the fixed visibility floors -- what MCP shows every reader, and what
+ * an anonymous event listing shows -- which are a statement about how much of
+ * the archive is on show rather than about anyone's grant.
+ */
+export function grantForRole(role: CatalogRole): CatalogGrant {
+  return { level: null, role, extras: [] };
+}
+
+/**
  * A grant that carries nothing but a legacy level.
  *
- * Every call site of this is a place that still knows only a level -- a client
- * reading one out of a payload, or a fixed visibility floor. They are what the
- * assignment step replaces, and this names them so they can be found.
+ * Kept for the interface, which still names levels, and for tests that describe
+ * a grant that way. Nothing stored resolves through it any more.
  */
 export function grantFromLevel(level: AccessLevel | null): CatalogGrant {
   return { level, role: null, extras: [] };
