@@ -74,6 +74,23 @@ export function EventListResults({
   const tDownloads = useTranslations("downloads");
   const downloadedEvents = useDownloadedEvents(catalogId);
 
+  // This label used to sit on a line of its own, which made the few
+  // multi-session rows taller than every other row. Both layouts now place it
+  // on a line that already exists, and `h-5` keeps it inside the 20px text
+  // line box on desktop and the card's reserved 56px text slot on mobile, so
+  // a row with a session reads exactly as tall as one without.
+  const renderSessionBadge = (sessionIndex: number) => {
+    if (sessionIndex <= 1) return null;
+    return (
+      <Badge
+        variant="outline"
+        className="h-5 shrink-0 px-2 py-0 leading-none align-middle"
+      >
+        {t("sessionLabel", { index: sessionIndex })}
+      </Badge>
+    );
+  };
+
   const renderDownloadMarker = (eventId: number) => {
     const status = downloadedEvents.get(eventId);
     if (!status) return null;
@@ -318,7 +335,12 @@ export function EventListResults({
                     onClick={() => openEvent(catalogEvent.id)}
                   >
                     <TableCell>
-                      <div className="font-semibold">{formattedDate}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold whitespace-nowrap">
+                          {formattedDate}
+                        </span>
+                        {renderSessionBadge(catalogEvent.sessionIndex)}
+                      </div>
                     </TableCell>
                     <TableCell className="font-medium">
                       <div>{catalogEvent.location?.name ?? t("unknownLocation")}</div>
@@ -423,6 +445,7 @@ export function EventListResults({
                       </div>
                     </div>
                   </div>
+                  {renderSessionBadge(catalogEvent.sessionIndex)}
                   {renderDownloadMarker(catalogEvent.id)}
                   <EventPlaybackProgress playback={catalogEvent.playback} />
                 </div>

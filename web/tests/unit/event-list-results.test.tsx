@@ -114,7 +114,7 @@ describe("EventListResults", () => {
     expect(within(mobileCard).queryByText("released")).not.toBeInTheDocument();
   });
 
-  it("does not show the session label in catalog event results", () => {
+  it("shows the session label on both the desktop row and the mobile card", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
@@ -124,7 +124,43 @@ describe("EventListResults", () => {
       />
     );
 
+    // One in the desktop table, one in the mobile card; both layouts render.
+    expect(screen.getAllByText("sessionLabel")).toHaveLength(2);
+    expect(
+      within(screen.getByTestId("event-card-1")).getByText("sessionLabel")
+    ).toBeInTheDocument();
+  });
+
+  it("omits the session label for a single-session event", () => {
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        showAllColumns
+        showReleaseState
+      />
+    );
+
     expect(screen.queryByText("sessionLabel")).not.toBeInTheDocument();
+  });
+
+  it("keeps the session label off its own line so rows stay the same height", () => {
+    render(
+      <EventListResults
+        {...BASE_PROPS}
+        events={[{ ...BASE_PROPS.events[0], sessionIndex: 2 }]}
+        showAllColumns
+        showReleaseState
+      />
+    );
+
+    // The regression this guards: a badge in a block of its own made the few
+    // multi-session rows taller than the rest.
+    for (const badge of screen.getAllByText("sessionLabel")) {
+      const row = badge.closest("td, button");
+      expect(row).not.toBeNull();
+      expect(badge.parentElement).toHaveClass("flex", "items-center");
+      expect(badge).toHaveClass("h-5");
+    }
   });
 
   it("shows the download icon on a downloaded event", () => {
