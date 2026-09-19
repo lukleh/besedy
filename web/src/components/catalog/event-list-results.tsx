@@ -80,12 +80,12 @@ export function EventListResults({
     if (status === "complete") {
       return (
         <span
-          className="inline-flex shrink-0 items-center text-muted-foreground"
+          className="inline-flex shrink-0 items-center text-foreground"
           aria-label={tDownloads("downloaded")}
           title={tDownloads("downloaded")}
           data-testid={`event-downloaded-${eventId}`}
         >
-          <Download className="h-4 w-4" />
+          <Download className="h-5 w-5" />
         </span>
       );
     }
@@ -426,11 +426,6 @@ export function EventListResults({
                           {locationName}
                         </span>
                       </div>
-                      {catalogEvent.sessionIndex > 1 ? (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {t("sessionLabel", { index: catalogEvent.sessionIndex })}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                   {renderDownloadMarker(catalogEvent.id)}

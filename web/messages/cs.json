@@ -546,12 +546,32 @@
     },
     "webUpdates": {
       "title": "Aktualizace webového klienta",
-      "description": "Průběh aktualizací za posledních 24 hodin a 100 nejnovějších událostí.",
+      "description": "Naposledy zaznamenané verze klientů a průběh aktualizací ve vybraném období.",
+      "deployedVersion": "Nasazená verze",
+      "distributionTitle": "Rozložení verzí",
+      "usersTitle": "Poslední záznam jednotlivých uživatelů",
+      "lifecycleTitle": "Průběh aktualizací",
       "recentTitle": "Nedávné události aktualizací",
       "anonymous": "Anonymní",
+      "unknownVersion": "Neznámá verze",
       "empty": "Zatím nebyly přijaty žádné události aktualizací.",
+      "emptyUsers": "V tomto období nebyli zaznamenáni žádní identifikovaní uživatelé.",
+      "ranges": {
+        "24h": "24 hodin",
+        "7d": "7 dní",
+        "30d": "30 dní"
+      },
+      "status": {
+        "current": "Aktuální",
+        "other": "Jiná",
+        "unknown": "Neznámá"
+      },
       "metrics": {
-        "seen": "Spuštění klienta",
+        "observedUsers": "Zaznamenaní uživatelé",
+        "currentUsers": "Aktuální verze",
+        "otherUsers": "Jiné verze",
+        "unknownUsers": "Neznámá verze",
+        "starts": "Spuštění klienta",
         "detected": "Zjištěné aktualizace",
         "completed": "Dokončené aktualizace",
         "delayed": "Pomalé aktivace",
@@ -561,7 +581,13 @@
       "table": {
         "time": "Čas",
         "event": "Událost",
-        "version": "Klient → cílová verze",
+        "version": "Verze",
+        "transition": "Klient → cílová verze",
+        "status": "Stav",
+        "users": "Zaznamenaní uživatelé",
+        "starts": "Spuštění",
+        "browser": "Prohlížeč",
+        "lastSeen": "Naposledy zaznamenáno",
         "user": "Uživatel",
         "context": "Kontext"
       },

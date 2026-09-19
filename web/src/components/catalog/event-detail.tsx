@@ -311,6 +311,7 @@ export function EventDetail({
       <RecordingContent
         key={selectedRecording.audioHash}
         params={{ catalogId, hash: selectedRecording.audioHash }}
+        downloadEventId={eventId}
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
