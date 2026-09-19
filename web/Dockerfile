@@ -79,6 +79,7 @@ RUN echo "Refreshing Alpine packages (${BUILD_TIME:-unknown})" \
 # filesystem layers.
 ARG GIT_COMMIT=unknown
 ARG WEB_VERSION=unknown
+LABEL org.opencontainers.image.revision=${GIT_COMMIT}
 ENV GIT_COMMIT=${GIT_COMMIT}
 ENV WEB_VERSION=${WEB_VERSION}
 ENV BUILD_TIME=${BUILD_TIME}
