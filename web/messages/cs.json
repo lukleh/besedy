@@ -1467,6 +1467,10 @@
     "transcriptRestrictedDescription": "Pro zobrazení přepisů potřebujete úroveň PROHLÍŽEČ nebo vyšší."
   },
   "events": {
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Sezení {index} z {count}"
+      },
     "tabs": {
       "ariaLabel": "Záložky katalogu",
       "recordings": "Nahrávky",
@@ -1568,7 +1572,6 @@
       "postersDraftOnly": "Jen koncept",
       "postersPublished": "Zveřejněno",
       "postersPublishedWithDrafts": "Zveřejněno + novější koncepty",
-      "sessionLabel": "Sezení {index}",
       "createDialogTitle": "Vytvořit událost",
       "createDialogDescription": "Událost vyžaduje místo a alespoň rok; měsíc/den jsou volitelné.",
       "fieldLocation": "Místo",
@@ -1579,8 +1582,6 @@
       "fieldMonthPlaceholder": "1-12",
       "fieldDay": "Den",
       "fieldDayPlaceholder": "1-31",
-      "fieldSessionIndexOptional": "Číslo sezení (volitelné)",
-      "fieldSessionIndexPlaceholder": "Další volné",
       "fieldTitleOptional": "Název (volitelné)",
       "fieldTitlePlaceholder": "Při prázdném se odvodí automaticky",
       "fieldDescriptionOptional": "Popis (volitelné)",
@@ -1588,6 +1589,7 @@
       "create": "Vytvořit",
       "toastCreated": "Událost vytvořena",
       "toastCreateFailed": "Nepodařilo se vytvořit událost",
+      "openExistingEvent": "Otevřít událost",
       "loadNextError": "Nepodařilo se načíst další události",
       "loadAllError": "Nepodařilo se načíst všechny události",
       "loading": "Načítání událostí...",
@@ -1598,7 +1600,6 @@
       "unknownError": "Neznámá chyba",
       "eventFallbackTitle": "Událost {id}",
       "recordingCount": "{count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
-      "sessionLabel": "Sezení {index}",
       "released": "Vydáno",
       "unreleased": "Nevydáno",
       "editEvent": "Upravit událost",
@@ -1675,9 +1676,16 @@
       "fieldSessionIndex": "Číslo sezení",
       "fieldSessionIndexPlaceholder": "1",
       "fieldDescription": "Popis",
-      "sessionLabel": "Sezení {index}",
       "cancel": "Zrušit",
       "saveChanges": "Uložit změny"
+    },
+    "creationConflict": {
+      "title": "Vyberte, kam nahrávka patří",
+      "description": "Na tomto místě a datu už existuje jedna nebo více událostí. Vyberte odpovídající besedu, nebo potvrďte, že jde o samostatnou událost.",
+      "eventFallback": "Událost {id}",
+      "candidateMeta": "Událost {id} · sezení {index} · {count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
+      "createDistinct": "Vytvořit samostatnou událost",
+      "cancel": "Zrušit"
     },
     "unassignedPage": {
       "title": "Nepřiřazené nahrávky",
@@ -1691,7 +1699,8 @@
       "toastCreated": "Událost vytvořena z nahrávky",
       "toastCreateFailed": "Nepodařilo se vytvořit událost z nahrávky",
       "loading": "Načítání nepřiřazených nahrávek...",
-      "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}"
+      "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}",
+      "attachToEvent": "Připojit"
     }
   },
   "catalogSettings": {
@@ -1994,7 +2003,6 @@
     "unknownTitle": "Nahrávka bez názvu",
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
-    "sessionLabel": "Sezení {index}",
     "availableOffline": "Dostupné offline",
     "offlinePlayer": "Offline přehrávač",
     "audioUnavailable": "Stažený zvuk není k dispozici. Odeberte toto stažení a uložte jej znovu online.",

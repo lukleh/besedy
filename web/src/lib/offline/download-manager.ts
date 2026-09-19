@@ -164,6 +164,8 @@ interface EventDetailResponse {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal?: number;
+  sessionCount?: number;
   recordings: EventRecordingResponse[];
   publishedPoster?: {
     id: string;
@@ -451,6 +453,8 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
     dateMonth: event.dateMonth,
     dateDay: event.dateDay,
     sessionIndex: event.sessionIndex,
+    sessionOrdinal: event.sessionOrdinal,
+    sessionCount: event.sessionCount,
     publishedPoster: event.publishedPoster
       ? {
           id: event.publishedPoster.id,

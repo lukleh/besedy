@@ -85,6 +85,94 @@ export async function listReadableCatalogEvents(
   });
 }
 
+/** The tuple the unique identity index groups sessions by, minus the index. */
+export interface SessionDateKey {
+  locationId: number;
+  dateYear: number;
+  dateMonth: number | null;
+  dateDay: number | null;
+}
+
+export function sessionDateKey(event: SessionDateKey): string {
+  return [
+    event.locationId,
+    event.dateYear,
+    event.dateMonth ?? '',
+    event.dateDay ?? '',
+  ].join(':');
+}
+
+export interface SessionOrdinal {
+  ordinal: number;
+  count: number;
+}
+
+/**
+ * Each event's position among the sessions the reader can open on that date.
+ *
+ * The stored session index is editable and can have gaps after an edit or
+ * deletion, so it cannot safely be paired with a row count as an ordinal.
+ * Derive both values from the same visibility-scoped sibling set instead.
+ * List filters are intentionally excluded: filtering a page must not renumber
+ * an event or hide the fact that it has a visible sibling.
+ */
+export async function loadSessionOrdinals(
+  catalogId: string,
+  eventIds: ReadableEventIds,
+  keys: SessionDateKey[],
+): Promise<Map<number, SessionOrdinal>> {
+  const unique = new Map<string, SessionDateKey>();
+  for (const key of keys) {
+    unique.set(sessionDateKey(key), {
+      locationId: key.locationId,
+      dateYear: key.dateYear,
+      dateMonth: key.dateMonth,
+      dateDay: key.dateDay,
+    });
+  }
+  if (unique.size === 0) return new Map();
+
+  const rows = await prisma.catalogEvent.findMany({
+    where: {
+      AND: [
+        buildReadableCatalogEventWhere(catalogId, eventIds),
+        { OR: [...unique.values()] },
+      ],
+    },
+    select: {
+      id: true,
+      locationId: true,
+      dateYear: true,
+      dateMonth: true,
+      dateDay: true,
+      sessionIndex: true,
+    },
+  });
+
+  const siblingsByDate = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = sessionDateKey(row);
+    const siblings = siblingsByDate.get(key) ?? [];
+    siblings.push(row);
+    siblingsByDate.set(key, siblings);
+  }
+
+  const ordinals = new Map<number, SessionOrdinal>();
+  for (const siblings of siblingsByDate.values()) {
+    siblings.sort(
+      (left, right) =>
+        left.sessionIndex - right.sessionIndex || left.id - right.id
+    );
+    siblings.forEach((event, index) => {
+      ordinals.set(event.id, {
+        ordinal: index + 1,
+        count: siblings.length,
+      });
+    });
+  }
+  return ordinals;
+}
+
 export function catalogEventRecordingVisibilityWhere(
   eventIds: ReadableEventIds,
 ): Prisma.CatalogEventRecordingWhereInput {

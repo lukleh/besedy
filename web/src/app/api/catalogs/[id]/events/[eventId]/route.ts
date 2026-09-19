@@ -9,7 +9,11 @@ import { getCatalogCapability } from "@/lib/access/capabilities";
 import { handlePrismaError, badRequest, conflict, forbidden, notFound } from "@/lib/api";
 import { IntIdSchema, validateParams, validateRequestBody } from "@/lib/api/validation";
 import { UpdateCatalogEventSchema } from "@/lib/catalog-events/validation";
-import { loadReadableCatalogEvent } from "@/lib/catalog-events/read-service";
+import {
+  loadSessionOrdinals,
+  loadReadableCatalogEvent,
+  resolveReadableEventIds,
+} from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
 import { getPublishedEventPoster } from "@/lib/event-poster-service";
@@ -99,10 +103,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         return a.audioHash.localeCompare(b.audioHash);
       });
 
-    const [catalogCapability, publishedPoster] = await Promise.all([
+    const readableEventIds = await resolveReadableEventIds(catalogId, catalogGrant);
+    const [catalogCapability, publishedPoster, sessionOrdinals] = await Promise.all([
       getCatalogCapability(catalogId, userId),
       getPublishedEventPoster(catalogId, eventId),
+      loadSessionOrdinals(catalogId, readableEventIds, [event]),
     ]);
+    const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
+      ordinal: 1,
+      count: 1,
+    };
     const canViewPosterCandidates = catalogCapability.canViewPosterCandidates;
     const canManagePosters = catalogCapability.canManagePosters;
     const canPublishPosters = catalogCapability.canPublishPosters;
@@ -118,6 +128,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       dateMonth: event.dateMonth,
       dateDay: event.dateDay,
       sessionIndex: event.sessionIndex,
+      sessionOrdinal: sessionOrdinal.ordinal,
+      sessionCount: sessionOrdinal.count,
       description: event.description,
       released: event.released,
       sortOrder: event.sortOrder,

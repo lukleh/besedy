@@ -106,6 +106,7 @@ describe("catalog events route", () => {
           dateYear: 2024,
           dateMonth: 4,
           dateDay: 3,
+          sessionIndex: 1,
           description: null,
           released: false,
           sortOrder: 1,
@@ -115,7 +116,17 @@ describe("catalog events route", () => {
           _count: { recordings: 1 },
         },
       ])
-      .mockResolvedValueOnce([{ dateYear: 2024 }]);
+      .mockResolvedValueOnce([{ dateYear: 2024 }])
+      .mockResolvedValueOnce([
+        {
+          id: 7,
+          locationId: 3,
+          dateYear: 2024,
+          dateMonth: 4,
+          dateDay: 3,
+          sessionIndex: 1,
+        },
+      ]);
     prisma.location.findMany.mockResolvedValue([{ id: 3, name: "Praha" }]);
     prisma.catalogEntry.findMany.mockResolvedValue([
       {
@@ -158,6 +169,8 @@ describe("catalog events route", () => {
     expect(body.events[0].id).toBe(7);
     expect(body.events[0].released).toBe(false);
     expect(body.events[0].posterStatus).toBe("draft-only");
+    expect(body.events[0].sessionOrdinal).toBe(1);
+    expect(body.events[0].sessionCount).toBe(1);
   });
 
   it("limits listener listings to published-visible event ids", async () => {

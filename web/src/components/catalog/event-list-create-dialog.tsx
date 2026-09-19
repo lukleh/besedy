@@ -26,14 +26,12 @@ interface EventListCreateDialogProps {
   isPending: boolean;
   locationId: string;
   metadataLocations: LocationItem[];
-  sessionIndex: string;
   onDateDayChange: (value: string) => void;
   onDateMonthChange: (value: string) => void;
   onDateYearChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onLocationIdChange: (value: string) => void;
   onOpenChange: (open: boolean) => void;
-  onSessionIndexChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTitleChange: (value: string) => void;
   title: string;
@@ -48,14 +46,12 @@ export function EventListCreateDialog({
   isPending,
   locationId,
   metadataLocations,
-  sessionIndex,
   onDateDayChange,
   onDateMonthChange,
   onDateYearChange,
   onDescriptionChange,
   onLocationIdChange,
   onOpenChange,
-  onSessionIndexChange,
   onSubmit,
   onTitleChange,
   title,
@@ -114,15 +110,6 @@ export function EventListCreateDialog({
                 placeholder={t("fieldDayPlaceholder")}
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="event-session-index">{t("fieldSessionIndexOptional")}</Label>
-            <Input
-              id="event-session-index"
-              value={sessionIndex}
-              onChange={(event) => onSessionIndexChange(event.target.value)}
-              placeholder={t("fieldSessionIndexPlaceholder")}
-            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="event-title">{t("fieldTitleOptional")}</Label>

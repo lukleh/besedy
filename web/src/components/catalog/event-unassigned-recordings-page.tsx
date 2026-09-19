@@ -11,6 +11,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { CatalogPagination } from "@/components/catalog/catalog-list/components/pagination";
 import { type PaginationInfo } from "@/components/catalog/catalog-list/types";
+import { EventCreationConflictDialog } from "@/components/catalog/event-creation-conflict-dialog";
+import {
+  CREATE_DISTINCT_EVENT_INTENT,
+  type EventCreationConflictDetails,
+} from "@/lib/catalog-events/create-conflict";
+import { readEventCreationConflict } from "@/lib/catalog-events/create-conflict-client";
 import {
   UnassignedRecordingsTable,
   type UnassignedEntry,
@@ -45,6 +51,11 @@ function canCreateEventFromEntry(entry: UnassignedEntry): boolean {
   return entry.locationId !== null && entry.dateYear !== null;
 }
 
+interface CreationDecision {
+  entry: UnassignedEntry;
+  conflict: EventCreationConflictDetails;
+}
+
 export function EventUnassignedRecordingsPage({
   catalogId,
 }: EventUnassignedRecordingsPageProps) {
@@ -53,6 +64,9 @@ export function EventUnassignedRecordingsPage({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [page, setPage] = useState(1);
+  const [creationDecision, setCreationDecision] = useState<CreationDecision | null>(
+    null
+  );
 
   const queryKey = useMemo(
     () => ["catalog-event-unassigned-page", catalogId, page] as const,
@@ -73,8 +87,25 @@ export function EventUnassignedRecordingsPage({
     },
   });
 
+  async function refreshEventQueries() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["catalog-events", catalogId] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog-events-health", catalogId] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog-event-unassigned", catalogId] }),
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-event-unassigned-page", catalogId],
+      }),
+    ]);
+  }
+
   const createMutation = useMutation({
-    mutationFn: async (entry: UnassignedEntry) => {
+    mutationFn: async ({
+      entry,
+      intent,
+    }: {
+      entry: UnassignedEntry;
+      intent?: typeof CREATE_DISTINCT_EVENT_INTENT;
+    }) => {
       return fetchJson<CreateEventFromRecordingResponse>(
         "/api/catalog-events/from-recording",
         {
@@ -83,20 +114,52 @@ export function EventUnassignedRecordingsPage({
           body: JSON.stringify({
             workflowGroupId: catalogId,
             audioHash: entry.audioHash,
+            ...(intent !== undefined ? { intent } : {}),
           }),
         }
       );
     },
     onSuccess: async (result) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["catalog-events", catalogId] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog-events-health", catalogId] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog-event-unassigned", catalogId] }),
-        queryClient.invalidateQueries({
-          queryKey: ["catalog-event-unassigned-page", catalogId],
-        }),
-      ]);
+      setCreationDecision(null);
+      await refreshEventQueries();
       router.push(`/catalog/${catalogId}/event/${result.eventId}/edit`);
+    },
+    onError: (error: Error, variables) => {
+      const conflict = readEventCreationConflict(error);
+      if (conflict) {
+        setCreationDecision({ entry: variables.entry, conflict });
+        return;
+      }
+      toast({
+        title: t("toastCreateFailed"),
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const attachMutation = useMutation({
+    mutationFn: async ({
+      entry,
+      eventId,
+    }: {
+      entry: UnassignedEntry;
+      eventId: number;
+    }) => {
+      await fetchJson(
+        `/api/catalogs/${catalogId}/events/${eventId}/recordings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audioHashes: [entry.audioHash] }),
+        }
+      );
+      return { eventId };
+    },
+    onSuccess: async ({ eventId }) => {
+      setCreationDecision(null);
+      await refreshEventQueries();
+      router.push(`/catalog/${catalogId}/event/${eventId}/edit`);
     },
     onError: (error: Error) => {
       toast({
@@ -137,7 +200,7 @@ export function EventUnassignedRecordingsPage({
       return;
     }
 
-    createMutation.mutate(entry);
+    createMutation.mutate({ entry });
   }
 
   return (
@@ -174,10 +237,10 @@ export function EventUnassignedRecordingsPage({
           });
           return `/catalog/${catalogId}/recording/${entry.audioHash}?${params.toString()}`;
         }}
-        isBusy={createMutation.isPending}
+        isBusy={createMutation.isPending || attachMutation.isPending}
         isActionPending={(entry) =>
           createMutation.isPending &&
-          createMutation.variables?.audioHash === entry.audioHash
+          createMutation.variables?.entry.audioHash === entry.audioHash
         }
         getActionTitle={(entry) =>
           canCreateEventFromEntry(entry) ? undefined : t("missingMetadataHint")
@@ -190,6 +253,27 @@ export function EventUnassignedRecordingsPage({
           onPageChange={setPage}
         />
       ) : null}
+
+      <EventCreationConflictDialog
+        candidateActionLabel={t("attachToEvent")}
+        conflict={creationDecision?.conflict ?? null}
+        isPending={createMutation.isPending || attachMutation.isPending}
+        onCancel={() => setCreationDecision(null)}
+        onCandidateAction={(candidate) => {
+          if (!creationDecision) return;
+          attachMutation.mutate({
+            entry: creationDecision.entry,
+            eventId: candidate.id,
+          });
+        }}
+        onCreateDistinct={() => {
+          if (!creationDecision) return;
+          createMutation.mutate({
+            entry: creationDecision.entry,
+            intent: CREATE_DISTINCT_EVENT_INTENT,
+          });
+        }}
+      />
     </div>
   );
 }

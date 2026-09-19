@@ -5,6 +5,12 @@ import { conflict, badRequest, handlePrismaError, notFound } from "@/lib/api";
 import { validateRequestBody } from "@/lib/api/validation";
 import { CreateCatalogEventFromRecordingSchema } from "@/lib/catalog-events/validation";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
+import { loadEventCreationContext } from "@/lib/catalog-events/create-candidates";
+import {
+  buildEventCreationConflictDetails,
+  CREATE_DISTINCT_EVENT_INTENT,
+  type EventCreationConflictDetails,
+} from "@/lib/catalog-events/create-conflict";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +19,7 @@ type CreateFromRecordingResult =
   | { kind: "recording_not_found" }
   | { kind: "non_actionable" }
   | { kind: "already_assigned"; eventId: number }
+  | { kind: "needs_destination_decision"; details: EventCreationConflictDetails }
   | { kind: "missing_metadata" };
 
 export async function POST(request: NextRequest) {
@@ -82,18 +89,29 @@ export async function POST(request: NextRequest) {
           return { kind: "missing_metadata" };
         }
 
-        const latestSession = await tx.catalogEvent.findFirst({
-          where: {
-            workflowGroupId: body.workflowGroupId,
-            locationId: metadata.location.id,
-            dateYear: metadata.dateYear,
-            dateMonth: metadata.dateMonth ?? null,
-            dateDay: metadata.dateDay ?? null,
-          },
-          select: { sessionIndex: true },
-          orderBy: { sessionIndex: "desc" },
+        const creationContext = await loadEventCreationContext(tx, {
+          workflowGroupId: body.workflowGroupId,
+          locationId: metadata.location.id,
+          dateYear: metadata.dateYear,
+          dateMonth: metadata.dateMonth ?? null,
+          dateDay: metadata.dateDay ?? null,
         });
-        const sessionIndex = (latestSession?.sessionIndex ?? 0) + 1;
+
+        if (
+          creationContext.candidates.length > 0 &&
+          body.intent !== CREATE_DISTINCT_EVENT_INTENT
+        ) {
+          return {
+            kind: "needs_destination_decision",
+            details: buildEventCreationConflictDetails(
+              creationContext.candidates
+            ),
+          };
+        }
+
+        // The browser confirms semantic intent, never a storage index. Re-read
+        // the current candidates and allocate the index in this transaction.
+        const sessionIndex = creationContext.nextSessionIndex;
 
         const title = deriveEventTitle(
           metadata.location.name,
@@ -147,6 +165,13 @@ export async function POST(request: NextRequest) {
       }
       if (result.kind === "already_assigned") {
         return conflict(`Recording is already assigned to event ${result.eventId}`);
+      }
+      if (result.kind === "needs_destination_decision") {
+        return conflict(
+          "One or more events already cover this recording's location and date. " +
+            "Attach it to the matching discussion or confirm that it is a distinct event.",
+          result.details
+        );
       }
       if (result.kind === "missing_metadata") {
         return badRequest("Recording requires location and year metadata before creating an event");

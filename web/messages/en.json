@@ -1468,6 +1468,10 @@
     "transcriptRestrictedDescription": "You need VIEWER access or higher to view transcripts."
   },
   "events": {
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Session {index} of {count}"
+      },
     "tabs": {
       "ariaLabel": "Catalog tabs",
       "recordings": "Recordings",
@@ -1569,7 +1573,6 @@
       "postersDraftOnly": "Draft only",
       "postersPublished": "Published",
       "postersPublishedWithDrafts": "Published + newer drafts",
-      "sessionLabel": "Session {index}",
       "createDialogTitle": "Create Event",
       "createDialogDescription": "Event requires location and at least year; month/day are optional.",
       "fieldLocation": "Location",
@@ -1580,8 +1583,6 @@
       "fieldMonthPlaceholder": "1-12",
       "fieldDay": "Day",
       "fieldDayPlaceholder": "1-31",
-      "fieldSessionIndexOptional": "Session number (optional)",
-      "fieldSessionIndexPlaceholder": "Next available",
       "fieldTitleOptional": "Title (optional)",
       "fieldTitlePlaceholder": "Auto-derived when empty",
       "fieldDescriptionOptional": "Description (optional)",
@@ -1589,6 +1590,7 @@
       "create": "Create",
       "toastCreated": "Event created",
       "toastCreateFailed": "Failed to create event",
+      "openExistingEvent": "Open event",
       "loadNextError": "Failed to load next events",
       "loadAllError": "Failed to load all events",
       "loading": "Loading events...",
@@ -1599,7 +1601,6 @@
       "unknownError": "Unknown error",
       "eventFallbackTitle": "Event {id}",
       "recordingCount": "{count, plural, one {# recording} other {# recordings}}",
-      "sessionLabel": "Session {index}",
       "released": "Released",
       "unreleased": "Unreleased",
       "editEvent": "Edit Event",
@@ -1676,9 +1677,16 @@
       "fieldSessionIndex": "Session number",
       "fieldSessionIndexPlaceholder": "1",
       "fieldDescription": "Description",
-      "sessionLabel": "Session {index}",
       "cancel": "Cancel",
       "saveChanges": "Save Changes"
+    },
+    "creationConflict": {
+      "title": "Choose where this belongs",
+      "description": "One or more events already have this location and date. Choose the matching discussion, or confirm that this is a distinct event.",
+      "eventFallback": "Event {id}",
+      "candidateMeta": "Event {id} · session {index} · {count, plural, one {# recording} other {# recordings}}",
+      "createDistinct": "Create a distinct event",
+      "cancel": "Cancel"
     },
     "unassignedPage": {
       "title": "Unassigned Recordings",
@@ -1692,7 +1700,8 @@
       "toastCreated": "Event created from recording",
       "toastCreateFailed": "Failed to create event from recording",
       "loading": "Loading unassigned recordings...",
-      "loadError": "Failed to load unassigned recordings: {message}"
+      "loadError": "Failed to load unassigned recordings: {message}",
+      "attachToEvent": "Attach"
     }
   },
   "catalogSettings": {
@@ -1995,7 +2004,6 @@
     "unknownTitle": "Untitled recording",
     "eventLabel": "Event",
     "recordingLabel": "Recording",
-    "sessionLabel": "Session {index}",
     "availableOffline": "Available offline",
     "offlinePlayer": "Offline player",
     "audioUnavailable": "The downloaded audio is unavailable. Remove this download and save it again while online.",
