@@ -1,18 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/permissions";
 import prisma from "@/lib/db";
-import { roleFieldsForLevel } from "@/lib/policy/catalog-permissions";
+import {
+  GRANTABLE_EXTRA_PERMISSIONS,
+  grantFieldsForRole,
+  mergeGrantableExtraPermissions,
+} from "@/lib/policy/catalog-permissions";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   canManageCatalogConfiguration,
   canAttemptCatalogManagement,
-  canGrantCatalogAccessLevel,
-  canManageExistingCatalogAccessLevel,
+  canGrantCatalogGrant,
+  canManageCatalogGrantExtras,
+  canManageExistingCatalogGrant,
+  canRevokeExistingCatalogGrant,
   isSelfCatalogAccessChange,
-  manageableCatalogAccessLevels,
+  manageableCatalogRoles,
 } from "@/lib/policy/catalog";
-import { TimestampIdParamSchema, GrantAccessSchema } from "@/lib/validation/schemas";
-import { validateMutationSource, validateParams, validateRequestBody, badRequest, forbidden, notFound, conflict, handlePrismaError } from "@/lib/api";
+import {
+  TimestampIdParamSchema,
+  GrantAccessSchema,
+} from "@/lib/validation/schemas";
+import {
+  validateMutationSource,
+  validateParams,
+  validateRequestBody,
+  badRequest,
+  forbidden,
+  notFound,
+  conflict,
+  handlePrismaError,
+} from "@/lib/api";
 import { logCatalogAccessEvent } from "@/lib/audit/logger";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +41,7 @@ interface RouteParams {
 
 /**
  * GET /api/catalogs/:id/access - List users with access to this catalog
- * Requires OWNER or Admin
+ * Requires catalog access-management permission.
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -52,7 +70,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
     // Get all access grants for this catalog (including revoked)
@@ -62,12 +80,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         id: true,
         userId: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         status: true,
         notes: true,
         createdAt: true,
         revokedAt: true,
         user: {
-          select: { id: true, name: true, email: true, image: true, status: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            status: true,
+          },
         },
         grantedBy: {
           select: { id: true, name: true, email: true },
@@ -78,23 +104,40 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       },
       orderBy: [
         { status: "asc" }, // ACTIVE first, then REVOKED
-        { accessLevel: "desc" }, // OWNER first
         { createdAt: "asc" },
       ],
     });
 
     return NextResponse.json({
       catalog,
-      accessList,
+      accessList: accessList.map((grant) => ({
+        ...grant,
+        canManage:
+          !isSelfCatalogAccessChange(userId, grant.userId) &&
+          canManageExistingCatalogGrant(managementAccess.policyContext, {
+            level: grant.accessLevel,
+            role: grant.role,
+            extras: grant.extraPermissions,
+          }),
+        canRevoke:
+          !isSelfCatalogAccessChange(userId, grant.userId) &&
+          canRevokeExistingCatalogGrant(managementAccess.policyContext, {
+            level: grant.accessLevel,
+            role: grant.role,
+            extras: grant.extraPermissions,
+          }),
+      })),
       canManageAccess: true,
       canManageCatalogConfig: canManageCatalogConfiguration(
         managementAccess.policyContext
       ),
-      // The levels the actor may assign and act on, so the client offers
+      // The roles the actor may assign, so the client offers
       // exactly what the server will accept.
-      manageableAccessLevels: manageableCatalogAccessLevels(
+      manageableRoles: manageableCatalogRoles(managementAccess.policyContext),
+      canManageExtras: canManageCatalogGrantExtras(
         managementAccess.policyContext
       ),
+      grantableExtraPermissions: GRANTABLE_EXTRA_PERMISSIONS,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog access", "fetch");
@@ -103,9 +146,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 /**
  * POST /api/catalogs/:id/access - Grant access to a user
- * Body: { userId: string, accessLevel: AccessLevel, notes?: string, userName?: string }
- * Admin can grant any level including OWNER
- * OWNER can grant LISTENER, VIEWER, MEMBER, EDITOR (not OWNER)
+ * Body: { userId: string, role: CatalogRole, extraPermissions?: string[], notes?: string, userName?: string }
+ * Catalog administrators may grant any role and curated extras. Hosts may
+ * grant only roles carrying no protected permission and may not grant extras.
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
@@ -122,7 +165,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const bodyResult = await validateRequestBody(request, GrantAccessSchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { userId, accessLevel, notes, userName } = bodyResult.data;
+    const { userId, role, extraPermissions, notes, userName } = bodyResult.data;
 
     // Check if catalog exists
     const catalog = await prisma.workflowGroup.findUnique({
@@ -153,15 +196,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(managementAccess.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
-    if (!canGrantCatalogAccessLevel(managementAccess.policyContext, accessLevel)) {
-      return forbidden("Only administrators can grant this level of access");
+    if (
+      !canGrantCatalogGrant(
+        managementAccess.policyContext,
+        role,
+        extraPermissions
+      )
+    ) {
+      return forbidden(
+        "Only catalog administrators can grant this role or extras"
+      );
     }
 
     if (isSelfCatalogAccessChange(currentUserId, userId)) {
-      return badRequest("Cannot grant yourself access. Ask another admin or owner to do this.");
+      return badRequest(
+        "Cannot grant yourself access. Ask another admin or owner to do this."
+      );
     }
 
     // Check if user already has access (including revoked)
@@ -173,18 +226,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (existingAccess) {
       if (existingAccess.status === "ACTIVE") {
-        return conflict("User already has access to this catalog. Use PUT to update the access level.");
+        return conflict(
+          "User already has access to this catalog. Use PUT to update the grant."
+        );
       }
 
       if (
-        !canManageExistingCatalogAccessLevel(
-          managementAccess.policyContext,
-          existingAccess.accessLevel
-        )
+        !canManageExistingCatalogGrant(managementAccess.policyContext, {
+          level: existingAccess.accessLevel,
+          role: existingAccess.role,
+          extras: existingAccess.extraPermissions,
+        })
       ) {
-        return forbidden("Only administrators can restore this level of access");
+        return forbidden("Only catalog administrators can restore this access");
       }
     }
+
+    const storedExtraPermissions = existingAccess
+      ? mergeGrantableExtraPermissions(
+          existingAccess.extraPermissions,
+          extraPermissions
+        )
+      : extraPermissions;
 
     const grantedAccess = await prisma.$transaction(async (tx) => {
       if (userName !== undefined) {
@@ -201,8 +264,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             userId_catalogId: { userId, catalogId },
           },
           data: {
-            accessLevel,
-            ...roleFieldsForLevel(accessLevel),
+            ...grantFieldsForRole(role, storedExtraPermissions),
             status: "ACTIVE",
             notes: notes || null,
             grantedById: currentUserId,
@@ -210,7 +272,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             revokedAt: null,
           },
           include: {
-            user: { select: { id: true, name: true, email: true, image: true } },
+            user: {
+              select: { id: true, name: true, email: true, image: true },
+            },
             grantedBy: { select: { id: true, name: true, email: true } },
           },
         });
@@ -221,8 +285,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         data: {
           userId,
           catalogId,
-          accessLevel,
-          ...roleFieldsForLevel(accessLevel),
+          ...grantFieldsForRole(role, storedExtraPermissions),
           notes: notes || null,
           grantedById: currentUserId,
         },
@@ -242,12 +305,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       targetEmail: targetUser.email,
       catalogId,
       catalogLabel: catalog.label,
-      accessLevel,
+      accessLevel: grantedAccess.accessLevel,
       details: {
         targetUserId: userId,
         targetEmail: targetUser.email,
         catalogId,
-        accessLevel,
+        role,
+        extraPermissions: storedExtraPermissions,
         restored: !!existingAccess,
         userNameUpdated: userName !== undefined,
       },

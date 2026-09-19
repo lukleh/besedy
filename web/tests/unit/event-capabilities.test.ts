@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogFeaturesResponse } from "@/lib/features/capabilities";
-import {
-  grantForRole,
-  grantFromLevel,
-} from "@/lib/policy/catalog-permissions";
+import { grantForRole, grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 function deepSearch(enabled: boolean, canView: boolean) {
   return {
@@ -17,7 +14,11 @@ describe("event capabilities", () => {
   // Browsing recordings is a permission now, and no role below the curator
   // carries it, so these two have one surface and need no switch.
   it("keeps listeners on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse(grantForRole("listener"), false, false);
+    const result = buildCatalogFeaturesResponse(
+      grantForRole("listener"),
+      false,
+      false
+    );
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -39,7 +40,11 @@ describe("event capabilities", () => {
   });
 
   it("keeps readers on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse(grantForRole("reader"), false, false);
+    const result = buildCatalogFeaturesResponse(
+      grantForRole("reader"),
+      false,
+      false
+    );
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -63,7 +68,11 @@ describe("event capabilities", () => {
   });
 
   it("lets owners edit events and use both catalog tabs", () => {
-    const result = buildCatalogFeaturesResponse(grantFromLevel("OWNER"), false, false);
+    const result = buildCatalogFeaturesResponse(
+      grantFromLevel("OWNER"),
+      false,
+      false
+    );
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -85,9 +94,27 @@ describe("event capabilities", () => {
   });
 
   it("lets owners use deep search only when Labs is enabled", () => {
-    const result = buildCatalogFeaturesResponse(grantFromLevel("OWNER"), true, false);
+    const result = buildCatalogFeaturesResponse(
+      grantFromLevel("OWNER"),
+      true,
+      false
+    );
 
     expect(result.features.deepSearch).toEqual(deepSearch(true, true));
+  });
+
+  it("requires transcript read permission for deep search", () => {
+    const result = buildCatalogFeaturesResponse(
+      {
+        level: null,
+        role: "listener",
+        extras: ["use_deep_search"],
+      },
+      true,
+      false
+    );
+
+    expect(result.features.deepSearch).toEqual(deepSearch(true, false));
   });
 
   it("lets catalog admins browse and edit events without an explicit catalog grant", () => {
@@ -141,10 +168,15 @@ describe("event capabilities", () => {
   });
 
   it("never reports event access when admission or catalog state is impossible", () => {
-    const result = buildCatalogFeaturesResponse(grantFromLevel("LISTENER"), true, false, {
-      catalogExists: false,
-      canEnterPortal: false,
-    });
+    const result = buildCatalogFeaturesResponse(
+      grantFromLevel("LISTENER"),
+      true,
+      false,
+      {
+        catalogExists: false,
+        canEnterPortal: false,
+      }
+    );
 
     expect(result).toEqual({
       labsEnabled: true,

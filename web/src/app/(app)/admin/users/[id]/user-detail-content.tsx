@@ -25,7 +25,13 @@ import { formatRelativeTime, formatLocalDate } from "@/lib/date-format";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -49,15 +55,18 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminStatus } from "@/hooks/use-admin-status";
 import { useCatalogs } from "@/hooks/use-catalogs";
-import { AccessLevel, UserStatus } from "@/generated/prisma/enums";
+import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
+import { CATALOG_ROLES, roleForLevel } from "@/lib/policy/catalog-permissions";
 
-const ACCESS_LEVEL_VALUES = Object.values(AccessLevel);
+const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 
 interface CatalogAccess {
   id: string;
   catalogId: string;
-  accessLevel: AccessLevel;
+  accessLevel: "LISTENER" | "VIEWER" | "MEMBER" | "EDITOR" | "OWNER";
+  role: CatalogRole | null;
+  extraPermissions: string[];
   catalog: {
     id: string;
     label: string | null;
@@ -85,7 +94,11 @@ interface UserDetails {
 
 const statusConfig: Record<
   UserStatus,
-  { labelKey: "pending" | "active" | "blocked"; variant: "default" | "secondary" | "destructive"; icon: typeof UserCheck }
+  {
+    labelKey: "pending" | "active" | "blocked";
+    variant: "default" | "secondary" | "destructive";
+    icon: typeof UserCheck;
+  }
 > = {
   PENDING: { labelKey: "pending", variant: "secondary", icon: Clock },
   ACTIVE: { labelKey: "active", variant: "default", icon: UserCheck },
@@ -103,22 +116,25 @@ export default function UserDetailContent() {
   const locale = useLocale();
   const userId = params.id as string;
 
-  // Helper function to get translated access level label
-  const getAccessLevelLabel = (level: AccessLevel): string => {
-    const key = level.toLowerCase() as "listener" | "viewer" | "member" | "editor" | "owner";
-    return t(`accessLevels.${key}`);
-  };
+  const getCatalogRoleLabel = (role: CatalogRole): string =>
+    t(`catalogRoles.${role}`);
+  const roleOf = (access: CatalogAccess): CatalogRole =>
+    access.role ?? roleForLevel(access.accessLevel).role;
 
   const [blockConfirm, setBlockConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [adminRoleForm, setAdminRoleForm] = useState(false);
   const [newCatalogId, setNewCatalogId] = useState<string>("");
-  const [newAccessLevel, setNewAccessLevel] = useState<AccessLevel>("LISTENER");
+  const [newCatalogRole, setNewCatalogRole] = useState<CatalogRole>("listener");
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
 
   // Fetch user details
-  const { data: user, isLoading, error } = useQuery<UserDetails>({
+  const {
+    data: user,
+    isLoading,
+    error,
+  } = useQuery<UserDetails>({
     queryKey: ["admin-user-detail", userId],
     queryFn: async () => {
       try {
@@ -145,7 +161,9 @@ export default function UserDetailContent() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail", userId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-user-detail", userId],
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setBlockConfirm(false);
       toast({
@@ -172,7 +190,9 @@ export default function UserDetailContent() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail", userId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-user-detail", userId],
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setIsEditingName(false);
       toast({
@@ -212,7 +232,9 @@ export default function UserDetailContent() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail", userId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-user-detail", userId],
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setAdminRoleForm(false);
       toast({
@@ -233,22 +255,24 @@ export default function UserDetailContent() {
   const addCatalogAccess = useMutation({
     mutationFn: async ({
       catalogId,
-      accessLevel,
+      role,
     }: {
       catalogId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}/access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, accessLevel }),
+        body: JSON.stringify({ userId, role, extraPermissions: [] }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail", userId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-user-detail", userId],
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setNewCatalogId("");
-      setNewAccessLevel("LISTENER");
+      setNewCatalogRole("listener");
       toast({
         title: t("toasts.accessGranted"),
         description: t("toasts.accessHasBeenGranted"),
@@ -267,19 +291,23 @@ export default function UserDetailContent() {
   const updateCatalogAccess = useMutation({
     mutationFn: async ({
       catalogId,
-      accessLevel,
+      role,
+      extraPermissions,
     }: {
       catalogId: string;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
+      extraPermissions: string[];
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}/access/${userId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessLevel }),
+        body: JSON.stringify({ role, extraPermissions }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail", userId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-user-detail", userId],
+      });
       toast({
         title: t("toasts.accessUpdated"),
         description: t("toasts.accessHasBeenUpdated"),
@@ -302,7 +330,9 @@ export default function UserDetailContent() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail", userId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-user-detail", userId],
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       toast({
         title: t("toasts.accessRemoved"),
@@ -481,10 +511,15 @@ export default function UserDetailContent() {
                   </>
                 )}
                 {user.isSuperadmin && (
-                  <Badge className="bg-purple-600">{t("users.roles.superadmin")}</Badge>
+                  <Badge className="bg-purple-600">
+                    {t("users.roles.superadmin")}
+                  </Badge>
                 )}
                 {user.isAdmin && !user.isSuperadmin && (
-                  <Badge variant="secondary" className="text-indigo-600 border-indigo-300">
+                  <Badge
+                    variant="secondary"
+                    className="text-indigo-600 border-indigo-300"
+                  >
                     {t("users.roles.admin")}
                   </Badge>
                 )}
@@ -506,14 +541,18 @@ export default function UserDetailContent() {
             <div className="flex items-center gap-2 text-sm">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <div>
-                <span className="text-muted-foreground">{t("userDetail.memberSince")} </span>
+                <span className="text-muted-foreground">
+                  {t("userDetail.memberSince")}{" "}
+                </span>
                 {formatLocalDate(user.createdAt, locale, "MMM d, yyyy")}
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <Clock className="h-4 w-4 text-muted-foreground" />
               <div>
-                <span className="text-muted-foreground">{t("userDetail.lastLogin")} </span>
+                <span className="text-muted-foreground">
+                  {t("userDetail.lastLogin")}{" "}
+                </span>
                 {user.lastLoginAt
                   ? formatRelativeTime(user.lastLoginAt, locale)
                   : t("users.never")}
@@ -523,7 +562,9 @@ export default function UserDetailContent() {
               <div className="flex items-center gap-2 text-sm">
                 <UserCheck className="h-4 w-4 text-muted-foreground" />
                 <div>
-                  <span className="text-muted-foreground">{t("userDetail.activated")} </span>
+                  <span className="text-muted-foreground">
+                    {t("userDetail.activated")}{" "}
+                  </span>
                   {formatLocalDate(user.activatedAt, locale, "MMM d, yyyy")}
                 </div>
               </div>
@@ -534,7 +575,9 @@ export default function UserDetailContent() {
           {user.invitedBy && (
             <div className="flex items-center gap-2 text-sm">
               <User className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">{t("userDetail.addedBy")} </span>
+              <span className="text-muted-foreground">
+                {t("userDetail.addedBy")}{" "}
+              </span>
               <span>{user.invitedBy.name || user.invitedBy.email}</span>
             </div>
           )}
@@ -578,7 +621,9 @@ export default function UserDetailContent() {
                 onClick={() => setAdminRoleForm(true)}
               >
                 <Shield className="mr-2 h-4 w-4" />
-                {user.isAdmin ? t("actions.removeAdmin") : t("actions.makeAdmin")}
+                {user.isAdmin
+                  ? t("actions.removeAdmin")
+                  : t("actions.makeAdmin")}
               </Button>
             )}
 
@@ -629,21 +674,27 @@ export default function UserDetailContent() {
                   </div>
                   <div className="flex items-center gap-2">
                     <ResponsiveSelect
-                      value={access.accessLevel}
+                      value={roleOf(access)}
                       onValueChange={(value) =>
                         updateCatalogAccess.mutate({
                           catalogId: access.catalogId,
-                          accessLevel: value as AccessLevel,
+                          role: value as CatalogRole,
+                          extraPermissions: access.extraPermissions,
                         })
                       }
                     >
-                      <ResponsiveSelectTrigger className="w-[120px]" aria-label={t("userDetail.accessLevel")}>
-                        <ResponsiveSelectValue displayValue={getAccessLevelLabel(access.accessLevel)} />
+                      <ResponsiveSelectTrigger
+                        className="w-[140px]"
+                        aria-label={t("userDetail.role")}
+                      >
+                        <ResponsiveSelectValue
+                          displayValue={getCatalogRoleLabel(roleOf(access))}
+                        />
                       </ResponsiveSelectTrigger>
-                      <ResponsiveSelectContent title={t("userDetail.accessLevel")}>
-                        {ACCESS_LEVEL_VALUES.map((level) => (
-                          <ResponsiveSelectItem key={level} value={level}>
-                            {getAccessLevelLabel(level)}
+                      <ResponsiveSelectContent title={t("userDetail.role")}>
+                        {CATALOG_ROLE_VALUES.map((role) => (
+                          <ResponsiveSelectItem key={role} value={role}>
+                            {getCatalogRoleLabel(role)}
                           </ResponsiveSelectItem>
                         ))}
                       </ResponsiveSelectContent>
@@ -651,7 +702,9 @@ export default function UserDetailContent() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => removeCatalogAccess.mutate(access.catalogId)}
+                      onClick={() =>
+                        removeCatalogAccess.mutate(access.catalogId)
+                      }
                       disabled={removeCatalogAccess.isPending}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -667,33 +720,60 @@ export default function UserDetailContent() {
             <>
               <Separator />
               <div>
-                <h4 className="text-sm font-medium mb-2">{t("userDetail.addCatalogAccess")}</h4>
+                <h4 className="text-sm font-medium mb-2">
+                  {t("userDetail.addCatalogAccess")}
+                </h4>
                 <div className="flex gap-2">
-                  <ResponsiveSelect value={newCatalogId} onValueChange={setNewCatalogId}>
-                    <ResponsiveSelectTrigger className="flex-1" aria-label={t("userDetail.selectCatalog")}>
-                      <ResponsiveSelectValue placeholder={t("userDetail.selectCatalog")} displayValue={newCatalogId ? (availableCatalogs?.find(c => c.id === newCatalogId)?.label || newCatalogId) : undefined} />
+                  <ResponsiveSelect
+                    value={newCatalogId}
+                    onValueChange={setNewCatalogId}
+                  >
+                    <ResponsiveSelectTrigger
+                      className="flex-1"
+                      aria-label={t("userDetail.selectCatalog")}
+                    >
+                      <ResponsiveSelectValue
+                        placeholder={t("userDetail.selectCatalog")}
+                        displayValue={
+                          newCatalogId
+                            ? availableCatalogs?.find(
+                                (c) => c.id === newCatalogId
+                              )?.label || newCatalogId
+                            : undefined
+                        }
+                      />
                     </ResponsiveSelectTrigger>
-                    <ResponsiveSelectContent title={t("userDetail.selectCatalog")}>
+                    <ResponsiveSelectContent
+                      title={t("userDetail.selectCatalog")}
+                    >
                       {availableCatalogs.map((catalog) => (
-                        <ResponsiveSelectItem key={catalog.id} value={catalog.id}>
+                        <ResponsiveSelectItem
+                          key={catalog.id}
+                          value={catalog.id}
+                        >
                           {catalog.label || catalog.id}
                         </ResponsiveSelectItem>
                       ))}
                     </ResponsiveSelectContent>
                   </ResponsiveSelect>
                   <ResponsiveSelect
-                    value={newAccessLevel}
+                    value={newCatalogRole}
                     onValueChange={(value) =>
-                      setNewAccessLevel(value as AccessLevel)
+                      setNewCatalogRole(value as CatalogRole)
                     }
                   >
-                    <ResponsiveSelectTrigger className="w-[120px]" aria-label={t("userDetail.accessLevel")}>
-                      <ResponsiveSelectValue displayValue={getAccessLevelLabel(newAccessLevel)} />
+                    <ResponsiveSelectTrigger
+                      className="w-[140px]"
+                      aria-label={t("userDetail.role")}
+                    >
+                      <ResponsiveSelectValue
+                        displayValue={getCatalogRoleLabel(newCatalogRole)}
+                      />
                     </ResponsiveSelectTrigger>
-                    <ResponsiveSelectContent title={t("userDetail.accessLevel")}>
-                      {ACCESS_LEVEL_VALUES.map((level) => (
-                        <ResponsiveSelectItem key={level} value={level}>
-                          {getAccessLevelLabel(level)}
+                    <ResponsiveSelectContent title={t("userDetail.role")}>
+                      {CATALOG_ROLE_VALUES.map((role) => (
+                        <ResponsiveSelectItem key={role} value={role}>
+                          {getCatalogRoleLabel(role)}
                         </ResponsiveSelectItem>
                       ))}
                     </ResponsiveSelectContent>
@@ -703,7 +783,7 @@ export default function UserDetailContent() {
                       if (newCatalogId) {
                         addCatalogAccess.mutate({
                           catalogId: newCatalogId,
-                          accessLevel: newAccessLevel,
+                          role: newCatalogRole,
                         });
                       }
                     }}
@@ -728,7 +808,9 @@ export default function UserDetailContent() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("dialogs.blockUser.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("dialogs.blockUser.description", { name: user.name || user.email })}
+              {t("dialogs.blockUser.description", {
+                name: user.name || user.email,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -748,12 +830,18 @@ export default function UserDetailContent() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {user.isAdmin ? t("dialogs.adminRole.removeTitle") : t("dialogs.adminRole.grantTitle")}
+              {user.isAdmin
+                ? t("dialogs.adminRole.removeTitle")
+                : t("dialogs.adminRole.grantTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {user.isAdmin
-                ? t("dialogs.adminRole.removeConfirm", { name: user.name || user.email })
-                : t("dialogs.adminRole.grantConfirm", { name: user.name || user.email })}
+                ? t("dialogs.adminRole.removeConfirm", {
+                    name: user.name || user.email,
+                  })
+                : t("dialogs.adminRole.grantConfirm", {
+                    name: user.name || user.email,
+                  })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -773,7 +861,9 @@ export default function UserDetailContent() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("dialogs.deleteUser.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("dialogs.deleteUser.description", { name: user.name || user.email })}
+              {t("dialogs.deleteUser.description", {
+                name: user.name || user.email,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -783,7 +873,9 @@ export default function UserDetailContent() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={deleteUser.isPending}
             >
-              {deleteUser.isPending ? t("actions.deleting") : t("actions.deleteUser")}
+              {deleteUser.isPending
+                ? t("actions.deleting")
+                : t("actions.deleteUser")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

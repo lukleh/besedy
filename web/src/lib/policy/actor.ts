@@ -78,7 +78,11 @@ export async function resolvePortalActorContext(
     userId: resolvedUserId,
     isAuthenticated: true,
     userStatus: user.status,
-    systemRole: user.isSuperadmin ? "SUPERADMIN" : user.isAdmin ? "ADMIN" : "USER",
+    systemRole: user.isSuperadmin
+      ? "SUPERADMIN"
+      : user.isAdmin
+        ? "ADMIN"
+        : "USER",
     canEnterPortal: true,
   };
 }
@@ -111,9 +115,9 @@ export async function resolveCatalogActorContext(
     };
   }
 
-  const isCatalogAdmin = hasSystemCatalogAuthority(portal);
+  const hasSystemAuthority = hasSystemCatalogAuthority(portal);
 
-  const access = isCatalogAdmin
+  const access = hasSystemAuthority
     ? null
     : await prisma.catalogAccess.findUnique({
         where: {
@@ -140,6 +144,8 @@ export async function resolveCatalogActorContext(
           extras: access.extraPermissions ?? [],
         }
       : null;
+  const isCatalogAdmin =
+    hasSystemAuthority || catalogGrant?.role === "catalog_admin";
 
   return {
     ...portal,

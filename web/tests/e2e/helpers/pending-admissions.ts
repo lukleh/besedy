@@ -7,14 +7,19 @@ import { APIRequestContext } from "@playwright/test";
 export interface PendingAdmissionData {
   email: string;
   catalogId?: string;
-  accessLevel?: string;
+  role?: string;
+  extraPermissions?: string[];
 }
 
 export interface PendingAdmissionResponse {
   id: string;
   email: string;
   status: string;
-  catalogAccess?: { catalogId: string; accessLevel: string } | null;
+  catalogAccess?: {
+    catalogId: string;
+    role: string;
+    extraPermissions: string[];
+  } | null;
 }
 
 export interface PendingAdmissionDetails {
@@ -24,6 +29,8 @@ export interface PendingAdmissionDetails {
   invitedAt: string;
   catalogId: string | null;
   accessLevel: string | null;
+  role: string | null;
+  extraPermissions: string[];
   consumedAt: string | null;
   consumedById: string | null;
 }
@@ -44,8 +51,12 @@ export async function createPendingAdmission(
   });
 
   if (!response.ok()) {
-    const error = await response.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(`Failed to create pending admission: ${error.error || response.status()}`);
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
+    throw new Error(
+      `Failed to create pending admission: ${error.error || response.status()}`
+    );
   }
 
   return response.json();
@@ -62,7 +73,9 @@ export async function getPendingAdmission(
   admissionId: string
 ): Promise<PendingAdmissionDetails> {
   if (!admissionId.includes("@")) {
-    throw new Error("Pending portal admissions must be fetched by canonical email");
+    throw new Error(
+      "Pending portal admissions must be fetched by canonical email"
+    );
   }
 
   const path = `/api/admin/portal-admissions/${encodeURIComponent(admissionId)}`;
@@ -86,15 +99,21 @@ export async function deletePendingAdmission(
   admissionId: string
 ): Promise<void> {
   if (!admissionId.includes("@")) {
-    throw new Error("Pending portal admissions must be deleted by canonical email");
+    throw new Error(
+      "Pending portal admissions must be deleted by canonical email"
+    );
   }
 
   const path = `/api/admin/portal-admissions/${encodeURIComponent(admissionId)}`;
   const response = await request.delete(path);
 
   if (!response.ok()) {
-    const error = await response.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(`Failed to delete pending admission: ${error.error || response.status()}`);
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
+    throw new Error(
+      `Failed to delete pending admission: ${error.error || response.status()}`
+    );
   }
 }
 

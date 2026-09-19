@@ -1,6 +1,6 @@
 # ADR 0005: Catalog permission model
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-15
 - **Canonical references:** [Web security](../web/security.md#access-control), [MCP server](../web/mcp-server.md#access-matrix)
 
@@ -9,7 +9,7 @@
 Catalog authorization is a single ordered scale, `LISTENER < VIEWER < MEMBER <
 EDITOR < OWNER`. Gaining a capability requires moving up the scale, which also
 widens visibility, because the scale carries two unrelated concerns at once:
-*which material exists for an actor* and *what the actor may do with it*.
+_which material exists for an actor_ and _what the actor may do with it_.
 
 Three concrete requirements cannot be expressed on that shape:
 
@@ -62,18 +62,20 @@ Roles are defined in code, the way feature rollouts already are. An account
 stores a role name per catalog, not an expanded set. Adding a role is a commit,
 not a migration and not a runtime editor.
 
-`CatalogAccess.accessLevel` becomes the stored role and its extras sit beside it
-as a list on the same row, so an account's effective set is readable without a
-join. Identifiers are English and lower case; the Czech names in this record are
-what the interface and this conversation use.
+`CatalogAccess.role` stores the role and `extraPermissions` sits beside it as a
+list on the same row, so an account's effective set is readable without a join.
+The legacy non-null `accessLevel` remains as a write-time compatibility
+projection during the migration window; it is not authoritative once `role` is
+present. Identifiers are English and lower case; the Czech names in this record
+are what the interface and this conversation use.
 
-| Identifier | Name here |
-| --- | --- |
-| `listener` | posluchač |
-| `reader` | čtenář |
-| `corrector` | korektor |
-| `host` | hostitel |
-| `curator` | redaktor |
+| Identifier      | Name here    |
+| --------------- | ------------ |
+| `listener`      | posluchač    |
+| `reader`        | čtenář       |
+| `corrector`     | korektor     |
+| `host`          | hostitel     |
+| `curator`       | redaktor     |
 | `catalog_admin` | catalogAdmin |
 
 `curator` rather than `editor` deliberately. The retired `EDITOR` level meant
@@ -153,7 +155,7 @@ the last attestation landing.
 **Like the stance on file delivery, this gate decides how the text is offered,
 not whether it can be obtained.** Search returns passages from unreleased
 transcripts, and an agent asked through MCP will hand over the whole of one.
-What release withholds is the transcript *as a document to sit and read*. It is
+What release withholds is the transcript _as a document to sit and read_. It is
 a statement about when a text is fit to be presented that way, not a boundary
 around the words.
 
@@ -176,7 +178,7 @@ application and through MCP alike. There is no special rule.
 What does not enter into it is the transcript's own release state. Search works
 over the machine transcript until the transcript is released, and over the
 released transcript afterwards; corrections in progress reach it no more than
-they reach anyone else. Release gates *reading* — the transcript view, its
+they reach anyone else. Release gates _reading_ — the transcript view, its
 download, the bulk export — and nothing else: an unreleased transcript's machine
 text stays searchable, exactly as it is today.
 
@@ -205,12 +207,12 @@ general right to read machine output elsewhere. An account holding
 
 ### Account tiers
 
-| Tier | Scope |
-| --- | --- |
-| superadmin | Everything. Bootstrap account; not for daily use. |
-| admin | Everything. |
+| Tier         | Scope                                                                             |
+| ------------ | --------------------------------------------------------------------------------- |
+| superadmin   | Everything. Bootstrap account; not for daily use.                                 |
+| admin        | Everything.                                                                       |
 | catalogAdmin | Every permission within one catalog, as a wildcard rather than an enumerated set. |
-| user | A role and optional extras per catalog. |
+| user         | A role and optional extras per catalog.                                           |
 
 `catalogAdmin` is a wildcard so that new permissions accrue to it automatically
 instead of needing to be added to a top role every time.
@@ -222,10 +224,12 @@ Access is granted as roles, not as permissions. Two permissions are
 
 - A holder of `manage_access` may assign any role that carries neither protected
   permission. Today that is `posluchač`, `čtenář` and `korektor`.
-- The same test applies to the role being **replaced**. Changing or revoking the
-  access of an account that already holds a protected role is reserved to
-  `catalogAdmin`, so a `hostitel` cannot demote a `redaktor` to `posluchač` or
-  revoke them outright.
+- The same test applies to the role being **replaced**. Changing, restoring, or
+  revoking the access of an account that already holds a protected role is
+  reserved to `catalogAdmin`, so a `hostitel` cannot demote a `redaktor` to
+  `posluchač` or revoke them outright. Revocation is deliberately less strict
+  about extras on an ordinary role: a `hostitel` may cut off a `čtenář` carrying
+  an administrator-assigned extra, but may not edit or restore that grant.
 - Nobody changes their own access. A holder of `manage_access` cannot assign
   themselves a role, protected or not; that is a `catalogAdmin` act.
 - Only `catalogAdmin` and above may assign a role that carries a protected
@@ -241,13 +245,12 @@ material an administrative decision: a `redaktor` sees it but cannot pass that
 sight on. Because the test is on the permissions a role carries, a role added
 later is classified without touching this rule.
 
-Testing the replaced role as well as the assigned one keeps the existing
-two-sided check. Today every access mutation asks both
-`canGrantCatalogAccessLevel` about the new level and
-`canManageExistingCatalogAccessLevel` about the level already held, on update
-and on revoke alike. Without the second test the rule would stop privilege from
-spreading upward but still let an account strip one above it, which is the same
-authority wearing a different hat.
+Testing the replaced role as well as the assigned one keeps the two-sided check
+for updates and restores. Revocation has its own predicate: it still protects
+roles carrying `manage_access` or `see_unreleased`, but ignores extras because
+the operation can only remove access. This prevents privilege from spreading
+upward or a host stripping a protected role while still allowing the person on
+hand to cut off an ordinary account in an incident.
 
 Forbidding self-assignment is mostly new. Under a rule that let a granter pass
 on only what it held, assigning to oneself gained nothing and the question never
@@ -261,63 +264,63 @@ than taken, which is what makes the role name worth reading.
 
 ### Material visibility
 
-| Permission | Covers |
-| --- | --- |
+| Permission       | Covers                                                                                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `see_unreleased` | Unreleased events, unpublished and non-actionable recordings, unreleased transcripts, and the release-state indicators that only make sense alongside them. |
 
 ### Browsing and audio
 
-| Permission | Covers |
-| --- | --- |
+| Permission          | Covers                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `browse_recordings` | The recordings list as a surface. Today this is an accident of the tab switcher; it becomes a choice. |
-| `stream_audio` | Playback, including radio mode and offline caching. |
+| `stream_audio`      | Playback, including radio mode and offline caching.                                                   |
 
 ### Transcripts
 
-| Permission | Covers |
-| --- | --- |
-| `read_transcripts` | Reading a recording's transcript, once it has been released. |
-| `see_transcript_variants` | That more than one machine backend exists: the per-recording picker and the multi-backend stream view. Administrative only; every other role reads the default backend. |
-| `see_speakers` | The diarization overlay. Administrative for the same reason as the line above: it is unevaluated machine output, it names nobody, and it currently tells an ordinary reader nothing useful. |
+| Permission                | Covers                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read_transcripts`        | Reading a recording's transcript, once it has been released.                                                                                                                                |
+| `see_transcript_variants` | That more than one machine backend exists: the per-recording picker and the multi-backend stream view. Administrative only; every other role reads the default backend.                     |
+| `see_speakers`            | The diarization overlay. Administrative for the same reason as the line above: it is unevaluated machine output, it names nobody, and it currently tells an ordinary reader nothing useful. |
 
 ### Correction
 
-| Permission | Covers |
-| --- | --- |
-| `correct_transcripts` | The correction surface: editing spans, proposing corrections, attesting, and reading the original text within that surface. |
-| `publish_transcript` | Releasing a checked transcript for reading, and settling disagreements between correctors along the way. Both are the same person's job: whoever owns a transcript's correction to its end. |
+| Permission            | Covers                                                                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `correct_transcripts` | The correction surface: editing spans, proposing corrections, attesting, and reading the original text within that surface.                                                                 |
+| `publish_transcript`  | Releasing a checked transcript for reading, and settling disagreements between correctors along the way. Both are the same person's job: whoever owns a transcript's correction to its end. |
 
 ### Search
 
-| Permission | Covers |
-| --- | --- |
+| Permission           | Covers                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `search_transcripts` | Semantic and lexical search over every transcript in the catalog, released or not. Unlike `read_transcripts` it is not gated on release. |
-| `use_deep_search` | Running and reading deep-search jobs. Per-job sharing stays a property of the job. |
+| `use_deep_search`    | Running and reading deep-search jobs. Per-job sharing stays a property of the job.                                                       |
 
 ### Curated metadata
 
-| Permission | Covers |
-| --- | --- |
-| `edit_metadata` | Per-recording curated metadata, including the verified flag. |
-| `batch_edit_metadata` | Inline bulk editing across the recordings list. |
+| Permission            | Covers                                                       |
+| --------------------- | ------------------------------------------------------------ |
+| `edit_metadata`       | Per-recording curated metadata, including the verified flag. |
+| `batch_edit_metadata` | Inline bulk editing across the recordings list.              |
 
 ### Editorial and publication
 
-| Permission | Covers |
-| --- | --- |
-| `publish_recording` | Recording publication state. |
-| `manage_events` | Creating, editing and deleting events; attaching, detaching and choosing the primary recording. |
-| `release_events` | Releasing an event to its audience. |
-| `manage_event_posters` | Event poster upload and removal. |
-| `manage_event_sources` | Event source records. |
+| Permission             | Covers                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `publish_recording`    | Recording publication state.                                                                    |
+| `manage_events`        | Creating, editing and deleting events; attaching, detaching and choosing the primary recording. |
+| `release_events`       | Releasing an event to its audience.                                                             |
+| `manage_event_posters` | Event poster upload and removal.                                                                |
+| `manage_event_sources` | Event source records.                                                                           |
 
 ### Access and configuration
 
-| Permission | Covers |
-| --- | --- |
-| `manage_access` | Granting and revoking access, including pending grants for accounts that have never signed in. |
-| `manage_lookups` | Recorder, location and album rows for this catalog. Assumes [ADR 0007](0007-per-catalog-lookups.md); the rows are global today. |
-| `manage_catalog_config` | Catalog paths, sync, default and active flags. `catalogAdmin` only. |
+| Permission              | Covers                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `manage_access`         | Granting and revoking access, including pending grants for accounts that have never signed in.                 |
+| `manage_lookups`        | Recorder, location and album rows for this catalog, as established by [ADR 0007](0007-per-catalog-lookups.md). |
+| `manage_catalog_config` | Catalog paths, sync, default and active flags. `catalogAdmin` only.                                            |
 
 ### File delivery — `redaktor` and above, or an individual grant
 
@@ -337,29 +340,32 @@ A `korektor` is not an exception to this. Their access to unchecked text is
 access to a working surface, not a right to read it, so a `korektor` granted a
 download still takes released transcripts only.
 
-| Permission | Covers |
-| --- | --- |
-| `download_audio` | The playable audio file. Original masters stay inside the `catalogAdmin` wildcard. |
-| `download_transcripts` | File delivery of a transcript the account can already read. |
+| Permission                     | Covers                                                                                                                      |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `download_audio`               | The playable audio file. Original masters stay inside the `catalogAdmin` wildcard.                                          |
+| `download_transcripts`         | File delivery of a transcript the account can already read.                                                                 |
 | `download_original_transcript` | The machine text underneath, as a variant of that same download — for a released transcript, what the corrections replaced. |
-| `bulk_export_transcripts` | Catalog-wide export. The highest-impact permission in the catalogue: one request yields the whole corpus as data. |
+| `bulk_export_transcripts`      | Catalog-wide export. The highest-impact permission in the catalogue: one request yields the whole corpus as data.           |
 
 ### Outside the catalog scope
 
-The admin panel, user management, audit log, MCP usage, transcript backend order
-and catalog sync remain system-level rights of `admin` and `superadmin`. No
-catalog permission reaches them.
+The admin panel, user management, audit log, MCP usage telemetry, transcript
+backend order and catalog sync remain system-level rights of `admin` and
+`superadmin`. Here "MCP usage" means the administrative telemetry page, not
+permission to connect an MCP client; client access follows active portal status,
+and catalog-scoped calls follow live grants. No catalog permission reaches the
+administrative surfaces.
 
 ## Roles
 
-| Role | Name here | Permissions |
-| --- | --- | --- |
-| `listener` | posluchač | `stream_audio` |
-| `reader` | čtenář | + `read_transcripts`, `search_transcripts` |
-| `corrector` | korektor | `reader` + `correct_transcripts` |
-| `host` | hostitel | `reader` + `manage_access` |
-| `curator` | redaktor | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
-| `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config` |
+| Role            | Name here    | Permissions                                                                                                                                                                                                                                                                                                                                                          |
+| --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `listener`      | posluchač    | `stream_audio`                                                                                                                                                                                                                                                                                                                                                       |
+| `reader`        | čtenář       | + `read_transcripts`, `search_transcripts`                                                                                                                                                                                                                                                                                                                           |
+| `corrector`     | korektor     | `reader` + `correct_transcripts`                                                                                                                                                                                                                                                                                                                                     |
+| `host`          | hostitel     | `reader` + `manage_access`                                                                                                                                                                                                                                                                                                                                           |
+| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config`                                                                                                                                                                                                                                                                            |
 
 Every role below `curator` sees released events and published recordings only,
 because none of them holds `see_unreleased`.
@@ -410,7 +416,7 @@ start empty.
   corpus as data rather than who gets a convenient button, download permissions
   alone do not achieve it.
 - `manage_lookups` assumes the lookups are per catalog, which they are not
-  today. That change carries its own migration, identifier and invariant
+  originally. That change carries its own migration, identifier and invariant
   concerns and is a prerequisite for nothing, so it has its own record: [ADR
   0007](0007-per-catalog-lookups.md). `redaktor` carries the permission from the
   moment that record lands; before then there is no catalog for it to govern.
@@ -420,13 +426,13 @@ start empty.
   is intended rather than incidental. Measured in production the whole of it is
   three accounts:
 
-  | Today | Count | Becomes | Effect |
-  | --- | --- | --- | --- |
-  | `LISTENER` | 77 | `listener` | unchanged |
-  | `MEMBER` | 1 | `reader` | loses downloads, sight of unreleased material, and the diarization overlay |
-  | `OWNER` | 2 | `host` | loses the editorial rights below |
-  | `VIEWER` | 0 | `reader` | nobody holds it |
-  | `EDITOR` | 0 | `reader` + `edit_metadata` | nobody holds it |
+  | Today      | Count | Becomes    | Effect                                                                     |
+  | ---------- | ----- | ---------- | -------------------------------------------------------------------------- |
+  | `LISTENER` | 77    | `listener` | unchanged                                                                  |
+  | `MEMBER`   | 1     | `reader`   | loses downloads, sight of unreleased material, and the diarization overlay |
+  | `OWNER`    | 2     | `host`     | loses the editorial rights below                                           |
+  | `VIEWER`   | 0     | `reader`   | nobody holds it                                                            |
+  | `EDITOR`   | 0     | `curator`  | nobody holds it                                                            |
 
 - Neither owner is the administrator, who holds no catalog grant at all and
   reaches the catalog through `isCatalogAdmin`. As `host` the two of them keep
@@ -522,5 +528,5 @@ start empty.
   account, because the product is listening and reading inside Besedy.
 - **Lookups become per-catalog**, which turns `manage_lookups` into an ordinary
   catalog permission and removes the cross-catalog write path that
-  `requireEditorOnAnyCatalog` opens today. Recorded separately in [ADR
+  `requireEditorOnAnyCatalog` opened. Recorded separately in [ADR
   0007](0007-per-catalog-lookups.md).

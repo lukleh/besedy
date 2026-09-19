@@ -28,6 +28,7 @@ const {
   mockResolveCatalogRecordingRouteAccess,
   mockRequireCatalogRecordingAccess,
   mockRequireCatalogRecordingDownload,
+  mockRequireCatalogRecordingOriginalAudio,
   mockGetCatalogEntry,
   mockLogAudioStreamed,
   mockLogAudioDownloaded,
@@ -49,6 +50,7 @@ const {
     mockResolveCatalogRecordingRouteAccess: vi.fn(),
     mockRequireCatalogRecordingAccess: vi.fn(),
     mockRequireCatalogRecordingDownload: vi.fn(),
+    mockRequireCatalogRecordingOriginalAudio: vi.fn(),
     mockGetCatalogEntry: vi.fn(),
     mockLogAudioStreamed: vi.fn(),
     mockLogAudioDownloaded: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock("@/lib/access/catalog-recording-route-access", () => ({
   resolveCatalogRecordingRouteAccess: mockResolveCatalogRecordingRouteAccess,
   requireCatalogRecordingAccess: mockRequireCatalogRecordingAccess,
   requireCatalogRecordingDownload: mockRequireCatalogRecordingDownload,
+  requireCatalogRecordingOriginalAudio: mockRequireCatalogRecordingOriginalAudio,
 }));
 
 vi.mock("@/lib/catalog", () => ({
@@ -105,10 +108,12 @@ describe("catalog audio route", () => {
         hasAccess: true,
         canAccessRecording: true,
         canDownloadRecording: true,
+        canDownloadOriginalAudio: true,
       },
     });
     mockRequireCatalogRecordingAccess.mockResolvedValue(null);
     mockRequireCatalogRecordingDownload.mockResolvedValue(null);
+    mockRequireCatalogRecordingOriginalAudio.mockResolvedValue(null);
     mockGetCatalogEntry.mockResolvedValue({
       compressedPath: audioPath,
       originalPath: audioPath,
@@ -157,6 +162,39 @@ describe("catalog audio route", () => {
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.error).toMatch(/Download not permitted/);
+    expect(mockGetCatalogEntry).not.toHaveBeenCalled();
+  });
+
+  // The master belongs to no role. Asked whether or not the request forces a
+  // download, because serving it inline delivers the same bytes.
+  it.each([
+    ["a download", "?source=original&download=true"],
+    ["a plain request", "?source=original"],
+  ])("refuses the original recording on %s without the permission", async (_name, query) => {
+    mockResolveCatalogRecordingRouteAccess.mockResolvedValue({
+      ok: true,
+      userId: "user-1",
+      catalogId: CATALOG_ID,
+      hash: HASH,
+      capability: {
+        hasAccess: true,
+        canAccessRecording: true,
+        canDownloadRecording: true,
+        canDownloadOriginalAudio: false,
+      },
+    });
+    mockRequireCatalogRecordingOriginalAudio.mockResolvedValue(
+      NextResponse.json({ error: "not available" }, { status: 403 })
+    );
+
+    const response = await getAudio(
+      new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio${query}`
+      ),
+      { params: Promise.resolve({ id: CATALOG_ID, hash: HASH }) }
+    );
+
+    expect(response.status).toBe(403);
     expect(mockGetCatalogEntry).not.toHaveBeenCalled();
   });
 

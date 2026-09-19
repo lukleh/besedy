@@ -21,7 +21,10 @@ describe("catalog admission read models", () => {
       },
     };
 
-    const result = await listPendingCatalogUsers("20260101_000000", db as never);
+    const result = await listPendingCatalogUsers(
+      "20260101_000000",
+      db as never
+    );
 
     expect(db.pendingCatalogGrant.findMany).toHaveBeenCalledWith({
       where: {
@@ -31,6 +34,8 @@ describe("catalog admission read models", () => {
       select: {
         email: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         notes: true,
         grantedAt: true,
         grantedBy: {
@@ -45,6 +50,8 @@ describe("catalog admission read models", () => {
         type: "pending_catalog_grant",
         email: "pending@example.com",
         accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         notes: "pending note",
         createdAt: "2026-03-10T10:00:00.000Z",
         grantedBy: {
@@ -75,7 +82,10 @@ describe("catalog admission read models", () => {
       },
     };
 
-    const result = await listPendingCatalogUsers("20260101_000000", db as never);
+    const result = await listPendingCatalogUsers(
+      "20260101_000000",
+      db as never
+    );
 
     expect(result).toEqual([
       {
@@ -83,6 +93,8 @@ describe("catalog admission read models", () => {
         type: "pending_catalog_grant",
         email: "johndoe@gmail.com",
         accessLevel: "VIEWER",
+        role: "reader",
+        extraPermissions: [],
         notes: "shadow note",
         createdAt: "2026-03-10T11:00:00.000Z",
         grantedBy: {
@@ -109,7 +121,10 @@ describe("catalog admission read models", () => {
       },
     };
 
-    const result = await listPendingCatalogUsers("20260101_000000", db as never);
+    const result = await listPendingCatalogUsers(
+      "20260101_000000",
+      db as never
+    );
 
     expect(result).toEqual([
       {
@@ -117,6 +132,8 @@ describe("catalog admission read models", () => {
         type: "pending_catalog_grant",
         email: "orphan@example.com",
         accessLevel: "VIEWER",
+        role: "reader",
+        extraPermissions: [],
         notes: null,
         createdAt: "2026-03-10T10:00:00.000Z",
         grantedBy: null,

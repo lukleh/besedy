@@ -7,7 +7,12 @@
 import { test, expect } from "./helpers/base-test";
 import type { APIRequestContext } from "@playwright/test";
 import { loginAs, devLogin, resetEventReleaseState } from "./helpers/auth";
-import { TEST_AUDIO_FILES, TEST_EVENTS, TEST_CATALOG_ID, URLS } from "./helpers/fixtures";
+import {
+  TEST_AUDIO_FILES,
+  TEST_EVENTS,
+  TEST_CATALOG_ID,
+  URLS,
+} from "./helpers/fixtures";
 import { waitForPageReady } from "./helpers/navigation";
 
 interface EventListItem {
@@ -15,7 +20,10 @@ interface EventListItem {
   title: string | null;
 }
 
-async function setLabsEnabled(request: APIRequestContext, enabled: boolean): Promise<void> {
+async function setLabsEnabled(
+  request: APIRequestContext,
+  enabled: boolean
+): Promise<void> {
   const response = await request.put("/api/preferences/labs", {
     data: { enabled },
   });
@@ -31,7 +39,9 @@ async function getEventIdByTitle(
     search: title,
     limit: "50",
   });
-  const response = await request.get(`/api/catalog-events?${params.toString()}`);
+  const response = await request.get(
+    `/api/catalog-events?${params.toString()}`
+  );
   expect(response.ok()).toBeTruthy();
 
   const body = (await response.json()) as { events: EventListItem[] };
@@ -45,13 +55,17 @@ async function getEventIdByTitle(
 test.describe("Event Catalog", () => {
   test.describe.configure({ mode: "serial" });
 
-  test("admin with Labs sees Events tab and viewer without Labs does not", async ({ page }) => {
+  test("admin with Labs sees Events tab and viewer without Labs does not", async ({
+    page,
+  }) => {
     await loginAs(page, "admin");
     await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
-    await expect(page.getByRole("tab", { name: "Events" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("tab", { name: "Events" })).toBeVisible({
+      timeout: 10000,
+    });
 
     await loginAs(page, "viewer");
     await setLabsEnabled(page.request, false);
@@ -61,7 +75,9 @@ test.describe("Event Catalog", () => {
     await expect(page.getByRole("tab", { name: "Events" })).toHaveCount(0);
   });
 
-  test("viewer lands on events view but cannot create events", async ({ page }) => {
+  test("viewer lands on events view but cannot create events", async ({
+    page,
+  }) => {
     // With events rolled out publicly, viewers default to the events view
     // without a tab switcher (tabs require canEdit). Verify the events list
     // loads and the Create Event control is absent.
@@ -70,20 +86,30 @@ test.describe("Event Catalog", () => {
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
-    await expect(page.getByText(/\d+ events/i).first()).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("button", { name: "Create Event" })).toHaveCount(0);
+    await expect(page.getByText(/\d+ events/i).first()).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Create Event" })
+    ).toHaveCount(0);
   });
 
-  test("editor lands on events view but cannot create events", async ({ page }) => {
-    // Editors have browse rights but no event-edit rights (OWNER/admin only),
-    // so they see the events view directly with no Create Event button.
+  test("curator can create events", async ({ page }) => {
+    // The legacy editor fixture is migrated to the curator role, which owns
+    // editorial event work.
     await loginAs(page, "editor");
     await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
-    await expect(page.getByText(/\d+ events/i).first()).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("button", { name: "Create Event" })).toHaveCount(0);
+    await expect(page.getByText(/\d+ events/i).first()).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Create Event" })
+    ).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test("events tab lists seeded events", async ({ page }) => {
@@ -96,7 +122,9 @@ test.describe("Event Catalog", () => {
       "aria-selected",
       "true"
     );
-    await expect(page.getByRole("button", { name: "Create Event" })).toBeVisible({
+    await expect(
+      page.getByRole("button", { name: "Create Event" })
+    ).toBeVisible({
       timeout: 10000,
     });
     // The events list identifies events by date + location; titles are not
@@ -108,11 +136,7 @@ test.describe("Event Catalog", () => {
         month: "short",
         day: "numeric",
       }).format(
-        new Date(
-          spec.dateYear,
-          (spec.dateMonth ?? 1) - 1,
-          spec.dateDay ?? 1
-        )
+        new Date(spec.dateYear, (spec.dateMonth ?? 1) - 1, spec.dateDay ?? 1)
       );
     const firstDate = formatSeededDate(TEST_EVENTS[0]);
     const secondDate = formatSeededDate(TEST_EVENTS[1]);
@@ -162,12 +186,16 @@ test.describe("Event Catalog", () => {
       "aria-selected",
       "true"
     );
-    await expect(page.getByRole("button", { name: "Create Event" })).toBeVisible({
+    await expect(
+      page.getByRole("button", { name: "Create Event" })
+    ).toBeVisible({
       timeout: 10000,
     });
   });
 
-  test("admin can attach and detach an unassigned recording", async ({ page }, testInfo) => {
+  test("admin can attach and detach an unassigned recording", async ({
+    page,
+  }, testInfo) => {
     test.skip(
       testInfo.project.name !== "Desktop Chrome",
       "Mutation test runs only on Desktop Chrome to avoid parallel DB races"
@@ -180,8 +208,14 @@ test.describe("Event Catalog", () => {
     // ab00004dab were added to "Archive Evening" for notification coverage),
     // so there are no unassigned recordings out of the box. Detach one via
     // the API first so the UI has something to re-attach.
-    const cabinetEventId = await getEventIdByTitle(page.request, TEST_EVENTS[2].title);
-    const targetEventId = await getEventIdByTitle(page.request, TEST_EVENTS[1].title);
+    const cabinetEventId = await getEventIdByTitle(
+      page.request,
+      TEST_EVENTS[2].title
+    );
+    const targetEventId = await getEventIdByTitle(
+      page.request,
+      TEST_EVENTS[1].title
+    );
     const unassignedHash = TEST_AUDIO_FILES[2].hash;
     const preDetach = await page.request.delete(
       `/api/catalogs/${TEST_CATALOG_ID}/events/${cabinetEventId}/recordings/${unassignedHash}`
@@ -199,7 +233,9 @@ test.describe("Event Catalog", () => {
     await expect(attachRow).toBeVisible({ timeout: 10000 });
 
     await attachRow.getByRole("button", { name: /^Attach$/ }).click();
-    await expect(page.getByText("Recording attached")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Recording attached")).toBeVisible({
+      timeout: 10000,
+    });
 
     const attachedRow = hashRows
       .filter({ has: page.locator("button", { hasText: /^Detach$/ }) })
@@ -207,7 +243,9 @@ test.describe("Event Catalog", () => {
     await expect(attachedRow).toBeVisible({ timeout: 10000 });
 
     await attachedRow.getByRole("button", { name: "Detach" }).click();
-    await expect(page.getByText("Recording detached")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Recording detached")).toBeVisible({
+      timeout: 10000,
+    });
     await expect(
       hashRows.filter({ has: page.locator("button", { hasText: /^Detach$/ }) })
     ).toHaveCount(0);
@@ -240,24 +278,34 @@ test.describe("Event Catalog", () => {
     await releaseButton.click();
 
     await expect(
-      page.getByText(/cannot be released without exactly one primary recording/i)
+      page.getByText(
+        /cannot be released without exactly one primary recording/i
+      )
     ).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Unreleased")).toBeVisible({ timeout: 10000 });
 
     // The recordings table identifies rows by hash; recording titles are
     // not rendered here. Find the seeded recording row by its audio hash.
-    const primaryRow = page.locator("tbody tr", { hasText: primaryHash }).first();
+    const primaryRow = page
+      .locator("tbody tr", { hasText: primaryHash })
+      .first();
     await primaryRow.getByRole("button", { name: "Set primary" }).click();
-    await expect(page.getByText("Primary recording updated")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Primary recording updated")).toBeVisible({
+      timeout: 10000,
+    });
 
     await page.getByRole("button", { name: "Release" }).click();
-    await expect(page.getByText("Event status updated")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Event status updated")).toBeVisible({
+      timeout: 10000,
+    });
     await expect(page.getByRole("button", { name: "Unrelease" })).toBeVisible({
       timeout: 10000,
     });
   });
 
-  test("unassigned endpoint returns a well-formed entry list", async ({ page }) => {
+  test("unassigned endpoint returns a well-formed entry list", async ({
+    page,
+  }) => {
     await devLogin(page, "admin");
     await setLabsEnabled(page.request, true);
     const response = await page.request.get(
@@ -268,7 +316,9 @@ test.describe("Event Catalog", () => {
     // All seeded recordings are attached to events by default, so the list
     // can legitimately be empty. Assert the shape rather than specific
     // hashes — those are exercised by the attach/detach UI test.
-    const body = (await response.json()) as { entries: Array<{ audioHash: string }> };
+    const body = (await response.json()) as {
+      entries: Array<{ audioHash: string }>;
+    };
     expect(Array.isArray(body.entries)).toBe(true);
     for (const entry of body.entries) {
       expect(typeof entry.audioHash).toBe("string");

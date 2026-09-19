@@ -10,7 +10,12 @@
 
 import { test, expect } from "./helpers/base-test";
 import { loginAs } from "./helpers/auth";
-import { URLS, FIRST_RECORDING, TEST_AUDIO_FILES, TEST_CATALOG_ID } from "./helpers/fixtures";
+import {
+  URLS,
+  FIRST_RECORDING,
+  TEST_AUDIO_FILES,
+  TEST_CATALOG_ID,
+} from "./helpers/fixtures";
 import {
   openFirstPlayableCatalogItem,
   waitForAudioState,
@@ -18,9 +23,7 @@ import {
 } from "./helpers/navigation";
 
 test.describe("User Workflows", () => {
-  test("LISTENER: can stream audio, but no transcripts", async ({
-    page,
-  }) => {
+  test("LISTENER: can stream audio, but no transcripts", async ({ page }) => {
     await loginAs(page, "listener");
 
     // Browse catalog - content visible (table or cards for recordings,
@@ -28,7 +31,9 @@ test.describe("User Workflows", () => {
     // land on the events view; the catalog header shows either a recordings
     // or events count depending on the active tab.
     await waitForPageReady(page);
-    await expect(page.getByText(/\d+ (recordings|events)/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/\d+ (recordings|events)/i)).toBeVisible({
+      timeout: 15000,
+    });
 
     // LISTENER sees only ready items, so status column is hidden by default
     // The status filter dropdown should not be visible in the toolbar
@@ -44,13 +49,15 @@ test.describe("User Workflows", () => {
     const playButton = page.getByTestId("audio-play-button");
     await expect(playButton).toBeVisible({ timeout: 15000 });
 
-    const audioResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes("/api/catalogs/") &&
-        response.url().includes("/recordings/") &&
-        response.url().includes("/audio"),
-      { timeout: 5000 }
-    ).catch(() => null);
+    const audioResponsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes("/api/catalogs/") &&
+          response.url().includes("/recordings/") &&
+          response.url().includes("/audio"),
+        { timeout: 5000 }
+      )
+      .catch(() => null);
 
     // Verify audio playback works - click play and verify state changes
     await playButton.click();
@@ -68,11 +75,16 @@ test.describe("User Workflows", () => {
     expect(await waitForAudioState(page, "paused", 5000)).toBe(true);
 
     // Cannot see transcripts (LISTENER restriction)
-    const transcriptHeading = page.getByRole("heading", { name: /transcript/i });
+    const transcriptHeading = page.getByRole("heading", {
+      name: /transcript/i,
+    });
     await expect(transcriptHeading).toBeHidden({ timeout: 5000 });
 
-    // Cannot download
-    const downloadButton = page.getByRole("button", { name: /download/i }).first();
+    // Cannot export the audio file. The offline-download control is separate
+    // and is available to anyone who can stream the recording.
+    const downloadButton = page
+      .getByRole("button", { name: /^download$/i })
+      .first();
     await expect(downloadButton).toBeHidden({ timeout: 3000 });
   });
 
@@ -82,7 +94,9 @@ test.describe("User Workflows", () => {
     await waitForPageReady(page);
 
     // Can see transcript heading
-    const transcriptHeading = page.getByRole("heading", { name: /transcript/i });
+    const transcriptHeading = page.getByRole("heading", {
+      name: /transcript/i,
+    });
     await expect(transcriptHeading).toBeVisible({ timeout: 10000 });
 
     // Transcript availability depends on current backend fixture mapping.
@@ -97,18 +111,26 @@ test.describe("User Workflows", () => {
       .first();
     const transcriptSegments = page.locator("[data-segment-index]");
 
-    await expect.poll(async () => {
-      if (await noTranscriptHeading.isVisible().catch(() => false)) {
-        return "empty";
-      }
-      if ((await transcriptSegments.count()) > 0) {
-        return "content";
-      }
-      return "pending";
-    }, { timeout: 10000 }).toMatch(/empty|content/);
+    await expect
+      .poll(
+        async () => {
+          if (await noTranscriptHeading.isVisible().catch(() => false)) {
+            return "empty";
+          }
+          if ((await transcriptSegments.count()) > 0) {
+            return "content";
+          }
+          return "pending";
+        },
+        { timeout: 10000 }
+      )
+      .toMatch(/empty|content/);
 
-    // Cannot download
-    const downloadButton = page.getByRole("button", { name: /download/i }).first();
+    // Cannot export the audio file. The offline-download control is separate
+    // and is available to anyone who can stream the recording.
+    const downloadButton = page
+      .getByRole("button", { name: /^download$/i })
+      .first();
     await expect(downloadButton).toBeHidden({ timeout: 3000 });
 
     // Cannot edit
@@ -116,7 +138,9 @@ test.describe("User Workflows", () => {
     await expect(editLink).toBeHidden({ timeout: 3000 });
   });
 
-  test("VIEWER: playback position survives navigation", async ({ page }, testInfo) => {
+  test("VIEWER: playback position survives navigation", async ({
+    page,
+  }, testInfo) => {
     // Localhost only — needs a consistent storage domain and no cross-origin
     // navigation. The feature itself is viewport-independent, so run once.
     test.skip(
@@ -166,14 +190,19 @@ test.describe("User Workflows", () => {
       (hash) => window.localStorage.getItem(`besedy-playback-${hash}`),
       recording.hash
     );
-    expect(storedRaw, "expected playback position to be persisted").not.toBeNull();
+    expect(
+      storedRaw,
+      "expected playback position to be persisted"
+    ).not.toBeNull();
     const storedSeconds = Number.parseFloat(storedRaw ?? "0");
     expect(storedSeconds).toBeGreaterThan(0);
 
     // Return to the recording — the player should resume at the saved spot.
     await page.goto(URLS.recording(recording.hash));
     await waitForPageReady(page);
-    await expect(page.getByTestId("audio-play-button").first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("audio-play-button").first()).toBeVisible({
+      timeout: 10000,
+    });
 
     await expect
       .poll(
@@ -187,7 +216,9 @@ test.describe("User Workflows", () => {
       .toBeGreaterThanOrEqual(storedSeconds - 0.5);
   });
 
-  test("VIEWER: playback continues when the tab is hidden", async ({ page }, testInfo) => {
+  test("VIEWER: playback continues when the tab is hidden", async ({
+    page,
+  }, testInfo) => {
     test.skip(
       testInfo.project.name !== "Desktop Chrome",
       "Single-viewport coverage is sufficient for a visibility policy check"
@@ -262,21 +293,31 @@ test.describe("User Workflows", () => {
     await waitForPageReady(page);
 
     // Verify it loads correctly
-    await expect(page.getByTestId("audio-play-button")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("heading", { name: /transcript/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("audio-play-button")).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(
+      page.getByRole("heading", { name: /transcript/i })
+    ).toBeVisible({ timeout: 10000 });
   });
 
-  test("MEMBER: can download recordings", async ({ page }) => {
+  test("reader with download extra can download recordings", async ({
+    page,
+  }) => {
     await loginAs(page, "member");
     await page.goto(URLS.recording(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
     // Can see transcript
-    const transcriptHeading = page.getByRole("heading", { name: /transcript/i });
+    const transcriptHeading = page.getByRole("heading", {
+      name: /transcript/i,
+    });
     await expect(transcriptHeading).toBeVisible({ timeout: 10000 });
 
     // Download button visible and enabled
-    const downloadButton = page.getByRole("button", { name: /download/i }).first();
+    const downloadButton = page
+      .getByRole("button", { name: /download/i })
+      .first();
     await expect(downloadButton).toBeVisible({ timeout: 5000 });
 
     // Cannot edit
@@ -290,10 +331,14 @@ test.describe("User Workflows", () => {
     await waitForPageReady(page);
 
     // Can see transcript and download
-    const transcriptHeading = page.getByRole("heading", { name: /transcript/i });
+    const transcriptHeading = page.getByRole("heading", {
+      name: /transcript/i,
+    });
     await expect(transcriptHeading).toBeVisible({ timeout: 15000 });
 
-    const downloadButton = page.getByRole("button", { name: /download/i }).first();
+    const downloadButton = page
+      .getByRole("button", { name: /download/i })
+      .first();
     await expect(downloadButton).toBeVisible({ timeout: 5000 });
 
     // Edit link visible
@@ -331,17 +376,21 @@ test.describe("User Workflows", () => {
     await saveButton.click();
 
     // Verify success feedback (toast notification shows "Metadata saved")
-    await expect(page.getByText("Metadata saved")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Metadata saved")).toBeVisible({
+      timeout: 5000,
+    });
 
     // Verify persisted by reloading and checking
     await page.reload();
     await waitForPageReady(page);
-    const reloadedNotesField = page.getByPlaceholder(/notes about this recording/i);
+    const reloadedNotesField = page.getByPlaceholder(
+      /notes about this recording/i
+    );
     await expect(reloadedNotesField).toBeVisible({ timeout: 10000 });
     await expect(reloadedNotesField).toHaveValue(testNote);
   });
 
-  test("OWNER: can manage catalog access", async ({ page }) => {
+  test("host can manage catalog access", async ({ page }) => {
     await loginAs(page, "owner");
     await page.goto(URLS.catalogSettings);
     await waitForPageReady(page);
@@ -367,7 +416,7 @@ test.describe("User Workflows", () => {
     await expect(userSearch).toBeVisible({ timeout: 5000 });
   });
 
-  test("Admin: can grant OWNER level access (OWNER cannot)", async ({
+  test("Admin can offer catalog-admin access (host cannot)", async ({
     page,
   }) => {
     await loginAs(page, "admin");
@@ -385,7 +434,10 @@ test.describe("User Workflows", () => {
 
     // Search for the mutation user - dedicated for mutation tests to avoid race conditions
     // (searching for "noaccess" would race with the no-access redirect test running in parallel)
-    const userSearch = dialog.getByRole("combobox").filter({ visible: true }).first();
+    const userSearch = dialog
+      .getByRole("combobox")
+      .filter({ visible: true })
+      .first();
     await userSearch.fill("mutation");
 
     // Wait for search results to appear
@@ -393,22 +445,22 @@ test.describe("User Workflows", () => {
     await expect(userOption).toBeVisible({ timeout: 5000 });
     await userOption.click();
 
-    // Access level selector appears after user selection. On desktop the
+    // Role selector appears after user selection. On desktop the
     // ResponsiveSelect renders a role=combobox trigger; on mobile it renders
     // a plain button that opens a drawer. Match either visible control.
     const accessSelect = dialog
-      .getByRole("combobox", { name: /access level/i })
-      .or(dialog.getByRole("button", { name: /access level/i }))
+      .getByRole("combobox", { name: /^role$/i })
+      .or(dialog.getByRole("button", { name: /^role$/i }))
       .filter({ visible: true })
       .first();
     await expect(accessSelect).toBeVisible({ timeout: 5000 });
     await accessSelect.click();
 
-    // Admin CAN see OWNER option. On mobile the options render inside a
+    // Admin can see the protected catalog-admin option. On mobile the options render inside a
     // drawer as buttons rather than option roles, so accept either role.
     const ownerOption = page
-      .getByRole("option", { name: /owner/i })
-      .or(page.getByRole("button", { name: /owner/i }))
+      .getByRole("option", { name: /catalog admin/i })
+      .or(page.getByRole("button", { name: /catalog admin/i }))
       .filter({ visible: true })
       .first();
     await expect(ownerOption).toBeVisible({ timeout: 5000 });
@@ -452,7 +504,9 @@ test.describe("User Workflows", () => {
     await expect(playButton).toBeVisible({ timeout: 10000 });
 
     // Transcript visible (viewer has access)
-    const transcriptHeading = page.getByRole("heading", { name: /transcript/i });
+    const transcriptHeading = page.getByRole("heading", {
+      name: /transcript/i,
+    });
     await expect(transcriptHeading).toBeVisible({ timeout: 10000 });
   });
 });

@@ -74,6 +74,7 @@ describe("transcript route access", () => {
       canAccessRecording: false,
       canViewRecordingTranscripts: false,
       canDownloadRecording: false,
+        canDownloadTranscripts: false,
     });
 
     const result = await resolveTranscriptRouteAccess({
@@ -106,6 +107,7 @@ describe("transcript route access", () => {
       canAccessRecording: true,
       canViewRecordingTranscripts: false,
       canDownloadRecording: false,
+        canDownloadTranscripts: false,
     });
 
     const result = await resolveTranscriptRouteAccess({
@@ -131,6 +133,7 @@ describe("transcript route access", () => {
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
       canDownloadRecording: false,
+        canDownloadTranscripts: false,
     });
 
     const result = await resolveTranscriptRouteAccess({
@@ -157,6 +160,7 @@ describe("transcript route access", () => {
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
       canDownloadRecording: true,
+        canDownloadTranscripts: true,
     });
     resolveTranscriptsPath.mockReturnValue("/transcripts/catalog-1");
 
@@ -174,6 +178,6 @@ describe("transcript route access", () => {
     expect(result.userId).toBe("user-1");
     expect(result.group).toEqual({ id: "catalog-1" });
     expect(result.transcriptsPath).toBe("/transcripts/catalog-1");
-    expect(result.capability.canDownloadRecording).toBe(true);
+    expect(result.capability.canDownloadTranscripts).toBe(true);
   });
 });

@@ -12,7 +12,11 @@ import {
   canBatchEditCatalogMetadata,
   canAccessCatalogSettings,
   canBrowseRecordings,
-  canDownloadCatalogContent,
+  canBulkExportTranscripts,
+  canDownloadAudio,
+  canDownloadOriginalAudio,
+  canDownloadOriginalTranscript,
+  canDownloadTranscripts,
   canEditCatalogMetadata,
   canManageCatalogConfiguration,
   canUseCatalogRag,
@@ -63,7 +67,12 @@ export interface CatalogCapability extends PortalCapability {
   canViewCatalog: boolean;
   canBrowseRecordings: boolean;
   canViewTranscripts: boolean;
-  canDownload: boolean;
+  // One per thing delivered; there is no general "may download" any more.
+  canDownloadAudio: boolean;
+  canDownloadOriginalAudio: boolean;
+  canDownloadTranscripts: boolean;
+  canDownloadOriginalTranscript: boolean;
+  canBulkExportTranscripts: boolean;
   canEditMetadata: boolean;
   canBatchEditMetadata: boolean;
   canManageAccess: boolean;
@@ -115,7 +124,11 @@ export function buildCatalogCapability(
     canViewCatalog: canViewCatalog(policyContext),
     canBrowseRecordings: canBrowseRecordings(policyContext),
     canViewTranscripts: canViewCatalogTranscripts(policyContext),
-    canDownload: canDownloadCatalogContent(policyContext),
+    canDownloadAudio: canDownloadAudio(policyContext),
+    canDownloadOriginalAudio: canDownloadOriginalAudio(policyContext),
+    canDownloadTranscripts: canDownloadTranscripts(policyContext),
+    canDownloadOriginalTranscript: canDownloadOriginalTranscript(policyContext),
+    canBulkExportTranscripts: canBulkExportTranscripts(policyContext),
     canEditMetadata: canEditCatalogMetadata(policyContext),
     canBatchEditMetadata: canBatchEditCatalogMetadata(policyContext),
     canManageAccess: hasCatalogManagementAuthority(policyContext),

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { canonicalizeEmail } from "../email";
+import {
+  CATALOG_ROLES,
+  GRANTABLE_EXTRA_PERMISSIONS,
+} from "@/lib/policy/catalog-permissions";
 
 /**
  * Zod validation schemas for API request validation.
@@ -18,7 +22,10 @@ import { canonicalizeEmail } from "../email";
  */
 export const HashSchema = z
   .string()
-  .regex(/^[a-f0-9]{64}$/i, "Invalid SHA-256 hash format (expected 64 hex characters)");
+  .regex(
+    /^[a-f0-9]{64}$/i,
+    "Invalid SHA-256 hash format (expected 64 hex characters)"
+  );
 
 /**
  * CUID - Collision-resistant unique identifier
@@ -42,7 +49,10 @@ export const UserIdSchema = z
  */
 export const TimestampIdSchema = z
   .string()
-  .regex(/^\d{8}_\d{6}$/, "Invalid timestamp ID format (expected YYYYMMDD_HHMMSS)");
+  .regex(
+    /^\d{8}_\d{6}$/,
+    "Invalid timestamp ID format (expected YYYYMMDD_HHMMSS)"
+  );
 
 /**
  * Email address (canonicalized for consistent storage and lookup)
@@ -105,8 +115,31 @@ export const CatalogUserParamSchema = z.object({
 /**
  * Catalog access levels (hierarchical)
  */
-export const AccessLevelSchema = z.enum(["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"]);
+export const AccessLevelSchema = z.enum([
+  "LISTENER",
+  "VIEWER",
+  "MEMBER",
+  "EDITOR",
+  "OWNER",
+]);
 export type AccessLevel = z.infer<typeof AccessLevelSchema>;
+
+export const CatalogRoleSchema = z.enum(CATALOG_ROLES);
+export type CatalogRole = z.infer<typeof CatalogRoleSchema>;
+
+export const GrantableExtraPermissionSchema = z.enum(
+  GRANTABLE_EXTRA_PERMISSIONS
+);
+export type GrantableExtraPermission = z.infer<
+  typeof GrantableExtraPermissionSchema
+>;
+
+const ExtraPermissionsSchema = z
+  .array(GrantableExtraPermissionSchema)
+  .max(GRANTABLE_EXTRA_PERMISSIONS.length)
+  .refine((values) => new Set(values).size === values.length, {
+    message: "Extra permissions must be unique",
+  });
 
 /**
  * Catalog access status (for soft-delete support)
@@ -144,7 +177,13 @@ export const TranscriptBackendSchema = z
     if (parts.length !== 2) return false;
     const [workflow, model] = parts;
     if (!workflow || !model) return false;
-    if (workflow === "." || workflow === ".." || model === "." || model === "..") return false;
+    if (
+      workflow === "." ||
+      workflow === ".." ||
+      model === "." ||
+      model === ".."
+    )
+      return false;
     if (workflow.includes("\\") || model.includes("\\")) return false;
     return true;
   }, "Invalid transcript backend key");
@@ -190,7 +229,10 @@ export const AudioQuerySchema = z.object({
   group: z.string().optional(),
   source: AudioSourceSchema.optional().default("archived"),
   variant: z.string().optional(),
-  download: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
+  download: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 // =============================================================================
@@ -202,7 +244,8 @@ export const AudioQuerySchema = z.object({
  */
 export const GrantAccessSchema = z.object({
   userId: UserIdSchema,
-  accessLevel: AccessLevelSchema,
+  role: CatalogRoleSchema,
+  extraPermissions: ExtraPermissionsSchema.optional().default([]),
   notes: z.string().max(500).optional(),
   userName: z.string().min(1).max(100).optional(),
 });
@@ -211,7 +254,8 @@ export const GrantAccessSchema = z.object({
  * Update catalog access
  */
 export const UpdateAccessSchema = z.object({
-  accessLevel: AccessLevelSchema,
+  role: CatalogRoleSchema,
+  extraPermissions: ExtraPermissionsSchema.optional().default([]),
   notes: z.string().max(500).optional(),
 });
 
@@ -219,7 +263,8 @@ export const UpdateAccessSchema = z.object({
  * Update catalog access with optional user name editing
  */
 export const UpdateAccessWithNameSchema = z.object({
-  accessLevel: AccessLevelSchema,
+  role: CatalogRoleSchema,
+  extraPermissions: ExtraPermissionsSchema.optional().default([]),
   notes: z.string().max(500).optional(),
   userName: z.string().min(1).max(100).optional(),
 });
@@ -243,7 +288,8 @@ export const UserSearchQuerySchema = z.object({
  */
 export const CreatePendingCatalogGrantSchema = z.object({
   email: EmailSchema,
-  accessLevel: AccessLevelSchema,
+  role: CatalogRoleSchema,
+  extraPermissions: ExtraPermissionsSchema.optional().default([]),
   message: z.string().max(500).optional(),
 });
 
@@ -279,20 +325,22 @@ export const UserListQuerySchema = z.object({
  * Add user to the allowlist (admin creates pending admission state, not a user row)
  * Optionally assign catalog access at the same time
  */
-export const AddUserSchema = z.object({
-  email: EmailSchema,
-  catalogId: TimestampIdSchema.optional(),
-  accessLevel: AccessLevelSchema.optional(),
-}).refine(
-  (data) => {
-    // If catalogId is provided, accessLevel must also be provided
-    if (data.catalogId && !data.accessLevel) return false;
-    // If accessLevel is provided, catalogId must also be provided
-    if (data.accessLevel && !data.catalogId) return false;
-    return true;
-  },
-  { message: "Both catalogId and accessLevel must be provided together" }
-);
+export const AddUserSchema = z
+  .object({
+    email: EmailSchema,
+    catalogId: TimestampIdSchema.optional(),
+    role: CatalogRoleSchema.optional(),
+    extraPermissions: ExtraPermissionsSchema.optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.catalogId && !data.role) return false;
+      if (data.role && !data.catalogId) return false;
+      if (data.extraPermissions?.length && !data.catalogId) return false;
+      return true;
+    },
+    { message: "Both catalogId and role must be provided together" }
+  );
 
 // =============================================================================
 // Catalog Variants

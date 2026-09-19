@@ -34,30 +34,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  ResponsiveSelect,
-  ResponsiveSelectContent,
-  ResponsiveSelectItem,
-  ResponsiveSelectTrigger,
-  ResponsiveSelectValue,
-} from "@/components/ui/responsive-select";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { AUTH_SENSITIVE_QUERY_OPTIONS } from "@/lib/query/auth-sensitive";
-import { AccessLevel } from "@/generated/prisma/enums";
+import { CatalogRole } from "@/generated/prisma/enums";
 import { GrantAccessDialog } from "@/components/catalog/grant-access-dialog";
 import { AccessTable } from "@/components/catalog/access-table";
+import { AccessFormFields } from "@/components/catalog/access-form-fields";
+import type { GrantableExtraPermission } from "@/lib/policy/catalog-permissions";
 import { CatalogSettingsAccessSummary } from "./catalog-settings-access-summary";
 import { CatalogSettingsConfigCard } from "./catalog-settings-config-card";
 import { CatalogSettingsEventHealthCard } from "./catalog-settings-event-health-card";
 import { CatalogSettingsPendingUsersCard } from "./catalog-settings-pending-users-card";
 import { CatalogSettingsTranscriptExportsCard } from "./catalog-settings-transcript-exports-card";
 import {
-  ACCESS_LEVEL_COLORS,
+  CATALOG_ROLE_COLORS,
   catalogAccessResponseSchema,
   catalogConfigSchema,
   catalogSyncResponseSchema,
@@ -72,6 +65,7 @@ import {
   pendingUsersResponseSchema,
   type PendingCatalogGrant,
   type PendingUsersResponse,
+  resolvedCatalogRole,
 } from "./catalog-settings-content-types";
 
 export default function CatalogSettingsContent({
@@ -84,69 +78,95 @@ export default function CatalogSettingsContent({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
-    skipCatalogValidation,
-  });
+  const { catalogNotFound, catalogValidationLoading } = useCatalogContext(
+    catalogId,
+    {
+      skipCatalogValidation,
+    }
+  );
   const t = useTranslations("catalogSettings");
   const tCommon = useTranslations("common");
 
   const [grantDialogOpen, setGrantDialogOpen] = useState(false);
-  const [removeDialog, setRemoveDialog] = useState<PendingCatalogGrant | null>(null);
-  const [editPendingDialog, setEditPendingDialog] = useState<PendingCatalogGrant | null>(null);
-  const [editPendingForm, setEditPendingForm] = useState<{ accessLevel: AccessLevel; notes: string }>({
-    accessLevel: "VIEWER",
+  const [removeDialog, setRemoveDialog] = useState<PendingCatalogGrant | null>(
+    null
+  );
+  const [editPendingDialog, setEditPendingDialog] =
+    useState<PendingCatalogGrant | null>(null);
+  const [editPendingForm, setEditPendingForm] = useState<{
+    role: CatalogRole;
+    extraPermissions: GrantableExtraPermission[];
+    notes: string;
+  }>({
+    role: "reader",
+    extraPermissions: [],
     notes: "",
   });
-  const [accessLevelFilter, setAccessLevelFilter] = useState<AccessLevel | "all" | "revoked">("all");
+  const [roleFilter, setRoleFilter] = useState<CatalogRole | "all" | "revoked">(
+    "all"
+  );
   const [search, setSearch] = useState("");
   const [isEditingConfig, setIsEditingConfig] = useState(false);
-  const [configDraft, setConfigDraft] = useState<CatalogConfigDraft | null>(null);
+  const [configDraft, setConfigDraft] = useState<CatalogConfigDraft | null>(
+    null
+  );
 
   // Fetch catalog access
-  const { data, isLoading, error, isFetching } = useQuery<CatalogAccessResponse>({
-    queryKey: ["catalog-access", catalogId],
-    queryFn: async () => {
-      try {
-        return await fetchJson<CatalogAccessResponse>(`/api/catalogs/${catalogId}/access`, {
-          schema: catalogAccessResponseSchema,
-        });
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 403) {
-          throw new Error("You don't have permission to manage this catalog");
-        }
-        throw error;
-      }
-    },
-    enabled: cards.access && !catalogNotFound && !catalogValidationLoading,
-    retry: false, // Don't retry on error (403 is expected for unauthorized users)
-    ...AUTH_SENSITIVE_QUERY_OPTIONS,
-  });
-
-  // Until the payload arrives, offer nothing: an empty list hides controls the
-  // server may refuse, where a full one would show controls that then fail.
-  const manageableAccessLevels = data?.manageableAccessLevels ?? [];
-
-  // Fetch catalog configuration only when policy allows config management.
-  const { data: catalogConfig, isLoading: loadingConfig, error: configError } =
-    useQuery<CatalogConfig>({
-      queryKey: ["catalog-config", catalogId],
+  const { data, isLoading, error, isFetching } =
+    useQuery<CatalogAccessResponse>({
+      queryKey: ["catalog-access", catalogId],
       queryFn: async () => {
         try {
-          return await fetchJson<CatalogConfig>(`/api/catalogs/${catalogId}`, {
-            schema: catalogConfigSchema,
-          });
+          return await fetchJson<CatalogAccessResponse>(
+            `/api/catalogs/${catalogId}/access`,
+            {
+              schema: catalogAccessResponseSchema,
+            }
+          );
         } catch (error) {
           if (error instanceof ApiError && error.status === 403) {
-            throw new Error("Admin access required to view catalog configuration");
+            throw new Error("You don't have permission to manage this catalog");
           }
           throw error;
         }
       },
-      enabled:
-        !catalogNotFound &&
-        !catalogValidationLoading &&
-        data?.canManageCatalogConfig === true,
+      enabled: cards.access && !catalogNotFound && !catalogValidationLoading,
+      retry: false, // Don't retry on error (403 is expected for unauthorized users)
+      ...AUTH_SENSITIVE_QUERY_OPTIONS,
     });
+
+  // Until the payload arrives, offer nothing: an empty list hides controls the
+  // server may refuse, where a full one would show controls that then fail.
+  const manageableRoles = data?.manageableRoles ?? [];
+  const canManageExtras = data?.canManageExtras ?? false;
+  const grantableExtraPermissions = data?.grantableExtraPermissions ?? [];
+
+  // Fetch catalog configuration only when policy allows config management.
+  const {
+    data: catalogConfig,
+    isLoading: loadingConfig,
+    error: configError,
+  } = useQuery<CatalogConfig>({
+    queryKey: ["catalog-config", catalogId],
+    queryFn: async () => {
+      try {
+        return await fetchJson<CatalogConfig>(`/api/catalogs/${catalogId}`, {
+          schema: catalogConfigSchema,
+        });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 403) {
+          throw new Error(
+            "Admin access required to view catalog configuration"
+          );
+        }
+        throw error;
+      }
+    },
+    enabled:
+      !catalogNotFound &&
+      !catalogValidationLoading &&
+      data?.canManageCatalogConfig === true,
+  });
 
   // Sync form draft from server data - valid external system sync pattern
   useEffect(() => {
@@ -180,12 +200,19 @@ export default function CatalogSettingsContent({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
-      queryClient.invalidateQueries({ queryKey: ["catalog-config", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-access", catalogId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-config", catalogId],
+      });
       queryClient.invalidateQueries({ queryKey: ["catalogs"] });
       queryClient.invalidateQueries({ queryKey: ["preferences"] });
       // Invalidate admin users list since it displays catalog names
-      queryClient.invalidateQueries({ queryKey: ["admin-users"], refetchType: "all" });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-users"],
+        refetchType: "all",
+      });
       setIsEditingConfig(false);
       toast({
         title: t("toasts.settingsUpdated"),
@@ -213,9 +240,13 @@ export default function CatalogSettingsContent({
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ["catalog"] });
       queryClient.invalidateQueries({ queryKey: ["catalog-filter-options"] });
-      queryClient.invalidateQueries({ queryKey: ["catalog-events-health", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-events-health", catalogId],
+      });
 
-      const result = response.results.find((item) => item.groupId === catalogId);
+      const result = response.results.find(
+        (item) => item.groupId === catalogId
+      );
       if (result?.status === "skipped") {
         toast({
           title: t("toasts.catalogSyncSkipped"),
@@ -253,7 +284,7 @@ export default function CatalogSettingsContent({
         return { pendingUsers: [] };
       }
     },
-    enabled: !catalogNotFound && !catalogValidationLoading,
+    enabled: cards.access && !catalogNotFound && !catalogValidationLoading,
   });
 
   const {
@@ -269,19 +300,23 @@ export default function CatalogSettingsContent({
           schema: eventCatalogHealthSchema,
         }
       ),
-    enabled:
-      cards.eventHealth && !catalogNotFound && !catalogValidationLoading,
+    enabled: cards.eventHealth && !catalogNotFound && !catalogValidationLoading,
   });
 
   // Remove pending catalog grant mutation (revokes the pending access)
   const removePendingUser = useMutation({
     mutationFn: async (pendingUser: PendingCatalogGrant) => {
-      return fetchJson(getPendingCatalogGrantMutationPath(catalogId, pendingUser), {
-        method: "DELETE",
-      });
+      return fetchJson(
+        getPendingCatalogGrantMutationPath(catalogId, pendingUser),
+        {
+          method: "DELETE",
+        }
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["catalog-pending-users", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-pending-users", catalogId],
+      });
       setRemoveDialog(null);
       toast({
         title: t("toasts.userRemoved"),
@@ -301,21 +336,32 @@ export default function CatalogSettingsContent({
   const updatePendingUser = useMutation({
     mutationFn: async ({
       pendingUser,
-      accessLevel,
+      role,
+      extraPermissions,
       notes,
     }: {
       pendingUser: PendingCatalogGrant;
-      accessLevel: AccessLevel;
+      role: CatalogRole;
+      extraPermissions: GrantableExtraPermission[];
       notes: string;
     }) => {
-      return fetchJson(getPendingCatalogGrantMutationPath(catalogId, pendingUser), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessLevel, notes: notes || null }),
-      });
+      return fetchJson(
+        getPendingCatalogGrantMutationPath(catalogId, pendingUser),
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role,
+            extraPermissions,
+            notes: notes || null,
+          }),
+        }
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["catalog-pending-users", catalogId] });
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-pending-users", catalogId],
+      });
       setEditPendingDialog(null);
       toast({
         title: t("toasts.pendingAccessUpdated"),
@@ -334,7 +380,12 @@ export default function CatalogSettingsContent({
   // Open edit dialog for pending user
   const openEditPendingDialog = (pendingUser: PendingCatalogGrant) => {
     setEditPendingForm({
-      accessLevel: pendingUser.accessLevel,
+      role: resolvedCatalogRole(pendingUser.role, pendingUser.accessLevel),
+      extraPermissions: pendingUser.extraPermissions.filter((permission) =>
+        grantableExtraPermissions.includes(
+          permission as GrantableExtraPermission
+        )
+      ) as GrantableExtraPermission[],
       notes: pendingUser.notes || "",
     });
     setEditPendingDialog(pendingUser);
@@ -393,7 +444,9 @@ export default function CatalogSettingsContent({
       label: normalizeOptional(configDraft.label),
       archivedCatalogPath: archived,
       metadataCatalogPath: metadata,
-      duplicatesCatalogPath: normalizeOptional(configDraft.duplicatesCatalogPath),
+      duplicatesCatalogPath: normalizeOptional(
+        configDraft.duplicatesCatalogPath
+      ),
       transcriptsPath: normalizeOptional(configDraft.transcriptsPath),
       isDefault: configDraft.isDefault,
       isActive: configDraft.isActive,
@@ -411,15 +464,22 @@ export default function CatalogSettingsContent({
     );
   };
 
-  // Count by access level (only ACTIVE users)
-  const countByLevel = (level: AccessLevel) =>
-    data?.accessList?.filter((g) => g.status === "ACTIVE" && g.accessLevel === level).length ?? 0;
+  // Count by role (only ACTIVE users). Legacy rows are resolved for the
+  // migration window, but new writes always carry a role.
+  const countByRole = (role: CatalogRole) =>
+    data?.accessList?.filter(
+      (grant) =>
+        grant.status === "ACTIVE" &&
+        resolvedCatalogRole(grant.role, grant.accessLevel) === role
+    ).length ?? 0;
 
   // Count total active users
-  const totalActiveUsers = data?.accessList?.filter((g) => g.status === "ACTIVE").length ?? 0;
+  const totalActiveUsers =
+    data?.accessList?.filter((g) => g.status === "ACTIVE").length ?? 0;
 
   // Count revoked users
-  const totalRevokedUsers = data?.accessList?.filter((g) => g.status === "REVOKED").length ?? 0;
+  const totalRevokedUsers =
+    data?.accessList?.filter((g) => g.status === "REVOKED").length ?? 0;
   const missingCatalogError =
     (error instanceof ApiError && error.status === 404) ||
     (configError instanceof ApiError && configError.status === 404);
@@ -476,7 +536,9 @@ export default function CatalogSettingsContent({
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center">
           <Shield className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h2 className="mt-4 text-lg font-medium">{t("accessDenied.title")}</h2>
+          <h2 className="mt-4 text-lg font-medium">
+            {t("accessDenied.title")}
+          </h2>
           <p className="mt-2 text-muted-foreground">
             {error?.message || t("accessDenied.description")}
           </p>
@@ -503,7 +565,11 @@ export default function CatalogSettingsContent({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href={`/catalog/${catalogId}`}>
-            <Button variant="ghost" size="icon" aria-label={t("buttons.backToCatalog")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("buttons.backToCatalog")}
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
@@ -516,9 +582,7 @@ export default function CatalogSettingsContent({
                   : t("titleDefault")}
               </h1>
             </div>
-            <p className="text-muted-foreground">
-              {t("description")}
-            </p>
+            <p className="text-muted-foreground">{t("description")}</p>
             <div className="mt-3 text-sm text-muted-foreground">
               {data?.catalog?.label || catalogId}
             </div>
@@ -533,7 +597,9 @@ export default function CatalogSettingsContent({
       </div>
 
       {cards.transcriptExports && (
-        <CatalogSettingsTranscriptExportsCard onDownload={handleTranscriptExportDownload} />
+        <CatalogSettingsTranscriptExportsCard
+          onDownload={handleTranscriptExportDownload}
+        />
       )}
 
       {/* Catalog Configuration - Only visible to admins */}
@@ -565,165 +631,180 @@ export default function CatalogSettingsContent({
         />
       )}
 
-      <CatalogSettingsAccessSummary
-        accessLevelFilter={accessLevelFilter}
-        countByLevel={countByLevel}
-        onAccessLevelFilterChange={setAccessLevelFilter}
-        totalActiveUsers={totalActiveUsers}
-        totalRevokedUsers={totalRevokedUsers}
-      />
+      {cards.access && (
+        <>
+          <CatalogSettingsAccessSummary
+            roleFilter={roleFilter}
+            countByRole={countByRole}
+            onRoleFilterChange={setRoleFilter}
+            totalActiveUsers={totalActiveUsers}
+            totalRevokedUsers={totalRevokedUsers}
+          />
 
-      {/* Search field */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t("searchPlaceholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10 pr-9"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            aria-label={t("searchClear")}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
-      <CatalogSettingsPendingUsersCard
-        accessLevelColors={ACCESS_LEVEL_COLORS}
-        accessLevelFilter={accessLevelFilter}
-        manageableAccessLevels={manageableAccessLevels}
-        onEditPendingUser={openEditPendingDialog}
-        onRemovePendingUser={setRemoveDialog}
-        pendingUsersData={pendingUsersData}
-        search={search}
-        t={t}
-      />
-
-      {/* Access List */}
-      <AccessTable
-        catalogId={catalogId}
-        accessList={data?.accessList ?? []}
-        manageableAccessLevels={manageableAccessLevels}
-        accessLevelFilter={accessLevelFilter}
-        searchQuery={search}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
-        }}
-      />
-
-      {/* Grant Access Dialog */}
-      <GrantAccessDialog
-        catalogId={catalogId}
-        manageableAccessLevels={manageableAccessLevels}
-        open={grantDialogOpen}
-        onOpenChange={setGrantDialogOpen}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["catalog-access", catalogId] });
-          queryClient.invalidateQueries({ queryKey: ["catalog-pending-users", catalogId] });
-        }}
-      />
-
-      {/* Remove Pending User Dialog */}
-      <AlertDialog
-        open={!!removeDialog}
-        onOpenChange={(open) => !open && setRemoveDialog(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("dialogs.removePending.title")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("dialogs.removePending.description", {
-                email: removeDialog?.email || ""
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => removeDialog && removePendingUser.mutate(removeDialog)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t("dialogs.removePending.confirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Edit Pending User Dialog */}
-      <Dialog
-        open={!!editPendingDialog}
-        onOpenChange={(open) => !open && setEditPendingDialog(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("dialogs.editPending.title")}</DialogTitle>
-            <DialogDescription>
-              {t("dialogs.editPending.description", {
-                email: editPendingDialog?.email || ""
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Access level */}
-            <div>
-              <Label htmlFor="edit-pending-accessLevel">
-                {t("dialogs.grantAccess.accessLevelLabel")}
-              </Label>
-              <ResponsiveSelect
-                value={editPendingForm.accessLevel}
-                onValueChange={(value) => setEditPendingForm(prev => ({ ...prev, accessLevel: value as AccessLevel }))}
+          {/* Search field */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t("searchPlaceholder")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 pr-9"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={t("searchClear")}
               >
-                <ResponsiveSelectTrigger className="mt-2 w-full" aria-label={t("dialogs.grantAccess.accessLevelLabel")}>
-                  <ResponsiveSelectValue displayValue={t(`accessLevels.${editPendingForm.accessLevel.toLowerCase()}`)} />
-                </ResponsiveSelectTrigger>
-                <ResponsiveSelectContent title={t("dialogs.grantAccess.accessLevelLabel")}>
-                  {manageableAccessLevels.map((level) => (
-                    <ResponsiveSelectItem key={level} value={level}>
-                      {t(`accessLevels.${level.toLowerCase()}`)}
-                    </ResponsiveSelectItem>
-                  ))}
-                </ResponsiveSelectContent>
-              </ResponsiveSelect>
-            </div>
-            {/* Notes */}
-            <div>
-              <Label htmlFor="edit-pending-notes">{t("dialogs.grantAccess.notesLabel")}</Label>
-              <Textarea
-                id="edit-pending-notes"
-                value={editPendingForm.notes}
-                onChange={(e) => setEditPendingForm(prev => ({ ...prev, notes: e.target.value }))}
-                placeholder={t("dialogs.grantAccess.notesPlaceholder")}
-                className="mt-2 !resize-none"
-                rows={2}
-              />
-            </div>
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditPendingDialog(null)}>
-              {tCommon("cancel")}
-            </Button>
-            <Button
-              onClick={() => editPendingDialog && updatePendingUser.mutate({
-                pendingUser: editPendingDialog,
-                accessLevel: editPendingForm.accessLevel,
-                notes: editPendingForm.notes,
-              })}
-              disabled={updatePendingUser.isPending}
-            >
-              {updatePendingUser.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              {tCommon("save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+          <CatalogSettingsPendingUsersCard
+            roleColors={CATALOG_ROLE_COLORS}
+            roleFilter={roleFilter}
+            onEditPendingUser={openEditPendingDialog}
+            onRemovePendingUser={setRemoveDialog}
+            pendingUsersData={pendingUsersData}
+            search={search}
+            t={t}
+          />
+
+          {/* Access List */}
+          <AccessTable
+            catalogId={catalogId}
+            accessList={data?.accessList ?? []}
+            manageableRoles={manageableRoles}
+            canManageExtras={canManageExtras}
+            grantableExtraPermissions={grantableExtraPermissions}
+            roleFilter={roleFilter}
+            searchQuery={search}
+            onSuccess={() => {
+              queryClient.invalidateQueries({
+                queryKey: ["catalog-access", catalogId],
+              });
+            }}
+          />
+
+          {/* Grant Access Dialog */}
+          <GrantAccessDialog
+            catalogId={catalogId}
+            manageableRoles={manageableRoles}
+            canManageExtras={canManageExtras}
+            grantableExtraPermissions={grantableExtraPermissions}
+            open={grantDialogOpen}
+            onOpenChange={setGrantDialogOpen}
+            onSuccess={() => {
+              queryClient.invalidateQueries({
+                queryKey: ["catalog-access", catalogId],
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["catalog-pending-users", catalogId],
+              });
+            }}
+          />
+
+          {/* Remove Pending User Dialog */}
+          <AlertDialog
+            open={!!removeDialog}
+            onOpenChange={(open) => !open && setRemoveDialog(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t("dialogs.removePending.title")}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("dialogs.removePending.description", {
+                    email: removeDialog?.email || "",
+                  })}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() =>
+                    removeDialog && removePendingUser.mutate(removeDialog)
+                  }
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {t("dialogs.removePending.confirm")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Edit Pending User Dialog */}
+          <Dialog
+            open={!!editPendingDialog}
+            onOpenChange={(open) => !open && setEditPendingDialog(null)}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("dialogs.editPending.title")}</DialogTitle>
+                <DialogDescription>
+                  {t("dialogs.editPending.description", {
+                    email: editPendingDialog?.email || "",
+                  })}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <AccessFormFields
+                  userName=""
+                  onUserNameChange={() => undefined}
+                  role={editPendingForm.role}
+                  onRoleChange={(role) =>
+                    setEditPendingForm((previous) => ({ ...previous, role }))
+                  }
+                  extraPermissions={editPendingForm.extraPermissions}
+                  onExtraPermissionsChange={(extraPermissions) =>
+                    setEditPendingForm((previous) => ({
+                      ...previous,
+                      extraPermissions,
+                    }))
+                  }
+                  notes={editPendingForm.notes}
+                  onNotesChange={(notes) =>
+                    setEditPendingForm((previous) => ({ ...previous, notes }))
+                  }
+                  manageableRoles={manageableRoles}
+                  canManageExtras={canManageExtras}
+                  grantableExtraPermissions={grantableExtraPermissions}
+                  idPrefix="edit-pending"
+                  showUserName={false}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setEditPendingDialog(null)}
+                >
+                  {tCommon("cancel")}
+                </Button>
+                <Button
+                  onClick={() =>
+                    editPendingDialog &&
+                    updatePendingUser.mutate({
+                      pendingUser: editPendingDialog,
+                      role: editPendingForm.role,
+                      extraPermissions: editPendingForm.extraPermissions,
+                      notes: editPendingForm.notes,
+                    })
+                  }
+                  disabled={updatePendingUser.isPending}
+                >
+                  {updatePendingUser.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  {tCommon("save")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }

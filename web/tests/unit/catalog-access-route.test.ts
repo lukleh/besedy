@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getAccess, POST as postAccess } from "@/app/api/catalogs/[id]/access/route";
+import {
+  GET as getAccess,
+  POST as postAccess,
+} from "@/app/api/catalogs/[id]/access/route";
 import {
   grantFromLevel,
   type CatalogGrant,
@@ -85,7 +88,10 @@ describe("catalog access routes", () => {
   let prisma: {
     $transaction: ReturnType<typeof vi.fn>;
     workflowGroup: { findUnique: ReturnType<typeof vi.fn> };
-    user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    user: {
+      findUnique: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
     catalogAccess: {
       findMany: ReturnType<typeof vi.fn>;
       findUnique: ReturnType<typeof vi.fn>;
@@ -96,24 +102,29 @@ describe("catalog access routes", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    requireAuth = (await import("@/lib/auth/permissions")).requireAuth as ReturnType<
-      typeof vi.fn
-    >;
+    requireAuth = (await import("@/lib/auth/permissions"))
+      .requireAuth as ReturnType<typeof vi.fn>;
     resolveCatalogManagementActor = (
       await import("@/lib/access/catalog-management-route-access")
     ).resolveCatalogManagementActor as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
-    prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
-      callback(prisma)
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: typeof prisma) => unknown) => callback(prisma)
     );
   });
 
   it("GET /api/catalogs/:id/access returns 403 when user cannot manage access", async () => {
     requireAuth.mockResolvedValue("user-1");
     resolveCatalogManagementActor.mockResolvedValue(
-      makeManagementAccess({ resolvedUserId: "user-1", catalogGrant: grantFromLevel("VIEWER") })
+      makeManagementAccess({
+        resolvedUserId: "user-1",
+        catalogGrant: grantFromLevel("VIEWER"),
+      })
     );
-    prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId, label: "Test" });
+    prisma.workflowGroup.findUnique.mockResolvedValue({
+      id: catalogId,
+      label: "Test",
+    });
 
     const response = await getAccess(
       new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`),
@@ -122,7 +133,7 @@ describe("catalog access routes", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringMatching(/OWNER or Admin/),
+      error: expect.stringMatching(/access-management permission/),
     });
   });
 
@@ -136,22 +147,22 @@ describe("catalog access routes", () => {
       new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
         method: "POST",
         headers: browserMutationHeaders,
-        body: JSON.stringify({ userId, accessLevel: "OWNER" }),
+        body: JSON.stringify({ userId, role: "host", extraPermissions: [] }),
       }),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringMatching(/Only administrators/),
+      error: expect.stringMatching(/Only catalog administrators/),
     });
   });
 
   // EDITOR becomes `curator`, which sees unreleased material; OWNER becomes
   // `host`, which grants access. Both are protected, so both are admin-only.
-  it.each(["EDITOR", "OWNER"] as const)(
+  it.each(["curator", "host"] as const)(
     "POST /api/catalogs/:id/access blocks %s for a non-admin, because its role carries a protected permission",
-    async (accessLevel) => {
+    async (role) => {
       requireAuth.mockResolvedValue("owner-1");
       resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
       prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId });
@@ -161,7 +172,7 @@ describe("catalog access routes", () => {
         new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
           method: "POST",
           headers: browserMutationHeaders,
-          body: JSON.stringify({ userId, accessLevel }),
+          body: JSON.stringify({ userId, role, extraPermissions: [] }),
         }),
         { params: Promise.resolve({ id: catalogId }) }
       );
@@ -173,19 +184,22 @@ describe("catalog access routes", () => {
 
   // Reading is not seeing unreleased material once the level becomes a role, so
   // a holder of manage_access hands it out without an administrator.
-  it.each(["LISTENER", "VIEWER", "MEMBER"] as const)(
+  it.each(["listener", "reader", "corrector"] as const)(
     "POST /api/catalogs/:id/access lets a non-admin grant %s",
-    async (accessLevel) => {
+    async (role) => {
       requireAuth.mockResolvedValue("owner-1");
       resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
       prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId });
-      prisma.user.findUnique.mockResolvedValue({ id: userId, email: "u@test.com" });
+      prisma.user.findUnique.mockResolvedValue({
+        id: userId,
+        email: "u@test.com",
+      });
       prisma.catalogAccess.findUnique.mockResolvedValue(null);
       prisma.catalogAccess.create.mockResolvedValue({
         id: "a",
         userId,
         catalogId,
-        accessLevel,
+        accessLevel: role === "listener" ? "LISTENER" : "VIEWER",
         status: "ACTIVE",
         createdAt: new Date(),
         user: { id: userId, name: "U", email: "u@test.com" },
@@ -195,7 +209,7 @@ describe("catalog access routes", () => {
         new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
           method: "POST",
           headers: browserMutationHeaders,
-          body: JSON.stringify({ userId, accessLevel }),
+          body: JSON.stringify({ userId, role, extraPermissions: [] }),
         }),
         { params: Promise.resolve({ id: catalogId }) }
       );
@@ -217,7 +231,7 @@ describe("catalog access routes", () => {
       new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
         method: "POST",
         headers: browserMutationHeaders,
-        body: JSON.stringify({ userId, accessLevel: "OWNER" }),
+        body: JSON.stringify({ userId, role: "host", extraPermissions: [] }),
       }),
       { params: Promise.resolve({ id: catalogId }) }
     );
@@ -242,11 +256,14 @@ describe("catalog access routes", () => {
     });
 
     const response = await putAccess(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-        method: "PUT",
-        headers: browserMutationHeaders,
-        body: JSON.stringify({ accessLevel: "EDITOR" }),
-      }),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+        {
+          method: "PUT",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ role: "curator", extraPermissions: [] }),
+        }
+      ),
       { params: Promise.resolve({ id: catalogId, userId }) }
     );
 
@@ -268,11 +285,14 @@ describe("catalog access routes", () => {
     });
 
     const response = await patchAccess(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-        method: "PATCH",
-        headers: browserMutationHeaders,
-        body: JSON.stringify({ action: "restore" }),
-      }),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+        {
+          method: "PATCH",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ action: "restore" }),
+        }
+      ),
       { params: Promise.resolve({ id: catalogId, userId }) }
     );
 
@@ -296,14 +316,18 @@ describe("catalog access routes", () => {
         headers: browserMutationHeaders,
         // A level the owner may hand out, so the refusal comes from the access
         // being restored rather than from the one being assigned.
-        body: JSON.stringify({ userId, accessLevel: "LISTENER" }),
+        body: JSON.stringify({
+          userId,
+          role: "listener",
+          extraPermissions: [],
+        }),
       }),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringMatching(/restore this level of access/i),
+      error: expect.stringMatching(/restore this access/i),
     });
     expect(prisma.catalogAccess.update).not.toHaveBeenCalled();
   });
@@ -319,11 +343,14 @@ describe("catalog access routes", () => {
     });
 
     const response = await putAccess(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-        method: "PUT",
-        headers: browserMutationHeaders,
-        body: JSON.stringify({ accessLevel: "VIEWER" }),
-      }),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+        {
+          method: "PUT",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ role: "reader", extraPermissions: [] }),
+        }
+      ),
       { params: Promise.resolve({ id: catalogId, userId }) }
     );
 
@@ -344,11 +371,14 @@ describe("catalog access routes", () => {
     );
 
     const response = await putAccess(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-        method: "PUT",
-        headers: browserMutationHeaders,
-        body: JSON.stringify({ accessLevel: "VIEWER" }),
-      }),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+        {
+          method: "PUT",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ role: "reader", extraPermissions: [] }),
+        }
+      ),
       { params: Promise.resolve({ id: catalogId, userId }) }
     );
 
@@ -372,10 +402,13 @@ describe("catalog access routes", () => {
     });
 
     const response = await deleteAccess(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-        method: "DELETE",
-        headers: { Origin: "http://localhost" },
-      }),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+        {
+          method: "DELETE",
+          headers: { Origin: "http://localhost" },
+        }
+      ),
       { params: Promise.resolve({ id: catalogId, userId }) }
     );
 
@@ -397,11 +430,14 @@ describe("catalog access routes", () => {
     });
 
     const response = await patchAccess(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-        method: "PATCH",
-        headers: browserMutationHeaders,
-        body: JSON.stringify({ action: "restore" }),
-      }),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+        {
+          method: "PATCH",
+          headers: browserMutationHeaders,
+          body: JSON.stringify({ action: "restore" }),
+        }
+      ),
       { params: Promise.resolve({ id: catalogId, userId }) }
     );
 
@@ -436,15 +472,23 @@ describe("catalog access routes", () => {
     it("GET /api/catalogs/:id/access returns access list for authorized user", async () => {
       requireAuth.mockResolvedValue("admin-1");
       resolveCatalogManagementActor.mockResolvedValue(
-        makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
+        makeManagementAccess({
+          resolvedUserId: "admin-1",
+          isCatalogAdmin: true,
+        })
       );
-      prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId, label: "Test Catalog" });
+      prisma.workflowGroup.findUnique.mockResolvedValue({
+        id: catalogId,
+        label: "Test Catalog",
+      });
       prisma.catalogAccess.findMany.mockResolvedValue([
         {
           id: "access-1",
           userId: "user-1",
           catalogId,
           accessLevel: "OWNER",
+          role: "host",
+          extraPermissions: ["download_transcripts"],
           status: "ACTIVE",
           user: { id: "user-1", name: "Owner User", email: "owner@test.com" },
           grantedBy: { id: "admin-1", name: "Admin" },
@@ -454,6 +498,8 @@ describe("catalog access routes", () => {
           userId: "user-2",
           catalogId,
           accessLevel: "VIEWER",
+          role: "reader",
+          extraPermissions: [],
           status: "ACTIVE",
           user: { id: "user-2", name: "Viewer User", email: "viewer@test.com" },
           grantedBy: { id: "admin-1", name: "Admin" },
@@ -468,19 +514,66 @@ describe("catalog access routes", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
         accessList: [
-          expect.objectContaining({ accessLevel: "OWNER" }),
-          expect.objectContaining({ accessLevel: "VIEWER" }),
+          expect.objectContaining({ accessLevel: "OWNER", canManage: true }),
+          expect.objectContaining({ accessLevel: "VIEWER", canManage: true }),
         ],
         canManageAccess: true,
         canManageCatalogConfig: true,
-        manageableAccessLevels: ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"],
+        manageableRoles: [
+          "listener",
+          "reader",
+          "corrector",
+          "host",
+          "curator",
+          "catalog_admin",
+        ],
+      });
+    });
+
+    it("GET marks the actor own grant as unmanageable", async () => {
+      requireAuth.mockResolvedValue("admin-1");
+      resolveCatalogManagementActor.mockResolvedValue(
+        makeManagementAccess({
+          resolvedUserId: "admin-1",
+          isCatalogAdmin: true,
+        })
+      );
+      prisma.workflowGroup.findUnique.mockResolvedValue({
+        id: catalogId,
+        label: "Test Catalog",
+      });
+      prisma.catalogAccess.findMany.mockResolvedValue([
+        {
+          id: "access-self",
+          userId: "admin-1",
+          catalogId,
+          accessLevel: "OWNER",
+          role: "catalog_admin",
+          extraPermissions: [],
+          status: "ACTIVE",
+          user: { id: "admin-1", name: "Admin", email: "admin@test.com" },
+          grantedBy: null,
+        },
+      ]);
+
+      const response = await getAccess(
+        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`),
+        { params: Promise.resolve({ id: catalogId }) }
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        accessList: [expect.objectContaining({ canManage: false })],
       });
     });
 
     it("POST /api/catalogs/:id/access creates new access successfully", async () => {
       requireAuth.mockResolvedValue("owner-1");
       resolveCatalogManagementActor.mockResolvedValue(makeManagementAccess());
-      prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId, label: "Catalog" });
+      prisma.workflowGroup.findUnique.mockResolvedValue({
+        id: catalogId,
+        label: "Catalog",
+      });
       prisma.user.findUnique.mockResolvedValue({
         id: userId,
         name: "New User",
@@ -508,7 +601,8 @@ describe("catalog access routes", () => {
           headers: browserMutationHeaders,
           body: JSON.stringify({
             userId,
-            accessLevel: "LISTENER",
+            role: "listener",
+            extraPermissions: [],
             userName: "Updated User",
           }),
         }),
@@ -529,9 +623,15 @@ describe("catalog access routes", () => {
     it("POST /api/catalogs/:id/access allows admin to grant OWNER access", async () => {
       requireAuth.mockResolvedValue("admin-1");
       resolveCatalogManagementActor.mockResolvedValue(
-        makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
+        makeManagementAccess({
+          resolvedUserId: "admin-1",
+          isCatalogAdmin: true,
+        })
       );
-      prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId, label: "Catalog" });
+      prisma.workflowGroup.findUnique.mockResolvedValue({
+        id: catalogId,
+        label: "Catalog",
+      });
       prisma.user.findUnique.mockResolvedValue({
         id: userId,
         name: "New Owner",
@@ -553,7 +653,7 @@ describe("catalog access routes", () => {
         new NextRequest(`http://localhost/api/catalogs/${catalogId}/access`, {
           method: "POST",
           headers: browserMutationHeaders,
-          body: JSON.stringify({ userId, accessLevel: "OWNER" }),
+          body: JSON.stringify({ userId, role: "host", extraPermissions: [] }),
         }),
         { params: Promise.resolve({ id: catalogId }) }
       );
@@ -568,12 +668,17 @@ describe("catalog access routes", () => {
       // Both levels are protected, so only an administrator may make this move.
       requireAuth.mockResolvedValue("admin-1");
       resolveCatalogManagementActor.mockResolvedValue(
-        makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
+        makeManagementAccess({
+          resolvedUserId: "admin-1",
+          isCatalogAdmin: true,
+        })
       );
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
         accessLevel: "VIEWER",
+        role: "reader",
+        extraPermissions: ["future_permission"],
         status: "ACTIVE",
         user: { id: userId, email: "user@test.com" },
       });
@@ -586,11 +691,14 @@ describe("catalog access routes", () => {
       });
 
       const response = await putAccess(
-        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-          method: "PUT",
-          headers: browserMutationHeaders,
-          body: JSON.stringify({ accessLevel: "EDITOR" }),
-        }),
+        new NextRequest(
+          `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+          {
+            method: "PUT",
+            headers: browserMutationHeaders,
+            body: JSON.stringify({ role: "curator", extraPermissions: [] }),
+          }
+        ),
         { params: Promise.resolve({ id: catalogId, userId }) }
       );
 
@@ -603,12 +711,17 @@ describe("catalog access routes", () => {
     it("PUT /api/catalogs/:id/access/:userId clears notes when an empty string is submitted", async () => {
       requireAuth.mockResolvedValue("admin-1");
       resolveCatalogManagementActor.mockResolvedValue(
-        makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
+        makeManagementAccess({
+          resolvedUserId: "admin-1",
+          isCatalogAdmin: true,
+        })
       );
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
         accessLevel: "VIEWER",
+        role: "reader",
+        extraPermissions: ["future_permission"],
         status: "ACTIVE",
         notes: "keep me",
         user: { id: userId, email: "user@test.com" },
@@ -623,11 +736,18 @@ describe("catalog access routes", () => {
       });
 
       const response = await putAccess(
-        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-          method: "PUT",
-          headers: browserMutationHeaders,
-          body: JSON.stringify({ accessLevel: "VIEWER", notes: "" }),
-        }),
+        new NextRequest(
+          `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+          {
+            method: "PUT",
+            headers: browserMutationHeaders,
+            body: JSON.stringify({
+              role: "reader",
+              extraPermissions: [],
+              notes: "",
+            }),
+          }
+        ),
         { params: Promise.resolve({ id: catalogId, userId }) }
       );
 
@@ -636,6 +756,7 @@ describe("catalog access routes", () => {
         expect.objectContaining({
           data: expect.objectContaining({
             notes: null,
+            extraPermissions: ["future_permission"],
           }),
         })
       );
@@ -651,6 +772,8 @@ describe("catalog access routes", () => {
         userId: targetUserId,
         catalogId,
         accessLevel: "LISTENER",
+        role: "reader",
+        extraPermissions: ["download_audio"],
         status: "ACTIVE",
         user: { id: targetUserId, email: "user@test.com" },
       });
@@ -662,10 +785,13 @@ describe("catalog access routes", () => {
       });
 
       const response = await deleteAccess(
-        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${targetUserId}`, {
-          method: "DELETE",
-          headers: { Origin: "http://localhost" },
-        }),
+        new NextRequest(
+          `http://localhost/api/catalogs/${catalogId}/access/${targetUserId}`,
+          {
+            method: "DELETE",
+            headers: { Origin: "http://localhost" },
+          }
+        ),
         { params: Promise.resolve({ id: catalogId, userId: targetUserId }) }
       );
 
@@ -701,11 +827,14 @@ describe("catalog access routes", () => {
       });
 
       const response = await patchAccess(
-        new NextRequest(`http://localhost/api/catalogs/${catalogId}/access/${userId}`, {
-          method: "PATCH",
-          headers: browserMutationHeaders,
-          body: JSON.stringify({ action: "restore" }),
-        }),
+        new NextRequest(
+          `http://localhost/api/catalogs/${catalogId}/access/${userId}`,
+          {
+            method: "PATCH",
+            headers: browserMutationHeaders,
+            body: JSON.stringify({ action: "restore" }),
+          }
+        ),
         { params: Promise.resolve({ id: catalogId, userId }) }
       );
 

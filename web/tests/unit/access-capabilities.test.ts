@@ -112,7 +112,10 @@ describe("access capabilities", () => {
       isCatalogAdmin: false,
       canViewCatalog: true,
       canViewTranscripts: true,
-      canDownload: false,
+      // A reader reads; every delivery is a permission of its own now.
+      canDownloadAudio: false,
+      canDownloadTranscripts: false,
+      canBulkExportTranscripts: false,
       canEditMetadata: false,
       canBatchEditMetadata: false,
       canManageAccess: false,

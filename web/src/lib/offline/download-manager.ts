@@ -46,6 +46,7 @@ import {
   deleteDownloadBundle,
   deleteDownloadRecord,
   getDownload,
+  getDownloadBundle,
   isIndexedDBAvailable,
   listDownloads,
   makeDownloadKey,
@@ -124,6 +125,7 @@ interface EntryResponse {
     recorder?: { id: number; name: string } | null;
   };
   canViewTranscripts: boolean;
+  canDownloadTranscripts: boolean;
 }
 
 interface SourcesResponse {
@@ -573,6 +575,8 @@ class DownloadManager {
   private storage: StorageEstimateSnapshot | null = null;
   private channel: BroadcastChannel | null = null;
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private transcriptPermissionReconciliation: Promise<void> | null = null;
+  private transcriptPermissionReconciliationPending = false;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -636,6 +640,7 @@ class DownloadManager {
     ) {
       void warmDownloadsShell();
     }
+    this.scheduleTranscriptPermissionReconciliation();
     void this.processQueue();
   }
 
@@ -643,6 +648,7 @@ class DownloadManager {
     if (this.userId === userId) return;
     this.userId = userId;
     this.publish();
+    this.scheduleTranscriptPermissionReconciliation();
   }
 
   setOnline(online: boolean): void {
@@ -651,6 +657,7 @@ class DownloadManager {
     if (online) {
       this.onlineGeneration += 1;
       void this.resumeInterruptedDownloads();
+      this.scheduleTranscriptPermissionReconciliation();
     }
   }
 
@@ -869,6 +876,84 @@ class DownloadManager {
     } catch {
       // Best effort; the browser may refuse or storage may be unavailable.
     }
+  }
+
+  private scheduleTranscriptPermissionReconciliation(): void {
+    if (!this.online || !this.userId || !this.snapshot.hydrated) {
+      return;
+    }
+    if (this.transcriptPermissionReconciliation) {
+      this.transcriptPermissionReconciliationPending = true;
+      return;
+    }
+
+    const userId = this.userId;
+    this.transcriptPermissionReconciliation =
+      this.reconcileTranscriptPermissions(userId).finally(() => {
+        this.transcriptPermissionReconciliation = null;
+        if (this.transcriptPermissionReconciliationPending) {
+          this.transcriptPermissionReconciliationPending = false;
+          this.scheduleTranscriptPermissionReconciliation();
+        }
+      });
+  }
+
+  private async reconcileTranscriptPermissions(userId: string): Promise<void> {
+    const signal = new AbortController().signal;
+    const candidates = Array.from(this.records.values()).filter(
+      (record) =>
+        record.status === 'complete' &&
+        record.transcriptBackend !== null &&
+        (record.userId === null || record.userId === userId),
+    );
+
+    for (const record of candidates) {
+      if (!this.online || this.userId !== userId) return;
+
+      try {
+        const entry = await fetchJson<EntryResponse>(
+          buildRecordingEntryUrl(record.catalogId, record.hash),
+          signal,
+        );
+        if (entry.canViewTranscripts && entry.canDownloadTranscripts) continue;
+      } catch (error) {
+        if (isNetworkError(error)) return;
+        const permissionDenied =
+          error instanceof DownloadHttpError &&
+          (error.status === 403 || error.status === 404);
+        if (!permissionDenied) {
+          logger.debug('Could not refresh offline transcript permission', {
+            key: record.key,
+            error,
+          });
+          continue;
+        }
+      }
+
+      if (!this.online || this.userId !== userId) return;
+      try {
+        await this.removeStoredTranscript(record);
+      } catch (error) {
+        logger.warn('Failed to remove an offline transcript', {
+          key: record.key,
+          error,
+        });
+      }
+    }
+  }
+
+  private async removeStoredTranscript(record: DownloadRecord): Promise<void> {
+    const bundle = await getDownloadBundle(record.key);
+    if (bundle) {
+      await putDownloadBundle({
+        ...bundle,
+        transcriptBackend: null,
+        transcript: null,
+        diarization: null,
+        updatedAt: Date.now(),
+      });
+    }
+    await this.update(record.key, { transcriptBackend: null });
   }
 
   private openChannel(): void {
@@ -1137,7 +1222,7 @@ class DownloadManager {
       let transcriptBackend: string | null = null;
       let transcript: Transcript | null = null;
       let diarization: Diarization | null = null;
-      if (entry.canViewTranscripts) {
+      if (entry.canViewTranscripts && entry.canDownloadTranscripts) {
         const transcriptPayload = await this.downloadTranscriptBundle(
           catalogId,
           hash,

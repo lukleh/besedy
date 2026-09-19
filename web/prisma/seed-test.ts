@@ -16,7 +16,11 @@
  *   DATABASE_URL=postgresql://besedy_test:besedy_test@localhost:5434/besedy_test tsx prisma/seed-test.ts
  */
 
-import { PrismaClient, UserStatus, AccessLevel } from "../src/generated/prisma/client";
+import {
+  PrismaClient,
+  UserStatus,
+  AccessLevel,
+} from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { roleFieldsForLevel } from "../src/lib/policy/catalog-permissions";
 import {
@@ -39,22 +43,93 @@ const DIRECT_USERS: Array<{
   catalogAccess?: AccessLevel;
 }> = [
   // Superadmin - needed as inviter for other users
-  { email: TEST_USERS.superadmin.email, name: TEST_USERS.superadmin.name, isSuperadmin: true, isAdmin: false, status: "ACTIVE" },
+  {
+    email: TEST_USERS.superadmin.email,
+    name: TEST_USERS.superadmin.name,
+    isSuperadmin: true,
+    isAdmin: false,
+    status: "ACTIVE",
+  },
   // Admin - needs isAdmin=true (cannot be set via pending admission)
-  { email: TEST_USERS.admin.email, name: TEST_USERS.admin.name, isSuperadmin: false, isAdmin: true, status: "ACTIVE" },
+  {
+    email: TEST_USERS.admin.email,
+    name: TEST_USERS.admin.name,
+    isSuperadmin: false,
+    isAdmin: true,
+    status: "ACTIVE",
+  },
   // Pending - needs to stay PENDING (activatePendingUser would change it)
-  { email: TEST_USERS.pending.email, name: TEST_USERS.pending.name, isSuperadmin: false, isAdmin: false, status: "PENDING" },
+  {
+    email: TEST_USERS.pending.email,
+    name: TEST_USERS.pending.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "PENDING",
+  },
   // Blocked - needs status=BLOCKED (cannot be set via pending admission)
-  { email: TEST_USERS.blocked.email, name: TEST_USERS.blocked.name, isSuperadmin: false, isAdmin: false, status: "BLOCKED" },
+  {
+    email: TEST_USERS.blocked.email,
+    name: TEST_USERS.blocked.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "BLOCKED",
+  },
   // Mutation - needs to exist for tests that search for users to grant access
-  { email: TEST_USERS.mutation.email, name: TEST_USERS.mutation.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE" },
+  {
+    email: TEST_USERS.mutation.email,
+    name: TEST_USERS.mutation.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+  },
   // Catalog access users - created directly to support devLogin API testing
-  { email: TEST_USERS.owner.email, name: TEST_USERS.owner.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE", catalogAccess: "OWNER" },
-  { email: TEST_USERS.editor.email, name: TEST_USERS.editor.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE", catalogAccess: "EDITOR" },
-  { email: TEST_USERS.member.email, name: TEST_USERS.member.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE", catalogAccess: "MEMBER" },
-  { email: TEST_USERS.viewer.email, name: TEST_USERS.viewer.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE", catalogAccess: "VIEWER" },
-  { email: TEST_USERS.listener.email, name: TEST_USERS.listener.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE", catalogAccess: "LISTENER" },
-  { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name, isSuperadmin: false, isAdmin: false, status: "ACTIVE" },
+  {
+    email: TEST_USERS.owner.email,
+    name: TEST_USERS.owner.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    catalogAccess: "OWNER",
+  },
+  {
+    email: TEST_USERS.editor.email,
+    name: TEST_USERS.editor.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    catalogAccess: "EDITOR",
+  },
+  {
+    email: TEST_USERS.member.email,
+    name: TEST_USERS.member.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    catalogAccess: "MEMBER",
+  },
+  {
+    email: TEST_USERS.viewer.email,
+    name: TEST_USERS.viewer.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    catalogAccess: "VIEWER",
+  },
+  {
+    email: TEST_USERS.listener.email,
+    name: TEST_USERS.listener.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    catalogAccess: "LISTENER",
+  },
+  {
+    email: TEST_USERS.noaccess.email,
+    name: TEST_USERS.noaccess.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+  },
 ];
 
 /**
@@ -68,18 +143,41 @@ const DIRECT_USERS: Array<{
 function roleFieldsForSeededLevel(level: AccessLevel) {
   const fields = roleFieldsForLevel(level);
   if (level === "MEMBER") {
-    return { ...fields, extraPermissions: [...fields.extraPermissions, "download"] };
+    return {
+      ...fields,
+      extraPermissions: [...fields.extraPermissions, "download_audio"],
+    };
   }
   return fields;
 }
 
 // Pending admissions to keep allowlist workflows testable
 const INVITED_USERS = [
-  { email: TEST_USERS.owner.email, name: TEST_USERS.owner.name, catalogAccess: "OWNER" as AccessLevel },
-  { email: TEST_USERS.editor.email, name: TEST_USERS.editor.name, catalogAccess: "EDITOR" as AccessLevel },
-  { email: TEST_USERS.member.email, name: TEST_USERS.member.name, catalogAccess: "MEMBER" as AccessLevel },
-  { email: TEST_USERS.viewer.email, name: TEST_USERS.viewer.name, catalogAccess: "VIEWER" as AccessLevel },
-  { email: TEST_USERS.listener.email, name: TEST_USERS.listener.name, catalogAccess: "LISTENER" as AccessLevel },
+  {
+    email: TEST_USERS.owner.email,
+    name: TEST_USERS.owner.name,
+    catalogAccess: "OWNER" as AccessLevel,
+  },
+  {
+    email: TEST_USERS.editor.email,
+    name: TEST_USERS.editor.name,
+    catalogAccess: "EDITOR" as AccessLevel,
+  },
+  {
+    email: TEST_USERS.member.email,
+    name: TEST_USERS.member.name,
+    catalogAccess: "MEMBER" as AccessLevel,
+  },
+  {
+    email: TEST_USERS.viewer.email,
+    name: TEST_USERS.viewer.name,
+    catalogAccess: "VIEWER" as AccessLevel,
+  },
+  {
+    email: TEST_USERS.listener.email,
+    name: TEST_USERS.listener.name,
+    catalogAccess: "LISTENER" as AccessLevel,
+  },
   { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name },
 ];
 
@@ -184,7 +282,9 @@ async function main() {
         userData.isAdmin && "admin",
         userData.status !== "ACTIVE" && userData.status,
         userData.catalogAccess,
-      ].filter(Boolean).join(", ");
+      ]
+        .filter(Boolean)
+        .join(", ");
       console.log(`  ✓ ${userData.email}${flags ? ` (${flags})` : ""}`);
     }
 
@@ -211,7 +311,9 @@ async function main() {
         accessLevel: userData.catalogAccess || null,
         notes: `E2E test user: ${userData.name}`,
       });
-      console.log(`  ✓ ${userData.email}${userData.catalogAccess ? ` (${userData.catalogAccess})` : ""}`);
+      console.log(
+        `  ✓ ${userData.email}${userData.catalogAccess ? ` (${userData.catalogAccess})` : ""}`
+      );
     }
 
     // 4. Create recorders
@@ -249,16 +351,36 @@ async function main() {
     // 6. Create audio metadata
     console.log("\n[6/9] Creating audio metadata...");
     const recorderA = await prisma.recorder.findUnique({
-      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Recorder A" } },
+      where: {
+        workflowGroupId_name: {
+          workflowGroupId: TEST_CATALOG_ID,
+          name: "Recorder A",
+        },
+      },
     });
     const recorderB = await prisma.recorder.findUnique({
-      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Recorder B" } },
+      where: {
+        workflowGroupId_name: {
+          workflowGroupId: TEST_CATALOG_ID,
+          name: "Recorder B",
+        },
+      },
     });
     const locationX = await prisma.location.findUnique({
-      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Location X" } },
+      where: {
+        workflowGroupId_name: {
+          workflowGroupId: TEST_CATALOG_ID,
+          name: "Location X",
+        },
+      },
     });
     const locationY = await prisma.location.findUnique({
-      where: { workflowGroupId_name: { workflowGroupId: TEST_CATALOG_ID, name: "Location Y" } },
+      where: {
+        workflowGroupId_name: {
+          workflowGroupId: TEST_CATALOG_ID,
+          name: "Location Y",
+        },
+      },
     });
 
     for (let i = 0; i < TEST_AUDIO_FILES.length; i++) {
@@ -297,11 +419,36 @@ async function main() {
     console.log("\n[7/9] Creating catalog serving rows...");
 
     const sourceRows = [
-      { title: "Test Recording One", artist: "Recorder A", album: "Test Album", date: "2024" },
-      { title: "Long Recording", artist: "Recorder B", album: "Test Album", date: "2024" },
-      { title: "Short Clip", artist: "Recorder A", album: "Clips", date: "2023" },
-      { title: "Extended Session", artist: "Recorder B", album: "Sessions", date: "2024" },
-      { title: "Quick Note", artist: "Recorder A", album: "Notes", date: "2024" },
+      {
+        title: "Test Recording One",
+        artist: "Recorder A",
+        album: "Test Album",
+        date: "2024",
+      },
+      {
+        title: "Long Recording",
+        artist: "Recorder B",
+        album: "Test Album",
+        date: "2024",
+      },
+      {
+        title: "Short Clip",
+        artist: "Recorder A",
+        album: "Clips",
+        date: "2023",
+      },
+      {
+        title: "Extended Session",
+        artist: "Recorder B",
+        album: "Sessions",
+        date: "2024",
+      },
+      {
+        title: "Quick Note",
+        artist: "Recorder A",
+        album: "Notes",
+        date: "2024",
+      },
     ];
 
     let catalogEntryCount = 0;
@@ -401,7 +548,10 @@ async function main() {
     );
     const locationIdByName = new Map(
       [locationX, locationY]
-        .filter((location): location is NonNullable<typeof location> => location !== null)
+        .filter(
+          (location): location is NonNullable<typeof location> =>
+            location !== null
+        )
         .map((location) => [location.name, location.id])
     );
 
@@ -411,7 +561,9 @@ async function main() {
     for (const eventSpec of TEST_EVENTS) {
       const locationId = locationIdByName.get(eventSpec.location);
       if (!locationId) {
-        throw new Error(`Location not found for event seed: ${eventSpec.location}`);
+        throw new Error(
+          `Location not found for event seed: ${eventSpec.location}`
+        );
       }
 
       const event = await prisma.catalogEvent.create({
@@ -514,8 +666,12 @@ async function main() {
 
     console.log("\n=== E2E Test Data Seeded Successfully ===\n");
     console.log("Summary:");
-    console.log(`  Direct users: ${DIRECT_USERS.length} (superadmin, admin, pending, blocked, mutation)`);
-    console.log(`  Pending admissions: ${INVITED_USERS.length} (seeded for OAuth claim flow)`);
+    console.log(
+      `  Direct users: ${DIRECT_USERS.length} (superadmin, admin, pending, blocked, mutation)`
+    );
+    console.log(
+      `  Pending admissions: ${INVITED_USERS.length} (seeded for OAuth claim flow)`
+    );
     console.log(`  Workflow Groups: 1`);
     console.log(`  Recorders: ${SEEDED_RECORDERS.length}`);
     console.log(`  Locations: ${SEEDED_LOCATIONS.length}`);

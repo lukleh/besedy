@@ -359,7 +359,7 @@ export async function GET(request: NextRequest) {
         hasNextPage: page < totalPages,
         hasPrevPage: page > 1,
       },
-      canDownload: capability.canDownload,
+      canDownload: capability.canDownloadAudio,
       canEditMetadata: capability.canEditMetadata,
       canBatchEditMetadata: capability.canBatchEditMetadata,
       canManageAccess: capability.canManageAccess,

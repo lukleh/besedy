@@ -3,7 +3,7 @@
 import type { FormEvent } from "react";
 import { Loader2, Plus, UserPlus } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { AccessLevel } from "@/generated/prisma/enums";
+import { CatalogRole } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,9 +23,7 @@ import {
   ResponsiveSelectTrigger,
   ResponsiveSelectValue,
 } from "@/components/ui/responsive-select";
-import {
-  ACCESS_LEVEL_VALUES,
-} from "./users-content-types";
+import { CATALOG_ROLE_VALUES } from "./users-content-types";
 
 interface CatalogOption {
   id: string;
@@ -37,24 +35,24 @@ export interface UsersCreateDialogProps {
   catalogs?: CatalogOption[];
   createDialogOpen: boolean;
   createUserPending: boolean;
-  getAccessLevelDesc: (level: AccessLevel) => string;
-  getAccessLevelLabel: (level: AccessLevel) => string;
+  getCatalogRoleDesc: (role: CatalogRole) => string;
+  getCatalogRoleLabel: (role: CatalogRole) => string;
   newEmail: string;
   onCatalogChange: (value: string) => void;
   onDialogOpenChange: (open: boolean) => void;
   onEmailChange: (value: string) => void;
-  onRoleChange: (value: AccessLevel | "") => void;
+  onRoleChange: (value: CatalogRole | "") => void;
   onSubmit: (event: FormEvent) => void;
   selectedCatalog: string;
-  selectedRole: AccessLevel | "";
+  selectedRole: CatalogRole | "";
 }
 
 export function UsersCreateDialog({
   catalogs,
   createDialogOpen,
   createUserPending,
-  getAccessLevelDesc,
-  getAccessLevelLabel,
+  getCatalogRoleDesc,
+  getCatalogRoleLabel,
   newEmail,
   onCatalogChange,
   onDialogOpenChange,
@@ -85,7 +83,9 @@ export function UsersCreateDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="email">{t("pendingAdmissions.dialog.emailLabel")}</Label>
+              <Label htmlFor="email">
+                {t("pendingAdmissions.dialog.emailLabel")}
+              </Label>
               <Input
                 id="email"
                 type="email"
@@ -103,7 +103,9 @@ export function UsersCreateDialog({
               </Label>
               <div className="mt-2 grid gap-3">
                 <div>
-                  <Label htmlFor="catalog">{t("pendingAdmissions.dialog.catalog")}</Label>
+                  <Label htmlFor="catalog">
+                    {t("pendingAdmissions.dialog.catalog")}
+                  </Label>
                   <ResponsiveSelect
                     value={selectedCatalog || "none"}
                     onValueChange={(value: string) =>
@@ -118,18 +120,24 @@ export function UsersCreateDialog({
                         placeholder={t("pendingAdmissions.dialog.noCatalog")}
                         displayValue={
                           selectedCatalog
-                            ? (catalogs?.find((catalog) => catalog.id === selectedCatalog)?.label ||
-                              selectedCatalog)
+                            ? catalogs?.find(
+                                (catalog) => catalog.id === selectedCatalog
+                              )?.label || selectedCatalog
                             : undefined
                         }
                       />
                     </ResponsiveSelectTrigger>
-                    <ResponsiveSelectContent title={t("pendingAdmissions.dialog.catalog")}>
+                    <ResponsiveSelectContent
+                      title={t("pendingAdmissions.dialog.catalog")}
+                    >
                       <ResponsiveSelectItem value="none">
                         {t("pendingAdmissions.dialog.noCatalog")}
                       </ResponsiveSelectItem>
                       {catalogs?.map((catalog) => (
-                        <ResponsiveSelectItem key={catalog.id} value={catalog.id}>
+                        <ResponsiveSelectItem
+                          key={catalog.id}
+                          value={catalog.id}
+                        >
                           {catalog.label || catalog.id}
                         </ResponsiveSelectItem>
                       ))}
@@ -139,33 +147,39 @@ export function UsersCreateDialog({
 
                 {selectedCatalog && (
                   <div>
-                    <Label htmlFor="role">{t("pendingAdmissions.dialog.accessLevel")}</Label>
+                    <Label htmlFor="role">
+                      {t("pendingAdmissions.dialog.role")}
+                    </Label>
                     <ResponsiveSelect
                       value={selectedRole}
-                      onValueChange={(value: string) => onRoleChange(value as AccessLevel)}
+                      onValueChange={(value: string) =>
+                        onRoleChange(value as CatalogRole)
+                      }
                     >
                       <ResponsiveSelectTrigger
                         className="mt-1"
-                        aria-label={t("pendingAdmissions.dialog.accessLevel")}
+                        aria-label={t("pendingAdmissions.dialog.role")}
                       >
                         <ResponsiveSelectValue
-                          placeholder={t("pendingAdmissions.dialog.selectAccessLevel")}
+                          placeholder={t("pendingAdmissions.dialog.selectRole")}
                           displayValue={
                             selectedRole
-                              ? getAccessLevelLabel(selectedRole as AccessLevel)
+                              ? getCatalogRoleLabel(selectedRole as CatalogRole)
                               : undefined
                           }
                         />
                       </ResponsiveSelectTrigger>
-                      <ResponsiveSelectContent title={t("pendingAdmissions.dialog.accessLevel")}>
-                        {ACCESS_LEVEL_VALUES.map((level) => (
-                          <ResponsiveSelectItem key={level} value={level}>
+                      <ResponsiveSelectContent
+                        title={t("pendingAdmissions.dialog.role")}
+                      >
+                        {CATALOG_ROLE_VALUES.map((role) => (
+                          <ResponsiveSelectItem key={role} value={role}>
                             <div>
                               <span className="font-medium">
-                                {getAccessLevelLabel(level)}
+                                {getCatalogRoleLabel(role)}
                               </span>
                               <span className="ml-2 text-xs text-muted-foreground">
-                                - {getAccessLevelDesc(level)}
+                                - {getCatalogRoleDesc(role)}
                               </span>
                             </div>
                           </ResponsiveSelectItem>
@@ -187,7 +201,9 @@ export function UsersCreateDialog({
             </Button>
             <Button
               type="submit"
-              disabled={createUserPending || (!!selectedCatalog && !selectedRole)}
+              disabled={
+                createUserPending || (!!selectedCatalog && !selectedRole)
+              }
             >
               {createUserPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -1,4 +1,5 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { CatalogRole, PrismaClient } from "@/generated/prisma/client";
+import { roleForLevel } from "@/lib/policy/catalog-permissions";
 import prisma from "@/lib/db";
 
 type AdmissionReadClient = Pick<
@@ -16,13 +17,7 @@ export interface PendingAdminAdmissionItem {
   pendingGrantCount: number;
   catalogId: string | null;
   catalogLabel: string | null;
-  accessLevel:
-    | "LISTENER"
-    | "VIEWER"
-    | "MEMBER"
-    | "EDITOR"
-    | "OWNER"
-    | null;
+  role: CatalogRole | null;
   invitedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;
 }
@@ -30,44 +25,22 @@ export interface PendingAdminAdmissionItem {
 export interface PendingAdminAdmissionGrant {
   catalogId: string;
   catalogLabel: string;
-  accessLevel:
-    | "LISTENER"
-    | "VIEWER"
-    | "MEMBER"
-    | "EDITOR"
-    | "OWNER";
+  accessLevel: "LISTENER" | "VIEWER" | "MEMBER" | "EDITOR" | "OWNER";
+  role: CatalogRole;
+  extraPermissions: string[];
   grantedAt: string;
   grantedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;
 }
 
-function uniqueNonNullStrings(values: Array<string | null | undefined>): string[] {
+function uniqueNonNullStrings(
+  values: Array<string | null | undefined>
+): string[] {
   return Array.from(
-    new Set(values.filter((value): value is string => typeof value === "string"))
+    new Set(
+      values.filter((value): value is string => typeof value === "string")
+    )
   );
-}
-
-const ACCESS_LEVEL_ORDER = ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"] as const;
-
-function highestPendingAccessLevel(
-  grants: Array<{ accessLevel: PendingAdminAdmissionItem["accessLevel"] }>
-): PendingAdminAdmissionItem["accessLevel"] {
-  let highestIndex = -1;
-  let highestLevel: PendingAdminAdmissionItem["accessLevel"] = null;
-
-  for (const grant of grants) {
-    if (!grant.accessLevel) {
-      continue;
-    }
-
-    const index = ACCESS_LEVEL_ORDER.indexOf(grant.accessLevel);
-    if (index > highestIndex) {
-      highestIndex = index;
-      highestLevel = grant.accessLevel;
-    }
-  }
-
-  return highestLevel;
 }
 
 export async function listPendingAdminAdmissions(
@@ -99,29 +72,35 @@ export async function listPendingAdminAdmissions(
   });
 
   const emails = admissions.map((admission) => admission.email);
-  const pendingGrants = emails.length > 0
-    ? await db.pendingCatalogGrant.findMany({
-        where: {
-          status: "PENDING",
-          email: { in: emails },
-        },
-        select: {
-          email: true,
-          catalogId: true,
-          accessLevel: true,
-          notes: true,
-          grantedAt: true,
-          grantedById: true,
-        },
-        orderBy: [{ grantedAt: "desc" }, { catalogId: "asc" }],
-      })
-    : [];
+  const pendingGrants =
+    emails.length > 0
+      ? await db.pendingCatalogGrant.findMany({
+          where: {
+            status: "PENDING",
+            email: { in: emails },
+          },
+          select: {
+            email: true,
+            catalogId: true,
+            accessLevel: true,
+            role: true,
+            extraPermissions: true,
+            notes: true,
+            grantedAt: true,
+            grantedById: true,
+          },
+          orderBy: [{ grantedAt: "desc" }, { catalogId: "asc" }],
+        })
+      : [];
 
   // Admin pending-state stays admission-centric for now. When multiple grants
   // exist for one email, we summarize them alongside the single
   // portal-admission row instead of pretending one arbitrary grant is the
   // whole pending state.
-  const pendingGrantsByEmail = new Map<string, Array<(typeof pendingGrants)[number]>>();
+  const pendingGrantsByEmail = new Map<
+    string,
+    Array<(typeof pendingGrants)[number]>
+  >();
   for (const pendingGrant of pendingGrants) {
     const grantsForEmail = pendingGrantsByEmail.get(pendingGrant.email) ?? [];
     grantsForEmail.push(pendingGrant);
@@ -170,18 +149,24 @@ export async function listPendingAdminAdmissions(
   const catalogById = new Map(catalogs.map((catalog) => [catalog.id, catalog]));
 
   return admissions.map((admission) => {
-    const pendingGrantsForEmail = pendingGrantsByEmail.get(admission.email) ?? [];
+    const pendingGrantsForEmail =
+      pendingGrantsByEmail.get(admission.email) ?? [];
     const newestPendingGrant = pendingGrantsForEmail[0] ?? null;
     const pendingGrantCount = pendingGrantsForEmail.length;
-    const singleCatalogGrant = pendingGrantCount === 1 ? newestPendingGrant : null;
+    const singleCatalogGrant =
+      pendingGrantCount === 1 ? newestPendingGrant : null;
     const pendingGrants = pendingGrantsForEmail.map((grant) => {
       const catalog = catalogById.get(grant.catalogId);
       return {
         catalogId: grant.catalogId,
         catalogLabel: catalog?.label || grant.catalogId,
         accessLevel: grant.accessLevel,
+        role: grant.role ?? roleForLevel(grant.accessLevel).role,
+        extraPermissions: grant.extraPermissions ?? [],
         grantedAt: grant.grantedAt.toISOString(),
-        grantedBy: grant.grantedById ? actorById.get(grant.grantedById) ?? null : null,
+        grantedBy: grant.grantedById
+          ? (actorById.get(grant.grantedById) ?? null)
+          : null,
         notes: grant.notes ?? null,
       };
     });
@@ -207,7 +192,7 @@ export async function listPendingAdminAdmissions(
       pendingGrantCount,
       catalogId: singleCatalogGrant?.catalogId ?? null,
       catalogLabel: catalog?.label || singleCatalogGrant?.catalogId || null,
-      accessLevel: highestPendingAccessLevel(pendingGrantsForEmail),
+      role: pendingGrantCount === 1 ? (pendingGrants[0]?.role ?? null) : null,
       invitedBy,
       notes: admission.notes ?? newestPendingGrant?.notes ?? null,
     };

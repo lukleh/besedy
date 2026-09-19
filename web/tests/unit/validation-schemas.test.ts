@@ -29,7 +29,9 @@ describe("TimestampIdSchema", () => {
   });
 
   it("rejects CUID format", () => {
-    expect(TimestampIdSchema.safeParse("cm2abc123def456ghi789jkl").success).toBe(false);
+    expect(
+      TimestampIdSchema.safeParse("cm2abc123def456ghi789jkl").success
+    ).toBe(false);
     expect(TimestampIdSchema.safeParse("cuid_test_123").success).toBe(false);
   });
 
@@ -50,9 +52,15 @@ describe("TimestampIdSchema", () => {
 describe("CuidSchema", () => {
   it("accepts valid CUIDs", () => {
     // CUIDs are 25+ chars total (c + 24+ alphanumeric)
-    expect(CuidSchema.safeParse("cm2abc123def456ghi789jklmn").success).toBe(true); // 26 chars
-    expect(CuidSchema.safeParse("c12345678901234567890123456").success).toBe(true); // 27 chars
-    expect(CuidSchema.safeParse("clyrxz1qw000008l9d6zk9q2x").success).toBe(true); // realistic CUID
+    expect(CuidSchema.safeParse("cm2abc123def456ghi789jklmn").success).toBe(
+      true
+    ); // 26 chars
+    expect(CuidSchema.safeParse("c12345678901234567890123456").success).toBe(
+      true
+    ); // 27 chars
+    expect(CuidSchema.safeParse("clyrxz1qw000008l9d6zk9q2x").success).toBe(
+      true
+    ); // realistic CUID
   });
 
   it("rejects non-CUID formats", () => {
@@ -62,7 +70,9 @@ describe("CuidSchema", () => {
   });
 
   it("rejects CUIDs that don't start with 'c'", () => {
-    expect(CuidSchema.safeParse("a12345678901234567890123456").success).toBe(false);
+    expect(CuidSchema.safeParse("a12345678901234567890123456").success).toBe(
+      false
+    );
   });
 
   it("rejects CUIDs that are too short", () => {
@@ -73,7 +83,9 @@ describe("CuidSchema", () => {
 describe("HashSchema", () => {
   it("accepts valid SHA-256 hashes", () => {
     expect(HashSchema.safeParse("a".repeat(64)).success).toBe(true);
-    expect(HashSchema.safeParse("0123456789abcdef".repeat(4)).success).toBe(true);
+    expect(HashSchema.safeParse("0123456789abcdef".repeat(4)).success).toBe(
+      true
+    );
   });
 
   it("rejects invalid hashes", () => {
@@ -189,10 +201,12 @@ describe("UserStatusSchema", () => {
 describe("TranscriptBackendSchema", () => {
   it("accepts valid backends", () => {
     expect(
-      TranscriptBackendSchema.safeParse("faster-whisper/large-v3@silero_vad_v6").success
+      TranscriptBackendSchema.safeParse("faster-whisper/large-v3@silero_vad_v6")
+        .success
     ).toBe(true);
     expect(
-      TranscriptBackendSchema.safeParse("canary-nemo/nvidia_canary-1b-v2").success
+      TranscriptBackendSchema.safeParse("canary-nemo/nvidia_canary-1b-v2")
+        .success
     ).toBe(true);
     expect(
       TranscriptBackendSchema.safeParse("whisperx/large-v3@silero").success
@@ -201,10 +215,18 @@ describe("TranscriptBackendSchema", () => {
 
   it("rejects invalid backends", () => {
     expect(TranscriptBackendSchema.safeParse("").success).toBe(false);
-    expect(TranscriptBackendSchema.safeParse("faster-whisper").success).toBe(false);
-    expect(TranscriptBackendSchema.safeParse("faster-whisper/..").success).toBe(false);
-    expect(TranscriptBackendSchema.safeParse("faster-whisper/large/v3").success).toBe(false);
-    expect(TranscriptBackendSchema.safeParse("openai-whisper").success).toBe(false);
+    expect(TranscriptBackendSchema.safeParse("faster-whisper").success).toBe(
+      false
+    );
+    expect(TranscriptBackendSchema.safeParse("faster-whisper/..").success).toBe(
+      false
+    );
+    expect(
+      TranscriptBackendSchema.safeParse("faster-whisper/large/v3").success
+    ).toBe(false);
+    expect(TranscriptBackendSchema.safeParse("openai-whisper").success).toBe(
+      false
+    );
   });
 });
 
@@ -250,7 +272,8 @@ describe("GrantAccessSchema", () => {
   it("accepts valid access grant", () => {
     const result = GrantAccessSchema.safeParse({
       userId: "c" + "a".repeat(24),
-      accessLevel: "EDITOR",
+      role: "curator",
+      extraPermissions: [],
     });
     expect(result.success).toBe(true);
   });
@@ -258,7 +281,8 @@ describe("GrantAccessSchema", () => {
   it("accepts optional notes", () => {
     const result = GrantAccessSchema.safeParse({
       userId: "c" + "a".repeat(24),
-      accessLevel: "VIEWER",
+      role: "reader",
+      extraPermissions: [],
       notes: "Granted for project X",
     });
     expect(result.success).toBe(true);
@@ -266,14 +290,16 @@ describe("GrantAccessSchema", () => {
 
   it("rejects missing required fields", () => {
     expect(GrantAccessSchema.safeParse({}).success).toBe(false);
-    expect(GrantAccessSchema.safeParse({ userId: "c" + "a".repeat(24) }).success).toBe(false);
-    expect(GrantAccessSchema.safeParse({ accessLevel: "VIEWER" }).success).toBe(false);
+    expect(
+      GrantAccessSchema.safeParse({ userId: "c" + "a".repeat(24) }).success
+    ).toBe(false);
+    expect(GrantAccessSchema.safeParse({ role: "reader" }).success).toBe(false);
   });
 
   it("rejects notes exceeding max length", () => {
     const result = GrantAccessSchema.safeParse({
       userId: "c" + "a".repeat(24),
-      accessLevel: "VIEWER",
+      role: "reader",
       notes: "x".repeat(501),
     });
     expect(result.success).toBe(false);
@@ -283,20 +309,23 @@ describe("GrantAccessSchema", () => {
 describe("UpdateAccessSchema", () => {
   it("accepts valid updates", () => {
     const result = UpdateAccessSchema.safeParse({
-      accessLevel: "MEMBER",
+      role: "reader",
+      extraPermissions: ["download_audio"],
       notes: "Updated notes",
     });
     expect(result.success).toBe(true);
   });
 
-  it("requires accessLevel", () => {
+  it("requires a role", () => {
     expect(UpdateAccessSchema.safeParse({}).success).toBe(false);
-    expect(UpdateAccessSchema.safeParse({ notes: "Missing level" }).success).toBe(false);
+    expect(
+      UpdateAccessSchema.safeParse({ notes: "Missing level" }).success
+    ).toBe(false);
   });
 
   it("rejects notes that are too long", () => {
     const result = UpdateAccessSchema.safeParse({
-      accessLevel: "VIEWER",
+      role: "reader",
       notes: "x".repeat(501),
     });
     expect(result.success).toBe(false);
@@ -306,7 +335,7 @@ describe("UpdateAccessSchema", () => {
 describe("UpdateAccessWithNameSchema", () => {
   it("accepts access update with user name", () => {
     const result = UpdateAccessWithNameSchema.safeParse({
-      accessLevel: "EDITOR",
+      role: "curator",
       userName: "Updated Name",
       notes: "Notes",
     });
@@ -315,7 +344,7 @@ describe("UpdateAccessWithNameSchema", () => {
 
   it("rejects empty user name", () => {
     const result = UpdateAccessWithNameSchema.safeParse({
-      accessLevel: "VIEWER",
+      role: "reader",
       userName: "",
     });
     expect(result.success).toBe(false);
@@ -323,7 +352,7 @@ describe("UpdateAccessWithNameSchema", () => {
 
   it("rejects user name over max length", () => {
     const result = UpdateAccessWithNameSchema.safeParse({
-      accessLevel: "VIEWER",
+      role: "reader",
       userName: "x".repeat(101),
     });
     expect(result.success).toBe(false);
@@ -345,7 +374,9 @@ describe("RestoreAccessSchema", () => {
 describe("UserSearchQuerySchema", () => {
   it("accepts optional search param", () => {
     expect(UserSearchQuerySchema.safeParse({}).success).toBe(true);
-    expect(UserSearchQuerySchema.safeParse({ search: "alice" }).success).toBe(true);
+    expect(UserSearchQuerySchema.safeParse({ search: "alice" }).success).toBe(
+      true
+    );
   });
 
   it("rejects search terms that are too long", () => {
@@ -358,7 +389,9 @@ describe("UpdateUserSchema", () => {
   it("accepts valid user updates", () => {
     expect(UpdateUserSchema.safeParse({ status: "ACTIVE" }).success).toBe(true);
     expect(UpdateUserSchema.safeParse({ isAdmin: true }).success).toBe(true);
-    expect(UpdateUserSchema.safeParse({ status: "BLOCKED", isAdmin: false }).success).toBe(true);
+    expect(
+      UpdateUserSchema.safeParse({ status: "BLOCKED", isAdmin: false }).success
+    ).toBe(true);
   });
 
   it("accepts empty object (no updates)", () => {
@@ -366,7 +399,9 @@ describe("UpdateUserSchema", () => {
   });
 
   it("rejects pending status (allowlist-only semantics)", () => {
-    expect(UpdateUserSchema.safeParse({ status: "PENDING" }).success).toBe(false);
+    expect(UpdateUserSchema.safeParse({ status: "PENDING" }).success).toBe(
+      false
+    );
   });
 });
 
@@ -374,7 +409,8 @@ describe("CreatePendingCatalogGrantSchema", () => {
   it("accepts valid pending catalog grant payload", () => {
     const result = CreatePendingCatalogGrantSchema.safeParse({
       email: "user@example.com",
-      accessLevel: "MEMBER",
+      role: "reader",
+      extraPermissions: ["download_audio"],
     });
     expect(result.success).toBe(true);
   });
@@ -382,7 +418,7 @@ describe("CreatePendingCatalogGrantSchema", () => {
   it("lowercases email", () => {
     const result = CreatePendingCatalogGrantSchema.safeParse({
       email: "USER@EXAMPLE.COM",
-      accessLevel: "VIEWER",
+      role: "reader",
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -393,7 +429,7 @@ describe("CreatePendingCatalogGrantSchema", () => {
   it("accepts optional message", () => {
     const result = CreatePendingCatalogGrantSchema.safeParse({
       email: "user@example.com",
-      accessLevel: "EDITOR",
+      role: "curator",
       message: "Welcome to the catalog!",
     });
     expect(result.success).toBe(true);

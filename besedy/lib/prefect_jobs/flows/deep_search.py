@@ -60,7 +60,7 @@ def validate_inputs(
     catalog_id: str,
     query: str,
     instructions: str | None = None,
-    requested_by_id: str | None = None,
+    requested_by_id: str,
     retrieval: JsonDict,
     execution: JsonDict,
 ) -> JsonDict:
@@ -68,6 +68,9 @@ def validate_inputs(
         raise ValueError("catalog_id must not be empty.")
     if not str(query).strip():
         raise ValueError("query must not be empty.")
+    if not isinstance(requested_by_id, str) or not requested_by_id.strip():
+        raise ValueError("requested_by_id must not be empty.")
+    requested_by_id_text = requested_by_id.strip()
     instructions_text = _string_or_none(instructions)
     if instructions_text is None:
         raise ValueError("instructions must not be empty.")
@@ -77,7 +80,7 @@ def validate_inputs(
         "instructions": instructions_text,
         # Carried through the whole flow: a job sees what the person who asked
         # for it sees, and the retrieval calls say so on every request.
-        "requested_by_id": _string_or_none(requested_by_id),
+        "requested_by_id": requested_by_id_text,
         "retrieval": retrieval if isinstance(retrieval, dict) else {},
         "execution": execution if isinstance(execution, dict) else {},
     }
@@ -89,7 +92,7 @@ def run_initial_retrieval(inputs: JsonDict) -> JsonDict:
     query = str(inputs["query"])
     catalog_id = str(inputs["catalog_id"])
     client = build_besedy_deep_search_client_from_env(
-        requested_by_id=_string_or_none(inputs.get("requested_by_id")),
+        requested_by_id=_required_requester_id(inputs),
     )
     if client is None:
         time.sleep(0.1)
@@ -141,7 +144,7 @@ def expand_citations(inputs: JsonDict, initial_retrieval: JsonDict) -> list[Json
         return []
 
     client = build_besedy_deep_search_client_from_env(
-        requested_by_id=_string_or_none(inputs.get("requested_by_id")),
+        requested_by_id=_required_requester_id(inputs),
     )
     if client is None:
         raise DeepSearchFlowError(
@@ -202,8 +205,8 @@ def run_rlm_deep_search(
     )
     if execution_mode == DeepSearchExecutionMode.RLM:
         client = build_besedy_deep_search_client_from_env(
-        requested_by_id=_string_or_none(inputs.get("requested_by_id")),
-    )
+            requested_by_id=_required_requester_id(inputs),
+        )
         if client is None:
             raise DeepSearchFlowError(
                 "Besedy deep-search client is not configured.",
@@ -337,8 +340,8 @@ def publish_final_artifacts(
 def deep_search_flow(
     catalog_id: str,
     query: str,
+    requested_by_id: str,
     instructions: str | None = None,
-    requested_by_id: str | None = None,
     caller_scope: str | None = None,
     retrieval: JsonDict | None = None,
     execution: JsonDict | None = None,
@@ -749,3 +752,10 @@ def _string_or_none(value: object) -> str | None:
         rendered = value.strip()
         return rendered or None
     return None
+
+
+def _required_requester_id(inputs: JsonDict) -> str:
+    requested_by_id = inputs.get("requested_by_id")
+    if not isinstance(requested_by_id, str) or not requested_by_id.strip():
+        raise ValueError("requested_by_id must not be empty.")
+    return requested_by_id.strip()

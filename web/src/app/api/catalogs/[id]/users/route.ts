@@ -4,16 +4,30 @@ import prisma from "@/lib/db";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   canAttemptCatalogManagement,
-  manageableCatalogAccessLevels,
+  canManageExistingCatalogGrant,
 } from "@/lib/policy/catalog";
-import { TimestampIdParamSchema, UserSearchQuerySchema } from "@/lib/validation/schemas";
-import { validateParams, validateSearchParams, forbidden, notFound, handlePrismaError } from "@/lib/api";
+import { roleForLevel } from "@/lib/policy/catalog-permissions";
+import {
+  TimestampIdParamSchema,
+  UserSearchQuerySchema,
+} from "@/lib/validation/schemas";
+import {
+  validateParams,
+  validateSearchParams,
+  forbidden,
+  notFound,
+  handlePrismaError,
+} from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
+
+const ACCESS_SEARCH_RESULT_LIMIT = 5;
+const ACCESS_SEARCH_PAGE_SIZE = 50;
+const ACCESS_SEARCH_MAX_PAGES = 10;
 
 /**
  * GET /api/catalogs/:id/users?search=query - Search users for access grant dialog
@@ -31,7 +45,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (!paramsResult.success) return paramsResult.response;
     const catalogId = paramsResult.data.id;
 
-    const queryResult = validateSearchParams(request.nextUrl.searchParams, UserSearchQuerySchema);
+    const queryResult = validateSearchParams(
+      request.nextUrl.searchParams,
+      UserSearchQuerySchema
+    );
     if (!queryResult.success) return queryResult.response;
     const { search } = queryResult.data;
 
@@ -55,7 +72,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!canAttemptCatalogManagement(access.policyContext)) {
-      return forbidden("OWNER or Admin access required to manage catalog access");
+      return forbidden("Catalog access-management permission required");
     }
 
     // If no search query, return empty results
@@ -67,66 +84,94 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const searchTerm = search.trim().toLowerCase();
-    // Someone the actor cannot act on should not be offered to them at all.
-    const manageableLevels = manageableCatalogAccessLevels(access.policyContext);
+    const findManageableAccess = async (status: "ACTIVE" | "REVOKED") => {
+      const matches = [];
+      let cursor: string | undefined;
 
-    // Get users with ACTIVE access to this catalog (for update option)
-    const activeAccess = await prisma.catalogAccess.findMany({
-      where: {
-        catalogId,
-        status: "ACTIVE",
-        accessLevel: { in: manageableLevels },
-        OR: [
-          { user: { email: { contains: searchTerm, mode: "insensitive" } } },
-          { user: { name: { contains: searchTerm, mode: "insensitive" } } },
-        ],
-      },
-      select: {
-        accessLevel: true,
-        notes: true,
-        user: {
-          select: { id: true, name: true, email: true, image: true },
-        },
-      },
-      take: 5,
-    });
+      // The policy predicate cannot be expressed safely as a role list. Scan
+      // bounded pages until five actionable grants are found instead of
+      // loading every textual match into memory on each keystroke.
+      for (
+        let page = 0;
+        page < ACCESS_SEARCH_MAX_PAGES &&
+        matches.length < ACCESS_SEARCH_RESULT_LIMIT;
+        page += 1
+      ) {
+        const candidates = await prisma.catalogAccess.findMany({
+          where: {
+            catalogId,
+            status,
+            userId: { not: userId },
+            OR: [
+              {
+                user: {
+                  email: { contains: searchTerm, mode: "insensitive" },
+                },
+              },
+              {
+                user: {
+                  name: { contains: searchTerm, mode: "insensitive" },
+                },
+              },
+            ],
+          },
+          select: {
+            id: true,
+            accessLevel: true,
+            role: true,
+            extraPermissions: true,
+            notes: true,
+            user: {
+              select: { id: true, name: true, email: true, image: true },
+            },
+          },
+          orderBy: { id: "asc" },
+          take: ACCESS_SEARCH_PAGE_SIZE,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        });
 
-    // Get users with REVOKED access to this catalog (for restore option)
-    const revokedAccess = await prisma.catalogAccess.findMany({
-      where: {
-        catalogId,
-        status: "REVOKED",
-        accessLevel: { in: manageableLevels },
-        OR: [
-          { user: { email: { contains: searchTerm, mode: "insensitive" } } },
-          { user: { name: { contains: searchTerm, mode: "insensitive" } } },
-        ],
-      },
-      select: {
-        accessLevel: true,
-        user: {
-          select: { id: true, name: true, email: true, image: true },
-        },
-      },
-      take: 5,
-    });
+        for (const grant of candidates) {
+          if (
+            canManageExistingCatalogGrant(access.policyContext, {
+              level: grant.accessLevel,
+              role: grant.role,
+              extras: grant.extraPermissions,
+            })
+          ) {
+            matches.push(grant);
+            if (matches.length === ACCESS_SEARCH_RESULT_LIMIT) break;
+          }
+        }
 
-    // Get users who DON'T have any access (ACTIVE or REVOKED) to this catalog
-    const availableUsers = await prisma.user.findMany({
-      where: {
-        status: { not: "BLOCKED" },
-        OR: [
-          { email: { contains: searchTerm, mode: "insensitive" } },
-          { name: { contains: searchTerm, mode: "insensitive" } },
-        ],
-        // Exclude users who already have access (ACTIVE or REVOKED)
-        catalogAccess: {
-          none: { catalogId },
+        if (candidates.length < ACCESS_SEARCH_PAGE_SIZE) break;
+        cursor = candidates.at(-1)?.id;
+        if (!cursor) break;
+      }
+
+      return matches;
+    };
+
+    const [activeAccess, revokedAccess, availableUsers] = await Promise.all([
+      findManageableAccess("ACTIVE"),
+      findManageableAccess("REVOKED"),
+      // Get users who DON'T have any access (ACTIVE or REVOKED) to this catalog.
+      prisma.user.findMany({
+        where: {
+          id: { not: userId },
+          status: { not: "BLOCKED" },
+          OR: [
+            { email: { contains: searchTerm, mode: "insensitive" } },
+            { name: { contains: searchTerm, mode: "insensitive" } },
+          ],
+          // Exclude users who already have access (ACTIVE or REVOKED)
+          catalogAccess: {
+            none: { catalogId },
+          },
         },
-      },
-      select: { id: true, name: true, email: true, image: true },
-      take: 10,
-    });
+        select: { id: true, name: true, email: true, image: true },
+        take: 10,
+      }),
+    ]);
 
     // Check if search looks like a valid email for a new pending admission
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(searchTerm);
@@ -156,6 +201,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         image: access.user.image,
         type: "active" as const,
         currentAccessLevel: access.accessLevel,
+        currentRole: access.role ?? roleForLevel(access.accessLevel).role,
+        extraPermissions: access.extraPermissions ?? [],
         notes: access.notes,
       })),
       // Revoked users next (for restore)
@@ -166,6 +213,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         image: access.user.image,
         type: "revoked" as const,
         previousAccessLevel: access.accessLevel,
+        previousRole: access.role ?? roleForLevel(access.accessLevel).role,
+        extraPermissions: access.extraPermissions ?? [],
       })),
       // Available users last (no current access)
       ...availableUsers.map((user) => ({

@@ -2,7 +2,7 @@
 
 import { Loader2, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { AccessLevel } from "@/generated/prisma/enums";
+import { CatalogRole } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/responsive-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  ACCESS_LEVEL_VALUES,
+  CATALOG_ROLE_VALUES,
   type CatalogAccess,
   type PendingPortalAdmission,
   type User,
@@ -49,16 +49,24 @@ export interface UsersDialogsProps {
   addCatalogAccessPending: boolean;
   adminRoleDialog: { open: boolean; user: User } | null;
   adminRoleForm: { isAdmin: boolean };
-  blockDialog: { open: boolean; userId: string; action: "ACTIVE" | "BLOCKED"; userName: string } | null;
+  blockDialog: {
+    open: boolean;
+    userId: string;
+    action: "ACTIVE" | "BLOCKED";
+    userName: string;
+  } | null;
   catalogs?: CatalogOption[];
   catalogAccessDialog: { open: boolean; user: User } | null;
   deleteDialog: { open: boolean; user: User } | null;
   deleteUserPending: boolean;
-  editAdmissionDialog: { open: boolean; admission: PendingPortalAdmission } | null;
-  editAdmissionForm: { accessLevel: AccessLevel | ""; notes: string };
-  getAccessLevelLabel: (level: AccessLevel) => string;
+  editAdmissionDialog: {
+    open: boolean;
+    admission: PendingPortalAdmission;
+  } | null;
+  editAdmissionForm: { role: CatalogRole | ""; notes: string };
+  getCatalogRoleLabel: (role: CatalogRole) => string;
   isLoadingAccess: boolean;
-  newAccessLevel: AccessLevel;
+  newCatalogRole: CatalogRole;
   newCatalogId: string;
   onAddCatalogAccess: () => void;
   onAdminRoleDialogOpenChange: (open: boolean) => void;
@@ -70,15 +78,25 @@ export interface UsersDialogsProps {
   onDeleteDialogOpenChange: (open: boolean) => void;
   onDeleteUser: () => void;
   onEditAdmissionDialogOpenChange: (open: boolean) => void;
-  onEditAdmissionFormChange: (value: { accessLevel?: AccessLevel | ""; notes?: string }) => void;
+  onEditAdmissionFormChange: (value: {
+    role?: CatalogRole | "";
+    notes?: string;
+  }) => void;
   onEditAdmissionSubmit: () => void;
-  onNewAccessLevelChange: (value: AccessLevel) => void;
+  onNewCatalogRoleChange: (value: CatalogRole) => void;
   onNewCatalogIdChange: (value: string) => void;
   onRemoveCatalogAccess: (catalogId: string) => void;
   onRevokeAdmission: () => void;
   onRevokeAdmissionDialogOpenChange: (open: boolean) => void;
-  onUpdateCatalogAccess: (catalogId: string, accessLevel: AccessLevel) => void;
-  revokeAdmissionDialog: { open: boolean; admission: PendingPortalAdmission } | null;
+  onUpdateCatalogAccess: (
+    catalogId: string,
+    role: CatalogRole,
+    extraPermissions: string[]
+  ) => void;
+  revokeAdmissionDialog: {
+    open: boolean;
+    admission: PendingPortalAdmission;
+  } | null;
   revokeAdmissionPending: boolean;
   updateAdminRolePending: boolean;
   updateAdmissionPending: boolean;
@@ -100,9 +118,9 @@ export function UsersDialogs({
   deleteUserPending,
   editAdmissionDialog,
   editAdmissionForm,
-  getAccessLevelLabel,
+  getCatalogRoleLabel,
   isLoadingAccess,
-  newAccessLevel,
+  newCatalogRole,
   newCatalogId,
   onAddCatalogAccess,
   onAdminRoleDialogOpenChange,
@@ -116,7 +134,7 @@ export function UsersDialogs({
   onEditAdmissionDialogOpenChange,
   onEditAdmissionFormChange,
   onEditAdmissionSubmit,
-  onNewAccessLevelChange,
+  onNewCatalogRoleChange,
   onNewCatalogIdChange,
   onRemoveCatalogAccess,
   onRevokeAdmission,
@@ -131,15 +149,13 @@ export function UsersDialogs({
   const t = useTranslations("admin");
   const tCommon = useTranslations("common");
   const selectCatalogLabel = t("dialogs.catalogAccess.selectCatalog");
-  const accessLevelLabel = t("dialogs.catalogAccess.accessLevel");
+  const roleLabel = t("dialogs.catalogAccess.role");
   const noCatalogAccessText = t("dialogs.catalogAccess.noAccessYet");
   const removeAccessLabel = t("actions.removeAccess");
   const editAdmission = editAdmissionDialog?.admission ?? null;
   const editAdmissionGrantCount = editAdmission?.pendingGrants.length ?? 0;
   const multiGrantEditAdmission =
-    editAdmissionGrantCount > 1
-      ? editAdmission
-      : null;
+    editAdmissionGrantCount > 1 ? editAdmission : null;
   const availableCatalogs = catalogs?.filter(
     (catalog) =>
       !userCatalogAccess?.some((access) => access.catalogId === catalog.id)
@@ -192,7 +208,9 @@ export function UsersDialogs({
               disabled={deleteUserPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteUserPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {deleteUserPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {t("actions.deleteUser")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -208,7 +226,10 @@ export function UsersDialogs({
             <DialogTitle>{t("dialogs.adminRole.title")}</DialogTitle>
             <DialogDescription>
               {t("dialogs.adminRole.description", {
-                name: adminRoleDialog?.user.name || adminRoleDialog?.user.email || "",
+                name:
+                  adminRoleDialog?.user.name ||
+                  adminRoleDialog?.user.email ||
+                  "",
               })}
             </DialogDescription>
           </DialogHeader>
@@ -218,15 +239,25 @@ export function UsersDialogs({
                 checked={adminRoleForm.isAdmin}
                 onCheckedChange={(checked) => onAdminRoleFormChange(!!checked)}
               />
-              <span className="text-sm font-medium">{t("dialogs.adminRole.isAdminLabel")}</span>
+              <span className="text-sm font-medium">
+                {t("dialogs.adminRole.isAdminLabel")}
+              </span>
             </label>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onAdminRoleDialogOpenChange(false)}>
+            <Button
+              variant="outline"
+              onClick={() => onAdminRoleDialogOpenChange(false)}
+            >
               {tCommon("cancel")}
             </Button>
-            <Button onClick={onAdminRoleSubmit} disabled={updateAdminRolePending}>
-              {updateAdminRolePending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button
+              onClick={onAdminRoleSubmit}
+              disabled={updateAdminRolePending}
+            >
+              {updateAdminRolePending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {tCommon("save")}
             </Button>
           </DialogFooter>
@@ -242,7 +273,10 @@ export function UsersDialogs({
             <DialogTitle>{t("dialogs.catalogAccess.title")}</DialogTitle>
             <DialogDescription>
               {t("dialogs.catalogAccess.description", {
-                name: catalogAccessDialog?.user.name || catalogAccessDialog?.user.email || "",
+                name:
+                  catalogAccessDialog?.user.name ||
+                  catalogAccessDialog?.user.email ||
+                  "",
               })}
             </DialogDescription>
           </DialogHeader>
@@ -251,13 +285,18 @@ export function UsersDialogs({
             <div className="grid gap-3 sm:grid-cols-[1fr_180px_auto]">
               <div className="space-y-2">
                 <Label>{selectCatalogLabel}</Label>
-                <ResponsiveSelect value={newCatalogId} onValueChange={onNewCatalogIdChange}>
+                <ResponsiveSelect
+                  value={newCatalogId}
+                  onValueChange={onNewCatalogIdChange}
+                >
                   <ResponsiveSelectTrigger aria-label={selectCatalogLabel}>
                     <ResponsiveSelectValue
                       placeholder={selectCatalogLabel}
                       displayValue={
                         newCatalogId
-                          ? availableCatalogs?.find((catalog) => catalog.id === newCatalogId)?.label || newCatalogId
+                          ? availableCatalogs?.find(
+                              (catalog) => catalog.id === newCatalogId
+                            )?.label || newCatalogId
                           : undefined
                       }
                     />
@@ -272,20 +311,22 @@ export function UsersDialogs({
                 </ResponsiveSelect>
               </div>
               <div className="space-y-2">
-                <Label>{accessLevelLabel}</Label>
+                <Label>{roleLabel}</Label>
                 <ResponsiveSelect
-                  value={newAccessLevel}
-                  onValueChange={(value) => onNewAccessLevelChange(value as AccessLevel)}
+                  value={newCatalogRole}
+                  onValueChange={(value) =>
+                    onNewCatalogRoleChange(value as CatalogRole)
+                  }
                 >
-                  <ResponsiveSelectTrigger aria-label={accessLevelLabel}>
+                  <ResponsiveSelectTrigger aria-label={roleLabel}>
                     <ResponsiveSelectValue
-                      displayValue={getAccessLevelLabel(newAccessLevel)}
+                      displayValue={getCatalogRoleLabel(newCatalogRole)}
                     />
                   </ResponsiveSelectTrigger>
-                  <ResponsiveSelectContent title={accessLevelLabel}>
-                    {ACCESS_LEVEL_VALUES.map((level) => (
-                      <ResponsiveSelectItem key={level} value={level}>
-                        {getAccessLevelLabel(level)}
+                  <ResponsiveSelectContent title={roleLabel}>
+                    {CATALOG_ROLE_VALUES.map((role) => (
+                      <ResponsiveSelectItem key={role} value={role}>
+                        {getCatalogRoleLabel(role)}
                       </ResponsiveSelectItem>
                     ))}
                   </ResponsiveSelectContent>
@@ -296,7 +337,9 @@ export function UsersDialogs({
                   onClick={onAddCatalogAccess}
                   disabled={!newCatalogId || addCatalogAccessPending}
                 >
-                  {addCatalogAccessPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {addCatalogAccessPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   {tCommon("add")}
                 </Button>
               </div>
@@ -304,7 +347,9 @@ export function UsersDialogs({
 
             <div className="space-y-3">
               {isLoadingAccess ? (
-                <div className="text-sm text-muted-foreground">{t("loading")}</div>
+                <div className="text-sm text-muted-foreground">
+                  {t("loading")}
+                </div>
               ) : userCatalogAccess?.length ? (
                 userCatalogAccess.map((access) => (
                   <div
@@ -321,23 +366,27 @@ export function UsersDialogs({
                     </div>
                     <div className="flex items-center gap-2">
                       <ResponsiveSelect
-                        value={access.accessLevel}
+                        value={access.role}
                         onValueChange={(value) =>
-                          onUpdateCatalogAccess(access.catalogId, value as AccessLevel)
+                          onUpdateCatalogAccess(
+                            access.catalogId,
+                            value as CatalogRole,
+                            access.extraPermissions
+                          )
                         }
                       >
                         <ResponsiveSelectTrigger
                           className="w-[150px]"
-                          aria-label={accessLevelLabel}
+                          aria-label={roleLabel}
                         >
                           <ResponsiveSelectValue
-                            displayValue={getAccessLevelLabel(access.accessLevel)}
+                            displayValue={getCatalogRoleLabel(access.role)}
                           />
                         </ResponsiveSelectTrigger>
-                        <ResponsiveSelectContent title={accessLevelLabel}>
-                          {ACCESS_LEVEL_VALUES.map((level) => (
-                            <ResponsiveSelectItem key={level} value={level}>
-                              {getAccessLevelLabel(level)}
+                        <ResponsiveSelectContent title={roleLabel}>
+                          {CATALOG_ROLE_VALUES.map((role) => (
+                            <ResponsiveSelectItem key={role} value={role}>
+                              {getCatalogRoleLabel(role)}
                             </ResponsiveSelectItem>
                           ))}
                         </ResponsiveSelectContent>
@@ -361,7 +410,10 @@ export function UsersDialogs({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onCatalogAccessDialogOpenChange(false)}>
+            <Button
+              variant="outline"
+              onClick={() => onCatalogAccessDialogOpenChange(false)}
+            >
               {tCommon("close")}
             </Button>
           </DialogFooter>
@@ -389,34 +441,36 @@ export function UsersDialogs({
           <div className="space-y-4 py-4">
             {!multiGrantEditAdmission && (
               <div>
-                <Label id="edit-pending-admission-access-level-label">
-                  {t("dialogs.editPendingAdmission.accessLevel")}
+                <Label id="edit-pending-admission-role-label">
+                  {t("dialogs.editPendingAdmission.role")}
                 </Label>
                 <ResponsiveSelect
-                  value={editAdmissionForm.accessLevel || "none"}
+                  value={editAdmissionForm.role || "none"}
                   onValueChange={(value) =>
                     onEditAdmissionFormChange({
-                      accessLevel: value === "none" ? "" : (value as AccessLevel),
+                      role: value === "none" ? "" : (value as CatalogRole),
                     })
                   }
                 >
                   <ResponsiveSelectTrigger
                     className="mt-2"
-                    aria-label={t("dialogs.editPendingAdmission.accessLevel")}
-                    aria-labelledby="edit-pending-admission-access-level-label"
+                    aria-label={t("dialogs.editPendingAdmission.role")}
+                    aria-labelledby="edit-pending-admission-role-label"
                   >
                     <ResponsiveSelectValue
                       displayValue={
-                        editAdmissionForm.accessLevel
-                          ? getAccessLevelLabel(editAdmissionForm.accessLevel)
+                        editAdmissionForm.role
+                          ? getCatalogRoleLabel(editAdmissionForm.role)
                           : undefined
                       }
                     />
                   </ResponsiveSelectTrigger>
-                  <ResponsiveSelectContent title={t("dialogs.editPendingAdmission.accessLevel")}>
-                    {ACCESS_LEVEL_VALUES.map((level) => (
-                      <ResponsiveSelectItem key={level} value={level}>
-                        {getAccessLevelLabel(level)}
+                  <ResponsiveSelectContent
+                    title={t("dialogs.editPendingAdmission.role")}
+                  >
+                    {CATALOG_ROLE_VALUES.map((role) => (
+                      <ResponsiveSelectItem key={role} value={role}>
+                        {getCatalogRoleLabel(role)}
                       </ResponsiveSelectItem>
                     ))}
                   </ResponsiveSelectContent>
@@ -445,8 +499,13 @@ export function UsersDialogs({
             >
               {tCommon("cancel")}
             </Button>
-            <Button onClick={onEditAdmissionSubmit} disabled={updateAdmissionPending}>
-              {updateAdmissionPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button
+              onClick={onEditAdmissionSubmit}
+              disabled={updateAdmissionPending}
+            >
+              {updateAdmissionPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {tCommon("save")}
             </Button>
           </DialogFooter>
@@ -459,7 +518,9 @@ export function UsersDialogs({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("dialogs.revokePendingAdmission.title")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("dialogs.revokePendingAdmission.title")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("dialogs.revokePendingAdmission.description", {
                 email: revokeAdmissionDialog?.admission.email ?? "",
@@ -473,7 +534,9 @@ export function UsersDialogs({
               disabled={revokeAdmissionPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {revokeAdmissionPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {revokeAdmissionPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {t("actions.revokePendingAccess")}
             </AlertDialogAction>
           </AlertDialogFooter>

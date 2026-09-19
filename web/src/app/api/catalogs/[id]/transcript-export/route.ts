@@ -216,12 +216,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (
       !capability.hasAccess ||
-      !capability.canDownload ||
-      !capability.canViewTranscripts
+      !capability.canBulkExportTranscripts
     ) {
       await logAccessDenied(userId, "transcript", catalogId, {
         groupId: catalogId,
-        reason: "Bulk transcript download requires transcript access and a download permission",
+        reason: "Bulk export requires bulk_export_transcripts",
       });
       return NextResponse.json(
         { error: "Download not permitted for this catalog" },
