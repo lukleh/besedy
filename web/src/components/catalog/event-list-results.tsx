@@ -319,11 +319,6 @@ export function EventListResults({
                   >
                     <TableCell>
                       <div className="font-semibold">{formattedDate}</div>
-                      {catalogEvent.sessionIndex > 1 ? (
-                        <Badge variant="outline" className="mt-1">
-                          {t("sessionLabel", { index: catalogEvent.sessionIndex })}
-                        </Badge>
-                      ) : null}
                     </TableCell>
                     <TableCell className="font-medium">
                       <div>{catalogEvent.location?.name ?? t("unknownLocation")}</div>
