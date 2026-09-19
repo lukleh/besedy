@@ -114,7 +114,7 @@ describe("EventListResults", () => {
     expect(within(mobileCard).queryByText("released")).not.toBeInTheDocument();
   });
 
-  it("does not add the session label to mobile event cards", () => {
+  it("does not show the session label in catalog event results", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
@@ -124,9 +124,7 @@ describe("EventListResults", () => {
       />
     );
 
-    expect(
-      within(screen.getByTestId("event-card-1")).queryByText("sessionLabel")
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("sessionLabel")).not.toBeInTheDocument();
   });
 
   it("shows the download icon on a downloaded event", () => {
