@@ -37,6 +37,9 @@ export interface DownloadEventSnapshot {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  /** Absent on records downloaded before ordinals were stored; the cue hides then. */
+  sessionOrdinal?: number;
+  sessionCount?: number;
   posterFiles: {
     portrait: { exists: boolean; uploadedAt: string | null };
     landscape: { exists: boolean; uploadedAt: string | null };

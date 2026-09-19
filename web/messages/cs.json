@@ -1467,6 +1467,10 @@
     "transcriptRestrictedDescription": "Pro zobrazení přepisů potřebujete úroveň PROHLÍŽEČ nebo vyšší."
   },
   "events": {
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Sezení {index} z {count}"
+      },
     "tabs": {
       "ariaLabel": "Záložky katalogu",
       "recordings": "Nahrávky",
@@ -1527,7 +1531,6 @@
       "postersPortrait": "Jen mobil",
       "postersLandscape": "Jen desktop",
       "postersBoth": "Obě",
-      "sessionLabel": "Sezení {index}",
       "createDialogTitle": "Vytvořit událost",
       "createDialogDescription": "Událost vyžaduje místo a alespoň rok; měsíc/den jsou volitelné.",
       "fieldLocation": "Místo",
@@ -1557,7 +1560,6 @@
       "unknownError": "Neznámá chyba",
       "eventFallbackTitle": "Událost {id}",
       "recordingCount": "{count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
-      "sessionLabel": "Sezení {index}",
       "released": "Vydáno",
       "unreleased": "Nevydáno",
       "editEvent": "Upravit událost",
@@ -1634,7 +1636,6 @@
       "fieldSessionIndex": "Číslo sezení",
       "fieldSessionIndexPlaceholder": "1",
       "fieldDescription": "Popis",
-      "sessionLabel": "Sezení {index}",
       "cancel": "Zrušit",
       "saveChanges": "Uložit změny"
     },
@@ -1949,7 +1950,6 @@
     "unknownTitle": "Nahrávka bez názvu",
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
-    "sessionLabel": "Sezení {index}",
     "availableOffline": "Dostupné offline",
     "offlinePlayer": "Offline přehrávač",
     "audioUnavailable": "Stažený zvuk není k dispozici. Odeberte toto stažení a uložte jej znovu online.",

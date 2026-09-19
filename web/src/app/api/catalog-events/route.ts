@@ -26,6 +26,7 @@ import {
 import {
   buildReadableCatalogEventWhere,
   catalogEventVisibilityWhere,
+  loadSessionOrdinals,
   listReadableCatalogEvents,
   resolveReadableEventIds,
 } from "@/lib/catalog-events/read-service";
@@ -291,6 +292,12 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
     ]);
 
+    const sessionOrdinals = await loadSessionOrdinals(
+      workflowGroupId,
+      readableEventIds,
+      events
+    );
+
     const sourceTitleByHash = new Map(catalogRows.map((row) => [row.audioHash, row.sourceTitle]));
     const durationByHash = new Map(
       catalogRows.map((row) => [row.audioHash, parseDurationHmsToSeconds(row.durationHms)])
@@ -306,6 +313,10 @@ export async function GET(request: NextRequest) {
     const eventAssetsById = new Map(eventAssetPairs);
 
     const serialized = events.map((event) => {
+      const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
+        ordinal: 1,
+        count: 1,
+      };
       const primaryAudioHash =
         event.recordings.find((recording) => recording.isPrimary)?.audioHash ??
         event.recordings[0]?.audioHash ??
@@ -340,6 +351,8 @@ export async function GET(request: NextRequest) {
         dateMonth: event.dateMonth,
         dateDay: event.dateDay,
         sessionIndex: event.sessionIndex,
+        sessionOrdinal: sessionOrdinal.ordinal,
+        sessionCount: sessionOrdinal.count,
         description: event.description,
         released: event.released,
         sortOrder: event.sortOrder,

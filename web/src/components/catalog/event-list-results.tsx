@@ -24,6 +24,7 @@ import {
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 import { EventPlaybackProgress } from "./event-playback-progress";
+import { SessionOrdinalBadge } from "./session-ordinal-badge";
 import type {
   CatalogEventRow,
   EventSortKey,
@@ -318,7 +319,15 @@ export function EventListResults({
                     onClick={() => openEvent(catalogEvent.id)}
                   >
                     <TableCell>
-                      <div className="font-semibold">{formattedDate}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold whitespace-nowrap">
+                          {formattedDate}
+                        </span>
+                        <SessionOrdinalBadge
+                          sessionOrdinal={catalogEvent.sessionOrdinal}
+                          sessionCount={catalogEvent.sessionCount}
+                        />
+                      </div>
                     </TableCell>
                     <TableCell className="font-medium">
                       <div>{catalogEvent.location?.name ?? t("unknownLocation")}</div>
@@ -423,6 +432,10 @@ export function EventListResults({
                       </div>
                     </div>
                   </div>
+                  <SessionOrdinalBadge
+                    sessionOrdinal={catalogEvent.sessionOrdinal}
+                    sessionCount={catalogEvent.sessionCount}
+                  />
                   {renderDownloadMarker(catalogEvent.id)}
                   <EventPlaybackProgress playback={catalogEvent.playback} />
                 </div>

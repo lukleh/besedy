@@ -1468,6 +1468,10 @@
     "transcriptRestrictedDescription": "You need VIEWER access or higher to view transcripts."
   },
   "events": {
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Session {index} of {count}"
+      },
     "tabs": {
       "ariaLabel": "Catalog tabs",
       "recordings": "Recordings",
@@ -1528,7 +1532,6 @@
       "postersPortrait": "Mobile only",
       "postersLandscape": "Desktop only",
       "postersBoth": "Both",
-      "sessionLabel": "Session {index}",
       "createDialogTitle": "Create Event",
       "createDialogDescription": "Event requires location and at least year; month/day are optional.",
       "fieldLocation": "Location",
@@ -1558,7 +1561,6 @@
       "unknownError": "Unknown error",
       "eventFallbackTitle": "Event {id}",
       "recordingCount": "{count, plural, one {# recording} other {# recordings}}",
-      "sessionLabel": "Session {index}",
       "released": "Released",
       "unreleased": "Unreleased",
       "editEvent": "Edit Event",
@@ -1635,7 +1637,6 @@
       "fieldSessionIndex": "Session number",
       "fieldSessionIndexPlaceholder": "1",
       "fieldDescription": "Description",
-      "sessionLabel": "Session {index}",
       "cancel": "Cancel",
       "saveChanges": "Save Changes"
     },
@@ -1950,7 +1951,6 @@
     "unknownTitle": "Untitled recording",
     "eventLabel": "Event",
     "recordingLabel": "Recording",
-    "sessionLabel": "Session {index}",
     "availableOffline": "Available offline",
     "offlinePlayer": "Offline player",
     "audioUnavailable": "The downloaded audio is unavailable. Remove this download and save it again while online.",

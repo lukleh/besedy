@@ -35,6 +35,7 @@ import {
   UnassignedRecordingsTable,
   type UnassignedResponse,
 } from "@/components/catalog/unassigned-recordings-table";
+import { SessionOrdinalBadge } from "./session-ordinal-badge";
 
 interface EventDetailProps {
   catalogId: string;
@@ -61,6 +62,8 @@ interface EventDetailResponse {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal: number;
+  sessionCount: number;
   description: string | null;
   released: boolean;
   canManagePosters?: boolean;
@@ -398,9 +401,10 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
           ) : (
             <Badge variant="secondary">{t("unreleased")}</Badge>
           )}
-          {data.sessionIndex > 1 ? (
-            <Badge variant="outline">{t("sessionLabel", { index: data.sessionIndex })}</Badge>
-          ) : null}
+          <SessionOrdinalBadge
+            sessionOrdinal={data.sessionOrdinal}
+            sessionCount={data.sessionCount}
+          />
           {canManagePosters && (
             <Button asChild variant="outline">
               <Link href={`/catalog/${catalogId}/event/${eventId}/poster`}>

@@ -24,6 +24,8 @@ export interface CatalogEventRow {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal: number;
+  sessionCount: number;
   released: boolean;
   recordingCount: number;
   sourceCount: number;
@@ -68,6 +70,8 @@ export const catalogEventRowSchema = z.object({
   dateMonth: z.number().nullable(),
   dateDay: z.number().nullable(),
   sessionIndex: z.number(),
+  sessionOrdinal: z.number(),
+  sessionCount: z.number(),
   released: z.boolean(),
   recordingCount: z.number(),
   sourceCount: z.number(),
