@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getJobs, POST as postJob } from "@/app/api/catalogs/[id]/deep-search/jobs/route";
+import {
+  GET as getJobs,
+  POST as postJob,
+} from "@/app/api/catalogs/[id]/deep-search/jobs/route";
 import { GET as getJob } from "@/app/api/catalogs/[id]/deep-search/jobs/[jobId]/route";
 import { POST as cancelJob } from "@/app/api/catalogs/[id]/deep-search/jobs/[jobId]/cancel/route";
 import {
@@ -126,7 +129,8 @@ describe("deep-search proxy routes", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    requireAuth = (await import("@/lib/auth/permissions")).requireAuth as ReturnType<typeof vi.fn>;
+    requireAuth = (await import("@/lib/auth/permissions"))
+      .requireAuth as ReturnType<typeof vi.fn>;
     canAccessCatalogDeepSearch = (await import("@/lib/features/capabilities"))
       .canAccessCatalogDeepSearch as ReturnType<typeof vi.fn>;
     getLabsPreferenceForUser = (await import("@/lib/features/capabilities"))
@@ -135,28 +139,35 @@ describe("deep-search proxy routes", () => {
       .isFeatureEnabledForUser as ReturnType<typeof vi.fn>;
     getCatalogCapability = (await import("@/lib/access/capabilities"))
       .getCatalogCapability as ReturnType<typeof vi.fn>;
-    fetchJobsApi = (await import("@/lib/jobs-api/server")).fetchJobsApi as ReturnType<typeof vi.fn>;
+    fetchJobsApi = (await import("@/lib/jobs-api/server"))
+      .fetchJobsApi as ReturnType<typeof vi.fn>;
     requireAuth.mockResolvedValue("user-1");
     canAccessCatalogDeepSearch.mockResolvedValue(true);
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
+      canViewTranscripts: true,
     });
     getLabsPreferenceForUser.mockResolvedValue({ enabled: true });
     isFeatureEnabledForUser.mockReturnValue(true);
     vi.mocked(prisma.deepSearchJobShare.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.deepSearchJobShare.findMany).mockResolvedValue([]);
-    vi.mocked(prisma.deepSearchJobShare.deleteMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.deepSearchJobShare.deleteMany).mockResolvedValue({
+      count: 1,
+    } as never);
   });
 
   it("injects the authenticated user when submitting a job", async () => {
     fetchJobsApi.mockResolvedValue(deepSearchJob());
 
     const response = await postJob(
-      mutationRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`, {
-        query: " who mentions Brno? ",
-        requestedById: "attacker",
-      }),
+      mutationRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`,
+        {
+          query: " who mentions Brno? ",
+          requestedById: "attacker",
+        }
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -176,9 +187,12 @@ describe("deep-search proxy routes", () => {
 
   it("rejects job submission without a query", async () => {
     const response = await postJob(
-      mutationRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`, {
-        query: "",
-      }),
+      mutationRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`,
+        {
+          query: "",
+        }
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -188,10 +202,13 @@ describe("deep-search proxy routes", () => {
 
   it("rejects job submission with an empty report instructions", async () => {
     const response = await postJob(
-      mutationRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`, {
-        query: "who mentions Brno?",
-        instructions: " ",
-      }),
+      mutationRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`,
+        {
+          query: "who mentions Brno?",
+          instructions: " ",
+        }
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -201,10 +218,13 @@ describe("deep-search proxy routes", () => {
 
   it("rejects job submission with the removed form field", async () => {
     const response = await postJob(
-      mutationRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`, {
-        query: "who mentions Brno?",
-        form: "Return a table",
-      }),
+      mutationRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`,
+        {
+          query: "who mentions Brno?",
+          form: "Return a table",
+        }
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -216,9 +236,12 @@ describe("deep-search proxy routes", () => {
     fetchJobsApi.mockResolvedValue(deepSearchJob());
 
     const response = await postJob(
-      mutationRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`, {
-        query: " who mentions Brno? ",
-      }),
+      mutationRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`,
+        {
+          query: " who mentions Brno? ",
+        }
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -249,10 +272,13 @@ describe("deep-search proxy routes", () => {
     );
 
     const response = await postJob(
-      mutationRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`, {
-        query: " who mentions Brno? ",
-        instructions: " Return a table ",
-      }),
+      mutationRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`,
+        {
+          query: " who mentions Brno? ",
+          instructions: " Return a table ",
+        }
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -275,13 +301,21 @@ describe("deep-search proxy routes", () => {
     fetchJobsApi.mockResolvedValue({
       jobs: [
         deepSearchJob(),
-        deepSearchJob({ id: "00000000-0000-4000-8000-000000000002", requested_by_id: "other" }),
-        deepSearchJob({ id: "00000000-0000-4000-8000-000000000003", catalog_id: "20260202_120000" }),
+        deepSearchJob({
+          id: "00000000-0000-4000-8000-000000000002",
+          requested_by_id: "other",
+        }),
+        deepSearchJob({
+          id: "00000000-0000-4000-8000-000000000003",
+          catalog_id: "20260202_120000",
+        }),
       ],
     });
 
     const response = await getJobs(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -295,7 +329,9 @@ describe("deep-search proxy routes", () => {
     fetchJobsApi.mockResolvedValue(deepSearchJob({ requested_by_id: "other" }));
 
     const response = await getJob(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs/${jobId}`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs/${jobId}`
+      ),
       routeParams()
     );
 
@@ -307,10 +343,14 @@ describe("deep-search proxy routes", () => {
       id: "share-1",
       catalogId,
     } as never);
-    fetchJobsApi.mockResolvedValue(deepSearchJob({ requested_by_id: "owner-1" }));
+    fetchJobsApi.mockResolvedValue(
+      deepSearchJob({ requested_by_id: "owner-1" })
+    );
 
     const response = await getJob(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs/${jobId}`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs/${jobId}`
+      ),
       routeParams()
     );
 
@@ -351,7 +391,9 @@ describe("deep-search proxy routes", () => {
     });
 
     const response = await getJobs(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs`
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -384,7 +426,9 @@ describe("deep-search proxy routes", () => {
     );
 
     const response = await getJobs(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs?scope=shared`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs?scope=shared`
+      ),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
@@ -400,11 +444,14 @@ describe("deep-search proxy routes", () => {
 
   it("creates a share only for a user with catalog access", async () => {
     fetchJobsApi.mockResolvedValue(deepSearchJob());
-    getCatalogCapability.mockImplementation((_catalogId: string, checkedUserId: string) =>
-      Promise.resolve({
-        catalogExists: true,
-        hasAccess: checkedUserId === "user-2" || checkedUserId === "user-1",
-      })
+    getCatalogCapability.mockImplementation(
+      (_catalogId: string, checkedUserId: string) =>
+        Promise.resolve({
+          catalogExists: true,
+          hasAccess: checkedUserId === "user-2" || checkedUserId === "user-1",
+          canViewTranscripts:
+            checkedUserId === "user-2" || checkedUserId === "user-1",
+        })
     );
     vi.mocked(prisma.deepSearchJobShare.upsert).mockResolvedValue({
       id: "share-1",
@@ -442,14 +489,47 @@ describe("deep-search proxy routes", () => {
     );
   });
 
-  it("searches share recipients only among users with same catalog access", async () => {
+  it("filters share recipients with the canonical transcript policy", async () => {
     fetchJobsApi.mockResolvedValue(deepSearchJob());
     vi.mocked(prisma.user.findMany).mockResolvedValue([
       {
         id: "user-2",
+        name: "Listener",
+        email: "listener@example.test",
+        image: null,
+        isAdmin: false,
+        isSuperadmin: false,
+        catalogAccess: [
+          {
+            accessLevel: "LISTENER",
+            role: "listener",
+            extraPermissions: [],
+          },
+        ],
+      },
+      {
+        id: "user-3",
         name: "Reader",
         email: "reader@example.test",
         image: null,
+        isAdmin: false,
+        isSuperadmin: false,
+        catalogAccess: [
+          {
+            accessLevel: "VIEWER",
+            role: "reader",
+            extraPermissions: [],
+          },
+        ],
+      },
+      {
+        id: "user-4",
+        name: "System Admin",
+        email: "admin@example.test",
+        image: null,
+        isAdmin: true,
+        isSuperadmin: false,
+        catalogAccess: [],
       },
     ] as never);
 
@@ -461,23 +541,37 @@ describe("deep-search proxy routes", () => {
     );
 
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      users: [
+        expect.objectContaining({ id: "user-3", type: "available" }),
+        expect.objectContaining({ id: "user-4", type: "available" }),
+      ],
+    });
     expect(prisma.user.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           AND: [
             {
               OR: expect.arrayContaining([
+                expect.objectContaining({ isAdmin: true }),
                 expect.objectContaining({
                   catalogAccess: {
-                    some: {
+                    some: expect.objectContaining({
                       catalogId,
                       status: "ACTIVE",
-                    },
+                    }),
                   },
                 }),
               ]),
             },
           ],
+        }),
+        select: expect.objectContaining({
+          isAdmin: true,
+          isSuperadmin: true,
+          catalogAccess: expect.objectContaining({
+            where: { catalogId, status: "ACTIVE" },
+          }),
         }),
       })
     );
@@ -503,7 +597,9 @@ describe("deep-search proxy routes", () => {
     ] as never);
 
     const response = await getShares(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/deep-search/jobs/${jobId}/shares`),
+      new NextRequest(
+        `http://localhost/api/catalogs/${catalogId}/deep-search/jobs/${jobId}/shares`
+      ),
       routeParams()
     );
 

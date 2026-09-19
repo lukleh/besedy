@@ -7,9 +7,25 @@ import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 Element.prototype.scrollIntoView = vi.fn();
 
 const mockOptions: ComboboxOption[] = [
-  { id: "user-1", label: "John Doe", description: "john@example.com", type: "available" },
-  { id: "user-2", label: "Jane Smith", description: "jane@example.com", type: "available" },
-  { id: "user-3", label: "Revoked User", description: "revoked@example.com", type: "revoked", previousAccessLevel: "VIEWER" },
+  {
+    id: "user-1",
+    label: "John Doe",
+    description: "john@example.com",
+    type: "available",
+  },
+  {
+    id: "user-2",
+    label: "Jane Smith",
+    description: "jane@example.com",
+    type: "available",
+  },
+  {
+    id: "user-3",
+    label: "Revoked User",
+    description: "revoked@example.com",
+    type: "revoked",
+    previousAccessLabel: "Reader",
+  },
 ];
 
 describe("Combobox", () => {
@@ -101,7 +117,7 @@ describe("Combobox", () => {
 
     // Should show revoked option with previous access level
     expect(screen.getByText("Revoked User")).toBeInTheDocument();
-    expect(screen.getByText("Previously: VIEWER")).toBeInTheDocument();
+    expect(screen.getByText("Previously: Reader")).toBeInTheDocument();
   });
 
   it("shows empty message when no results and search is long enough", async () => {
@@ -126,7 +142,9 @@ describe("Combobox", () => {
     const input = screen.getByRole("combobox");
     await userEvent.click(input);
 
-    expect(screen.getByText("Type at least 2 characters to search")).toBeInTheDocument();
+    expect(
+      screen.getByText("Type at least 2 characters to search")
+    ).toBeInTheDocument();
   });
 
   it("calls onSelect when clicking an option", async () => {
@@ -238,7 +256,9 @@ describe("Combobox", () => {
 
     it("selects highlighted option on Enter", async () => {
       const onSelect = vi.fn();
-      render(<Combobox {...defaultProps} onSelect={onSelect} searchValue="jo" />);
+      render(
+        <Combobox {...defaultProps} onSelect={onSelect} searchValue="jo" />
+      );
 
       const input = screen.getByRole("combobox");
       await userEvent.click(input);
@@ -258,8 +278,10 @@ describe("Combobox", () => {
 
   describe("option grouping", () => {
     it("shows only available options when no revoked", async () => {
-      const availableOnly = mockOptions.filter(o => o.type === "available");
-      render(<Combobox {...defaultProps} options={availableOnly} searchValue="jo" />);
+      const availableOnly = mockOptions.filter((o) => o.type === "available");
+      render(
+        <Combobox {...defaultProps} options={availableOnly} searchValue="jo" />
+      );
 
       const input = screen.getByRole("combobox");
       await userEvent.click(input);
@@ -269,8 +291,10 @@ describe("Combobox", () => {
     });
 
     it("shows only revoked options when no available", async () => {
-      const revokedOnly = mockOptions.filter(o => o.type === "revoked");
-      render(<Combobox {...defaultProps} options={revokedOnly} searchValue="jo" />);
+      const revokedOnly = mockOptions.filter((o) => o.type === "revoked");
+      render(
+        <Combobox {...defaultProps} options={revokedOnly} searchValue="jo" />
+      );
 
       const input = screen.getByRole("combobox");
       await userEvent.click(input);

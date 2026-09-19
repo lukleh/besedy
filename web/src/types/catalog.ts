@@ -143,7 +143,12 @@ export interface CatalogEntryWithPermissions {
   entry: CatalogEntryResponse;
   canViewTranscripts: boolean;
   canEditMetadata: boolean;
-  canDownload: boolean;
+  /** The playable audio file. */
+  canDownloadAudio: boolean;
+  /** The master, which belongs to no role. */
+  canDownloadOriginalAudio?: boolean;
+  /** A transcript this account can already read. */
+  canDownloadTranscripts?: boolean;
   /** Administrative: that machine transcripts other than the default exist. */
   canSeeTranscriptVariants?: boolean;
   /** Administrative: the diarization overlay. */

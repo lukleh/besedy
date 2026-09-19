@@ -65,7 +65,7 @@ describe("useRecordingEntry", () => {
       },
       canViewTranscripts: true,
       canEditMetadata: true,
-      canDownload: true,
+      canDownloadAudio: true,
     };
 
     queryClient.setQueryData(["catalog-entry", hash, groupKey], cachedEditorData);
@@ -127,7 +127,7 @@ describe("useRecordingEntry", () => {
       },
       canViewTranscripts: true,
       canEditMetadata: true,
-      canDownload: true,
+      canDownloadAudio: true,
     };
 
     queryClient.setQueryData(["catalog-entry", hash, groupKey], cachedEditorData);
@@ -167,7 +167,7 @@ describe("useRecordingEntry", () => {
       },
       canViewTranscripts: true,
       canEditMetadata: true,
-      canDownload: true,
+      canDownloadAudio: true,
     };
 
     queryClient.setQueryData(["catalog-entry", hash, groupKey], cachedEditorData);
@@ -207,7 +207,7 @@ describe("useRecordingEntry", () => {
       },
       canViewTranscripts: true,
       canEditMetadata: true,
-      canDownload: true,
+      canDownloadAudio: true,
     };
 
     let resolveRefetch:

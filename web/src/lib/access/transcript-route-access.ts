@@ -87,7 +87,9 @@ export async function resolveTranscriptRouteAccess(
     };
   }
 
-  if (options.requireDownload && !capability.canDownloadRecording) {
+  // This helper serves transcript routes, so a download here is a transcript
+  // leaving, not audio.
+  if (options.requireDownload && !capability.canDownloadTranscripts) {
     if (options.auditResource) {
       await logAccessDenied(userId, options.auditResource, options.hash, {
         groupId: group.id,

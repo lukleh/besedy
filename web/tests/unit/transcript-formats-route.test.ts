@@ -75,6 +75,7 @@ describe("transcript formats route", () => {
         canAccessRecording: true,
         canViewRecordingTranscripts: false,
         canDownloadRecording: false,
+        canDownloadTranscripts: false,
       });
       resolveActiveGroup.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
@@ -98,6 +99,7 @@ describe("transcript formats route", () => {
         canAccessRecording: false,
         canViewRecordingTranscripts: false,
         canDownloadRecording: false,
+        canDownloadTranscripts: false,
       });
       resolveActiveGroup.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
@@ -119,6 +121,7 @@ describe("transcript formats route", () => {
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
         canDownloadRecording: false,
+        canDownloadTranscripts: false,
       });
       resolveActiveGroup.mockResolvedValue({
         id: "20251225_120000",
@@ -155,6 +158,7 @@ describe("transcript formats route", () => {
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
         canDownloadRecording: false,
+        canDownloadTranscripts: false,
       });
       resolveActiveGroup.mockResolvedValue({
         id: "20251225_120000",

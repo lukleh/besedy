@@ -47,13 +47,13 @@ test.describe("Pending Admission Management", () => {
       const admission = await createPendingAdmission(page.request, {
         email,
         catalogId: TEST_CATALOG_ID,
-        accessLevel: "VIEWER",
+        role: "reader",
       });
 
       expect(admission.id).toBeDefined();
       expect(admission.email).toBe(email);
       expect(admission.catalogAccess?.catalogId).toBe(TEST_CATALOG_ID);
-      expect(admission.catalogAccess?.accessLevel).toBe("VIEWER");
+      expect(admission.catalogAccess?.role).toBe("reader");
     });
 
     test("admin can list pending admissions", async ({ page }) => {
@@ -84,11 +84,15 @@ test.describe("Pending Admission Management", () => {
 
       // Should not be in the list anymore
       const admissions = await listPendingAdmissions(page.request);
-      const found = admissions.find((pendingAdmission) => pendingAdmission.email === email);
+      const found = admissions.find(
+        (pendingAdmission) => pendingAdmission.email === email
+      );
       expect(found).toBeUndefined();
     });
 
-    test("duplicate pending admission request is idempotent", async ({ page }) => {
+    test("duplicate pending admission request is idempotent", async ({
+      page,
+    }) => {
       await loginAs(page, "admin");
 
       const email = uniqueEmail("duplicate");
@@ -104,7 +108,9 @@ test.describe("Pending Admission Management", () => {
       expect(second.status).toBe("PENDING");
 
       const admissions = await listPendingAdmissions(page.request);
-      const matches = admissions.filter((admission) => admission.email === email);
+      const matches = admissions.filter(
+        (admission) => admission.email === email
+      );
       expect(matches).toHaveLength(1);
     });
 
@@ -245,7 +251,9 @@ test.describe("Pending Admission Management", () => {
       await expect(userSearch).toBeVisible({ timeout: 5000 });
     });
 
-    test("owner can add a pending grant via the catalog API", async ({ page }) => {
+    test("owner can add a pending grant via the catalog API", async ({
+      page,
+    }) => {
       await loginAs(page, "owner");
 
       const email = uniqueEmail("owner-pending-grant");
@@ -256,9 +264,7 @@ test.describe("Pending Admission Management", () => {
         {
           data: {
             email,
-            // The only level an owner may hand out: everything above it carries
-            // see_unreleased, which is reserved to administrators.
-            accessLevel: "LISTENER",
+            role: "listener",
           },
         }
       );
@@ -266,7 +272,7 @@ test.describe("Pending Admission Management", () => {
       expect(response.ok()).toBeTruthy();
       const result = await response.json();
       expect(result.email).toBe(email);
-      expect(result.accessLevel).toBe("LISTENER");
+      expect(result.role).toBe("listener");
       // For new users, this creates pending first-login state.
       expect(result.userStatus).toBe("PENDING");
     });

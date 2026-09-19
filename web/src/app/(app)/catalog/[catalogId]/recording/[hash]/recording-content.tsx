@@ -282,7 +282,7 @@ export default function RecordingContent({
       />
       {data?.canViewTranscripts && (
         <RecordingTranscriptSection
-          canDownload={data.canDownload}
+          canDownloadTranscripts={data.canDownloadTranscripts ?? false}
           canSeeSpeakers={data.canSeeSpeakers ?? false}
           canSeeTranscriptVariants={data.canSeeTranscriptVariants ?? false}
           catalogId={catalogId}

@@ -106,7 +106,7 @@ describe("catalog transcript export route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      canDownload: false,
+      canBulkExportTranscripts: false,
       canViewTranscripts: true,
     });
 
@@ -130,7 +130,7 @@ describe("catalog transcript export route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      canDownload: false,
+      canBulkExportTranscripts: false,
       canViewTranscripts: true,
     });
 
@@ -152,7 +152,7 @@ describe("catalog transcript export route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      canDownload: true,
+      canBulkExportTranscripts: true,
       canViewTranscripts: true,
     });
     getRagBackendKey.mockReturnValue("faster-whisper/large-v3@silero_vad_v6");

@@ -37,13 +37,15 @@ describe("admin users route", () => {
     vi.clearAllMocks();
     const permissionsModule = await import("@/lib/auth/permissions");
     const accessModule = await import("@/lib/access/capabilities");
-    getAdminCapability = accessModule.getAdminCapability as ReturnType<typeof vi.fn>;
+    getAdminCapability = accessModule.getAdminCapability as ReturnType<
+      typeof vi.fn
+    >;
     requireAuth = permissionsModule.requireAuth as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
   });
 
-  it("computes highestAccessLevel and catalogNames", async () => {
+  it("returns unordered catalog roles and catalog names", async () => {
     requireAuth.mockResolvedValue("admin-1");
     prisma.user.findMany.mockResolvedValue([
       {
@@ -58,7 +60,10 @@ describe("admin users route", () => {
         createdAt: new Date(),
         activatedAt: new Date(),
         catalogAccess: [
-          { accessLevel: "VIEWER", catalog: { id: "cat-1", label: "Catalog A" } },
+          {
+            accessLevel: "VIEWER",
+            catalog: { id: "cat-1", label: "Catalog A" },
+          },
           { accessLevel: "OWNER", catalog: { id: "cat-2", label: null } },
         ],
       },
@@ -70,7 +75,7 @@ describe("admin users route", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toHaveLength(1);
-    expect(body[0].highestAccessLevel).toBe("OWNER");
+    expect(body[0].catalogRoles).toEqual(["reader", "host"]);
     expect(body[0].catalogNames).toEqual(["Catalog A", "cat-2"]);
     expect(body[0].catalogAccess).toBeUndefined();
     expect(prisma.user.findMany).toHaveBeenCalledWith(
@@ -122,7 +127,7 @@ describe("admin users route", () => {
         createdAt: "2026-03-10T10:00:00.000Z",
         activatedAt: null,
         type: "user",
-        highestAccessLevel: null,
+        catalogRoles: [],
         catalogNames: [],
       },
     ]);
@@ -143,7 +148,9 @@ describe("admin users route", () => {
     requireAuth.mockResolvedValue("admin-1");
     prisma.user.findMany.mockResolvedValue([]);
 
-    const request = new NextRequest("http://localhost/api/admin/users?status=PENDING");
+    const request = new NextRequest(
+      "http://localhost/api/admin/users?status=PENDING"
+    );
     const response = await getAdminUsers(request);
 
     expect(response.status).toBe(200);

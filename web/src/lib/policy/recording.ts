@@ -1,7 +1,7 @@
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
-  canDownloadCatalogContent,
+  canDownloadAudio,
   canEditCatalogMetadata,
   canViewCatalogTranscripts,
   hasCatalogPermission,
@@ -110,8 +110,9 @@ export function scopeRecordingsForAccess<
   return entries.filter((entry) => canViewRecordingForAccessLevel(catalogGrant, entry));
 }
 
+/** The playable file. The master is a separate permission. */
 export function canDownloadRecording(context: CatalogPolicyContext): boolean {
-  return canDownloadCatalogContent(context);
+  return canDownloadAudio(context);
 }
 
 export function canEditRecordingMetadata(context: CatalogPolicyContext): boolean {

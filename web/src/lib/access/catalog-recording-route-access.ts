@@ -98,6 +98,25 @@ export async function requireCatalogRecordingAccess(
   );
 }
 
+export async function requireCatalogRecordingOriginalAudio(
+  context: CatalogRecordingRouteAccessContext,
+  options: AccessDeniedOptions
+): Promise<NextResponse | null> {
+  if (context.capability.canDownloadOriginalAudio) {
+    return null;
+  }
+
+  await logAccessDenied(context.userId, options.auditResource, context.hash, {
+    groupId: context.catalogId,
+    reason: options.reason ?? "Original audio not permitted",
+  });
+
+  return NextResponse.json(
+    { error: options.deniedMessage },
+    { status: options.status ?? 403 }
+  );
+}
+
 export async function requireCatalogRecordingDownload(
   context: CatalogRecordingRouteAccessContext,
   options: AccessDeniedOptions

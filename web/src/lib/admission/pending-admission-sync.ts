@@ -1,7 +1,11 @@
-import type { AccessLevel, PortalAdmissionRevocationReason, PrismaClient } from "@/generated/prisma/client";
+import type {
+  CatalogRole,
+  PortalAdmissionRevocationReason,
+  PrismaClient,
+} from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { canonicalizeEmail } from "@/lib/email";
-import { roleFieldsForLevel } from "@/lib/policy/catalog-permissions";
+import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 
 type PendingAdmissionSyncClient = Pick<
   PrismaClient,
@@ -11,7 +15,8 @@ type PendingAdmissionSyncClient = Pick<
 export interface PendingAdmissionStateInput {
   email: string;
   catalogId: string | null;
-  accessLevel: AccessLevel | null;
+  role: CatalogRole | null;
+  extraPermissions: string[];
   createdById: string | null;
   createdAt: Date;
   notes: string | null;
@@ -27,11 +32,13 @@ interface RevokePendingAdmissionStateOptions {
   revokeAllPendingGrantsForEmail?: boolean;
 }
 
-function hasPendingGrant(input: PendingAdmissionStateInput): input is PendingAdmissionStateInput & {
+function hasPendingGrant(
+  input: PendingAdmissionStateInput
+): input is PendingAdmissionStateInput & {
   catalogId: string;
-  accessLevel: AccessLevel;
+  role: CatalogRole;
 } {
-  return input.catalogId !== null && input.accessLevel !== null;
+  return input.catalogId !== null && input.role !== null;
 }
 
 export class AdminDeniedAdmissionReopenError extends Error {
@@ -66,13 +73,13 @@ export async function syncPendingAdmissionState(
       ? "PENDING_GRANT"
       : "STANDALONE";
   const admittedById = preserveStandaloneAdmissionMetadata
-    ? existingAdmission?.admittedById ?? null
+    ? (existingAdmission?.admittedById ?? null)
     : input.createdById;
   const admittedAt = preserveStandaloneAdmissionMetadata
-    ? existingAdmission?.admittedAt ?? input.createdAt
+    ? (existingAdmission?.admittedAt ?? input.createdAt)
     : input.createdAt;
   const admissionNotes = preserveStandaloneAdmissionMetadata
-    ? existingAdmission?.notes ?? null
+    ? (existingAdmission?.notes ?? null)
     : input.notes;
 
   if (
@@ -117,16 +124,14 @@ export async function syncPendingAdmissionState(
       create: {
         email,
         catalogId: input.catalogId,
-        accessLevel: input.accessLevel,
-        ...roleFieldsForLevel(input.accessLevel),
+        ...grantFieldsForRole(input.role, input.extraPermissions),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,
         notes: input.notes,
       },
       update: {
-        accessLevel: input.accessLevel,
-        ...roleFieldsForLevel(input.accessLevel),
+        ...grantFieldsForRole(input.role, input.extraPermissions),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,

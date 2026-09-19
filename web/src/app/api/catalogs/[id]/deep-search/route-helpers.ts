@@ -16,10 +16,7 @@ import {
 } from "@/lib/features/capabilities";
 import prisma from "@/lib/db";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
-import {
-  JobsApiConfigurationError,
-  JobsApiError,
-} from "@/lib/jobs-api/server";
+import { JobsApiConfigurationError, JobsApiError } from "@/lib/jobs-api/server";
 import type { DeepSearchJob } from "@/lib/jobs-api/schemas";
 
 type DeepSearchAccess = "owner" | "shared";
@@ -54,6 +51,7 @@ export async function authorizeCatalogDeepSearchRead(
   if (
     capability.catalogExists &&
     capability.hasAccess &&
+    capability.canViewTranscripts &&
     isFeatureEnabledForUser("deep-search", labsPreference.enabled)
   ) {
     return null;
@@ -61,12 +59,16 @@ export async function authorizeCatalogDeepSearchRead(
   return notFound("deep search");
 }
 
-export async function userHasCatalogAccess(
+export async function userCanReadCatalogTranscripts(
   userId: string,
   catalogId: string
 ): Promise<boolean> {
   const capability = await getCatalogCapability(catalogId, userId);
-  return capability.catalogExists && capability.hasAccess;
+  return (
+    capability.catalogExists &&
+    capability.hasAccess &&
+    capability.canViewTranscripts
+  );
 }
 
 export function isOwnedDeepSearchJob(
@@ -180,7 +182,10 @@ export function requireDeepSearchShareOwner(
     userId: string;
   }
 ): NextResponse | null {
-  const ownershipResponse = requireOwnedDeepSearchJob(job, { catalogId, userId });
+  const ownershipResponse = requireOwnedDeepSearchJob(job, {
+    catalogId,
+    userId,
+  });
   if (ownershipResponse) {
     return ownershipResponse;
   }
@@ -214,7 +219,10 @@ export function handleDeepSearchRouteError(
   }
 
   if (error instanceof ZodError) {
-    console.error("Deep search jobs service returned an invalid payload:", error);
+    console.error(
+      "Deep search jobs service returned an invalid payload:",
+      error
+    );
     return NextResponse.json(
       {
         error: "Deep search jobs service returned an invalid payload",

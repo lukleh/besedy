@@ -3,10 +3,7 @@ import prisma from "@/lib/db";
 import { unauthorized } from "@/lib/api";
 import { constantTimeEqual } from "@/lib/security/constant-time";
 import { getCatalogCapability } from "@/lib/access/capabilities";
-import {
-  grantForRole,
-  type CatalogGrant,
-} from "@/lib/policy/catalog-permissions";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   canViewRecordingForAccessLevel,
   requiresReadyRecordingScope,
@@ -15,7 +12,7 @@ import {
 const BESEDY_JOB_SERVICE_SECRET = process.env.BESEDY_JOB_SERVICE_SECRET?.trim();
 
 export function authorizeDeepSearchServiceRequest(
-  request: NextRequest,
+  request: NextRequest
 ): NextResponse | null {
   const authHeader = request.headers.get("Authorization");
   if (
@@ -35,28 +32,22 @@ export function authorizeDeepSearchServiceRequest(
  * secret says the caller is our own worker; it says nothing about on whose
  * behalf, which is why the request carries the requester.
  *
- * Two cases fail closed rather than passing `null`, which this search layer
- * reads as "not scoped at all":
- *
- *   - no requester named, which is an older worker: the listener floor, so an
- *     un-updated worker returns released material instead of everything;
- *   - a requester with no access to the catalog: the same floor, since there is
- *     no reason to answer them more broadly than anyone else.
- *
  * A catalog administrator is unscoped, which is what `null` is for.
  */
 export async function resolveDeepSearchJobGrant(
   catalogId: string,
-  requestedById: string | undefined,
-): Promise<CatalogGrant | null> {
-  if (!requestedById) return grantForRole("listener");
-
+  requestedById: string
+): Promise<{ ok: true; grant: CatalogGrant | null } | { ok: false }> {
   const capability = await getCatalogCapability(catalogId, requestedById);
-  if (capability.isCatalogAdmin) return null;
-  if (!capability.hasAccess || !capability.catalogGrant) {
-    return grantForRole("listener");
+  if (capability.isCatalogAdmin) return { ok: true, grant: null };
+  if (
+    !capability.hasAccess ||
+    !capability.canViewTranscripts ||
+    !capability.catalogGrant
+  ) {
+    return { ok: false };
   }
-  return capability.catalogGrant;
+  return { ok: true, grant: capability.catalogGrant };
 }
 
 /**
@@ -69,7 +60,7 @@ export async function resolveDeepSearchJobGrant(
 export async function deepSearchJobCanSeeRecording(
   catalogId: string,
   audioHash: string,
-  grant: CatalogGrant | null,
+  grant: CatalogGrant | null
 ): Promise<boolean> {
   if (!requiresReadyRecordingScope(grant)) return true;
 
@@ -93,7 +84,7 @@ export async function catalogExists(catalogId: string): Promise<boolean> {
 
 export async function getCatalogRecordingMetadata(
   catalogId: string,
-  audioHash: string,
+  audioHash: string
 ) {
   return prisma.audioMetadata.findUnique({
     where: {
@@ -110,7 +101,7 @@ export async function getCatalogRecordingMetadata(
 }
 
 export function formatDeepSearchMetadata(
-  metadata: Awaited<ReturnType<typeof getCatalogRecordingMetadata>>,
+  metadata: Awaited<ReturnType<typeof getCatalogRecordingMetadata>>
 ) {
   if (!metadata) {
     return null;

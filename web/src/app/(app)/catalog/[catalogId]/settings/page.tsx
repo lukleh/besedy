@@ -24,7 +24,7 @@ export default async function CatalogSettingsPage({
   // The page is a set of separately gated cards rather than one permission, so
   // what opens it is having any of them rather than a single settings right.
   const cards: CatalogSettingsCards = {
-    transcriptExports: capability.canDownload && capability.canViewTranscripts,
+    transcriptExports: capability.canBulkExportTranscripts,
     configuration: capability.canManageCatalogConfiguration,
     eventHealth: features.features.events.canEdit,
     access: capability.canManageAccess,

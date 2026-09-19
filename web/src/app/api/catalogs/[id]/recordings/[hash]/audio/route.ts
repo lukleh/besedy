@@ -14,6 +14,7 @@ import {
   resolveCatalogRecordingRouteAccess,
   requireCatalogRecordingAccess,
   requireCatalogRecordingDownload,
+  requireCatalogRecordingOriginalAudio,
 } from "@/lib/access/catalog-recording-route-access";
 import { createServerLogger } from "@/lib/log/server";
 import { validatePathAsync, rewritePath } from "@/lib/security/path-validation";
@@ -257,6 +258,7 @@ export async function GET(
       return response;
     }
     const audioSource = queryResult.data.source;
+    const audioSourceParam = audioSource;
     requestedSource = audioSource;
     variantName = queryResult.data.variant ?? null;
     forceDownload = queryResult.data.download;
@@ -286,6 +288,21 @@ export async function GET(
       if (deniedDownloadResponse) {
         logResponse("warn", deniedDownloadResponse.status, "download_access_denied");
         return deniedDownloadResponse;
+      }
+    }
+
+    // The master is not what anyone is offered. No role carries it, so this is
+    // the catalog administrator holding every permission -- and it is asked
+    // whether or not the request forces a download, because serving the master
+    // inline would deliver the same bytes.
+    if (audioSourceParam === "original" && !access.capability.canDownloadOriginalAudio) {
+      const denied = await requireCatalogRecordingOriginalAudio(access, {
+        auditResource: "audio",
+        deniedMessage: "The original recording is not available for this account",
+      });
+      if (denied) {
+        logResponse("warn", denied.status, "original_audio_access_denied");
+        return denied;
       }
     }
 

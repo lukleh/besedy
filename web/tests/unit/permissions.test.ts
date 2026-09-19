@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AuthError } from "@/lib/auth/permissions";
-import { accessLevelAtLeast } from "@/lib/policy/access-level";
 
 // Mock prisma for database-dependent tests
 vi.mock("@/lib/db", () => ({
@@ -20,41 +19,6 @@ vi.mock("@/lib/db", () => ({
     },
   },
 }));
-
-describe("accessLevelAtLeast", () => {
-  it("should correctly compare access levels", () => {
-    // LISTENER is the lowest level
-    expect(accessLevelAtLeast("LISTENER", "LISTENER")).toBe(true);
-    expect(accessLevelAtLeast("VIEWER", "LISTENER")).toBe(true);
-    expect(accessLevelAtLeast("MEMBER", "LISTENER")).toBe(true);
-    expect(accessLevelAtLeast("EDITOR", "LISTENER")).toBe(true);
-    expect(accessLevelAtLeast("OWNER", "LISTENER")).toBe(true);
-
-    expect(accessLevelAtLeast("LISTENER", "VIEWER")).toBe(false);
-    expect(accessLevelAtLeast("VIEWER", "VIEWER")).toBe(true);
-    expect(accessLevelAtLeast("MEMBER", "VIEWER")).toBe(true);
-    expect(accessLevelAtLeast("EDITOR", "VIEWER")).toBe(true);
-    expect(accessLevelAtLeast("OWNER", "VIEWER")).toBe(true);
-
-    expect(accessLevelAtLeast("LISTENER", "MEMBER")).toBe(false);
-    expect(accessLevelAtLeast("VIEWER", "MEMBER")).toBe(false);
-    expect(accessLevelAtLeast("MEMBER", "MEMBER")).toBe(true);
-    expect(accessLevelAtLeast("EDITOR", "MEMBER")).toBe(true);
-    expect(accessLevelAtLeast("OWNER", "MEMBER")).toBe(true);
-
-    expect(accessLevelAtLeast("LISTENER", "EDITOR")).toBe(false);
-    expect(accessLevelAtLeast("VIEWER", "EDITOR")).toBe(false);
-    expect(accessLevelAtLeast("MEMBER", "EDITOR")).toBe(false);
-    expect(accessLevelAtLeast("EDITOR", "EDITOR")).toBe(true);
-    expect(accessLevelAtLeast("OWNER", "EDITOR")).toBe(true);
-
-    expect(accessLevelAtLeast("LISTENER", "OWNER")).toBe(false);
-    expect(accessLevelAtLeast("VIEWER", "OWNER")).toBe(false);
-    expect(accessLevelAtLeast("MEMBER", "OWNER")).toBe(false);
-    expect(accessLevelAtLeast("EDITOR", "OWNER")).toBe(false);
-    expect(accessLevelAtLeast("OWNER", "OWNER")).toBe(true);
-  });
-});
 
 describe("AuthError", () => {
   it("should create error with default status code 403", () => {

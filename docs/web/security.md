@@ -110,25 +110,25 @@ Unauthenticated requests are redirected to `/auth/signin`.
 
 ### Rate Limiting
 
-| Setting | Value |
-|---------|-------|
-| Limit | 30 requests per IP |
-| Window | 60 seconds |
-| Scope | `/api/auth/*` routes |
+| Setting  | Value                                          |
+| -------- | ---------------------------------------------- |
+| Limit    | 30 requests per IP                             |
+| Window   | 60 seconds                                     |
+| Scope    | `/api/auth/*` routes                           |
 | Response | `429 Too Many Requests` with `Retry-After: 60` |
 
 Rate limiting is bypassed in dev/test environments.
 
 ### Security Headers
 
-| Header | Value | Purpose |
-|--------|-------|---------|
-| `X-Frame-Options` | `DENY` | Prevent clickjacking |
-| `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer info |
-| `X-XSS-Protection` | `1; mode=block` | XSS filter (legacy browsers) |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Disable sensitive APIs |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | HTTPS enforcement (production only) |
+| Header                      | Value                                      | Purpose                             |
+| --------------------------- | ------------------------------------------ | ----------------------------------- |
+| `X-Frame-Options`           | `DENY`                                     | Prevent clickjacking                |
+| `X-Content-Type-Options`    | `nosniff`                                  | Prevent MIME sniffing               |
+| `Referrer-Policy`           | `strict-origin-when-cross-origin`          | Control referrer info               |
+| `X-XSS-Protection`          | `1; mode=block`                            | XSS filter (legacy browsers)        |
+| `Permissions-Policy`        | `camera=(), microphone=(), geolocation=()` | Disable sensitive APIs              |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`      | HTTPS enforcement (production only) |
 
 HSTS is enabled only when `APP_ENV=production` (fallback: `NODE_ENV=production`).
 
@@ -159,222 +159,130 @@ complete list.
 Authorization is centralized in `src/lib/policy/*`, `src/lib/access/*`, and
 `src/lib/features/*`.
 
-### Role Hierarchy
+### System roles and catalog roles
 
-| Role | System Access | Catalog Access |
-|------|---------------|----------------|
-| **Superadmin** | Full control | OWNER (all catalogs) |
-| **Admin** | Manage users + catalogs | OWNER (all catalogs) |
-| **Owner** | Manage catalog access | OWNER (granted catalogs) |
-| **Editor** | -- | EDITOR (granted catalogs) |
-| **Member** | -- | MEMBER (granted catalogs) |
-| **Viewer** | -- | VIEWER (granted catalogs) |
-| **Listener** | -- | LISTENER (granted catalogs) |
+System roles (`SUPERADMIN`, `ADMIN`, `USER`) govern portal administration.
+Catalog roles are independent, named permission sets on one catalog:
 
-Access level hierarchy: `LISTENER < VIEWER < MEMBER < EDITOR < OWNER`
+| Catalog role    | Baseline purpose                                              |
+| --------------- | ------------------------------------------------------------- |
+| `listener`      | Listen to released recordings                                 |
+| `reader`        | Listen, read, and search transcripts                          |
+| `corrector`     | Reader plus transcript correction                             |
+| `host`          | Reader plus access management                                 |
+| `curator`       | Editorial and publication work, including unreleased material |
+| `catalog_admin` | Every current and future catalog permission                   |
 
-**Permissions no longer come from that scale.** Every grant carries a role, and
-the role is what it carries; the level is kept because the interface still names
-it, and because a level is what the API accepts when access is granted. The
-level a grant is given maps to a role on the way in:
+System admins resolve as catalog administrators for every catalog. A stored
+`catalog_admin` role grants the same authority only on its own catalog.
 
-| Level | Role | What the role carries |
-|---|---|---|
-| `LISTENER` | `listener` | Listening |
-| `VIEWER` | `reader` | Listening, reading and searching transcripts |
-| `MEMBER` | `reader` | The same. Downloading is now an extra, granted per account |
-| `EDITOR` | `curator` | The editorial work of the archive, including `see_unreleased` |
-| `OWNER` | `host` | Reading, plus granting access, plus `download_transcripts` |
+Grants and grant APIs are role-native. The non-null `access_level` column is
+retained only as a compatibility projection while old data and tooling are
+retired; authorization never derives from it when a role is present. Existing
+levels were migrated as follows:
 
-An account may carry extra permissions beside its role. Extras are additive
-only, so the role name is always a lower bound on what the account may do, and
-an extra naming a permission this build does not know is ignored.
+| Legacy level       | Stored role | Migration extra        |
+| ------------------ | ----------- | ---------------------- |
+| `LISTENER`         | `listener`  | none                   |
+| `VIEWER`, `MEMBER` | `reader`    | none                   |
+| `EDITOR`           | `curator`   | none                   |
+| `OWNER`            | `host`      | `download_transcripts` |
+
+An account may carry curated extra permissions beside its role. Extras are
+additive only, so the role remains a lower bound. Unknown names are ignored.
 
 ### System-Level Access Matrix
 
-| Feature | Superadmin | Admin | Owner | Editor | Member | Viewer | Listener |
-|---------|:----------:|:-----:|:-----:|:------:|:------:|:------:|:--------:|
-| Admin Panel | Y | Y | - | - | - | - | - |
-| Manage Users | Y | Y | - | - | - | - | - |
-| Manage Catalogs | Y | Y | - | - | - | - | - |
-| Settings Page | Y | Y | Y* | - | - | - | - |
-| Manage Pending Access | Y | Y | Y* | - | - | - | - |
-
-*OWNER can access catalog settings and manage pending grants for catalogs they own.
+| Feature                       | Superadmin | Admin |           User            |
+| ----------------------------- | :--------: | :---: | :-----------------------: |
+| Admin panel                   |     Y      |   Y   |             -             |
+| Manage users and catalogs     |     Y      |   Y   |             -             |
+| Grant or revoke system admin  |     Y      |   -   |             -             |
+| Catalog settings              |     Y      |   Y   |     per catalog role      |
+| Manage pending catalog access |     Y      |   Y   | `host` or `catalog_admin` |
 
 ### Catalog-Level Access Matrix
 
-Full per-capability inventory. `A` is system admin/superadmin, which resolves to
-OWNER on every catalog. `Y` means allowed; `-` means denied; a footnote marker
-means the capability is qualified.
+The baseline matrix below excludes additive extras. `catalog_admin` is a
+wildcard; system admins resolve the same way.
 
-**Browsing and visibility**
+| Capability group                                | listener | reader | corrector | host | curator | catalog_admin |
+| ----------------------------------------------- | :------: | :----: | :-------: | :--: | :-----: | :-----------: |
+| Open catalog and stream audio                   |    Y     |   Y    |     Y     |  Y   |    Y    |       Y       |
+| Read and search transcripts                     |    -     |   Y    |     Y     |  Y   |    Y    |       Y       |
+| Correct transcripts                             |    -     |   -    |     Y     |  -   |    Y    |       Y       |
+| See unreleased material                         |    -     |   -    |     -     |  -   |    Y    |       Y       |
+| Browse recordings list                          |    -     |   -    |     -     |  -   |    Y    |       Y       |
+| Edit metadata, lookups, events, and publication |    -     |   -    |     -     |  -   |    Y    |       Y       |
+| Use deep search                                 |    -     |   -    |     -     |  -   |    Y    |       Y       |
+| Manage catalog access                           |    -     |   -    |     -     |  Y   |    -    |       Y       |
+| Manage catalog configuration                    |    -     |   -    |     -     |  -   |    -    |       Y       |
+| See transcript variants and speaker overlay     |    -     |   -    |     -     |  -   |    -    |       Y       |
+| Download playable audio and transcripts         |    -     |   -    |     -     |  -   |    Y    |       Y       |
+| Download original audio                         |    -     |   -    |     -     |  -   |    -    |       Y       |
+| Bulk transcript export                          |    -     |   -    |     -     |  -   |    Y    |       Y       |
 
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| Open catalog | Y | Y | Y | Y | Y | `hasCatalogAccess` |
-| See unpublished / non-actionable recordings | Y | Y | Y | Y | - | `requiresReadyRecordingScope` |
-| See unreleased events | Y | Y | Y | Y | - | `requiresReleasedEventVisibilityScope` |
-| See event release state | Y | Y | Y | Y | - | `canSeeReleaseState` |
-| See event admin columns (recordings, sources, posters, primary, status) | Y | - | - | - | - | `canSeeAllEventColumns` |
-| Reach the recordings list in the UI | Y | - | - | - | - | `canUseCatalogTabSwitcher` [^tabs] |
+Catalog administrators may assign the curated extras `browse_recordings`,
+`use_deep_search`, `download_audio`, `download_original_audio`,
+`download_transcripts`, and `bulk_export_transcripts` to a named account.
+Delivery permissions never bypass the corresponding read/visibility gate.
 
-**Audio**
-
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| Stream audio | Y | Y | Y | Y | Y | `canStreamRecording` |
-| Radio mode | Y | Y | Y | Y | Y | page/API access only |
-| Cache audio for offline use | Y | Y | Y | Y | Y | no UI gate [^cache] |
-| Download audio | Y | Y | Y | - | - | `canDownloadCatalogContent` |
-
-**Transcripts**
-
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| View transcript | Y | Y | Y | Y | - | `canViewCatalogTranscripts` |
-| Copy full transcript text | Y | Y | Y | Y | - | no separate gate [^copy] |
-| View backend comparison ("transcript stream") | Y | Y | Y | Y | - | no gate; default view [^stream] |
-| View speaker diarization | Y | Y | Y | Y | - | `resolveTranscriptRouteAccess` |
-| Download transcript file | Y | Y | Y | - | - | `requireDownload` |
-| Bulk catalog transcript export | Y | Y | Y | - | - | `canDownload` + `canViewTranscripts` [^export] |
-
-**Search**
-
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| Semantic / lexical transcript search | Y | Y | Y | Y | - | `canUseCatalogRag` [^rag] |
-| Open deep-search pages | Y | Y | Y | Y | Y | catalog access + Labs [^deep] |
-| Create deep-search job | Y | - | - | - | - | `deepSearch.canView` + Labs |
-| Share a deep-search job | Y | - | - | - | - | job owner; recipient needs any grant |
-
-**Curated metadata**
-
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| View curated metadata | Y | Y | Y | Y | Y | recording access |
-| Edit / verify / delete recording metadata | Y | Y | - | - | - | `canEditCatalogMetadata` |
-| Batch edit mode | Y | - | - | - | - | `canBatchEditCatalogMetadata` |
-| Edit lookup rows (recorder, location, album) | Y | Y | - | - | - | `canEditMetadata` on this catalog [^lookup] |
-
-**Publication and editorial**
-
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| Publish / unpublish recording | Y | - | - | - | - | `canPublishRecording` |
-| Create / edit / delete event | Y | - | - | - | - | `canEditEvent` |
-| Release event | Y | - | - | - | - | `canReleaseEvent` |
-| Attach / detach / set primary recording | Y | - | - | - | - | `canEditEvent` |
-| Manage event posters and sources | Y | - | - | - | - | `hasCatalogManagementAuthority` [^poster] |
-
-**Access and configuration**
-
-| Capability | Owner | Editor | Member | Viewer | Listener | Enforced by |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| Open catalog settings | Y | - | - | - | - | `canAccessCatalogSettings` |
-| Grant / revoke up to MEMBER | Y | - | - | - | - | `canGrantCatalogAccessLevel` [^protected] |
-| Grant or modify EDITOR and OWNER | A | - | - | - | - | admin only |
-| Manage pending catalog grants | Y | - | - | - | - | `canAttemptCatalogManagement` |
-| Read / edit catalog configuration and paths | A | - | - | - | - | `canManageCatalogConfiguration` |
+The recordings list is a separate surface from opening one recording through
+an event, search result, or radio. Offline caching likewise follows
+`stream_audio`; it has no separate permission and cannot widen what the source
+routes deliver.
 
 **System-wide (not catalog-scoped)**
 
-| Capability | Required role |
-|---|---|
-| Admin panel, user management, audit log, MCP usage, transcript backend order, catalog sync | ADMIN |
-| Grant / revoke admin role | SUPERADMIN |
-| Labs toggle, notification preferences, playback progress | any authenticated user |
+| Capability                                                                                           | Required role          |
+| ---------------------------------------------------------------------------------------------------- | ---------------------- |
+| Admin panel, user management, audit log, MCP usage telemetry, transcript backend order, catalog sync | ADMIN                  |
+| Grant / revoke admin role                                                                            | SUPERADMIN             |
+| Labs toggle, notification preferences, playback progress                                             | any authenticated user |
 
-[^tabs]: `canUseCatalogTabSwitcher` asks whether there are two surfaces to move
-    between: browse-recordings **and** browse-events. It used to require
-    edit-events as well, which locked every level below OWNER to the events
-    view with no path to the recordings list at all — the accident that made
-    browsing recordings a side effect rather than a decision.
+### Listener role
 
-[^cache]: The offline cache button carries no capability check, but the fetches
-    it triggers go through the gated audio and transcript routes, so it cannot
-    widen access. It is a UI inconsistency, not a hole.
-
-[^copy]: A VIEWER can copy the entire transcript to the clipboard. The
-    MEMBER-level download right therefore does not bound how much transcript
-    text a VIEWER can extract; it bounds only file delivery.
-
-[^stream]: The multi-backend comparison view has no capability gate and is the
-    default transcript view (`besedy-transcript-enabled` defaults to `true`).
-
-[^export]: The export card lives on the OWNER-only settings page, but the route
-    itself (`/api/catalogs/:id/transcript-export`) checks only `canDownload`
-    and `canViewTranscripts`, so MEMBER and EDITOR can call it directly. It is
-    also the only transcript path with no per-recording published/released
-    scoping — it exports every hash in the catalog, and the settings card
-    requests `includeInactive=true`.
-
-[^rag]: Deliberately identical to `canViewCatalogTranscripts`: search returns
-    transcript-derived content and must never be broader than direct transcript
-    access.
-
-[^deep]: The deep-search page guard is catalog access plus the Labs flag, which
-    is looser than the OWNER-level guard on the navigation link and on job
-    creation. Job results are produced by an internal worker call that passes
-    `accessLevel: null`, so they are not release-scoped.
-
-[^poster]: Poster and source writes go through `requireCatalogManagementAccess`,
-    whose default authorizer is `hasCatalogManagementAuthority`, after
-    `requireCatalogEventsAccess(catalogId, "view")`. Poster reads are open to
-    every level; for LISTENER they are release-scoped through
-    `requiresReleasedEventVisibilityScope`. Source reads are not: every source
-    route, read included, goes through the management check.
-
-[^lookup]: Recorder, location and album rows belong to one catalog, so reads are
-    filtered by it and writes require edit rights on it. They were global until
-    [ADR 0007](../adr/0007-per-catalog-lookups.md), guarded by an
-    editor-on-any-catalog permission that let an editor of one catalog change
-    rows every catalog depended on, while the item reads asked only for
-    authentication.
-
-### LISTENER Role
-
-LISTENER is the default access level for new pending catalog grants. Listeners
-can access the catalog homepage and stream audio but **cannot view transcripts**.
-The catalog homepage is events-first for listeners; recording detail access
-follows listener recording visibility rules.
+`listener` is the default role for new pending catalog grants. Listeners can
+access the catalog homepage, stream audio, and cache downloaded events for
+offline playback, but cannot view transcripts. The catalog is events-first for
+listeners; recording detail access follows listener visibility rules.
 
 ### Surface Differences
 
 The web UI is not the only read surface, and the surfaces do not agree:
 
-| Surface | Unreleased events | Transcript read | Release scoping |
-|---|---|---|---|
-| Web UI / web API | VIEWER and above | VIEWER and above | per access level |
-| MCP | nobody, including admins | **every active grant, including LISTENER** | uniform, `MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER'` |
-| Deep-search worker | n/a | catalog-wide | **none** (`accessLevel: null`) |
+| Surface            | Unreleased events         | Transcript read                              | Release scoping                   |
+| ------------------ | ------------------------- | -------------------------------------------- | --------------------------------- |
+| Web UI / web API   | `curator` / catalog admin | `reader` and above by permission             | requester's role and extras       |
+| MCP                | nobody, including admins  | **every active grant, including `listener`** | uniform listener-visible material |
+| Deep-search worker | requester's visibility    | requester must be able to read               | requester's role and extras       |
 
 The MCP listener-transcript decision is deliberate and dated; see
 [mcp-server.md](mcp-server.md#design-decision-listener-transcript-access-through-mcp).
-Any change to who may read transcripts has to be made on both surfaces or it
-does not take effect.
+"MCP usage" in the system-wide table means the administrative usage-telemetry
+page, not permission to connect an MCP client. MCP client access follows portal
+status, while catalog-scoped calls follow live catalog grants as described in
+that decision. Any change to who may read transcripts has to be considered on
+both surfaces; changing the web gate alone intentionally does not alter MCP.
 
 ### Access Management Rules
 
-Two permissions are **protected**: `manage_access` and `see_unreleased`. Access
-that carries either is reserved to administrators, and the test is on what the
-access carries rather than on what it is called, so a level or role added later
-is classified without anyone editing the rule.
+Two permissions are **protected**: `manage_access` and `see_unreleased`. Only a
+catalog administrator may assign or modify a grant carrying either. The test is
+on the grant's permissions rather than its role name, so a role added later is
+classified without updating a name list.
 
-**OWNER capabilities:**
+A `host` can create, update, revoke, and restore `listener`, `reader`, and
+`corrector` grants, including pending grants. A host cannot manage `host`,
+`curator`, or `catalog_admin`, and cannot assign extras. A catalog administrator
+can manage every role and the curated extras. Revocation is the narrow
+exception: a host may revoke an ordinary role carrying administrator-assigned
+extras, but cannot edit or restore it.
 
-- View and manage catalog settings for their catalogs
-- Grant, update and revoke access up to MEMBER — all of which become `reader`
-  or `listener`, and carry no protected permission
-- Create and revoke pending catalog grants at those levels
-
-**OWNER restrictions:**
-
-- Cannot grant EDITOR, which becomes `curator` and sees unreleased material,
-  or OWNER, which becomes `host` and grants access (Admin only)
-- Cannot modify or revoke access at those levels either — the same test applies
-  to the access being replaced (Admin only)
-- Cannot change their own access at all, in any direction
+Nobody can change their own catalog grant, including administrators. Updates
+and restores apply the same assignability test to both the old and new grant;
+revocation separately protects the old role while allowing extras to be cut
+off with it.
 
 **Why the two permissions are protected:** `manage_access` prevents privilege
 escalation chains — an account that grants could otherwise mint another account
@@ -385,11 +293,6 @@ account can pass on.
 **Why nobody changes their own access:** a role is conferred rather than taken.
 Administrators are included, which also preserves the older guard against an
 account revoking itself out of a catalog.
-
-[^protected]: The test is on the role a level becomes, not on the level. The
-    legacy scale conflated reading with seeing unreleased material, so while it
-    was the unit a holder of `manage_access` could hand out nothing but
-    `LISTENER`. The roles separate the two, so reading is grantable again.
 
 ### Delivery and Background Jobs Are Scoped Like Reading
 
@@ -404,14 +307,51 @@ is unscoped and still gets everything.
 service secret and the internal search treated that as full visibility, so a
 report could quote unreleased material to someone who cannot read it. The job
 now carries the account it was asked for, and the internal search, citation and
-metadata routes scope to that account. Two cases fail closed to what a listener
-sees rather than opening up: a request naming no requester, which is an older
-worker, and a requester with no access to the catalog.
+metadata routes scope to that account. A missing requester or a requester whose
+access was revoked is rejected; neither falls back to listener visibility.
 
 The service secret still says only that the caller is our own worker. It is
 shared by the web-to-jobs client, the jobs API and the worker-to-web client, so
 one leaked value is worth treating as a full compromise of job submission and
 retrieval.
+
+### File Delivery Is One Permission Per Thing Delivered
+
+There is no general "may download". Which file is leaving decides which
+permission, so an account given transcripts does not thereby get audio, and
+neither of them gets the whole corpus in one request.
+
+| Permission                     | Covers                                        | Who                                            |
+| ------------------------------ | --------------------------------------------- | ---------------------------------------------- |
+| `download_audio`               | The playable file                             | `curator`, `catalog_admin`, or a named account |
+| `download_original_audio`      | The master                                    | `catalog_admin` only — no role carries it      |
+| `download_transcripts`         | One transcript the account can already read   | `curator`, `catalog_admin`, or a named account |
+| `download_original_transcript` | The machine text under a corrected transcript | `curator`, `catalog_admin`                     |
+| `bulk_export_transcripts`      | The whole catalog as data                     | `curator`, `catalog_admin`                     |
+
+Each is never broader than reading: they decide whether an account may take out
+what it can already open, not what it may open. The transcript ones therefore
+also require `read_transcripts`.
+
+`download_original_transcript` is gated but serves nothing yet. There are no
+corrections, so there is no machine text underneath a corrected transcript; the
+permission exists so the correction work has one to hang the variant on rather
+than inventing it then.
+
+**This is a stance about what the product is, not a control boundary.** Besedy
+is used by listening and reading inside it; taking files out serves specific,
+occasional purposes. Two things follow, both deliberate and recorded in
+[ADR 0005](../adr/0005-catalog-permission-model.md):
+
+- The audio route returns the whole file to anyone who may play it, so
+  `download_audio` decides whether the interface offers a download, not whether
+  the bytes are reachable. `download_original_audio` is different: it gates the
+  path, on every request rather than only on a forced download, because serving
+  the master inline would deliver the same bytes.
+- Offline caching needs no permission of its own. It writes audio to the
+  viewer's device, but it delivers the same listening `stream_audio` already
+  describes. A transcript is different: the Downloads bundle persists readable
+  text, so it is included only for an account with `download_transcripts`.
 
 ### Browsing Recordings Is a Surface, Not Catalog Access
 
@@ -434,7 +374,8 @@ accepted in [ADR 0005](../adr/0005-catalog-permission-model.md).
 
 ### Machine-Output Views Are Administrative
 
-Two permissions sit with the catalog administrator alone, and with no role.
+Two permissions sit with the catalog administrator alone, and with no other
+role.
 
 `see_transcript_variants` covers the fact that more than one machine transcript
 exists. Without it, `GET /api/transcript/:hash` lists only the default backend
@@ -464,13 +405,13 @@ previous access when unblocking.
 
 Prefer the typed capability layer over older ad hoc permission helpers:
 
-| Helper | Scope |
-|--------|-------|
-| `getPortalCapability()` | Portal admission and top-level access |
-| `getAdminCapability()` | Admin surfaces |
-| `getCatalogCapability()` | Catalog-scoped access |
-| `getRecordingCapability()` | Recording-scoped access |
-| `requireCatalogEventsAccess()` | Event visibility and edit checks |
+| Helper                         | Scope                                 |
+| ------------------------------ | ------------------------------------- |
+| `getPortalCapability()`        | Portal admission and top-level access |
+| `getAdminCapability()`         | Admin surfaces                        |
+| `getCatalogCapability()`       | Catalog-scoped access                 |
+| `getRecordingCapability()`     | Recording-scoped access               |
+| `requireCatalogEventsAccess()` | Event visibility and edit checks      |
 
 Compatibility helpers still exist in `src/lib/auth/permissions.ts`; new policy
 logic should be added to the capability layer first.
@@ -517,76 +458,76 @@ released and its primary recording is actionable and published.
 
 ### Deployment Context
 
-| Aspect | Value |
-|--------|-------|
-| Environment | Single host running Docker Compose |
-| Network | Cloudflare Tunnel (outbound-only, no inbound ports) |
-| TLS | Cloudflare terminates TLS, provides DDoS protection |
-| Goal | Reasonable security, minimal blast radius on container compromise |
+| Aspect      | Value                                                             |
+| ----------- | ----------------------------------------------------------------- |
+| Environment | Single host running Docker Compose                                |
+| Network     | Cloudflare Tunnel (outbound-only, no inbound ports)               |
+| TLS         | Cloudflare terminates TLS, provides DDoS protection               |
+| Goal        | Reasonable security, minimal blast radius on container compromise |
 
 When this guide references `.env.prod`, read that as the resolved production
 env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 
 ### Container Hardening Checklist
 
-| Control | Status | Source |
-|---------|:------:|--------|
-| Non-root user (UID 1001) | Done | `Dockerfile` |
-| Read-only data mount (`:ro`) | Done | `docker-compose.secure.yml` |
-| Localhost-only port (`127.0.0.1:3000`) | Done | `docker-compose.secure.yml` |
-| DB user split (`besedy_migrator` DDL / `besedy_app` DML) | Done | Host-only migrator, container app user |
-| Read-only container filesystem + tmpfs | Done | `docker-compose.secure.yml` |
-| `cap_drop: ALL` | Done | `docker-compose.secure.yml` |
-| `no-new-privileges: true` | Done | `docker-compose.secure.yml` |
-| Resource limits (2 CPU, 1 GB RAM) | Done | `docker-compose.secure.yml` |
-| Syslog logging | Done | Docker logs to host syslog |
-| LAN egress isolation | Open | Retired; see [egress-control-retirement.md](egress-control-retirement.md) |
-| Cloudflare Tunnel (outbound-only) | Done | No listening port to attack |
+| Control                                                  | Status | Source                                                                    |
+| -------------------------------------------------------- | :----: | ------------------------------------------------------------------------- |
+| Non-root user (UID 1001)                                 |  Done  | `Dockerfile`                                                              |
+| Read-only data mount (`:ro`)                             |  Done  | `docker-compose.secure.yml`                                               |
+| Localhost-only port (`127.0.0.1:3000`)                   |  Done  | `docker-compose.secure.yml`                                               |
+| DB user split (`besedy_migrator` DDL / `besedy_app` DML) |  Done  | Host-only migrator, container app user                                    |
+| Read-only container filesystem + tmpfs                   |  Done  | `docker-compose.secure.yml`                                               |
+| `cap_drop: ALL`                                          |  Done  | `docker-compose.secure.yml`                                               |
+| `no-new-privileges: true`                                |  Done  | `docker-compose.secure.yml`                                               |
+| Resource limits (2 CPU, 1 GB RAM)                        |  Done  | `docker-compose.secure.yml`                                               |
+| Syslog logging                                           |  Done  | Docker logs to host syslog                                                |
+| LAN egress isolation                                     |  Open  | Retired; see [egress-control-retirement.md](egress-control-retirement.md) |
+| Cloudflare Tunnel (outbound-only)                        |  Done  | No listening port to attack                                               |
 
 ### Container Escape Vectors
 
-| Vector | Risk | Mitigation |
-|--------|------|------------|
-| Kernel exploit | Low | Alpine is minimal but not hardened |
-| Docker socket | None | Not mounted |
-| Host filesystem | None | Only `/data` (read-only), container FS read-only |
-| Privilege escalation | Very Low | UID 1001, all caps dropped, no-new-privileges |
-| Network pivot to LAN | Medium | No repository-managed egress block; see [retirement record](egress-control-retirement.md) |
-| Network pivot to Internet | Medium | Internet allowed for OAuth |
+| Vector                    | Risk     | Mitigation                                                                                |
+| ------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| Kernel exploit            | Low      | Alpine is minimal but not hardened                                                        |
+| Docker socket             | None     | Not mounted                                                                               |
+| Host filesystem           | None     | Only `/data` (read-only), container FS read-only                                          |
+| Privilege escalation      | Very Low | UID 1001, all caps dropped, no-new-privileges                                             |
+| Network pivot to LAN      | Medium   | No repository-managed egress block; see [retirement record](egress-control-retirement.md) |
+| Network pivot to Internet | Medium   | Internet allowed for OAuth                                                                |
 
 ### Blast Radius: Web Container Compromised
 
 **What an attacker CAN do:**
 
-| Access | Detail |
-|--------|--------|
-| Read audio/transcripts | `/data` mounted read-only |
-| Full DB read/write | Via `DATABASE_URL` env var |
-| Network to DB container | Docker network |
-| Reach LAN services | No repository-managed container egress firewall |
-| Exfiltrate data | Outbound internet (required for OAuth) |
-| Delete audit logs | Via database access |
+| Access                  | Detail                                          |
+| ----------------------- | ----------------------------------------------- |
+| Read audio/transcripts  | `/data` mounted read-only                       |
+| Full DB read/write      | Via `DATABASE_URL` env var                      |
+| Network to DB container | Docker network                                  |
+| Reach LAN services      | No repository-managed container egress firewall |
+| Exfiltrate data         | Outbound internet (required for OAuth)          |
+| Delete audit logs       | Via database access                             |
 
 **What an attacker CANNOT do:**
 
-| Blocked | Why |
-|---------|-----|
-| Write to audio files | Read-only mount |
-| Access host filesystem | No host mounts beyond `/data` |
+| Blocked                              | Why                                 |
+| ------------------------------------ | ----------------------------------- |
+| Write to audio files                 | Read-only mount                     |
+| Access host filesystem               | No host mounts beyond `/data`       |
 | Access other containers' filesystems | No shared volumes, no Docker socket |
-| Escape to host | No privileged mode, no capabilities |
-| Access cloudflared credentials | Stored on host, not in container |
+| Escape to host                       | No privileged mode, no capabilities |
+| Access cloudflared credentials       | Stored on host, not in container    |
 
 ### Lateral Movement Summary
 
-| Path | Method | Risk |
-|------|--------|------|
-| web -> db | `DATABASE_URL` env var | High (full DB) |
-| web -> backup | None (no shared creds) | Low |
-| web -> host | `host.docker.internal`; exposure depends on host services | Medium |
-| web -> cloudflared | Runs on host | Low |
-| web -> LAN | Container network; not filtered by Besedy | Medium |
-| web -> Internet | Outbound TCP/HTTP | Medium (OAuth) |
+| Path               | Method                                                    | Risk           |
+| ------------------ | --------------------------------------------------------- | -------------- |
+| web -> db          | `DATABASE_URL` env var                                    | High (full DB) |
+| web -> backup      | None (no shared creds)                                    | Low            |
+| web -> host        | `host.docker.internal`; exposure depends on host services | Medium         |
+| web -> cloudflared | Runs on host                                              | Low            |
+| web -> LAN         | Container network; not filtered by Besedy                 | Medium         |
+| web -> Internet    | Outbound TCP/HTTP                                         | Medium (OAuth) |
 
 ### Cloudflare Origin Protection
 
@@ -630,15 +571,15 @@ Rotate all secrets after any suspected compromise.
 
 ### Monitoring and Detection
 
-| Capability | Status |
-|------------|--------|
-| Audit logging to DB | Done |
-| Docker logs to host syslog | Done |
-| Daily anomaly check + email | Done (`web/scripts/audit-check.sh`) |
-| Weekly activity report | Done (`web/scripts/weekly-report.sh`) |
+| Capability                       | Status                                           |
+| -------------------------------- | ------------------------------------------------ |
+| Audit logging to DB              | Done                                             |
+| Docker logs to host syslog       | Done                                             |
+| Daily anomaly check + email      | Done (`web/scripts/audit-check.sh`)              |
+| Weekly activity report           | Done (`web/scripts/weekly-report.sh`)            |
 | Daily host backup coverage check | Done (`web/scripts/host-backup-health-check.sh`) |
-| Monthly security update check | Done (`web/scripts/security-update-check.sh`) |
-| Real-time alerting | Open (webhook integration not yet wired) |
+| Monthly security update check    | Done (`web/scripts/security-update-check.sh`)    |
+| Real-time alerting               | Open (webhook integration not yet wired)         |
 
 For monitoring scripts, schedules, and the update workflow, see
 `docs/web/operations.md`.

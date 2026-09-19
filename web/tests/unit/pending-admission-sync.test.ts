@@ -21,7 +21,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: null,
-        accessLevel: null,
+        role: null,
+        extraPermissions: [],
         createdById: "admin-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "allowlisted",
@@ -67,7 +68,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         createdById: "owner-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "catalog invite",
@@ -132,7 +134,8 @@ describe("pending admission sync", () => {
       {
         email: "John.Doe+tag@googlemail.com",
         catalogId: "20260101_000000",
-        accessLevel: "VIEWER",
+        role: "reader",
+        extraPermissions: [],
         createdById: "owner-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "catalog invite",
@@ -184,7 +187,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260102_000000",
-        accessLevel: "MEMBER",
+        role: "reader",
+        extraPermissions: [],
         createdById: "owner-2",
         createdAt: new Date("2026-03-10T12:00:00.000Z"),
         notes: "second sponsorship",
@@ -224,7 +228,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         createdById: "admin-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "catalog invite",
@@ -280,7 +285,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         createdById: "owner-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: null,
@@ -315,7 +321,8 @@ describe("pending admission sync", () => {
         {
           email: "pending@example.com",
           catalogId: "20260101_000000",
-          accessLevel: "EDITOR",
+          role: "curator",
+          extraPermissions: [],
           createdById: "owner-1",
           createdAt: new Date("2026-03-10T10:00:00.000Z"),
           notes: "catalog invite",
@@ -347,7 +354,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         createdById: "admin-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "catalog invite",
@@ -386,7 +394,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         createdById: "owner-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "catalog invite",
@@ -443,7 +452,8 @@ describe("pending admission sync", () => {
       {
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
+        extraPermissions: [],
         createdById: "owner-1",
         createdAt: new Date("2026-03-10T10:00:00.000Z"),
         notes: "catalog invite",

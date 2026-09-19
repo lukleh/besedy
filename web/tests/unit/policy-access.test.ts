@@ -3,9 +3,9 @@ import {
   canAccessCatalogSettings,
   canBrowseRecordings,
   canAttemptCatalogManagement,
-  canGrantCatalogAccessLevel,
+  canGrantCatalogGrant,
   canManageCatalogConfiguration,
-  canManageExistingCatalogAccessLevel,
+  canManageExistingCatalogGrant,
   canUseCatalogRag,
   hasCatalogManagementAuthority,
   canViewCatalog,
@@ -100,13 +100,31 @@ describe("policy access helpers", () => {
     expect(hasCatalogManagementAuthority(ownerContext)).toBe(true);
     expect(canAccessCatalogSettings(ownerContext)).toBe(true);
     expect(canManageCatalogConfiguration(ownerContext)).toBe(false);
-    expect(canGrantCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
-    expect(canGrantCatalogAccessLevel(ownerContext, "EDITOR")).toBe(false);
-    expect(canGrantCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "LISTENER")).toBe(true);
-    // VIEWER becomes `reader`, which carries neither protected permission.
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "VIEWER")).toBe(true);
-    expect(canManageExistingCatalogAccessLevel(ownerContext, "OWNER")).toBe(false);
+    expect(canGrantCatalogGrant(ownerContext, "listener")).toBe(true);
+    expect(canGrantCatalogGrant(ownerContext, "curator")).toBe(false);
+    expect(canGrantCatalogGrant(ownerContext, "host")).toBe(false);
+    expect(
+      canManageExistingCatalogGrant(ownerContext, {
+        level: null,
+        role: "listener",
+        extras: [],
+      })
+    ).toBe(true);
+    // The reader role carries neither protected permission.
+    expect(
+      canManageExistingCatalogGrant(ownerContext, {
+        level: null,
+        role: "reader",
+        extras: [],
+      })
+    ).toBe(true);
+    expect(
+      canManageExistingCatalogGrant(ownerContext, {
+        level: null,
+        role: "host",
+        extras: [],
+      })
+    ).toBe(false);
     expect(canPublishRecording(ownerContext)).toBe(true);
     expect(requiresReadyRecordingScope(grantFromLevel("OWNER"))).toBe(false);
   });
@@ -128,8 +146,14 @@ describe("policy access helpers", () => {
     expect(hasCatalogManagementAuthority(adminContext)).toBe(true);
     expect(canAccessCatalogSettings(adminContext)).toBe(true);
     expect(canManageCatalogConfiguration(adminContext)).toBe(true);
-    expect(canGrantCatalogAccessLevel(adminContext, "OWNER")).toBe(true);
-    expect(canManageExistingCatalogAccessLevel(adminContext, "OWNER")).toBe(true);
+    expect(canGrantCatalogGrant(adminContext, "catalog_admin")).toBe(true);
+    expect(
+      canManageExistingCatalogGrant(adminContext, {
+        level: null,
+        role: "catalog_admin",
+        extras: [],
+      })
+    ).toBe(true);
     expect(canPublishRecording(adminContext)).toBe(true);
     expect(requiresReadyRecordingScope(null)).toBe(false);
   });
@@ -146,8 +170,14 @@ describe("policy access helpers", () => {
     expect(canUseCatalogRag(viewerContext)).toBe(true);
     expect(canViewUnreleasedEvents(viewerContext)).toBe(true);
     expect(hasCatalogManagementAuthority(viewerContext)).toBe(false);
-    expect(canGrantCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
-    expect(canManageExistingCatalogAccessLevel(viewerContext, "VIEWER")).toBe(false);
+    expect(canGrantCatalogGrant(viewerContext, "reader")).toBe(false);
+    expect(
+      canManageExistingCatalogGrant(viewerContext, {
+        level: null,
+        role: "reader",
+        extras: [],
+      })
+    ).toBe(false);
     expect(canPublishRecording(viewerContext)).toBe(false);
   });
 });

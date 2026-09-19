@@ -11,19 +11,20 @@ import { type CatalogFeaturesResponse } from "@/lib/features/types";
 import {
   canBrowseRecordings,
   canUseCatalogRag,
+  canViewCatalogTranscripts,
   hasCatalogPermission,
 } from "@/lib/policy/catalog";
-import {
-  canBrowseEvents,
-  canEditCatalogEvents,
-} from "@/lib/policy/event";
+import { canBrowseEvents, canEditCatalogEvents } from "@/lib/policy/event";
 import {
   canSeeAllEventColumns,
   canSeeReleaseState,
   canUseCatalogTabSwitcher,
 } from "@/lib/policy/ui";
 
-export function isFeatureEnabledForUser(feature: FeatureKey, labsEnabled: boolean): boolean {
+export function isFeatureEnabledForUser(
+  feature: FeatureKey,
+  labsEnabled: boolean
+): boolean {
   const rollout = getFeatureRollout(feature);
   if (rollout === "public") return true;
   if (rollout === "off") return false;
@@ -71,8 +72,10 @@ export function buildCatalogFeaturesResponse(
     canEnterPortal?: boolean;
   } = {}
 ): CatalogFeaturesResponse {
-  const catalogExists = options.catalogExists ?? (catalogGrant !== null || isCatalogAdmin);
-  const canEnterPortal = options.canEnterPortal ?? (catalogGrant !== null || isCatalogAdmin);
+  const catalogExists =
+    options.catalogExists ?? (catalogGrant !== null || isCatalogAdmin);
+  const canEnterPortal =
+    options.canEnterPortal ?? (catalogGrant !== null || isCatalogAdmin);
   const rollout = getFeatureRollout("events");
   const featureEnabled = isFeatureEnabledForUser("events", labsEnabled);
   const deepSearchRollout = getFeatureRollout("deep-search");
@@ -130,6 +133,7 @@ export function buildCatalogFeaturesResponse(
           deepSearchEnabled &&
           catalogExists &&
           canEnterPortal &&
+          canViewCatalogTranscripts(catalogPolicyContext) &&
           hasCatalogPermission(catalogPolicyContext, "use_deep_search"),
       },
     },

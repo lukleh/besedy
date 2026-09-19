@@ -4,27 +4,6 @@ import prisma from "@/lib/db";
 // Keep route-specific authorization, mutations, and audit decisions in
 // admin-pending-record-route.ts.
 
-const ACCESS_LEVEL_ORDER = ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"] as const;
-
-type PendingAccessLevel = (typeof ACCESS_LEVEL_ORDER)[number];
-
-export function highestPendingAccessLevel(
-  grants: Array<{ accessLevel: PendingAccessLevel }>
-): PendingAccessLevel | null {
-  let highestIndex = -1;
-  let highestLevel: PendingAccessLevel | null = null;
-
-  for (const grant of grants) {
-    const index = ACCESS_LEVEL_ORDER.indexOf(grant.accessLevel);
-    if (index > highestIndex) {
-      highestIndex = index;
-      highestLevel = grant.accessLevel;
-    }
-  }
-
-  return highestLevel;
-}
-
 export async function loadPendingAdmissionState(canonicalEmail: string) {
   const [admission, pendingGrants] = await Promise.all([
     prisma.portalAdmission.findFirst({
@@ -48,6 +27,8 @@ export async function loadPendingAdmissionState(canonicalEmail: string) {
       select: {
         catalogId: true,
         accessLevel: true,
+        role: true,
+        extraPermissions: true,
         notes: true,
         grantedById: true,
         grantedAt: true,
@@ -61,7 +42,15 @@ export async function loadPendingAdmissionState(canonicalEmail: string) {
 
 interface PendingGrantPresentationItem {
   catalogId: string;
-  accessLevel: PendingAccessLevel;
+  role:
+    | "listener"
+    | "reader"
+    | "corrector"
+    | "host"
+    | "curator"
+    | "catalog_admin"
+    | null;
+  extraPermissions: string[];
   grantedAt: Date;
   grantedById: string | null;
   notes: string | null;
@@ -73,8 +62,11 @@ export async function buildPendingGrantPresentation(
 ) {
   const pendingGrantCount = pendingGrants.length;
   const newestPendingGrant = pendingGrants[0] ?? null;
-  const singleCatalogGrant = pendingGrantCount === 1 ? newestPendingGrant : null;
-  const catalogIds = Array.from(new Set(pendingGrants.map((grant) => grant.catalogId)));
+  const singleCatalogGrant =
+    pendingGrantCount === 1 ? newestPendingGrant : null;
+  const catalogIds = Array.from(
+    new Set(pendingGrants.map((grant) => grant.catalogId))
+  );
   const actorIds = Array.from(
     new Set(
       [actorId, ...pendingGrants.map((grant) => grant.grantedById)].filter(
@@ -104,18 +96,20 @@ export async function buildPendingGrantPresentation(
       : Promise.resolve(null),
   ]);
 
-  const actorById = new Map(actors.map((candidate) => [candidate.id, candidate]));
+  const actorById = new Map(
+    actors.map((candidate) => [candidate.id, candidate])
+  );
   const catalogById = new Map(catalogs.map((catalog) => [catalog.id, catalog]));
 
   const pendingGrantResponses = pendingGrants.map((grant) => ({
     catalogId: grant.catalogId,
     catalogLabel: catalogById.get(grant.catalogId)?.label || grant.catalogId,
-    accessLevel: grant.accessLevel,
+    role: grant.role,
+    extraPermissions: grant.extraPermissions,
     grantedAt: grant.grantedAt.toISOString(),
-    grantedBy:
-      grant.grantedById
-        ? actorById.get(grant.grantedById) ?? null
-        : null,
+    grantedBy: grant.grantedById
+      ? (actorById.get(grant.grantedById) ?? null)
+      : null,
     notes: grant.notes ?? null,
   }));
 
@@ -125,9 +119,9 @@ export async function buildPendingGrantPresentation(
     pendingGrantCount,
     pendingGrantResponses,
     singleCatalogGrant,
-    singleCatalogLabel:
-      singleCatalogGrant
-        ? catalogById.get(singleCatalogGrant.catalogId)?.label || singleCatalogGrant.catalogId
-        : null,
+    singleCatalogLabel: singleCatalogGrant
+      ? catalogById.get(singleCatalogGrant.catalogId)?.label ||
+        singleCatalogGrant.catalogId
+      : null,
   };
 }
