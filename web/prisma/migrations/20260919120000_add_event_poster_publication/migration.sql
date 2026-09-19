@@ -4,7 +4,7 @@ ALTER TYPE "AuditAction" ADD VALUE 'EVENT_POSTER_PUBLISHED';
 ALTER TYPE "AuditAction" ADD VALUE 'EVENT_POSTER_UNPUBLISHED';
 
 CREATE TABLE "catalog_event_poster" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "id" UUID NOT NULL,
     "event_id" INTEGER NOT NULL,
     "workflow_group_id" VARCHAR(15) NOT NULL,
     "label" VARCHAR(255),
@@ -48,7 +48,7 @@ ON "catalog_event_poster_publication"("poster_id");
 CREATE UNIQUE INDEX "catalog_event_poster_publication_event_id_workflow_group_id_key"
 ON "catalog_event_poster_publication"("event_id", "workflow_group_id");
 
-CREATE UNIQUE INDEX "catalog_event_poster_publication_poster_id_event_id_workflow_group_id_key"
+CREATE UNIQUE INDEX "catalog_event_poster_publication_poster_id_event_id_workflo_key"
 ON "catalog_event_poster_publication"("poster_id", "event_id", "workflow_group_id");
 
 ALTER TABLE "catalog_event_poster"
@@ -63,13 +63,13 @@ FOREIGN KEY ("created_by") REFERENCES "users"("id")
 ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "catalog_event_poster_publication"
-ADD CONSTRAINT "catalog_event_poster_publication_event_id_workflow_group_id_fkey"
+ADD CONSTRAINT "catalog_event_poster_publication_event_id_workflow_group_i_fkey"
 FOREIGN KEY ("event_id", "workflow_group_id")
 REFERENCES "catalog_event"("id", "workflow_group_id")
 ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "catalog_event_poster_publication"
-ADD CONSTRAINT "catalog_event_poster_publication_poster_id_event_id_workflow_group_id_fkey"
+ADD CONSTRAINT "catalog_event_poster_publication_poster_id_event_id_workfl_fkey"
 FOREIGN KEY ("poster_id", "event_id", "workflow_group_id")
 REFERENCES "catalog_event_poster"("id", "event_id", "workflow_group_id")
 ON DELETE NO ACTION ON UPDATE CASCADE;

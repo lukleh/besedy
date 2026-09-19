@@ -9,6 +9,7 @@ import { getDatabaseUrlOrThrow, loadScriptEnv, redactDatabaseUrl } from "../src/
 type Command = "list" | "create" | "publish" | "unpublish" | "delete" | "inventory" | "import-legacy";
 
 const LEGACY_IMPORT_LABEL = "Imported legacy poster";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Args {
   command: Command;
@@ -88,13 +89,17 @@ function parseArgs(argv: string[]): Args {
   if (flags.has("--dry-run") && command !== "import-legacy") {
     throw new Error("--dry-run is supported only by import-legacy");
   }
+  const posterId = values.get("--poster") ?? null;
+  if (posterId !== null && !UUID_PATTERN.test(posterId)) {
+    throw new Error("--poster must be a valid UUID");
+  }
 
   return {
     command,
     catalogId,
     eventId,
     actor: values.get("--actor") ?? null,
-    posterId: values.get("--poster") ?? null,
+    posterId,
     squarePath: values.get("--square") ?? null,
     landscapePath: values.get("--landscape") ?? null,
     label: values.get("--label") ?? null,
