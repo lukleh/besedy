@@ -92,32 +92,40 @@ plus a hash of its source text**. The segment index is stored as a hint, never
 as the identity. Rows are created lazily on the first human touch; an untouched
 span has no row.
 
-### Vouching is the only action, and what is stored is a count
+### Approving is the only positive action, and what is stored is a count
 
 A person working on a span does one of two things: they fix the text, or they
-leave it because it is already right. **Both are the same act** — vouching for
-whatever text is there when they move on. That is the only positive action in
-the model.
+leave it because it is already right. **Both end in the same act** — approving
+whatever text is there when they move on.
 
 What the record keeps per span is therefore not a state but a number: **how many
-people have vouched for the text that is there right now.** The required count
-is configurable per catalog and defaults to two. One person mishears, skims, or
-is tired; two people independently content with the same exact words is the
-quality bar, and that is the whole of the two-person rule.
+people have approved the text that is there right now.** The required count is
+configurable per catalog and defaults to two. One person mishears, skims, or is
+tired; two people independently content with the same exact words is the quality
+bar, and that is the whole of the two-person rule.
 
-Attestations are bound to a hash of the text they vouch for. If someone rewrites
-a span, earlier vouches no longer describe what is there — nobody vouched for
-words they never saw — so they stop counting by hash mismatch rather than by
-deletion, and the history of who vouched for what survives.
+Nothing caps the number of people who may look at a span. More eyes on a
+difficult passage are welcome, whether to help or to settle an argument, and
+approvals beyond the required count are simply surplus. What extra people cannot
+do is **outvote a disapproval**: the rule below is that a live disapproval
+blocks regardless of how many approvals accumulate around it. Settling a
+disagreement means the objector is persuaded or the text changes, never that
+enough other people disagreed with them. Anything else would be adjudication by
+vote, which is exactly what the next section declines to build.
+
+Approvals are bound to a hash of the text they approve. If someone rewrites a
+span, earlier approvals no longer describe what is there — nobody approved words
+they never saw — so they stop counting by hash mismatch rather than by deletion,
+and the history of who approved what survives.
 
 The three words the tool may use for that count are labels over it, not stored
 state:
 
 | label | means | what it controls |
 | --- | --- | --- |
-| machine | zero vouches — untouched | nothing |
-| reviewed | one vouch | nothing |
-| verified | the required number of vouches | a transcript may be published when every span is verified |
+| machine | zero approvals — untouched | nothing |
+| reviewed | one approval | nothing |
+| verified | the required number of approvals | a transcript may be published when every span is verified |
 
 **Only the full count gates anything, and it gates exactly one thing:
 publication.** The other two values control nothing at all; they are a progress
@@ -143,34 +151,52 @@ machine transcript until the whole transcript is published. Holding
 sees: it is access to a tool. This is what makes it safe to hand the permission
 out widely, and it has to hold whatever the roles look like.
 
-### Disagreement is a contest, and a contest blocks
+### Four actions, and only one of them blocks
 
-Vouching alone cannot express disagreement. Without a second action, the only
-way to disagree is to overwrite the other person's text, which makes a genuine
-dispute indistinguishable from an ordinary improvement and lets two people
-oscillate forever.
+Everyone working on a transcript has the same four actions, whichever pass they
+are on: **change** the text, **comment**, **approve**, **disapprove**.
 
-A **contest** is the mirror of a vouch and uses the same machinery: it is bound
-to the hash of the text it objects to, and it proposes nothing. It says this is
-wrong, without requiring the objector to guess at what was actually said — which
-is the common case when listening, and the only action cheap enough to take
-without stopping the audio.
+A **comment** is a thread on the side, anchored to a span, the way comments work
+in a shared document. It exists so that discussion has somewhere to live and
+survives as a record of it. **A comment does not block publication.** If it did,
+people would weigh whether a remark is worth holding up the document and would
+stop making them, which loses the communication the comment was for. Threads are
+resolved as housekeeping, not as a gate, and a published transcript may carry
+open ones.
 
-Everything else follows from the hash binding that attestations already use:
+A **disapproval** is the blocking signal, and it has to be an unambiguous
+deliberate act rather than something inferred from the presence of discussion.
+It may well be carried on a comment — a thumb down, a minus, some mark on the
+thread — or it may be its own control; that is an interface question and it is
+not settled here. What is settled is that blocking requires an explicit signal
+and that leaving a remark is never one.
 
-- If the text is rewritten, the contest stops applying, exactly as a vouch does.
-  The new text starts clean at one vouch, and the objector reads it and either
-  vouches or contests again.
-- If the text is not rewritten, the span carries a vouch and a contest **on the
-  same words**. That is the disagreement, recorded and visible: one says yes,
-  one says no, about this exact text.
+Disapproval proposes nothing. It says this is wrong, without requiring the
+objector to guess at what was actually said — which is the common case when
+listening, and the only action cheap enough to take without stopping the audio.
 
-A span is publishable when it carries the required vouches and **no live
-contest**. A contest is cleared only by the objector vouching for the current
-text, or by the text changing underneath it. A contest may carry a comment, so
-that the two people can talk to each other rather than exchange silent edits.
+It uses the same hash binding as an approval:
 
-**There is no adjudication.** A contested span stays blocked until the people
+- If the text is rewritten, the disapproval stops applying, exactly as an
+  approval does. The new text starts clean at one approval, and the objector
+  reads it and either approves or disapproves again.
+- If the text is not rewritten, the span carries an approval and a disapproval
+  **on the same words**. That is the disagreement, recorded and visible: one says
+  yes, one says no, about this exact text.
+
+A span is publishable when it carries the required approvals and **no live
+disapproval**. A disapproval is cleared only by the objector approving the
+current text, or by the text changing underneath it.
+
+The comment and the disapproval it may ride on have **different lifetimes**, and
+this is deliberate. The disapproval lapses when the text changes, because the
+objection was to particular words. The comment does not, because it is anchored
+to the span rather than to the text: somebody writes "I think that is a village,
+not a surname," the text is edited in response, and it would be perverse for the
+edit to destroy the thread that prompted it. The reasoning persists; the
+objection has to be made again against the new words.
+
+**There is no adjudication.** A disapproved span stays blocked until the people
 involved agree. This is deliberately an opening to deadlock, and it is accepted
 as the starting premise: people need to agree in order to continue.
 
@@ -183,7 +209,7 @@ neither will move on, which between two people who can talk to each other is a
 conversation rather than a system problem.
 
 At twenty correctors who do not know each other it will not be. Adjudication —
-someone with `publish_transcript` deciding, that act supplying the attestations,
+someone with `publish_transcript` deciding, that act supplying the approvals,
 available only on a span whose history shows a real dispute, and counted so a
 transcript published with forty of them says something — is the shape the answer
 will take. It is deferred, not rejected. Revisit it when the corps grows beyond
@@ -198,7 +224,7 @@ because a reader can detect the gap and cannot detect the error.
 
 - The span stays. It keeps its time range and simply holds no text, so spans
   still tile the timeline without gaps and citations still resolve.
-- It needs the same vouches as any other span. Two people agreeing that nobody
+- It needs the same approvals as any other span. Two people agreeing that nobody
   can make it out is an editorial statement like any other, so this is not an
   exception to the rule — it is an ordinary edit whose result happens to be
   empty. That is also what keeps the publication gate reachable for recordings
@@ -210,6 +236,11 @@ because a reader can detect the gap and cannot detect the error.
   sidecar carries an empty span and nothing else, so chunking, search and MCP see
   a segment with no text and treat it as nothing. What consumes text finds no
   text.
+
+A reader of a published transcript therefore sees a gap where such a span was:
+the rendered `txt`, `srt` and `vtt` show nothing at all, with no bracketed
+marker standing in. Keep it simple until it proves to be a problem for real
+readers, and solve it then.
 
 That last point works because **publication is what makes empty unambiguous.** A
 transcript can only be published when every span is resolved, so an empty span in
@@ -225,24 +256,30 @@ for whoever writes validation over the published sidecar: an empty span **there*
 is intentional, and a check copied from the transcription side will fire on every
 corrected transcript that contains one.
 
-### The second pass is a different activity from the first
+### Every pass is the same surface
 
-The first pass corrects: it stops at each span, and the tool plays that span and
-waits. The second pass runs with the audio continuous, the reviewer intervening
-only when something is wrong. Making the second pass cheap is what makes a
-two-person rule affordable at all.
+There is no first-pass tool and second-pass tool. Every pass presents the same
+screen and the same four actions, and what differs between them is only what is
+already on the document when a person arrives: the first meets machine text, the
+second meets corrections and approvals, a third meets open threads and
+disagreements. Nobody switches modes and nobody learns a second keyboard.
 
-What that pass **produces** is now open. The design above gives a listening
-reviewer a one-key action that costs nothing — contest — which means a continuous
-pass may produce a list of objections for a later pass to resolve rather than
-producing verification directly. That is a different system from one where
-passive listening attests to everything it goes past, and it decides what the
-tool looks like. See the open questions.
+That is what makes the later passes cheap, which is what makes a two-person rule
+affordable at all. A reviewer follows one continuous text with the audio running
+and acts only where something needs it — and the acts available are the same ones
+the first pass used.
 
-Two safeguards against rubber-stamping, both cheap: an attestation cannot be
-recorded for audio the player has not actually played, and the second reviewer is
-not shown who worked on the span before them. The second of these does not apply
-to the pilot below, where there are two people and both know it.
+Corrections are shown in a distinct colour so that a later pass can read straight
+through as though it were the original text while still seeing where a person has
+already been. A span carrying a live disagreement is marked likewise. Colour
+carries orientation only: it says the text was changed, never who changed it.
+
+One safeguard against rubber-stamping survives this: **an approval cannot be
+recorded for audio the player has not actually played.** The other one the
+earlier design had — hiding from a reviewer who worked on the span before them —
+is gone, because named discussion threads and anonymity cannot both exist and
+discussion is worth more. That leaves the played-audio requirement carrying the
+weight on its own, which is worth knowing when it comes to be built.
 
 ### What an edit does to word timings
 
@@ -296,8 +333,8 @@ should be extracted rather than rewritten.
 ### Edits are recorded as events
 
 The store keeps the history of edits — who, when, from what text to what text,
-and how long was spent on the span — not only the resulting text. Vouches and
-contests are part of that history. Without this the first real use of the tool
+and how long was spent on the span — not only the resulting text. Comments,
+approvals and disapprovals are part of that history. Without this the first real use of the tool
 produces an impression; with it, it produces the numbers that decide whether the
 two-person rule is worth its cost, how much correction time a minute of audio
 costs, and how much two people actually differ.
@@ -321,7 +358,7 @@ anonymity of the second reviewer. With two people on one recording there is no
 queue to feed, nothing to lease, and no anonymity to preserve. They are the right
 design for a corps and the wrong thing to build for a pilot.
 
-What the pilot does need is the two passes, the vouch, the contest, the
+What the pilot does need is the one surface with its four actions, the
 unintelligible route, split and merge, and a way to stop in the middle of a
 three-hour recording and resume.
 
@@ -449,7 +486,7 @@ one sitting cannot be a recording. Progress is tracked and resumed inside one.
 Two correctors who disagree about whether to keep "ehm", whether to remove false
 starts, how to punctuate, whether to write numbers as words, and how to mark
 inaudible passages will register disagreement about spans where nobody actually
-misheard anything. With contests blocking publication and no adjudication to
+misheard anything. With disapprovals blocking publication and no adjudication to
 break them, that is not a cosmetic problem: it stalls the document. A short
 written convention, visible inside the correction tool, is a prerequisite rather
 than documentation written afterwards.
@@ -457,8 +494,8 @@ than documentation written afterwards.
 ## Consequences
 
 - Done means two things at two levels, and the record keeps them apart. A
-  **span** is done when its current text carries the required attestations and no
-  live contest. A **transcript** is done when every span is and a person has
+  **span** is done when its current text carries the required approvals and no
+  live disapproval. A **transcript** is done when every span is and a person has
   published it, which is a stored state alongside `CatalogEntry.isPublished` and
   `CatalogEvent.released`. Every span verified is the invariant that permits
   publication, not the publication itself. Until then a derived coverage figure
@@ -546,8 +583,12 @@ than documentation written afterwards.
 - **The verb is publish, and unpublish moves only a flag.**
 - **What is stored per span is a count, not a state**, and nothing may ever be
   gated on the middle value.
-- **A contest blocks and there is no adjudication.** People have to agree. This
-  is a starting premise to revisit when the corps outgrows talking to each other.
+- **Only a disapproval blocks; a comment never does.** Blocking takes an
+  explicit signal, and an open thread is not one.
+- **There is no adjudication and no outvoting.** People have to agree. This is a
+  starting premise to revisit when the corps outgrows talking to each other.
+- **Every pass is the same surface with the same four actions** — change,
+  comment, approve, disapprove.
 - **An unintelligible passage is cleared, not guessed at**, and the fact that it
   was unintelligible does not leave the database.
 - **The system is tried before it is opened.** Two or three primary recordings,
@@ -555,17 +596,19 @@ than documentation written afterwards.
 
 ## Open questions
 
-- **What the second pass produces.** Continuous listening with contest as the
-  cheap in-flight action may mean the second pass yields a list of objections
-  rather than verification, moving verification to a third pass. The alternative
-  is that passive listening attests to everything it passes, which is affordable
-  but rubber-stampable. This decides the shape of the tool and is the largest
-  thing still open.
-- **What a reader sees where a span was cleared.** A gap in the rendered `txt`,
-  `srt` and `vtt`, or a visible marker. A marker would have to be literal text in
-  the span rather than metadata, which would put it in front of MCP and search.
-- **Whether a contest is visible above the span.** Whether a transcript carrying
-  contests is shown as stalled so that somebody notices, or whether the blockage
-  is only apparent to whoever opens the span.
 - **How `meta.backend`, `meta.model` and `meta.generation_params` are filled for
-  a resolved transcript**, per the sidecar section above.
+  a resolved transcript**, per the sidecar section above. This one blocks the
+  sidecar being written at all.
+- **How a disapproval is expressed in the interface** — a mark on a comment
+  thread, or a control of its own. The rule it has to satisfy is settled: an
+  explicit deliberate signal, never inferred from a thread existing.
+- **Whether a transcript carrying disagreements is shown as stalled** somewhere
+  above the span, so that a document one objection away from publishable does not
+  sit unnoticed, or whether the count in the correction surface is enough.
+- **The correction data model** — spans, approvals, disapprovals, comments and
+  the edit log — is not in this record and has to be written before any of it is
+  built.
+
+Closed since the first draft: what the second pass produces (nothing special —
+every pass offers the same four actions), and how an unintelligible passage is
+marked (the text is cleared and the fact stays in the database).
