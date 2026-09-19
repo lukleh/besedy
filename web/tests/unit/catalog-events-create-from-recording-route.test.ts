@@ -142,7 +142,7 @@ describe("catalog events create-from-recording route", () => {
     });
   });
 
-  it("returns 409 instead of a second session when a same-place same-day event exists", async () => {
+  function mockActionableRecordingAt(location = { id: 7, name: "Praha" }) {
     prisma.catalogEntry.findFirst.mockResolvedValue({
       audioHash,
       isActionable: true,
@@ -151,23 +151,28 @@ describe("catalog events create-from-recording route", () => {
       dateYear: 2024,
       dateMonth: 4,
       dateDay: 3,
-      location: {
-        id: 7,
-        name: "Praha",
-      },
+      location,
     });
     prisma.catalogEventRecording.findUnique.mockResolvedValue(null);
-    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 88 });
+  }
 
-    const request = new NextRequest("http://localhost/api/catalog-events/from-recording", {
+  function buildRequest(body: Record<string, unknown> = {}) {
+    return new NextRequest("http://localhost/api/catalog-events/from-recording", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         workflowGroupId: catalogId,
         audioHash,
+        ...body,
       }),
     });
-    const response = await createFromRecording(request);
+  }
+
+  it("asks for confirmation instead of silently adding a second session", async () => {
+    mockActionableRecordingAt();
+    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 88, sessionIndex: 1 });
+
+    const response = await createFromRecording(buildRequest());
 
     expect(response.status).toBe(409);
     expect(prisma.catalogEvent.findFirst).toHaveBeenCalledWith({
@@ -178,14 +183,51 @@ describe("catalog events create-from-recording route", () => {
         dateMonth: 4,
         dateDay: 3,
       },
-      select: { id: true },
+      select: { id: true, sessionIndex: true },
       orderBy: { sessionIndex: "desc" },
     });
 
     const body = await response.json();
     expect(body.error).toMatch(/Event 88 already covers/i);
+    // The caller must be able to act on the answer without re-deriving it.
+    expect(body.details).toEqual({ eventId: 88, nextSessionIndex: 2 });
     expect(prisma.catalogEvent.create).not.toHaveBeenCalled();
     expect(prisma.catalogEventRecording.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the separate session once the caller confirms it", async () => {
+    mockActionableRecordingAt();
+    prisma.catalogEvent.create.mockResolvedValue({
+      id: 89,
+      title: "Praha, 3 Apr 2024, session 2",
+    });
+    prisma.catalogEventRecording.create.mockResolvedValue({
+      eventId: 89,
+      workflowGroupId: catalogId,
+      audioHash,
+      isPrimary: true,
+    });
+
+    const response = await createFromRecording(buildRequest({ sessionIndex: 2 }));
+
+    expect(response.status).toBe(201);
+    // A confirmed session skips the guard; the identity index still arbitrates.
+    expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
+    expect(prisma.catalogEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sessionIndex: 2,
+        title: "Praha, 3 Apr 2024, session 2",
+      }),
+      select: { id: true, title: true },
+    });
+
+    const body = await response.json();
+    expect(body).toEqual({
+      eventId: 89,
+      audioHash,
+      title: "Praha, 3 Apr 2024, session 2",
+      sessionIndex: 2,
+    });
   });
 
   it("returns 400 when the recording lacks required event metadata", async () => {

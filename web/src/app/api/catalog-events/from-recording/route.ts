@@ -13,7 +13,7 @@ type CreateFromRecordingResult =
   | { kind: "recording_not_found" }
   | { kind: "non_actionable" }
   | { kind: "already_assigned"; eventId: number }
-  | { kind: "duplicate_event"; eventId: number }
+  | { kind: "needs_session_confirmation"; eventId: number; nextSessionIndex: number }
   | { kind: "missing_metadata" };
 
 export async function POST(request: NextRequest) {
@@ -83,25 +83,34 @@ export async function POST(request: NextRequest) {
           return { kind: "missing_metadata" };
         }
 
-        // Recording metadata is the only input here, so a match means the
-        // recording belongs on the existing event rather than beside it.
-        const existing = await tx.catalogEvent.findFirst({
-          where: {
-            workflowGroupId: body.workflowGroupId,
-            locationId: metadata.location.id,
-            dateYear: metadata.dateYear,
-            dateMonth: metadata.dateMonth ?? null,
-            dateDay: metadata.dateDay ?? null,
-          },
-          select: { id: true },
-          orderBy: { sessionIndex: "desc" },
-        });
+        // A second event at one place and date is legitimate here -- two
+        // recordings from one venue on one day are usually two discussions.
+        // It is still worth confirming, because the catalog list shows only
+        // date and location, so a stray one is invisible once created.
+        const existing =
+          body.sessionIndex === undefined
+            ? await tx.catalogEvent.findFirst({
+                where: {
+                  workflowGroupId: body.workflowGroupId,
+                  locationId: metadata.location.id,
+                  dateYear: metadata.dateYear,
+                  dateMonth: metadata.dateMonth ?? null,
+                  dateDay: metadata.dateDay ?? null,
+                },
+                select: { id: true, sessionIndex: true },
+                orderBy: { sessionIndex: "desc" },
+              })
+            : null;
 
         if (existing) {
-          return { kind: "duplicate_event", eventId: existing.id };
+          return {
+            kind: "needs_session_confirmation",
+            eventId: existing.id,
+            nextSessionIndex: existing.sessionIndex + 1,
+          };
         }
 
-        const sessionIndex = 1;
+        const sessionIndex = body.sessionIndex ?? 1;
 
         const title = deriveEventTitle(
           metadata.location.name,
@@ -156,10 +165,12 @@ export async function POST(request: NextRequest) {
       if (result.kind === "already_assigned") {
         return conflict(`Recording is already assigned to event ${result.eventId}`);
       }
-      if (result.kind === "duplicate_event") {
+      if (result.kind === "needs_session_confirmation") {
         return conflict(
           `Event ${result.eventId} already covers this recording's location and date. ` +
-            `Attach the recording to that event instead.`
+            `Attach the recording to it, or resend with sessionIndex ` +
+            `${result.nextSessionIndex} to record a separate session.`,
+          { eventId: result.eventId, nextSessionIndex: result.nextSessionIndex }
         );
       }
       if (result.kind === "missing_metadata") {

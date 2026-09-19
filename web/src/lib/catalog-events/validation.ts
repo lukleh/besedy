@@ -70,6 +70,9 @@ export const UpdateCatalogEventSchema = z
 export const CreateCatalogEventFromRecordingSchema = z.object({
   workflowGroupId: TimestampIdSchema,
   audioHash: HashSchema,
+  // Only set once the caller has been told an event already covers this
+  // recording's location and date, and wants a separate session anyway.
+  sessionIndex: EventSessionIndexSchema.optional(),
 });
 
 export const AttachRecordingsSchema = z.object({

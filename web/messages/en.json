@@ -1652,7 +1652,12 @@
       "toastCreated": "Event created from recording",
       "toastCreateFailed": "Failed to create event from recording",
       "loading": "Loading unassigned recordings...",
-      "loadError": "Failed to load unassigned recordings: {message}"
+      "loadError": "Failed to load unassigned recordings: {message}",
+      "sessionConflictTitle": "An event already covers this date",
+      "sessionConflictDescription": "Event {eventId} is already recorded at this location and date. Attach the recording to it if they are the same discussion, or create session {index} if this is a separate one.",
+      "sessionConflictOpenEvent": "Open existing event",
+      "sessionConflictCreate": "Create separate session",
+      "sessionConflictCancel": "Cancel"
     }
   },
   "catalogSettings": {

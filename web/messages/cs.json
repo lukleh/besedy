@@ -1651,7 +1651,12 @@
       "toastCreated": "Událost vytvořena z nahrávky",
       "toastCreateFailed": "Nepodařilo se vytvořit událost z nahrávky",
       "loading": "Načítání nepřiřazených nahrávek...",
-      "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}"
+      "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}",
+      "sessionConflictTitle": "Událost k tomuto datu už existuje",
+      "sessionConflictDescription": "Událost {eventId} je již vedena na tomto místě a datu. Pokud jde o stejnou besedu, připojte k ní nahrávku; pokud jde o jinou, vytvořte sezení {index}.",
+      "sessionConflictOpenEvent": "Otevřít existující událost",
+      "sessionConflictCreate": "Vytvořit samostatné sezení",
+      "sessionConflictCancel": "Zrušit"
     }
   },
   "catalogSettings": {

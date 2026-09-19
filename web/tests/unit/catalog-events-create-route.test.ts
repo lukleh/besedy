@@ -106,6 +106,7 @@ describe("catalog events create route", () => {
     const body = await response.json();
     expect(body.error).toMatch(/Event 88 already covers/i);
     expect(body.error).toMatch(/sessionIndex 2/);
+    expect(body.details).toEqual({ eventId: 88, nextSessionIndex: 2 });
     expect(prisma.catalogEvent.create).not.toHaveBeenCalled();
   });
 

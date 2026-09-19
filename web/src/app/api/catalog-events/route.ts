@@ -440,7 +440,8 @@ export async function POST(request: NextRequest) {
     if (existing) {
       return conflict(
         `Event ${existing.id} already covers this location and date. ` +
-          `Pass sessionIndex ${existing.sessionIndex + 1} to add another session.`
+          `Pass sessionIndex ${existing.sessionIndex + 1} to add another session.`,
+        { eventId: existing.id, nextSessionIndex: existing.sessionIndex + 1 }
       );
     }
 
