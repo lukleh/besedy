@@ -168,10 +168,22 @@ services:
     entrypoint: ['/bin/sh', '-c']
     command:
       - |
+        set -eu
+        cleanup() { rm -f "$${SQL_FILE:-}" "$${ARCHIVE:-}"; }
+        trap cleanup EXIT
         while true; do
           FILENAME="/backups/besedy_$$(date +%Y%m%d_%H%M%S).sql.gz"
+          SQL_FILE="$${FILENAME%.gz}.tmp"
+          ARCHIVE="$$FILENAME.tmp"
           echo "Creating backup: $$FILENAME"
-          pg_dump | gzip > "$$FILENAME"
+          rm -f "$$SQL_FILE" "$$ARCHIVE"
+          pg_dump > "$$SQL_FILE"
+          test -s "$$SQL_FILE"
+          gzip -c "$$SQL_FILE" > "$$ARCHIVE"
+          gzip -t "$$ARCHIVE"
+          test -s "$$ARCHIVE"
+          mv "$$ARCHIVE" "$$FILENAME"
+          rm -f "$$SQL_FILE"
           ls -t /backups/*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
           sleep 86400
         done
