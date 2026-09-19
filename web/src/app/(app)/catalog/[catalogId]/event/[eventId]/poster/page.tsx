@@ -265,7 +265,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
               disabled={isBusy}
             />
           </label>
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-5 md:grid-cols-[9fr_16fr]">
             <PosterFileInput
               title={t("square")}
               hint={t("squareHint")}
@@ -354,7 +354,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
                     ) : null}
                   </div>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-[9fr_16fr]">
                   <CandidateImage
                     title={t("square")}
                     src={buildEventPosterCandidateImageUrl(catalogId, parsedEventId, candidate.id, "square")}
@@ -448,6 +448,7 @@ function PosterFileInput({
         accept=".jpg,.jpeg,.png,image/jpeg,image/png"
         disabled={disabled}
         onChange={(event) => onChange(event.target.files?.[0] ?? null)}
+        className="block w-full cursor-pointer text-xs text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
       />
     </label>
   );
