@@ -98,7 +98,7 @@ describe("EventListResults", () => {
     expect(screen.getAllByText("released").length).toBeGreaterThan(0);
   });
 
-  it("shows the primary title so same-day events remain distinguishable", () => {
+  it("keeps the mobile card limited to date and location", () => {
     render(
       <EventListResults
         {...BASE_PROPS}
@@ -115,7 +115,7 @@ describe("EventListResults", () => {
     expect(within(mobileCard).getByText("May 2, 2024")).toBeInTheDocument();
     expect(within(mobileCard).getByText("Prague")).toBeInTheDocument();
     expect(within(mobileCard).queryByText("Recordings: 3")).not.toBeInTheDocument();
-    expect(within(mobileCard).getByText("Primary track")).toBeInTheDocument();
+    expect(within(mobileCard).queryByText("Primary track")).not.toBeInTheDocument();
     expect(within(mobileCard).queryByText("released")).not.toBeInTheDocument();
   });
 

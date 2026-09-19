@@ -331,11 +331,6 @@ export function EventListResults({
                     </TableCell>
                     <TableCell className="font-medium">
                       <div>{catalogEvent.location?.name ?? t("unknownLocation")}</div>
-                      {!showAllColumns && catalogEvent.primaryTitle ? (
-                        <div className="mt-1 max-w-[320px] truncate text-sm font-normal text-muted-foreground">
-                          {catalogEvent.primaryTitle}
-                        </div>
-                      ) : null}
                       {showReleaseState && !showAllColumns ? (
                         <div className="mt-1">
                           {catalogEvent.released ? (
@@ -435,11 +430,6 @@ export function EventListResults({
                           {locationName}
                         </span>
                       </div>
-                      {catalogEvent.primaryTitle ? (
-                        <div className="mt-1 truncate text-sm text-muted-foreground">
-                          {catalogEvent.primaryTitle}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                   <SessionOrdinalBadge
