@@ -229,9 +229,9 @@ test.describe("Pending Admission Management", () => {
     });
   });
 
-  test.describe("Catalog pending grant (owner flow)", () => {
-    test("owner can open grant access dialog", async ({ page }) => {
-      await loginAs(page, "owner");
+  test.describe("Catalog pending grants", () => {
+    test("admin can invite a user with a role-only grant", async ({ page }) => {
+      await loginAs(page, "admin");
 
       // Navigate to catalog settings
       await page.goto(URLS.catalogSettings);
@@ -249,6 +249,22 @@ test.describe("Pending Admission Management", () => {
       // User search combobox is visible
       const userSearch = dialog.getByRole("combobox").first();
       await expect(userSearch).toBeVisible({ timeout: 5000 });
+
+      const email = uniqueEmail("admin-role-only-dialog");
+      await userSearch.fill(email);
+      await page.getByRole("button", { name: `Invite ${email}` }).click();
+
+      await expect(
+        dialog.getByRole("group", { name: "Additional permissions" })
+      ).toHaveCount(0);
+      const inviteButton = dialog.getByRole("button", { name: "Invite User" });
+      await expect(inviteButton).toBeInViewport();
+      await inviteButton.click();
+
+      await expect(dialog).toBeHidden();
+      await expect(
+        page.getByTestId("pending-users-table").getByText(email)
+      ).toBeVisible({ timeout: 10000 });
     });
 
     test("owner can add a pending grant via the catalog API", async ({
