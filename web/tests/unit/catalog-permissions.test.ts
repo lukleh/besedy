@@ -55,6 +55,7 @@ describe("catalog permissions", () => {
       "manage_events",
       "release_events",
       "manage_event_posters",
+      "publish_event_posters",
       "manage_event_sources",
       "use_deep_search",
       "manage_access",

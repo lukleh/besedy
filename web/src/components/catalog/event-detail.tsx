@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import NextImage from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
@@ -10,13 +9,14 @@ import { ChevronDown, FolderOpen, Image as ImageIcon, Mic, Pencil } from "lucide
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { fetchJson } from "@/lib/api/fetch-json";
-import { buildEventDetailUrl, buildEventPosterUrl } from "@/lib/api/recording-urls";
+import { buildEventDetailUrl } from "@/lib/api/recording-urls";
 import { DownloadButton } from "@/components/offline/download-button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
+import { EventPosterPicture } from "@/components/catalog/event-poster-picture";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -59,25 +59,21 @@ interface EventDetailResponse {
   description: string | null;
   released: boolean;
   recordings: EventRecording[];
+  canViewPosterCandidates?: boolean;
   canManagePosters?: boolean;
+  canPublishPosters?: boolean;
   canManageSources?: boolean;
-  posterStatus?: {
-    portrait: boolean;
-    landscape: boolean;
-  } | null;
-  posterFiles?: {
-    portrait: { exists: boolean; filename: string | null; uploadedAt?: string | null; size?: number | null };
-    landscape: { exists: boolean; filename: string | null; uploadedAt?: string | null; size?: number | null };
+  publishedPoster?: {
+    id: string;
+    publishedAt: string;
+    assets: {
+      square: { bytes: number; sha256: string };
+      landscape: { bytes: number; sha256: string };
+    };
   } | null;
 }
 
-export function EventDetail({
-  catalogId,
-  eventId,
-  canEdit,
-  showAllColumns,
-  showReleaseState,
-}: EventDetailProps) {
+export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showReleaseState }: EventDetailProps) {
   const locale = useLocale();
   const t = useTranslations("events.detail");
   const tRoot = useTranslations();
@@ -91,15 +87,11 @@ export function EventDetail({
 
   const { data, isLoading, error } = useQuery<EventDetailResponse>({
     queryKey: ["catalog-event-detail", eventId],
-    queryFn: () =>
-      fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
+    queryFn: () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
   });
 
   const defaultSelectedHash = useMemo(
-    () =>
-      data?.recordings.find((recording) => recording.isPrimary)?.audioHash ??
-      data?.recordings[0]?.audioHash ??
-      "",
+    () => data?.recordings.find((recording) => recording.isPrimary)?.audioHash ?? data?.recordings[0]?.audioHash ?? "",
     [data]
   );
 
@@ -111,9 +103,7 @@ export function EventDetail({
   }, [data, selectedHash, defaultSelectedHash]);
 
   const selectedRecording = useMemo(
-    () =>
-      data?.recordings.find((recording) => recording.audioHash === activeSelectedHash) ??
-      null,
+    () => data?.recordings.find((recording) => recording.audioHash === activeSelectedHash) ?? null,
     [data, activeSelectedHash]
   );
 
@@ -160,26 +150,27 @@ export function EventDetail({
     );
   }
 
-  const recordingCountLabel = t("recordingCount", { count: data.recordings.length });
+  const recordingCountLabel = t("recordingCount", {
+    count: data.recordings.length,
+  });
   const showRecorderMenu = data.recordings.length > 1;
   const selectedRecorderName = selectedRecording?.recorder?.name ?? t("unknownRecorder");
-  const canManagePosters = data.canManagePosters ?? false;
+  const canViewPosterCandidates = data.canViewPosterCandidates ?? false;
   const canManageSources = data.canManageSources ?? false;
-  const posterStatus = data.posterStatus;
-  const posterFiles = data.posterFiles;
-  const posterPortraitExists = posterFiles?.portrait.exists ?? posterStatus?.portrait ?? false;
-  const posterLandscapeExists = posterFiles?.landscape.exists ?? posterStatus?.landscape ?? false;
-  const hasAnyPoster = posterPortraitExists || posterLandscapeExists;
-  const posterPortraitVersion = posterFiles?.portrait.uploadedAt;
-  const posterLandscapeVersion = posterFiles?.landscape.uploadedAt;
-  const portraitPosterSrc = buildEventPosterUrl(catalogId, eventId, "portrait", posterPortraitVersion);
-  const landscapePosterSrc = buildEventPosterUrl(catalogId, eventId, "landscape", posterLandscapeVersion);
+  const publishedPoster = data.publishedPoster ?? null;
+
+  const posterPicture = publishedPoster ? (
+    <EventPosterPicture
+      catalogId={catalogId}
+      eventId={eventId}
+      posterId={publishedPoster.id}
+      alt={data.title ?? t("eventFallbackTitle", { id: data.id })}
+    />
+  ) : null;
 
   const eventHeaderActions = (
     <>
-      {data.recordings.length > 0 && (
-        <DownloadButton catalogId={catalogId} eventId={eventId} size="default" />
-      )}
+      {data.recordings.length > 0 && <DownloadButton catalogId={catalogId} eventId={eventId} size="default" />}
       {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
       <SessionOrdinalBadge
         sessionOrdinal={data.sessionOrdinal}
@@ -213,16 +204,11 @@ export function EventDetail({
           </Button>
         </ResponsiveMenuTrigger>
         <ResponsiveMenuContent align="end" title={t("recordingsMenuTitle")}>
-          <ResponsiveMenuRadioGroup
-            value={activeSelectedHash}
-            onValueChange={(value) => setSelectedHash(value)}
-          >
+          <ResponsiveMenuRadioGroup value={activeSelectedHash} onValueChange={(value) => setSelectedHash(value)}>
             {data.recordings.map((recording) => (
               <ResponsiveMenuRadioItem key={recording.audioHash} value={recording.audioHash}>
                 <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="truncate">
-                    {recording.recorder?.name ?? t("unknownRecorder")}
-                  </span>
+                  <span className="truncate">{recording.recorder?.name ?? t("unknownRecorder")}</span>
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     {recording.durationHms ?? "--:--:--"}
                   </span>
@@ -241,40 +227,16 @@ export function EventDetail({
   ) : null;
 
   const detailExtras =
-    hasAnyPoster || canManagePosters || canManageSources || data.title || data.description ? (
+    canViewPosterCandidates || canManageSources || data.title || data.description ? (
       <div className="space-y-3">
-        {posterPortraitExists && (
-          <div className="sm:hidden">
-            <NextImage
-              src={portraitPosterSrc}
-              alt={data.title ?? t("eventFallbackTitle", { id: data.id })}
-              width={900}
-              height={1600}
-              className="w-full rounded-xl border border-border/50 bg-muted"
-              unoptimized
-            />
-          </div>
-        )}
-        {posterLandscapeExists && (
-          <div className="hidden sm:block">
-            <NextImage
-              src={landscapePosterSrc}
-              alt={data.title ?? t("eventFallbackTitle", { id: data.id })}
-              width={1600}
-              height={900}
-              className="w-full rounded-xl border border-border/50 bg-muted"
-              unoptimized
-            />
-          </div>
-        )}
-        {!hasAnyPoster && canManagePosters && (
+        {!publishedPoster && canViewPosterCandidates && (
           <Badge variant="outline" className="self-start">
             {tRoot("recording.noPoster")}
           </Badge>
         )}
-        {(canManagePosters || canManageSources) && (
+        {(canViewPosterCandidates || canManageSources) && (
           <div className="flex flex-wrap items-center gap-2">
-            {canManagePosters && (
+            {canViewPosterCandidates && (
               <Button variant="outline" size="sm" asChild>
                 <Link href={`/catalog/${catalogId}/event/${eventId}/poster`}>
                   <ImageIcon className="h-4 w-4 mr-2" />
@@ -319,6 +281,7 @@ export function EventDetail({
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
+        beforeAudioPlayer={posterPicture}
         afterAudioPlayer={
           <div className="space-y-4">
             {eventNavigation}
@@ -329,8 +292,7 @@ export function EventDetail({
     );
   }
 
-  const formattedDate =
-    formatPartialDate(data.dateYear, data.dateMonth, data.dateDay, locale) ?? String(data.dateYear);
+  const formattedDate = formatPartialDate(data.dateYear, data.dateMonth, data.dateDay, locale) ?? String(data.dateYear);
   const locationName = data.location?.name ?? t("unknownLocation");
 
   return (
@@ -358,17 +320,13 @@ export function EventDetail({
           )}
         </div>
 
-        {data.title && (
-          <p className="text-sm text-muted-foreground">{data.title}</p>
-        )}
+        {data.title && <p className="text-sm text-muted-foreground">{data.title}</p>}
 
-        {data.description && (
-          <p className="text-sm text-muted-foreground">{data.description}</p>
-        )}
+        {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
 
-        {(canManagePosters || canManageSources) && (
+        {(canViewPosterCandidates || canManageSources) && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {canManagePosters && (
+            {canViewPosterCandidates && (
               <Button variant="outline" size="sm" asChild>
                 <Link href={`/catalog/${catalogId}/event/${eventId}/poster`}>
                   <ImageIcon className="h-4 w-4 mr-2" />
@@ -388,9 +346,8 @@ export function EventDetail({
         )}
       </div>
 
-      <div className="rounded-md border p-6 text-sm text-muted-foreground">
-        {t("noRecordings")}
-      </div>
+      {posterPicture}
+      <div className="rounded-md border p-6 text-sm text-muted-foreground">{t("noRecordings")}</div>
       {eventNavigation}
     </div>
   );

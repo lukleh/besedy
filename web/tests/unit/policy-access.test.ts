@@ -18,6 +18,11 @@ import {
   requiresReleasedEventVisibilityScope,
 } from "@/lib/policy/event";
 import {
+  canManageEventPosterCandidates,
+  canPublishEventPosters,
+  canViewEventPosterCandidates,
+} from "@/lib/policy/event-poster";
+import {
   canPublishRecording,
   requiresReadyRecordingScope,
   canStreamRecording,
@@ -63,14 +68,26 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(listenerContext)).toBe(false);
     expect(canUseCatalogRag(listenerContext)).toBe(false);
     expect(canViewUnreleasedEvents(listenerContext)).toBe(false);
+    expect(canViewEventPosterCandidates(listenerContext)).toBe(false);
+    expect(canManageEventPosterCandidates(listenerContext)).toBe(false);
+    expect(canPublishEventPosters(listenerContext)).toBe(false);
     expect(
-      canViewRecording(listenerContext, { isActionable: true, isPublished: true })
+      canViewRecording(listenerContext, {
+        isActionable: true,
+        isPublished: true,
+      })
     ).toBe(true);
     expect(
-      canViewRecording(listenerContext, { isActionable: true, isPublished: false })
+      canViewRecording(listenerContext, {
+        isActionable: true,
+        isPublished: false,
+      })
     ).toBe(false);
     expect(
-      canStreamRecording(listenerContext, { isActionable: false, isPublished: true })
+      canStreamRecording(listenerContext, {
+        isActionable: false,
+        isPublished: true,
+      })
     ).toBe(false);
     expect(
       canViewRecordingTranscript(listenerContext, {
@@ -94,6 +111,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(ownerContext)).toBe(true);
     expect(canUseCatalogRag(ownerContext)).toBe(true);
     expect(canViewUnreleasedEvents(ownerContext)).toBe(true);
+    expect(canViewEventPosterCandidates(ownerContext)).toBe(true);
+    expect(canManageEventPosterCandidates(ownerContext)).toBe(true);
+    expect(canPublishEventPosters(ownerContext)).toBe(true);
     expect(canViewRecording(ownerContext)).toBe(true);
     expect(canViewRecordingTranscript(ownerContext)).toBe(true);
     expect(canAttemptCatalogManagement(ownerContext)).toBe(true);
@@ -142,6 +162,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(adminContext)).toBe(true);
     expect(canUseCatalogRag(adminContext)).toBe(true);
     expect(canViewUnreleasedEvents(adminContext)).toBe(true);
+    expect(canViewEventPosterCandidates(adminContext)).toBe(true);
+    expect(canManageEventPosterCandidates(adminContext)).toBe(true);
+    expect(canPublishEventPosters(adminContext)).toBe(true);
     expect(canAttemptCatalogManagement(adminContext)).toBe(true);
     expect(hasCatalogManagementAuthority(adminContext)).toBe(true);
     expect(canAccessCatalogSettings(adminContext)).toBe(true);
@@ -169,6 +192,9 @@ describe("policy access helpers", () => {
     expect(canAttemptCatalogManagement(viewerContext)).toBe(false);
     expect(canUseCatalogRag(viewerContext)).toBe(true);
     expect(canViewUnreleasedEvents(viewerContext)).toBe(true);
+    expect(canViewEventPosterCandidates(viewerContext)).toBe(true);
+    expect(canManageEventPosterCandidates(viewerContext)).toBe(false);
+    expect(canPublishEventPosters(viewerContext)).toBe(false);
     expect(hasCatalogManagementAuthority(viewerContext)).toBe(false);
     expect(canGrantCatalogGrant(viewerContext, "reader")).toBe(false);
     expect(

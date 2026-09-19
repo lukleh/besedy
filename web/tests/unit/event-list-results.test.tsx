@@ -44,7 +44,7 @@ const BASE_PROPS = {
       released: true,
       recordingCount: 3,
       sourceCount: 2,
-      posterStatus: { portrait: true, landscape: true },
+      posterStatus: "published" as const,
       primaryTitle: "Primary track",
       playback: null,
     },
@@ -68,13 +68,7 @@ describe("EventListResults", () => {
   });
 
   it("shows listener columns without owner-only fields", () => {
-    render(
-      <EventListResults
-        {...BASE_PROPS}
-        showAllColumns={false}
-        showReleaseState={false}
-      />
-    );
+    render(<EventListResults {...BASE_PROPS} showAllColumns={false} showReleaseState={false} />);
 
     expect(screen.getByText("columnDate")).toBeInTheDocument();
     expect(screen.getByText("columnLocation")).toBeInTheDocument();
@@ -86,26 +80,14 @@ describe("EventListResults", () => {
   });
 
   it("keeps release visibility without owner-only columns", () => {
-    render(
-      <EventListResults
-        {...BASE_PROPS}
-        showAllColumns={false}
-        showReleaseState
-      />
-    );
+    render(<EventListResults {...BASE_PROPS} showAllColumns={false} showReleaseState />);
 
     expect(screen.queryByText("columnRecordings")).not.toBeInTheDocument();
     expect(screen.getAllByText("released").length).toBeGreaterThan(0);
   });
 
   it("keeps the mobile card limited to date and location", () => {
-    render(
-      <EventListResults
-        {...BASE_PROPS}
-        showAllColumns
-        showReleaseState
-      />
-    );
+    render(<EventListResults {...BASE_PROPS} showAllColumns showReleaseState />);
 
     const mobileCard = screen.getByTestId("event-card-1");
 
@@ -204,17 +186,9 @@ describe("EventListResults", () => {
   it("shows the download icon on a downloaded event", () => {
     downloadedEvents.set(1, "complete");
 
-    render(
-      <EventListResults
-        {...BASE_PROPS}
-        showAllColumns={false}
-        showReleaseState={false}
-      />
-    );
+    render(<EventListResults {...BASE_PROPS} showAllColumns={false} showReleaseState={false} />);
 
-    const marker = within(screen.getByTestId("event-card-1")).getByLabelText(
-      "downloaded"
-    );
+    const marker = within(screen.getByTestId("event-card-1")).getByLabelText("downloaded");
     expect(marker.querySelector(".lucide-download")).toBeInTheDocument();
     expect(marker).toHaveClass("text-foreground");
   });

@@ -306,13 +306,14 @@ than taken, which is what makes the role name worth reading.
 
 ### Editorial and publication
 
-| Permission             | Covers                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| `publish_recording`    | Recording publication state.                                                                    |
-| `manage_events`        | Creating, editing and deleting events; attaching, detaching and choosing the primary recording. |
-| `release_events`       | Releasing an event to its audience.                                                             |
-| `manage_event_posters` | Event poster upload and removal.                                                                |
-| `manage_event_sources` | Event source records.                                                                           |
+| Permission              | Covers                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `publish_recording`     | Recording publication state.                                                                                                                           |
+| `manage_events`         | Creating, editing and deleting events; attaching, detaching and choosing the primary recording.                                                        |
+| `release_events`        | Releasing an event to its audience.                                                                                                                    |
+| `manage_event_posters`  | List and preview poster candidates; create candidates and remove unselected candidates. See [ADR 0009](0009-event-poster-publication.md).              |
+| `publish_event_posters` | Select, replace, and unpublish an event's audience poster.                                                                                             |
+| `manage_event_sources`  | Event source records.                                                                                                                                  |
 
 ### Access and configuration
 
@@ -358,14 +359,14 @@ administrative surfaces.
 
 ## Roles
 
-| Role            | Name here    | Permissions                                                                                                                                                                                                                                                                                                                                                          |
-| --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `listener`      | posluchač    | `stream_audio`                                                                                                                                                                                                                                                                                                                                                       |
-| `reader`        | čtenář       | + `read_transcripts`, `search_transcripts`                                                                                                                                                                                                                                                                                                                           |
-| `corrector`     | korektor     | `reader` + `correct_transcripts`                                                                                                                                                                                                                                                                                                                                     |
-| `host`          | hostitel     | `reader` + `manage_access`                                                                                                                                                                                                                                                                                                                                           |
-| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
-| `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config`                                                                                                                                                                                                                                                                            |
+| Role            | Name here    | Permissions                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `listener`      | posluchač    | `stream_audio`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `reader`        | čtenář       | + `read_transcripts`, `search_transcripts`                                                                                                                                                                                                                                                                                                                                                        |
+| `corrector`     | korektor     | `reader` + `correct_transcripts`                                                                                                                                                                                                                                                                                                                                                                  |
+| `host`          | hostitel     | `reader` + `manage_access`                                                                                                                                                                                                                                                                                                                                                                        |
+| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `publish_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config`                                                                                                                                                                                                                                                                                                         |
 
 Every role below `curator` sees released events and published recordings only,
 because none of them holds `see_unreleased`.
@@ -520,7 +521,8 @@ start empty.
   audience**, in material that is by its nature discussion. This is accepted for
   now rather than overlooked: the overlay identifies nobody, and attributing
   speech is a later phase built on the same span mechanism.
-- **Posters and sources stay separate permissions.**
+- **Poster upload and poster publication are separate permissions, and sources
+  remain separate from both.** See [ADR 0009](0009-event-poster-publication.md).
 - **Downloaded audio is the playable file.** Original masters are not part of
   any role.
 - **File delivery starts at `redaktor`.** No role describing an ordinary

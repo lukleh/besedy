@@ -26,6 +26,7 @@ export type AuditSubjectType =
   | "audio"
   | "transcript"
   | "metadata"
+  | "event_poster"
   | "unknown";
 
 export interface AuditActorSnapshot {
@@ -156,23 +157,14 @@ function getCatalogId(
   payload: Record<string, unknown> | null,
   subjectSnapshot?: AuditSubjectSnapshot | null
 ): string | null {
-  return (
-    subjectSnapshot?.catalogId ??
-    getString(payload?.catalogId) ??
-    getString(payload?.groupId)
-  );
+  return subjectSnapshot?.catalogId ?? getString(payload?.catalogId) ?? getString(payload?.groupId);
 }
 
-function getAccessLevel(
-  payload: Record<string, unknown> | null,
-  action: string
-): string | null {
+function getAccessLevel(payload: Record<string, unknown> | null, action: string): string | null {
   return (
     getString(payload?.accessLevel) ??
     getString(payload?.newAccessLevel) ??
-    (action === "CATALOG_ACCESS_REVOKED"
-      ? getString(payload?.previousAccessLevel)
-      : null)
+    (action === "CATALOG_ACCESS_REVOKED" ? getString(payload?.previousAccessLevel) : null)
   );
 }
 
@@ -200,10 +192,7 @@ function pickSubjectLabel(
   );
 }
 
-function catalogSuffix(
-  payload: Record<string, unknown> | null,
-  subjectSnapshot?: AuditSubjectSnapshot | null
-): string {
+function catalogSuffix(payload: Record<string, unknown> | null, subjectSnapshot?: AuditSubjectSnapshot | null): string {
   const catalogLabel = getCatalogLabel(payload, subjectSnapshot);
   const catalogId = getCatalogId(payload, subjectSnapshot);
   if (catalogLabel) {
@@ -246,7 +235,8 @@ export function inferAuditDomain(action: string, resource: string): AuditDomain 
   if (
     action === "METADATA_UPDATED" ||
     action === "METADATA_VERIFIED" ||
-    action === "METADATA_DELETED"
+    action === "METADATA_DELETED" ||
+    action.startsWith("EVENT_POSTER_")
   ) {
     return "content";
   }
@@ -262,7 +252,7 @@ export function inferAuditDomain(action: string, resource: string): AuditDomain 
   if (resource === "audio" || resource === "transcript") {
     return "data_access";
   }
-  if (resource === "metadata") {
+  if (resource === "metadata" || resource === "event_poster") {
     return "content";
   }
   return "unknown";
@@ -282,6 +272,7 @@ export function inferAuditOutcome(action: string): AuditOutcome {
     action === "CATALOG_UPDATED" ||
     action === "METADATA_UPDATED" ||
     action === "METADATA_VERIFIED" ||
+    action.startsWith("EVENT_POSTER_") ||
     action === "USER_BLOCKED" ||
     action === "USER_UNBLOCKED" ||
     action === "USER_DELETED" ||
@@ -326,6 +317,9 @@ export function inferSubjectType(action: string, resource: string): AuditSubject
   if (resource === "metadata" || resource === "metadata-read") {
     return "metadata";
   }
+  if (resource === "event_poster" || action.startsWith("EVENT_POSTER_")) {
+    return "event_poster";
+  }
   if (resource === "auth") {
     return "auth";
   }
@@ -348,9 +342,7 @@ export function buildAuditSummary({
   const accessPrefix = accessLevel ? `${accessLevel} access` : "Catalog access";
   const catalogInfo = catalogSuffix(payload, subjectSnapshot);
   const actorLabel =
-    actorSnapshot?.name ??
-    actorSnapshot?.email ??
-    (actorSnapshot?.type === "system" ? "System" : null);
+    actorSnapshot?.name ?? actorSnapshot?.email ?? (actorSnapshot?.type === "system" ? "System" : null);
 
   switch (action) {
     case "LOGIN":
@@ -422,6 +414,14 @@ export function buildAuditSummary({
       return `Metadata verification updated for ${subjectLabel}`;
     case "METADATA_DELETED":
       return `Metadata deleted for ${subjectLabel}`;
+    case "EVENT_POSTER_CREATED":
+      return `Poster candidate created for ${subjectLabel}`;
+    case "EVENT_POSTER_DELETED":
+      return `Poster candidate deleted for ${subjectLabel}`;
+    case "EVENT_POSTER_PUBLISHED":
+      return `Poster published for ${subjectLabel}`;
+    case "EVENT_POSTER_UNPUBLISHED":
+      return `Poster unpublished for ${subjectLabel}`;
     case "ACCESS_DENIED":
       return `Access denied to ${subjectLabel}`;
     case "SUPERADMIN_ACCESS":
@@ -486,9 +486,7 @@ export function getAuditMetadata(details: unknown): AuditMetadataEnvelope | null
       : null,
     subjectSnapshot: isRecord(audit.subjectSnapshot)
       ? {
-          type:
-            (getString(audit.subjectSnapshot.type) as AuditSubjectType) ??
-            "unknown",
+          type: (getString(audit.subjectSnapshot.type) as AuditSubjectType) ?? "unknown",
           id: getString(audit.subjectSnapshot.id),
           label: getString(audit.subjectSnapshot.label),
           secondaryLabel: getString(audit.subjectSnapshot.secondaryLabel),
@@ -513,10 +511,7 @@ function toCreatedAtString(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function buildActorView(
-  row: AuditLogRecord,
-  metadata: AuditMetadataEnvelope | null
-): AuditActorView {
+function buildActorView(row: AuditLogRecord, metadata: AuditMetadataEnvelope | null): AuditActorView {
   const actorSnapshot = metadata?.actorSnapshot;
   if (actorSnapshot?.type === "system") {
     return {
@@ -533,8 +528,7 @@ function buildActorView(
       kind: "user",
       userId: row.user.id,
       label: row.user.name ?? row.user.email ?? row.user.id,
-      secondaryLabel:
-        row.user.name && row.user.email ? row.user.email : null,
+      secondaryLabel: row.user.name && row.user.email ? row.user.email : null,
       image: row.user.image ?? null,
     };
   }
@@ -543,13 +537,8 @@ function buildActorView(
     return {
       kind: actorSnapshot.type === "anonymous" ? "anonymous" : "user",
       userId: actorSnapshot.userId ?? row.userId ?? null,
-      label:
-        actorSnapshot.name ??
-        actorSnapshot.email ??
-        actorSnapshot.userId ??
-        "Unknown user",
-      secondaryLabel:
-        actorSnapshot.name && actorSnapshot.email ? actorSnapshot.email : null,
+      label: actorSnapshot.name ?? actorSnapshot.email ?? actorSnapshot.userId ?? "Unknown user",
+      secondaryLabel: actorSnapshot.name && actorSnapshot.email ? actorSnapshot.email : null,
       image: null,
     };
   }
@@ -589,22 +578,12 @@ function buildTargetView(
       (getString(row.subjectType) as AuditSubjectType | null) ??
       metadata?.subjectType ??
       inferSubjectType(row.action, row.resource),
-    id:
-      subjectSnapshot?.id ??
-      metadata?.subjectId ??
-      row.subjectId ??
-      row.resourceId ??
-      null,
+    id: subjectSnapshot?.id ?? metadata?.subjectId ?? row.subjectId ?? row.resourceId ?? null,
     label: label ?? row.resource,
     secondaryLabel:
-      subjectSnapshot?.secondaryLabel ??
-      (label !== subjectSnapshot?.label ? getString(payload?.email) : null) ??
-      null,
+      subjectSnapshot?.secondaryLabel ?? (label !== subjectSnapshot?.label ? getString(payload?.email) : null) ?? null,
     catalogId:
-      subjectSnapshot?.catalogId ??
-      metadata?.catalogId ??
-      row.catalogId ??
-      getCatalogId(payload, subjectSnapshot),
+      subjectSnapshot?.catalogId ?? metadata?.catalogId ?? row.catalogId ?? getCatalogId(payload, subjectSnapshot),
     catalogLabel: getCatalogLabel(payload, subjectSnapshot),
   };
 }
@@ -653,10 +632,7 @@ export function mapAuditLogToListItem(row: AuditLogRecord): AuditListItem {
   };
 }
 
-export function mapAuditLogToDetailViewModel(
-  row: AuditLogRecord,
-  relatedEntity: unknown
-): AuditDetailViewModel {
+export function mapAuditLogToDetailViewModel(row: AuditLogRecord, relatedEntity: unknown): AuditDetailViewModel {
   return {
     ...mapAuditLogToListItem(row),
     relatedEntity,

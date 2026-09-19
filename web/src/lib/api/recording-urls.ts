@@ -45,11 +45,7 @@ export function buildAudioUrl(
   return `/api/catalogs/${catalogId}/recordings/${hash}/audio`;
 }
 
-export function buildAudioDownloadUrl(
-  catalogId: string,
-  hash: string,
-  source: "archived" | "original"
-): string {
+export function buildAudioDownloadUrl(catalogId: string, hash: string, source: "archived" | "original"): string {
   const params = new URLSearchParams({ download: "true", source });
   return `/api/catalogs/${catalogId}/recordings/${hash}/audio?${params.toString()}`;
 }
@@ -71,11 +67,7 @@ export function buildTranscriptUrl(hash: string, groupId: string | null | undefi
   return `/api/transcript/${hash}?${params.toString()}`;
 }
 
-export function buildTranscriptFormatsUrl(
-  hash: string,
-  groupId: string | null | undefined,
-  backend: string
-): string {
+export function buildTranscriptFormatsUrl(hash: string, groupId: string | null | undefined, backend: string): string {
   const params = withGroup(new URLSearchParams({ backend }), groupId);
   return `/api/transcript/${hash}/formats?${params.toString()}`;
 }
@@ -85,11 +77,7 @@ export function buildDiarizationBackendsUrl(hash: string, groupId?: string | nul
   return `/api/transcript/${hash}/speakers${suffix ? `?${suffix}` : ""}`;
 }
 
-export function buildDiarizationUrl(
-  hash: string,
-  groupId: string | null | undefined,
-  backend: string
-): string {
+export function buildDiarizationUrl(hash: string, groupId: string | null | undefined, backend: string): string {
   const params = withGroup(new URLSearchParams({ backend }), groupId);
   return `/api/transcript/${hash}/speakers?${params.toString()}`;
 }
@@ -101,11 +89,32 @@ export function buildEventDetailUrl(catalogId: string, eventId: number): string 
 export function buildEventPosterUrl(
   catalogId: string,
   eventId: number,
-  variant: "portrait" | "landscape",
+  variant: "square" | "landscape",
   version?: string | null
 ): string {
   const versionSuffix = version ? `&v=${encodeURIComponent(version)}` : "";
   return `/api/catalogs/${catalogId}/events/${eventId}/poster?variant=${variant}${versionSuffix}`;
+}
+
+export function buildEventPosterCandidatesUrl(catalogId: string, eventId: number): string {
+  return `/api/catalogs/${catalogId}/events/${eventId}/posters`;
+}
+
+export function buildEventPosterCandidateUrl(catalogId: string, eventId: number, posterId: string): string {
+  return `${buildEventPosterCandidatesUrl(catalogId, eventId)}/${posterId}`;
+}
+
+export function buildEventPosterCandidateImageUrl(
+  catalogId: string,
+  eventId: number,
+  posterId: string,
+  variant: "square" | "landscape"
+): string {
+  return `${buildEventPosterCandidateUrl(catalogId, eventId, posterId)}/image?variant=${variant}`;
+}
+
+export function buildEventPosterPublicationUrl(catalogId: string, eventId: number): string {
+  return `/api/catalogs/${catalogId}/events/${eventId}/poster-publication`;
 }
 
 export function buildEventPagePath(catalogId: string, eventId: number): string {

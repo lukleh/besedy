@@ -59,11 +59,21 @@ export function getTextDataDir(): string {
 }
 
 /**
- * Get posters directory from config (falls back to text_data_dir).
+ * Get the posters directory. The application config is authoritative when it
+ * is available. Host-run operator tools fall back to POSTERS_DIR because the
+ * selected production environment points BESEDY_CONFIG at a container-only
+ * path.
  */
 export function getPostersDir(): string {
-  const config = getBesedyConfig();
-  return config.paths.posters_dir || config.paths.text_data_dir;
+  try {
+    const config = getBesedyConfig();
+    return config.paths.posters_dir || config.paths.text_data_dir;
+  } catch (configError) {
+    const environmentPath = process.env.POSTERS_DIR?.trim();
+    if (environmentPath) return environmentPath;
+
+    throw configError;
+  }
 }
 
 /**

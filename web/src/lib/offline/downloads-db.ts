@@ -40,9 +40,9 @@ export interface DownloadEventSnapshot {
   /** Absent on records downloaded before ordinals were stored; the cue hides then. */
   sessionOrdinal?: number;
   sessionCount?: number;
-  posterFiles: {
-    portrait: { exists: boolean; uploadedAt: string | null };
-    landscape: { exists: boolean; uploadedAt: string | null };
+  publishedPoster: {
+    id: string;
+    publishedAt: string;
   } | null;
 }
 
@@ -89,7 +89,9 @@ export interface DownloadRecord {
 export interface DownloadPosterPayload {
   blob: Blob;
   contentType: string;
-  variant: 'portrait' | 'landscape';
+  /** `portrait` is retained only for bundles created before ADR 0009. */
+  variant: 'square' | 'landscape' | 'portrait';
+  posterId?: string;
 }
 
 export interface DownloadBundlePayload {

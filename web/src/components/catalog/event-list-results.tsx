@@ -2,25 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import {
-  AlertCircle,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  Download,
-  Loader2,
-  Pause,
-} from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Download, Loader2, Pause } from "lucide-react";
 import { useDownloadedEvents } from "@/hooks/use-downloads";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 import { EventPlaybackProgress } from "./event-playback-progress";
@@ -103,16 +88,8 @@ export function EventListResults({
     const isPaused = status === "paused";
     const label = tDownloads(isPaused ? "statusPaused" : "statusError");
     return (
-      <span
-        className="inline-flex shrink-0 items-center text-muted-foreground"
-        aria-label={label}
-        title={label}
-      >
-        {isPaused ? (
-          <Pause className="h-4 w-4" />
-        ) : (
-          <AlertCircle className="h-4 w-4 text-destructive" />
-        )}
+      <span className="inline-flex shrink-0 items-center text-muted-foreground" aria-label={label} title={label}>
+        {isPaused ? <Pause className="h-4 w-4" /> : <AlertCircle className="h-4 w-4 text-destructive" />}
       </span>
     );
   };
@@ -122,9 +99,11 @@ export function EventListResults({
       return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
     }
 
-    return sortDir === "asc"
-      ? <ArrowUp className="h-3.5 w-3.5 text-foreground" />
-      : <ArrowDown className="h-3.5 w-3.5 text-foreground" />;
+    return sortDir === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-foreground" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-foreground" />
+    );
   };
 
   const getSortAria = (key: EventSortKey): "ascending" | "descending" | "none" => {
@@ -133,17 +112,16 @@ export function EventListResults({
   };
 
   const getPosterStatusLabel = (status: CatalogEventRow["posterStatus"]) => {
-    if (status.portrait && status.landscape) return t("postersBoth");
-    if (status.portrait) return t("postersPortrait");
-    if (status.landscape) return t("postersLandscape");
+    if (status === "published-with-newer-drafts") return t("postersPublishedWithDrafts");
+    if (status === "published") return t("postersPublished");
+    if (status === "draft-only") return t("postersDraftOnly");
     return t("postersMissing");
   };
 
-  const getPosterStatusVariant = (
-    status: CatalogEventRow["posterStatus"]
-  ): "default" | "secondary" | "outline" => {
-    if (status.portrait && status.landscape) return "default";
-    if (status.portrait || status.landscape) return "secondary";
+  const getPosterStatusVariant = (status: CatalogEventRow["posterStatus"]): "default" | "secondary" | "outline" => {
+    if (status === "published") return "default";
+    if (status === "published-with-newer-drafts") return "secondary";
+    if (status === "draft-only") return "secondary";
     return "outline";
   };
 
@@ -158,21 +136,13 @@ export function EventListResults({
           <TableHeader>
             <TableRow>
               <TableHead aria-sort={getSortAria("date")}>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={() => onSort("date")}
-                >
+                <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort("date")}>
                   {t("columnDate")}
                   {getSortIcon("date")}
                 </button>
               </TableHead>
               <TableHead aria-sort={getSortAria("location")}>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={() => onSort("location")}
-                >
+                <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort("location")}>
                   {t("columnLocation")}
                   {getSortIcon("location")}
                 </button>
@@ -193,20 +163,14 @@ export function EventListResults({
                   <TableHead>{t("columnPosters")}</TableHead>
                   <TableHead>{t("columnPrimaryRecording")}</TableHead>
                   <TableHead aria-sort={getSortAria("released")}>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1"
-                      onClick={() => onSort("released")}
-                    >
+                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort("released")}>
                       {t("columnStatus")}
                       {getSortIcon("released")}
                     </button>
                   </TableHead>
                 </>
               ) : null}
-              <TableHead className="w-36 text-right">
-                {t("columnProgress")}
-              </TableHead>
+              <TableHead className="w-36 text-right">{t("columnProgress")}</TableHead>
             </TableRow>
             <TableRow className="bg-muted/30 hover:bg-muted/30">
               <TableHead className="py-1.5 font-normal">
@@ -248,9 +212,7 @@ export function EventListResults({
                   {showReleaseState && !showAllColumns ? (
                     <select
                       value={releasedFilter}
-                      onChange={(event) =>
-                        onReleasedFilterChange(event.target.value as "all" | "true" | "false")
-                      }
+                      onChange={(event) => onReleasedFilterChange(event.target.value as "all" | "true" | "false")}
                       className={cn(
                         "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
                         releasedFilter !== "all" && "border-primary"
@@ -273,9 +235,7 @@ export function EventListResults({
                   <TableHead className="py-1.5 font-normal">
                     <select
                       value={releasedFilter}
-                      onChange={(event) =>
-                        onReleasedFilterChange(event.target.value as "all" | "true" | "false")
-                      }
+                      onChange={(event) => onReleasedFilterChange(event.target.value as "all" | "true" | "false")}
                       className={cn(
                         "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
                         releasedFilter !== "all" && "border-primary"
@@ -295,22 +255,15 @@ export function EventListResults({
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={showAllColumns ? 8 : 3}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={showAllColumns ? 8 : 3} className="py-10 text-center text-sm text-muted-foreground">
                   {hasActiveFilters ? t("noMatch") : t("empty")}
                 </TableCell>
               </TableRow>
             ) : (
               events.map((catalogEvent) => {
                 const formattedDate =
-                  formatPartialDate(
-                    catalogEvent.dateYear,
-                    catalogEvent.dateMonth,
-                    catalogEvent.dateDay,
-                    locale
-                  ) ?? String(catalogEvent.dateYear);
+                  formatPartialDate(catalogEvent.dateYear, catalogEvent.dateMonth, catalogEvent.dateDay, locale) ??
+                  String(catalogEvent.dateYear);
 
                 return (
                   <TableRow
@@ -365,11 +318,7 @@ export function EventListResults({
                     <TableCell className="w-36 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {renderDownloadMarker(catalogEvent.id)}
-                        <EventPlaybackProgress
-                          playback={catalogEvent.playback}
-                          layout="inline"
-                          showLabel
-                        />
+                        <EventPlaybackProgress playback={catalogEvent.playback} layout="inline" showLabel />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -391,20 +340,9 @@ export function EventListResults({
             const day = catalogEvent.dateDay;
             const formattedDate =
               month !== null && day !== null
-              ? formatMediumDate(
-                  catalogEvent.dateYear,
-                  month,
-                  day,
-                  locale
-                )
-              : formatPartialDate(
-                  catalogEvent.dateYear,
-                  month,
-                  day,
-                  locale
-                ) || String(catalogEvent.dateYear);
-            const locationName =
-              catalogEvent.location?.name ?? t("unknownLocation");
+                ? formatMediumDate(catalogEvent.dateYear, month, day, locale)
+                : formatPartialDate(catalogEvent.dateYear, month, day, locale) || String(catalogEvent.dateYear);
+            const locationName = catalogEvent.location?.name ?? t("unknownLocation");
 
             return (
               <button
@@ -422,13 +360,9 @@ export function EventListResults({
                   <div className="min-w-0 flex-1">
                     <div className="min-h-14 @[400px]:min-h-0">
                       <div className="text-lg leading-7 font-semibold">
-                        <span className="block truncate @[400px]:inline">
-                          {formattedDate}
-                        </span>
+                        <span className="block truncate @[400px]:inline">{formattedDate}</span>
                         <span className="hidden @[400px]:inline"> · </span>
-                        <span className="block truncate @[400px]:inline">
-                          {locationName}
-                        </span>
+                        <span className="block truncate @[400px]:inline">{locationName}</span>
                       </div>
                     </div>
                   </div>

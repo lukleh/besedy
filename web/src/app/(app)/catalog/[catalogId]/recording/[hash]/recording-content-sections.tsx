@@ -40,10 +40,7 @@ interface RecordingAudioSourceOption {
   label: string;
 }
 
-type RecordingPageStateVariant =
-  | "catalogNotFound"
-  | "recordingNotFound"
-  | "recordingUnavailable";
+type RecordingPageStateVariant = "catalogNotFound" | "recordingNotFound" | "recordingUnavailable";
 
 interface RecordingPageStateProps {
   afterAudioPlayer?: ReactNode;
@@ -61,6 +58,7 @@ interface RecordingHeaderProps {
 }
 
 interface RecordingAudioSectionProps {
+  beforeAudioPlayer?: ReactNode;
   afterAudioPlayer?: ReactNode;
   audioSource: string;
   audioUrl: string;
@@ -114,12 +112,7 @@ export function RecordingPageSkeleton() {
   );
 }
 
-export function RecordingPageState({
-  afterAudioPlayer,
-  backToListUrl,
-  catalogId,
-  variant,
-}: RecordingPageStateProps) {
+export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId, variant }: RecordingPageStateProps) {
   const t = useTranslations();
   const backHref = variant === "catalogNotFound" ? "/catalog" : backToListUrl;
   const title =
@@ -168,14 +161,14 @@ export function RecordingHeader({
   const formattedDate = hasFullDate
     ? formatMediumDate(recording.dateYear!, recording.dateMonth!, recording.dateDay!, locale)
     : null;
-  const fallbackTitle =
-    recording.curatedTitle || recording.title || recording.filename || hash.slice(0, 16);
-  const defaultRecorderIdentity = recording.recorder && !hideDefaultRecorder ? (
-    <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">
-      <Mic className="h-4 w-4 shrink-0" />
-      <span className="truncate">{recording.recorder.name}</span>
-    </div>
-  ) : null;
+  const fallbackTitle = recording.curatedTitle || recording.title || recording.filename || hash.slice(0, 16);
+  const defaultRecorderIdentity =
+    recording.recorder && !hideDefaultRecorder ? (
+      <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">
+        <Mic className="h-4 w-4 shrink-0" />
+        <span className="truncate">{recording.recorder.name}</span>
+      </div>
+    ) : null;
   const resolvedHeaderIdentity = headerIdentity ?? defaultRecorderIdentity;
 
   return (
@@ -189,7 +182,9 @@ export function RecordingHeader({
                 <span className="hidden sm:inline"> · </span>
                 <span className="block sm:inline">{recording.location!.name}</span>
               </>
-            ) : fallbackTitle}
+            ) : (
+              fallbackTitle
+            )}
           </h1>
         </div>
         {(resolvedHeaderIdentity || headerActions) && (
@@ -204,6 +199,7 @@ export function RecordingHeader({
 }
 
 export function RecordingAudioSection({
+  beforeAudioPlayer,
   afterAudioPlayer,
   audioSource,
   audioUrl,
@@ -232,10 +228,7 @@ export function RecordingAudioSection({
         <div className="flex items-center gap-2">
           <Music className="h-4 w-4 text-muted-foreground" />
           <ResponsiveSelect value={audioSource} onValueChange={onSourceChange}>
-            <ResponsiveSelectTrigger
-              className="w-[180px] h-8 text-sm"
-              aria-label={t("recording.source")}
-            >
+            <ResponsiveSelectTrigger className="w-[180px] h-8 text-sm" aria-label={t("recording.source")}>
               <ResponsiveSelectValue
                 placeholder={t("recording.source")}
                 displayValue={sources.find((source) => source.id === audioSource)?.label}
@@ -243,16 +236,10 @@ export function RecordingAudioSection({
             </ResponsiveSelectTrigger>
             <ResponsiveSelectContent title={t("recording.source")}>
               {sources.map((source) => (
-                <ResponsiveSelectItem
-                  key={source.id}
-                  value={source.id}
-                  disabled={!source.available}
-                >
+                <ResponsiveSelectItem key={source.id} value={source.id} disabled={!source.available}>
                   {source.label}
                   {source.id === savedSourceId && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {t("recording.saved")}
-                    </span>
+                    <span className="ml-2 text-xs text-muted-foreground">{t("recording.saved")}</span>
                   )}
                 </ResponsiveSelectItem>
               ))}
@@ -260,6 +247,8 @@ export function RecordingAudioSection({
           </ResponsiveSelect>
         </div>
       )}
+
+      {beforeAudioPlayer}
 
       <AudioPlayer
         src={audioUrl}
