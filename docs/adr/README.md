@@ -22,6 +22,7 @@ each record links to those references.
 | [0005](0005-catalog-permission-model.md) | Accepted | Permission sets with visibility as one permission, roles as named presets                |
 | [0006](0006-transcript-correction.md)    | Proposed | Human transcript correction as a time-anchored layer that substitutes for machine output |
 | [0007](0007-per-catalog-lookups.md)      | Accepted | Recorder, location and album rows belong to one catalog                                  |
+| [0008](0008-web-recording-ingest.md)     | Accepted | Web-triggered recording ingest via a host Prefect worker; duplicates rejected            |
 
 When a decision changes, add a new ADR and mark the old record superseded. Do
 not rewrite old context to make it appear that the new design always existed.

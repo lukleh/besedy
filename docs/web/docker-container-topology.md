@@ -106,6 +106,7 @@ Before deploying, compare the target shape with the environment using the
 | Prefect control plane | `jobs-service/docker-compose.prefect.yml` | `besedy-prefect` | Prefect API/UI, services, Prefect DB | Shared singleton |
 | Deep Search runtime | `jobs-service/docker-compose.jobs-{dev,test,prod}.yml` | `besedy-jobs-{dev,test,prod}` | Jobs API and Prefect worker for one web environment | Yes |
 | RAG | `rag-services/docker-compose.yml` | `besedy-rag-services` | ColBERT sidecar and optional legacy TEI services | Shared singleton |
+| Ingest worker | not Docker: `jobs-service/host-worker/besedy-ingest-worker.service` (systemd user unit) | host process | Prefect process worker for `besedy-ingest-<env>`; runs the catalog CLI with host Docker/GPU access | Yes (one pool per env) |
 | ML backends | `backends/docker-compose.yml` | varies | Legacy/auxiliary model backends | Not part of current Deep Search path |
 
 ## Web Stacks
@@ -268,6 +269,18 @@ with read-only root filesystems, dropped capabilities, and an ephemeral `/tmp`.
 The API reads the output bind mount, while only the worker can write it. For
 ChatGPT profiles, an opt-in overlay mounts only the host Codex `auth.json`, not
 `~/.codex`; other provider profiles run without any Codex credential mount.
+
+### Host Ingest Worker
+
+Recording ingest (see [recording-ingest.md](recording-ingest.md)) reuses the
+shared Prefect control plane and each environment's jobs API, but its worker
+cannot be one of the hardened containers: the pipeline launches GPU backend
+containers through the host Docker daemon and writes catalog CSVs and audio
+artifacts. The worker is therefore a systemd **user** service on the host,
+polling `besedy-ingest-<env>` with concurrency 1, configured by
+`~/.config/lukleh/besedy/ingest-worker.env`. It reaches the shared Prefect API
+on `127.0.0.1:4200` and the target web app on its published loopback port, and
+shares the `UPLOADS_DIR` bind mount with that web container.
 
 ### Should Prefect Be Shared Across Environments?
 

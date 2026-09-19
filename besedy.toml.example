@@ -39,6 +39,11 @@ text_data_dir = ""
 # Directory for recording sources (URLs/files) managed by the web app.
 # Required for the Sources feature in the web app.
 sources_dir = "/path/to/sources"
+# Directory for recordings uploaded through the web admin (Admin -> Ingest).
+# The web app writes <catalog>/incoming/<intake>/, the host ingest worker moves
+# accepted files to <catalog>/accepted/ (which becomes their catalog path).
+# Absolute path, or relative to audio_artifacts_dir. Required for web ingest.
+uploads_dir = ""
 # Output directory name for transcript JSON files
 # (organized by workflow/output-component/full-audio-hash/)
 transcripts_dir = "transcripts"
