@@ -123,6 +123,7 @@ describe("catalog API routes (access gating)", () => {
       hasAccess: true,
       accessLevel: "OWNER",
       catalogGrant: grantFromLevel("OWNER"),
+      canBrowseRecordings: true,
       canDownload: true,
       canEditMetadata: true,
       canBatchEditMetadata: true,
@@ -238,7 +239,12 @@ describe("catalog API routes (access gating)", () => {
     getCatalogCapability.mockResolvedValue({
       hasAccess: true,
       accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      // Browsing the list is its own permission now, and no role below the
+      // curator carries it. This is the grant the scoping below exists for:
+      // an account given the list as an extra, which still cannot see
+      // unreleased material.
+      catalogGrant: { level: null, role: "listener", extras: ["browse_recordings"] },
+      canBrowseRecordings: true,
       canDownload: false,
       canEditMetadata: false,
       canBatchEditMetadata: false,
@@ -307,7 +313,8 @@ describe("catalog API routes (access gating)", () => {
     getCatalogCapability.mockResolvedValue({
       hasAccess: true,
       accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: { level: null, role: "listener", extras: ["browse_recordings"] },
+      canBrowseRecordings: true,
     });
     loadEnrichedCatalogEntries.mockResolvedValue([
       createEntry({

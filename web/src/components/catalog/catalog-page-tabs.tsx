@@ -27,6 +27,7 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
   const showReleaseState = featureData?.features.events.showReleaseState ?? false;
   const canUseRagSearch = featureData?.features.events.canUseRagSearch ?? false;
   const canViewDeepSearch = featureData?.features.deepSearch?.canView ?? false;
+  const canBrowseRecordings = featureData?.features.recordings?.canBrowse ?? false;
   const { activeTab, setActiveTab } = useCatalogTab(catalogId, showTabs);
   const tabFromUrl = searchParams.get("tab");
   const initialTabFromUrl: CatalogTab | null =
@@ -53,7 +54,9 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
     ? "recordings"
     : showTabs
       ? (initialTabFromUrl ?? activeTab)
-      : "events";
+      : canBrowseRecordings
+        ? "recordings"
+        : "events";
 
   function handleTabChange(nextTab: CatalogTab) {
     setActiveTab(nextTab);
@@ -69,6 +72,15 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
   const deepSearchHref = canViewDeepSearch
     ? `/catalog/${catalogId}/deep-search`
     : undefined;
+
+  // Neither surface: the events feature is off for this account and it may not
+  // browse recordings either. Rendering the list would fetch one the server
+  // refuses, so say so instead.
+  if (!canViewEvents && !canBrowseRecordings) {
+    return (
+      <div className="py-6 text-muted-foreground">{t("noSurfaceAvailable")}</div>
+    );
+  }
 
   if (!canViewEvents) {
     return <CatalogList catalogId={catalogId} deepSearchHref={deepSearchHref} />;

@@ -14,14 +14,17 @@ export interface EventColumnPolicyContext {
   isCatalogAdmin: boolean;
 }
 
+/**
+ * Whether to offer a switch between the two surfaces.
+ *
+ * Both of them, and nothing else. Requiring event-edit rights here is what
+ * made browsing recordings an accident: it hid the switch from everyone who
+ * could not edit events, and with it the only path to the recordings list.
+ */
 export function canUseCatalogTabSwitcher(
   context: CatalogTabPolicyContext
 ): boolean {
-  return (
-    context.canBrowseRecordings &&
-    context.canBrowseEvents &&
-    context.canEditEvents
-  );
+  return context.canBrowseRecordings && context.canBrowseEvents;
 }
 
 export function canSeeRecordingsTab(context: CatalogTabPolicyContext): boolean {

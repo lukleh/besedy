@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogFeaturesResponse } from "@/lib/features/capabilities";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import {
+  grantForRole,
+  grantFromLevel,
+} from "@/lib/policy/catalog-permissions";
 
 function deepSearch(enabled: boolean, canView: boolean) {
   return {
@@ -11,8 +14,10 @@ function deepSearch(enabled: boolean, canView: boolean) {
 }
 
 describe("event capabilities", () => {
+  // Browsing recordings is a permission now, and no role below the curator
+  // carries it, so these two have one surface and need no switch.
   it("keeps listeners on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse(grantFromLevel("LISTENER"), false, false);
+    const result = buildCatalogFeaturesResponse(grantForRole("listener"), false, false);
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -27,13 +32,14 @@ describe("event capabilities", () => {
           showReleaseState: false,
           canUseRagSearch: false,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(false, false),
       },
     });
   });
 
-  it("keeps viewers on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse(grantFromLevel("VIEWER"), false, false);
+  it("keeps readers on the events-first view without a tab switcher", () => {
+    const result = buildCatalogFeaturesResponse(grantForRole("reader"), false, false);
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -45,9 +51,12 @@ describe("event capabilities", () => {
           canEdit: false,
           showTabs: false,
           showAllColumns: false,
-          showReleaseState: true,
+          // A reader reads; seeing unreleased material is a curator's, so the
+          // release-state indicator has nothing to indicate.
+          showReleaseState: false,
           canUseRagSearch: true,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(false, false),
       },
     });
@@ -69,6 +78,7 @@ describe("event capabilities", () => {
           showReleaseState: true,
           canUseRagSearch: true,
         },
+        recordings: { canBrowse: true },
         deepSearch: deepSearch(false, false),
       },
     });
@@ -96,6 +106,7 @@ describe("event capabilities", () => {
           showReleaseState: true,
           canUseRagSearch: true,
         },
+        recordings: { canBrowse: true },
         deepSearch: deepSearch(false, false),
       },
     });
@@ -123,6 +134,7 @@ describe("event capabilities", () => {
           showReleaseState: false,
           canUseRagSearch: false,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(false, false),
       },
     });
@@ -147,6 +159,7 @@ describe("event capabilities", () => {
           showReleaseState: false,
           canUseRagSearch: false,
         },
+        recordings: { canBrowse: false },
         deepSearch: deepSearch(true, false),
       },
     });

@@ -45,8 +45,17 @@ export function canViewCatalog(context: CatalogPolicyContext): boolean {
   return hasCatalogAccess(context);
 }
 
+/**
+ * Whether the actor may browse the recordings list.
+ *
+ * A choice rather than a side effect. It used to be "anyone who can open the
+ * catalog", which was then narrowed by accident: the tab switcher demanded
+ * event-edit rights, so everybody below an owner was locked to events with no
+ * path here at all. The permission says who the surface is for, and the
+ * switcher asks about browsing rather than about editing.
+ */
 export function canBrowseRecordings(context: CatalogPolicyContext): boolean {
-  return canViewCatalog(context);
+  return hasCatalogAccess(context) && hasCatalogPermission(context, "browse_recordings");
 }
 
 export function canViewCatalogTranscripts(context: CatalogPolicyContext): boolean {
