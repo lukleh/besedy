@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { redactDatabaseUrl } from "@/lib/script-env";
+import { redactDatabaseUrl, resolveHostDatabaseUrl } from "@/lib/script-env";
+
+describe("resolveHostDatabaseUrl", () => {
+  const containerUrl = "postgresql://user:secret@db:5432/besedy?schema=public";
+
+  it("uses the published host and port for a host-run operator command", () => {
+    expect(resolveHostDatabaseUrl(containerUrl, "127.0.0.1:55432")).toBe(
+      "postgresql://user:secret@127.0.0.1:55432/besedy?schema=public"
+    );
+  });
+
+  it("uses loopback when the binding contains only a port", () => {
+    expect(resolveHostDatabaseUrl(containerUrl, "55432")).toBe(
+      "postgresql://user:secret@127.0.0.1:55432/besedy?schema=public"
+    );
+  });
+
+  it("leaves the URL unchanged when no published binding is configured", () => {
+    expect(resolveHostDatabaseUrl(containerUrl, undefined)).toBe(containerUrl);
+  });
+
+  it("rejects malformed bindings", () => {
+    expect(() => resolveHostDatabaseUrl(containerUrl, "localhost:not-a-port")).toThrow(
+      "DB_PORT must be a port or host:port binding"
+    );
+  });
+});
 
 describe("redactDatabaseUrl", () => {
   it("redacts a standard username/password URL", () => {

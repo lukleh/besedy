@@ -9,9 +9,7 @@ import * as session from "@/lib/auth/session";
 import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/session", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/auth/session")>(
-    "@/lib/auth/session"
-  );
+  const actual = await vi.importActual<typeof import("@/lib/auth/session")>("@/lib/auth/session");
   return {
     ...actual,
     getCurrentUserId: vi.fn(),
@@ -122,6 +120,9 @@ describe("access capabilities", () => {
       canAccessSettings: false,
       canManageCatalogConfiguration: false,
       canUseRagSearch: true,
+      canViewPosterCandidates: true,
+      canManagePosters: false,
+      canPublishPosters: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -152,6 +153,9 @@ describe("access capabilities", () => {
       canManageAccess: true,
       canAccessSettings: true,
       canManageCatalogConfiguration: false,
+      canViewPosterCandidates: true,
+      canManagePosters: true,
+      canPublishPosters: true,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -244,15 +248,8 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockImplementation(
-      ({
-        where,
-      }: {
-        where: { id: string; isActive?: boolean };
-      }) =>
-        Promise.resolve(
-          where.isActive === undefined ? { id: "catalog-1" } : null
-        )
+    prisma.workflowGroup.findFirst.mockImplementation(({ where }: { where: { id: string; isActive?: boolean } }) =>
+      Promise.resolve(where.isActive === undefined ? { id: "catalog-1" } : null)
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
       accessLevel: "OWNER",

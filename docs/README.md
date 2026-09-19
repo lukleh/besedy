@@ -15,6 +15,7 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface
 - [web/offline.md](web/offline.md) -- downloads, service worker caching, offline behavior
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
+- [web/recording-ingest.md](web/recording-ingest.md) -- admin recording upload processed by a host Prefect worker, with auto catalog sync
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
 - [web/security.md](web/security.md) -- auth model, access control, deployment hardening
 - [web/egress-control-retirement.md](web/egress-control-retirement.md) -- why the former Docker LAN egress control was removed and what a future design must address

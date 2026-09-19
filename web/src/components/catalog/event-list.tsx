@@ -50,7 +50,13 @@ import {
   saveEventListState,
 } from "./event-list-storage";
 import { EventListCreateDialog } from "./event-list-create-dialog";
+import { EventCreationConflictDialog } from "./event-creation-conflict-dialog";
 import { EventListResults } from "./event-list-results";
+import {
+  CREATE_DISTINCT_EVENT_INTENT,
+  type EventCreationConflictDetails,
+} from "@/lib/catalog-events/create-conflict";
+import { readEventCreationConflict } from "@/lib/catalog-events/create-conflict-client";
 import type {
   CatalogEventRow,
   CreateEventPayload,
@@ -70,6 +76,11 @@ import {
 
 interface EventHealthResponse {
   unassignedRecordings: number;
+}
+
+interface PendingEventCreation {
+  conflict: EventCreationConflictDetails;
+  payload: CreateEventPayload;
 }
 
 const eventHealthResponseSchema = z.object({
@@ -112,9 +123,10 @@ export function EventList({
   const [dateYear, setDateYear] = useState("");
   const [dateMonth, setDateMonth] = useState("");
   const [dateDay, setDateDay] = useState("");
-  const [sessionIndex, setSessionIndex] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [pendingEventCreation, setPendingEventCreation] =
+    useState<PendingEventCreation | null>(null);
 
   const [isLoadMoreMode, setIsLoadMoreMode] = useState(false);
   const [accumulatedEvents, setAccumulatedEvents] = useState<CatalogEventRow[]>(
@@ -390,12 +402,18 @@ export function EventList({
       setDateYear("");
       setDateMonth("");
       setDateDay("");
-      setSessionIndex("");
       setTitle("");
       setDescription("");
+      setPendingEventCreation(null);
       toast({ title: t("toastCreated") });
     },
-    onError: (err: Error) => {
+    onError: (err: Error, payload) => {
+      const conflict = readEventCreationConflict(err);
+      if (conflict) {
+        setCreateOpen(false);
+        setPendingEventCreation({ conflict, payload });
+        return;
+      }
       toast({
         title: t("toastCreateFailed"),
         description: err.message,
@@ -521,9 +539,6 @@ export function EventList({
     const parsedDateYear = Number.parseInt(dateYear, 10);
     const parsedDateMonth = dateMonth ? Number.parseInt(dateMonth, 10) : null;
     const parsedDateDay = dateDay ? Number.parseInt(dateDay, 10) : null;
-    const parsedSessionIndex = sessionIndex
-      ? Number.parseInt(sessionIndex, 10)
-      : null;
 
     if (!Number.isFinite(parsedLocationId) || parsedLocationId <= 0) {
       toast({
@@ -547,24 +562,12 @@ export function EventList({
       });
       return;
     }
-    if (
-      parsedSessionIndex !== null &&
-      (!Number.isFinite(parsedSessionIndex) || parsedSessionIndex < 1)
-    ) {
-      toast({
-        title: tCommon("validationSessionIndexRequired"),
-        variant: "destructive",
-      });
-      return;
-    }
-
     createMutation.mutate({
       workflowGroupId: catalogId,
       locationId: parsedLocationId,
       dateYear: parsedDateYear,
       dateMonth: parsedDateMonth,
       dateDay: parsedDateDay,
-      ...(parsedSessionIndex !== null ? { sessionIndex: parsedSessionIndex } : {}),
       title: title.trim() || null,
       description: description.trim() || null,
     });
@@ -961,19 +964,38 @@ export function EventList({
           isPending={createMutation.isPending}
           locationId={locationId}
           metadataLocations={metadataLocations}
-          sessionIndex={sessionIndex}
           onDateDayChange={setDateDay}
           onDateMonthChange={setDateMonth}
           onDateYearChange={setDateYear}
           onDescriptionChange={setDescription}
           onLocationIdChange={setLocationId}
           onOpenChange={setCreateOpen}
-          onSessionIndexChange={setSessionIndex}
           onSubmit={submitCreateEvent}
           onTitleChange={setTitle}
           title={title}
         />
       )}
+      <EventCreationConflictDialog
+        candidateActionLabel={t("openExistingEvent")}
+        conflict={pendingEventCreation?.conflict ?? null}
+        isPending={createMutation.isPending}
+        onCancel={() => {
+          setPendingEventCreation(null);
+          setCreateOpen(true);
+        }}
+        onCandidateAction={(candidate) => {
+          setPendingEventCreation(null);
+          setCreateOpen(false);
+          router.push(`/catalog/${catalogId}/event/${candidate.id}/edit`);
+        }}
+        onCreateDistinct={() => {
+          if (!pendingEventCreation) return;
+          createMutation.mutate({
+            ...pendingEventCreation.payload,
+            intent: CREATE_DISTINCT_EVENT_INTENT,
+          });
+        }}
+      />
     </div>
   );
 }

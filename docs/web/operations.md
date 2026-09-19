@@ -1,6 +1,6 @@
 # Web Operations
 
-> **Last Updated:** 2026-09-17
+> **Last Updated:** 2026-09-19
 
 Operational reference for deploying, monitoring, and running the Besedy web app.
 For security hardening details see `docs/web/security.md`.
@@ -181,6 +181,47 @@ before stopping the worker. If a run is queued or active, deployment refuses to
 continue; wait for it to finish or cancel it explicitly. If a run races the
 first check, the unchanged web and jobs API containers are restarted without
 migrating.
+
+### Event poster cutover
+
+The production cutover completed on 2026-09-19. The fixed recording-scoped
+files were backed up, reviewed, and imported as three unpublished event poster
+candidates. Candidate/file hashes matched, the publication table remained
+empty, and the temporary legacy inventory/import commands were then retired.
+The obsolete `poster_status` table was already absent through migration
+`20260218100000_drop_poster_status`.
+
+Use the retained poster CLI for normal event poster operations:
+
+```bash
+just posters list --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod
+just posters create --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --square <file> --landscape <file> --label <text> --prod --yes
+just posters publish --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --poster <poster-id> --prod --yes
+just posters unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
+just posters delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --poster <poster-id> --prod --yes
+```
+
+`POSTERS_DIR` must belong to the shared `UPLOADS_GID` group and have mode
+`2770`. Poster writes preserve that shared group on descendant directories and
+use group-readable files so host-run CLI imports and the web container can read
+each other's candidates.
+
+For host-run commands, the CLI rewrites the container database hostname to the
+published `DB_PORT` binding from the selected environment file. Production
+mutations require the explicit `--yes` confirmation.
+
+To verify that no poster is currently published:
+
+```sql
+SELECT count(*) AS published_posters
+  FROM catalog_event_poster_publication;
+```
+
+The result must be zero when the deployment policy requires every poster to
+remain unpublished.
 
 ### Permissions rework rollout
 
@@ -505,6 +546,35 @@ Then submit one small Deep Search job through the UI and confirm a
   `JOBS_CONTAINER_UID:JOBS_CONTAINER_GID` must own the deep-search state root;
   do not restore root execution or broad capabilities to work around ownership.
 - Do not run `npm audit fix --force` as part of a rollout.
+
+---
+
+## Recording Ingest (Host Worker)
+
+Admin uploads on `/admin/ingest` are processed by a Prefect worker running on
+the host (not in the hardened jobs containers). Full runbook:
+[recording-ingest.md](recording-ingest.md).
+
+Deploy additions on top of the Deep Search steps above:
+
+1. Web env file: set `UPLOADS_DIR` and `UPLOADS_GID`, prepare that directory as
+   the shared group with mode `2770`, add the worker user to the group, and add
+   `<host uploads dir>=/data/uploads` to `BESEDY_PATH_MAPPINGS`; host
+   `besedy.toml`: set `[paths].uploads_dir` to the same host directory.
+2. `just prod-deploy` (includes the `recording_intake` migration) and
+   `just jobs-prod-rebuild && just jobs-prod-deploy` (registers the
+   `besedy-ingest-prod` pool and `ingest_recording_flow/ingest-prod`).
+3. Install and start the host worker unit from
+   `jobs-service/host-worker/besedy-ingest-worker.service` with
+   `~/.config/lukleh/besedy/ingest-worker.env` filled in
+   (`BESEDY_INTERNAL_BASE_URL=http://127.0.0.1:3000`, the production
+   `BESEDY_JOB_SERVICE_SECRET`, `PREFECT_INGEST_WORK_POOL=besedy-ingest-prod`).
+4. Verify: `systemctl --user status besedy-ingest-worker`, the pool shows a
+   healthy worker in the Prefect UI, then upload a short recording and watch it
+   reach `SUCCEEDED` with a hash link.
+
+Cloudflare limits proxied request bodies to 100 MB; uploads are chunked at
+`INGEST_CHUNK_BYTES` (default 50 MB) so do not raise that above the limit.
 
 ---
 

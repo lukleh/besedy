@@ -160,6 +160,42 @@ superadmin_email = "override@example.org"
   });
 });
 
+describe("getPostersDir", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it("uses the host poster path without loading a container-only config path", async () => {
+    vi.stubEnv("POSTERS_DIR", " /host/besedy-posters ");
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const { getPostersDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(getPostersDir()).toBe("/host/besedy-posters");
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it("prefers the application config when both paths are available", async () => {
+    vi.stubEnv("POSTERS_DIR", "/host/besedy-posters");
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(`
+[paths]
+text_data_dir = "/data/text"
+transcripts_dir = "transcripts"
+posters_dir = "/data/posters"
+`);
+
+    const { getPostersDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(getPostersDir()).toBe("/data/posters");
+  });
+});
+
 describe("getDeepSearchDefaultInstructions", () => {
   beforeEach(() => {
     vi.resetModules();

@@ -217,13 +217,9 @@ function createFakeServer(options: FakeServerOptions = {}) {
               recorder: { id: 1, name: 'Zoom' },
             },
           ],
-          posterFiles: {
-            portrait: {
-              exists: true,
-              filename: 'p.jpg',
-              uploadedAt: '2026-05-01T00:00:00.000Z',
-            },
-            landscape: { exists: false, filename: null },
+          publishedPoster: {
+            id: '4b58cb81-ad10-4b7f-98ca-f05946711b37',
+            publishedAt: '2026-05-01T00:00:00.000Z',
           },
         });
       }
@@ -529,7 +525,7 @@ describe('download manager', () => {
 
     const { getDownloadBundle } = await import('@/lib/offline/downloads-db');
     const bundle = await getDownloadBundle(record.key);
-    expect(bundle?.poster?.variant).toBe('portrait');
+    expect(bundle?.poster?.variant).toBe('square');
     expect(bundle?.poster?.contentType).toBe('image/jpeg');
     expect(
       server.fetchMock.mock.calls.filter(([input]) =>

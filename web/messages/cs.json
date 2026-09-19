@@ -480,6 +480,7 @@
       "dashboard": "Přehled",
       "users": "Uživatelé",
       "catalogs": "Katalogy",
+      "ingest": "Nahrání záznamů",
       "metadata": "Číselníky katalogu",
       "transcripts": "Pořadí přepisů",
       "addUsers": "Přidat uživatele",
@@ -487,6 +488,84 @@
       "mcpUsage": "Využití MCP",
       "clientErrors": "Chyby klienta",
       "webUpdates": "Aktualizace webu"
+    },
+    "ingest": {
+      "title": "Nahrání záznamů",
+      "description": "Nahrajte nahrávky a nechte je zpracovat do katalogu na serveru.",
+      "upload": {
+        "title": "Nahrát nahrávky",
+        "description": "Soubory se nahrávají po částech, spočítá se jejich audio hash, zkontroluje se katalog a poté proběhne přepis a indexace. Duplicity jsou odmítnuty.",
+        "catalog": "Cílový katalog",
+        "selectCatalog": "Vyberte katalog",
+        "files": "Zvukové soubory",
+        "submit": "Nahrát a zpracovat ({count})",
+        "phase": {
+          "pending": "Připraveno k nahrání",
+          "uploading": "Nahrávání… {percent} %",
+          "done": "Nahráno a zařazeno",
+          "error": "Nahrání selhalo"
+        }
+      },
+      "jobs": {
+        "title": "Zpracování",
+        "description": "Poslední nahrání napříč katalogy. Aktivní řádky se obnovují automaticky.",
+        "refresh": "Obnovit",
+        "empty": "Zatím nebyly nahrány žádné nahrávky.",
+        "retrySubmit": "Znovu odeslat",
+        "remove": "Odebrat nahrávku",
+        "loadError": "Seznam zpracování se nepodařilo načíst.",
+        "columns": {
+          "file": "Soubor",
+          "catalog": "Katalog",
+          "requestedBy": "Zadal",
+          "created": "Vytvořeno",
+          "status": "Stav",
+          "actions": "Akce",
+          "result": "Výsledek"
+        }
+      },
+      "status": {
+        "UPLOADING": "Nahrává se",
+        "QUEUED": "Ve frontě",
+        "RUNNING": "Zpracovává se",
+        "SUCCEEDED": "Hotovo",
+        "REJECTED": "Odmítnuto",
+        "FAILED": "Selhalo",
+        "REMOVING": "Odebírá se",
+        "REMOVED": "Odebráno",
+        "CANCELLED": "Zrušeno"
+      },
+      "errors": {
+        "duplicate": "Již v katalogu (stejné audio)",
+        "submit_failed": "Úlohu se nepodařilo předat službě zpracování",
+        "undecodable_audio": "ffmpeg nedokázal soubor dekódovat",
+        "intake_missing": "Nahraný soubor nebyl na serveru nalezen",
+        "intake_invalid": "Adresář nahrání má neočekávaný obsah",
+        "catalog_missing": "CSV katalogu nebylo na serveru nalezeno",
+        "accepted_exists": "Soubor s tímto názvem už byl přijat",
+        "catalog_add_failed": "catalog add selhal",
+        "run_pipeline_failed": "Pipeline selhala",
+        "ingest_failed": "Zpracování selhalo",
+        "worker_failed": "Běh na serveru selhal",
+        "worker_cancelled": "Běh na serveru byl zrušen",
+        "job_missing": "Úloha už v Prefectu neexistuje",
+        "completion_missing": "Zpracování doběhlo, ale hlášení nedorazilo; katalog byl synchronizován",
+        "remove_failed": "Odebrání selhalo - nahrávka může být odebrána jen částečně; zkontrolujte log workeru",
+        "derived_refresh_failed": "Odebráno, ale obnova RAG/mluvčích selhala - spusťte catalog run-pipeline",
+        "sync_failed": "Zpracováno, ale synchronizace katalogu selhala - spusťte Synchronizovat katalog"
+      },
+      "remove": {
+        "title": "Odebrat tuto nahrávku?",
+        "descriptionCatalog": "\"{file}\" bude smazána z katalogu včetně zvuku, přepisů, diarizace, embeddingů mluvčích, RAG úseků, metadat a přiřazení k události. Pokud je hlavní nahrávkou zveřejněné události, událost bude stažena ze zveřejnění. Akci nelze vrátit.",
+        "descriptionFiles": "Nahraný soubor \"{file}\" bude smazán. Do katalogu se nikdy nedostal, nic dalšího se nemění.",
+        "confirm": "Odebrat"
+      },
+      "toasts": {
+        "queued": "{count, plural, one {# nahrávka zařazena} few {# nahrávky zařazeny} other {# nahrávek zařazeno}}",
+        "removed": "Nahrávka odebrána",
+        "removalQueued": "Odebrání zařazeno",
+        "partial": "Zařazeno {done} z {total} nahrávek"
+      }
     },
     "mcp": {
       "title": "Využití MCP",
@@ -1388,6 +1467,10 @@
     "transcriptRestrictedDescription": "Pro zobrazení přepisů potřebujete úroveň PROHLÍŽEČ nebo vyšší."
   },
   "events": {
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Sezení {index} z {count}"
+      },
     "tabs": {
       "ariaLabel": "Záložky katalogu",
       "recordings": "Nahrávky",
@@ -1398,6 +1481,47 @@
       "labsRequiredDescription": "Pro přístup k událostem zapněte Besedy Labs v Nastavení.",
       "readOnlyTitle": "Přístup jen pro čtení",
       "readOnlyDescription": "Události můžete prohlížet, ale úpravy vyžadují přístup administrátora."
+    },
+    "poster": {
+      "title": "Plakáty události",
+      "back": "Zpět na událost",
+      "eventFallback": "Událost {id}",
+      "createTitle": "Vytvořit návrh plakátu",
+      "createDescription": "Nahrajte jeden čtvercový a jeden širokoúhlý obrázek. Vytvořením návrhu se nezmění to, co vidí posluchači.",
+      "label": "Název (volitelný)",
+      "labelPlaceholder": "Například: modrá verze",
+      "square": "Čtverec",
+      "squareHint": "1:1 pro telefony",
+      "landscape": "Na šířku",
+      "landscapeHint": "16:9 pro desktop a tablet na šířku",
+      "create": "Vytvořit návrh",
+      "created": "Návrh plakátu byl vytvořen",
+      "createFailed": "Návrh plakátu se nepodařilo vytvořit",
+      "bothRequired": "Vyberte čtvercový i širokoúhlý soubor.",
+      "candidatesTitle": "Návrhy",
+      "candidatesDescription": "Jeden návrh zveřejněte posluchačům, ostatní ponechte rozepsané nebo se později vraťte ke starší verzi.",
+      "empty": "Zatím nejsou žádné návrhy plakátu.",
+      "unnamed": "Návrh bez názvu",
+      "current": "Zveřejněno",
+      "draft": "Koncept",
+      "createdMeta": "Vytvořeno {date}, autor {author}",
+      "unknownAuthor": "Neznámý uživatel",
+      "publish": "Zveřejnit",
+      "published": "Plakát byl zveřejněn",
+      "publishFailed": "Plakát se nepodařilo zveřejnit",
+      "unpublish": "Skrýt",
+      "unpublished": "Plakát byl skryt",
+      "unpublishFailed": "Plakát se nepodařilo skrýt",
+      "confirmUnpublishTitle": "Skrýt tento plakát?",
+      "confirmUnpublishDescription": "Událost okamžitě přestane mít plakát pro posluchače. Návrh zůstane dostupný pro opětovné zveřejnění.",
+      "delete": "Smazat",
+      "deleted": "Návrh plakátu byl smazán",
+      "deleteFailed": "Návrh plakátu se nepodařilo smazat",
+      "confirmDeleteTitle": "Smazat tento návrh?",
+      "confirmDeleteDescription": "{label} a oba jeho obrázky budou trvale smazány.",
+      "cancel": "Zrušit",
+      "invalidEvent": "Neplatná událost.",
+      "loadFailed": "Plakáty události se nepodařilo načíst."
     },
     "common": {
       "validationLocationRequired": "Místo je povinné",
@@ -1445,10 +1569,9 @@
       "sourcesMobile": "Zdroje: {count}",
       "postersMobile": "Plakáty: {status}",
       "postersMissing": "Chybí",
-      "postersPortrait": "Jen mobil",
-      "postersLandscape": "Jen desktop",
-      "postersBoth": "Obě",
-      "sessionLabel": "Sezení {index}",
+      "postersDraftOnly": "Jen koncept",
+      "postersPublished": "Zveřejněno",
+      "postersPublishedWithDrafts": "Zveřejněno + novější koncepty",
       "createDialogTitle": "Vytvořit událost",
       "createDialogDescription": "Událost vyžaduje místo a alespoň rok; měsíc/den jsou volitelné.",
       "fieldLocation": "Místo",
@@ -1459,8 +1582,6 @@
       "fieldMonthPlaceholder": "1-12",
       "fieldDay": "Den",
       "fieldDayPlaceholder": "1-31",
-      "fieldSessionIndexOptional": "Číslo sezení (volitelné)",
-      "fieldSessionIndexPlaceholder": "Další volné",
       "fieldTitleOptional": "Název (volitelné)",
       "fieldTitlePlaceholder": "Při prázdném se odvodí automaticky",
       "fieldDescriptionOptional": "Popis (volitelné)",
@@ -1468,6 +1589,7 @@
       "create": "Vytvořit",
       "toastCreated": "Událost vytvořena",
       "toastCreateFailed": "Nepodařilo se vytvořit událost",
+      "openExistingEvent": "Otevřít událost",
       "loadNextError": "Nepodařilo se načíst další události",
       "loadAllError": "Nepodařilo se načíst všechny události",
       "loading": "Načítání událostí...",
@@ -1478,7 +1600,6 @@
       "unknownError": "Neznámá chyba",
       "eventFallbackTitle": "Událost {id}",
       "recordingCount": "{count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
-      "sessionLabel": "Sezení {index}",
       "released": "Vydáno",
       "unreleased": "Nevydáno",
       "editEvent": "Upravit událost",
@@ -1555,9 +1676,16 @@
       "fieldSessionIndex": "Číslo sezení",
       "fieldSessionIndexPlaceholder": "1",
       "fieldDescription": "Popis",
-      "sessionLabel": "Sezení {index}",
       "cancel": "Zrušit",
       "saveChanges": "Uložit změny"
+    },
+    "creationConflict": {
+      "title": "Vyberte, kam nahrávka patří",
+      "description": "Na tomto místě a datu už existuje jedna nebo více událostí. Vyberte odpovídající besedu, nebo potvrďte, že jde o samostatnou událost.",
+      "eventFallback": "Událost {id}",
+      "candidateMeta": "Událost {id} · sezení {index} · {count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
+      "createDistinct": "Vytvořit samostatnou událost",
+      "cancel": "Zrušit"
     },
     "unassignedPage": {
       "title": "Nepřiřazené nahrávky",
@@ -1571,7 +1699,8 @@
       "toastCreated": "Událost vytvořena z nahrávky",
       "toastCreateFailed": "Nepodařilo se vytvořit událost z nahrávky",
       "loading": "Načítání nepřiřazených nahrávek...",
-      "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}"
+      "loadError": "Nepodařilo se načíst nepřiřazené nahrávky: {message}",
+      "attachToEvent": "Připojit"
     }
   },
   "catalogSettings": {
@@ -1788,7 +1917,11 @@
       "download_transcripts": "Stahovat přepisy",
       "download_transcriptsDesc": "Stahovat jednotlivé soubory přepisů",
       "bulk_export_transcripts": "Hromadně exportovat přepisy",
-      "bulk_export_transcriptsDesc": "Exportovat korpus přepisů katalogu"
+      "bulk_export_transcriptsDesc": "Exportovat korpus přepisů katalogu",
+      "manage_event_posters": "Spravovat plakáty událostí",
+      "manage_event_postersDesc": "Vytvářet, zobrazovat a odstraňovat nezveřejněné návrhy plakátů",
+      "publish_event_posters": "Zveřejňovat plakáty událostí",
+      "publish_event_postersDesc": "Vybrat, nahradit nebo zrušit zveřejnění plakátu události"
     },
     "toasts": {
       "settingsUpdated": "Nastavení katalogu aktualizováno",
@@ -1870,7 +2003,6 @@
     "unknownTitle": "Nahrávka bez názvu",
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
-    "sessionLabel": "Sezení {index}",
     "availableOffline": "Dostupné offline",
     "offlinePlayer": "Offline přehrávač",
     "audioUnavailable": "Stažený zvuk není k dispozici. Odeberte toto stažení a uložte jej znovu online.",

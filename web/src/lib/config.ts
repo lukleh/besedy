@@ -8,6 +8,7 @@ interface BesedyPathsConfig {
   audio_artifacts_dir?: string;
   posters_dir?: string;
   sources_dir?: string;
+  uploads_dir?: string;
 }
 
 interface BesedyWebConfig {
@@ -58,11 +59,21 @@ export function getTextDataDir(): string {
 }
 
 /**
- * Get posters directory from config (falls back to text_data_dir).
+ * Get the posters directory. The application config is authoritative when it
+ * is available. Host-run operator tools fall back to POSTERS_DIR because the
+ * selected production environment points BESEDY_CONFIG at a container-only
+ * path.
  */
 export function getPostersDir(): string {
-  const config = getBesedyConfig();
-  return config.paths.posters_dir || config.paths.text_data_dir;
+  try {
+    const config = getBesedyConfig();
+    return config.paths.posters_dir || config.paths.text_data_dir;
+  } catch (configError) {
+    const environmentPath = process.env.POSTERS_DIR?.trim();
+    if (environmentPath) return environmentPath;
+
+    throw configError;
+  }
 }
 
 /**
@@ -75,6 +86,18 @@ export function getSourcesDir(): string {
     throw new Error("sources_dir is required in besedy.toml for recording sources.");
   }
   return sourcesDir;
+}
+
+/**
+ * Get the admin upload (ingest) directory from config.
+ */
+export function getUploadsDir(): string {
+  const config = getBesedyConfig();
+  const uploadsDir = config.paths.uploads_dir?.trim();
+  if (!uploadsDir) {
+    throw new Error("uploads_dir is required in besedy.toml for recording ingest.");
+  }
+  return uploadsDir;
 }
 
 /**

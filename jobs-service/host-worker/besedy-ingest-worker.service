@@ -1,0 +1,35 @@
+# systemd user unit for the host-side Besedy ingest worker.
+#
+# The ingest flow runs `catalog add` / `catalog run-pipeline`, which launch the
+# GPU backend containers through the host Docker daemon, so this worker must run
+# on the host as the operator user (not inside the hardened jobs containers).
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp jobs-service/host-worker/besedy-ingest-worker.service ~/.config/systemd/user/
+#   cp jobs-service/host-worker/ingest-worker.env.example ~/.config/lukleh/besedy/ingest-worker.env
+#   # edit the env file, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now besedy-ingest-worker
+#   loginctl enable-linger "$USER"   # keep the user session alive after logout
+#
+# Logs: journalctl --user -u besedy-ingest-worker -f
+
+[Unit]
+Description=Besedy ingest Prefect worker (host, Docker/GPU access)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Repository checkout that owns the `besedy` package and the `uv` environment.
+WorkingDirectory=%h/projects/besedy
+EnvironmentFile=%h/.config/lukleh/besedy/ingest-worker.env
+ExecStart=/usr/bin/env bash -lc 'exec uv run --extra jobs prefect worker start --pool "${PREFECT_INGEST_WORK_POOL}" --type process --limit 1 --install-policy never'
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target

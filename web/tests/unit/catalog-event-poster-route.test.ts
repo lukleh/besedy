@@ -1,475 +1,274 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { GET as getPublishedPoster } from "@/app/api/catalogs/[id]/events/[eventId]/poster/route";
 import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import {
-  GET as getEventPoster,
-  POST as uploadEventPoster,
-} from "@/app/api/catalogs/[id]/events/[eventId]/poster/route";
-
-vi.mock("fs/promises", () => ({
-  default: {
-    mkdir: vi.fn(),
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-  },
-}));
-
-vi.mock("sharp", () => ({
-  default: vi.fn(),
-}));
+  GET as listPosterCandidates,
+  POST as createPosterCandidate,
+} from "@/app/api/catalogs/[id]/events/[eventId]/posters/route";
+import {
+  DELETE as unpublishPoster,
+  PUT as publishPoster,
+} from "@/app/api/catalogs/[id]/events/[eventId]/poster-publication/route";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
-}));
-
-vi.mock("@/lib/access/catalog-management-route-access", () => ({
-  requireCatalogManagementAccess: vi.fn(),
 }));
 
 vi.mock("@/lib/catalog-events/visibility", () => ({
   isPublishedVisibleEvent: vi.fn(),
 }));
 
-vi.mock("@/lib/audit/logger", () => ({
-  logAccessDenied: vi.fn(),
+vi.mock("@/lib/event-poster-access", () => ({
+  requireEventPosterAccess: vi.fn(),
 }));
 
-vi.mock("@/lib/event-posters", () => ({
-  findPosterFile: vi.fn(),
-  getPosterContentType: vi.fn(),
-  POSTER_EXTENSIONS: [".jpg", ".jpeg", ".png"],
-  removeExistingPosterFiles: vi.fn(),
-  resolveEventPosterDir: vi.fn(),
-  writePosterMeta: vi.fn(),
-}));
-
-vi.mock("@/lib/security/path-validation", () => ({
-  validatePath: vi.fn(),
-}));
-
-vi.mock("@/lib/db", () => ({
-  default: {
-    catalogEvent: {
-      findFirst: vi.fn(),
-    },
+vi.mock("@/lib/event-poster-service", () => ({
+  EventPosterServiceError: class EventPosterServiceError extends Error {
+    constructor(
+      message: string,
+      public statusCode: number
+    ) {
+      super(message);
+    }
   },
+  createEventPosterCandidate: vi.fn(),
+  listEventPosterCandidates: vi.fn(),
+  loadEventPosterAsset: vi.fn(),
+  publishEventPoster: vi.fn(),
+  unpublishEventPoster: vi.fn(),
 }));
 
-describe("catalog event poster route", () => {
+vi.mock("@/lib/db", () => ({ default: {} }));
+
+describe("catalog event poster routes", () => {
   const catalogId = "20260201_120000";
   const eventId = 12;
+  const context = {
+    params: Promise.resolve({ id: catalogId, eventId: String(eventId) }),
+  };
 
   let requireCatalogEventsAccess: ReturnType<typeof vi.fn>;
-  let requireCatalogManagementAccess: ReturnType<typeof vi.fn>;
   let isPublishedVisibleEvent: ReturnType<typeof vi.fn>;
-  let findPosterFile: ReturnType<typeof vi.fn>;
-  let getPosterContentType: ReturnType<typeof vi.fn>;
-  let resolveEventPosterDir: ReturnType<typeof vi.fn>;
-  let writePosterMeta: ReturnType<typeof vi.fn>;
-  let validatePath: ReturnType<typeof vi.fn>;
-  let sharp: ReturnType<typeof vi.fn>;
-  let fs: {
-    mkdir: ReturnType<typeof vi.fn>;
-    readFile: ReturnType<typeof vi.fn>;
-    writeFile: ReturnType<typeof vi.fn>;
-  };
-  let prisma: {
-    catalogEvent: { findFirst: ReturnType<typeof vi.fn> };
-  };
+  let requireEventPosterAccess: ReturnType<typeof vi.fn>;
+  let createEventPosterCandidate: ReturnType<typeof vi.fn>;
+  let listEventPosterCandidates: ReturnType<typeof vi.fn>;
+  let loadEventPosterAsset: ReturnType<typeof vi.fn>;
+  let publishEventPoster: ReturnType<typeof vi.fn>;
+  let unpublishEventPoster: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-
-    requireCatalogEventsAccess = (
-      await import("@/lib/catalog-events/access")
-    ).requireCatalogEventsAccess as ReturnType<typeof vi.fn>;
-    requireCatalogManagementAccess = (
-      await import("@/lib/access/catalog-management-route-access")
-    ).requireCatalogManagementAccess as ReturnType<typeof vi.fn>;
-    isPublishedVisibleEvent = (
-      await import("@/lib/catalog-events/visibility")
-    ).isPublishedVisibleEvent as ReturnType<typeof vi.fn>;
-    findPosterFile = (await import("@/lib/event-posters")).findPosterFile as ReturnType<
+    requireCatalogEventsAccess = (await import("@/lib/catalog-events/access")).requireCatalogEventsAccess as ReturnType<
       typeof vi.fn
     >;
-    getPosterContentType = (
-      await import("@/lib/event-posters")
-    ).getPosterContentType as ReturnType<typeof vi.fn>;
-    resolveEventPosterDir = (
-      await import("@/lib/event-posters")
-    ).resolveEventPosterDir as ReturnType<typeof vi.fn>;
-    writePosterMeta = (await import("@/lib/event-posters")).writePosterMeta as ReturnType<
+    isPublishedVisibleEvent = (await import("@/lib/catalog-events/visibility")).isPublishedVisibleEvent as ReturnType<
       typeof vi.fn
     >;
-    validatePath = (
-      await import("@/lib/security/path-validation")
-    ).validatePath as ReturnType<typeof vi.fn>;
-    sharp = (await import("sharp")).default as unknown as ReturnType<typeof vi.fn>;
-    fs = (await import("fs/promises")).default as unknown as typeof fs;
-    prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
+    requireEventPosterAccess = (await import("@/lib/event-poster-access")).requireEventPosterAccess as ReturnType<
+      typeof vi.fn
+    >;
+    const service = await import("@/lib/event-poster-service");
+    createEventPosterCandidate = service.createEventPosterCandidate as ReturnType<typeof vi.fn>;
+    listEventPosterCandidates = service.listEventPosterCandidates as ReturnType<typeof vi.fn>;
+    loadEventPosterAsset = service.loadEventPosterAsset as ReturnType<typeof vi.fn>;
+    publishEventPoster = service.publishEventPoster as ReturnType<typeof vi.fn>;
+    unpublishEventPoster = service.unpublishEventPoster as ReturnType<typeof vi.fn>;
 
     requireCatalogEventsAccess.mockResolvedValue({
-      userId: "viewer-1",
-      accessLevel: "VIEWER",
-      catalogGrant: grantFromLevel("VIEWER"),
-    });
-    requireCatalogManagementAccess.mockResolvedValue({
-      ok: false,
-      response: new Response(JSON.stringify({ error: "Access denied to this poster" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }),
-    });
-    isPublishedVisibleEvent.mockResolvedValue(true);
-    findPosterFile.mockResolvedValue("/tmp/poster.jpg");
-    getPosterContentType.mockReturnValue("image/jpeg");
-    resolveEventPosterDir.mockReturnValue("/tmp/posters");
-    validatePath.mockReturnValue({ valid: true, resolvedPath: "/tmp/poster.jpg" });
-    fs.mkdir.mockResolvedValue(undefined);
-    fs.readFile.mockResolvedValue(Buffer.from("poster"));
-    fs.writeFile.mockResolvedValue(undefined);
-    prisma.catalogEvent.findFirst.mockResolvedValue({ id: eventId });
-  });
-
-  it("returns 403 when the user cannot manage event posters", async () => {
-    const response = await uploadEventPoster(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster`, {
-        method: "POST",
-      }),
-      { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
-    );
-
-    expect(response.status).toBe(403);
-    expect(requireCatalogManagementAccess).toHaveBeenCalledWith(catalogId, {
-      userId: "viewer-1",
-      auditResource: "event_poster",
-      auditResourceId: String(eventId),
-      deniedMessage: "Access denied to this poster",
-      deniedReason: "Not owner/admin",
-    });
-    expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
-  });
-
-  it("keeps draft poster previews accessible for owners", async () => {
-    requireCatalogEventsAccess.mockResolvedValue({
-      userId: "owner-1",
-      accessLevel: "OWNER",
       catalogGrant: grantFromLevel("OWNER"),
     });
+    requireEventPosterAccess.mockResolvedValue({ userId: "owner-1" });
+    isPublishedVisibleEvent.mockResolvedValue(true);
+    loadEventPosterAsset.mockResolvedValue({
+      bytes: Buffer.from("poster"),
+      contentType: "image/jpeg",
+      posterId: "4b58cb81-ad10-4b7f-98ca-f05946711b37",
+      sha256: "abc123",
+    });
+    listEventPosterCandidates.mockResolvedValue([]);
+    createEventPosterCandidate.mockResolvedValue({
+      id: "4b58cb81-ad10-4b7f-98ca-f05946711b37",
+    });
+    publishEventPoster.mockResolvedValue({
+      changed: true,
+      previousPosterId: null,
+    });
+    unpublishEventPoster.mockResolvedValue({
+      changed: true,
+      previousPosterId: "4b58cb81-ad10-4b7f-98ca-f05946711b37",
+    });
+  });
 
-    const response = await getEventPoster(
-      new NextRequest(
-        `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster?variant=portrait`
-      ),
-      { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
+  it("serves only the published poster with a private ETag", async () => {
+    const response = await getPublishedPoster(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster?variant=square`),
+      context
     );
 
     expect(response.status).toBe(200);
-    expect(isPublishedVisibleEvent).not.toHaveBeenCalled();
-    expect(prisma.catalogEvent.findFirst).toHaveBeenCalledWith({
-      where: { id: eventId, workflowGroupId: catalogId },
-      select: { id: true },
+    expect(response.headers.get("etag")).toBe('"abc123"');
+    expect(response.headers.get("cache-control")).toBe("private, no-cache");
+    expect(loadEventPosterAsset).toHaveBeenCalledWith({
+      catalogId,
+      eventId,
+      variant: "square",
+      publishedOnly: true,
     });
   });
 
-  it("returns 404 for listener draft poster previews", async () => {
+  it("does not reveal a poster attached to an unreleased event to listeners", async () => {
     requireCatalogEventsAccess.mockResolvedValue({
-      userId: "listener-1",
-      accessLevel: "LISTENER",
       catalogGrant: grantFromLevel("LISTENER"),
     });
     isPublishedVisibleEvent.mockResolvedValue(false);
 
-    const response = await getEventPoster(
-      new NextRequest(
-        `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster?variant=portrait`
-      ),
-      { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
+    const response = await getPublishedPoster(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster?variant=landscape`),
+      context
     );
 
     expect(response.status).toBe(404);
-    expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
+    expect(loadEventPosterAsset).not.toHaveBeenCalled();
   });
 
-  it("rejects poster bytes that Sharp cannot fully decode", async () => {
-    requireCatalogEventsAccess.mockResolvedValue({
-      userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
-    });
-    requireCatalogManagementAccess.mockResolvedValue({ ok: true });
-
-    const stats = vi.fn().mockRejectedValue(new Error("invalid pixel data"));
-    const clone = vi.fn().mockReturnValue({ stats });
-    const metadata = vi.fn().mockResolvedValue({
-      format: "jpeg",
-      width: 100,
-      height: 100,
-    });
-    const rotate = vi.fn().mockReturnValue({ clone, metadata });
-    sharp.mockReturnValue({ rotate });
-
-    const posterFile = {
-      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("not-a-jpeg")),
-      name: "poster.jpg",
-      size: 10,
-      type: "image/jpeg",
-    };
-    const formData = {
-      get: vi.fn((name: string) => (name === "portrait" ? posterFile : null)),
-    } as unknown as FormData;
-
-    const request = new NextRequest(
-      `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster`,
-      { method: "POST" }
+  it("requires candidate-view authority before listing drafts", async () => {
+    const response = await listPosterCandidates(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`),
+      context
     );
-    vi.spyOn(request, "formData").mockResolvedValue(formData);
-
-    const response = await uploadEventPoster(
-      request,
-      { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
-    );
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "INVALID_FILE",
-    });
-    expect(sharp).toHaveBeenCalledWith(expect.any(Buffer), {
-      failOn: "warning",
-      limitInputPixels: 50_000_000,
-    });
-    expect(stats).toHaveBeenCalledOnce();
-    expect(fs.writeFile).not.toHaveBeenCalled();
-    expect(writePosterMeta).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 when a poster exceeds Sharp's pixel budget", async () => {
-    requireCatalogEventsAccess.mockResolvedValue({
-      userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
-    });
-    requireCatalogManagementAccess.mockResolvedValue({ ok: true });
-
-    const metadata = vi
-      .fn()
-      .mockRejectedValue(new Error("Input image exceeds pixel limit"));
-    const rotate = vi.fn().mockReturnValue({ metadata });
-    sharp.mockReturnValue({ rotate });
-
-    const posterFile = {
-      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("oversized-png")),
-      name: "poster.png",
-      size: 13,
-      type: "image/png",
-    };
-    const formData = {
-      get: vi.fn((name: string) => (name === "portrait" ? posterFile : null)),
-    } as unknown as FormData;
-
-    const request = new NextRequest(
-      `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster`,
-      { method: "POST" }
-    );
-    vi.spyOn(request, "formData").mockResolvedValue(formData);
-
-    const response = await uploadEventPoster(request, {
-      params: Promise.resolve({ id: catalogId, eventId: String(eventId) }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "INVALID_FILE",
-      error:
-        "Poster files must contain valid JPG or PNG image data and not exceed 50 megapixels",
-    });
-    expect(sharp).toHaveBeenCalledWith(expect.any(Buffer), {
-      failOn: "warning",
-      limitInputPixels: 50_000_000,
-    });
-    expect(fs.writeFile).not.toHaveBeenCalled();
-    expect(writePosterMeta).not.toHaveBeenCalled();
-  });
-
-  it("rejects poster data that does not match its file extension", async () => {
-    requireCatalogEventsAccess.mockResolvedValue({
-      userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
-    });
-    requireCatalogManagementAccess.mockResolvedValue({ ok: true });
-
-    const metadata = vi.fn().mockResolvedValue({
-      format: "svg",
-      width: 100,
-      height: 100,
-    });
-    const rotate = vi.fn().mockReturnValue({ metadata });
-    sharp.mockReturnValue({ rotate });
-
-    const posterFile = {
-      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("<svg></svg>")),
-      name: "poster.jpg",
-      size: 11,
-      type: "image/jpeg",
-    };
-    const formData = {
-      get: vi.fn((name: string) => (name === "portrait" ? posterFile : null)),
-    } as unknown as FormData;
-
-    const request = new NextRequest(
-      `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster`,
-      { method: "POST" }
-    );
-    vi.spyOn(request, "formData").mockResolvedValue(formData);
-
-    const response = await uploadEventPoster(request, {
-      params: Promise.resolve({ id: catalogId, eventId: String(eventId) }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "INVALID_FILE",
-    });
-    expect(fs.writeFile).not.toHaveBeenCalled();
-    expect(writePosterMeta).not.toHaveBeenCalled();
-  });
-
-  it("resizes over-dimension posters even when the input is small", async () => {
-    requireCatalogEventsAccess.mockResolvedValue({
-      userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
-    });
-    requireCatalogManagementAccess.mockResolvedValue({ ok: true });
-
-    const outputBuffer = Buffer.from("resized-png");
-    const toBuffer = vi.fn().mockResolvedValue(outputBuffer);
-    const png = vi.fn().mockReturnValue({ toBuffer });
-    const resize = vi.fn().mockReturnValue({ png });
-    const metadata = vi.fn().mockResolvedValue({
-      format: "png",
-      width: 5000,
-      height: 5000,
-    });
-    const rotate = vi.fn().mockReturnValue({ metadata, resize });
-    sharp.mockReturnValue({ rotate });
-
-    const posterFile = {
-      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("png")),
-      name: "poster.png",
-      size: 3,
-      type: "image/png",
-    };
-    const formData = {
-      get: vi.fn((name: string) => (name === "portrait" ? posterFile : null)),
-    } as unknown as FormData;
-
-    const request = new NextRequest(
-      `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster`,
-      { method: "POST" }
-    );
-    vi.spyOn(request, "formData").mockResolvedValue(formData);
-
-    const response = await uploadEventPoster(request, {
-      params: Promise.resolve({ id: catalogId, eventId: String(eventId) }),
-    });
 
     expect(response.status).toBe(200);
-    expect(resize).toHaveBeenCalledWith({
-      width: 1600,
-      height: 1600,
-      fit: "inside",
-      withoutEnlargement: true,
-    });
-    expect(png).toHaveBeenCalledOnce();
-    expect(toBuffer).toHaveBeenCalledOnce();
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("poster_portrait.png"),
-      outputBuffer
-    );
-    expect(writePosterMeta).toHaveBeenCalledOnce();
+    expect(requireEventPosterAccess).toHaveBeenCalledWith(catalogId, eventId, "view_candidates");
   });
 
-  it("fully processes the portrait before decoding the landscape", async () => {
-    requireCatalogEventsAccess.mockResolvedValue({
-      userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+  it("requires both shapes when creating an immutable candidate", async () => {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
+      method: "POST",
+      headers: { "content-length": "1024" },
     });
-    requireCatalogManagementAccess.mockResolvedValue({ ok: true });
+    vi.spyOn(request, "formData").mockResolvedValue({
+      get: vi.fn(() => null),
+    } as unknown as FormData);
 
-    let finishPortraitStats!: () => void;
-    const portraitStatsPromise = new Promise<void>((resolve) => {
-      finishPortraitStats = resolve;
-    });
-    const portraitStats = vi.fn().mockReturnValue(portraitStatsPromise);
-    const portraitClone = vi.fn().mockReturnValue({ stats: portraitStats });
-    const portraitMetadata = vi.fn().mockResolvedValue({
-      format: "jpeg",
-      width: 100,
-      height: 100,
-    });
-    const portraitRotate = vi.fn().mockReturnValue({
-      clone: portraitClone,
-      metadata: portraitMetadata,
-    });
+    const response = await createPosterCandidate(request, context);
 
-    const landscapeStats = vi.fn().mockResolvedValue(undefined);
-    const landscapeClone = vi.fn().mockReturnValue({ stats: landscapeStats });
-    const landscapeMetadata = vi.fn().mockResolvedValue({
-      format: "jpeg",
-      width: 100,
-      height: 100,
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Both square and landscape poster files are required",
     });
-    const landscapeRotate = vi.fn().mockReturnValue({
-      clone: landscapeClone,
-      metadata: landscapeMetadata,
-    });
+    expect(requireEventPosterAccess).toHaveBeenCalledWith(catalogId, eventId, "manage");
+    expect(createEventPosterCandidate).not.toHaveBeenCalled();
+  });
 
-    sharp
-      .mockReturnValueOnce({ rotate: portraitRotate })
-      .mockReturnValueOnce({ rotate: landscapeRotate });
-
-    const portraitFile = {
-      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("portrait")),
-      name: "portrait.jpg",
-      size: 8,
-      type: "image/jpeg",
+  it("passes both uploaded assets to candidate creation", async () => {
+    const square = {
+      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("square")),
+      name: "square.png",
+      size: 6,
+      type: "image/png",
     };
-    const landscapeFile = {
+    const landscape = {
       arrayBuffer: vi.fn().mockResolvedValue(Buffer.from("landscape")),
       name: "landscape.jpg",
       size: 9,
       type: "image/jpeg",
     };
-    const formData = {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
+      method: "POST",
+      headers: { "content-length": "1024" },
+    });
+    vi.spyOn(request, "formData").mockResolvedValue({
       get: vi.fn((name: string) => {
-        if (name === "portrait") return portraitFile;
-        if (name === "landscape") return landscapeFile;
+        if (name === "square") return square;
+        if (name === "landscape") return landscape;
+        if (name === "label") return "Version A";
         return null;
       }),
-    } as unknown as FormData;
+    } as unknown as FormData);
 
-    const request = new NextRequest(
-      `http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster`,
-      { method: "POST" }
+    const response = await createPosterCandidate(request, context);
+
+    expect(response.status).toBe(201);
+    expect(createEventPosterCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        catalogId,
+        eventId,
+        userId: "owner-1",
+        label: "Version A",
+        square: expect.objectContaining({ originalName: "square.png" }),
+        landscape: expect.objectContaining({ originalName: "landscape.jpg" }),
+      })
     );
-    vi.spyOn(request, "formData").mockResolvedValue(formData);
+  });
 
-    const responsePromise = uploadEventPoster(request, {
-      params: Promise.resolve({ id: catalogId, eventId: String(eventId) }),
+  it("rejects an upload without a content length before buffering it", async () => {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
+      method: "POST",
     });
+    const formData = vi.spyOn(request, "formData");
 
-    await vi.waitFor(() => expect(portraitStats).toHaveBeenCalledOnce());
-    expect(landscapeFile.arrayBuffer).not.toHaveBeenCalled();
+    const response = await createPosterCandidate(request, context);
 
-    finishPortraitStats();
-    const response = await responsePromise;
+    expect(response.status).toBe(411);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "CONTENT_LENGTH_REQUIRED",
+    });
+    expect(formData).not.toHaveBeenCalled();
+    expect(requireEventPosterAccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed content length before buffering the upload", async () => {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/posters`, {
+      method: "POST",
+      headers: { "content-length": "1e3" },
+    });
+    const formData = vi.spyOn(request, "formData");
+
+    const response = await createPosterCandidate(request, context);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "INVALID_CONTENT_LENGTH",
+    });
+    expect(formData).not.toHaveBeenCalled();
+  });
+
+  it("publishes a selected candidate through the separate publish capability", async () => {
+    const posterId = "4b58cb81-ad10-4b7f-98ca-f05946711b37";
+    const response = await publishPoster(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster-publication`, {
+        method: "PUT",
+        body: JSON.stringify({ posterId }),
+        headers: { "content-type": "application/json" },
+      }),
+      context
+    );
 
     expect(response.status).toBe(200);
-    expect(landscapeFile.arrayBuffer).toHaveBeenCalledOnce();
-    expect(landscapeStats).toHaveBeenCalledOnce();
-    expect(fs.writeFile).toHaveBeenCalledTimes(2);
+    expect(requireEventPosterAccess).toHaveBeenCalledWith(catalogId, eventId, "publish");
+    expect(publishEventPoster).toHaveBeenCalledWith({
+      catalogId,
+      eventId,
+      posterId,
+      userId: "owner-1",
+    });
+  });
+
+  it("supports explicit unpublish", async () => {
+    const response = await unpublishPoster(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/poster-publication`, {
+        method: "DELETE",
+      }),
+      context
+    );
+
+    expect(response.status).toBe(200);
+    expect(requireEventPosterAccess).toHaveBeenCalledWith(catalogId, eventId, "publish");
+    expect(unpublishEventPoster).toHaveBeenCalledWith({
+      catalogId,
+      eventId,
+      userId: "owner-1",
+    });
   });
 });

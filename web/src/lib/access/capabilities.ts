@@ -38,6 +38,11 @@ import {
   canViewRecording,
   canViewRecordingTranscript,
 } from "@/lib/policy/recording";
+import {
+  canManageEventPosterCandidates,
+  canPublishEventPosters,
+  canViewEventPosterCandidates,
+} from "@/lib/policy/event-poster";
 
 export interface PortalCapability {
   userId: string | null;
@@ -81,6 +86,9 @@ export interface CatalogCapability extends PortalCapability {
   canAccessSettings: boolean;
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
+  canViewPosterCandidates: boolean;
+  canManagePosters: boolean;
+  canPublishPosters: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -137,6 +145,9 @@ export function buildCatalogCapability(
     canAccessSettings: canAccessCatalogSettings(policyContext),
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),
+    canViewPosterCandidates: canViewEventPosterCandidates(policyContext),
+    canManagePosters: canManageEventPosterCandidates(policyContext),
+    canPublishPosters: canPublishEventPosters(policyContext),
   };
 }
 
@@ -178,9 +189,7 @@ export async function getAdminCapability(userId?: string): Promise<AdminCapabili
   };
 }
 
-export async function getCatalogDiscoveryCapability(
-  userId?: string
-): Promise<CatalogDiscoveryCapability> {
+export async function getCatalogDiscoveryCapability(userId?: string): Promise<CatalogDiscoveryCapability> {
   const actor = await resolvePortalActorContext(userId);
   const portal: PortalCapability = {
     userId: actor.userId,
@@ -196,9 +205,7 @@ export async function getCatalogDiscoveryCapability(
     };
   }
 
-  const accessibleCatalogIds = (
-    await listUserCatalogAccessEntries(actor)
-  ).map((entry) => entry.catalogId);
+  const accessibleCatalogIds = (await listUserCatalogAccessEntries(actor)).map((entry) => entry.catalogId);
 
   return {
     ...portal,
@@ -293,10 +300,7 @@ export async function getRecordingCapability(
     ...baseCapability,
     canAccessRecording: canViewRecording(policyContext, recordingState),
     canStreamAudio: canStreamRecording(policyContext, recordingState),
-    canViewRecordingTranscripts: canViewRecordingTranscript(
-      policyContext,
-      recordingState
-    ),
+    canViewRecordingTranscripts: canViewRecordingTranscript(policyContext, recordingState),
     canDownloadRecording: canDownloadRecording(policyContext),
     canEditRecording: canEditRecordingMetadata(policyContext),
   };

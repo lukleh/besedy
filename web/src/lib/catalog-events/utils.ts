@@ -47,8 +47,15 @@ export function deriveEventTitle(
   return `${safeLocation}, ${dateYear}${sessionSuffix}`;
 }
 
-export function formatSessionLabel(sessionIndex: number): string | null {
-  return sessionIndex > 1 ? `Session ${sessionIndex}` : null;
+/**
+ * Server-side counterpart of SessionOrdinalBadge: null unless the day holds
+ * more than one event, so an ordinary event is never annotated.
+ */
+export function formatSessionOrdinal(
+  sessionOrdinal: number,
+  sessionCount: number
+): string | null {
+  return sessionCount > 1 ? `${sessionOrdinal}/${sessionCount}` : null;
 }
 
 export function normalizeOptionalString(value: string | null | undefined): string | null {

@@ -692,7 +692,6 @@ export default function CatalogSettingsContent({
           <GrantAccessDialog
             catalogId={catalogId}
             manageableRoles={manageableRoles}
-            canManageExtras={canManageExtras}
             grantableExtraPermissions={grantableExtraPermissions}
             open={grantDialogOpen}
             onOpenChange={setGrantDialogOpen}

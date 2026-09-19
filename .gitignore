@@ -49,6 +49,7 @@ models*
 # Claude Code - allow shared settings, ignore local overrides
 .claude/settings.local.json
 .claude/*.local.*
+.claude/launch.json
 test_commands.sh
 external/
 scratch

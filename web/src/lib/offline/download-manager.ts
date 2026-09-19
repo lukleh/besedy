@@ -27,6 +27,7 @@ import {
   buildTranscriptUrl,
   type AudioSourceOption,
 } from '@/lib/api/recording-urls';
+import { EVENT_POSTER_LANDSCAPE_MEDIA } from '@/lib/event-poster-media';
 import type {
   Diarization,
   Transcript,
@@ -163,12 +164,13 @@ interface EventDetailResponse {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal?: number;
+  sessionCount?: number;
   recordings: EventRecordingResponse[];
-  posterFiles?: {
-    portrait: { exists: boolean; uploadedAt?: string | null };
-    landscape: { exists: boolean; uploadedAt?: string | null };
+  publishedPoster?: {
+    id: string;
+    publishedAt: string;
   } | null;
-  posterStatus?: { portrait: boolean; landscape: boolean } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +243,7 @@ async function tryFetchJson<T>(
 async function tryFetchPoster(
   url: string,
   variant: DownloadPosterPayload['variant'],
+  posterId: string,
   signal: AbortSignal,
 ): Promise<DownloadPosterPayload | null> {
   try {
@@ -253,6 +256,7 @@ async function tryFetchPoster(
         blob.type ??
         'application/octet-stream',
       variant,
+      posterId,
     };
   } catch (error) {
     if (isAbortError(error) || isNetworkError(error)) throw error;
@@ -449,29 +453,14 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
     dateMonth: event.dateMonth,
     dateDay: event.dateDay,
     sessionIndex: event.sessionIndex,
-    posterFiles: event.posterFiles
+    sessionOrdinal: event.sessionOrdinal,
+    sessionCount: event.sessionCount,
+    publishedPoster: event.publishedPoster
       ? {
-          portrait: {
-            exists: event.posterFiles.portrait.exists,
-            uploadedAt: event.posterFiles.portrait.uploadedAt ?? null,
-          },
-          landscape: {
-            exists: event.posterFiles.landscape.exists,
-            uploadedAt: event.posterFiles.landscape.uploadedAt ?? null,
-          },
+          id: event.publishedPoster.id,
+          publishedAt: event.publishedPoster.publishedAt,
         }
-      : event.posterStatus
-        ? {
-            portrait: {
-              exists: event.posterStatus.portrait,
-              uploadedAt: null,
-            },
-            landscape: {
-              exists: event.posterStatus.landscape,
-              uploadedAt: null,
-            },
-          }
-        : null,
+      : null,
   };
 }
 
@@ -1351,34 +1340,25 @@ class DownloadManager {
     event: DownloadEventSnapshot,
     signal: AbortSignal,
   ): Promise<DownloadPosterPayload | null> {
-    const portraitExists = event.posterFiles?.portrait.exists ?? false;
-    const landscapeExists = event.posterFiles?.landscape.exists ?? false;
-    if (landscapeExists) {
-      const landscape = await tryFetchPoster(
-        buildEventPosterUrl(
-          catalogId,
-          event.id,
-          'landscape',
-          event.posterFiles?.landscape.uploadedAt,
-        ),
-        'landscape',
-        signal,
-      );
-      if (landscape) return landscape;
-    }
-    if (portraitExists) {
-      return tryFetchPoster(
-        buildEventPosterUrl(
-          catalogId,
-          event.id,
-          'portrait',
-          event.posterFiles?.portrait.uploadedAt,
-        ),
-        'portrait',
-        signal,
-      );
-    }
-    return null;
+    const poster = event.publishedPoster;
+    if (!poster) return null;
+    const preferred = window.matchMedia(EVENT_POSTER_LANDSCAPE_MEDIA).matches
+      ? 'landscape'
+      : 'square';
+    const fallback = preferred === 'landscape' ? 'square' : 'landscape';
+    const preferredPoster = await tryFetchPoster(
+      buildEventPosterUrl(catalogId, event.id, preferred, poster.id),
+      preferred,
+      poster.id,
+      signal,
+    );
+    if (preferredPoster) return preferredPoster;
+    return tryFetchPoster(
+      buildEventPosterUrl(catalogId, event.id, fallback, poster.id),
+      fallback,
+      poster.id,
+      signal,
+    );
   }
 
   private async deleteBundle(record: DownloadRecord): Promise<void> {

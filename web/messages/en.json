@@ -480,6 +480,7 @@
       "dashboard": "Dashboard",
       "users": "Users",
       "catalogs": "Catalogs",
+      "ingest": "Ingest",
       "metadata": "Catalog Enums",
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
@@ -487,6 +488,84 @@
       "mcpUsage": "MCP Usage",
       "clientErrors": "Client Errors",
       "webUpdates": "Web Updates"
+    },
+    "ingest": {
+      "title": "Recording Ingest",
+      "description": "Upload recordings and let the host worker process them into the catalog.",
+      "upload": {
+        "title": "Upload recordings",
+        "description": "Files are uploaded in chunks, hashed, checked against the catalog, then transcribed and indexed. Duplicates are rejected.",
+        "catalog": "Target catalog",
+        "selectCatalog": "Select a catalog",
+        "files": "Audio files",
+        "submit": "Upload & process ({count})",
+        "phase": {
+          "pending": "Ready to upload",
+          "uploading": "Uploading… {percent}%",
+          "done": "Uploaded and queued",
+          "error": "Upload failed"
+        }
+      },
+      "jobs": {
+        "title": "Ingest jobs",
+        "description": "Recent uploads across all catalogs. Active rows refresh automatically.",
+        "refresh": "Refresh",
+        "empty": "No recordings have been uploaded yet.",
+        "retrySubmit": "Retry submit",
+        "remove": "Remove recording",
+        "loadError": "Ingest jobs could not be loaded.",
+        "columns": {
+          "file": "File",
+          "catalog": "Catalog",
+          "requestedBy": "Requested by",
+          "created": "Created",
+          "status": "Status",
+          "actions": "Actions",
+          "result": "Result"
+        }
+      },
+      "status": {
+        "UPLOADING": "Uploading",
+        "QUEUED": "Queued",
+        "RUNNING": "Processing",
+        "SUCCEEDED": "Done",
+        "REJECTED": "Rejected",
+        "FAILED": "Failed",
+        "REMOVING": "Removing",
+        "REMOVED": "Removed",
+        "CANCELLED": "Cancelled"
+      },
+      "errors": {
+        "duplicate": "Already in the catalog (same audio)",
+        "submit_failed": "Could not submit the job to the jobs service",
+        "undecodable_audio": "ffmpeg could not decode the file",
+        "intake_missing": "Uploaded file not found on the worker",
+        "intake_invalid": "Upload directory has unexpected contents",
+        "catalog_missing": "Catalog CSV not found on the worker",
+        "accepted_exists": "A file with this name was already accepted",
+        "catalog_add_failed": "catalog add failed",
+        "run_pipeline_failed": "Pipeline failed",
+        "ingest_failed": "Ingest failed",
+        "worker_failed": "Worker run failed",
+        "worker_cancelled": "Worker run was cancelled",
+        "job_missing": "Job no longer exists in Prefect",
+        "completion_missing": "Worker finished but its report never arrived; catalog re-synced",
+        "remove_failed": "Removal failed - the recording may be partially removed; check the worker log",
+        "derived_refresh_failed": "Removed, but the RAG/speaker refresh failed - run catalog run-pipeline",
+        "sync_failed": "Processed, but catalog sync failed - run Sync catalog"
+      },
+      "remove": {
+        "title": "Remove this recording?",
+        "descriptionCatalog": "\"{file}\" will be deleted from the catalog together with its audio, transcripts, diarization, speaker embeddings, RAG chunks, metadata and event assignment. If it is the primary recording of a released event, that event is unreleased. This cannot be undone.",
+        "descriptionFiles": "The uploaded file for \"{file}\" will be deleted. It never reached the catalog, so nothing else changes.",
+        "confirm": "Remove"
+      },
+      "toasts": {
+        "queued": "{count, plural, one {# recording queued} other {# recordings queued}}",
+        "removed": "Recording removed",
+        "removalQueued": "Removal queued",
+        "partial": "{done} of {total} recordings queued"
+      }
     },
     "mcp": {
       "title": "MCP Usage",
@@ -1389,6 +1468,10 @@
     "transcriptRestrictedDescription": "You need VIEWER access or higher to view transcripts."
   },
   "events": {
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Session {index} of {count}"
+      },
     "tabs": {
       "ariaLabel": "Catalog tabs",
       "recordings": "Recordings",
@@ -1399,6 +1482,47 @@
       "labsRequiredDescription": "Enable Besedy Labs in Settings to access Events.",
       "readOnlyTitle": "Read-only access",
       "readOnlyDescription": "You can view events, but editing requires Admin access."
+    },
+    "poster": {
+      "title": "Event posters",
+      "back": "Back to event",
+      "eventFallback": "Event {id}",
+      "createTitle": "Create a poster candidate",
+      "createDescription": "Upload one square and one landscape image. Creating a candidate does not change what listeners see.",
+      "label": "Label (optional)",
+      "labelPlaceholder": "For example: blue version",
+      "square": "Square",
+      "squareHint": "1:1 for phones",
+      "landscape": "Landscape",
+      "landscapeHint": "16:9 for desktop and landscape tablets",
+      "create": "Create candidate",
+      "created": "Poster candidate created",
+      "createFailed": "Could not create poster candidate",
+      "bothRequired": "Select both square and landscape files.",
+      "candidatesTitle": "Candidates",
+      "candidatesDescription": "Publish one candidate for listeners, keep alternatives as drafts, or return to an older candidate later.",
+      "empty": "No poster candidates yet.",
+      "unnamed": "Untitled candidate",
+      "current": "Published",
+      "draft": "Draft",
+      "createdMeta": "Created {date} by {author}",
+      "unknownAuthor": "Unknown user",
+      "publish": "Publish",
+      "published": "Poster published",
+      "publishFailed": "Could not publish poster",
+      "unpublish": "Unpublish",
+      "unpublished": "Poster unpublished",
+      "unpublishFailed": "Could not unpublish poster",
+      "confirmUnpublishTitle": "Unpublish this poster?",
+      "confirmUnpublishDescription": "The event will immediately have no poster for listeners. The candidate will remain available to publish again.",
+      "delete": "Delete",
+      "deleted": "Poster candidate deleted",
+      "deleteFailed": "Could not delete poster candidate",
+      "confirmDeleteTitle": "Delete this candidate?",
+      "confirmDeleteDescription": "{label} and both of its images will be permanently deleted.",
+      "cancel": "Cancel",
+      "invalidEvent": "Invalid event.",
+      "loadFailed": "Could not load event posters."
     },
     "common": {
       "validationLocationRequired": "Location is required",
@@ -1446,10 +1570,9 @@
       "sourcesMobile": "Sources: {count}",
       "postersMobile": "Posters: {status}",
       "postersMissing": "Missing",
-      "postersPortrait": "Mobile only",
-      "postersLandscape": "Desktop only",
-      "postersBoth": "Both",
-      "sessionLabel": "Session {index}",
+      "postersDraftOnly": "Draft only",
+      "postersPublished": "Published",
+      "postersPublishedWithDrafts": "Published + newer drafts",
       "createDialogTitle": "Create Event",
       "createDialogDescription": "Event requires location and at least year; month/day are optional.",
       "fieldLocation": "Location",
@@ -1460,8 +1583,6 @@
       "fieldMonthPlaceholder": "1-12",
       "fieldDay": "Day",
       "fieldDayPlaceholder": "1-31",
-      "fieldSessionIndexOptional": "Session number (optional)",
-      "fieldSessionIndexPlaceholder": "Next available",
       "fieldTitleOptional": "Title (optional)",
       "fieldTitlePlaceholder": "Auto-derived when empty",
       "fieldDescriptionOptional": "Description (optional)",
@@ -1469,6 +1590,7 @@
       "create": "Create",
       "toastCreated": "Event created",
       "toastCreateFailed": "Failed to create event",
+      "openExistingEvent": "Open event",
       "loadNextError": "Failed to load next events",
       "loadAllError": "Failed to load all events",
       "loading": "Loading events...",
@@ -1479,7 +1601,6 @@
       "unknownError": "Unknown error",
       "eventFallbackTitle": "Event {id}",
       "recordingCount": "{count, plural, one {# recording} other {# recordings}}",
-      "sessionLabel": "Session {index}",
       "released": "Released",
       "unreleased": "Unreleased",
       "editEvent": "Edit Event",
@@ -1556,9 +1677,16 @@
       "fieldSessionIndex": "Session number",
       "fieldSessionIndexPlaceholder": "1",
       "fieldDescription": "Description",
-      "sessionLabel": "Session {index}",
       "cancel": "Cancel",
       "saveChanges": "Save Changes"
+    },
+    "creationConflict": {
+      "title": "Choose where this belongs",
+      "description": "One or more events already have this location and date. Choose the matching discussion, or confirm that this is a distinct event.",
+      "eventFallback": "Event {id}",
+      "candidateMeta": "Event {id} · session {index} · {count, plural, one {# recording} other {# recordings}}",
+      "createDistinct": "Create a distinct event",
+      "cancel": "Cancel"
     },
     "unassignedPage": {
       "title": "Unassigned Recordings",
@@ -1572,7 +1700,8 @@
       "toastCreated": "Event created from recording",
       "toastCreateFailed": "Failed to create event from recording",
       "loading": "Loading unassigned recordings...",
-      "loadError": "Failed to load unassigned recordings: {message}"
+      "loadError": "Failed to load unassigned recordings: {message}",
+      "attachToEvent": "Attach"
     }
   },
   "catalogSettings": {
@@ -1789,7 +1918,11 @@
       "download_transcripts": "Download transcripts",
       "download_transcriptsDesc": "Download individual transcript files",
       "bulk_export_transcripts": "Bulk export transcripts",
-      "bulk_export_transcriptsDesc": "Export the catalog transcript corpus"
+      "bulk_export_transcriptsDesc": "Export the catalog transcript corpus",
+      "manage_event_posters": "Manage event posters",
+      "manage_event_postersDesc": "Create, preview, and remove unpublished poster candidates",
+      "publish_event_posters": "Publish event posters",
+      "publish_event_postersDesc": "Select, replace, or unpublish an event poster"
     },
     "toasts": {
       "settingsUpdated": "Catalog settings updated",
@@ -1871,7 +2004,6 @@
     "unknownTitle": "Untitled recording",
     "eventLabel": "Event",
     "recordingLabel": "Recording",
-    "sessionLabel": "Session {index}",
     "availableOffline": "Available offline",
     "offlinePlayer": "Offline player",
     "audioUnavailable": "The downloaded audio is unavailable. Remove this download and save it again while online.",

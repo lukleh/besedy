@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { PaginationInfo } from "@/components/catalog/catalog-list/types";
 import type { PlaybackProgressSummary } from "@/lib/playback-progress";
+import type { CREATE_DISTINCT_EVENT_INTENT } from "@/lib/catalog-events/create-conflict";
 
 export interface EventListProps {
   catalogId: string;
@@ -24,13 +25,12 @@ export interface CatalogEventRow {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
+  sessionOrdinal: number;
+  sessionCount: number;
   released: boolean;
   recordingCount: number;
   sourceCount: number;
-  posterStatus: {
-    portrait: boolean;
-    landscape: boolean;
-  };
+  posterStatus: "none" | "draft-only" | "published" | "published-with-newer-drafts";
   primaryTitle: string | null;
   playback: PlaybackProgressSummary | null;
 }
@@ -68,13 +68,12 @@ export const catalogEventRowSchema = z.object({
   dateMonth: z.number().nullable(),
   dateDay: z.number().nullable(),
   sessionIndex: z.number(),
+  sessionOrdinal: z.number(),
+  sessionCount: z.number(),
   released: z.boolean(),
   recordingCount: z.number(),
   sourceCount: z.number(),
-  posterStatus: z.object({
-    portrait: z.boolean(),
-    landscape: z.boolean(),
-  }),
+  posterStatus: z.enum(["none", "draft-only", "published", "published-with-newer-drafts"]),
   primaryTitle: z.string().nullable(),
   playback: z
     .object({
@@ -107,7 +106,7 @@ export interface CreateEventPayload {
   dateYear: number;
   dateMonth?: number | null;
   dateDay?: number | null;
-  sessionIndex?: number;
+  intent?: typeof CREATE_DISTINCT_EVENT_INTENT;
   title?: string | null;
   description?: string | null;
 }
@@ -132,9 +131,7 @@ export interface StoredEventListState {
   page?: number;
 }
 
-export function toPaginationInfo(
-  pagination: EventListResponse["pagination"],
-): PaginationInfo {
+export function toPaginationInfo(pagination: EventListResponse["pagination"]): PaginationInfo {
   return {
     page: pagination.page,
     limit: pagination.limit,

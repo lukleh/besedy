@@ -361,8 +361,9 @@ corrections/
 
 The exact storage root follows the existing writable-artifact conventions. The
 important invariant is the workspace/publication identity, not these literal
-directory names. Database pointers choose active artifacts; file existence alone
-never means a transcript is published.
+directory names. The tree is separate from the immutable transcript generation,
+as required by [ADR 0002](0002-artifact-generations.md). Database pointers choose
+active artifacts; file existence alone never means a transcript is published.
 
 ### Reader and search publication pointers are separate
 
