@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getAccess, POST as postAccess } from "@/app/api/catalogs/[id]/access/route";
 import {
+  grantFromLevel,
+  type CatalogGrant,
+} from "@/lib/policy/catalog-permissions";
+import {
   DELETE as deleteAccess,
   PATCH as patchAccess,
   PUT as putAccess,
@@ -47,13 +51,13 @@ const browserMutationHeaders = {
 
 function makeManagementAccess({
   resolvedUserId = "owner-1",
-  catalogGrant = "OWNER",
+  catalogGrant = grantFromLevel("OWNER"),
   isCatalogAdmin = false,
   canEnterPortal = true,
   catalogExists = true,
 }: {
   resolvedUserId?: string;
-  catalogGrant?: "LISTENER" | "VIEWER" | "MEMBER" | "EDITOR" | "OWNER" | null;
+  catalogGrant?: CatalogGrant | null;
   isCatalogAdmin?: boolean;
   canEnterPortal?: boolean;
   catalogExists?: boolean;
@@ -107,7 +111,7 @@ describe("catalog access routes", () => {
   it("GET /api/catalogs/:id/access returns 403 when user cannot manage access", async () => {
     requireAuth.mockResolvedValue("user-1");
     resolveCatalogManagementActor.mockResolvedValue(
-      makeManagementAccess({ resolvedUserId: "user-1", catalogGrant: "VIEWER" })
+      makeManagementAccess({ resolvedUserId: "user-1", catalogGrant: grantFromLevel("VIEWER") })
     );
     prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId, label: "Test" });
 

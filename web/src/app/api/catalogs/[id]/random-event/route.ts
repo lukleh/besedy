@@ -148,7 +148,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   ]);
   const playableEntries = scopeCatalogEntriesForAccess(
     entries,
-    capability.accessLevel
+    capability.catalogGrant
   ).filter((entry) => entry.isActionable);
 
   if (playableEntries.length === 0) {

@@ -1,5 +1,6 @@
-import { Prisma, type AccessLevel } from '@/generated/prisma/client';
+import { Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
+import { grantFromLevel } from '@/lib/policy/catalog-permissions';
 import {
   catalogEventVisibilityWhere,
   catalogEventRecordingVisibilityWhere,
@@ -34,7 +35,7 @@ import { getMcpResourceUrl } from '@/lib/mcp/config';
 
 export type McpEventOrder = 'asc' | 'desc';
 
-const MCP_VISIBILITY_ACCESS_LEVEL = 'LISTENER' as const satisfies AccessLevel;
+const MCP_VISIBILITY_GRANT = grantFromLevel('LISTENER');
 const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
 const MAX_FULL_TRANSCRIPT_SEGMENTS = 2_000;
 const MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS = 400_000;
@@ -453,7 +454,7 @@ export async function listMcpLocations(
 ) {
   const visibleEventIds = await resolveReadableEventIds(
     catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
+    MCP_VISIBILITY_GRANT,
   );
   const eventRows = await prisma.catalogEvent.findMany({
     where: {
@@ -494,7 +495,7 @@ export async function listMcpRecorders(
 ) {
   const eligibleHashesQuery = buildEligibleAudioHashesQuery(
     catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
+    MCP_VISIBILITY_GRANT,
     null,
   );
   const recorders = await prisma.$queryRaw<
@@ -531,7 +532,7 @@ export async function listMcpEvents(
     : undefined;
   const visibleEventIds = await resolveReadableEventIds(
     catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
+    MCP_VISIBILITY_GRANT,
   );
   const filters: Prisma.CatalogEventWhereInput = {
     ...(cursor ? { AND: [eventAfterCursorWhere(cursor)] } : {}),
@@ -593,7 +594,7 @@ export async function getMcpEvent(
   const readable = await loadReadableCatalogEvent(
     catalogId,
     eventId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
+    MCP_VISIBILITY_GRANT,
   );
   if (!readable) throw new McpReadError('not_found', 'Event not found');
   const { event, recordings: visibleRecordings } = readable;
@@ -645,7 +646,7 @@ export async function getMcpRecording(catalogId: string, audioHash: string) {
 
   const visibleEventIds = await resolveReadableEventIds(
     catalogId,
-    MCP_VISIBILITY_ACCESS_LEVEL,
+    MCP_VISIBILITY_GRANT,
   );
   const eventWhere: Prisma.CatalogEventRecordingWhereInput = {
     workflowGroupId: catalogId,
@@ -816,7 +817,7 @@ async function resolveMcpReadableRecordingHashes(
   const eligibleQuery = buildAllowedAudioHashesQuery(
     catalogId,
     audioHashes,
-    MCP_VISIBILITY_ACCESS_LEVEL,
+    MCP_VISIBILITY_GRANT,
     null,
   );
   if (!eligibleQuery) return new Set();
@@ -831,7 +832,7 @@ async function assertMcpSearchFiltersVisible(
   const requestedEventIds = filters?.eventIds;
   if (requestedEventIds?.length) {
     const visibleEventIds = new Set(
-      (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_ACCESS_LEVEL)) ??
+      (await resolveReadableEventIds(catalogId, MCP_VISIBILITY_GRANT)) ??
         [],
     );
     if (requestedEventIds.some((eventId) => !visibleEventIds.has(eventId))) {
@@ -871,7 +872,7 @@ export async function searchMcpTranscripts(
       neighborCount: input.contextChunks,
       maxPerAudio: input.maxPerRecording,
       metadataFilters: input.filters ?? null,
-      accessLevel: MCP_VISIBILITY_ACCESS_LEVEL,
+      catalogGrant: MCP_VISIBILITY_GRANT,
       failOnMissingBundle: true,
     });
   } catch (error) {
@@ -913,7 +914,7 @@ export async function findMcpTranscriptMentions(
       neighborCount: input.contextChunks,
       maxPerAudio: input.maxPerRecording,
       metadataFilters: input.filters ?? null,
-      accessLevel: MCP_VISIBILITY_ACCESS_LEVEL,
+      catalogGrant: MCP_VISIBILITY_GRANT,
       failOnMissingBundle: true,
     });
   } catch (error) {

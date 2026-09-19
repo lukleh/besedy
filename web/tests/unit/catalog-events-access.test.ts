@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth/permissions")>();
@@ -56,7 +57,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
       isCatalogAdmin: false,
     });
     isFeatureEnabledForUser.mockReturnValue(true);
@@ -107,7 +108,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: false,
-      catalogGrant: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       isCatalogAdmin: false,
     });
     isFeatureEnabledForUser.mockReturnValue(false);
@@ -138,7 +139,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
       isCatalogAdmin: false,
     });
 
@@ -146,12 +147,12 @@ describe("requireCatalogEventsAccess", () => {
 
     expect(result).toMatchObject({
       userId: "user-1",
-      accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
       policyContext: {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "LISTENER",
+        catalogGrant: grantFromLevel("LISTENER"),
         isCatalogAdmin: false,
       },
     });
@@ -169,18 +170,18 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       isCatalogAdmin: false,
     });
 
     await expect(requireCatalogEventsAccess(catalogId, "edit")).resolves.toMatchObject({
       userId: "user-1",
-      accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       policyContext: {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: false,
       },
     });
@@ -211,7 +212,7 @@ describe("requireCatalogEventsAccess", () => {
 
     expect(result).toMatchObject({
       userId: "user-1",
-      accessLevel: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
     });
   });
 
@@ -227,7 +228,7 @@ describe("requireCatalogEventsAccess", () => {
 
     expect(result).toMatchObject({
       userId: "user-1",
-      accessLevel: null,
+      catalogGrant: null,
     });
   });
 
@@ -252,7 +253,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       isCatalogAdmin: false,
     });
 

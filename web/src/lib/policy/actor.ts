@@ -1,5 +1,6 @@
-import type { AccessLevel, UserStatus } from "@/generated/prisma/client";
+import type { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 
 export type SystemRole = "USER" | "ADMIN" | "SUPERADMIN";
 
@@ -14,9 +15,8 @@ export interface PortalActorContext {
 export interface CatalogActorContext extends PortalActorContext {
   catalogId: string;
   catalogExists: boolean;
-  catalogGrant: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   hasCatalogAccess: boolean;
-  isCatalogOwner: boolean;
   isCatalogAdmin: boolean;
 }
 
@@ -107,7 +107,6 @@ export async function resolveCatalogActorContext(
       catalogExists,
       catalogGrant: null,
       hasCatalogAccess: false,
-      isCatalogOwner: false,
       isCatalogAdmin: false,
     };
   }
@@ -125,11 +124,22 @@ export async function resolveCatalogActorContext(
         },
         select: {
           accessLevel: true,
+          role: true,
+          extraPermissions: true,
           status: true,
         },
       });
 
-  const catalogGrant = access?.status === "ACTIVE" ? access.accessLevel : null;
+  // The role is authoritative once a grant carries one; the level is what
+  // answers for grants the assignment has not reached yet.
+  const catalogGrant: CatalogGrant | null =
+    access?.status === "ACTIVE"
+      ? {
+          level: access.accessLevel,
+          role: access.role ?? null,
+          extras: access.extraPermissions ?? [],
+        }
+      : null;
 
   return {
     ...portal,
@@ -137,7 +147,6 @@ export async function resolveCatalogActorContext(
     catalogExists,
     catalogGrant,
     hasCatalogAccess: isCatalogAdmin || catalogGrant !== null,
-    isCatalogOwner: catalogGrant === "OWNER",
     isCatalogAdmin,
   };
 }

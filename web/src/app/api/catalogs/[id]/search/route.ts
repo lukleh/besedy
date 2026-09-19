@@ -72,7 +72,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       neighborCount: bodyResult.data.neighborCount,
       maxPerAudio,
       metadataFilters,
-      accessLevel: capability.accessLevel,
+      catalogGrant: capability.catalogGrant,
       requestStartedAt,
       authMs: timings.authMs,
     });

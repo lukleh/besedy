@@ -56,12 +56,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!paramsResult.success) return paramsResult.response;
     const { id: catalogId, eventId } = paramsResult.data;
 
-    const { userId, accessLevel } = await requireCatalogEventsAccess(catalogId, "view");
+    const { userId, catalogGrant } = await requireCatalogEventsAccess(catalogId, "view");
 
     const readable = await loadReadableCatalogEvent(
       catalogId,
       eventId,
-      accessLevel
+      catalogGrant
     );
     if (!readable) {
       return notFound("catalog event");

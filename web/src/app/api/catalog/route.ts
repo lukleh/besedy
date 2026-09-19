@@ -157,14 +157,14 @@ export async function GET(request: NextRequest) {
     // LISTENER can only see published items - force the ready-status filter
     // Other filters (recorder, location, date, etc.) still apply normally
     let effectiveStatusFilter = statusFilter;
-    if (requiresReadyRecordingScope(capability.accessLevel)) {
+    if (requiresReadyRecordingScope(capability.catalogGrant)) {
       effectiveStatusFilter = "ready";
     }
 
     const enrichedEntries = await loadEnrichedCatalogEntries(group.id);
     const visibleEntries = scopeCatalogEntriesForAccess(
       enrichedEntries,
-      capability.accessLevel
+      capability.catalogGrant
     );
 
     const totalAll = visibleEntries.length;

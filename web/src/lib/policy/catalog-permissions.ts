@@ -36,7 +36,11 @@ export type CatalogPermission =
   | "correct_transcripts"
   | "publish_transcript"
   | "see_transcript_variants"
-  | "see_speakers";
+  | "see_speakers"
+  // The single `download` splits into one permission per medium later. This
+  // one is named early because the host role carries it as an extra, and an
+  // extra that named nothing would be a typo nobody could catch.
+  | "download_transcripts";
 
 /** What each level adds to everything the levels below it already carry. */
 const PERMISSIONS_BY_LEVEL: Record<AccessLevel, CatalogPermission[]> = {
@@ -96,6 +100,7 @@ const EVERY_PERMISSION: Record<CatalogPermission, true> = {
   publish_transcript: true,
   see_transcript_variants: true,
   see_speakers: true,
+  download_transcripts: true,
 };
 
 const ALL_PERMISSIONS: ReadonlySet<CatalogPermission> = new Set(
@@ -196,14 +201,69 @@ export function permissionsForLevel(
 }
 
 /**
+ * What one grant carries.
+ *
+ * `role` is authoritative once set. `level` is the legacy scale, kept as the
+ * answer for grants the assignment has not reached yet; when every grant
+ * carries a role it stops being read at all.
+ */
+export interface CatalogGrant {
+  level: AccessLevel | null;
+  role: CatalogRole | null;
+  extras: string[];
+}
+
+/**
+ * A grant that carries nothing but a legacy level.
+ *
+ * Every call site of this is a place that still knows only a level -- a client
+ * reading one out of a payload, or a fixed visibility floor. They are what the
+ * assignment step replaces, and this names them so they can be found.
+ */
+export function grantFromLevel(level: AccessLevel | null): CatalogGrant {
+  return { level, role: null, extras: [] };
+}
+
+/**
+ * Everything a grant carries: its role's permissions plus its extras.
+ *
+ * Extras are additive only, so the role name stays a lower bound on what the
+ * account may do. An extra naming a permission this build does not know is
+ * ignored rather than rejected, which is what lets the set grow without a
+ * migration.
+ */
+export function permissionsForGrant(
+  grant: CatalogGrant | null | undefined
+): ReadonlySet<CatalogPermission> {
+  if (grant == null) return NO_PERMISSIONS;
+
+  const base = grant.role != null
+    ? permissionsForRole(grant.role)
+    : permissionsForLevel(grant.level);
+
+  // A permission check must never throw: a grant that arrives without its
+  // extras carries none, which fails closed.
+  const extras = grant.extras ?? [];
+  if (extras.length === 0) return base;
+
+  const resolved = new Set(base);
+  for (const extra of extras) {
+    if (extra in EVERY_PERMISSION) {
+      resolved.add(extra as CatalogPermission);
+    }
+  }
+  return resolved;
+}
+
+/**
  * Whether a grant carries a permission, treating a catalog administrator as
  * holding all of them rather than as occupying the top of the scale.
  */
 export function grantHasPermission(
-  catalogGrant: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   isCatalogAdmin: boolean,
   permission: CatalogPermission
 ): boolean {
   if (isCatalogAdmin) return true;
-  return permissionsForLevel(catalogGrant).has(permission);
+  return permissionsForGrant(catalogGrant).has(permission);
 }

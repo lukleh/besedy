@@ -1,5 +1,7 @@
-import type { AccessLevel } from "@/generated/prisma/client";
-import { grantHasPermission } from "@/lib/policy/catalog-permissions";
+import {
+  grantHasPermission,
+  type CatalogGrant,
+} from "@/lib/policy/catalog-permissions";
 
 export interface CatalogTabPolicyContext {
   canBrowseRecordings: boolean;
@@ -8,7 +10,7 @@ export interface CatalogTabPolicyContext {
 }
 
 export interface EventColumnPolicyContext {
-  catalogGrant: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   isCatalogAdmin: boolean;
 }
 

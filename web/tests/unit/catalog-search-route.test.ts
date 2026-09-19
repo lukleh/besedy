@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { POST as searchCatalog } from "@/app/api/catalogs/[id]/search/route";
 import prisma from "@/lib/db";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 const originalEnv = process.env;
 
@@ -164,6 +165,7 @@ describe("catalog search route", () => {
       hasAccess: true,
       canUseRagSearch: true,
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
 
     fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
@@ -440,6 +442,7 @@ describe("catalog search route", () => {
       hasAccess: true,
       canUseRagSearch: true,
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
 
     const firstBatchHits = Array.from({ length: 200 }, (_, index) => ({
@@ -578,6 +581,7 @@ describe("catalog search route", () => {
       hasAccess: true,
       canUseRagSearch: true,
       accessLevel: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
     });
 
     fetchMock.mockImplementation(async (url: string | URL) => {
@@ -687,6 +691,7 @@ describe("catalog search route", () => {
       hasAccess: true,
       canUseRagSearch: true,
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
 
     const firstBatchHits = Array.from({ length: 200 }, (_, index) => ({
@@ -837,6 +842,7 @@ describe("catalog search route", () => {
       hasAccess: true,
       canUseRagSearch: true,
       accessLevel: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
     });
     process.env.RAG_COLBERT_RERANK_ENABLED = "true";
 
@@ -923,6 +929,7 @@ describe("catalog search route", () => {
       hasAccess: true,
       canUseRagSearch: true,
       accessLevel: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
     });
     process.env.RAG_COLBERT_RERANK_ENABLED = "true";
 

@@ -1,10 +1,10 @@
-import { AccessLevel } from "@/generated/prisma/client";
 import { AuthError, requireAuth } from "@/lib/auth/permissions";
 import {
   getLabsPreferenceForUser,
   isFeatureEnabledForUser,
 } from "@/lib/features/capabilities";
 import { resolveCatalogActorContext } from "@/lib/policy/actor";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   canAttachRecordingToEvent,
   canBrowseEvents,
@@ -28,7 +28,7 @@ export type CatalogEventsAccessMode =
 
 interface CatalogEventsAccessResult {
   userId: string;
-  accessLevel: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   policyContext: EventFeaturePolicyContext;
 }
 
@@ -114,5 +114,5 @@ export async function requireCatalogEventsAccess(
     throw new AuthError(deniedMessageForCatalogEventsMode(mode), 403);
   }
 
-  return { userId, accessLevel: actor.catalogGrant, policyContext };
+  return { userId, catalogGrant: actor.catalogGrant, policyContext };
 }

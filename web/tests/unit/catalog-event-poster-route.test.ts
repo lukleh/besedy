@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import {
   GET as getEventPoster,
   POST as uploadEventPoster,
@@ -110,6 +111,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "viewer-1",
       accessLevel: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
     });
     requireCatalogManagementAccess.mockResolvedValue({
       ok: false,
@@ -152,6 +154,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
 
     const response = await getEventPoster(
@@ -173,6 +176,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
     isPublishedVisibleEvent.mockResolvedValue(false);
 
@@ -191,6 +195,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     requireCatalogManagementAccess.mockResolvedValue({ ok: true });
 
@@ -242,6 +247,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     requireCatalogManagementAccess.mockResolvedValue({ ok: true });
 
@@ -289,6 +295,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     requireCatalogManagementAccess.mockResolvedValue({ ok: true });
 
@@ -332,6 +339,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     requireCatalogManagementAccess.mockResolvedValue({ ok: true });
 
@@ -387,6 +395,7 @@ describe("catalog event poster route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     requireCatalogManagementAccess.mockResolvedValue({ ok: true });
 

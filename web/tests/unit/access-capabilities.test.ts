@@ -6,6 +6,7 @@ import {
   getRecordingCapability,
 } from "@/lib/access/capabilities";
 import * as session from "@/lib/auth/session";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/session", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/session")>(
@@ -106,7 +107,7 @@ describe("access capabilities", () => {
       catalogId: "catalog-1",
       catalogExists: true,
       hasAccess: true,
-      catalogGrant: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
       accessLevel: "VIEWER",
       isCatalogAdmin: false,
       canViewCatalog: true,
@@ -140,7 +141,7 @@ describe("access capabilities", () => {
       catalogId: "catalog-1",
       catalogExists: true,
       hasAccess: true,
-      catalogGrant: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       accessLevel: "OWNER",
       isCatalogAdmin: false,
       canEditMetadata: true,

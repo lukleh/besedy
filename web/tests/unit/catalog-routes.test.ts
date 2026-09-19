@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { GET as getCatalog } from "@/app/api/catalog/route";
 import { GET as getFilterOptions } from "@/app/api/catalog/filter-options/route";
 import type { EnrichedCatalogEntry } from "@/lib/catalog";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/permissions")>(
@@ -121,6 +122,7 @@ describe("catalog API routes (access gating)", () => {
     getCatalogCapability.mockResolvedValue({
       hasAccess: true,
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       canDownload: true,
       canEditMetadata: true,
       canBatchEditMetadata: true,
@@ -236,6 +238,7 @@ describe("catalog API routes (access gating)", () => {
     getCatalogCapability.mockResolvedValue({
       hasAccess: true,
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
       canDownload: false,
       canEditMetadata: false,
       canBatchEditMetadata: false,
@@ -304,6 +307,7 @@ describe("catalog API routes (access gating)", () => {
     getCatalogCapability.mockResolvedValue({
       hasAccess: true,
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
     loadEnrichedCatalogEntries.mockResolvedValue([
       createEntry({

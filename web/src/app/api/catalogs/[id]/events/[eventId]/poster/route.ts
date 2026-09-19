@@ -249,9 +249,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Invalid poster variant" }, { status: 400 });
     }
 
-    const { accessLevel } = await requireCatalogEventsAccess(catalogId, "view");
+    const { catalogGrant } = await requireCatalogEventsAccess(catalogId, "view");
 
-    if (requiresReleasedEventVisibilityScope(accessLevel)) {
+    if (requiresReleasedEventVisibilityScope(catalogGrant)) {
       const isVisible = await isPublishedVisibleEvent(prisma, catalogId, eventId);
       if (!isVisible) {
         return NextResponse.json({ error: "Event not found" }, { status: 404 });

@@ -1,7 +1,8 @@
 import path from "node:path";
 import { z } from "zod";
-import { Prisma, type AccessLevel } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { requiresReadyRecordingScope } from "@/lib/policy/recording";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   getRagBackendKey,
   getRagColbertModel,
@@ -228,31 +229,31 @@ function parseBooleanEnv(name: string, value: string | undefined, fallback: bool
 export function buildAllowedAudioHashesQuery(
   catalogId: string,
   audioHashes: string[],
-  accessLevel: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
 ): Prisma.Sql | null {
   if (audioHashes.length === 0) return null;
 
-  return buildAudioHashesQuery(catalogId, accessLevel, metadataFilters, audioHashes);
+  return buildAudioHashesQuery(catalogId, catalogGrant, metadataFilters, audioHashes);
 }
 
 export function buildEligibleAudioHashesQuery(
   catalogId: string,
-  accessLevel: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
 ): Prisma.Sql {
-  return buildAudioHashesQuery(catalogId, accessLevel, metadataFilters, null);
+  return buildAudioHashesQuery(catalogId, catalogGrant, metadataFilters, null);
 }
 
 function buildAudioHashesQuery(
   catalogId: string,
-  accessLevel: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
   candidateAudioHashes: string[] | null,
 ): Prisma.Sql {
   const joins: Prisma.Sql[] = [];
   const filters: Prisma.Sql[] = [];
-  const requiresVisibleEvent = requiresReadyRecordingScope(accessLevel);
+  const requiresVisibleEvent = requiresReadyRecordingScope(catalogGrant);
   const needsEventJoin =
     requiresVisibleEvent ||
     (metadataFilters?.eventIds?.length ?? 0) > 0 ||
@@ -485,10 +486,10 @@ export function resolveRerankCandidateLimit(
 }
 
 export function shouldOverfetchColbertResults(
-  accessLevel: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
 ): boolean {
-  return requiresReadyRecordingScope(accessLevel) || metadataFilters !== null;
+  return requiresReadyRecordingScope(catalogGrant) || metadataFilters !== null;
 }
 
 export function resolveColbertFetchLimit(baseLimit: number): number {

@@ -1,5 +1,5 @@
-import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   canDownloadCatalogContent,
   canEditCatalogMetadata,
@@ -15,13 +15,13 @@ export interface RecordingVisibilityState {
 }
 
 export function requiresReadyRecordingScope(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): boolean {
   return lacksUnreleasedVisibility(catalogGrant);
 }
 
 function createRecordingVisibilityContext(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): CatalogPolicyContext {
   return {
     catalogExists: catalogGrant !== null && catalogGrant !== undefined,
@@ -61,7 +61,7 @@ export function canViewRecordingTranscript(
 }
 
 export function canViewRecordingForAccessLevel(
-  catalogGrant: AccessLevel | null | undefined,
+  catalogGrant: CatalogGrant | null | undefined,
   state?: RecordingVisibilityState
 ): boolean {
   return canViewRecording(createRecordingVisibilityContext(catalogGrant), state);
@@ -71,7 +71,7 @@ export function scopeRecordingsForAccess<
   T extends RecordingVisibilityState,
 >(
   entries: T[],
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): T[] {
   if (!requiresReadyRecordingScope(catalogGrant)) {
     return entries;

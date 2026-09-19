@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogFeaturesResponse } from "@/lib/features/capabilities";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 function deepSearch(enabled: boolean, canView: boolean) {
   return {
@@ -11,7 +12,7 @@ function deepSearch(enabled: boolean, canView: boolean) {
 
 describe("event capabilities", () => {
   it("keeps listeners on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse("LISTENER", false, false);
+    const result = buildCatalogFeaturesResponse(grantFromLevel("LISTENER"), false, false);
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -32,7 +33,7 @@ describe("event capabilities", () => {
   });
 
   it("keeps viewers on the events-first view without a tab switcher", () => {
-    const result = buildCatalogFeaturesResponse("VIEWER", false, false);
+    const result = buildCatalogFeaturesResponse(grantFromLevel("VIEWER"), false, false);
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -53,7 +54,7 @@ describe("event capabilities", () => {
   });
 
   it("lets owners edit events and use both catalog tabs", () => {
-    const result = buildCatalogFeaturesResponse("OWNER", false, false);
+    const result = buildCatalogFeaturesResponse(grantFromLevel("OWNER"), false, false);
 
     expect(result).toEqual({
       labsEnabled: false,
@@ -74,7 +75,7 @@ describe("event capabilities", () => {
   });
 
   it("lets owners use deep search only when Labs is enabled", () => {
-    const result = buildCatalogFeaturesResponse("OWNER", true, false);
+    const result = buildCatalogFeaturesResponse(grantFromLevel("OWNER"), true, false);
 
     expect(result.features.deepSearch).toEqual(deepSearch(true, true));
   });
@@ -128,7 +129,7 @@ describe("event capabilities", () => {
   });
 
   it("never reports event access when admission or catalog state is impossible", () => {
-    const result = buildCatalogFeaturesResponse("LISTENER", true, false, {
+    const result = buildCatalogFeaturesResponse(grantFromLevel("LISTENER"), true, false, {
       catalogExists: false,
       canEnterPortal: false,
     });
