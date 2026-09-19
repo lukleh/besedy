@@ -24,6 +24,7 @@ import {
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
+  canPublishRecording,
   canStreamRecording,
   canViewRecording,
   canViewRecordingTranscript,
@@ -60,6 +61,7 @@ export interface CatalogCapability extends PortalCapability {
   canEditMetadata: boolean;
   canBatchEditMetadata: boolean;
   canManageAccess: boolean;
+  canPublishRecording: boolean;
   canAccessSettings: boolean;
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
@@ -107,6 +109,7 @@ export function buildCatalogCapability(
     canEditMetadata: canEditCatalogMetadata(policyContext),
     canBatchEditMetadata: canBatchEditCatalogMetadata(policyContext),
     canManageAccess: hasCatalogManagementAuthority(policyContext),
+    canPublishRecording: canPublishRecording(policyContext),
     canAccessSettings: canAccessCatalogSettings(policyContext),
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),

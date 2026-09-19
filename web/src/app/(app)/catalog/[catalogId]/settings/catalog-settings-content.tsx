@@ -46,7 +46,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
-import { useCatalogFeatures } from "@/hooks/use-catalog-features";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { AUTH_SENSITIVE_QUERY_OPTIONS } from "@/lib/query/auth-sensitive";
 import { AccessLevel } from "@/generated/prisma/enums";
@@ -78,6 +77,7 @@ import {
 
 export default function CatalogSettingsContent({
   catalogId,
+  cards,
   skipCatalogValidation = false,
 }: CatalogSettingsContentProps) {
   // Owns the interactive catalog access-management workspace after the server
@@ -88,11 +88,6 @@ export default function CatalogSettingsContent({
   const { catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
     skipCatalogValidation,
   });
-  const { data: features } = useCatalogFeatures(catalogId, {
-    enabled: !catalogNotFound && !catalogValidationLoading,
-    includeInactive: true,
-  });
-  const eventsEnabled = features?.features.events.canEdit === true;
   const t = useTranslations("catalogSettings");
   const tCommon = useTranslations("common");
 
@@ -123,7 +118,7 @@ export default function CatalogSettingsContent({
         throw error;
       }
     },
-    enabled: !catalogNotFound && !catalogValidationLoading,
+    enabled: cards.access && !catalogNotFound && !catalogValidationLoading,
     retry: false, // Don't retry on error (403 is expected for unauthorized users)
     ...AUTH_SENSITIVE_QUERY_OPTIONS,
   });
@@ -272,9 +267,7 @@ export default function CatalogSettingsContent({
         }
       ),
     enabled:
-      !catalogNotFound &&
-      !catalogValidationLoading &&
-      eventsEnabled,
+      cards.eventHealth && !catalogNotFound && !catalogValidationLoading,
   });
 
   // Remove pending catalog grant mutation (revokes the pending access)
@@ -463,7 +456,7 @@ export default function CatalogSettingsContent({
   // Only block on the initial access load. Background revalidation should keep
   // the current workspace mounted and fail closed only if the fresh request
   // denies access.
-  if (isLoading && !data) {
+  if (cards.access && isLoading && !data) {
     return (
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-center py-12">
@@ -473,9 +466,9 @@ export default function CatalogSettingsContent({
     );
   }
 
-  // Show access denied if there's an error OR if there's no data after loading completes
-  // (this handles both explicit errors and cases where the query was rejected)
-  if (error || !data) {
+  // Only the access card needs this data, so its absence is a failure only when
+  // that card is the one being shown.
+  if (cards.access && (error || !data)) {
     return (
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center">
@@ -528,16 +521,20 @@ export default function CatalogSettingsContent({
             </div>
           </div>
         </div>
-        <Button onClick={() => setGrantDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t("buttons.grantAccess")}
-        </Button>
+        {cards.access && (
+          <Button onClick={() => setGrantDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t("buttons.grantAccess")}
+          </Button>
+        )}
       </div>
 
-      <CatalogSettingsTranscriptExportsCard onDownload={handleTranscriptExportDownload} />
+      {cards.transcriptExports && (
+        <CatalogSettingsTranscriptExportsCard onDownload={handleTranscriptExportDownload} />
+      )}
 
       {/* Catalog Configuration - Only visible to admins */}
-      {data?.canManageCatalogConfig && (
+      {cards.configuration && (
         <CatalogSettingsConfigCard
           catalogConfig={catalogConfig}
           configDraft={configDraft}
@@ -556,7 +553,7 @@ export default function CatalogSettingsContent({
         />
       )}
 
-      {eventsEnabled && (
+      {cards.eventHealth && (
         <CatalogSettingsEventHealthCard
           catalogId={catalogId}
           error={eventHealthError instanceof Error ? eventHealthError : null}

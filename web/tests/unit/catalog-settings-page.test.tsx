@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CatalogSettingsPage from "@/app/(app)/catalog/[catalogId]/settings/page";
+import type { CatalogSettingsCards } from "@/app/(app)/catalog/[catalogId]/settings/catalog-settings-content-types";
 
 const mocks = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
   requireCatalogPageAccessMock: vi.fn(),
+  getCatalogFeaturesForUserMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -21,19 +23,30 @@ vi.mock("@/lib/access/catalog-page-access", () => ({
   requireCatalogPageAccess: mocks.requireCatalogPageAccessMock,
 }));
 
+vi.mock("@/lib/features/capabilities", () => ({
+  getCatalogFeaturesForUser: mocks.getCatalogFeaturesForUserMock,
+}));
+
 vi.mock(
   "@/app/(app)/catalog/[catalogId]/settings/catalog-settings-content",
   () => ({
     default: ({
       catalogId,
+      cards,
       skipCatalogValidation,
     }: {
       catalogId: string;
+      cards: CatalogSettingsCards;
       skipCatalogValidation?: boolean;
     }) => (
       <div
         data-testid="catalog-settings-content"
         data-catalog-id={catalogId}
+        data-cards={Object.entries(cards)
+          .filter(([, visible]) => visible)
+          .map(([name]) => name)
+          .sort()
+          .join(",")}
         data-skip-catalog-validation={String(skipCatalogValidation ?? false)}
       />
     ),
@@ -43,16 +56,43 @@ vi.mock(
 describe("CatalogSettingsPage", () => {
   const catalogId = "catalog-1";
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  const capability = (overrides: Record<string, boolean> = {}) => ({
+    catalogExists: true,
+    hasAccess: true,
+    canDownload: false,
+    canViewTranscripts: false,
+    canManageCatalogConfiguration: false,
+    canManageAccess: false,
+    ...overrides,
+  });
+
+  const withCapability = (overrides: Record<string, boolean> = {}) => {
     mocks.requireCatalogPageAccessMock.mockResolvedValue({
       userId: "owner-1",
-      capability: {
-        catalogExists: true,
-        hasAccess: true,
-        canAccessSettings: true,
-      },
+      capability: capability(overrides),
     });
+  };
+
+  const withEventEditing = (canEdit: boolean) => {
+    mocks.getCatalogFeaturesForUserMock.mockResolvedValue({
+      data: { features: { events: { canEdit } } },
+    });
+  };
+
+  const renderPage = async () => {
+    render(await CatalogSettingsPage({ params: Promise.resolve({ catalogId }) }));
+    return screen.getByTestId("catalog-settings-content");
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    withCapability({
+      canDownload: true,
+      canViewTranscripts: true,
+      canManageCatalogConfiguration: true,
+      canManageAccess: true,
+    });
+    withEventEditing(true);
   });
 
   it("redirects unauthenticated users to sign-in", async () => {
@@ -79,15 +119,9 @@ describe("CatalogSettingsPage", () => {
     ).rejects.toThrow("NEXT_NOT_FOUND");
   });
 
-  it("redirects users without management access back to the catalog", async () => {
-    mocks.requireCatalogPageAccessMock.mockResolvedValue({
-      userId: "owner-1",
-      capability: {
-        catalogExists: true,
-        hasAccess: true,
-        canAccessSettings: false,
-      },
-    });
+  it("redirects back to the catalog when no card is visible", async () => {
+    withCapability();
+    withEventEditing(false);
 
     await expect(
       CatalogSettingsPage({
@@ -97,17 +131,64 @@ describe("CatalogSettingsPage", () => {
   });
 
   it("renders the client settings workspace after the server access check", async () => {
-    const page = await CatalogSettingsPage({
-      params: Promise.resolve({ catalogId }),
-    });
+    const content = await renderPage();
 
-    render(page);
-
-    const content = screen.getByTestId("catalog-settings-content");
     expect(content).toHaveAttribute("data-catalog-id", catalogId);
     expect(content).toHaveAttribute("data-skip-catalog-validation", "true");
     expect(mocks.requireCatalogPageAccessMock).toHaveBeenCalledWith(catalogId, {
       activeCatalogOnly: false,
     });
+    expect(content).toHaveAttribute(
+      "data-cards",
+      "access,configuration,eventHealth,transcriptExports"
+    );
+  });
+
+  // Each card is its own permission, so any one of them is enough to open the
+  // page, and the page hands the client exactly the cards that one permits.
+  const singleCardCases: Array<{
+    name: string;
+    capability: Record<string, boolean>;
+    events: boolean;
+    cards: string;
+  }> = [
+    {
+      name: "transcript exports",
+      capability: { canDownload: true, canViewTranscripts: true },
+      events: false,
+      cards: "transcriptExports",
+    },
+    {
+      name: "configuration",
+      capability: { canManageCatalogConfiguration: true },
+      events: false,
+      cards: "configuration",
+    },
+    {
+      name: "event health",
+      capability: {},
+      events: true,
+      cards: "eventHealth",
+    },
+    {
+      name: "access",
+      capability: { canManageAccess: true },
+      events: false,
+      cards: "access",
+    },
+  ];
+
+  it.each(singleCardCases)("opens the page for $name alone", async ({ capability, events, cards }) => {
+    withCapability(capability);
+    withEventEditing(events);
+
+    expect(await renderPage()).toHaveAttribute("data-cards", cards);
+  });
+
+  it("hides transcript exports from a downloader who cannot read transcripts", async () => {
+    withCapability({ canDownload: true, canManageAccess: true });
+    withEventEditing(false);
+
+    expect(await renderPage()).toHaveAttribute("data-cards", "access");
   });
 });
