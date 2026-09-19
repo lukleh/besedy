@@ -57,7 +57,7 @@ an explicit rule:
 | Reader and ordinary download | The active reader publication. With no active reader publication, return no transcript text. |
 | Search and MCP | The active search publication, otherwise the configured default machine transcript. |
 | Correction UI | The live database workspace. |
-| Privileged original access | The frozen machine source, or another machine variant where `see_transcript_variants` permits it. |
+| Privileged original access | Before a workspace exists, the current configured default machine transcript. Once correction starts, the frozen machine source. `see_transcript_variants` may additionally expose other machine variants. |
 
 This separation is a safety property. The machine fallback required by MCP must
 never accidentally become a fallback for the normal reading page.
@@ -75,7 +75,10 @@ reading gate:
   variants through the backend picker and comparison surface, including before
   publication.
 - `download_original_transcript` allows a curator or catalog administrator to
-  download the frozen machine source, including before publication.
+  download the current configured default machine transcript before a workspace
+  exists. Once correction starts, it always returns that workspace's frozen
+  machine source, including before publication. Downloading never starts or
+  otherwise changes a correction workspace.
 
 `see_unreleased` alone does not expose an unpublished transcript through the
 ordinary reader. Correctors see the source through the correction UI. Curators
@@ -236,14 +239,14 @@ more useful here than blind review.
 ### Span state is derived
 
 No mutable workflow status duplicates the decisions. The UI derives four
-states for the current revision:
+mutually exclusive states for the current revision, evaluated in this order:
 
 | State | Meaning |
 | --- | --- |
-| Not reviewed | No current approval. |
-| Needs second approval | One distinct person has approved. |
-| Done | Two distinct people have approved and nobody currently disapproves. |
 | Needs attention | At least one current disapproval; publication is blocked. |
+| Done | Nobody currently disapproves and at least two distinct people have approved. |
+| Needs second approval | Nobody currently disapproves and exactly one person has approved. |
+| Not reviewed | Nobody currently disapproves and no one has approved. |
 
 Whether text is unchanged machine text or human-edited is separate information,
 not a workflow state. "Done" appears only after the second approval. Editing
@@ -387,38 +390,52 @@ unpublish and need not have a first-version UI.
 ### Publication is one durable, retryable job
 
 Starting publication creates a `pending` publication with the exact span-
-revision manifest and briefly locks workspace writes. One job then:
+revision manifest and locks workspace writes. One job then:
 
 1. Materializes and validates the canonical corrected JSON in the publication's
    staging directory.
 2. Renders `txt`, `srt` and `vtt` from that JSON.
 3. Builds and validates an incremental search update that replaces the same
    audio hash in the same logical backend scope.
-4. Switches the staged index bundle.
-5. Marks the publication successful, moves the database pointers and unlocks
+4. Records the publication as `activating`, including the expected index bundle
+   and transcript fingerprint.
+5. Switches the staged index bundle.
+6. Moves the database pointers, marks the publication successful and unlocks
    the workspace.
 
 The reader pointer is never moved before artifacts and indexing are ready. The
 filesystem/index switch and PostgreSQL cannot form one transaction, so the job
 is idempotent and reconciles the only possible crash window: search may briefly
 contain the verified new snapshot while database consumers still point to the
-old one. That is the safe direction under the access policy. A retry recognizes
-the indexed fingerprint and completes pointer activation.
+old one. That is the safe direction under the access policy.
 
-Failure records the error, leaves active database pointers unchanged and
-unlocks the workspace. Failed artifacts are never resolved by a consumer. Job
-attempts are recorded separately from the logical publication. If the workspace
+A failure while the publication is still `pending` records the error, marks the
+publication failed, leaves active database pointers unchanged and unlocks the
+workspace. Failed artifacts are never resolved by a consumer. If the workspace
 is unchanged, an administrator may retry the same publication; after another
 edit, a new publication candidate is required.
+
+Once a publication is `activating`, a failed job attempt does not fail the
+logical publication or unlock the workspace. A retry or reconciliation worker
+compares the active index bundle with the recorded fingerprint. If the old
+bundle is still active, it performs the cutover; if the new bundle is active, it
+completes database pointer activation. The workspace remains locked until this
+succeeds. An explicit rollback may unlock it only after restoring the old index
+bundle. Job attempts and their errors are recorded separately from the logical
+publication.
 
 Unpublishing starts no job. It clears the reader pointer immediately.
 
 ### The canonical JSON carries minimal provenance
 
 The resolved transcript remains valid under the canonical transcript schema.
-It keeps the source transcript's honest `meta.backend`, `meta.model` and
-`meta.generation_params`, rebuilds derived transcript text from the published
-segments, and adds a small provenance block:
+It keeps source facts such as recording duration and the honest `meta.backend`,
+`meta.model` and `meta.generation_params`, but never copies derived source
+summaries blindly. It rebuilds `transcript_text` from the published segments,
+sets `num_segments` to their count and omits `num_words` because the first
+version carries neither timed word arrays nor a language-aware word-counting
+rule. Other derived summary fields are recomputed from the published structure
+or omitted. It also adds a small provenance block:
 
 ```json
 {

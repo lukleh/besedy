@@ -41,9 +41,10 @@ Transcript publication is a different axis. `see_unreleased` does not bypass
 the transcript reader's publication gate. Other explicit permissions widen what
 an actor can see for a particular purpose: `correct_transcripts` shows the live
 working text inside the correction surface, `see_transcript_variants` shows
-machine variants, and `download_original_transcript` delivers the frozen machine
-source. These are purpose-specific exceptions, not consequences of being able to
-see unreleased events and recordings.
+machine variants, and `download_original_transcript` delivers the configured
+default machine source—or the frozen source once correction has started. These
+are purpose-specific exceptions, not consequences of being able to see
+unreleased events and recordings.
 
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
@@ -105,8 +106,9 @@ corpus. That is what roles are for.
 
 Taking audio or transcript files out of the application serves specific,
 occasional purposes. Those permissions belong to the roles that run the archive
-— `redaktor` and `catalogAdmin` — and to **individually named accounts** below
-them. No role that describes an ordinary participant carries one.
+— `redaktor` and `catalogAdmin`. Ordinary delivery permissions may also belong
+to **individually named accounts** below them; privileged original-transcript
+delivery may not. No role that describes an ordinary participant carries one.
 
 This splits the catalogue in two: permissions that describe a kind of
 participant, and permissions that describe an exception made for one person.
@@ -323,11 +325,14 @@ than taken, which is what makes the role name worth reading.
 | `manage_lookups`        | Recorder, location and album rows for this catalog, as established by [ADR 0007](0007-per-catalog-lookups.md). |
 | `manage_catalog_config` | Catalog paths, sync, default and active flags, and the correction guide. `catalogAdmin` only.                  |
 
-### File delivery — `redaktor` and above, or an individual grant
+### File delivery
 
-Held by `redaktor` and `catalogAdmin`. For any role below them these are extras
-granted to a named account, and since only `catalogAdmin` grants extras, such a
-grant comes from `catalogAdmin`.
+These permissions are held by `redaktor` and `catalogAdmin` according to the
+role matrix. `download_audio`, `download_transcripts` and
+`bulk_export_transcripts` may also be granted as named extras to lower roles;
+since only `catalogAdmin` grants extras, such a grant comes from
+`catalogAdmin`. `download_original_transcript` is role-only: it belongs to
+`redaktor` and `catalogAdmin` and is not a grantable extra.
 
 **Ordinary delivery is never broader than reading.** These permissions decide
 whether an account may take files out, not which ordinary material it may take:
@@ -335,9 +340,10 @@ whether an account may take files out, not which ordinary material it may take:
 Audio follows the existing event and recording visibility rules.
 
 `download_original_transcript` is the deliberate exception. It serves the
-frozen machine source to a curator or catalog administrator before or after
-publication. It does not make that source readable on the ordinary transcript
-page.
+current configured default machine transcript to a curator or catalog
+administrator before a correction workspace exists. Once correction starts, it
+serves the frozen source before or after publication. It does not create a
+workspace or make that source readable on the ordinary transcript page.
 
 A `korektor` is not an exception to this. Their access to unchecked text is
 access to a working surface, not a right to read it, so a `korektor` granted a
@@ -347,7 +353,7 @@ download still takes published transcripts only.
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | `download_audio`               | The playable audio file. Original masters stay inside the `catalogAdmin` wildcard.                                          |
 | `download_transcripts`         | File delivery of a transcript the account can already read.                                                                 |
-| `download_original_transcript` | The frozen machine source underneath correction, available before or after publication to its editorial roles.           |
+| `download_original_transcript` | The current default machine transcript before correction starts, then the frozen source; available only to its editorial roles. |
 | `bulk_export_transcripts`      | Catalog-wide export. The highest-impact permission in the catalogue: one request yields the whole corpus as data.           |
 
 ### Outside the catalog scope
@@ -528,8 +534,9 @@ start empty.
 - **Downloaded audio is the playable file.** Original masters are not part of
   any role.
 - **File delivery starts at `redaktor`.** No role describing an ordinary
-  participant carries a download; below `redaktor` it is granted to a named
-  account, because the product is listening and reading inside Besedy.
+  participant carries a download. Ordinary delivery can be granted to a named
+  account below `redaktor`; original-transcript delivery cannot, because it is
+  reserved to the editorial roles.
 - **Lookups become per-catalog**, which turns `manage_lookups` into an ordinary
   catalog permission and removes the cross-catalog write path that
   `requireEditorOnAnyCatalog` opened. Recorded separately in [ADR
