@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       neighborCount: bodyResult.data.neighborCount,
       maxPerAudio: bodyResult.data.dedupeByAudio ? 1 : (bodyResult.data.maxPerAudio ?? null),
       metadataFilters: bodyResult.data.metadataFilters ?? null,
-      accessLevel: null,
+      catalogGrant: null,
       failOnMissingBundle: true,
       requestStartedAt,
     });

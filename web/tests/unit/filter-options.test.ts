@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import {
   applyFilters,
   extractDateParts,
@@ -294,7 +295,7 @@ describe("scopeCatalogEntriesForAccess", () => {
   ];
 
   it("keeps all entries for non-listener access", () => {
-    expect(scopeCatalogEntriesForAccess(entries, "VIEWER").map((entry) => entry.hash)).toEqual([
+    expect(scopeCatalogEntriesForAccess(entries, grantFromLevel("VIEWER")).map((entry) => entry.hash)).toEqual([
       "published",
       "draft",
       "incomplete",
@@ -302,7 +303,7 @@ describe("scopeCatalogEntriesForAccess", () => {
   });
 
   it("keeps only listener-visible entries for listener access", () => {
-    expect(scopeCatalogEntriesForAccess(entries, "LISTENER").map((entry) => entry.hash)).toEqual([
+    expect(scopeCatalogEntriesForAccess(entries, grantFromLevel("LISTENER")).map((entry) => entry.hash)).toEqual([
       "published",
     ]);
   });

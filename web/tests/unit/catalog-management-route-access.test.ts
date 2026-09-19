@@ -5,6 +5,7 @@ import {
 } from "@/lib/access/catalog-management-route-access";
 import { canAttemptCatalogManagement } from "@/lib/policy/catalog";
 import { canPublishRecording } from "@/lib/policy/recording";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
@@ -71,7 +72,7 @@ describe("catalog management route access", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "VIEWER",
+      catalogGrant: grantFromLevel("VIEWER"),
       isCatalogAdmin: false,
     });
 
@@ -107,7 +108,7 @@ describe("catalog management route access", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
       isCatalogAdmin: false,
     });
 
@@ -124,7 +125,7 @@ describe("catalog management route access", () => {
       throw new Error("expected access success");
     }
     expect(result.userId).toBe("owner-1");
-    expect(result.policyContext.catalogGrant).toBe("OWNER");
+    expect(result.policyContext.catalogGrant).toEqual(grantFromLevel("OWNER"));
   });
 
   it("preserves admin management authority when inactive-catalog checks are disabled", async () => {

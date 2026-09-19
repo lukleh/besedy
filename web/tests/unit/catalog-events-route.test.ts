@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogEvents } from "@/app/api/catalog-events/route";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -79,6 +80,7 @@ describe("catalog events route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([7]);
     getPosterStatus.mockResolvedValue({ portrait: false, landscape: false });
@@ -156,6 +158,7 @@ describe("catalog events route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
 
     const response = await getCatalogEvents(

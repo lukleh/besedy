@@ -1,4 +1,4 @@
-import type { AccessLevel } from "@/generated/prisma/client";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import prisma from "@/lib/db";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import {
@@ -8,7 +8,11 @@ import {
 } from "@/lib/features/labs";
 import { type FeatureKey, getFeatureRollout } from "@/lib/features/rollout";
 import { type CatalogFeaturesResponse } from "@/lib/features/types";
-import { canBrowseRecordings, canUseCatalogRag } from "@/lib/policy/catalog";
+import {
+  canBrowseRecordings,
+  canUseCatalogRag,
+  hasCatalogPermission,
+} from "@/lib/policy/catalog";
 import {
   canBrowseEvents,
   canEditCatalogEvents,
@@ -59,7 +63,7 @@ export async function getLabsPreferenceForUser(
 }
 
 export function buildCatalogFeaturesResponse(
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
   labsEnabled: boolean,
   isCatalogAdmin: boolean,
   options: {
@@ -123,7 +127,7 @@ export function buildCatalogFeaturesResponse(
           deepSearchEnabled &&
           catalogExists &&
           canEnterPortal &&
-          (isCatalogAdmin || catalogGrant === "OWNER"),
+          hasCatalogPermission(catalogPolicyContext, "use_deep_search"),
       },
     },
   };

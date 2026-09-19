@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AccessLevel } from "@/generated/prisma/client";
 import {
+  grantFromLevel,
   grantHasPermission,
+  permissionsForGrant,
   permissionsForLevel,
   permissionsForRole,
   type CatalogPermission,
@@ -26,10 +28,10 @@ const READER_PERMISSIONS: CatalogPermission[] = [
 
 const LEVELS: AccessLevel[] = ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"];
 
-const context = (catalogGrant: AccessLevel | null, isCatalogAdmin = false) => ({
+const context = (level: AccessLevel | null, isCatalogAdmin = false) => ({
   catalogExists: true,
   canEnterPortal: true,
-  catalogGrant,
+  catalogGrant: level == null ? null : grantFromLevel(level),
   isCatalogAdmin,
 });
 
@@ -77,9 +79,9 @@ describe("catalog permissions", () => {
   it("gives manage_catalog_config to no level, only to administrators", () => {
     for (const level of LEVELS) {
       expect(permissionsForLevel(level).has("manage_catalog_config")).toBe(false);
-      expect(grantHasPermission(level, false, "manage_catalog_config")).toBe(false);
+      expect(grantHasPermission(grantFromLevel(level), false, "manage_catalog_config")).toBe(false);
     }
-    expect(grantHasPermission("OWNER", true, "manage_catalog_config")).toBe(true);
+    expect(grantHasPermission(grantFromLevel("OWNER"), true, "manage_catalog_config")).toBe(true);
   });
 });
 
@@ -127,6 +129,47 @@ describe("roles", () => {
   it("gives an absent role nothing", () => {
     expect(permissionsForRole(null).size).toBe(0);
     expect(permissionsForRole(undefined).size).toBe(0);
+  });
+});
+
+describe("a grant resolves through its role", () => {
+  // Nobody holds a role yet, so every one of these describes what the
+  // assignment step switches on rather than what production does today.
+  it("answers from the level while no role is set", () => {
+    for (const level of LEVELS) {
+      expect([...permissionsForGrant(grantFromLevel(level))].sort()).toEqual(
+        [...permissionsForLevel(level)].sort()
+      );
+    }
+  });
+
+  it("answers from the role once one is set, ignoring the level beneath it", () => {
+    // An OWNER row carrying the listener role carries what a listener carries.
+    const demoted = { level: "OWNER" as const, role: "listener" as const, extras: [] };
+    expect([...permissionsForGrant(demoted)]).toEqual(["stream_audio"]);
+    expect(permissionsForGrant(demoted).has("manage_access")).toBe(false);
+  });
+
+  it("adds extras to the role and never subtracts", () => {
+    const host = { level: null, role: "host" as const, extras: ["download_transcripts"] };
+    const resolved = permissionsForGrant(host);
+
+    for (const permission of permissionsForRole("host")) {
+      expect(resolved.has(permission)).toBe(true);
+    }
+    expect(resolved.has("download_transcripts")).toBe(true);
+  });
+
+  it("ignores an extra this build does not know", () => {
+    const grant = { level: null, role: "reader" as const, extras: ["not_a_permission"] };
+    expect([...permissionsForGrant(grant)].sort()).toEqual(
+      [...permissionsForRole("reader")].sort()
+    );
+  });
+
+  it("gives an absent grant nothing", () => {
+    expect(permissionsForGrant(null).size).toBe(0);
+    expect(permissionsForGrant(undefined).size).toBe(0);
   });
 });
 
@@ -221,7 +264,7 @@ describe("catalog gates answer from the permission set", () => {
 
   it.each(GATES)("$name agrees with its permission at every level", ({ gate, permission }) => {
     for (const level of LEVELS) {
-      expect(gate(context(level))).toBe(grantHasPermission(level, false, permission));
+      expect(gate(context(level))).toBe(grantHasPermission(grantFromLevel(level), false, permission));
     }
     expect(gate(context(null, true))).toBe(grantHasPermission(null, true, permission));
   });

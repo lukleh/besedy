@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
     }
 
     // LISTENER can only see published items - force the ready-status filter
-    const requiresReadyScope = requiresReadyRecordingScope(capability.accessLevel);
+    const requiresReadyScope = requiresReadyRecordingScope(capability.catalogGrant);
     if (requiresReadyScope) {
       filters.status = "ready";
     }
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
     const enrichedEntries = await loadEnrichedCatalogEntries(group.id);
     const visibleEntries = scopeCatalogEntriesForAccess(
       enrichedEntries,
-      capability.accessLevel
+      capability.catalogGrant
     );
 
     // Load all recorders, locations, and albums for name lookup

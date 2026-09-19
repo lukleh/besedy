@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogEvent } from "@/app/api/catalogs/[id]/events/[eventId]/route";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -72,6 +73,7 @@ describe("catalog event detail route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       accessLevel: "OWNER",
+      catalogGrant: grantFromLevel("OWNER"),
     });
     getCatalogCapability.mockResolvedValue({
       canManageAccess: false,
@@ -126,6 +128,7 @@ describe("catalog event detail route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
     isPublishedVisibleEvent.mockResolvedValue(false);
 
@@ -142,6 +145,7 @@ describe("catalog event detail route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
       accessLevel: "LISTENER",
+      catalogGrant: grantFromLevel("LISTENER"),
     });
     prisma.catalogEvent.findFirst.mockResolvedValue({
       id: eventId,

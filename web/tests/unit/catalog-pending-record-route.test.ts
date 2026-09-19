@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import {
   deletePendingCatalogRecord,
   updatePendingCatalogRecord,
@@ -70,7 +71,7 @@ describe("catalog pending record route", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: false,
       },
     });

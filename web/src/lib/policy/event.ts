@@ -1,5 +1,6 @@
 import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   hasCatalogAccess,
   hasCatalogPermission,
@@ -19,7 +20,7 @@ export interface ReleasedVisibleEventState {
 }
 
 export function requiresReleasedEventVisibilityScope(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): boolean {
   return lacksUnreleasedVisibility(catalogGrant);
 }

@@ -1,5 +1,8 @@
 import type { AccessLevel } from "@/generated/prisma/client";
-import { permissionsForLevel } from "@/lib/policy/catalog-permissions";
+import {
+  permissionsForGrant,
+  type CatalogGrant,
+} from "@/lib/policy/catalog-permissions";
 
 const ACCESS_LEVEL_ORDER: AccessLevel[] = [
   "LISTENER",
@@ -28,7 +31,7 @@ export function accessLevelAtLeast(
  * `grantHasPermission` with an administrator flag it does not have.
  */
 export function lacksUnreleasedVisibility(
-  catalogGrant: AccessLevel | null | undefined
+  catalogGrant: CatalogGrant | null | undefined
 ): boolean {
-  return catalogGrant != null && !permissionsForLevel(catalogGrant).has("see_unreleased");
+  return catalogGrant != null && !permissionsForGrant(catalogGrant).has("see_unreleased");
 }

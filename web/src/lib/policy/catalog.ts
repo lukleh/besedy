@@ -3,13 +3,14 @@ import {
   carriesProtectedPermission,
   grantHasPermission,
   permissionsForLevel,
+  type CatalogGrant,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
 
 export interface CatalogPolicyContext {
   catalogExists: boolean;
   canEnterPortal: boolean;
-  catalogGrant: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   isCatalogAdmin: boolean;
 }
 

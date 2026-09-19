@@ -1,5 +1,6 @@
 import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 import type { ColumnConfig, ColumnKey, SortDirection, StoredFilters } from "./types";
 
 export const COLUMNS: ColumnConfig[] = [
@@ -44,7 +45,9 @@ export function getDefaultVisibility(): Record<ColumnKey, boolean> {
  */
 export function getDefaultVisibilityForRole(accessLevel: string | undefined): Record<ColumnKey, boolean> {
   const defaults = getDefaultVisibility();
-  if (lacksUnreleasedVisibility(accessLevel as AccessLevel | undefined)) {
+  // The client knows only the level; the assignment step replaces this with a
+  // boolean the server computes.
+  if (lacksUnreleasedVisibility(grantFromLevel((accessLevel as AccessLevel) ?? null))) {
     // Only published items are visible, so the status column is meaningless by default
     defaults.status = false;
   }

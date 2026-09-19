@@ -21,6 +21,7 @@ import {
   hasCatalogAccess,
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
+import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
@@ -51,7 +52,7 @@ export interface CatalogDiscoveryCapability extends PortalCapability {
 export interface CatalogCapability extends PortalCapability {
   catalogId: string;
   catalogExists: boolean;
-  catalogGrant: AccessLevel | null;
+  catalogGrant: CatalogGrant | null;
   accessLevel: AccessLevel | null;
   isCatalogAdmin: boolean;
   hasAccess: boolean;
@@ -84,7 +85,7 @@ export function buildCatalogCapability(
   portal: PortalCapability,
   catalogId: string,
   catalogExists: boolean,
-  catalogGrant: AccessLevel | null,
+  catalogGrant: CatalogGrant | null,
   accessLevel: AccessLevel | null,
   isCatalogAdmin: boolean
 ): CatalogCapability {
@@ -196,8 +197,10 @@ export async function getCatalogCapability(
     canEnterPortal: actor.canEnterPortal,
   };
 
+  // The level still names the grant for payloads and badges; permissions no
+  // longer come from it.
   const accessLevel =
-    actor.catalogGrant ?? (actor.isCatalogAdmin ? "OWNER" : null);
+    actor.catalogGrant?.level ?? (actor.isCatalogAdmin ? "OWNER" : null);
 
   return buildCatalogCapability(
     portal,

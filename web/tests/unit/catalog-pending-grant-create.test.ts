@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createPendingCatalogGrant } from "@/lib/admission/catalog-pending-grant-create";
+import { grantFromLevel } from "@/lib/policy/catalog-permissions";
 
 const CATALOG_ID = "20260101_000000";
 
@@ -74,7 +75,7 @@ describe("catalog pending grant create", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: "OWNER",
+        catalogGrant: grantFromLevel("OWNER"),
         isCatalogAdmin: false,
       },
     });
