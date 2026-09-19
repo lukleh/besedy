@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pr133-posters",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "cd /Users/lukas/projects/besedy-worktrees/pr133-posters/web && exec /opt/homebrew/bin/node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3002"],
+      "port": 3002
+    }
+  ]
+}

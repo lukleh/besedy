@@ -191,8 +191,11 @@ export function notFound(resource: string): NextResponse<ApiErrorResponse> {
 /**
  * 409 Conflict response.
  */
-export function conflict(message: string): NextResponse<ApiErrorResponse> {
-  return apiError(message, 409, ApiErrorCode.CONFLICT);
+export function conflict(
+  message: string,
+  details?: unknown
+): NextResponse<ApiErrorResponse> {
+  return apiError(message, 409, ApiErrorCode.CONFLICT, details);
 }
 
 /**

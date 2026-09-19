@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { IntIdSchema } from "@/lib/api/validation";
 import { HashSchema, TimestampIdSchema } from "@/lib/validation/schemas";
+import { CREATE_DISTINCT_EVENT_INTENT } from "@/lib/catalog-events/create-conflict";
 
 const EventTitleSchema = z.string().trim().min(1).max(255);
 const EventDescriptionSchema = z.string().trim().max(4000);
 const EventSessionIndexSchema = z.number().int().min(1).max(999);
+const EventCreationIntentSchema = z.literal(CREATE_DISTINCT_EVENT_INTENT);
 
 function validateMonthDay(
   dateMonth: number | null | undefined,
@@ -40,7 +42,7 @@ export const CreateCatalogEventSchema = z
     dateYear: z.number().int().min(1900).max(2100),
     dateMonth: z.number().int().min(1).max(12).nullable().optional(),
     dateDay: z.number().int().min(1).max(31).nullable().optional(),
-    sessionIndex: EventSessionIndexSchema.optional(),
+    intent: EventCreationIntentSchema.optional(),
     title: EventTitleSchema.nullish(),
     description: EventDescriptionSchema.nullish(),
     sortOrder: z.number().int().optional(),
@@ -70,6 +72,7 @@ export const UpdateCatalogEventSchema = z
 export const CreateCatalogEventFromRecordingSchema = z.object({
   workflowGroupId: TimestampIdSchema,
   audioHash: HashSchema,
+  intent: EventCreationIntentSchema.optional(),
 });
 
 export const AttachRecordingsSchema = z.object({

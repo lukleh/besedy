@@ -31,6 +31,12 @@ import {
   resolveReadableEventIds,
 } from "@/lib/catalog-events/read-service";
 import { resolveCatalogRecordingTitle } from "@/lib/catalog-recordings/read-service";
+import { loadEventCreationContext } from "@/lib/catalog-events/create-candidates";
+import {
+  buildEventCreationConflictDetails,
+  CREATE_DISTINCT_EVENT_INTENT,
+  type EventCreationConflictDetails,
+} from "@/lib/catalog-events/create-conflict";
 
 export const dynamic = "force-dynamic";
 
@@ -420,51 +426,60 @@ export async function POST(request: NextRequest) {
     if (!location) {
       return notFound("location");
     }
-    const sessionIndex =
-      body.sessionIndex ??
-      ((await prisma.catalogEvent.findFirst({
-        where: {
-          workflowGroupId: body.workflowGroupId,
-          locationId: body.locationId,
-          dateYear: body.dateYear,
-          dateMonth: body.dateMonth ?? null,
-          dateDay: body.dateDay ?? null,
-        },
-        select: { sessionIndex: true },
-        orderBy: { sessionIndex: "desc" },
-      }))?.sessionIndex ?? 0) + 1;
-
-    const title =
-      body.title ??
-      deriveEventTitle(
-        location.name,
-        body.dateYear,
-        body.dateMonth ?? null,
-        body.dateDay ?? null,
-        sessionIndex
-      );
-
     try {
-      const created = await prisma.catalogEvent.create({
-        data: {
+      const result = await prisma.$transaction<
+        | { kind: "conflict"; details: EventCreationConflictDetails }
+        | { kind: "created"; event: Awaited<ReturnType<typeof createEvent>> }
+      >(async (tx) => {
+        const creationContext = await loadEventCreationContext(tx, {
           workflowGroupId: body.workflowGroupId,
-          title,
           locationId: body.locationId,
           dateYear: body.dateYear,
           dateMonth: body.dateMonth ?? null,
           dateDay: body.dateDay ?? null,
+        });
+
+        if (
+          creationContext.candidates.length > 0 &&
+          body.intent !== CREATE_DISTINCT_EVENT_INTENT
+        ) {
+          return {
+            kind: "conflict",
+            details: buildEventCreationConflictDetails(
+              creationContext.candidates
+            ),
+          };
+        }
+
+        const sessionIndex = creationContext.nextSessionIndex;
+        const title =
+          body.title ??
+          deriveEventTitle(
+            location.name,
+            body.dateYear,
+            body.dateMonth ?? null,
+            body.dateDay ?? null,
+            sessionIndex
+          );
+
+        const event = await createEvent(tx, {
+          ...body,
           sessionIndex,
-          description: body.description ?? null,
-          sortOrder: body.sortOrder ?? 0,
-          createdById: userId,
-          updatedById: userId,
-        },
-        include: {
-          location: { select: { id: true, name: true } },
-          _count: { select: { recordings: true } },
-        },
+          title,
+          userId,
+        });
+        return { kind: "created", event };
       });
 
+      if (result.kind === "conflict") {
+        return conflict(
+          "One or more events already cover this location and date. " +
+            "Choose an existing event or confirm that this is a distinct event.",
+          result.details
+        );
+      }
+
+      const created = result.event;
       return NextResponse.json(
         {
           ...created,
@@ -487,4 +502,40 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handlePrismaError(error, "catalog event", "create");
   }
+}
+
+async function createEvent(
+  tx: Prisma.TransactionClient,
+  input: {
+    workflowGroupId: string;
+    locationId: number;
+    dateYear: number;
+    dateMonth?: number | null;
+    dateDay?: number | null;
+    description?: string | null;
+    sortOrder?: number;
+    sessionIndex: number;
+    title: string;
+    userId: string;
+  }
+) {
+  return tx.catalogEvent.create({
+    data: {
+      workflowGroupId: input.workflowGroupId,
+      title: input.title,
+      locationId: input.locationId,
+      dateYear: input.dateYear,
+      dateMonth: input.dateMonth ?? null,
+      dateDay: input.dateDay ?? null,
+      sessionIndex: input.sessionIndex,
+      description: input.description ?? null,
+      sortOrder: input.sortOrder ?? 0,
+      createdById: input.userId,
+      updatedById: input.userId,
+    },
+    include: {
+      location: { select: { id: true, name: true } },
+      _count: { select: { recordings: true } },
+    },
+  });
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { PaginationInfo } from "@/components/catalog/catalog-list/types";
 import type { PlaybackProgressSummary } from "@/lib/playback-progress";
+import type { CREATE_DISTINCT_EVENT_INTENT } from "@/lib/catalog-events/create-conflict";
 
 export interface EventListProps {
   catalogId: string;
@@ -111,7 +112,7 @@ export interface CreateEventPayload {
   dateYear: number;
   dateMonth?: number | null;
   dateDay?: number | null;
-  sessionIndex?: number;
+  intent?: typeof CREATE_DISTINCT_EVENT_INTENT;
   title?: string | null;
   description?: string | null;
 }
