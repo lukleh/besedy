@@ -52,27 +52,43 @@ async function findWorkspacePointers(
   });
 }
 
-/** Reader page, ordinary transcript download and bulk export. */
+/**
+ * Reader page, ordinary transcript download and bulk export.
+ *
+ * The gate follows the **workspace**, not the current event assignment. Once
+ * correction has started, this recording's transcript is the corrected one
+ * whatever happens to its primary status afterwards — otherwise detaching a
+ * recording, or promoting a different one, would silently replace a published
+ * corrected transcript with the unchecked machine text underneath it, which is
+ * the one thing this gate exists to prevent. Starting correction still
+ * requires a primary recording; see `startWorkspace`.
+ */
 export async function resolveReaderTranscriptSource(
   catalogId: string,
   audioHash: string
 ): Promise<TranscriptSource> {
+  // Deliberately blind to an activation in progress: the reader keeps the
+  // snapshot it has until a publication has actually succeeded.
+  const workspace = await findWorkspacePointers(catalogId, audioHash);
+
+  if (workspace) {
+    if (workspace.readerPublicationId) {
+      return {
+        kind: "publication",
+        workspaceId: workspace.id,
+        publicationId: workspace.readerPublicationId,
+      };
+    }
+    return { kind: "withheld", workspaceId: workspace.id };
+  }
+
+  // No workspace: a recording in correction scope is waiting for one, and a
+  // recording outside it keeps its configured machine transcript.
   if (!(await isCorrectionEligibleRecording(catalogId, audioHash))) {
     return { kind: "machine" };
   }
 
-  // Deliberately blind to an activation in progress: the reader keeps the
-  // snapshot it has until a publication has actually succeeded.
-  const workspace = await findWorkspacePointers(catalogId, audioHash);
-  if (workspace?.readerPublicationId) {
-    return {
-      kind: "publication",
-      workspaceId: workspace.id,
-      publicationId: workspace.readerPublicationId,
-    };
-  }
-
-  return { kind: "withheld", workspaceId: workspace?.id ?? null };
+  return { kind: "withheld", workspaceId: null };
 }
 
 /**
@@ -154,38 +170,46 @@ export async function resolveReaderTranscriptSources(
   const resolved = new Map<string, TranscriptSource>();
   if (audioHashes.length === 0) return resolved;
 
-  const eligible = await listCorrectionEligibleHashes(catalogId, audioHashes);
-  const workspaces =
-    eligible.size === 0
-      ? []
-      : await prisma.transcriptWorkspace.findMany({
-          where: {
-            workflowGroupId: catalogId,
-            audioHash: { in: [...eligible] },
-            status: "ACTIVE",
-          },
-          select: { id: true, audioHash: true, readerPublicationId: true },
-        });
+  // Workspaces first, for the same reason the single-recording resolver asks
+  // about them first: a live workspace gates its recording whatever its
+  // current event assignment says.
+  const [eligible, workspaces] = await Promise.all([
+    listCorrectionEligibleHashes(catalogId, audioHashes),
+    prisma.transcriptWorkspace.findMany({
+      where: {
+        workflowGroupId: catalogId,
+        audioHash: { in: [...audioHashes] },
+        status: "ACTIVE",
+      },
+      select: { id: true, audioHash: true, readerPublicationId: true },
+    }),
+  ]);
 
   const workspaceByHash = new Map(
     workspaces.map((workspace) => [workspace.audioHash, workspace])
   );
 
   for (const audioHash of audioHashes) {
-    if (!eligible.has(audioHash)) {
-      resolved.set(audioHash, { kind: "machine" });
-      continue;
-    }
     const workspace = workspaceByHash.get(audioHash);
+
     if (workspace?.readerPublicationId) {
       resolved.set(audioHash, {
         kind: "publication",
         workspaceId: workspace.id,
         publicationId: workspace.readerPublicationId,
       });
-    } else {
-      resolved.set(audioHash, { kind: "withheld", workspaceId: workspace?.id ?? null });
+      continue;
     }
+    if (workspace) {
+      resolved.set(audioHash, { kind: "withheld", workspaceId: workspace.id });
+      continue;
+    }
+    resolved.set(
+      audioHash,
+      eligible.has(audioHash)
+        ? { kind: "withheld", workspaceId: null }
+        : { kind: "machine" }
+    );
   }
 
   return resolved;

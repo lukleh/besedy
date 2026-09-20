@@ -45,11 +45,46 @@ describe("transcript source resolution", () => {
   describe("the reader", () => {
     it("serves the machine transcript for a recording outside correction scope", async () => {
       primaryRecording(false);
+      prisma.transcriptWorkspace.findFirst.mockResolvedValue(null);
 
       await expect(
         resolve.resolveReaderTranscriptSource(CATALOG_ID, SECONDARY)
       ).resolves.toEqual({ kind: "machine" });
-      expect(prisma.transcriptWorkspace.findFirst).not.toHaveBeenCalled();
+    });
+
+    // The gate follows the workspace, not the current event assignment.
+    // Detaching a recording, or promoting a different one, must not swap a
+    // published corrected transcript back to the machine text underneath it.
+    it("keeps serving the publication after the recording stops being primary", async () => {
+      primaryRecording(false);
+      prisma.transcriptWorkspace.findFirst.mockResolvedValue({
+        id: "ws-1",
+        readerPublicationId: "pub-1",
+        searchPublicationId: "pub-1",
+        publications: [],
+      });
+
+      await expect(
+        resolve.resolveReaderTranscriptSource(CATALOG_ID, PRIMARY)
+      ).resolves.toEqual({
+        kind: "publication",
+        workspaceId: "ws-1",
+        publicationId: "pub-1",
+      });
+    });
+
+    it("keeps withholding after demotion when correction is still under way", async () => {
+      primaryRecording(false);
+      prisma.transcriptWorkspace.findFirst.mockResolvedValue({
+        id: "ws-1",
+        readerPublicationId: null,
+        searchPublicationId: null,
+        publications: [],
+      });
+
+      await expect(
+        resolve.resolveReaderTranscriptSource(CATALOG_ID, PRIMARY)
+      ).resolves.toEqual({ kind: "withheld", workspaceId: "ws-1" });
     });
 
     it("withholds text for an eligible recording that was never corrected", async () => {
@@ -243,6 +278,23 @@ describe("transcript source resolution", () => {
       expect(resolved.get(SECONDARY)).toEqual({ kind: "machine" });
     });
 
+    it("keeps a demoted recording's publication in the export", async () => {
+      prisma.catalogEventRecording.findMany.mockResolvedValue([]);
+      prisma.transcriptWorkspace.findMany.mockResolvedValue([
+        { id: "ws-1", audioHash: PRIMARY, readerPublicationId: "pub-1" },
+      ]);
+
+      const resolved = await resolve.resolveReaderTranscriptSources(CATALOG_ID, [
+        PRIMARY,
+      ]);
+
+      expect(resolved.get(PRIMARY)).toEqual({
+        kind: "publication",
+        workspaceId: "ws-1",
+        publicationId: "pub-1",
+      });
+    });
+
     it("withholds an eligible recording with no reader publication", async () => {
       prisma.catalogEventRecording.findMany.mockResolvedValue([
         { audioHash: PRIMARY },
@@ -261,6 +313,7 @@ describe("transcript source resolution", () => {
 
       expect(resolved.size).toBe(0);
       expect(prisma.catalogEventRecording.findMany).not.toHaveBeenCalled();
+      expect(prisma.transcriptWorkspace.findMany).not.toHaveBeenCalled();
     });
   });
 });
