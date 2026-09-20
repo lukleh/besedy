@@ -450,18 +450,21 @@ currently active, switches it and checks again. Bundle identity is irrelevant,
 so unrelated successful syncs cannot strand the workspace. The workspace
 remains locked until reconciliation succeeds.
 
-An explicit rollback likewise operates on the latest active bundle: it restores
+An explicit rollback first commits the publication as `rolling_back`. Web
+resolution then returns to the previous source while search may still hold the
+newer activation, which is the safe crash direction. The recovery step restores
 the previous effective transcript only for this audio hash, verifies that
-fingerprint, then abandons the candidate and unlocks the workspace. It never
-reactivates an old whole bundle and therefore does not discard unrelated index
-updates. Job attempts and their errors are recorded separately from the logical
-publication.
+fingerprint, then records `rolled_back` and unlocks the workspace. A retry of
+`rolling_back` resumes the pointer restoration; a retry of `rolled_back` is a
+no-op, so it cannot reach past a newer publication. Rollback never reactivates
+an old whole bundle and therefore does not discard unrelated index updates. Job
+attempts and their errors are recorded separately from the logical publication.
 
 Unpublishing starts no indexing job and clears the reader pointer immediately,
-but it is rejected while any publication for the workspace is `pending` or
-`activating`. This simple serialization prevents a finishing publication from
-silently reversing a curator's unpublish. The curator may unpublish immediately
-after the publication completes.
+but it is rejected while any publication for the workspace is `pending`,
+`activating` or `rolling_back`. This simple serialization prevents a finishing
+publication or rollback from silently reversing a curator's unpublish. The
+curator may unpublish immediately after the publication operation completes.
 
 ### The canonical JSON carries minimal provenance
 

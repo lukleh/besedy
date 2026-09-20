@@ -179,8 +179,9 @@ they have to hold against concurrent requests:
   abandoned workspace for audit. Prisma cannot express a partial index, so it is
   created in the migration and not declared in `schema.prisma`.
 - **One publication in flight per workspace.** A partial unique index over
-  `PENDING` and `ACTIVATING`, which is also what locks the workspace against
-  writes while a snapshot is being materialized.
+  `PENDING`, `ACTIVATING` and `ROLLING_BACK`, which is also what locks the
+  workspace against writes while a snapshot is being materialized, activated
+  or rolled back.
 - **One decision per idempotency key.** `UNIQUE (workspace_id, user_id,
   idempotency_key)`, so a double-click or a retried request cannot record the
   same decision twice.

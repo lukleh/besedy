@@ -50,13 +50,7 @@ const BACKEND_WORKFLOW = "faster-whisper";
 const BACKEND_MODEL = "large-v3@silero_vad_v6";
 const BACKEND = `${BACKEND_WORKFLOW}/${BACKEND_MODEL}`;
 
-const machineDir = path.join(
-  transcriptsDir,
-  `transcripts_${CATALOG_ID}`,
-  BACKEND_WORKFLOW,
-  BACKEND_MODEL,
-  AUDIO_HASH
-);
+const machineDir = path.join(transcriptsDir, `transcripts_${CATALOG_ID}`, BACKEND_WORKFLOW, BACKEND_MODEL, AUDIO_HASH);
 fs.mkdirSync(machineDir, { recursive: true });
 fs.writeFileSync(
   path.join(machineDir, "transcript.json"),
@@ -73,8 +67,20 @@ fs.writeFileSync(
         num_words: 6,
       },
       segments: [
-        { start: 0, end: 5, text: "Dobry den vsichni.", words: [{ word: "Dobry" }], confidence: 0.7 },
-        { start: 5, end: 12, text: "Vitejte na besede.", words: [], confidence: 0.6 },
+        {
+          start: 0,
+          end: 5,
+          text: "Dobry den vsichni.",
+          words: [{ word: "Dobry" }],
+          confidence: 0.7,
+        },
+        {
+          start: 5,
+          end: 12,
+          text: "Vitejte na besede.",
+          words: [],
+          confidence: 0.6,
+        },
       ],
     },
     null,
@@ -104,9 +110,7 @@ async function main() {
   const prisma = (await import("@/lib/db")).default;
   const { startWorkspace, listSpans, computeProgress, archiveWorkspace, findResumePosition } =
     await import("@/lib/correction/workspace-service");
-  const { saveAndApprove, recordDecision, listSpanHistory } = await import(
-    "@/lib/correction/decision-service"
-  );
+  const { saveAndApprove, recordDecision, listSpanHistory } = await import("@/lib/correction/decision-service");
   const {
     publishTranscript,
     unpublishTranscript,
@@ -115,21 +119,24 @@ async function main() {
     reconcilePublication,
     rollbackPublication,
   } = await import("@/lib/correction/publication-service");
-  const {
-    resolveReaderTranscriptSource,
-    resolveSearchTranscriptSource,
-    resolveOriginalTranscriptSource,
-  } = await import("@/lib/correction/resolve");
-  const { readIndexPointer, resolvePublicationFilePath } = await import(
-    "@/lib/correction/storage"
-  );
+  const { resolveReaderTranscriptSource, resolveSearchTranscriptSource, resolveOriginalTranscriptSource } =
+    await import("@/lib/correction/resolve");
+  const { readIndexPointer, resolvePublicationFilePath, writeIndexPointer } = await import("@/lib/correction/storage");
 
   // --- fixture -------------------------------------------------------------
   const alice = await prisma.user.create({
-    data: { id: `alice-${randomUUID()}`, email: `alice-${randomUUID()}@example.test`, status: "ACTIVE" },
+    data: {
+      id: `alice-${randomUUID()}`,
+      email: `alice-${randomUUID()}@example.test`,
+      status: "ACTIVE",
+    },
   });
   const bob = await prisma.user.create({
-    data: { id: `bob-${randomUUID()}`, email: `bob-${randomUUID()}@example.test`, status: "ACTIVE" },
+    data: {
+      id: `bob-${randomUUID()}`,
+      email: `bob-${randomUUID()}@example.test`,
+      status: "ACTIVE",
+    },
   });
   await prisma.workflowGroup.create({
     data: {
@@ -328,43 +335,58 @@ async function main() {
   const concurrentSpan = (await listSpans(workspace.id)).spans[0];
   const concurrent = await Promise.allSettled([
     recordDecision({
-      workspaceId: workspace.id, spanId: concurrentSpan.id, userId: alice.id,
-      expectedRevisionId: concurrentSpan.revisionId, kind: "APPROVE",
+      workspaceId: workspace.id,
+      spanId: concurrentSpan.id,
+      userId: alice.id,
+      expectedRevisionId: concurrentSpan.revisionId,
+      kind: "APPROVE",
       idempotencyKey: concurrentKey,
     }),
     recordDecision({
-      workspaceId: workspace.id, spanId: concurrentSpan.id, userId: alice.id,
-      expectedRevisionId: concurrentSpan.revisionId, kind: "APPROVE",
+      workspaceId: workspace.id,
+      spanId: concurrentSpan.id,
+      userId: alice.id,
+      expectedRevisionId: concurrentSpan.revisionId,
+      kind: "APPROVE",
       idempotencyKey: concurrentKey,
     }),
   ]);
   check(
     "simultaneous identical requests both succeed, one as a replay",
     concurrent.every((outcome) => outcome.status === "fulfilled") &&
-      concurrent.some(
-        (outcome) => outcome.status === "fulfilled" && outcome.value.replayed
-      ),
-    concurrent.map((o) => (o.status === "fulfilled" ? `ok replayed=${o.value.replayed}` : `rejected ${(o.reason as { code?: string }).code}`))
+      concurrent.some((outcome) => outcome.status === "fulfilled" && outcome.value.replayed),
+    concurrent.map((o) =>
+      o.status === "fulfilled" ? `ok replayed=${o.value.replayed}` : `rejected ${(o.reason as { code?: string }).code}`
+    )
   );
 
   // The same action on a later revision is a different command.
   const staleKey = randomUUID();
   const revisionSpan = (await listSpans(workspace.id)).spans[1];
   await recordDecision({
-    workspaceId: workspace.id, spanId: revisionSpan.id, userId: bob.id,
-    expectedRevisionId: revisionSpan.revisionId, kind: "APPROVE",
+    workspaceId: workspace.id,
+    spanId: revisionSpan.id,
+    userId: bob.id,
+    expectedRevisionId: revisionSpan.revisionId,
+    kind: "APPROVE",
     idempotencyKey: staleKey,
   });
   await saveAndApprove({
-    workspaceId: workspace.id, spanId: revisionSpan.id, userId: alice.id,
-    expectedRevisionId: revisionSpan.revisionId, text: "moved on",
+    workspaceId: workspace.id,
+    spanId: revisionSpan.id,
+    userId: alice.id,
+    expectedRevisionId: revisionSpan.revisionId,
+    text: "moved on",
   });
   let staleRevisionRefused: string | null = null;
   try {
     const moved = (await listSpans(workspace.id)).spans[1];
     await recordDecision({
-      workspaceId: workspace.id, spanId: moved.id, userId: bob.id,
-      expectedRevisionId: moved.revisionId, kind: "APPROVE",
+      workspaceId: workspace.id,
+      spanId: moved.id,
+      userId: bob.id,
+      expectedRevisionId: moved.revisionId,
+      kind: "APPROVE",
       idempotencyKey: staleKey,
     });
   } catch (error) {
@@ -398,10 +420,13 @@ async function main() {
 
   let refusedWhileBlocked = false;
   try {
-    await publishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH, userId: alice.id });
+    await publishTranscript({
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      userId: alice.id,
+    });
   } catch (error) {
-    refusedWhileBlocked =
-      (error as { code?: string }).code === "NOT_ELIGIBLE_FOR_PUBLICATION";
+    refusedWhileBlocked = (error as { code?: string }).code === "NOT_ELIGIBLE_FOR_PUBLICATION";
   }
   check("publication refuses a disputed transcript", refusedWhileBlocked);
 
@@ -431,7 +456,11 @@ async function main() {
   console.log("\nracing a decision against a publication");
   const racedSpan = (await listSpans(workspace.id)).spans[0];
   const [publishOutcome, decisionOutcome] = await Promise.allSettled([
-    publishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH, userId: alice.id }),
+    publishTranscript({
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      userId: alice.id,
+    }),
     recordDecision({
       workspaceId: workspace.id,
       spanId: racedSpan.id,
@@ -452,22 +481,27 @@ async function main() {
         revisionId: racedSpan.revisionId,
       },
     })) > 0;
-  check(
-    "a disputed span is never inside a published snapshot",
-    !disputedInSnapshot,
-    { publishWon, decisionWon }
-  );
+  check("a disputed span is never inside a published snapshot", !disputedInSnapshot, {
+    publishWon,
+    decisionWon,
+  });
 
   // Put the span back into an approved state for the rest of the run.
   if (decisionWon) {
     const current = (await listSpans(workspace.id)).spans[0];
     await recordDecision({
-      workspaceId: workspace.id, spanId: current.id, userId: bob.id,
-      expectedRevisionId: current.revisionId, kind: "WITHDRAW",
+      workspaceId: workspace.id,
+      spanId: current.id,
+      userId: bob.id,
+      expectedRevisionId: current.revisionId,
+      kind: "WITHDRAW",
     });
     await recordDecision({
-      workspaceId: workspace.id, spanId: current.id, userId: bob.id,
-      expectedRevisionId: current.revisionId, kind: "APPROVE",
+      workspaceId: workspace.id,
+      spanId: current.id,
+      userId: bob.id,
+      expectedRevisionId: current.revisionId,
+      kind: "APPROVE",
     });
   }
 
@@ -498,25 +532,26 @@ async function main() {
   check("the publication job succeeds", published.status === "SUCCEEDED", published);
 
   for (const format of ["json", "txt", "srt", "vtt"] as const) {
-    const artifact = resolvePublicationFilePath(
-      CATALOG_ID,
-      workspace.id,
-      published.publicationId,
-      format
-    );
+    const artifact = resolvePublicationFilePath(CATALOG_ID, workspace.id, published.publicationId, format);
     check(`renders transcript.${format}`, fs.existsSync(artifact), artifact);
   }
 
   const document = JSON.parse(
-    fs.readFileSync(
-      resolvePublicationFilePath(CATALOG_ID, workspace.id, published.publicationId, "json"),
-      "utf-8"
-    )
+    fs.readFileSync(resolvePublicationFilePath(CATALOG_ID, workspace.id, published.publicationId, "json"), "utf-8")
   );
-  check("published JSON carries the corrected text", document.meta.transcript_text.includes("Dobrý den"), document.meta.transcript_text);
+  check(
+    "published JSON carries the corrected text",
+    document.meta.transcript_text.includes("Dobrý den"),
+    document.meta.transcript_text
+  );
   check("published JSON keeps the honest backend", document.meta.backend === "faster-whisper");
   check("published JSON omits num_words", !("num_words" in document.meta));
-  check("published segments are text-only", document.segments.every((s: { words: unknown[]; confidence: null }) => s.words.length === 0 && s.confidence === null));
+  check(
+    "published segments are text-only",
+    document.segments.every(
+      (s: { words: unknown[]; confidence: null }) => s.words.length === 0 && s.confidence === null
+    )
+  );
   check("published JSON records provenance", document.meta.correction.required_approvals === 2);
 
   const pointer = await readIndexPointer(CATALOG_ID, AUDIO_HASH);
@@ -548,16 +583,16 @@ async function main() {
   // refused by the lock before ownership is ever considered, which would test
   // the wrong guard.
   const otherHash = createHash("sha256").update(randomUUID()).digest("hex");
-  const otherDir = path.join(
-    transcriptsDir, `transcripts_${CATALOG_ID}`, BACKEND_WORKFLOW, BACKEND_MODEL, otherHash
-  );
+  const otherDir = path.join(transcriptsDir, `transcripts_${CATALOG_ID}`, BACKEND_WORKFLOW, BACKEND_MODEL, otherHash);
   fs.mkdirSync(otherDir, { recursive: true });
   fs.writeFileSync(
     path.join(otherDir, "transcript.json"),
     JSON.stringify({
       meta: {
-        backend: "faster-whisper", model: "large-v3",
-        audio_filepath: `/audio/${otherHash}.wav`, duration: 4,
+        backend: "faster-whisper",
+        model: "large-v3",
+        audio_filepath: `/audio/${otherHash}.wav`,
+        duration: 4,
         generation_params: {},
       },
       segments: [{ start: 0, end: 4, text: "Jina nahravka." }],
@@ -565,24 +600,35 @@ async function main() {
   );
   await prisma.catalogEntry.create({
     data: {
-      workflowGroupId: CATALOG_ID, audioHash: otherHash, hasArchived: true,
-      hasMetadata: true, isActionable: true, isPublished: true,
+      workflowGroupId: CATALOG_ID,
+      audioHash: otherHash,
+      hasArchived: true,
+      hasMetadata: true,
+      isActionable: true,
+      isPublished: true,
     },
   });
   const otherEvent = await prisma.catalogEvent.create({
     data: {
-      workflowGroupId: CATALOG_ID, locationId: location.id, dateYear: 2026,
-      sessionIndex: 2, createdById: alice.id, updatedById: alice.id,
+      workflowGroupId: CATALOG_ID,
+      locationId: location.id,
+      dateYear: 2026,
+      sessionIndex: 2,
+      createdById: alice.id,
+      updatedById: alice.id,
     },
   });
   await prisma.catalogEventRecording.create({
     data: {
-      eventId: otherEvent.id, workflowGroupId: CATALOG_ID,
-      audioHash: otherHash, isPrimary: true,
+      eventId: otherEvent.id,
+      workflowGroupId: CATALOG_ID,
+      audioHash: otherHash,
+      isPrimary: true,
     },
   });
   const otherWorkspace = await startWorkspace({
-    catalogId: CATALOG_ID, audioHash: otherHash,
+    catalogId: CATALOG_ID,
+    audioHash: otherHash,
     transcriptsPath: path.join(transcriptsDir, `transcripts_${CATALOG_ID}`),
     userId: alice.id,
   });
@@ -603,26 +649,56 @@ async function main() {
   }
   check("rolling back refuses a publication from another workspace", rollbackRefused);
 
-  // A rollback is one-shot. Replaying an old one must not reach past a
-  // publication that has succeeded since and take its pointer away.
-  let staleRollbackTouchedPointer = false;
+  // Reproduce a crash just after rollback intent committed: web resolution
+  // has returned to the previous source while the index pointer is still on
+  // the newer one. Resuming restores the pointer, and any later replay is a
+  // true no-op.
   const pointerBefore = await readIndexPointer(CATALOG_ID, AUDIO_HASH);
+  await prisma.transcriptWorkspace.update({
+    where: { id: workspace.id },
+    data: { readerPublicationId: null, searchPublicationId: null },
+  });
   await prisma.transcriptPublication.update({
     where: { id: published.publicationId },
-    data: { status: "ROLLED_BACK" },
+    data: { status: "ROLLING_BACK" },
   });
+  check(
+    "an interrupted rollback leaves search ahead of web resolution",
+    pointerBefore !== null && (await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "machine"
+  );
+
   await rollbackPublication(published.publicationId, workspace.id);
-  const pointerAfter = await readIndexPointer(CATALOG_ID, AUDIO_HASH);
-  staleRollbackTouchedPointer =
-    JSON.stringify(pointerBefore) !== JSON.stringify(pointerAfter);
+  check(
+    "resuming rollback restores the previous machine source",
+    (await readIndexPointer(CATALOG_ID, AUDIO_HASH)) === null &&
+      (
+        await prisma.transcriptPublication.findUniqueOrThrow({
+          where: { id: published.publicationId },
+          select: { status: true },
+        })
+      ).status === "ROLLED_BACK"
+  );
+
+  await rollbackPublication(published.publicationId, workspace.id);
+  check(
+    "replaying a finished rollback leaves the pointer alone",
+    (await readIndexPointer(CATALOG_ID, AUDIO_HASH)) === null
+  );
+
+  // Restore the successful publication for the ordinary unpublish/republish
+  // path below; the checks above deliberately exercised its recovery states.
+  if (pointerBefore) await writeIndexPointer(pointerBefore);
   await prisma.transcriptPublication.update({
     where: { id: published.publicationId },
     data: { status: "SUCCEEDED" },
   });
-  check(
-    "replaying a finished rollback leaves the pointer alone",
-    !staleRollbackTouchedPointer
-  );
+  await prisma.transcriptWorkspace.update({
+    where: { id: workspace.id },
+    data: {
+      readerPublicationId: published.publicationId,
+      searchPublicationId: published.publicationId,
+    },
+  });
 
   // --- republishing an unchanged snapshot ----------------------------------
   await unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH });
@@ -640,7 +716,11 @@ async function main() {
     audioHash: AUDIO_HASH,
     userId: alice.id,
   });
-  check("republishing unchanged text reuses the snapshot", republished.reused && republished.publicationId === published.publicationId, republished);
+  check(
+    "republishing unchanged text reuses the snapshot",
+    republished.reused && republished.publicationId === published.publicationId,
+    republished
+  );
 
   // --- archive and recreate ------------------------------------------------
   console.log("\narchiving a mis-started workspace");
@@ -656,7 +736,11 @@ async function main() {
   } catch (error) {
     archiveRefused = (error as { code?: string }).code ?? null;
   }
-  check("archiving refuses a workspace that still backs a publication", archiveRefused === "PUBLICATION_ACTIVE", archiveRefused);
+  check(
+    "archiving refuses a workspace that still backs a publication",
+    archiveRefused === "PUBLICATION_ACTIVE",
+    archiveRefused
+  );
 
   // A withdrawal interrupted after its intent commits must leave search on the
   // correction the reader has already released, and must be resumable.
@@ -665,7 +749,7 @@ async function main() {
     data: {
       searchPublicationId: null,
       readerPublicationId: null,
-      searchWithdrawalAt: new Date(),
+      searchWithdrawalId: randomUUID(),
     },
   });
   check(
@@ -676,7 +760,11 @@ async function main() {
 
   let publishDuringWithdrawal: string | null = null;
   try {
-    await publishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH, userId: alice.id });
+    await publishTranscript({
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      userId: alice.id,
+    });
   } catch (error) {
     publishDuringWithdrawal = (error as { code?: string }).code ?? null;
   }
@@ -686,14 +774,34 @@ async function main() {
     publishDuringWithdrawal
   );
 
-  // Resuming finishes it.
-  await withdrawFromSearch(CATALOG_ID, AUDIO_HASH);
+  let archiveDuringWithdrawal: string | null = null;
+  try {
+    await archiveWorkspace({
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      userId: alice.id,
+      reason: "must wait for withdrawal",
+    });
+  } catch (error) {
+    archiveDuringWithdrawal = (error as { code?: string }).code ?? null;
+  }
+  check(
+    "an unfinished withdrawal blocks archive and workspace replacement",
+    archiveDuringWithdrawal === "WORKSPACE_LOCKED",
+    archiveDuringWithdrawal
+  );
+
+  // Concurrent retries join the same generation; neither can outlive it and
+  // delete a pointer written after that generation completed.
+  await Promise.all([withdrawFromSearch(CATALOG_ID, AUDIO_HASH), withdrawFromSearch(CATALOG_ID, AUDIO_HASH)]);
   check(
     "resuming clears the intent",
-    (await prisma.transcriptWorkspace.findUniqueOrThrow({
-      where: { id: workspace.id },
-      select: { searchWithdrawalAt: true },
-    })).searchWithdrawalAt === null
+    (
+      await prisma.transcriptWorkspace.findUniqueOrThrow({
+        where: { id: workspace.id },
+        select: { searchWithdrawalId: true },
+      })
+    ).searchWithdrawalId === null
   );
   check(
     "withdrawing from search returns both sides to the machine transcript",
@@ -724,7 +832,9 @@ async function main() {
   check("the workspace is archived, not deleted", archived.status === "ARCHIVED", archived.status);
   check(
     "its history survives",
-    (await prisma.transcriptSpanDecision.count({ where: { workspaceId: archived.id } })) > 0
+    (await prisma.transcriptSpanDecision.count({
+      where: { workspaceId: archived.id },
+    })) > 0
   );
 
   const restarted = await startWorkspace({
@@ -736,7 +846,9 @@ async function main() {
   check("a new workspace can be started for the same recording", restarted.id !== archived.id);
   check(
     "the archived workspace is still there for audit",
-    (await prisma.transcriptWorkspace.count({ where: { audioHash: AUDIO_HASH } })) === 2
+    (await prisma.transcriptWorkspace.count({
+      where: { audioHash: AUDIO_HASH },
+    })) === 2
   );
 
   // --- deleting a participant ---------------------------------------------
@@ -794,11 +906,17 @@ async function main() {
   // restrict deletion of their catalog, so they go first. A cleanup failure
   // must not change what the run reported.
   try {
-    await prisma.catalogEvent.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
-    await prisma.location.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
+    await prisma.catalogEvent.deleteMany({
+      where: { workflowGroupId: CATALOG_ID },
+    });
+    await prisma.location.deleteMany({
+      where: { workflowGroupId: CATALOG_ID },
+    });
     await prisma.workflowGroup.delete({ where: { id: CATALOG_ID } });
     await prisma.user.deleteMany({ where: { id: { in: [alice.id, bob.id] } } });
-    await prisma.transcriptSpanDecision.deleteMany({ where: { actorKey: bob.id } });
+    await prisma.transcriptSpanDecision.deleteMany({
+      where: { actorKey: bob.id },
+    });
   } catch (error) {
     console.warn("cleanup failed, leaving fixture rows behind:", error);
   }

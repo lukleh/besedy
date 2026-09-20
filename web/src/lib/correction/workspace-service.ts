@@ -1,33 +1,13 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
-import {
-  Prisma,
-  type TranscriptDecisionKind,
-  type TranscriptPublicationStatus,
-} from "@/generated/prisma/client";
+import { Prisma, type TranscriptDecisionKind, type TranscriptPublicationStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
 import { isCorrectionEligibleRecording } from "@/lib/correction/eligibility";
-import {
-  readMachineSource,
-  resolveConfiguredDefaultBackend,
-  type CanonicalSegment,
-} from "@/lib/correction/source";
-import {
-  resolveWorkspaceDir,
-  resolveWorkspaceSourcePath,
-  writeFileAtomic,
-} from "@/lib/correction/storage";
-import {
-  fingerprintContent,
-  hashSpanText,
-  normalizeSpanText,
-} from "@/lib/correction/text";
-import {
-  hasBeenReviewed,
-  summarizeSpanDecisions,
-  type SpanState,
-} from "@/lib/correction/span-state";
+import { readMachineSource, resolveConfiguredDefaultBackend, type CanonicalSegment } from "@/lib/correction/source";
+import { resolveWorkspaceDir, resolveWorkspaceSourcePath, writeFileAtomic } from "@/lib/correction/storage";
+import { fingerprintContent, hashSpanText, normalizeSpanText } from "@/lib/correction/text";
+import { hasBeenReviewed, summarizeSpanDecisions, type SpanState } from "@/lib/correction/span-state";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 interface SpanDecisionRow {
@@ -113,7 +93,7 @@ function toSummary(workspace: {
   };
 }
 
-const IN_FLIGHT_STATUSES: TranscriptPublicationStatus[] = ["PENDING", "ACTIVATING"];
+const IN_FLIGHT_STATUSES: TranscriptPublicationStatus[] = ["PENDING", "ACTIVATING", "ROLLING_BACK"];
 
 const WORKSPACE_SELECT = {
   id: true,
@@ -126,6 +106,7 @@ const WORKSPACE_SELECT = {
   status: true,
   readerPublicationId: true,
   searchPublicationId: true,
+  searchWithdrawalId: true,
   startedById: true,
   createdAt: true,
   publications: {
@@ -136,10 +117,7 @@ const WORKSPACE_SELECT = {
 } satisfies Prisma.TranscriptWorkspaceSelect;
 
 /** The live workspace for a recording, or null when correction never started. */
-export async function findActiveWorkspace(
-  catalogId: string,
-  audioHash: string
-): Promise<WorkspaceSummary | null> {
+export async function findActiveWorkspace(catalogId: string, audioHash: string): Promise<WorkspaceSummary | null> {
   const workspace = await prisma.transcriptWorkspace.findFirst({
     where: { workflowGroupId: catalogId, audioHash, status: "ACTIVE" },
     select: WORKSPACE_SELECT,
@@ -148,16 +126,10 @@ export async function findActiveWorkspace(
   return workspace ? toSummary(workspace) : null;
 }
 
-export async function requireActiveWorkspace(
-  catalogId: string,
-  audioHash: string
-): Promise<WorkspaceSummary> {
+export async function requireActiveWorkspace(catalogId: string, audioHash: string): Promise<WorkspaceSummary> {
   const workspace = await findActiveWorkspace(catalogId, audioHash);
   if (!workspace) {
-    throw new CorrectionError(
-      "NO_WORKSPACE",
-      "Correction has not been started for this recording"
-    );
+    throw new CorrectionError("NO_WORKSPACE", "Correction has not been started for this recording");
   }
   return workspace;
 }
@@ -178,16 +150,11 @@ export interface StartWorkspaceInput {
  * then costs nothing, and a started one is completely independent of later
  * retranscription, backend-priority changes or source-file replacement.
  */
-export async function startWorkspace(
-  input: StartWorkspaceInput
-): Promise<WorkspaceSummary> {
+export async function startWorkspace(input: StartWorkspaceInput): Promise<WorkspaceSummary> {
   const { catalogId, audioHash, transcriptsPath, userId } = input;
 
   if (!(await isCorrectionEligibleRecording(catalogId, audioHash))) {
-    throw new CorrectionError(
-      "NOT_ELIGIBLE",
-      "Only the primary recording of an event can be corrected"
-    );
+    throw new CorrectionError("NOT_ELIGIBLE", "Only the primary recording of an event can be corrected");
   }
 
   const existing = await prisma.transcriptWorkspace.findFirst({
@@ -195,18 +162,12 @@ export async function startWorkspace(
     select: { id: true },
   });
   if (existing) {
-    throw new CorrectionError(
-      "WORKSPACE_EXISTS",
-      "Correction has already been started for this recording"
-    );
+    throw new CorrectionError("WORKSPACE_EXISTS", "Correction has already been started for this recording");
   }
 
   const backend = await resolveConfiguredDefaultBackend(transcriptsPath, audioHash);
   if (!backend) {
-    throw new CorrectionError(
-      "SOURCE_MISSING",
-      "This recording has no machine transcript to correct"
-    );
+    throw new CorrectionError("SOURCE_MISSING", "This recording has no machine transcript to correct");
   }
   if (input.expectedBackend && input.expectedBackend !== backend) {
     throw new CorrectionError(
@@ -222,10 +183,7 @@ export async function startWorkspace(
   const workspaceId = randomUUID();
   const spans = buildSpanRows(source.data.segments ?? []);
   if (spans.length === 0) {
-    throw new CorrectionError(
-      "SOURCE_MISSING",
-      "The machine transcript has no usable segments"
-    );
+    throw new CorrectionError("SOURCE_MISSING", "The machine transcript has no usable segments");
   }
 
   const spanDurationSeconds = spans.reduce(
@@ -235,10 +193,7 @@ export async function startWorkspace(
 
   // The immutable copy lands first: a workspace whose frozen source is missing
   // would be unrecoverable, while an orphan file is merely rubbish.
-  await writeFileAtomic(
-    resolveWorkspaceSourcePath(catalogId, workspaceId),
-    source.content
-  );
+  await writeFileAtomic(resolveWorkspaceSourcePath(catalogId, workspaceId), source.content);
 
   try {
     await prisma.$transaction(
@@ -297,14 +252,8 @@ export async function startWorkspace(
       recursive: true,
       force: true,
     });
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      throw new CorrectionError(
-        "WORKSPACE_EXISTS",
-        "Correction has already been started for this recording"
-      );
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new CorrectionError("WORKSPACE_EXISTS", "Correction has already been started for this recording");
     }
     throw error;
   }
@@ -389,9 +338,7 @@ export async function listSpans(
     }),
   ]);
 
-  const revisionIds = spans
-    .map((span) => span.currentRevisionId)
-    .filter((id): id is string => id !== null);
+  const revisionIds = spans.map((span) => span.currentRevisionId).filter((id): id is string => id !== null);
 
   const [decisions, commentCounts] = await Promise.all([
     revisionIds.length === 0
@@ -422,9 +369,7 @@ export async function listSpans(
     else decisionsBySpan.set(decision.spanId, [decision]);
   }
 
-  const commentCountBySpan = new Map(
-    commentCounts.map((row) => [row.spanId, row._count._all])
-  );
+  const commentCountBySpan = new Map(commentCounts.map((row) => [row.spanId, row._count._all]));
 
   return {
     total,
@@ -458,9 +403,7 @@ export async function listSpans(
  * describe the work badly; the reader panel and the publication check both
  * reason in seconds of audio.
  */
-export async function computeProgress(
-  workspaceId: string
-): Promise<CorrectionProgress> {
+export async function computeProgress(workspaceId: string): Promise<CorrectionProgress> {
   const spans = await prisma.transcriptSpan.findMany({
     where: { workspaceId },
     select: {
@@ -471,9 +414,7 @@ export async function computeProgress(
     },
   });
 
-  const revisionIds = spans
-    .map((span) => span.currentRevisionId)
-    .filter((id): id is string => id !== null);
+  const revisionIds = spans.map((span) => span.currentRevisionId).filter((id): id is string => id !== null);
 
   const decisions: SpanDecisionRow[] =
     revisionIds.length === 0
@@ -540,15 +481,10 @@ export interface ArchiveWorkspaceInput {
  * transcript away. Unpublish and withdraw it from search first; those are
  * deliberate acts of their own.
  */
-export async function archiveWorkspace(
-  input: ArchiveWorkspaceInput
-): Promise<WorkspaceSummary> {
+export async function archiveWorkspace(input: ArchiveWorkspaceInput): Promise<WorkspaceSummary> {
   const reason = input.reason.trim();
   if (!reason) {
-    throw new CorrectionError(
-      "EMPTY_TEXT",
-      "Archiving a workspace needs a reason, because nothing else records why"
-    );
+    throw new CorrectionError("EMPTY_TEXT", "Archiving a workspace needs a reason, because nothing else records why");
   }
 
   const existing = await prisma.transcriptWorkspace.findFirst({
@@ -561,10 +497,7 @@ export async function archiveWorkspace(
   });
 
   if (!existing) {
-    throw new CorrectionError(
-      "NO_WORKSPACE",
-      "Correction has not been started for this recording"
-    );
+    throw new CorrectionError("NO_WORKSPACE", "Correction has not been started for this recording");
   }
 
   const archived = await prisma.$transaction(async (tx) => {
@@ -580,6 +513,12 @@ export async function archiveWorkspace(
         "WORKSPACE_LOCKED",
         "A publication is in progress; it has to finish or be rolled back first",
         { publicationId: workspace.publications[0].id }
+      );
+    }
+    if (workspace.searchWithdrawalId) {
+      throw new CorrectionError(
+        "WORKSPACE_LOCKED",
+        "Withdrawal from search must finish before this workspace can be archived"
       );
     }
     if (workspace.readerPublicationId || workspace.searchPublicationId) {
@@ -619,19 +558,14 @@ export interface ResumePosition {
  * others have finished is not their problem, and one they objected to still
  * is, because it is theirs to withdraw or have addressed.
  */
-export async function findResumePosition(
-  workspaceId: string,
-  actorKey: string
-): Promise<ResumePosition | null> {
+export async function findResumePosition(workspaceId: string, actorKey: string): Promise<ResumePosition | null> {
   const spans = await prisma.transcriptSpan.findMany({
     where: { workspaceId },
     orderBy: { ordinal: "asc" },
     select: { id: true, ordinal: true, currentRevisionId: true },
   });
 
-  const revisionIds = spans
-    .map((span) => span.currentRevisionId)
-    .filter((id): id is string => id !== null);
+  const revisionIds = spans.map((span) => span.currentRevisionId).filter((id): id is string => id !== null);
 
   const decisions: SpanDecisionRow[] =
     revisionIds.length === 0

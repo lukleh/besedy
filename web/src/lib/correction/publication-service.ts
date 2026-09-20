@@ -1,13 +1,8 @@
-import {
-  Prisma,
-  type TranscriptPublicationStatus,
-} from "@/generated/prisma/client";
+import { randomUUID } from "node:crypto";
+import { Prisma, type TranscriptPublicationStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
-import {
-  materializeCorrectedTranscript,
-  CORRECTION_PROVENANCE_SCHEMA_VERSION,
-} from "@/lib/correction/materialize";
+import { materializeCorrectedTranscript, CORRECTION_PROVENANCE_SCHEMA_VERSION } from "@/lib/correction/materialize";
 import { renderSrt, renderTxt, renderVtt, type RenderableSegment } from "@/lib/correction/render";
 import type { CanonicalTranscript } from "@/lib/correction/source";
 import {
@@ -50,6 +45,8 @@ interface WorkspaceEvaluation extends PublicationEligibility {
   durationSeconds: number;
 }
 
+const IN_FLIGHT_PUBLICATION_STATUSES: TranscriptPublicationStatus[] = ["PENDING", "ACTIVATING", "ROLLING_BACK"];
+
 /**
  * Re-derive every span's state from its decisions.
  *
@@ -74,9 +71,7 @@ export async function evaluateWorkspace(
     },
   });
 
-  const revisionIds = spans
-    .map((span) => span.currentRevisionId)
-    .filter((id): id is string => id !== null);
+  const revisionIds = spans.map((span) => span.currentRevisionId).filter((id): id is string => id !== null);
 
   const decisions =
     revisionIds.length === 0
@@ -135,10 +130,7 @@ export async function evaluateWorkspace(
     // Every span must be done *and* carry a revision to publish. A span
     // without a current revision cannot appear in a manifest, so counting it
     // as eligible would publish a transcript with a hole in it.
-    eligible:
-      spans.length > 0 &&
-      doneSpanCount === spans.length &&
-      manifest.length === spans.length,
+    eligible: spans.length > 0 && doneSpanCount === spans.length && manifest.length === spans.length,
     spanCount: spans.length,
     doneSpanCount,
     blockedSpanCount,
@@ -149,9 +141,7 @@ export async function evaluateWorkspace(
   };
 }
 
-export async function getPublicationEligibility(
-  workspaceId: string
-): Promise<PublicationEligibility> {
+export async function getPublicationEligibility(workspaceId: string): Promise<PublicationEligibility> {
   const evaluation = await evaluateWorkspace(workspaceId);
   return {
     eligible: evaluation.eligible,
@@ -198,9 +188,7 @@ export interface PublishResult {
  * catalog administrator decides that it is fit to be read, which is an
  * editorial statement about the whole text and cannot be made span by span.
  */
-export async function publishTranscript(
-  input: PublishInput
-): Promise<PublishResult> {
+export async function publishTranscript(input: PublishInput): Promise<PublishResult> {
   const existing = await prisma.transcriptWorkspace.findFirst({
     where: {
       workflowGroupId: input.catalogId,
@@ -211,10 +199,7 @@ export async function publishTranscript(
   });
 
   if (!existing) {
-    throw new CorrectionError(
-      "NO_WORKSPACE",
-      "Correction has not been started for this recording"
-    );
+    throw new CorrectionError("NO_WORKSPACE", "Correction has not been started for this recording");
   }
 
   const guideRevisionId = await getActiveGuideRevisionId(input.catalogId);
@@ -237,9 +222,9 @@ export async function publishTranscript(
           sourceBackend: true,
           readerPublicationId: true,
           searchPublicationId: true,
-          searchWithdrawalAt: true,
+          searchWithdrawalId: true,
           publications: {
-            where: { status: { in: ["PENDING", "ACTIVATING"] } },
+            where: { status: { in: IN_FLIGHT_PUBLICATION_STATUSES } },
             select: { id: true },
             take: 1,
           },
@@ -247,13 +232,11 @@ export async function publishTranscript(
       });
 
       if (workspace.publications.length > 0) {
-        throw new CorrectionError(
-          "PUBLICATION_IN_FLIGHT",
-          "A publication for this workspace is already running",
-          { publicationId: workspace.publications[0].id }
-        );
+        throw new CorrectionError("PUBLICATION_IN_FLIGHT", "A publication for this workspace is already running", {
+          publicationId: workspace.publications[0].id,
+        });
       }
-      if (workspace.searchWithdrawalAt) {
+      if (workspace.searchWithdrawalId) {
         // Publishing now would write an index pointer that the unfinished
         // withdrawal removes when it resumes.
         throw new CorrectionError(
@@ -279,11 +262,7 @@ export async function publishTranscript(
       // indexes nothing: the snapshot search already carries is the same one.
       if (
         workspace.searchPublicationId &&
-        (await manifestMatchesPublication(
-          workspace.searchPublicationId,
-          evaluation.manifest,
-          tx
-        ))
+        (await manifestMatchesPublication(workspace.searchPublicationId, evaluation.manifest, tx))
       ) {
         await tx.transcriptWorkspace.update({
           where: { id: workspace.id },
@@ -343,15 +322,13 @@ async function assertNoPublicationInFlight(
   client: Prisma.TransactionClient = prisma
 ): Promise<void> {
   const inFlight = await client.transcriptPublication.findFirst({
-    where: { workspaceId, status: { in: ["PENDING", "ACTIVATING"] } },
+    where: { workspaceId, status: { in: IN_FLIGHT_PUBLICATION_STATUSES } },
     select: { id: true },
   });
   if (inFlight) {
-    throw new CorrectionError(
-      "PUBLICATION_IN_FLIGHT",
-      "A publication for this workspace is already running",
-      { publicationId: inFlight.id }
-    );
+    throw new CorrectionError("PUBLICATION_IN_FLIGHT", "A publication for this workspace is already running", {
+      publicationId: inFlight.id,
+    });
   }
 }
 
@@ -364,9 +341,7 @@ async function assertNoPublicationInFlight(
  * snapshot while database consumers still resolve the old one. That is the
  * safe direction — search may be newer than the reader, never the reverse.
  */
-export async function runPublicationJob(
-  publicationId: string
-): Promise<"SUCCEEDED" | "ACTIVATING" | "FAILED"> {
+export async function runPublicationJob(publicationId: string): Promise<"SUCCEEDED" | "ACTIVATING" | "FAILED"> {
   const publication = await prisma.transcriptPublication.findUnique({
     where: { id: publicationId },
     select: {
@@ -392,10 +367,7 @@ export async function runPublicationJob(
     return reconcilePublication(publicationId, publication.workspaceId);
   }
   if (publication.status !== "PENDING") {
-    throw new CorrectionError(
-      "PUBLICATION_NOT_FOUND",
-      `Publication is ${publication.status} and cannot be run`
-    );
+    throw new CorrectionError("PUBLICATION_NOT_FOUND", `Publication is ${publication.status} and cannot be run`);
   }
 
   await prisma.transcriptPublication.update({
@@ -457,10 +429,7 @@ export async function runPublicationJob(
       where: { id: publicationId },
       select: { status: true },
     });
-    throw new CorrectionError(
-      "PUBLICATION_NOT_FOUND",
-      `Publication is ${current.status} and was not activated`
-    );
+    throw new CorrectionError("PUBLICATION_NOT_FOUND", `Publication is ${current.status} and was not activated`);
   }
 
   return reconcilePublication(publicationId, publication.workspaceId);
@@ -491,10 +460,7 @@ export async function reconcilePublication(
   }
   if (publication.status === "SUCCEEDED") return "SUCCEEDED";
   if (publication.status !== "ACTIVATING") {
-    throw new CorrectionError(
-      "PUBLICATION_NOT_FOUND",
-      `Publication is ${publication.status} and cannot be reconciled`
-    );
+    throw new CorrectionError("PUBLICATION_NOT_FOUND", `Publication is ${publication.status} and cannot be reconciled`);
   }
   if (!publication.artifactSha256) {
     await failPublication(
@@ -526,21 +492,13 @@ export async function reconcilePublication(
       });
       if (current.status === "SUCCEEDED") return "SUCCEEDED";
       if (current.status !== "ACTIVATING") {
-        throw new CorrectionError(
-          "PUBLICATION_NOT_FOUND",
-          `Publication is ${current.status} and cannot be reconciled`
-        );
+        throw new CorrectionError("PUBLICATION_NOT_FOUND", `Publication is ${current.status} and cannot be reconciled`);
       }
 
       const expected = current.artifactSha256;
       if (!expected) return "ACTIVATING";
 
-      const jsonPath = resolvePublicationFilePath(
-        current.workflowGroupId,
-        workspaceId,
-        publicationId,
-        "json"
-      );
+      const jsonPath = resolvePublicationFilePath(current.workflowGroupId, workspaceId, publicationId, "json");
 
       // The artifact itself has to match, not just the metadata beside it.
       // Comparing the database hash with the hash the database also wrote into
@@ -590,10 +548,7 @@ export async function reconcilePublication(
         },
       });
       if (finished.count === 0) {
-        throw new CorrectionError(
-          "PUBLICATION_NOT_FOUND",
-          "Publication left ACTIVATING while it was being reconciled"
-        );
+        throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication left ACTIVATING while it was being reconciled");
       }
 
       await writeIndexPointer({
@@ -622,8 +577,7 @@ async function failPublication(
   error: unknown
 ): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
-  const code =
-    error instanceof CorrectionError ? error.code : "PUBLICATION_JOB_FAILED";
+  const code = error instanceof CorrectionError ? error.code : "PUBLICATION_JOB_FAILED";
 
   await prisma.$transaction(async (tx) => {
     await lockWorkspace(tx, workspaceId);
@@ -656,10 +610,7 @@ async function materializeArtifacts(
     resolveWorkspaceSourcePath(publication.workflowGroupId, publication.workspaceId)
   );
   if (!source) {
-    throw new CorrectionError(
-      "SOURCE_MISSING",
-      "The frozen machine source for this workspace is missing"
-    );
+    throw new CorrectionError("SOURCE_MISSING", "The frozen machine source for this workspace is missing");
   }
 
   const rows = await prisma.transcriptPublicationSpan.findMany({
@@ -673,10 +624,7 @@ async function materializeArtifacts(
   });
 
   if (rows.length === 0) {
-    throw new CorrectionError(
-      "NOT_ELIGIBLE_FOR_PUBLICATION",
-      "The publication manifest is empty"
-    );
+    throw new CorrectionError("NOT_ELIGIBLE_FOR_PUBLICATION", "The publication manifest is empty");
   }
 
   const segments: RenderableSegment[] = rows.map((row) => ({
@@ -711,30 +659,15 @@ async function materializeArtifacts(
 
   await writeFileAtomic(jsonPath, json);
   await writeFileAtomic(
-    resolvePublicationFilePath(
-      publication.workflowGroupId,
-      publication.workspaceId,
-      publication.id,
-      "txt"
-    ),
+    resolvePublicationFilePath(publication.workflowGroupId, publication.workspaceId, publication.id, "txt"),
     renderTxt(segments)
   );
   await writeFileAtomic(
-    resolvePublicationFilePath(
-      publication.workflowGroupId,
-      publication.workspaceId,
-      publication.id,
-      "srt"
-    ),
+    resolvePublicationFilePath(publication.workflowGroupId, publication.workspaceId, publication.id, "srt"),
     renderSrt(segments)
   );
   await writeFileAtomic(
-    resolvePublicationFilePath(
-      publication.workflowGroupId,
-      publication.workspaceId,
-      publication.id,
-      "vtt"
-    ),
+    resolvePublicationFilePath(publication.workflowGroupId, publication.workspaceId, publication.id, "vtt"),
     renderVtt(segments)
   );
 
@@ -754,9 +687,7 @@ export interface UnpublishInput {
  * pointers. Removing corrected text from search as well is a separate
  * administrative operation.
  */
-export async function unpublishTranscript(
-  input: UnpublishInput
-): Promise<{ unpublished: boolean }> {
+export async function unpublishTranscript(input: UnpublishInput): Promise<{ unpublished: boolean }> {
   const existing = await prisma.transcriptWorkspace.findFirst({
     where: {
       workflowGroupId: input.catalogId,
@@ -767,10 +698,7 @@ export async function unpublishTranscript(
   });
 
   if (!existing) {
-    throw new CorrectionError(
-      "NO_WORKSPACE",
-      "Correction has not been started for this recording"
-    );
+    throw new CorrectionError("NO_WORKSPACE", "Correction has not been started for this recording");
   }
 
   await prisma.$transaction(async (tx) => {
@@ -781,7 +709,7 @@ export async function unpublishTranscript(
       select: {
         readerPublicationId: true,
         publications: {
-          where: { status: { in: ["PENDING", "ACTIVATING"] } },
+          where: { status: { in: IN_FLIGHT_PUBLICATION_STATUSES } },
           select: { id: true },
           take: 1,
         },
@@ -789,20 +717,15 @@ export async function unpublishTranscript(
     });
 
     if (!workspace.readerPublicationId) {
-      throw new CorrectionError(
-        "NOT_PUBLISHED",
-        "This transcript is not published"
-      );
+      throw new CorrectionError("NOT_PUBLISHED", "This transcript is not published");
     }
 
     // Serialized rather than cancelling: a publication finishing afterwards
     // would otherwise move the reader pointer back and silently reverse this.
     if (workspace.publications.length > 0) {
-      throw new CorrectionError(
-        "PUBLICATION_IN_FLIGHT",
-        "A publication for this workspace is already running",
-        { publicationId: workspace.publications[0].id }
-      );
+      throw new CorrectionError("PUBLICATION_IN_FLIGHT", "A publication for this workspace is already running", {
+        publicationId: workspace.publications[0].id,
+      });
     }
 
     await tx.transcriptWorkspace.update({
@@ -822,61 +745,85 @@ export async function unpublishTranscript(
  * the reader pointer too, because the one direction this system never allows
  * is a reader newer than search.
  */
-export async function withdrawFromSearch(
-  catalogId: string,
-  audioHash: string
-): Promise<void> {
+export async function withdrawFromSearch(catalogId: string, audioHash: string): Promise<void> {
   const workspace = await prisma.transcriptWorkspace.findFirst({
     where: { workflowGroupId: catalogId, audioHash, status: "ACTIVE" },
-    select: { id: true, searchWithdrawalAt: true },
+    select: { id: true },
   });
   if (!workspace) {
     throw new CorrectionError("NO_WORKSPACE", "Correction has not been started");
   }
 
-  // Step one: commit the intent along with the pointers it releases. From here
-  // the database names no correction while the index still serves one, which
-  // is search ahead of the reader — the direction this design allows. The
-  // intent also blocks publication, whose pointer step two would otherwise
-  // delete.
-  if (!workspace.searchWithdrawalAt) {
-    await prisma.$transaction(async (tx) => {
-      await lockWorkspace(tx, workspace.id);
-      await assertNoPublicationInFlight(workspace.id, tx);
-      await tx.transcriptWorkspace.update({
-        where: { id: workspace.id },
-        data: {
-          searchPublicationId: null,
-          readerPublicationId: null,
-          searchWithdrawalAt: new Date(),
-        },
-      });
-    });
-  }
-
-  // Step two, under the lock so no publication can write a pointer across it.
-  // A crash here leaves the intent committed and the operation resumable:
-  // calling withdraw again picks up from this point.
-  await prisma.$transaction(async (tx) => {
+  // Step one: claim or join one durable withdrawal generation. The token is
+  // important: a delayed retry from an earlier withdrawal must not remove a
+  // pointer written after that withdrawal completed, nor clear a later
+  // withdrawal's intent.
+  const withdrawalId = await prisma.$transaction(async (tx) => {
     await lockWorkspace(tx, workspace.id);
-    await removeIndexPointer(catalogId, audioHash);
+
+    const current = await tx.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: workspace.id },
+      select: { status: true, searchWithdrawalId: true },
+    });
+    if (current.status !== "ACTIVE") {
+      throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
+    }
+    if (current.searchWithdrawalId) return current.searchWithdrawalId;
+
+    await assertNoPublicationInFlight(workspace.id, tx);
+    const id = randomUUID();
+    await tx.transcriptWorkspace.update({
+      where: { id: workspace.id },
+      data: {
+        searchPublicationId: null,
+        readerPublicationId: null,
+        searchWithdrawalId: id,
+      },
+    });
+    return id;
   });
 
-  // Step three: the intent is spent.
-  await prisma.transcriptWorkspace.update({
-    where: { id: workspace.id },
-    data: { searchWithdrawalAt: null },
+  // Step two: remove the pointer only if this exact generation still owns the
+  // intent. Another caller may already have completed it and allowed a new
+  // publication to start while this request was waiting for the lock.
+  const removed = await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspace.id);
+
+    const current = await tx.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: workspace.id },
+      select: { status: true, searchWithdrawalId: true },
+    });
+    if (current.status !== "ACTIVE" || current.searchWithdrawalId !== withdrawalId) {
+      return false;
+    }
+
+    await removeIndexPointer(catalogId, audioHash);
+    return true;
+  });
+  if (!removed) return;
+
+  // Step three: spend only the generation this request completed. A stale
+  // completion can therefore never clear a newer withdrawal's publication
+  // guard.
+  await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspace.id);
+    await tx.transcriptWorkspace.updateMany({
+      where: {
+        id: workspace.id,
+        status: "ACTIVE",
+        searchWithdrawalId: withdrawalId,
+      },
+      data: { searchWithdrawalId: null },
+    });
   });
 }
 
-export async function rollbackPublication(
-  publicationId: string,
-  workspaceId: string
-): Promise<void> {
-  // Claiming the publication and restoring the pointer happen together under
-  // the workspace lock, so a reconciliation cannot complete the publication
-  // this is abandoning, and cannot rewrite the pointer afterwards.
-  await prisma.$transaction(async (tx) => {
+export async function rollbackPublication(publicationId: string, workspaceId: string): Promise<void> {
+  // Step one: commit the rollback intent before touching the filesystem. Web
+  // resolution stops preferring the abandoned ACTIVATING publication at this
+  // point, while the index pointer may still name it. That is the allowed crash
+  // direction: search can be newer than the reader, never the reverse.
+  const target = await prisma.$transaction(async (tx) => {
     await lockWorkspace(tx, workspaceId);
 
     const publication = await tx.transcriptPublication.findUnique({
@@ -897,16 +844,11 @@ export async function rollbackPublication(
       throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication not found");
     }
 
-    // Already rolled back: nothing to do, and nothing safe to redo. Repeating
-    // the pointer restore would let a stale retry reach past a publication
-    // that has succeeded since, removing its pointer or replacing it with this
-    // one's predecessor while the database still names the newer one.
-    //
-    // Nor is the branch needed for repair. The status change and the pointer
-    // restore are one transaction, so a crash before it commits leaves the
-    // publication PENDING or ACTIVATING, and the retry comes back through the
-    // ordinary path.
-    if (publication.status === "ROLLED_BACK") return;
+    // A completed rollback is a true no-op. Repeating its pointer restore could
+    // otherwise reach past a newer successful publication.
+    if (publication.status === "ROLLED_BACK") return null;
+
+    if (publication.status === "ROLLING_BACK") return publication;
 
     if (publication.status !== "ACTIVATING" && publication.status !== "PENDING") {
       throw new CorrectionError(
@@ -917,44 +859,69 @@ export async function rollbackPublication(
 
     const claimed = await tx.transcriptPublication.updateMany({
       where: { id: publicationId, status: { in: ["PENDING", "ACTIVATING"] } },
-      data: { status: "ROLLED_BACK", finishedAt: new Date() },
+      data: { status: "ROLLING_BACK", finishedAt: null },
     });
     if (claimed.count === 0) {
-      throw new CorrectionError(
-        "PUBLICATION_NOT_FOUND",
-        "Publication changed state while it was being rolled back"
-      );
+      throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication changed state while it was being rolled back");
     }
 
-    if (publication.previousSourceKind === "publication" && publication.previousSourceRef) {
+    return publication;
+  });
+  if (!target) return;
+
+  // Step two: restore the previous effective source while the durable intent
+  // blocks publication and workspace writes. Repeating this step is safe; a
+  // crash leaves ROLLING_BACK committed and the next call resumes here.
+  const restored = await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspaceId);
+
+    const current = await tx.transcriptPublication.findUniqueOrThrow({
+      where: { id: publicationId },
+      select: { status: true },
+    });
+    if (current.status === "ROLLED_BACK") return false;
+    if (current.status !== "ROLLING_BACK") {
+      throw new CorrectionError("PUBLICATION_NOT_FOUND", `Publication is ${current.status} and cannot finish rollback`);
+    }
+
+    if (target.previousSourceKind === "publication" && target.previousSourceRef) {
       const previous = await tx.transcriptPublication.findUnique({
-        where: { id: publication.previousSourceRef },
+        where: { id: target.previousSourceRef },
         select: { id: true, workspaceId: true, artifactSha256: true },
       });
-      if (previous?.artifactSha256) {
-        await writeIndexPointer({
-          schema_version: INDEX_POINTER_SCHEMA_VERSION,
-          workflow_group_id: publication.workflowGroupId,
-          audio_hash: publication.audioHash,
-          workspace_id: previous.workspaceId,
-          publication_id: previous.id,
-          state: "active",
-          backend: publication.workspace.sourceBackend,
-          transcript_path: relativeToCorrectionsRoot(
-            resolvePublicationFilePath(
-              publication.workflowGroupId,
-              previous.workspaceId,
-              previous.id,
-              "json"
-            )
-          ),
-          artifact_sha256: previous.artifactSha256,
-          updated_at: new Date().toISOString(),
-        });
+      if (!previous?.artifactSha256) {
+        throw new CorrectionError("SOURCE_MISSING", "The previous publication needed for rollback is unavailable");
       }
+      await writeIndexPointer({
+        schema_version: INDEX_POINTER_SCHEMA_VERSION,
+        workflow_group_id: target.workflowGroupId,
+        audio_hash: target.audioHash,
+        workspace_id: previous.workspaceId,
+        publication_id: previous.id,
+        state: "active",
+        backend: target.workspace.sourceBackend,
+        transcript_path: relativeToCorrectionsRoot(
+          resolvePublicationFilePath(target.workflowGroupId, previous.workspaceId, previous.id, "json")
+        ),
+        artifact_sha256: previous.artifactSha256,
+        updated_at: new Date().toISOString(),
+      });
     } else {
-      await removeIndexPointer(publication.workflowGroupId, publication.audioHash);
+      await removeIndexPointer(target.workflowGroupId, target.audioHash);
     }
+
+    return true;
+  });
+  if (!restored) return;
+
+  // Step three: only after the pointer is restored does the intent become a
+  // completed rollback. A stale retry now sees ROLLED_BACK and does nothing.
+  await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspaceId);
+    await tx.transcriptPublication.updateMany({
+      where: { id: publicationId, status: "ROLLING_BACK" },
+      data: { status: "ROLLED_BACK", finishedAt: new Date() },
+    });
   });
 }
 
@@ -973,10 +940,7 @@ export interface PublicationView {
   isSearchPublication: boolean;
 }
 
-export async function listPublications(
-  workspaceId: string,
-  limit = 20
-): Promise<PublicationView[]> {
+export async function listPublications(workspaceId: string, limit = 20): Promise<PublicationView[]> {
   const [workspace, publications] = await Promise.all([
     prisma.transcriptWorkspace.findUniqueOrThrow({
       where: { id: workspaceId },

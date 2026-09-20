@@ -125,23 +125,23 @@ model User {
   oauthRefreshTokens           OauthRefreshToken[]
   oauthAccessTokens            OauthAccessToken[]
   oauthConsents                OauthConsent[]
-  invitedBy                    User?                       @relation("UserInvitations", fields: [invitedById], references: [id])
-  invitedUsers                 User[]                      @relation("UserInvitations")
+  invitedBy                    User?                           @relation("UserInvitations", fields: [invitedById], references: [id])
+  invitedUsers                 User[]                          @relation("UserInvitations")
   catalogAccess                CatalogAccess[]
-  accessGranted                CatalogAccess[]             @relation("AccessGrantedBy")
-  accessRevoked                CatalogAccess[]             @relation("AccessRevokedBy")
+  accessGranted                CatalogAccess[]                 @relation("AccessGrantedBy")
+  accessRevoked                CatalogAccess[]                 @relation("AccessRevokedBy")
   auditLogs                    AuditLog[]
   mcpToolInvocations           McpToolInvocation[]
   clientErrorReports           ClientErrorReport[]
   webUpdateEvents              WebUpdateEvent[]
   /// Portal admissions this user created or explicitly reviewed
-  portalAdmissionsAdmitted     PortalAdmission[]           @relation("PortalAdmissionAdmittedBy")
-  portalAdmissionsClaimed      PortalAdmission[]           @relation("PortalAdmissionClaimedBy")
-  portalAdmissionsRevoked      PortalAdmission[]           @relation("PortalAdmissionRevokedBy")
+  portalAdmissionsAdmitted     PortalAdmission[]               @relation("PortalAdmissionAdmittedBy")
+  portalAdmissionsClaimed      PortalAdmission[]               @relation("PortalAdmissionClaimedBy")
+  portalAdmissionsRevoked      PortalAdmission[]               @relation("PortalAdmissionRevokedBy")
   /// Pending catalog grants this user created or lifecycle-touched
-  pendingCatalogGrantsGranted  PendingCatalogGrant[]       @relation("PendingCatalogGrantGrantedBy")
-  pendingCatalogGrantsConsumed PendingCatalogGrant[]       @relation("PendingCatalogGrantConsumedBy")
-  pendingCatalogGrantsRevoked  PendingCatalogGrant[]       @relation("PendingCatalogGrantRevokedBy")
+  pendingCatalogGrantsGranted  PendingCatalogGrant[]           @relation("PendingCatalogGrantGrantedBy")
+  pendingCatalogGrantsConsumed PendingCatalogGrant[]           @relation("PendingCatalogGrantConsumedBy")
+  pendingCatalogGrantsRevoked  PendingCatalogGrant[]           @relation("PendingCatalogGrantRevokedBy")
   /// Push notification subscriptions for this user's browsers
   pushSubscriptions            PushSubscription[]
   /// Recording notifications for this user
@@ -149,36 +149,36 @@ model User {
   /// Event publish notifications for this user
   eventNotifications           EventNotification[]
   /// Events created by this user
-  catalogEventsCreated         CatalogEvent[]              @relation("CatalogEventCreatedBy")
+  catalogEventsCreated         CatalogEvent[]                  @relation("CatalogEventCreatedBy")
   /// Events last updated by this user
-  catalogEventsUpdated         CatalogEvent[]              @relation("CatalogEventUpdatedBy")
+  catalogEventsUpdated         CatalogEvent[]                  @relation("CatalogEventUpdatedBy")
   /// Event poster candidates created by this user
-  catalogEventPostersCreated   CatalogEventPoster[]        @relation("CatalogEventPosterCreatedBy")
+  catalogEventPostersCreated   CatalogEventPoster[]            @relation("CatalogEventPosterCreatedBy")
   /// Event poster publications performed by this user
   eventPosterPublications      CatalogEventPosterPublication[] @relation("CatalogEventPosterPublishedBy")
   /// Deep-search jobs owned by this user and shared with others
-  deepSearchSharesOwned        DeepSearchJobShare[]        @relation("DeepSearchJobShareOwner")
+  deepSearchSharesOwned        DeepSearchJobShare[]            @relation("DeepSearchJobShareOwner")
   /// Deep-search jobs shared with this user
-  deepSearchSharesReceived     DeepSearchJobShare[]        @relation("DeepSearchJobShareRecipient")
+  deepSearchSharesReceived     DeepSearchJobShare[]            @relation("DeepSearchJobShareRecipient")
   /// Deep-search shares created by this user
-  deepSearchSharesCreated      DeepSearchJobShare[]        @relation("DeepSearchJobShareCreator")
+  deepSearchSharesCreated      DeepSearchJobShare[]            @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
   /// Recording uploads this user submitted for ingest
-  recordingIntakes             RecordingIntake[]           @relation("RecordingIntakeRequestedBy")
+  recordingIntakes             RecordingIntake[]               @relation("RecordingIntakeRequestedBy")
   /// Correction workspaces this user started or archived
-  transcriptWorkspacesStarted  TranscriptWorkspace[]       @relation("TranscriptWorkspaceStartedBy")
-  transcriptWorkspacesArchived TranscriptWorkspace[]       @relation("TranscriptWorkspaceArchivedBy")
+  transcriptWorkspacesStarted  TranscriptWorkspace[]           @relation("TranscriptWorkspaceStartedBy")
+  transcriptWorkspacesArchived TranscriptWorkspace[]           @relation("TranscriptWorkspaceArchivedBy")
   /// Span text revisions written by this user
-  transcriptSpanRevisions      TranscriptSpanRevision[]    @relation("TranscriptSpanRevisionAuthor")
+  transcriptSpanRevisions      TranscriptSpanRevision[]        @relation("TranscriptSpanRevisionAuthor")
   /// Approvals, disapprovals and withdrawals by this user
-  transcriptSpanDecisions      TranscriptSpanDecision[]    @relation("TranscriptSpanDecisionUser")
+  transcriptSpanDecisions      TranscriptSpanDecision[]        @relation("TranscriptSpanDecisionUser")
   /// Span comments written by this user
-  transcriptSpanComments       TranscriptSpanComment[]     @relation("TranscriptSpanCommentAuthor")
+  transcriptSpanComments       TranscriptSpanComment[]         @relation("TranscriptSpanCommentAuthor")
   /// Transcript publications performed by this user
-  transcriptPublications       TranscriptPublication[]     @relation("TranscriptPublicationPublishedBy")
+  transcriptPublications       TranscriptPublication[]         @relation("TranscriptPublicationPublishedBy")
   /// Correction guide revisions written by this user
-  transcriptGuideRevisions     TranscriptGuideRevision[]   @relation("TranscriptGuideRevisionAuthor")
+  transcriptGuideRevisions     TranscriptGuideRevision[]       @relation("TranscriptGuideRevisionAuthor")
 
   @@map("users")
 }
@@ -586,40 +586,40 @@ model WorkflowGroup {
   /// Last modification time (metadata changes, catalog updates)
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
 
-  metadata                AudioMetadata[]
-  preferences             UserPreferences[]
-  catalogAccess           CatalogAccess[]
-  pendingCatalogGrants    PendingCatalogGrant[]
-  variants                WorkflowVariant[]
+  metadata                 AudioMetadata[]
+  preferences              UserPreferences[]
+  catalogAccess            CatalogAccess[]
+  pendingCatalogGrants     PendingCatalogGrant[]
+  variants                 WorkflowVariant[]
   /// Scan state for detecting new ready recordings
-  readyScanState          ReadyScanState?
+  readyScanState           ReadyScanState?
   /// Notifications for recordings in this catalog
-  recordingNotifications  RecordingNotification[]
+  recordingNotifications   RecordingNotification[]
   /// Event publish notifications in this catalog
-  eventNotifications      EventNotification[]
+  eventNotifications       EventNotification[]
   /// DB-backed serving entries derived from CSV catalogs
-  catalogEntries          CatalogEntry[]
+  catalogEntries           CatalogEntry[]
   /// Duplicate rows derived from duplicates CSV
-  catalogDuplicates       CatalogDuplicate[]
+  catalogDuplicates        CatalogDuplicate[]
   /// Listening availability rows per variant
-  catalogListeningEntries CatalogListeningEntry[]
+  catalogListeningEntries  CatalogListeningEntry[]
   /// Per-source sync state and fingerprints
-  catalogSyncStates       CatalogSyncState[]
+  catalogSyncStates        CatalogSyncState[]
   /// Event catalog rows
-  catalogEvents           CatalogEvent[]
+  catalogEvents            CatalogEvent[]
   /// Event-to-recording assignments
-  catalogEventRecordings  CatalogEventRecording[]
+  catalogEventRecordings   CatalogEventRecording[]
   /// Deep-search job shares scoped to this catalog
-  deepSearchJobShares     DeepSearchJobShare[]
+  deepSearchJobShares      DeepSearchJobShare[]
   /// Correction workspaces for recordings in this catalog
   transcriptWorkspaces     TranscriptWorkspace[]
   /// Correction guide revisions for this catalog
   transcriptGuideRevisions TranscriptGuideRevision[]
-  recorders               Recorder[]
-  locations               Location[]
-  albums                  Album[]
+  recorders                Recorder[]
+  locations                Location[]
+  albums                   Album[]
   /// Admin uploads being ingested into this catalog
-  recordingIntakes        RecordingIntake[]
+  recordingIntakes         RecordingIntake[]
 
   @@map("workflow_group")
 }
@@ -814,10 +814,10 @@ model CatalogEvent {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  workflowGroup      WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  location           Location                @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  createdBy          User                    @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
-  updatedBy          User                    @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
+  workflowGroup      WorkflowGroup                  @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  location           Location                       @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy          User                           @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
+  updatedBy          User                           @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
   recordings         CatalogEventRecording[]
   eventNotifications EventNotification[]
   posterCandidates   CatalogEventPoster[]
@@ -999,11 +999,13 @@ enum TranscriptWorkspaceStatus {
   ARCHIVED
 }
 
-/// Publication job states. `PENDING` and `ACTIVATING` both lock the workspace;
-/// only `ACTIVATING` may be completed by reconciliation after a crash.
+/// Publication job states. `PENDING`, `ACTIVATING` and `ROLLING_BACK` lock the
+/// workspace. `ACTIVATING` and `ROLLING_BACK` are durable cross-system intents
+/// whose filesystem half may be completed after a crash.
 enum TranscriptPublicationStatus {
   PENDING
   ACTIVATING
+  ROLLING_BACK
   SUCCEEDED
   FAILED
   ROLLED_BACK
@@ -1033,7 +1035,8 @@ model TranscriptWorkspace {
   readerPublicationId String?                   @unique @map("reader_publication_id") @db.Uuid
   /// Snapshot search indexing and MCP resolve; an ordinary unpublish keeps it
   searchPublicationId String?                   @unique @map("search_publication_id") @db.Uuid
-  /// Set while corrected text is being taken back out of search.
+  /// Unique operation token while corrected text is being taken back out of
+  /// search.
   ///
   /// PostgreSQL and the filesystem cannot commit together, so withdrawal is a
   /// committed intent rather than one step: the pointers are cleared first,
@@ -1042,7 +1045,7 @@ model TranscriptWorkspace {
   /// already let go of it — newer search, older reader, which is the direction
   /// this design allows. It also blocks publication, which would otherwise
   /// write a pointer that the resumed withdrawal would delete.
-  searchWithdrawalAt  DateTime?                 @map("search_withdrawal_at")
+  searchWithdrawalId  String?                   @map("search_withdrawal_id") @db.Uuid
   startedById         String?                   @map("started_by")
   archivedById        String?                   @map("archived_by")
   archiveReason       String?                   @map("archive_reason")
@@ -1050,16 +1053,16 @@ model TranscriptWorkspace {
   updatedAt           DateTime                  @updatedAt @map("updated_at")
   archivedAt          DateTime?                 @map("archived_at")
 
-  workflowGroup     WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  startedBy         User?                   @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
-  archivedBy        User?                   @relation("TranscriptWorkspaceArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  workflowGroup     WorkflowGroup            @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  startedBy         User?                    @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  archivedBy        User?                    @relation("TranscriptWorkspaceArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
   spans             TranscriptSpan[]
   revisions         TranscriptSpanRevision[]
   decisions         TranscriptSpanDecision[]
   comments          TranscriptSpanComment[]
   publications      TranscriptPublication[]
-  readerPublication TranscriptPublication?  @relation("TranscriptWorkspaceReaderPublication", fields: [readerPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  searchPublication TranscriptPublication?  @relation("TranscriptWorkspaceSearchPublication", fields: [searchPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  readerPublication TranscriptPublication?   @relation("TranscriptWorkspaceReaderPublication", fields: [readerPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  searchPublication TranscriptPublication?   @relation("TranscriptWorkspaceSearchPublication", fields: [searchPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([workflowGroupId, audioHash])
   @@index([workflowGroupId, status])
@@ -1081,11 +1084,11 @@ model TranscriptSpan {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  workspace       TranscriptWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  currentRevision TranscriptSpanRevision?    @relation("TranscriptSpanCurrentRevision", fields: [currentRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  revisions       TranscriptSpanRevision[]   @relation("TranscriptSpanRevisions")
-  decisions       TranscriptSpanDecision[]
-  comments        TranscriptSpanComment[]
+  workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  currentRevision  TranscriptSpanRevision?     @relation("TranscriptSpanCurrentRevision", fields: [currentRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  revisions        TranscriptSpanRevision[]    @relation("TranscriptSpanRevisions")
+  decisions        TranscriptSpanDecision[]
+  comments         TranscriptSpanComment[]
   publicationSpans TranscriptPublicationSpan[]
 
   @@unique([workspaceId, ordinal])
@@ -1110,12 +1113,12 @@ model TranscriptSpanRevision {
   authorId           String?  @map("author_id")
   createdAt          DateTime @default(now()) @map("created_at")
 
-  workspace        TranscriptWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  span             TranscriptSpan             @relation("TranscriptSpanRevisions", fields: [spanId], references: [id], onDelete: Cascade)
-  previousRevision TranscriptSpanRevision?    @relation("TranscriptSpanRevisionChain", fields: [previousRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  nextRevisions    TranscriptSpanRevision[]   @relation("TranscriptSpanRevisionChain")
-  author           User?                      @relation("TranscriptSpanRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  currentOfSpans   TranscriptSpan[]           @relation("TranscriptSpanCurrentRevision")
+  workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  span             TranscriptSpan              @relation("TranscriptSpanRevisions", fields: [spanId], references: [id], onDelete: Cascade)
+  previousRevision TranscriptSpanRevision?     @relation("TranscriptSpanRevisionChain", fields: [previousRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  nextRevisions    TranscriptSpanRevision[]    @relation("TranscriptSpanRevisionChain")
+  author           User?                       @relation("TranscriptSpanRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  currentOfSpans   TranscriptSpan[]            @relation("TranscriptSpanCurrentRevision")
   decisions        TranscriptSpanDecision[]
   comments         TranscriptSpanComment[]
   publicationSpans TranscriptPublicationSpan[]
@@ -1188,43 +1191,43 @@ model TranscriptSpanComment {
 /// An immutable snapshot of one exact revision per span, plus the job that
 /// materializes, renders, indexes and activates it.
 model TranscriptPublication {
-  id                    String                      @id @default(uuid()) @db.Uuid
-  workspaceId           String                      @map("workspace_id") @db.Uuid
+  id                      String                      @id @default(uuid()) @db.Uuid
+  workspaceId             String                      @map("workspace_id") @db.Uuid
   /// Denormalized so the indexing resolver can answer per audio hash
-  workflowGroupId       String                      @map("workflow_group_id") @db.VarChar(15)
-  audioHash             String                      @map("audio_hash") @db.VarChar(64)
-  status                TranscriptPublicationStatus @default(PENDING)
+  workflowGroupId         String                      @map("workflow_group_id") @db.VarChar(15)
+  audioHash               String                      @map("audio_hash") @db.VarChar(64)
+  status                  TranscriptPublicationStatus @default(PENDING)
   /// Historical policy: v1 always records 2
-  requiredApprovals     Int                         @default(2) @map("required_approvals")
-  guideRevisionId       String?                     @map("guide_revision_id") @db.Uuid
-  publishedById         String?                     @map("published_by")
-  spanCount             Int                         @default(0) @map("span_count")
-  durationSeconds       Float                       @default(0) @map("duration_seconds")
+  requiredApprovals       Int                         @default(2) @map("required_approvals")
+  guideRevisionId         String?                     @map("guide_revision_id") @db.Uuid
+  publishedById           String?                     @map("published_by")
+  spanCount               Int                         @default(0) @map("span_count")
+  durationSeconds         Float                       @default(0) @map("duration_seconds")
   /// SHA-256 of the rendered transcript.json bytes. Artifact integrity, owned
   /// by whoever wrote the file.
-  artifactSha256        String?                     @map("artifact_sha256") @db.VarChar(64)
+  artifactSha256          String?                     @map("artifact_sha256") @db.VarChar(64)
   /// The identity recorded in and verified against the active search bundle.
   /// Derived from normalized segment timing and text by the indexer, not from
   /// the artifact bytes, and therefore written by whoever activates the index.
   /// Null until real index activation exists.
-  searchSourceFingerprint String?                   @map("search_source_fingerprint") @db.VarChar(64)
+  searchSourceFingerprint String?                     @map("search_source_fingerprint") @db.VarChar(64)
   /// Effective search source before this publication, for rollback
-  previousSourceKind    String?                     @map("previous_source_kind") @db.VarChar(16)
-  previousSourceRef     String?                     @map("previous_source_ref")
-  attemptCount          Int                         @default(0) @map("attempt_count")
-  errorCode             String?                     @map("error_code") @db.VarChar(64)
-  errorMessage          String?                     @map("error_message")
-  createdAt             DateTime                    @default(now()) @map("created_at")
-  updatedAt             DateTime                    @updatedAt @map("updated_at")
-  activatingAt          DateTime?                   @map("activating_at")
-  finishedAt            DateTime?                   @map("finished_at")
+  previousSourceKind      String?                     @map("previous_source_kind") @db.VarChar(16)
+  previousSourceRef       String?                     @map("previous_source_ref")
+  attemptCount            Int                         @default(0) @map("attempt_count")
+  errorCode               String?                     @map("error_code") @db.VarChar(64)
+  errorMessage            String?                     @map("error_message")
+  createdAt               DateTime                    @default(now()) @map("created_at")
+  updatedAt               DateTime                    @updatedAt @map("updated_at")
+  activatingAt            DateTime?                   @map("activating_at")
+  finishedAt              DateTime?                   @map("finished_at")
 
-  workspace        TranscriptWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  guideRevision    TranscriptGuideRevision?   @relation(fields: [guideRevisionId], references: [id], onDelete: SetNull)
-  publishedBy      User?                      @relation("TranscriptPublicationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
-  spans            TranscriptPublicationSpan[]
-  readerOfWorkspace TranscriptWorkspace?      @relation("TranscriptWorkspaceReaderPublication")
-  searchOfWorkspace TranscriptWorkspace?      @relation("TranscriptWorkspaceSearchPublication")
+  workspace         TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  guideRevision     TranscriptGuideRevision?    @relation(fields: [guideRevisionId], references: [id], onDelete: SetNull)
+  publishedBy       User?                       @relation("TranscriptPublicationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  spans             TranscriptPublicationSpan[]
+  readerOfWorkspace TranscriptWorkspace?        @relation("TranscriptWorkspaceReaderPublication")
+  searchOfWorkspace TranscriptWorkspace?        @relation("TranscriptWorkspaceSearchPublication")
 
   @@index([workspaceId, createdAt])
   @@index([workflowGroupId, audioHash, status])

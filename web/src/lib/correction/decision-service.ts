@@ -2,15 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type TranscriptDecisionKind } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
-import {
-  hashSpanText,
-  isPublishableSpanText,
-  normalizeSpanText,
-} from "@/lib/correction/text";
-import {
-  summarizeSpanDecisions,
-  type SpanState,
-} from "@/lib/correction/span-state";
+import { hashSpanText, isPublishableSpanText, normalizeSpanText } from "@/lib/correction/text";
+import { summarizeSpanDecisions, type SpanState } from "@/lib/correction/span-state";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 export interface SpanCommandResult {
@@ -57,13 +50,8 @@ interface LockedSpan {
  * recovery state to save a rare collision; a revision check makes a lost
  * update impossible, which is the part that matters.
  */
-async function lockSpan(
-  tx: TransactionClient,
-  command: SpanCommandBase
-): Promise<LockedSpan> {
-  const rows = await tx.$queryRaw<
-    { id: string; workspace_id: string; current_revision_id: string | null }[]
-  >`
+async function lockSpan(tx: TransactionClient, command: SpanCommandBase): Promise<LockedSpan> {
+  const rows = await tx.$queryRaw<{ id: string; workspace_id: string; current_revision_id: string | null }[]>`
     SELECT "id", "workspace_id", "current_revision_id"
     FROM "transcript_span"
     WHERE "id" = ${command.spanId}::uuid
@@ -78,11 +66,9 @@ async function lockSpan(
     throw new CorrectionError("SPAN_NOT_FOUND", "Span has no current revision");
   }
   if (row.current_revision_id !== command.expectedRevisionId) {
-    throw new CorrectionError(
-      "REVISION_CONFLICT",
-      "Somebody changed this span while you were working on it",
-      { currentRevisionId: row.current_revision_id }
-    );
+    throw new CorrectionError("REVISION_CONFLICT", "Somebody changed this span while you were working on it", {
+      currentRevisionId: row.current_revision_id,
+    });
   }
 
   return {
@@ -99,16 +85,13 @@ async function lockSpan(
  * Callers hold the workspace lock before asking, so the answer cannot go stale
  * between the question and the write.
  */
-async function assertWorkspaceWritable(
-  tx: TransactionClient,
-  workspaceId: string
-): Promise<void> {
+async function assertWorkspaceWritable(tx: TransactionClient, workspaceId: string): Promise<void> {
   const workspace = await tx.transcriptWorkspace.findUnique({
     where: { id: workspaceId },
     select: {
       status: true,
       publications: {
-        where: { status: { in: ["PENDING", "ACTIVATING"] } },
+        where: { status: { in: ["PENDING", "ACTIVATING", "ROLLING_BACK"] } },
         select: { id: true },
         take: 1,
       },
@@ -119,10 +102,7 @@ async function assertWorkspaceWritable(
     throw new CorrectionError("NO_WORKSPACE", "Correction workspace not found");
   }
   if (workspace.status === "ARCHIVED") {
-    throw new CorrectionError(
-      "WORKSPACE_ARCHIVED",
-      "This correction workspace has been archived"
-    );
+    throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
   }
   if (workspace.publications.length > 0) {
     throw new CorrectionError(
@@ -154,9 +134,7 @@ function digestCommand(identity: CommandIdentity): string {
   // The revision belongs in the identity: the same action on a later revision
   // is a new command, and replaying the earlier response for it would report
   // success for something never recorded.
-  return hashSpanText(
-    `${identity.name}\u0000${identity.revisionId}\u0000${identity.payload}`
-  );
+  return hashSpanText(`${identity.name}\u0000${identity.revisionId}\u0000${identity.payload}`);
 }
 
 /**
@@ -199,11 +177,10 @@ async function findReplay(
     existing.commandName !== identity.name ||
     existing.commandDigest !== digest
   ) {
-    throw new CorrectionError(
-      "IDEMPOTENCY_CONFLICT",
-      "That idempotency key was already used for a different command",
-      { recordedCommand: existing.commandName, recordedSpanId: existing.spanId }
-    );
+    throw new CorrectionError("IDEMPOTENCY_CONFLICT", "That idempotency key was already used for a different command", {
+      recordedCommand: existing.commandName,
+      recordedSpanId: existing.spanId,
+    });
   }
 
   return { spanId: existing.spanId, revisionId: existing.revisionId };
@@ -239,17 +216,10 @@ async function summarizeSpan(
 }
 
 /** Approve, disapprove or withdraw the current revision of one span. */
-export async function recordDecision(
-  command: DecisionCommand
-): Promise<SpanCommandResult> {
+export async function recordDecision(command: DecisionCommand): Promise<SpanCommandResult> {
   return prisma.$transaction(async (tx) => {
     const identity: CommandIdentity = {
-      name:
-        command.kind === "APPROVE"
-          ? "approve"
-          : command.kind === "DISAPPROVE"
-            ? "disapprove"
-            : "withdraw",
+      name: command.kind === "APPROVE" ? "approve" : command.kind === "DISAPPROVE" ? "disapprove" : "withdraw",
       revisionId: command.expectedRevisionId,
       payload: "",
     };
@@ -298,15 +268,10 @@ export async function recordDecision(
  * local draft, so nothing half-considered ever sits in the database waiting to
  * be mistaken for reviewed text.
  */
-export async function saveAndApprove(
-  command: EditCommand
-): Promise<SpanCommandResult> {
+export async function saveAndApprove(command: EditCommand): Promise<SpanCommandResult> {
   const normalized = normalizeSpanText(command.text);
   if (!isPublishableSpanText(normalized)) {
-    throw new CorrectionError(
-      "EMPTY_TEXT",
-      "A span cannot be emptied; disapprove it instead if the words are unclear"
-    );
+    throw new CorrectionError("EMPTY_TEXT", "A span cannot be emptied; disapprove it instead if the words are unclear");
   }
 
   return prisma.$transaction(async (tx) => {
@@ -415,10 +380,7 @@ export async function addComment(command: CommentCommand): Promise<{
     select: { id: true, spanId: true },
   });
   if (!revision || revision.spanId !== command.spanId) {
-    throw new CorrectionError(
-      "REVISION_CONFLICT",
-      "That revision does not belong to this span"
-    );
+    throw new CorrectionError("REVISION_CONFLICT", "That revision does not belong to this span");
   }
 
   const comment = await prisma.transcriptSpanComment.create({
@@ -455,10 +417,7 @@ export interface SpanHistoryEntry {
  * Correctors are not anonymous to one another: this group resolves
  * disagreement by talking, which needs names.
  */
-export async function listSpanHistory(
-  workspaceId: string,
-  spanId: string
-): Promise<SpanHistoryEntry[]> {
+export async function listSpanHistory(workspaceId: string, spanId: string): Promise<SpanHistoryEntry[]> {
   // Scoped, not just authorized. A span id is enough to name a span anywhere
   // in the database, so a caller authorized for one workspace must not be able
   // to read another's revisions, comments and participants by supplying its id.
@@ -518,9 +477,7 @@ export async function listSpanHistory(
   // Correctors are not anonymous to one another: this group resolves
   // disagreement by talking, which needs names rather than opaque ids. A
   // deleted account keeps its place in the history and simply has no name.
-  const actorKeys = [
-    ...new Set(entries.map((entry) => entry.userId).filter((id): id is string => id !== null)),
-  ];
+  const actorKeys = [...new Set(entries.map((entry) => entry.userId).filter((id): id is string => id !== null))];
   const actors =
     actorKeys.length === 0
       ? []
@@ -528,9 +485,7 @@ export async function listSpanHistory(
           where: { id: { in: actorKeys } },
           select: { id: true, name: true, email: true },
         });
-  const nameByKey = new Map(
-    actors.map((actor) => [actor.id, actor.name ?? actor.email ?? null])
-  );
+  const nameByKey = new Map(actors.map((actor) => [actor.id, actor.name ?? actor.email ?? null]));
 
   for (const entry of entries) {
     entry.actorName = entry.userId ? (nameByKey.get(entry.userId) ?? null) : null;
