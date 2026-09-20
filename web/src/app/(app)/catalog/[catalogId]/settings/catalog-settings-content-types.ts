@@ -263,6 +263,7 @@ export function resolvedCatalogRole(
  */
 export interface CatalogSettingsCards {
   transcriptExports: boolean;
+  correctionGuide: boolean;
   configuration: boolean;
   eventHealth: boolean;
   access: boolean;
