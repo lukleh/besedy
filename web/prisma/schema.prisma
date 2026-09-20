@@ -1200,7 +1200,14 @@ model WebDeployLog {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   gitCommit  String   @map("git_commit") @db.VarChar(40)
   webVersion String   @map("web_version") @db.VarChar(64)
-  deployedAt DateTime @default(now()) @map("deployed_at")
+  /// timestamptz, not the schema's usual bare timestamp: this row's default
+  /// is filled by the database (CURRENT_TIMESTAMP), not by Prisma, and a
+  /// timestamp-without-time-zone column would silently store the db
+  /// session's local wall clock with no indication that it isn't UTC if
+  /// that session's TimeZone were ever changed from the current Etc/UTC
+  /// default. timestamptz stores the actual instant, so it stays correct
+  /// regardless.
+  deployedAt DateTime @default(now()) @map("deployed_at") @db.Timestamptz(3)
   deployedBy String?  @map("deployed_by") @db.VarChar(120)
   /// Not written by `prod-apply` and not read by any current query. Reserved
   /// for manually backfilling a row for a deploy that didn't go through the

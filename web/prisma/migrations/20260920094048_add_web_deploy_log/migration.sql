@@ -3,7 +3,7 @@ CREATE TABLE "web_deploy_log" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "git_commit" VARCHAR(40) NOT NULL,
     "web_version" VARCHAR(64) NOT NULL,
-    "deployed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deployed_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deployed_by" VARCHAR(120),
     "note" VARCHAR(500),
 
