@@ -18,6 +18,8 @@ import {
   loadTranscript,
   type TranscriptBackend,
 } from '@/lib/transcript';
+import { resolveSearchTranscriptSource } from '@/lib/correction/resolve';
+import { loadPublishedTranscript } from '@/lib/correction/reader-transcript';
 import { getRagBackendKey } from '@/lib/runtime-config';
 import {
   executeCatalogLexicalSearch,
@@ -713,12 +715,31 @@ export async function getMcpTranscript(
     );
   }
 
+  // Agents resolve the same text search does: the corrected snapshot once one
+  // has been published, and the machine transcript until then. A corrected
+  // transcript is a newer version of the same transcript here, not a separate
+  // kind of document, so there is no correction-specific branch below this.
   const transcriptsPath = resolveTranscriptsPath(catalogId);
+  const searchSource = await resolveSearchTranscriptSource(catalogId, audioHash);
   let transcript: Awaited<ReturnType<typeof loadTranscript>> = null;
-  for (const backend of getCanonicalTranscriptBackends()) {
-    transcript = await loadTranscript(transcriptsPath, audioHash, backend);
-    if (transcript) break;
+
+  if (searchSource.kind === 'publication') {
+    transcript = await loadPublishedTranscript(catalogId, audioHash, searchSource);
+    if (!transcript) {
+      // Falling back to the machine text here would quietly answer from a
+      // different transcript than the one search indexed.
+      throw new McpReadError(
+        'transcript_not_found',
+        'Published transcript artifact is missing',
+      );
+    }
+  } else {
+    for (const backend of getCanonicalTranscriptBackends()) {
+      transcript = await loadTranscript(transcriptsPath, audioHash, backend);
+      if (transcript) break;
+    }
   }
+
   if (!transcript) {
     throw new McpReadError('transcript_not_found', 'Transcript not found');
   }

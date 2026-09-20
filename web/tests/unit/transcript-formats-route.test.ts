@@ -2,6 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getFormats } from "@/app/api/transcript/[hash]/formats/route";
 
+// Correction resolution is exercised in its own tests; these route tests cover
+// recordings outside correction scope, where the machine transcript is served.
+vi.mock("@/lib/correction/resolve", () => ({
+  resolveReaderTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveSearchTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveOriginalTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveReaderTranscriptSources: vi.fn(async (_catalogId, hashes) => {
+    const map = new Map();
+    for (const hash of hashes) map.set(hash, { kind: "machine" });
+    return map;
+  }),
+  publicationArtifactPath: vi.fn(() => "/tmp/publication/transcript.json"),
+  frozenSourcePath: vi.fn(() => "/tmp/workspace/source/transcript.json"),
+}));
+
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
 }));

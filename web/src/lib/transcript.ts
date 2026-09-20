@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { validatePath } from "@/lib/security/path-validation";
+import { RESERVED_TRANSCRIPT_WORKFLOW_DIR } from "@/lib/correction/backend-key";
 
 /**
  * Validate that a transcripts path is within allowed directories.
@@ -153,6 +154,7 @@ export async function discoverTranscriptBackends(
       if (!workflowDir.isDirectory()) continue;
       if (workflowDir.name.startsWith(".")) continue;
       if (workflowDir.name === "speaker_diarization") continue;
+      if (workflowDir.name === RESERVED_TRANSCRIPT_WORKFLOW_DIR) continue;
 
       const workflowPath = path.join(validatedRoot, workflowDir.name);
       let modelDirs: import("fs").Dirent[];
@@ -227,6 +229,7 @@ export async function getAvailableTranscripts(
     if (!workflowDir.isDirectory()) continue;
     if (workflowDir.name.startsWith(".")) continue;
     if (workflowDir.name === "speaker_diarization") continue;
+    if (workflowDir.name === RESERVED_TRANSCRIPT_WORKFLOW_DIR) continue;
 
     try {
       const workflowPath = path.join(validatedPath, workflowDir.name);

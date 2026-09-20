@@ -43,6 +43,12 @@ import {
   canPublishEventPosters,
   canViewEventPosterCandidates,
 } from "@/lib/policy/event-poster";
+import {
+  canCorrectTranscripts,
+  canEditCorrectionGuide,
+  canPublishTranscript,
+} from "@/lib/policy/correction";
+import { resolveReaderTranscriptSource } from "@/lib/correction/resolve";
 
 export interface PortalCapability {
   userId: string | null;
@@ -89,6 +95,9 @@ export interface CatalogCapability extends PortalCapability {
   canViewPosterCandidates: boolean;
   canManagePosters: boolean;
   canPublishPosters: boolean;
+  canCorrectTranscripts: boolean;
+  canPublishTranscript: boolean;
+  canEditCorrectionGuide: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -100,6 +109,18 @@ export interface RecordingCapability extends CatalogCapability {
   canEditRecording: boolean;
   canSeeTranscriptVariants: boolean;
   canSeeSpeakers: boolean;
+  /// Primary recording of an event, so correction and its publication gate apply
+  correctionEligible: boolean;
+  correctionWorkspaceId: string | null;
+  /// Whether an active reader publication exists for an eligible recording
+  hasReaderPublication: boolean;
+  /**
+   * The publication gate. `canViewRecordingTranscripts` says the actor may use
+   * the transcript surface at all; this says whether there is text to read.
+   * They differ exactly while an eligible primary transcript is unpublished,
+   * which is when the reader sees progress instead.
+   */
+  canReadTranscriptText: boolean;
 }
 
 interface CatalogCapabilityOptions {
@@ -148,6 +169,9 @@ export function buildCatalogCapability(
     canViewPosterCandidates: canViewEventPosterCandidates(policyContext),
     canManagePosters: canManageEventPosterCandidates(policyContext),
     canPublishPosters: canPublishEventPosters(policyContext),
+    canCorrectTranscripts: canCorrectTranscripts(policyContext),
+    canPublishTranscript: canPublishTranscript(policyContext),
+    canEditCorrectionGuide: canEditCorrectionGuide(policyContext),
   };
 }
 
@@ -268,6 +292,10 @@ export async function getRecordingCapability(
     // rather than after the entry is loaded.
     canSeeTranscriptVariants: canSeeTranscriptVariants(policyContext),
     canSeeSpeakers: canSeeSpeakers(policyContext),
+    correctionEligible: false,
+    correctionWorkspaceId: null,
+    hasReaderPublication: false,
+    canReadTranscriptText: false,
   };
 
   if (!catalogCapability.catalogExists || !catalogCapability.hasAccess) {
@@ -296,12 +324,31 @@ export async function getRecordingCapability(
     isPublished: entry.isPublished,
   };
 
+  const canViewRecordingTranscripts = canViewRecordingTranscript(
+    policyContext,
+    recordingState
+  );
+
+  // Resolved once here rather than in every transcript surface, so the reader,
+  // its download and the page that explains the gate cannot disagree.
+  const readerSource = await resolveReaderTranscriptSource(catalogId, hash);
+
   return {
     ...baseCapability,
     canAccessRecording: canViewRecording(policyContext, recordingState),
     canStreamAudio: canStreamRecording(policyContext, recordingState),
-    canViewRecordingTranscripts: canViewRecordingTranscript(policyContext, recordingState),
+    canViewRecordingTranscripts,
     canDownloadRecording: canDownloadRecording(policyContext),
     canEditRecording: canEditRecordingMetadata(policyContext),
+    correctionEligible: readerSource.kind !== "machine",
+    correctionWorkspaceId:
+      readerSource.kind === "publication"
+        ? readerSource.workspaceId
+        : readerSource.kind === "withheld"
+          ? readerSource.workspaceId
+          : null,
+    hasReaderPublication: readerSource.kind === "publication",
+    canReadTranscriptText:
+      canViewRecordingTranscripts && readerSource.kind !== "withheld",
   };
 }
