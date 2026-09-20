@@ -154,6 +154,46 @@ Additional constraints:
 | `user_preferences`                   | Active catalog, theme, settings                  |
 | `audit_log`                          | Security and access event log                    |
 
+### Transcript Correction Tables
+
+Human transcript correction ([ADR 0006](../adr/0006-transcript-correction.md))
+keeps current projections and immutable history side by side. PostgreSQL is
+authoritative for work in progress; the rendered artifacts are immutable files.
+
+| Table                         | Purpose                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `transcript_workspace`        | One correction over a frozen machine source, plus its two pointers |
+| `transcript_span`             | One source segment, with fixed boundaries and a current revision   |
+| `transcript_span_revision`    | Immutable normalized text, chained to its predecessor              |
+| `transcript_span_decision`    | Immutable approve / disapprove / withdraw by one person            |
+| `transcript_span_comment`     | Optional discussion, recording the revision its author saw         |
+| `transcript_publication`      | One immutable snapshot and the job that activates it               |
+| `transcript_publication_span` | The exact revision used for every span in a publication            |
+| `transcript_guide_revision`   | Immutable versions of the catalog correction guide                 |
+
+Three invariants live in the database rather than in application code, because
+they have to hold against concurrent requests:
+
+- **One live workspace per recording.** A partial unique index over
+  non-archived rows, so the exceptional archive-and-recreate path keeps every
+  abandoned workspace for audit. Prisma cannot express a partial index, so it is
+  created in the migration and not declared in `schema.prisma`.
+- **One publication in flight per workspace.** A partial unique index over
+  `PENDING` and `ACTIVATING`, which is also what locks the workspace against
+  writes while a snapshot is being materialized.
+- **One decision per idempotency key.** `UNIQUE (workspace_id, user_id,
+  idempotency_key)`, so a double-click or a retried request cannot record the
+  same decision twice.
+
+Span state is never stored. It is derived from the decisions bound to a span's
+**current** revision, so a superseded approval cannot count and no status
+column can drift from the decisions underneath it.
+
+The two workspace pointers are deliberately separate. `reader_publication_id`
+is what the reader, the ordinary download and the bulk export resolve;
+`search_publication_id` is what search indexing and MCP resolve. An ordinary
+unpublish clears only the first.
+
 ---
 
 ## Configuration
@@ -168,6 +208,11 @@ Additional constraints:
 | `ORIGINAL_AUDIO_DIR` | Downloadable original audio                  |
 | `POSTERS_DIR`        | Writable poster storage                      |
 | `SOURCES_DIR`        | Writable recording sources storage           |
+
+Transcript correction artifacts are configured in `besedy.toml` rather than by
+environment variable: `[paths].corrections_dir`, defaulting to
+`<text_data_dir>/corrections`. Host-run Python tooling can override it with
+`BESEDY_CORRECTIONS_ROOT`.
 
 ### Path Mappings
 
