@@ -97,7 +97,7 @@ function DeepSearchNewJobDialogForm({
   }
 
   return (
-    <DialogContent className="overflow-y-auto sm:max-w-2xl">
+    <DialogContent className="sm:max-w-2xl">
       <form onSubmit={handleSubmit} className="contents">
         <DialogHeader>
           <DialogTitle>{t('deepSearch.newJob')}</DialogTitle>

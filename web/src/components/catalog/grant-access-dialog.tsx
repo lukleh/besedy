@@ -329,7 +329,7 @@ export function GrantAccessDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{t("dialogs.grantAccess.title")}</DialogTitle>
