@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readTranscriptFile, type TranscriptFormat } from "@/lib/transcript";
-import { logTranscriptDownloaded } from "@/lib/audit/logger";
+import {
+  logOriginalTranscriptDownloaded,
+  logTranscriptDownloaded,
+} from "@/lib/audit/logger";
 import { resolveTranscriptRouteAccess } from "@/lib/access/transcript-route-access";
 import { isCorrectedTranscriptBackend } from "@/lib/correction/backend-key";
 import {
@@ -113,6 +116,7 @@ export async function GET(
 
     const wantsOriginal = searchParams.get("original") === "1";
     let result: { content: string; filename: string } | null = null;
+    let originalSource: "machine" | "frozen" = "machine";
 
     if (wantsOriginal) {
       if (!capability.canDownloadOriginalTranscript) {
@@ -123,6 +127,7 @@ export async function GET(
       }
 
       const original = await resolveOriginalTranscriptSource(group.id, hash);
+      originalSource = original.kind === "frozen" ? "frozen" : "machine";
       if (original.kind === "frozen") {
         // Once correction has started this is always the frozen source, before
         // or after publication, so the original is the text the corrections
@@ -186,7 +191,15 @@ export async function GET(
     }
 
     // Log download
-    await logTranscriptDownloaded(userId, hash, group.id, backend, format);
+    if (wantsOriginal) {
+      await logOriginalTranscriptDownloaded(userId, hash, group.id, {
+        source: originalSource,
+        backend,
+        format,
+      });
+    } else {
+      await logTranscriptDownloaded(userId, hash, group.id, backend, format);
+    }
 
     // Return file content
     const safeBackend = (wantsOriginal ? `${backend}_original` : backend).replace(
