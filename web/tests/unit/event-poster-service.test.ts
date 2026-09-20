@@ -43,6 +43,7 @@ import {
   EventPosterServiceError,
   deleteEventPosterCandidate,
   getEventPosterWorkflowStatuses,
+  getLatestEventPosterCandidate,
   loadEventPosterAsset,
   publishEventPoster,
 } from "@/lib/event-poster-service";
@@ -76,6 +77,33 @@ describe("event poster service", () => {
       3: "published-with-newer-drafts",
       4: "none",
     });
+  });
+
+  it("returns the most recently created candidate for a preview", async () => {
+    prisma.catalogEventPoster.findFirst.mockResolvedValue({
+      id: "candidate-1",
+      label: "Cover draft",
+      createdAt: new Date("2026-03-02T00:00:00Z"),
+    });
+
+    const result = await getLatestEventPosterCandidate("20260101_000000", 7);
+
+    expect(result).toEqual({
+      id: "candidate-1",
+      label: "Cover draft",
+      createdAt: "2026-03-02T00:00:00.000Z",
+    });
+    expect(prisma.catalogEventPoster.findFirst).toHaveBeenCalledWith({
+      where: { workflowGroupId: "20260101_000000", eventId: 7 },
+      select: { id: true, label: true, createdAt: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  });
+
+  it("returns null when no candidate exists for a preview", async () => {
+    prisma.catalogEventPoster.findFirst.mockResolvedValue(null);
+
+    await expect(getLatestEventPosterCandidate("20260101_000000", 7)).resolves.toBeNull();
   });
 
   it("publishes a candidate atomically and records the replaced candidate", async () => {

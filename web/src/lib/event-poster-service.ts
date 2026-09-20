@@ -521,6 +521,29 @@ export async function getPublishedEventPoster(
   };
 }
 
+export interface LatestEventPosterCandidateView {
+  id: string;
+  label: string | null;
+  createdAt: string;
+}
+
+export async function getLatestEventPosterCandidate(
+  catalogId: string,
+  eventId: number
+): Promise<LatestEventPosterCandidateView | null> {
+  const candidate = await prisma.catalogEventPoster.findFirst({
+    where: { workflowGroupId: catalogId, eventId },
+    select: { id: true, label: true, createdAt: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  if (!candidate) return null;
+  return {
+    id: candidate.id,
+    label: candidate.label,
+    createdAt: candidate.createdAt.toISOString(),
+  };
+}
+
 export type PosterWorkflowStatus = "none" | "draft-only" | "published" | "published-with-newer-drafts";
 
 export async function getEventPosterWorkflowStatuses(

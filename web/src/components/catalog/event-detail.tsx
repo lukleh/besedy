@@ -72,6 +72,11 @@ interface EventDetailResponse {
       landscape: { bytes: number; sha256: string };
     };
   } | null;
+  latestDraftCandidate?: {
+    id: string;
+    label: string | null;
+    createdAt: string;
+  } | null;
 }
 
 export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showReleaseState }: EventDetailProps) {
@@ -160,30 +165,38 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const canManageSources = data.canManageSources ?? false;
   const publishedPoster = data.publishedPoster ?? null;
   const posterStatus = data.posterStatus ?? "none";
+  const latestDraftCandidate = data.latestDraftCandidate ?? null;
 
+  // The draft preview below already labels itself, so the badge only needs to
+  // cover the cases where there is nothing to show as an image.
   const posterStatusBadge = !canViewPosterCandidates ? null : publishedPoster ? (
     posterStatus === "published-with-newer-drafts" ? (
       <Badge variant="secondary" className="self-start">
         {t("newerDraftAvailable")}
       </Badge>
     ) : null
-  ) : posterStatus === "draft-only" ? (
-    <Badge variant="secondary" className="self-start">
-      {t("draftPosterAvailable")}
-    </Badge>
-  ) : (
+  ) : latestDraftCandidate ? null : (
     <Badge variant="outline" className="self-start">
       {tRoot("recording.noPoster")}
     </Badge>
   );
 
+  const posterAlt = data.title ?? t("eventFallbackTitle", { id: data.id });
   const posterPicture = publishedPoster ? (
-    <EventPosterPicture
-      catalogId={catalogId}
-      eventId={eventId}
-      posterId={publishedPoster.id}
-      alt={data.title ?? t("eventFallbackTitle", { id: data.id })}
-    />
+    <EventPosterPicture catalogId={catalogId} eventId={eventId} posterId={publishedPoster.id} alt={posterAlt} />
+  ) : canViewPosterCandidates && latestDraftCandidate ? (
+    <div className="relative">
+      <EventPosterPicture
+        catalogId={catalogId}
+        eventId={eventId}
+        posterId={latestDraftCandidate.id}
+        alt={posterAlt}
+        source="candidate"
+      />
+      <Badge variant="secondary" className="absolute left-3 top-3 shadow-sm">
+        {t("draftPosterAvailable")}
+      </Badge>
+    </div>
   ) : null;
 
   const eventHeaderActions = (

@@ -16,7 +16,11 @@ import {
 } from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { getEventPosterWorkflowStatuses, getPublishedEventPoster } from "@/lib/event-poster-service";
+import {
+  getEventPosterWorkflowStatuses,
+  getLatestEventPosterCandidate,
+  getPublishedEventPoster,
+} from "@/lib/event-poster-service";
 import {
   finalizeStagedEventPosterAssetsRemoval,
   restoreStagedEventPosterAssets,
@@ -121,6 +125,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // ADR 0009: draft counts/labels are only for actors with draft visibility;
     // ordinary readers keep seeing only the published poster.
     const posterStatus = canViewPosterCandidates ? (posterStatuses.get(eventId) ?? "none") : undefined;
+    // Admins with draft visibility get a labeled preview of the latest draft
+    // when nothing is published yet, instead of an empty poster area.
+    const latestDraftCandidate =
+      canViewPosterCandidates && posterStatus === "draft-only"
+        ? await getLatestEventPosterCandidate(catalogId, eventId)
+        : null;
 
     return NextResponse.json({
       id: event.id,
@@ -148,6 +158,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canManageSources,
       publishedPoster,
       posterStatus,
+      latestDraftCandidate,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog event", "fetch");
