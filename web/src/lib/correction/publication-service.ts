@@ -21,6 +21,7 @@ import {
 import { REQUIRED_APPROVALS, summarizeSpanDecisions } from "@/lib/correction/span-state";
 import { fingerprintContent } from "@/lib/correction/text";
 import { getActiveGuideRevisionId } from "@/lib/correction/guide";
+import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 export interface ManifestEntry {
   spanId: string;
@@ -53,9 +54,10 @@ interface WorkspaceEvaluation extends PublicationEligibility {
  * span that is unfinished or disputed — there is no adjudication in v1.
  */
 export async function evaluateWorkspace(
-  workspaceId: string
+  workspaceId: string,
+  client: Prisma.TransactionClient = prisma
 ): Promise<WorkspaceEvaluation> {
-  const spans = await prisma.transcriptSpan.findMany({
+  const spans = await client.transcriptSpan.findMany({
     where: { workspaceId },
     orderBy: { ordinal: "asc" },
     select: {
@@ -75,7 +77,7 @@ export async function evaluateWorkspace(
   const decisions =
     revisionIds.length === 0
       ? []
-      : await prisma.transcriptSpanDecision.findMany({
+      : await client.transcriptSpanDecision.findMany({
           where: { revisionId: { in: revisionIds } },
           select: { spanId: true, actorKey: true, kind: true, createdAt: true },
           orderBy: { createdAt: "asc" },
@@ -159,9 +161,10 @@ export async function getPublicationEligibility(
 
 async function manifestMatchesPublication(
   publicationId: string,
-  manifest: readonly ManifestEntry[]
+  manifest: readonly ManifestEntry[],
+  client: Prisma.TransactionClient = prisma
 ): Promise<boolean> {
-  const rows = await prisma.transcriptPublicationSpan.findMany({
+  const rows = await client.transcriptPublicationSpan.findMany({
     where: { publicationId },
     select: { spanId: true, revisionId: true },
   });
@@ -194,137 +197,139 @@ export interface PublishResult {
 export async function publishTranscript(
   input: PublishInput
 ): Promise<PublishResult> {
-  const workspace = await prisma.transcriptWorkspace.findFirst({
+  const existing = await prisma.transcriptWorkspace.findFirst({
     where: {
       workflowGroupId: input.catalogId,
       audioHash: input.audioHash,
       status: "ACTIVE",
     },
-    select: {
-      id: true,
-      workflowGroupId: true,
-      audioHash: true,
-      sourceBackend: true,
-      sourceFingerprint: true,
-      readerPublicationId: true,
-      searchPublicationId: true,
-    },
+    select: { id: true },
   });
 
-  if (!workspace) {
+  if (!existing) {
     throw new CorrectionError(
       "NO_WORKSPACE",
       "Correction has not been started for this recording"
     );
   }
 
-  await assertNoPublicationInFlight(workspace.id);
+  const guideRevisionId = await getActiveGuideRevisionId(input.catalogId);
 
-  const evaluation = await evaluateWorkspace(workspace.id);
-  if (!evaluation.eligible) {
-    throw new CorrectionError(
-      "NOT_ELIGIBLE_FOR_PUBLICATION",
-      "Every span needs two approvals and no objection before the transcript can be published",
-      {
-        spanCount: evaluation.spanCount,
-        doneSpanCount: evaluation.doneSpanCount,
-        blockedSpanCount: evaluation.blockedSpanCount,
+  // Everything that decides what this publication contains happens under the
+  // workspace lock and in one transaction: the eligibility recheck, the
+  // manifest and the pending row that locks out further writes. Splitting them
+  // let a decision land between the check and the snapshot, and let a crash
+  // leave a pending publication with no manifest holding the workspace shut.
+  const prepared = await prisma.$transaction(
+    async (tx) => {
+      await lockWorkspace(tx, existing.id);
+
+      const workspace = await tx.transcriptWorkspace.findUniqueOrThrow({
+        where: { id: existing.id },
+        select: {
+          id: true,
+          workflowGroupId: true,
+          audioHash: true,
+          sourceBackend: true,
+          readerPublicationId: true,
+          searchPublicationId: true,
+          publications: {
+            where: { status: { in: ["PENDING", "ACTIVATING"] } },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      });
+
+      if (workspace.publications.length > 0) {
+        throw new CorrectionError(
+          "PUBLICATION_IN_FLIGHT",
+          "A publication for this workspace is already running",
+          { publicationId: workspace.publications[0].id }
+        );
       }
-    );
-  }
 
-  // Restoring a reader pointer over text that has not moved renders and
-  // indexes nothing: the snapshot search already carries is the same one.
-  if (
-    workspace.searchPublicationId &&
-    (await manifestMatchesPublication(workspace.searchPublicationId, evaluation.manifest))
-  ) {
-    await prisma.transcriptWorkspace.update({
-      where: { id: workspace.id },
-      data: { readerPublicationId: workspace.searchPublicationId },
-    });
+      const evaluation = await evaluateWorkspace(workspace.id, tx);
+      if (!evaluation.eligible) {
+        throw new CorrectionError(
+          "NOT_ELIGIBLE_FOR_PUBLICATION",
+          "Every span needs two approvals and no objection before the transcript can be published",
+          {
+            spanCount: evaluation.spanCount,
+            doneSpanCount: evaluation.doneSpanCount,
+            blockedSpanCount: evaluation.blockedSpanCount,
+          }
+        );
+      }
+
+      // Restoring a reader pointer over text that has not moved renders and
+      // indexes nothing: the snapshot search already carries is the same one.
+      if (
+        workspace.searchPublicationId &&
+        (await manifestMatchesPublication(
+          workspace.searchPublicationId,
+          evaluation.manifest,
+          tx
+        ))
+      ) {
+        await tx.transcriptWorkspace.update({
+          where: { id: workspace.id },
+          data: { readerPublicationId: workspace.searchPublicationId },
+        });
+        return {
+          kind: "reused" as const,
+          publicationId: workspace.searchPublicationId,
+        };
+      }
+
+      const publication = await tx.transcriptPublication.create({
+        data: {
+          workspaceId: workspace.id,
+          workflowGroupId: workspace.workflowGroupId,
+          audioHash: workspace.audioHash,
+          status: "PENDING",
+          requiredApprovals: REQUIRED_APPROVALS,
+          guideRevisionId,
+          publishedById: input.userId,
+          spanCount: evaluation.manifest.length,
+          durationSeconds: evaluation.durationSeconds,
+          previousSourceKind: workspace.searchPublicationId ? "publication" : "machine",
+          previousSourceRef: workspace.searchPublicationId ?? workspace.sourceBackend,
+        },
+        select: { id: true },
+      });
+
+      await tx.transcriptPublicationSpan.createMany({
+        data: evaluation.manifest.map((entry) => ({
+          publicationId: publication.id,
+          spanId: entry.spanId,
+          revisionId: entry.revisionId,
+          ordinal: entry.ordinal,
+        })),
+      });
+
+      return { kind: "prepared" as const, publicationId: publication.id };
+    },
+    { maxWait: 10_000, timeout: 30_000 }
+  );
+
+  if (prepared.kind === "reused") {
     return {
-      publicationId: workspace.searchPublicationId,
+      publicationId: prepared.publicationId,
       status: "SUCCEEDED",
       reused: true,
     };
   }
 
-  const guideRevisionId = await getActiveGuideRevisionId(input.catalogId);
-
-  // The pending row is what locks the workspace, so the manifest is taken
-  // after it exists rather than before: a decision landing in between would
-  // otherwise be snapshotted from a workspace nobody was holding still.
-  let publicationId: string;
-  try {
-    const publication = await prisma.transcriptPublication.create({
-      data: {
-        workspaceId: workspace.id,
-        workflowGroupId: workspace.workflowGroupId,
-        audioHash: workspace.audioHash,
-        status: "PENDING",
-        requiredApprovals: REQUIRED_APPROVALS,
-        guideRevisionId,
-        publishedById: input.userId,
-        previousSourceKind: workspace.searchPublicationId ? "publication" : "machine",
-        previousSourceRef: workspace.searchPublicationId ?? workspace.sourceBackend,
-      },
-      select: { id: true },
-    });
-    publicationId = publication.id;
-  } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      throw new CorrectionError(
-        "PUBLICATION_IN_FLIGHT",
-        "A publication for this workspace is already running"
-      );
-    }
-    throw error;
-  }
-
-  const locked = await evaluateWorkspace(workspace.id);
-  if (!locked.eligible) {
-    // Nothing references an empty pending row, so withdrawing it leaves no
-    // trace of a publication that never had a manifest.
-    await prisma.transcriptPublication.delete({ where: { id: publicationId } });
-    throw new CorrectionError(
-      "NOT_ELIGIBLE_FOR_PUBLICATION",
-      "Every span needs two approvals and no objection before the transcript can be published",
-      {
-        spanCount: locked.spanCount,
-        doneSpanCount: locked.doneSpanCount,
-        blockedSpanCount: locked.blockedSpanCount,
-      }
-    );
-  }
-
-  await prisma.$transaction([
-    prisma.transcriptPublicationSpan.createMany({
-      data: locked.manifest.map((entry) => ({
-        publicationId,
-        spanId: entry.spanId,
-        revisionId: entry.revisionId,
-        ordinal: entry.ordinal,
-      })),
-    }),
-    prisma.transcriptPublication.update({
-      where: { id: publicationId },
-      data: {
-        spanCount: locked.manifest.length,
-        durationSeconds: locked.durationSeconds,
-      },
-    }),
-  ]);
-
-  const status = await runPublicationJob(publicationId);
-  return { publicationId, status, reused: false };
+  const status = await runPublicationJob(prepared.publicationId);
+  return { publicationId: prepared.publicationId, status, reused: false };
 }
 
-async function assertNoPublicationInFlight(workspaceId: string): Promise<void> {
-  const inFlight = await prisma.transcriptPublication.findFirst({
+async function assertNoPublicationInFlight(
+  workspaceId: string,
+  client: Prisma.TransactionClient = prisma
+): Promise<void> {
+  const inFlight = await client.transcriptPublication.findFirst({
     where: { workspaceId, status: { in: ["PENDING", "ACTIVATING"] } },
     select: { id: true },
   });
@@ -653,35 +658,58 @@ export interface UnpublishInput {
 export async function unpublishTranscript(
   input: UnpublishInput
 ): Promise<{ unpublished: boolean }> {
-  const workspace = await prisma.transcriptWorkspace.findFirst({
+  const existing = await prisma.transcriptWorkspace.findFirst({
     where: {
       workflowGroupId: input.catalogId,
       audioHash: input.audioHash,
       status: "ACTIVE",
     },
-    select: { id: true, readerPublicationId: true },
+    select: { id: true },
   });
 
-  if (!workspace) {
+  if (!existing) {
     throw new CorrectionError(
       "NO_WORKSPACE",
       "Correction has not been started for this recording"
     );
   }
-  if (!workspace.readerPublicationId) {
-    throw new CorrectionError(
-      "NOT_PUBLISHED",
-      "This transcript is not published"
-    );
-  }
 
-  // Serialized rather than cancelling: a publication finishing afterwards
-  // would otherwise move the reader pointer back and silently reverse this.
-  await assertNoPublicationInFlight(workspace.id);
+  await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, existing.id);
 
-  await prisma.transcriptWorkspace.update({
-    where: { id: workspace.id },
-    data: { readerPublicationId: null },
+    const workspace = await tx.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: existing.id },
+      select: {
+        readerPublicationId: true,
+        publications: {
+          where: { status: { in: ["PENDING", "ACTIVATING"] } },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+
+    if (!workspace.readerPublicationId) {
+      throw new CorrectionError(
+        "NOT_PUBLISHED",
+        "This transcript is not published"
+      );
+    }
+
+    // Serialized rather than cancelling: a publication finishing afterwards
+    // would otherwise move the reader pointer back and silently reverse this.
+    if (workspace.publications.length > 0) {
+      throw new CorrectionError(
+        "PUBLICATION_IN_FLIGHT",
+        "A publication for this workspace is already running",
+        { publicationId: workspace.publications[0].id }
+      );
+    }
+
+    await tx.transcriptWorkspace.update({
+      where: { id: existing.id },
+      data: { readerPublicationId: null },
+    });
   });
 
   return { unpublished: true };
@@ -701,18 +729,24 @@ export async function withdrawFromSearch(
 ): Promise<void> {
   const workspace = await prisma.transcriptWorkspace.findFirst({
     where: { workflowGroupId: catalogId, audioHash, status: "ACTIVE" },
-    select: { id: true, searchPublicationId: true },
+    select: { id: true },
   });
   if (!workspace) {
     throw new CorrectionError("NO_WORKSPACE", "Correction has not been started");
   }
 
-  await assertNoPublicationInFlight(workspace.id);
-  await removeIndexPointer(catalogId, audioHash);
-  await prisma.transcriptWorkspace.update({
-    where: { id: workspace.id },
-    data: { searchPublicationId: null, readerPublicationId: null },
+  await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspace.id);
+    await assertNoPublicationInFlight(workspace.id, tx);
+    await tx.transcriptWorkspace.update({
+      where: { id: workspace.id },
+      data: { searchPublicationId: null, readerPublicationId: null },
+    });
   });
+
+  // After the pointers are gone, so a crash between the two leaves search
+  // resolving a snapshot the database no longer offers rather than the reverse.
+  await removeIndexPointer(catalogId, audioHash);
 }
 
 /**

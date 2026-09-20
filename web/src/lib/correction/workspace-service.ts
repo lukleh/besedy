@@ -28,6 +28,7 @@ import {
   summarizeSpanDecisions,
   type SpanState,
 } from "@/lib/correction/span-state";
+import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 interface SpanDecisionRow {
   spanId: string;
@@ -550,44 +551,54 @@ export async function archiveWorkspace(
     );
   }
 
-  const workspace = await prisma.transcriptWorkspace.findFirst({
+  const existing = await prisma.transcriptWorkspace.findFirst({
     where: {
       workflowGroupId: input.catalogId,
       audioHash: input.audioHash,
       status: "ACTIVE",
     },
-    select: WORKSPACE_SELECT,
+    select: { id: true },
   });
 
-  if (!workspace) {
+  if (!existing) {
     throw new CorrectionError(
       "NO_WORKSPACE",
       "Correction has not been started for this recording"
     );
   }
-  if (workspace.publications.length > 0) {
-    throw new CorrectionError(
-      "WORKSPACE_LOCKED",
-      "A publication is in progress; it has to finish or be rolled back first",
-      { publicationId: workspace.publications[0].id }
-    );
-  }
-  if (workspace.readerPublicationId || workspace.searchPublicationId) {
-    throw new CorrectionError(
-      "PUBLICATION_ACTIVE",
-      "This workspace still backs a published transcript; unpublish it and withdraw it from search first"
-    );
-  }
 
-  const archived = await prisma.transcriptWorkspace.update({
-    where: { id: workspace.id },
-    data: {
-      status: "ARCHIVED",
-      archivedAt: new Date(),
-      archivedById: input.userId,
-      archiveReason: reason,
-    },
-    select: WORKSPACE_SELECT,
+  const archived = await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, existing.id);
+
+    const workspace = await tx.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: existing.id },
+      select: WORKSPACE_SELECT,
+    });
+
+    if (workspace.publications.length > 0) {
+      throw new CorrectionError(
+        "WORKSPACE_LOCKED",
+        "A publication is in progress; it has to finish or be rolled back first",
+        { publicationId: workspace.publications[0].id }
+      );
+    }
+    if (workspace.readerPublicationId || workspace.searchPublicationId) {
+      throw new CorrectionError(
+        "PUBLICATION_ACTIVE",
+        "This workspace still backs a published transcript; unpublish it and withdraw it from search first"
+      );
+    }
+
+    return tx.transcriptWorkspace.update({
+      where: { id: existing.id },
+      data: {
+        status: "ARCHIVED",
+        archivedAt: new Date(),
+        archivedById: input.userId,
+        archiveReason: reason,
+      },
+      select: WORKSPACE_SELECT,
+    });
   });
 
   return toSummary(archived);

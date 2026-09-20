@@ -11,6 +11,7 @@ import {
   summarizeSpanDecisions,
   type SpanState,
 } from "@/lib/correction/span-state";
+import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 export interface SpanCommandResult {
   spanId: string;
@@ -94,6 +95,9 @@ async function lockSpan(
 /**
  * A workspace locked by an in-flight publication takes no writes: a snapshot
  * is being materialized from exactly these revisions.
+ *
+ * Callers hold the workspace lock before asking, so the answer cannot go stale
+ * between the question and the write.
  */
 async function assertWorkspaceWritable(
   tx: TransactionClient,
@@ -210,6 +214,7 @@ export async function recordDecision(
       };
     }
 
+    await lockWorkspace(tx, command.workspaceId);
     await assertWorkspaceWritable(tx, command.workspaceId);
     const span = await lockSpan(tx, command);
 
@@ -261,6 +266,7 @@ export async function saveAndApprove(
       };
     }
 
+    await lockWorkspace(tx, command.workspaceId);
     await assertWorkspaceWritable(tx, command.workspaceId);
     const span = await lockSpan(tx, command);
 

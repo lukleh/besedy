@@ -330,6 +330,52 @@ async function main() {
   const progress = await computeProgress(workspace.id);
   check("progress is measured in audio", progress.fullyApprovedDurationSeconds === 12, progress);
 
+  // --- the publication lock ------------------------------------------------
+  // A disapproval racing a publish must not end with both succeeding: that is
+  // a disputed span inside a published snapshot. Either order is acceptable.
+  console.log("\nracing a decision against a publication");
+  const racedSpan = (await listSpans(workspace.id)).spans[0];
+  const [publishOutcome, decisionOutcome] = await Promise.allSettled([
+    publishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH, userId: alice.id }),
+    recordDecision({
+      workspaceId: workspace.id,
+      spanId: racedSpan.id,
+      userId: bob.id,
+      expectedRevisionId: racedSpan.revisionId,
+      kind: "DISAPPROVE",
+    }),
+  ]);
+
+  const publishWon = publishOutcome.status === "fulfilled";
+  const decisionWon = decisionOutcome.status === "fulfilled";
+  const disputedInSnapshot =
+    publishWon &&
+    decisionWon &&
+    (await prisma.transcriptPublicationSpan.count({
+      where: {
+        publicationId: publishOutcome.value.publicationId,
+        revisionId: racedSpan.revisionId,
+      },
+    })) > 0;
+  check(
+    "a disputed span is never inside a published snapshot",
+    !disputedInSnapshot,
+    { publishWon, decisionWon }
+  );
+
+  // Put the span back into an approved state for the rest of the run.
+  if (decisionWon) {
+    const current = (await listSpans(workspace.id)).spans[0];
+    await recordDecision({
+      workspaceId: workspace.id, spanId: current.id, userId: bob.id,
+      expectedRevisionId: current.revisionId, kind: "WITHDRAW",
+    });
+    await recordDecision({
+      workspaceId: workspace.id, spanId: current.id, userId: bob.id,
+      expectedRevisionId: current.revisionId, kind: "APPROVE",
+    });
+  }
+
   // --- publishing ----------------------------------------------------------
   console.log("\npublishing");
   const published = await publishTranscript({
