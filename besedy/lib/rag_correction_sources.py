@@ -8,7 +8,10 @@ for one catalog, and it is the only place that knows corrections exist.
 The web application owns the correction database, but an index build has no
 database. The two sides already share a filesystem, so the web application
 publishes the effective search source for an audio hash as a small pointer
-file, exactly as transcripts themselves are published as files. A pointer in
+file, exactly as transcripts themselves are published as files. The pointer
+carries the artifact's own SHA-256, not an index source fingerprint: those are
+different identities with different owners, and treating one as the other
+would look like verification while being a coincidence. A pointer in
 ``activating`` state is honoured as readily as an ``active`` one: during the
 window where a publication has written its artifacts but has not yet committed
 its database pointers, a routine sync must resolve the new text, or it would
@@ -27,7 +30,7 @@ from besedy.core.paths_runtime import resolve_corrections_root
 
 LOGGER = logging.getLogger(__name__)
 
-POINTER_SCHEMA_VERSION = 1
+POINTER_SCHEMA_VERSION = 2
 POINTER_DIR_NAME = "index-sources"
 ACTIVE_POINTER_STATES = frozenset({"activating", "active"})
 
@@ -43,7 +46,7 @@ class CorrectionIndexPointer:
     state: str
     backend: str
     transcript_path: Path
-    transcript_fingerprint: str
+    artifact_sha256: str
 
 
 @dataclass(frozen=True)
@@ -54,7 +57,7 @@ class EffectiveTranscriptSource:
     transcript_path: Path
     origin: str  # "machine" or "correction"
     publication_id: str | None = None
-    transcript_fingerprint: str | None = None
+    artifact_sha256: str | None = None
 
 
 def resolve_catalog_corrections_root(
@@ -103,8 +106,8 @@ def _parse_pointer(
 
     audio_hash = str(payload.get("audio_hash") or "")
     relative_path = str(payload.get("transcript_path") or "")
-    fingerprint = str(payload.get("transcript_fingerprint") or "")
-    if not audio_hash or not relative_path or not fingerprint:
+    artifact_sha256 = str(payload.get("artifact_sha256") or "")
+    if not audio_hash or not relative_path or not artifact_sha256:
         LOGGER.warning("Skipping incomplete correction pointer %s", path)
         return None
 
@@ -126,7 +129,7 @@ def _parse_pointer(
         state=state,
         backend=str(payload.get("backend") or ""),
         transcript_path=transcript_path,
-        transcript_fingerprint=fingerprint,
+        artifact_sha256=artifact_sha256,
     )
 
 
@@ -209,7 +212,7 @@ def resolve_effective_transcript_sources(
                 transcript_path=pointer.transcript_path,
                 origin="correction",
                 publication_id=pointer.publication_id,
-                transcript_fingerprint=pointer.transcript_fingerprint,
+                artifact_sha256=pointer.artifact_sha256,
             )
         )
 
@@ -222,7 +225,7 @@ def resolve_effective_transcript_sources(
                 transcript_path=pointer.transcript_path,
                 origin="correction",
                 publication_id=pointer.publication_id,
-                transcript_fingerprint=pointer.transcript_fingerprint,
+                artifact_sha256=pointer.artifact_sha256,
             )
         )
 

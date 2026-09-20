@@ -1180,8 +1180,14 @@ model TranscriptPublication {
   publishedById         String?                     @map("published_by")
   spanCount             Int                         @default(0) @map("span_count")
   durationSeconds       Float                       @default(0) @map("duration_seconds")
-  /// Content-derived fingerprint of the rendered transcript.json
-  transcriptFingerprint String?                     @map("transcript_fingerprint") @db.VarChar(64)
+  /// SHA-256 of the rendered transcript.json bytes. Artifact integrity, owned
+  /// by whoever wrote the file.
+  artifactSha256        String?                     @map("artifact_sha256") @db.VarChar(64)
+  /// The identity recorded in and verified against the active search bundle.
+  /// Derived from normalized segment timing and text by the indexer, not from
+  /// the artifact bytes, and therefore written by whoever activates the index.
+  /// Null until real index activation exists.
+  searchSourceFingerprint String?                   @map("search_source_fingerprint") @db.VarChar(64)
   /// Effective search source before this publication, for rollback
   previousSourceKind    String?                     @map("previous_source_kind") @db.VarChar(16)
   previousSourceRef     String?                     @map("previous_source_ref")

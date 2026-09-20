@@ -410,14 +410,14 @@ hash in whatever backend scope is being indexed.
 
 | Field | Meaning |
 |-------|---------|
-| `schema_version` | `1`. A pointer with an unknown version is ignored, not guessed at. |
+| `schema_version` | `2`. A pointer with an unknown version is ignored, not guessed at. |
 | `workflow_group_id` | Catalog. A pointer naming another catalog is ignored. |
 | `audio_hash` | The recording whose transcript this is. |
 | `workspace_id`, `publication_id` | Provenance for operators reading the tree. |
 | `state` | `activating` or `active`; any other value is ignored. |
 | `backend` | The machine backend the corrections descend from. Provenance only. |
 | `transcript_path` | Path to the published `transcript.json`, relative to the corrections root, so a differently mounted reader still resolves it. |
-| `transcript_fingerprint` | Content fingerprint of that file, which publication reconciliation checks against. |
+| `artifact_sha256` | SHA-256 of that file's bytes, which publication reconciliation checks against. Deliberately not the indexer's own source fingerprint, which is derived from segment timing and text: the two are different identities with different owners. |
 
 `activating` is honoured as readily as `active`. During the window where a
 publication has written its artifacts but has not yet committed its database

@@ -363,7 +363,8 @@ export async function runPublicationJob(
       workflowGroupId: true,
       audioHash: true,
       requiredApprovals: true,
-      transcriptFingerprint: true,
+      artifactSha256: true,
+      createdAt: true,
       workspace: {
         select: { id: true, sourceBackend: true, sourceFingerprint: true },
       },
@@ -407,7 +408,7 @@ export async function runPublicationJob(
     where: { id: publicationId },
     data: {
       status: "ACTIVATING",
-      transcriptFingerprint: fingerprint,
+      artifactSha256: fingerprint,
       activatingAt: new Date(),
     },
   });
@@ -421,7 +422,7 @@ export async function runPublicationJob(
     state: "activating",
     backend: publication.workspace.sourceBackend,
     transcript_path: relativeToCorrectionsRoot(jsonPath),
-    transcript_fingerprint: fingerprint,
+    artifact_sha256: fingerprint,
     updated_at: new Date().toISOString(),
   });
 
@@ -448,7 +449,7 @@ export async function reconcilePublication(
       workspaceId: true,
       workflowGroupId: true,
       audioHash: true,
-      transcriptFingerprint: true,
+      artifactSha256: true,
       workspace: { select: { sourceBackend: true } },
     },
   });
@@ -467,9 +468,12 @@ export async function reconcilePublication(
     );
   }
 
-  const expected = publication.transcriptFingerprint;
+  const expected = publication.artifactSha256;
   if (!expected) {
-    await failPublication(publicationId, new Error("Publication has no fingerprint"));
+    await failPublication(
+      publicationId,
+      new Error("Publication has no artifact hash to verify against")
+    );
     return "FAILED";
   }
 
@@ -478,7 +482,7 @@ export async function reconcilePublication(
     publication.audioHash
   );
 
-  if (!pointer || pointer.transcript_fingerprint !== expected) {
+  if (!pointer || pointer.artifact_sha256 !== expected) {
     const jsonPath = resolvePublicationFilePath(
       publication.workflowGroupId,
       publication.workspaceId,
@@ -494,14 +498,14 @@ export async function reconcilePublication(
       state: "activating",
       backend: publication.workspace.sourceBackend,
       transcript_path: relativeToCorrectionsRoot(jsonPath),
-      transcript_fingerprint: expected,
+      artifact_sha256: expected,
       updated_at: new Date().toISOString(),
     });
     pointer = await readIndexPointer(
       publication.workflowGroupId,
       publication.audioHash
     );
-    if (!pointer || pointer.transcript_fingerprint !== expected) {
+    if (!pointer || pointer.artifact_sha256 !== expected) {
       return "ACTIVATING";
     }
   }
@@ -550,6 +554,7 @@ interface MaterializeTarget {
   workflowGroupId: string;
   audioHash: string;
   requiredApprovals: number;
+  createdAt: Date;
   workspace: { sourceBackend: string; sourceFingerprint: string };
 }
 
@@ -597,7 +602,10 @@ async function materializeArtifacts(
       workspace_id: publication.workspaceId,
       publication_id: publication.id,
       source_fingerprint: publication.workspace.sourceFingerprint,
-      published_at: new Date().toISOString(),
+      // The publication's own timestamp, not the moment of rendering, so
+      // re-materializing the same manifest produces the same bytes and the
+      // artifact hash is a content identity rather than a clock reading.
+      published_at: publication.createdAt.toISOString(),
       required_approvals: publication.requiredApprovals,
     },
   });
@@ -784,9 +792,9 @@ export async function rollbackPublication(
   if (publication.previousSourceKind === "publication" && publication.previousSourceRef) {
     const previous = await prisma.transcriptPublication.findUnique({
       where: { id: publication.previousSourceRef },
-      select: { id: true, workspaceId: true, transcriptFingerprint: true },
+      select: { id: true, workspaceId: true, artifactSha256: true },
     });
-    if (previous?.transcriptFingerprint) {
+    if (previous?.artifactSha256) {
       await writeIndexPointer({
         schema_version: INDEX_POINTER_SCHEMA_VERSION,
         workflow_group_id: publication.workflowGroupId,
@@ -803,7 +811,7 @@ export async function rollbackPublication(
             "json"
           )
         ),
-        transcript_fingerprint: previous.transcriptFingerprint,
+        artifact_sha256: previous.artifactSha256,
         updated_at: new Date().toISOString(),
       });
     }
@@ -823,7 +831,7 @@ export interface PublicationView {
   spanCount: number;
   durationSeconds: number;
   publishedById: string | null;
-  transcriptFingerprint: string | null;
+  artifactSha256: string | null;
   createdAt: Date;
   finishedAt: Date | null;
   errorCode: string | null;
@@ -851,7 +859,7 @@ export async function listPublications(
         spanCount: true,
         durationSeconds: true,
         publishedById: true,
-        transcriptFingerprint: true,
+        artifactSha256: true,
         createdAt: true,
         finishedAt: true,
         errorCode: true,

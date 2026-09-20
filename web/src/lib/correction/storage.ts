@@ -8,7 +8,7 @@ const SHARED_DIR_MODE = 0o2770;
 const SHARED_FILE_MODE = 0o660;
 
 /** Bumped when the on-disk pointer contract changes for the Python indexer. */
-export const INDEX_POINTER_SCHEMA_VERSION = 1;
+export const INDEX_POINTER_SCHEMA_VERSION = 2;
 
 export type IndexPointerState = "activating" | "active";
 
@@ -32,7 +32,9 @@ export interface CorrectionIndexPointer {
   backend: string;
   /// Path to the published transcript.json, relative to the corrections root
   transcript_path: string;
-  transcript_fingerprint: string;
+  /// SHA-256 of that file's bytes. Deliberately not the indexer's own source
+  /// fingerprint, which is derived from segment timing and text.
+  artifact_sha256: string;
   updated_at: string;
 }
 

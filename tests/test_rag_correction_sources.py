@@ -73,7 +73,7 @@ def _write_pointer(
                 "state": state,
                 "backend": BACKEND,
                 "transcript_path": transcript_rel,
-                "transcript_fingerprint": "f" * 64,
+                "artifact_sha256": "f" * 64,
                 "updated_at": "2026-09-20T00:00:00.000Z",
             }
         ),
