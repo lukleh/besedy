@@ -58,8 +58,8 @@ export function CatalogAccessEntityCard({ access }: { access: RelatedCatalogAcce
             <span>{access.catalog.label || access.catalog.id}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">{t("accessLevel")}</span>
-            <Badge variant="outline">{access.accessLevel}</Badge>
+            <span className="text-muted-foreground">{t("role")}</span>
+            <Badge variant="outline">{access.role}</Badge>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("granted")}</span>
@@ -193,8 +193,8 @@ export function PendingCatalogGrantEntityCard({
 
         <div className="grid gap-2 text-sm">
           <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Access level</span>
-            <Badge variant="outline">{grant.accessLevel}</Badge>
+            <span className="text-muted-foreground">Role</span>
+            <Badge variant="outline">{grant.role}</Badge>
           </div>
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">Granted</span>

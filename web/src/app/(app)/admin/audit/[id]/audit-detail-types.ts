@@ -20,7 +20,7 @@ export interface RelatedUser {
   catalogAccess?: Array<{
     id: string;
     catalogId: string;
-    accessLevel: string;
+    role: string | null;
     catalog: { id: string; label: string | null };
   }>;
 }
@@ -62,7 +62,7 @@ export interface RelatedCatalog {
 
 export interface RelatedCatalogAccess {
   id: string;
-  accessLevel: string;
+  role: string | null;
   status: string;
   createdAt: string;
   revokedAt: string | null;
@@ -90,7 +90,7 @@ export interface RelatedPendingCatalogGrant {
   id: string;
   email: string;
   catalogId: string;
-  accessLevel: string;
+  role: string | null;
   status: string;
   grantedAt: string;
   consumedAt: string | null;

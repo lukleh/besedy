@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   applyFilters,
   extractDateParts,
@@ -294,8 +294,8 @@ describe("scopeCatalogEntriesForAccess", () => {
     createEntry({ hash: "incomplete", isActionable: false, isPublished: true }),
   ];
 
-  it("keeps all entries for non-listener access", () => {
-    expect(scopeCatalogEntriesForAccess(entries, grantFromLevel("VIEWER")).map((entry) => entry.hash)).toEqual([
+  it("keeps all entries for an actor who can see unreleased material", () => {
+    expect(scopeCatalogEntriesForAccess(entries, grantForRole("curator")).map((entry) => entry.hash)).toEqual([
       "published",
       "draft",
       "incomplete",
@@ -303,7 +303,13 @@ describe("scopeCatalogEntriesForAccess", () => {
   });
 
   it("keeps only listener-visible entries for listener access", () => {
-    expect(scopeCatalogEntriesForAccess(entries, grantFromLevel("LISTENER")).map((entry) => entry.hash)).toEqual([
+    expect(scopeCatalogEntriesForAccess(entries, grantForRole("listener")).map((entry) => entry.hash)).toEqual([
+      "published",
+    ]);
+  });
+
+  it("scopes an ordinary reader the same as a listener, since neither sees unreleased material", () => {
+    expect(scopeCatalogEntriesForAccess(entries, grantForRole("reader")).map((entry) => entry.hash)).toEqual([
       "published",
     ]);
   });

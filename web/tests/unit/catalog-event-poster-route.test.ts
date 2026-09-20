@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getPublishedPoster } from "@/app/api/catalogs/[id]/events/[eventId]/poster/route";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   GET as listPosterCandidates,
   POST as createPosterCandidate,
@@ -76,7 +76,7 @@ describe("catalog event poster routes", () => {
     unpublishEventPoster = service.unpublishEventPoster as ReturnType<typeof vi.fn>;
 
     requireCatalogEventsAccess.mockResolvedValue({
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("host"),
     });
     requireEventPosterAccess.mockResolvedValue({ userId: "owner-1" });
     isPublishedVisibleEvent.mockResolvedValue(true);
@@ -119,7 +119,7 @@ describe("catalog event poster routes", () => {
 
   it("does not reveal a poster attached to an unreleased event to listeners", async () => {
     requireCatalogEventsAccess.mockResolvedValue({
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     isPublishedVisibleEvent.mockResolvedValue(false);
 

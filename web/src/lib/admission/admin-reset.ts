@@ -13,7 +13,7 @@ export interface PortalAdmissionResetResult {
   pendingGrantCount: number;
   reopenedGrants: Array<{
     catalogId: string;
-    accessLevel: string;
+    role: string | null;
   }>;
 }
 
@@ -82,7 +82,7 @@ export async function resetClaimedPortalAdmission(
       },
       select: {
         catalogId: true,
-        accessLevel: true,
+        role: true,
         grantedById: true,
         grantedAt: true,
         notes: true,
@@ -124,7 +124,7 @@ export async function resetClaimedPortalAdmission(
       pendingGrantCount: consumedGrants.length,
       reopenedGrants: consumedGrants.map((grant) => ({
         catalogId: grant.catalogId,
-        accessLevel: grant.accessLevel,
+        role: grant.role,
       })),
     };
   });

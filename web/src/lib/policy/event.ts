@@ -1,4 +1,3 @@
-import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
@@ -6,8 +5,6 @@ import {
   hasCatalogPermission,
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
-
-export const EVENTS_VIEW_ACCESS_LEVEL: AccessLevel = "LISTENER";
 
 export interface EventFeaturePolicyContext extends CatalogPolicyContext {
   featureEnabled: boolean;

@@ -265,7 +265,7 @@ export const auth = betterAuth({
                 portalAdmissionId: string | null;
                 grants: Array<{
                   catalogId: string;
-                  accessLevel: string;
+                  role: string | null;
                   grantedById: string | null;
                   notes: string | null;
                 }>;
@@ -313,7 +313,7 @@ export const auth = betterAuth({
               portalAdmissionId: claim.portalAdmissionId,
               pendingGrantCount: claim.grants.length,
               catalogId: primaryGrant?.catalogId ?? null,
-              accessLevel: primaryGrant?.accessLevel ?? null,
+              role: primaryGrant?.role ?? null,
               grants: claim.grants,
             },
           }).catch((err) => console.error("[auth] Failed to log portal admission claim:", err));

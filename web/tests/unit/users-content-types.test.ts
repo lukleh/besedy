@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccessLevel, CatalogRole, UserStatus } from "@/generated/prisma/enums";
+import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import {
   getPendingPortalAdmissionMutationPath,
   getUserInitials,
@@ -33,7 +33,6 @@ const basePendingAdmission: PendingPortalAdmission = {
     {
       catalogId: "catalog-1",
       catalogLabel: "Catalog One",
-      accessLevel: AccessLevel.VIEWER,
       role: CatalogRole.reader,
       extraPermissions: [],
       grantedAt: "2026-03-10T00:00:00.000Z",

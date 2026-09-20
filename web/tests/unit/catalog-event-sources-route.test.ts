@@ -55,7 +55,6 @@ describe("catalog event sources route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "viewer-1",
-      accessLevel: "VIEWER",
     });
     requireCatalogManagementAccess.mockResolvedValue({
       ok: false,

@@ -19,12 +19,9 @@ import { Label } from "@/components/ui/label";
 import { AccessFormFields } from "@/components/catalog/access-form-fields";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
-import { AccessLevel, CatalogRole } from "@/generated/prisma/enums";
+import { CatalogRole } from "@/generated/prisma/enums";
 import { fetchJson } from "@/lib/api/fetch-json";
-import {
-  roleForLevel,
-  type GrantableExtraPermission,
-} from "@/lib/policy/catalog-permissions";
+import type { GrantableExtraPermission } from "@/lib/policy/catalog-permissions";
 
 interface UserSearchResult {
   id: string;
@@ -32,8 +29,6 @@ interface UserSearchResult {
   email: string | null;
   image: string | null;
   type: "active" | "available" | "revoked";
-  currentAccessLevel?: AccessLevel;
-  previousAccessLevel?: AccessLevel;
   currentRole?: CatalogRole | null;
   previousRole?: CatalogRole | null;
   extraPermissions?: string[];
@@ -186,14 +181,10 @@ export function GrantAccessDialog({
       image: user.image,
       currentAccessLabel: user.currentRole
         ? t(`catalogRoles.${user.currentRole}`)
-        : user.currentAccessLevel
-          ? t(`accessLevels.${user.currentAccessLevel.toLowerCase()}`)
-          : undefined,
+        : undefined,
       previousAccessLabel: user.previousRole
         ? t(`catalogRoles.${user.previousRole}`)
-        : user.previousAccessLevel
-          ? t(`accessLevels.${user.previousAccessLevel.toLowerCase()}`)
-          : undefined,
+        : undefined,
     })
   );
 
@@ -203,11 +194,7 @@ export function GrantAccessDialog({
       setSelectedUserId(user.id);
       setSelectedUser(user);
       setUserName(user.name || "");
-      const legacyLevel =
-        user.currentAccessLevel || user.previousAccessLevel || "LISTENER";
-      setRole(
-        user.currentRole ?? user.previousRole ?? roleForLevel(legacyLevel).role
-      );
+      setRole(user.currentRole ?? user.previousRole ?? "listener");
       setExtraPermissions(
         (user.extraPermissions ?? []).filter((permission) =>
           grantableExtraPermissions.includes(
@@ -399,29 +386,17 @@ export function GrantAccessDialog({
                                 "—",
                             })}
                   </p>
-                  {selectedUser?.type === "active" && (
+                  {selectedUser?.type === "active" && selectedUser.currentRole && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t("dialogs.grantAccess.currentLevel", {
-                        level: selectedUser.currentRole
-                          ? t(`catalogRoles.${selectedUser.currentRole}`)
-                          : t(
-                              `accessLevels.${(
-                                selectedUser.currentAccessLevel ?? "LISTENER"
-                              ).toLowerCase()}`
-                            ),
+                        level: t(`catalogRoles.${selectedUser.currentRole}`),
                       })}
                     </p>
                   )}
-                  {selectedUser?.type === "revoked" && (
+                  {selectedUser?.type === "revoked" && selectedUser.previousRole && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {t("dialogs.grantAccess.previousLevel", {
-                        level: selectedUser.previousRole
-                          ? t(`catalogRoles.${selectedUser.previousRole}`)
-                          : t(
-                              `accessLevels.${(
-                                selectedUser.previousAccessLevel ?? "LISTENER"
-                              ).toLowerCase()}`
-                            ),
+                        level: t(`catalogRoles.${selectedUser.previousRole}`),
                       })}
                     </p>
                   )}

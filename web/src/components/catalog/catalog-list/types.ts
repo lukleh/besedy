@@ -65,7 +65,6 @@ export interface CatalogResponse {
   canSeeUnreleased?: boolean;
   canPublishRecording?: boolean;
   canUseRagSearch?: boolean;
-  accessLevel?: string;
 }
 
 const metadataRecorderSchema = z.object({
@@ -151,7 +150,6 @@ export const catalogResponseSchema = z.object({
   canSeeUnreleased: z.boolean().optional(),
   canPublishRecording: z.boolean().optional(),
   canUseRagSearch: z.boolean().optional(),
-  accessLevel: z.string().optional(),
 });
 
 export type StatusFilter = "all" | "ready" | "incomplete";

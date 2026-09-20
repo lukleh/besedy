@@ -31,7 +31,8 @@ export function getInitials(name: string | null, email: string | null): string {
 
 interface AuditGrantDetailItem {
   catalogId: string;
-  accessLevel: string;
+  /** The retired access level (older records) or the role (current ones). */
+  label: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -53,13 +54,13 @@ function getGrantDetailItems(value: unknown): AuditGrantDetailItem[] {
     }
 
     const catalogId = getStringValue(entry.catalogId);
-    const accessLevel = getStringValue(entry.accessLevel);
+    const label = getStringValue(entry.accessLevel) ?? getStringValue(entry.role);
 
-    if (!catalogId || !accessLevel) {
+    if (!catalogId || !label) {
       return [];
     }
 
-    return [{ catalogId, accessLevel }];
+    return [{ catalogId, label }];
   });
 }
 
@@ -151,13 +152,13 @@ export function AuditGrantDetailsSummary({
             <div className="space-y-2">
               {section.grants.map((grant) => (
                 <div
-                  key={`${section.key}:${grant.catalogId}:${grant.accessLevel}`}
+                  key={`${section.key}:${grant.catalogId}:${grant.label}`}
                   className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
                 >
                   <span className="font-mono text-xs sm:text-sm">
                     {grant.catalogId}
                   </span>
-                  <Badge variant="outline">{grant.accessLevel}</Badge>
+                  <Badge variant="outline">{grant.label}</Badge>
                 </div>
               ))}
             </div>

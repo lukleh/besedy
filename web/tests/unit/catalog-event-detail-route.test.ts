@@ -4,7 +4,7 @@ import {
   DELETE as deleteCatalogEvent,
   GET as getCatalogEvent,
 } from "@/app/api/catalogs/[id]/events/[eventId]/route";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -110,8 +110,7 @@ describe("catalog event detail route", () => {
     ).mockResolvedValue([]);
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
     });
     getCatalogCapability.mockResolvedValue({
       canManageAccess: false,
@@ -150,7 +149,7 @@ describe("catalog event detail route", () => {
     prisma.catalogEvent.deleteMany.mockResolvedValue({ count: 1 });
   });
 
-  it("keeps draft event details accessible for owners", async () => {
+  it("keeps draft event details accessible for curators", async () => {
     const response = await getCatalogEvent(
       new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}`),
       { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
@@ -211,8 +210,7 @@ describe("catalog event detail route", () => {
   it("returns 404 for listener access when the event is not published-visible", async () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     isPublishedVisibleEvent.mockResolvedValue(false);
 
@@ -228,8 +226,7 @@ describe("catalog event detail route", () => {
   it("filters unpublished recordings out of the response for listeners", async () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     prisma.catalogEvent.findFirst.mockResolvedValue({
       id: eventId,

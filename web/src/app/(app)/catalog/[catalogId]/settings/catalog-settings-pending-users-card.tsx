@@ -49,7 +49,7 @@ export function CatalogSettingsPendingUsersCard({
     pendingUsersData?.pendingUsers.filter(
       (user) =>
         (roleFilter === "all" ||
-          resolvedCatalogRole(user.role, user.accessLevel) === roleFilter) &&
+          resolvedCatalogRole(user.role) === roleFilter) &&
         (!search || user.email.toLowerCase().includes(search.toLowerCase()))
     ) ?? [];
 
@@ -80,10 +80,7 @@ export function CatalogSettingsPendingUsersCard({
           </TableHeader>
           <TableBody>
             {filteredPendingUsers.map((pendingUser) => {
-              const role = resolvedCatalogRole(
-                pendingUser.role,
-                pendingUser.accessLevel
-              );
+              const role = resolvedCatalogRole(pendingUser.role);
               return (
                 <TableRow key={pendingUser.id}>
                   <TableCell>

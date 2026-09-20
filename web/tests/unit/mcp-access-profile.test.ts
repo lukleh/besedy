@@ -44,8 +44,8 @@ describe('MCP access profile', () => {
       canEnterPortal: true,
     });
     vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([
-      { catalogId: 'catalog-listener', accessLevel: 'LISTENER' },
-      { catalogId: 'catalog-viewer', accessLevel: 'VIEWER' },
+      { catalogId: 'catalog-listener' },
+      { catalogId: 'catalog-viewer' },
     ]);
     vi.mocked(getUserFeaturePreferences).mockResolvedValue({
       activeGroupId: 'catalog-viewer',
@@ -153,7 +153,7 @@ describe('MCP access profile', () => {
       canEnterPortal: true,
     });
     vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([
-      { catalogId: 'catalog-listener', accessLevel: 'OWNER' },
+      { catalogId: 'catalog-listener' },
     ]);
     prisma.workflowGroup.findMany.mockResolvedValue([
       { id: 'catalog-listener', label: 'Admin catalog', isDefault: true },

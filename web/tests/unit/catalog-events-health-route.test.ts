@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "@/app/api/catalogs/[id]/events/health/route";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -26,12 +26,11 @@ describe("catalog events health route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
-      accessLevel: "OWNER",
       policyContext: {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: false,
       },
     });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   MAX_PER_AUDIO_LIMIT,
   SearchRequestSchema,
@@ -76,7 +76,7 @@ describe("catalog search route helpers", () => {
   });
 
   it("restricts allowed recording hashes to linked events", () => {
-    const query = buildAllowedAudioHashesQuery("catalog-a", ["audio-a", "audio-b"], grantFromLevel("VIEWER"), {
+    const query = buildAllowedAudioHashesQuery("catalog-a", ["audio-a", "audio-b"], grantForRole("reader"), {
       eventIds: [42, 57],
     });
     const sql = query?.strings.join(" ? ") ?? "";
@@ -91,7 +91,7 @@ describe("catalog search route helpers", () => {
   });
 
   it("restricts listener search to recordings under visible released events", () => {
-    const query = buildEligibleAudioHashesQuery("catalog-a", grantFromLevel("LISTENER"), null);
+    const query = buildEligibleAudioHashesQuery("catalog-a", grantForRole("listener"), null);
     const sql = query.strings.join(" ? ");
 
     expect(sql).toContain("INNER JOIN catalog_event_recording event_recording");
@@ -104,7 +104,7 @@ describe("catalog search route helpers", () => {
   });
 
   it("builds a complete eligible-recording query with the same metadata filters", () => {
-    const query = buildEligibleAudioHashesQuery("catalog-a", grantFromLevel("LISTENER"), {
+    const query = buildEligibleAudioHashesQuery("catalog-a", grantForRole("listener"), {
       eventIds: [42],
       locationIds: [7],
       recorderIds: [3],
@@ -226,9 +226,9 @@ describe("catalog search route helpers", () => {
   });
 
   it("overfetches ColBERT when results will be post-filtered", () => {
-    expect(shouldOverfetchColbertResults(grantFromLevel("LISTENER"), null)).toBe(true);
+    expect(shouldOverfetchColbertResults(grantForRole("listener"), null)).toBe(true);
     expect(shouldOverfetchColbertResults(null, { verified: true })).toBe(true);
-    expect(shouldOverfetchColbertResults(grantFromLevel("EDITOR"), null)).toBe(false);
+    expect(shouldOverfetchColbertResults(grantForRole("curator"), null)).toBe(false);
     expect(resolveColbertFetchLimit(200)).toBe(800);
   });
 

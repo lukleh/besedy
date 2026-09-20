@@ -13,7 +13,6 @@ import {
   canEditEvent,
   canReleaseEvent,
   canSetPrimaryRecording,
-  EVENTS_VIEW_ACCESS_LEVEL,
   type EventFeaturePolicyContext,
 } from "@/lib/policy/event";
 
@@ -61,7 +60,7 @@ function isAllowedForCatalogEventsMode(
 function deniedMessageForCatalogEventsMode(mode: CatalogEventsAccessMode): string {
   switch (mode) {
     case "view":
-      return `Catalog access required: ${EVENTS_VIEW_ACCESS_LEVEL} or higher`;
+      return "Catalog access required";
     case "edit":
       return "Owner or admin access required for event edit operations";
     case "release_event":

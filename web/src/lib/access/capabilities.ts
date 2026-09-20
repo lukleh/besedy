@@ -1,4 +1,4 @@
-import { AccessLevel, UserStatus } from "@/generated/prisma/client";
+import { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import {
   listUserCatalogAccessEntries,
@@ -66,7 +66,6 @@ export interface CatalogCapability extends PortalCapability {
   catalogId: string;
   catalogExists: boolean;
   catalogGrant: CatalogGrant | null;
-  accessLevel: AccessLevel | null;
   isCatalogAdmin: boolean;
   hasAccess: boolean;
   canViewCatalog: boolean;
@@ -111,7 +110,6 @@ export function buildCatalogCapability(
   catalogId: string,
   catalogExists: boolean,
   catalogGrant: CatalogGrant | null,
-  accessLevel: AccessLevel | null,
   isCatalogAdmin: boolean
 ): CatalogCapability {
   const policyContext: CatalogPolicyContext = {
@@ -126,7 +124,6 @@ export function buildCatalogCapability(
     catalogId,
     catalogExists,
     catalogGrant,
-    accessLevel,
     isCatalogAdmin,
     hasAccess: hasCatalogAccess(policyContext),
     canViewCatalog: canViewCatalog(policyContext),
@@ -227,17 +224,11 @@ export async function getCatalogCapability(
     canEnterPortal: actor.canEnterPortal,
   };
 
-  // The level still names the grant for payloads and badges; permissions no
-  // longer come from it.
-  const accessLevel =
-    actor.catalogGrant?.level ?? (actor.isCatalogAdmin ? "OWNER" : null);
-
   return buildCatalogCapability(
     portal,
     catalogId,
     actor.catalogExists,
     actor.catalogGrant,
-    accessLevel,
     actor.isCatalogAdmin
   );
 }

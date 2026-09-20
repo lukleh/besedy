@@ -79,7 +79,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       select: {
         id: true,
         userId: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         status: true,
@@ -115,14 +114,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         canManage:
           !isSelfCatalogAccessChange(userId, grant.userId) &&
           canManageExistingCatalogGrant(managementAccess.policyContext, {
-            level: grant.accessLevel,
             role: grant.role,
             extras: grant.extraPermissions,
           }),
         canRevoke:
           !isSelfCatalogAccessChange(userId, grant.userId) &&
           canRevokeExistingCatalogGrant(managementAccess.policyContext, {
-            level: grant.accessLevel,
             role: grant.role,
             extras: grant.extraPermissions,
           }),
@@ -233,7 +230,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       if (
         !canManageExistingCatalogGrant(managementAccess.policyContext, {
-          level: existingAccess.accessLevel,
           role: existingAccess.role,
           extras: existingAccess.extraPermissions,
         })
@@ -305,7 +301,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       targetEmail: targetUser.email,
       catalogId,
       catalogLabel: catalog.label,
-      accessLevel: grantedAccess.accessLevel,
+      role: grantedAccess.role,
       details: {
         targetUserId: userId,
         targetEmail: targetUser.email,

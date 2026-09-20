@@ -116,7 +116,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (
       !canManageExistingCatalogGrant(managementAccess.policyContext, {
-        level: existingAccess.accessLevel,
         role: existingAccess.role,
         extras: existingAccess.extraPermissions,
       })
@@ -167,7 +166,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       targetUserId,
       targetEmail: existingAccess.user.email,
       catalogId,
-      accessLevel: updatedAccess.accessLevel,
+      role: updatedAccess.role,
       details: {
         targetUserId,
         targetEmail: existingAccess.user.email,
@@ -244,7 +243,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Only administrators may restore protected access.
     if (
       !canManageExistingCatalogGrant(managementAccess.policyContext, {
-        level: existingAccess.accessLevel,
         role: existingAccess.role,
         extras: existingAccess.extraPermissions,
       })
@@ -283,7 +281,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       targetUserId,
       targetEmail: existingAccess.user.email,
       catalogId,
-      accessLevel: existingAccess.accessLevel,
+      role: existingAccess.role,
       details: {
         targetUserId,
         targetEmail: existingAccess.user.email,
@@ -358,7 +356,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     // Only administrators may revoke protected access.
     if (
       !canRevokeExistingCatalogGrant(managementAccess.policyContext, {
-        level: existingAccess.accessLevel,
         role: existingAccess.role,
         extras: existingAccess.extraPermissions,
       })
@@ -392,7 +389,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       targetUserId,
       targetEmail: existingAccess.user.email,
       catalogId,
-      accessLevel: existingAccess.accessLevel,
+      role: existingAccess.role,
       details: {
         targetUserId,
         targetEmail: existingAccess.user.email,

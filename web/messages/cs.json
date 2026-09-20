@@ -1110,6 +1110,7 @@
         "active": "Aktivní",
         "inactive": "Neaktivní",
         "accessLevel": "Úroveň přístupu",
+        "role": "Role",
         "consumed": "Spotřebováno",
         "granted": "Uděleno",
         "revoked": "Odebráno",

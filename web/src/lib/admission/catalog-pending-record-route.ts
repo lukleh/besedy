@@ -20,7 +20,6 @@ import {
   CatalogRoleSchema,
   GrantableExtraPermissionSchema,
 } from "@/lib/validation/schemas";
-import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 import {
   canAttemptCatalogManagement,
   canGrantCatalogGrant,
@@ -70,7 +69,6 @@ export async function deletePendingCatalogRecord(
       select: {
         email: true,
         catalogId: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         grantedById: true,
@@ -85,7 +83,6 @@ export async function deletePendingCatalogRecord(
 
     if (
       !canManageExistingCatalogGrant(managementAccess.policyContext, {
-        level: pendingGrant.accessLevel,
         role: pendingGrant.role,
         extras: pendingGrant.extraPermissions,
       })
@@ -118,7 +115,7 @@ export async function deletePendingCatalogRecord(
       resourceId: `${pendingGrant.email}:${catalogId}`,
       email: pendingGrant.email,
       catalogId: pendingGrant.catalogId,
-      accessLevel: pendingGrant.accessLevel,
+      role: pendingGrant.role,
       details: {
         email: pendingGrant.email,
         catalogId: pendingGrant.catalogId,
@@ -176,7 +173,6 @@ export async function updatePendingCatalogRecord(
       select: {
         email: true,
         catalogId: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         grantedById: true,
@@ -203,7 +199,6 @@ export async function updatePendingCatalogRecord(
 
     if (
       !canManageExistingCatalogGrant(managementAccess.policyContext, {
-        level: pendingGrant.accessLevel,
         role: pendingGrant.role,
         extras: pendingGrant.extraPermissions,
       })
@@ -239,7 +234,7 @@ export async function updatePendingCatalogRecord(
       resourceId: `${pendingGrant.email}:${catalogId}`,
       email: pendingGrant.email,
       catalogId,
-      accessLevel: grantFieldsForRole(role, extraPermissions).accessLevel,
+      role,
       details: {
         email: pendingGrant.email,
         catalogId,

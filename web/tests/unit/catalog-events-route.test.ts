@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogEvents } from "@/app/api/catalog-events/route";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -85,8 +85,7 @@ describe("catalog events route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([7]);
     getEventPosterWorkflowStatuses.mockResolvedValue(new Map([[7, "draft-only"]]));
@@ -139,7 +138,7 @@ describe("catalog events route", () => {
     prisma.recordingPlaybackProgress.findMany.mockResolvedValue([]);
   });
 
-  it("keeps draft events visible for owner listings", async () => {
+  it("keeps draft events visible for curator listings", async () => {
     const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
 
     expect(response.status).toBe(200);
@@ -176,8 +175,7 @@ describe("catalog events route", () => {
   it("limits listener listings to published-visible event ids", async () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     canViewEventPosterCandidates.mockReturnValue(false);
 

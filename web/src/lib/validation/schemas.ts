@@ -112,18 +112,6 @@ export const CatalogUserParamSchema = z.object({
 // Access Control
 // =============================================================================
 
-/**
- * Catalog access levels (hierarchical)
- */
-export const AccessLevelSchema = z.enum([
-  "LISTENER",
-  "VIEWER",
-  "MEMBER",
-  "EDITOR",
-  "OWNER",
-]);
-export type AccessLevel = z.infer<typeof AccessLevelSchema>;
-
 export const CatalogRoleSchema = z.enum(CATALOG_ROLES);
 export type CatalogRole = z.infer<typeof CatalogRoleSchema>;
 

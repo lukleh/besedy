@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth/permissions")>();
@@ -57,7 +57,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
       isCatalogAdmin: false,
     });
     isFeatureEnabledForUser.mockReturnValue(true);
@@ -108,7 +108,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: false,
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("host"),
       isCatalogAdmin: false,
     });
     isFeatureEnabledForUser.mockReturnValue(false);
@@ -130,7 +130,7 @@ describe("requireCatalogEventsAccess", () => {
 
     await expect(requireCatalogEventsAccess(catalogId, "view")).rejects.toMatchObject({
       name: "AuthError",
-      message: "Catalog access required: LISTENER or higher",
+      message: "Catalog access required",
       statusCode: 403,
     });
   });
@@ -139,7 +139,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
       isCatalogAdmin: false,
     });
 
@@ -147,12 +147,12 @@ describe("requireCatalogEventsAccess", () => {
 
     expect(result).toMatchObject({
       userId: "user-1",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
       policyContext: {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("LISTENER"),
+        catalogGrant: grantForRole("listener"),
         isCatalogAdmin: false,
       },
     });
@@ -166,22 +166,22 @@ describe("requireCatalogEventsAccess", () => {
     });
   });
 
-  it("allows owners to edit events when the feature is enabled", async () => {
+  it("allows curators to edit events when the feature is enabled", async () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
       isCatalogAdmin: false,
     });
 
     await expect(requireCatalogEventsAccess(catalogId, "edit")).resolves.toMatchObject({
       userId: "user-1",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
       policyContext: {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("curator"),
         isCatalogAdmin: false,
       },
     });
@@ -207,16 +207,16 @@ describe("requireCatalogEventsAccess", () => {
     );
   });
 
-  it("returns user and accessLevel when all checks pass for view mode", async () => {
+  it("returns user and catalogGrant when all checks pass for view mode", async () => {
     const result = await requireCatalogEventsAccess(catalogId, "view");
 
     expect(result).toMatchObject({
       userId: "user-1",
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
     });
   });
 
-  it("returns user and accessLevel when admin passes edit mode", async () => {
+  it("returns user and catalogGrant when admin passes edit mode", async () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
@@ -253,7 +253,7 @@ describe("requireCatalogEventsAccess", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
       isCatalogAdmin: false,
     });
 

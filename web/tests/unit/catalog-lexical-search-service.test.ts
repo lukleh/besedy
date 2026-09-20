@@ -33,7 +33,7 @@ vi.mock(
 
 import { executeCatalogLexicalSearch } from '@/app/api/catalogs/[id]/search/search-service';
 import { getSearchConfig } from '@/app/api/catalogs/[id]/search/search-route-helpers';
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 describe('catalog lexical search service', () => {
   beforeEach(() => {
@@ -86,13 +86,13 @@ describe('catalog lexical search service', () => {
       limit: 50,
       maxPerAudio: 10,
       metadataFilters: filters,
-      catalogGrant: grantFromLevel('VIEWER'),
+      catalogGrant: grantForRole('reader'),
       config,
     });
 
     expect(mocks.buildEligibleAudioHashesQuery).toHaveBeenCalledWith(
       'catalog-a',
-      grantFromLevel('VIEWER'),
+      grantForRole('reader'),
       filters,
     );
     expect(mocks.queryRaw).toHaveBeenCalledWith({ query: 'eligible' });

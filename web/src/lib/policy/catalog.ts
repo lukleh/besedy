@@ -173,7 +173,7 @@ export function canGrantCatalogGrant(
   role: CatalogRole,
   extras: readonly GrantableExtraPermission[] = []
 ): boolean {
-  return mayPassOnGrant(context, { level: null, role, extras: [...extras] });
+  return mayPassOnGrant(context, { role, extras: [...extras] });
 }
 
 /** Whether the actor may update or restore an existing grant. */

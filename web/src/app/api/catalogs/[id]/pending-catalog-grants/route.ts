@@ -7,7 +7,6 @@ import {
   canAttemptCatalogManagement,
   canManageExistingCatalogGrant,
 } from "@/lib/policy/catalog";
-import { roleForLevel } from "@/lib/policy/catalog-permissions";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
 import {
   forbidden,
@@ -80,8 +79,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       (grant) => ({
         ...grant,
         canManage: canManageExistingCatalogGrant(access.policyContext, {
-          level: grant.accessLevel,
-          role: grant.role ?? roleForLevel(grant.accessLevel).role,
+          role: grant.role,
           extras: grant.extraPermissions,
         }),
       })
