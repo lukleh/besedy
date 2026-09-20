@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   groupBy: vi.fn(),
   findMany: vi.fn(),
   queryRaw: vi.fn(),
+  deployLogGroupBy: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -12,6 +13,9 @@ vi.mock('@/lib/db', () => ({
     webUpdateEvent: {
       groupBy: mocks.groupBy,
       findMany: mocks.findMany,
+    },
+    webDeployLog: {
+      groupBy: mocks.deployLogGroupBy,
     },
     $queryRaw: mocks.queryRaw,
   },
@@ -62,6 +66,10 @@ describe('web update analytics', () => {
     const currentLastSeen = new Date('2026-09-18T11:00:00.000Z');
     const otherLastSeen = new Date('2026-09-18T10:00:00.000Z');
     const unknownLastSeen = new Date('2026-09-18T09:00:00.000Z');
+    const currentDeployedAt = new Date('2026-09-15T08:00:00.000Z');
+    mocks.deployLogGroupBy.mockResolvedValue([
+      { webVersion: 'web-v2-current', _max: { deployedAt: currentDeployedAt } },
+    ]);
     mocks.groupBy
       .mockResolvedValueOnce([
         { event: WebUpdateEventType.CLIENT_SEEN, _count: { _all: 7 } },
@@ -125,18 +133,21 @@ describe('web update analytics', () => {
         starts: 3,
         observedUsers: 1,
         lastSeenAt: currentLastSeen,
+        deployedAt: currentDeployedAt,
       },
       {
         clientVersion: 'web-v2-another',
         starts: 3,
         observedUsers: 1,
         lastSeenAt: otherLastSeen,
+        deployedAt: null,
       },
       {
         clientVersion: null,
         starts: 1,
         observedUsers: 1,
         lastSeenAt: unknownLastSeen,
+        deployedAt: null,
       },
     ]);
     expect(analytics.latestUsers[0]).toEqual(

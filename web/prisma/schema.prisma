@@ -1190,6 +1190,25 @@ model WebUpdateEvent {
   @@map("web_update_event")
 }
 
+/// Authoritative record of when a web client version actually went live.
+/// Written directly by the production deploy recipe (`just prod-apply`), not
+/// by the app -- this is the definitive answer to "what was deployed when,"
+/// as opposed to a commit's timestamp, which only says when the code
+/// changed. Rows are never updated; each deploy (including a redeploy of an
+/// unchanged version) appends one.
+model WebDeployLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gitCommit  String   @map("git_commit") @db.VarChar(40)
+  webVersion String   @map("web_version") @db.VarChar(64)
+  deployedAt DateTime @default(now()) @map("deployed_at")
+  deployedBy String?  @map("deployed_by") @db.VarChar(120)
+  note       String?  @db.VarChar(500)
+
+  @@index([webVersion])
+  @@index([deployedAt])
+  @@map("web_deploy_log")
+}
+
 // ============================================================================
 // Global Enums (Cross-Catalog Lookup Tables)
 // ============================================================================

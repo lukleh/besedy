@@ -13,9 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { VersionTrendChart } from '@/components/admin/web-updates/version-trend-chart';
 import {
   formatWebVersion,
   getWebUpdateAnalytics,
+  getWebUpdateDailyVersionSeries,
   getWebUpdateVersionStatus,
   parseWebUpdateRange,
   type WebUpdateRange,
@@ -54,6 +56,7 @@ export default async function WebUpdatesPage({
     getLocale(),
     getWebUpdateAnalytics(range),
   ]);
+  const dailySeries = await getWebUpdateDailyVersionSeries(range, locale);
   const dateFormatter = new Intl.DateTimeFormat(locale, {
     dateStyle: 'short',
     timeStyle: 'medium',
@@ -143,6 +146,8 @@ export default async function WebUpdatesPage({
         </CardContent>
       </Card>
 
+      <VersionTrendChart data={dailySeries} />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {versionMetrics.map(([label, value]) => (
           <Card key={label}>
@@ -171,6 +176,7 @@ export default async function WebUpdatesPage({
                   {t('table.starts')}
                 </TableHead>
                 <TableHead>{t('table.lastSeen')}</TableHead>
+                <TableHead>{t('table.deployedAt')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -189,12 +195,20 @@ export default async function WebUpdatesPage({
                       ? dateFormatter.format(item.lastSeenAt)
                       : '—'}
                   </TableCell>
+                  <TableCell
+                    className="whitespace-nowrap"
+                    title={t('deployedAtHint')}
+                  >
+                    {item.deployedAt
+                      ? dateFormatter.format(item.deployedAt)
+                      : '—'}
+                  </TableCell>
                 </TableRow>
               ))}
               {analytics.versions.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="py-8 text-center text-muted-foreground"
                   >
                     {t('empty')}

@@ -596,6 +596,32 @@ prod-apply:
     just prod-migrate
     echo "Starting the migrated web service and scheduled backup..."
     {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web backup
+    # Authoritative deploy record: what actually went live, and when -- as
+    # opposed to a commit's timestamp, which only says when the code changed.
+    # Best-effort and non-fatal: the deploy above already succeeded, so a
+    # logging hiccup here shouldn't turn a good deploy into a failed one.
+    web_container_id="$({{ prod_compose }} ps -q web 2>/dev/null || true)"
+    web_version=""
+    if [ -n "$web_container_id" ]; then
+        web_version="$(docker exec "$web_container_id" printenv WEB_VERSION 2>/dev/null || true)"
+    fi
+    deployed_by="$(git config user.name 2>/dev/null || true)"
+    deployed_by="${deployed_by:-$(whoami)}"
+    db_container_id="$({{ prod_compose }} ps -q db 2>/dev/null || true)"
+    if [[ "$web_version" =~ ^web-v2-[0-9a-f]{40}$ ]] && [ -n "$db_container_id" ]; then
+        # Piped via stdin rather than -c: psql only performs :'var' literal
+        # interpolation (the safe-quoting mechanism) on script input, not on
+        # a -c command string.
+        if docker exec -i "$db_container_id" psql -U besedy_app -d besedy -v ON_ERROR_STOP=1 \
+            -v git_commit="$git_commit" -v web_version="$web_version" -v deployed_by="$deployed_by" \
+            >/dev/null 2>&1 <<< "INSERT INTO web_deploy_log (git_commit, web_version, deployed_by) VALUES (:'git_commit', :'web_version', :'deployed_by');"; then
+            echo "Recorded deploy in web_deploy_log ($web_version)."
+        else
+            echo "WARNING: deploy succeeded but could not be recorded in web_deploy_log." >&2
+        fi
+    else
+        echo "WARNING: could not determine web_version or db container; skipping web_deploy_log entry." >&2
+    fi
     echo "Deployment complete. Commit: ${git_commit:0:7}"
     echo "Verify: curl -s http://localhost:3000/api/version | jq"
 
