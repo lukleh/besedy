@@ -28,6 +28,8 @@ interface WorkspacePointers {
   id: string;
   readerPublicationId: string | null;
   searchPublicationId: string | null;
+  /** An activation that has written its artifacts but not yet moved the pointers */
+  publications: { id: string }[];
 }
 
 async function findWorkspacePointers(
@@ -36,7 +38,17 @@ async function findWorkspacePointers(
 ): Promise<WorkspacePointers | null> {
   return prisma.transcriptWorkspace.findFirst({
     where: { workflowGroupId: catalogId, audioHash, status: "ACTIVE" },
-    select: { id: true, readerPublicationId: true, searchPublicationId: true },
+    select: {
+      id: true,
+      readerPublicationId: true,
+      searchPublicationId: true,
+      publications: {
+        where: { status: "ACTIVATING" },
+        select: { id: true },
+        orderBy: { activatingAt: "desc" },
+        take: 1,
+      },
+    },
   });
 }
 
@@ -49,6 +61,8 @@ export async function resolveReaderTranscriptSource(
     return { kind: "machine" };
   }
 
+  // Deliberately blind to an activation in progress: the reader keeps the
+  // snapshot it has until a publication has actually succeeded.
   const workspace = await findWorkspacePointers(catalogId, audioHash);
   if (workspace?.readerPublicationId) {
     return {
@@ -74,13 +88,32 @@ export async function resolveSearchTranscriptSource(
   audioHash: string
 ): Promise<TranscriptSource> {
   const workspace = await findWorkspacePointers(catalogId, audioHash);
-  if (workspace?.searchPublicationId) {
+  if (!workspace) return { kind: "machine" };
+
+  // An activation writes its artifacts and publishes the index pointer before
+  // it moves these database pointers, so between those two steps the index
+  // already serves the new text. Resolving an activating publication first is
+  // what keeps this side from contradicting it — an agent asked to verify a
+  // search hit by replaying the passage would otherwise get the machine
+  // wording back. After a crash mid-activation that window lasts until
+  // reconciliation, not milliseconds.
+  const activating = workspace.publications[0]?.id;
+  if (activating) {
+    return {
+      kind: "publication",
+      workspaceId: workspace.id,
+      publicationId: activating,
+    };
+  }
+
+  if (workspace.searchPublicationId) {
     return {
       kind: "publication",
       workspaceId: workspace.id,
       publicationId: workspace.searchPublicationId,
     };
   }
+
   return { kind: "machine" };
 }
 
