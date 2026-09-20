@@ -424,6 +424,7 @@
     "addComment": "Add comment",
     "original": "Machine text",
     "history": "History",
+    "unknownActor": "Unknown account",
     "guide": "Guide",
     "guideTitle": "Correction guide",
     "guideDescription": "The convention correctors follow. Editing it takes effect at once and invalidates nobody's decision.",

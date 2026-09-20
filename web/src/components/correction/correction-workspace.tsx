@@ -275,6 +275,7 @@ export function CorrectionWorkspace({
             hash={hash}
             userId={userId}
             workspace={state.workspace}
+            resume={state.resume}
             onChanged={refreshState}
           />
         </>

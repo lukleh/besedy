@@ -422,7 +422,10 @@ export async function addComment(command: CommentCommand): Promise<{
 export interface SpanHistoryEntry {
   kind: "revision" | "decision" | "comment";
   at: Date;
+  /** Immutable actor identity; present even after the account is deleted */
   userId: string | null;
+  /** Display name for that actor, null when the account no longer exists */
+  actorName: string | null;
   revisionId: string;
   text?: string;
   decision?: TranscriptDecisionKind;
@@ -473,6 +476,7 @@ export async function listSpanHistory(
       kind: "revision" as const,
       at: revision.createdAt,
       userId: revision.authorId,
+      actorName: null,
       revisionId: revision.id,
       text: revision.text,
     })),
@@ -480,6 +484,7 @@ export async function listSpanHistory(
       kind: "decision" as const,
       at: decision.createdAt,
       userId: decision.actorKey,
+      actorName: null,
       revisionId: decision.revisionId,
       decision: decision.kind,
     })),
@@ -487,10 +492,32 @@ export async function listSpanHistory(
       kind: "comment" as const,
       at: comment.createdAt,
       userId: comment.actorKey,
+      actorName: null,
       revisionId: comment.revisionId,
       body: comment.body,
     })),
   ];
+
+  // Correctors are not anonymous to one another: this group resolves
+  // disagreement by talking, which needs names rather than opaque ids. A
+  // deleted account keeps its place in the history and simply has no name.
+  const actorKeys = [
+    ...new Set(entries.map((entry) => entry.userId).filter((id): id is string => id !== null)),
+  ];
+  const actors =
+    actorKeys.length === 0
+      ? []
+      : await prisma.user.findMany({
+          where: { id: { in: actorKeys } },
+          select: { id: true, name: true, email: true },
+        });
+  const nameByKey = new Map(
+    actors.map((actor) => [actor.id, actor.name ?? actor.email ?? null])
+  );
+
+  for (const entry of entries) {
+    entry.actorName = entry.userId ? (nameByKey.get(entry.userId) ?? null) : null;
+  }
 
   return entries.sort((a, b) => a.at.getTime() - b.at.getTime());
 }

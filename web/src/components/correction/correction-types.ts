@@ -92,6 +92,9 @@ export const correctionStateSchema = z.object({
     })
     .nullable(),
   publication: publicationEligibilitySchema.nullable(),
+  resume: z
+    .object({ spanId: z.string(), ordinal: z.number() })
+    .nullable(),
 });
 
 export type CorrectionState = z.infer<typeof correctionStateSchema>;
@@ -114,6 +117,7 @@ export const spanHistorySchema = z.object({
       at: z.string(),
       userId: z.string().nullable(),
       revisionId: z.string(),
+      actorName: z.string().nullable(),
       text: z.string().optional(),
       decision: z.enum(["APPROVE", "DISAPPROVE", "WITHDRAW"]).optional(),
       body: z.string().optional(),

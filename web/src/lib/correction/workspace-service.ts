@@ -603,3 +603,58 @@ export async function archiveWorkspace(
 
   return toSummary(archived);
 }
+
+export interface ResumePosition {
+  spanId: string;
+  ordinal: number;
+}
+
+/**
+ * Where this person should pick the work up.
+ *
+ * A three-hour recording runs to several hundred spans and nobody finishes one
+ * in a sitting, so opening at the first span every time would make resuming a
+ * scrolling exercise. This answers "what still wants me": the earliest span
+ * that is not done and that this person has not already approved. A span
+ * others have finished is not their problem, and one they objected to still
+ * is, because it is theirs to withdraw or have addressed.
+ */
+export async function findResumePosition(
+  workspaceId: string,
+  actorKey: string
+): Promise<ResumePosition | null> {
+  const spans = await prisma.transcriptSpan.findMany({
+    where: { workspaceId },
+    orderBy: { ordinal: "asc" },
+    select: { id: true, ordinal: true, currentRevisionId: true },
+  });
+
+  const revisionIds = spans
+    .map((span) => span.currentRevisionId)
+    .filter((id): id is string => id !== null);
+
+  const decisions: SpanDecisionRow[] =
+    revisionIds.length === 0
+      ? []
+      : await prisma.transcriptSpanDecision.findMany({
+          where: { revisionId: { in: revisionIds } },
+          select: { spanId: true, actorKey: true, kind: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        });
+
+  const decisionsBySpan = new Map<string, SpanDecisionRow[]>();
+  for (const decision of decisions) {
+    const bucket = decisionsBySpan.get(decision.spanId);
+    if (bucket) bucket.push(decision);
+    else decisionsBySpan.set(decision.spanId, [decision]);
+  }
+
+  for (const span of spans) {
+    const summary = summarizeSpanDecisions(decisionsBySpan.get(span.id) ?? []);
+    if (summary.isDone) continue;
+    if (summary.approverIds.includes(actorKey)) continue;
+    return { spanId: span.id, ordinal: span.ordinal };
+  }
+
+  return null;
+}

@@ -37,6 +37,8 @@ interface CorrectionSurfaceProps {
   hash: string;
   userId: string;
   workspace: WorkspaceSummary;
+  /** Where this person should pick the work up, if anywhere */
+  resume: { spanId: string; ordinal: number } | null;
   onChanged: () => void;
 }
 
@@ -65,13 +67,23 @@ export function CorrectionSurface({
   hash,
   userId,
   workspace,
+  resume,
   onChanged,
 }: CorrectionSurfaceProps) {
   const t = useTranslations("correction");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  // Nobody finishes a three-hour recording in a sitting, so the surface opens
+  // on the first span that still wants this person rather than on the first
+  // span of the recording.
+  const [selectedSpanId, setSelectedSpanId] = useState<string | null>(
+    resume?.spanId ?? null
+  );
+  const initialOffset = useMemo(
+    () => (resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0),
+    [resume]
+  );
   const [draft, setDraft] = useState("");
   const [conflictDraft, setConflictDraft] = useState<string | null>(null);
   const [commentBody, setCommentBody] = useState("");
@@ -84,8 +96,8 @@ export function CorrectionSurface({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const spansQuery = useInfiniteQuery<SpanPage>({
-    queryKey: ["correction-spans", catalogId, hash, workspace.id],
-    initialPageParam: 0,
+    queryKey: ["correction-spans", catalogId, hash, workspace.id, initialOffset],
+    initialPageParam: initialOffset,
     queryFn: async ({ pageParam }) =>
       fetchJson<SpanPage>(
         buildCorrectionSpansUrl(catalogId, hash, {
@@ -441,6 +453,9 @@ export function CorrectionSurface({
                   <li key={`${entry.kind}-${index}`} className="text-muted-foreground">
                     <span className="font-mono text-xs">
                       {new Date(entry.at).toLocaleString()}
+                    </span>{" "}
+                    <span className="font-medium text-foreground">
+                      {entry.actorName ?? t("unknownActor")}
                     </span>{" "}
                     <span>{entry.kind}</span>
                     {entry.decision ? ` · ${entry.decision.toLowerCase()}` : ""}

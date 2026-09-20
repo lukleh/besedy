@@ -102,9 +102,9 @@ function check(label: string, condition: boolean, detail?: unknown) {
 
 async function main() {
   const prisma = (await import("@/lib/db")).default;
-  const { startWorkspace, listSpans, computeProgress, archiveWorkspace } =
+  const { startWorkspace, listSpans, computeProgress, archiveWorkspace, findResumePosition } =
     await import("@/lib/correction/workspace-service");
-  const { saveAndApprove, recordDecision } = await import(
+  const { saveAndApprove, recordDecision, listSpanHistory } = await import(
     "@/lib/correction/decision-service"
   );
   const {
@@ -416,6 +416,23 @@ async function main() {
       expectedRevisionId: current.revisionId, kind: "APPROVE",
     });
   }
+
+  // --- resuming and attribution --------------------------------------------
+  console.log("\nresuming, and naming who acted");
+  const resumeForBob = await findResumePosition(workspace.id, bob.id);
+  check(
+    "resume skips what this person already approved",
+    resumeForBob === null || resumeForBob.ordinal > 0,
+    resumeForBob
+  );
+
+  const historySpan = (await listSpans(workspace.id)).spans[0];
+  const history = await listSpanHistory(workspace.id, historySpan.id);
+  check(
+    "history names the people in it",
+    history.some((entry) => entry.actorName !== null),
+    history.map((entry) => entry.actorName)
+  );
 
   // --- publishing ----------------------------------------------------------
   console.log("\npublishing");

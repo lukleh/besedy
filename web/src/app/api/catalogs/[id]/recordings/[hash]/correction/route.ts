@@ -14,6 +14,7 @@ import {
   archiveWorkspace,
   computeProgress,
   findActiveWorkspace,
+  findResumePosition,
   startWorkspace,
 } from "@/lib/correction/workspace-service";
 
@@ -47,7 +48,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!paramsResult.success) return paramsResult.response;
     const { id: catalogId, hash } = paramsResult.data;
 
-    const { capability } = await requireCorrectionAccess(catalogId, hash, "correct");
+    const { userId, capability } = await requireCorrectionAccess(
+      catalogId,
+      hash,
+      "correct"
+    );
     const eligible = await isCorrectionEligibleRecording(catalogId, hash);
     const workspace = await findActiveWorkspace(catalogId, hash);
     const transcriptsPath = resolveTranscriptsPath(catalogId);
@@ -64,6 +69,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         : await resolveConfiguredDefaultBackend(transcriptsPath, hash),
       workspace,
       progress: workspace ? await computeProgress(workspace.id) : null,
+      /** Where this person should pick the work up */
+      resume: workspace ? await findResumePosition(workspace.id, userId) : null,
       publication: workspace
         ? await getPublicationEligibility(workspace.id)
         : null,
