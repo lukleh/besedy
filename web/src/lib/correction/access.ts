@@ -2,7 +2,7 @@ import { getRecordingCapability, type RecordingCapability } from "@/lib/access/c
 import { logAccessDenied } from "@/lib/audit/logger";
 import { AuthError, requireAuth } from "@/lib/auth/permissions";
 
-export type CorrectionAccessMode = "correct" | "publish";
+export type CorrectionAccessMode = "correct" | "publish" | "administer";
 
 export interface CorrectionAccess {
   userId: string;
@@ -36,7 +36,9 @@ export async function requireCorrectionAccess(
   const allowed =
     mode === "correct"
       ? capability.canCorrectTranscripts
-      : capability.canPublishTranscript;
+      : mode === "publish"
+        ? capability.canPublishTranscript
+        : capability.canAdministerCorrection;
 
   if (!allowed) {
     await logAccessDenied(userId, "transcript_correction", audioHash, {
@@ -47,7 +49,9 @@ export async function requireCorrectionAccess(
     throw new AuthError(
       mode === "correct"
         ? "Access denied to the correction surface"
-        : "Publishing transcripts is not permitted for this account",
+        : mode === "publish"
+          ? "Publishing transcripts is not permitted for this account"
+          : "Administering correction workspaces is not permitted for this account",
       403
     );
   }

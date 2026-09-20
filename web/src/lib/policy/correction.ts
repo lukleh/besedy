@@ -38,3 +38,19 @@ export function canEditCorrectionGuide(context: CatalogPolicyContext): boolean {
     hasCatalogPermission(context, "manage_catalog_config")
   );
 }
+
+/**
+ * Exceptional recovery: archiving a mis-started workspace, reconciling or
+ * rolling back a stuck publication, and taking corrected text back out of
+ * search.
+ *
+ * None of these is part of ordinary correction or publication, and each can
+ * change what every consumer resolves, so they sit with the authority that
+ * already owns catalog configuration.
+ */
+export function canAdministerCorrection(context: CatalogPolicyContext): boolean {
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "manage_catalog_config")
+  );
+}

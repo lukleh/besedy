@@ -518,3 +518,77 @@ export async function computeProgress(
     blockedSpanCount,
   };
 }
+
+export interface ArchiveWorkspaceInput {
+  catalogId: string;
+  audioHash: string;
+  userId: string;
+  reason: string;
+}
+
+/**
+ * Abandon a workspace so a new one can be started over the right source.
+ *
+ * There is no restart or rebase: corrections are not relocated onto new
+ * machine segments, and nothing is deleted. The row stays for audit, and the
+ * partial unique index permits exactly one live workspace per recording, so
+ * archiving is what makes room for the replacement.
+ *
+ * A workspace whose corrections are still the transcript somebody reads or
+ * searches cannot be archived, because doing so would silently take that
+ * transcript away. Unpublish and withdraw it from search first; those are
+ * deliberate acts of their own.
+ */
+export async function archiveWorkspace(
+  input: ArchiveWorkspaceInput
+): Promise<WorkspaceSummary> {
+  const reason = input.reason.trim();
+  if (!reason) {
+    throw new CorrectionError(
+      "EMPTY_TEXT",
+      "Archiving a workspace needs a reason, because nothing else records why"
+    );
+  }
+
+  const workspace = await prisma.transcriptWorkspace.findFirst({
+    where: {
+      workflowGroupId: input.catalogId,
+      audioHash: input.audioHash,
+      status: "ACTIVE",
+    },
+    select: WORKSPACE_SELECT,
+  });
+
+  if (!workspace) {
+    throw new CorrectionError(
+      "NO_WORKSPACE",
+      "Correction has not been started for this recording"
+    );
+  }
+  if (workspace.publications.length > 0) {
+    throw new CorrectionError(
+      "WORKSPACE_LOCKED",
+      "A publication is in progress; it has to finish or be rolled back first",
+      { publicationId: workspace.publications[0].id }
+    );
+  }
+  if (workspace.readerPublicationId || workspace.searchPublicationId) {
+    throw new CorrectionError(
+      "PUBLICATION_ACTIVE",
+      "This workspace still backs a published transcript; unpublish it and withdraw it from search first"
+    );
+  }
+
+  const archived = await prisma.transcriptWorkspace.update({
+    where: { id: workspace.id },
+    data: {
+      status: "ARCHIVED",
+      archivedAt: new Date(),
+      archivedById: input.userId,
+      archiveReason: reason,
+    },
+    select: WORKSPACE_SELECT,
+  });
+
+  return toSummary(archived);
+}

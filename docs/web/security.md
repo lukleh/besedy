@@ -343,6 +343,15 @@ machine variants, including before publication. `download_original_transcript`
 delivers the machine text underneath, and asking for it never starts or changes
 a correction workspace.
 
+Three exceptional operations sit with `manage_catalog_config` rather than with
+either of those: archiving a mis-started workspace so a new one can be started,
+reconciling or rolling back a publication that crashed mid-activation, and
+withdrawing corrected text from search. Each can change what every consumer
+resolves, which is why none of them is part of ordinary correction or
+publication. Archiving refuses a workspace that still backs a published
+transcript: unpublishing and withdrawing it from search are deliberate acts of
+their own, and archiving must not perform them silently.
+
 `publish_transcript` grants no adjudication. The server rechecks every span
 when publication starts: two distinct approvals on its current revision and no
 current disapproval. A publisher cannot carry a disputed or unfinished span

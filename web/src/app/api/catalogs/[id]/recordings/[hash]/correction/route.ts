@@ -11,6 +11,7 @@ import { getActiveGuide } from "@/lib/correction/guide";
 import { getPublicationEligibility } from "@/lib/correction/publication-service";
 import { resolveConfiguredDefaultBackend } from "@/lib/correction/source";
 import {
+  archiveWorkspace,
   computeProgress,
   findActiveWorkspace,
   startWorkspace,
@@ -22,6 +23,10 @@ export const dynamic = "force-dynamic";
 interface RouteParams {
   params: Promise<{ id: string; hash: string }>;
 }
+
+const ArchiveBodySchema = z
+  .object({ reason: z.string().min(1).max(500) })
+  .strict();
 
 const StartBodySchema = z
   .object({
@@ -105,5 +110,49 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ workspace }, { status: 201 });
   } catch (error) {
     return handleCorrectionRouteError(error, "create");
+  }
+}
+
+/**
+ * DELETE - archive this workspace so a new one can be started.
+ *
+ * The exceptional path for a wrongly chosen source. Nothing is deleted: the
+ * abandoned workspace and all of its history stay available for audit, and the
+ * partial unique index is what lets a replacement exist beside it.
+ */
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const paramsResult = validateParams(await params, CatalogHashParamSchema);
+    if (!paramsResult.success) return paramsResult.response;
+    const { id: catalogId, hash } = paramsResult.data;
+
+    const bodyResult = await validateRequestBody(request, ArchiveBodySchema);
+    if (!bodyResult.success) return bodyResult.response;
+
+    const { userId } = await requireCorrectionAccess(catalogId, hash, "administer");
+
+    const workspace = await archiveWorkspace({
+      catalogId,
+      audioHash: hash,
+      userId,
+      reason: bodyResult.data.reason,
+    });
+
+    await logAuditEvent({
+      userId,
+      action: "TRANSCRIPT_CORRECTION_ARCHIVED",
+      resource: "transcript_correction",
+      resourceId: hash,
+      catalogId,
+      payload: {
+        workspaceId: workspace.id,
+        backend: workspace.sourceBackend,
+        reason: bodyResult.data.reason,
+      },
+    });
+
+    return NextResponse.json({ workspace });
+  } catch (error) {
+    return handleCorrectionRouteError(error, "delete");
   }
 }

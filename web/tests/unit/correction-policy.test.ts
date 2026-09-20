@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatalogRole } from "@/generated/prisma/client";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
+  canAdministerCorrection,
   canCorrectTranscripts,
   canEditCorrectionGuide,
   canPublishTranscript,
@@ -48,6 +49,16 @@ describe("correction policy", () => {
     expect(canCorrectTranscripts(context(null, true))).toBe(true);
     expect(canPublishTranscript(context(null, true))).toBe(true);
     expect(canEditCorrectionGuide(context(null, true))).toBe(true);
+    expect(canAdministerCorrection(context(null, true))).toBe(true);
+  });
+
+  it("keeps archiving and recovery away from a curator", () => {
+    // Archiving a workspace and rolling back a publication change what every
+    // consumer resolves, so they sit with catalog configuration rather than
+    // with the editorial right to publish.
+    expect(canAdministerCorrection(context("curator"))).toBe(false);
+    expect(canAdministerCorrection(context("corrector"))).toBe(false);
+    expect(canAdministerCorrection(context("host"))).toBe(false);
   });
 
   it("keeps the guide out of a curator's hands, since it is catalog configuration", () => {

@@ -44,6 +44,7 @@ import {
   canViewEventPosterCandidates,
 } from "@/lib/policy/event-poster";
 import {
+  canAdministerCorrection,
   canCorrectTranscripts,
   canEditCorrectionGuide,
   canPublishTranscript,
@@ -98,6 +99,7 @@ export interface CatalogCapability extends PortalCapability {
   canCorrectTranscripts: boolean;
   canPublishTranscript: boolean;
   canEditCorrectionGuide: boolean;
+  canAdministerCorrection: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -172,6 +174,7 @@ export function buildCatalogCapability(
     canCorrectTranscripts: canCorrectTranscripts(policyContext),
     canPublishTranscript: canPublishTranscript(policyContext),
     canEditCorrectionGuide: canEditCorrectionGuide(policyContext),
+    canAdministerCorrection: canAdministerCorrection(policyContext),
   };
 }
 
