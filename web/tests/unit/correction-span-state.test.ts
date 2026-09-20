@@ -12,11 +12,11 @@ function at(seconds: number): Date {
 }
 
 function decision(
-  userId: string,
+  actorKey: string,
   kind: DecisionRow["kind"],
   seconds: number
 ): DecisionRow {
-  return { userId, kind, createdAt: at(seconds) };
+  return { actorKey, kind, createdAt: at(seconds) };
 }
 
 describe("span state", () => {

@@ -1118,7 +1118,14 @@ model TranscriptSpanDecision {
   workspaceId    String                 @map("workspace_id") @db.Uuid
   spanId         String                 @map("span_id") @db.Uuid
   revisionId     String                 @map("revision_id") @db.Uuid
-  userId         String                 @map("user_id")
+  /// Immutable identity of the person who decided.
+  ///
+  /// Two distinct people make a span done, and that has to stay true after one
+  /// of them is deleted. The live `userId` relation is nullable so deletion can
+  /// clear it; this column is what the count is keyed on, so a deleted account
+  /// can neither erase its approval nor merge with another deleted one.
+  actorKey       String                 @map("actor_key")
+  userId         String?                @map("user_id")
   kind           TranscriptDecisionKind
   /// Client-supplied key; double-clicks and retries cannot duplicate a decision
   idempotencyKey String?                @map("idempotency_key") @db.VarChar(64)
@@ -1127,10 +1134,10 @@ model TranscriptSpanDecision {
   workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
   revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
-  user      User                   @relation("TranscriptSpanDecisionUser", fields: [userId], references: [id], onDelete: Cascade)
+  user      User?                  @relation("TranscriptSpanDecisionUser", fields: [userId], references: [id], onDelete: SetNull)
 
-  @@unique([workspaceId, userId, idempotencyKey])
-  @@index([revisionId, userId, createdAt])
+  @@unique([workspaceId, actorKey, idempotencyKey])
+  @@index([revisionId, actorKey, createdAt])
   @@index([spanId, createdAt])
   @@map("transcript_span_decision")
 }
@@ -1143,14 +1150,16 @@ model TranscriptSpanComment {
   spanId      String   @map("span_id") @db.Uuid
   /// Revision visible to the author when the comment was written
   revisionId  String   @map("revision_id") @db.Uuid
-  authorId    String   @map("author_id")
+  /// Immutable identity of the author; see TranscriptSpanDecision.actorKey
+  actorKey    String   @map("actor_key")
+  authorId    String?  @map("author_id")
   body        String
   createdAt   DateTime @default(now()) @map("created_at")
 
   workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
   revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
-  author    User                   @relation("TranscriptSpanCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  author    User?                  @relation("TranscriptSpanCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([spanId, createdAt])
   @@map("transcript_span_comment")

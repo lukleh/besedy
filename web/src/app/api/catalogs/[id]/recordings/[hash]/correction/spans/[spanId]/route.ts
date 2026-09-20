@@ -60,9 +60,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { id: catalogId, hash, spanId } = paramsResult.data;
 
     await requireCorrectionAccess(catalogId, hash, "correct");
-    await requireActiveWorkspace(catalogId, hash);
+    const workspace = await requireActiveWorkspace(catalogId, hash);
 
-    return NextResponse.json({ spanId, history: await listSpanHistory(spanId) });
+    return NextResponse.json({
+      spanId,
+      history: await listSpanHistory(workspace.id, spanId),
+    });
   } catch (error) {
     return handleCorrectionRouteError(error, "fetch");
   }

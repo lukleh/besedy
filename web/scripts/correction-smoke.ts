@@ -470,6 +470,29 @@ async function main() {
     (await prisma.transcriptWorkspace.count({ where: { audioHash: AUDIO_HASH } })) === 2
   );
 
+  // --- deleting a participant ---------------------------------------------
+  console.log("\ndeleting a participant");
+  const beforeDeletion = (await listSpans(workspace.id)).spans[0];
+  await prisma.user.delete({ where: { id: bob.id } });
+  const afterDeletion = (await listSpans(workspace.id)).spans[0];
+
+  check(
+    "a deleted participant's approval survives",
+    afterDeletion.state === beforeDeletion.state && afterDeletion.state === "done",
+    { before: beforeDeletion.state, after: afterDeletion.state }
+  );
+  check(
+    "two distinct people still count as two",
+    afterDeletion.approverIds.length === 2,
+    afterDeletion.approverIds.length
+  );
+  check(
+    "the decision row is kept, with the account reference cleared",
+    (await prisma.transcriptSpanDecision.count({
+      where: { actorKey: bob.id, userId: null },
+    })) > 0
+  );
+
   console.log(`\ncorrections root: ${correctionsDir}`);
   console.log(failures.length === 0 ? "\nALL CHECKS PASSED" : `\n${failures.length} CHECK(S) FAILED`);
 
@@ -482,6 +505,7 @@ async function main() {
     await prisma.location.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
     await prisma.workflowGroup.delete({ where: { id: CATALOG_ID } });
     await prisma.user.deleteMany({ where: { id: { in: [alice.id, bob.id] } } });
+    await prisma.transcriptSpanDecision.deleteMany({ where: { actorKey: bob.id } });
   } catch (error) {
     console.warn("cleanup failed, leaving fixture rows behind:", error);
   }

@@ -31,7 +31,7 @@ import {
 
 interface SpanDecisionRow {
   spanId: string;
-  userId: string;
+  actorKey: string;
   kind: TranscriptDecisionKind;
   createdAt: Date;
 }
@@ -399,7 +399,7 @@ export async function listSpans(
           where: { revisionId: { in: revisionIds } },
           select: {
             spanId: true,
-            userId: true,
+            actorKey: true,
             kind: true,
             createdAt: true,
           },
@@ -479,7 +479,7 @@ export async function computeProgress(
       ? []
       : await prisma.transcriptSpanDecision.findMany({
           where: { revisionId: { in: revisionIds } },
-          select: { spanId: true, userId: true, kind: true, createdAt: true },
+          select: { spanId: true, actorKey: true, kind: true, createdAt: true },
           orderBy: { createdAt: "asc" },
         });
 

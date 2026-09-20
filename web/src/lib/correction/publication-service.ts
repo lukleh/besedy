@@ -77,7 +77,7 @@ export async function evaluateWorkspace(
       ? []
       : await prisma.transcriptSpanDecision.findMany({
           where: { revisionId: { in: revisionIds } },
-          select: { spanId: true, userId: true, kind: true, createdAt: true },
+          select: { spanId: true, actorKey: true, kind: true, createdAt: true },
           orderBy: { createdAt: "asc" },
         });
 

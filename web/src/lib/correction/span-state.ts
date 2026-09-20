@@ -17,12 +17,14 @@ export type SpanState = (typeof SPAN_STATES)[number];
 export const REQUIRED_APPROVALS = 2;
 
 export interface DecisionRow {
-  userId: string;
+  /** Immutable actor identity; equal to the user id while that account exists */
+  actorKey: string;
   kind: TranscriptDecisionKind;
   createdAt: Date;
 }
 
 export interface SpanDecisionSummary {
+  /** Actor keys, so a deleted account still counts as the person it was */
   approverIds: string[];
   disapproverIds: string[];
   state: SpanState;
@@ -44,18 +46,18 @@ export function summarizeSpanDecisions(
   const effective = new Map<string, DecisionRow>();
 
   for (const decision of decisions) {
-    const previous = effective.get(decision.userId);
+    const previous = effective.get(decision.actorKey);
     if (!previous || previous.createdAt <= decision.createdAt) {
-      effective.set(decision.userId, decision);
+      effective.set(decision.actorKey, decision);
     }
   }
 
   const approverIds: string[] = [];
   const disapproverIds: string[] = [];
 
-  for (const [userId, decision] of effective) {
-    if (decision.kind === "APPROVE") approverIds.push(userId);
-    else if (decision.kind === "DISAPPROVE") disapproverIds.push(userId);
+  for (const [actorKey, decision] of effective) {
+    if (decision.kind === "APPROVE") approverIds.push(actorKey);
+    else if (decision.kind === "DISAPPROVE") disapproverIds.push(actorKey);
   }
 
   approverIds.sort();

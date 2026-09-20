@@ -146,9 +146,9 @@ async function findReplay(
 
   const existing = await tx.transcriptSpanDecision.findUnique({
     where: {
-      workspaceId_userId_idempotencyKey: {
+      workspaceId_actorKey_idempotencyKey: {
         workspaceId: command.workspaceId,
-        userId: command.userId,
+        actorKey: command.userId,
         idempotencyKey: command.idempotencyKey,
       },
     },
@@ -180,7 +180,7 @@ async function summarizeSpan(
     }),
     tx.transcriptSpanDecision.findMany({
       where: { revisionId },
-      select: { userId: true, kind: true, createdAt: true },
+      select: { actorKey: true, kind: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
   ]);
@@ -218,6 +218,7 @@ export async function recordDecision(
         workspaceId: command.workspaceId,
         spanId: span.id,
         revisionId: span.currentRevisionId,
+        actorKey: command.userId,
         userId: command.userId,
         kind: command.kind,
         idempotencyKey: command.idempotencyKey ?? null,
@@ -296,6 +297,7 @@ export async function saveAndApprove(
         workspaceId: command.workspaceId,
         spanId: span.id,
         revisionId,
+        actorKey: command.userId,
         userId: command.userId,
         kind: "APPROVE",
         idempotencyKey: command.idempotencyKey ?? null,
@@ -354,6 +356,7 @@ export async function addComment(command: CommentCommand): Promise<{
       workspaceId: command.workspaceId,
       spanId: command.spanId,
       revisionId: command.revisionId,
+      actorKey: command.userId,
       authorId: command.userId,
       body,
     },
@@ -380,8 +383,20 @@ export interface SpanHistoryEntry {
  * disagreement by talking, which needs names.
  */
 export async function listSpanHistory(
+  workspaceId: string,
   spanId: string
 ): Promise<SpanHistoryEntry[]> {
+  // Scoped, not just authorized. A span id is enough to name a span anywhere
+  // in the database, so a caller authorized for one workspace must not be able
+  // to read another's revisions, comments and participants by supplying its id.
+  const span = await prisma.transcriptSpan.findUnique({
+    where: { id: spanId },
+    select: { workspaceId: true },
+  });
+  if (!span || span.workspaceId !== workspaceId) {
+    throw new CorrectionError("SPAN_NOT_FOUND", "Span not found in this workspace");
+  }
+
   const [revisions, decisions, comments] = await Promise.all([
     prisma.transcriptSpanRevision.findMany({
       where: { spanId },
@@ -390,12 +405,12 @@ export async function listSpanHistory(
     }),
     prisma.transcriptSpanDecision.findMany({
       where: { spanId },
-      select: { revisionId: true, userId: true, kind: true, createdAt: true },
+      select: { revisionId: true, actorKey: true, kind: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
     prisma.transcriptSpanComment.findMany({
       where: { spanId },
-      select: { revisionId: true, authorId: true, body: true, createdAt: true },
+      select: { revisionId: true, actorKey: true, body: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
   ]);
@@ -411,14 +426,14 @@ export async function listSpanHistory(
     ...decisions.map((decision) => ({
       kind: "decision" as const,
       at: decision.createdAt,
-      userId: decision.userId,
+      userId: decision.actorKey,
       revisionId: decision.revisionId,
       decision: decision.kind,
     })),
     ...comments.map((comment) => ({
       kind: "comment" as const,
       at: comment.createdAt,
-      userId: comment.authorId,
+      userId: comment.actorKey,
       revisionId: comment.revisionId,
       body: comment.body,
     })),
