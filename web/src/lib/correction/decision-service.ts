@@ -129,26 +129,43 @@ async function assertWorkspaceWritable(
   }
 }
 
+/**
+ * Recognize a retry of the same command, and refuse a different one.
+ *
+ * A key identifies one action on one span, not "whatever this person sends
+ * next". Matching on the key alone would let a client that reuses a key report
+ * a disapproval as the earlier approval's success — the objection silently
+ * discarded while the span stays publishable.
+ */
 async function findReplay(
   tx: TransactionClient,
-  workspaceId: string,
-  userId: string,
-  idempotencyKey: string | null | undefined
+  command: SpanCommandBase,
+  kind: TranscriptDecisionKind
 ): Promise<{ spanId: string; revisionId: string } | null> {
-  if (!idempotencyKey) return null;
+  if (!command.idempotencyKey) return null;
 
   const existing = await tx.transcriptSpanDecision.findUnique({
     where: {
       workspaceId_userId_idempotencyKey: {
-        workspaceId,
-        userId,
-        idempotencyKey,
+        workspaceId: command.workspaceId,
+        userId: command.userId,
+        idempotencyKey: command.idempotencyKey,
       },
     },
-    select: { spanId: true, revisionId: true },
+    select: { spanId: true, revisionId: true, kind: true },
   });
 
-  return existing;
+  if (!existing) return null;
+
+  if (existing.spanId !== command.spanId || existing.kind !== kind) {
+    throw new CorrectionError(
+      "IDEMPOTENCY_CONFLICT",
+      "That idempotency key was already used for a different action",
+      { recordedKind: existing.kind, recordedSpanId: existing.spanId }
+    );
+  }
+
+  return { spanId: existing.spanId, revisionId: existing.revisionId };
 }
 
 async function summarizeSpan(
@@ -185,12 +202,7 @@ export async function recordDecision(
   command: DecisionCommand
 ): Promise<SpanCommandResult> {
   return prisma.$transaction(async (tx) => {
-    const replay = await findReplay(
-      tx,
-      command.workspaceId,
-      command.userId,
-      command.idempotencyKey
-    );
+    const replay = await findReplay(tx, command, command.kind);
     if (replay) {
       return {
         ...(await summarizeSpan(tx, replay.spanId, replay.revisionId)),
@@ -238,12 +250,9 @@ export async function saveAndApprove(
   }
 
   return prisma.$transaction(async (tx) => {
-    const replay = await findReplay(
-      tx,
-      command.workspaceId,
-      command.userId,
-      command.idempotencyKey
-    );
+    // An edit is stored with the editor's approval, so a retry of it is a
+    // replay of an APPROVE.
+    const replay = await findReplay(tx, command, "APPROVE");
     if (replay) {
       return {
         ...(await summarizeSpan(tx, replay.spanId, replay.revisionId)),

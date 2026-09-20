@@ -77,7 +77,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     await logAuditEvent({
       userId,
-      action: "TRANSCRIPT_UNPUBLISHED",
+      // Reconciling completes an activation and makes the transcript readable;
+      // the other two take it away. Recording all three as an unpublish would
+      // make the log say the opposite of what happened.
+      action:
+        command.action === "reconcile"
+          ? "TRANSCRIPT_PUBLISHED"
+          : "TRANSCRIPT_UNPUBLISHED",
       resource: "transcript_correction",
       resourceId: hash,
       catalogId,

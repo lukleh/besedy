@@ -114,15 +114,15 @@ export interface RecordingCapability extends CatalogCapability {
   /// Primary recording of an event, so correction and its publication gate apply
   correctionEligible: boolean;
   correctionWorkspaceId: string | null;
-  /// Whether an active reader publication exists for an eligible recording
-  hasReaderPublication: boolean;
   /**
-   * The publication gate. `canViewRecordingTranscripts` says the actor may use
-   * the transcript surface at all; this says whether there is text to read.
-   * They differ exactly while an eligible primary transcript is unpublished,
-   * which is when the reader sees progress instead.
+   * Whether an active reader publication exists for an eligible recording.
+   *
+   * The publication gate itself is not answered here. Each transcript surface
+   * resolves it through `resolveReaderTranscriptSource`, because the answer
+   * differs per consumer, and a single capability field would be one more
+   * thing that can disagree with them.
    */
-  canReadTranscriptText: boolean;
+  hasReaderPublication: boolean;
 }
 
 interface CatalogCapabilityOptions {
@@ -298,7 +298,6 @@ export async function getRecordingCapability(
     correctionEligible: false,
     correctionWorkspaceId: null,
     hasReaderPublication: false,
-    canReadTranscriptText: false,
   };
 
   if (!catalogCapability.catalogExists || !catalogCapability.hasAccess) {
@@ -351,7 +350,5 @@ export async function getRecordingCapability(
           ? readerSource.workspaceId
           : null,
     hasReaderPublication: readerSource.kind === "publication",
-    canReadTranscriptText:
-      canViewRecordingTranscripts && readerSource.kind !== "withheld",
   };
 }

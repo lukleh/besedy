@@ -265,6 +265,25 @@ async function main() {
   check("two distinct approvals finish a span", firstCall.state === "done", firstCall.state);
   check("a replayed idempotency key changes nothing", replay.replayed && replay.approverIds.length === 2);
 
+  let reusedKeyRefused: string | null = null;
+  try {
+    await recordDecision({
+      workspaceId: workspace.id,
+      spanId: first.id,
+      userId: bob.id,
+      expectedRevisionId: edited.revisionId,
+      kind: "DISAPPROVE",
+      idempotencyKey: key,
+    });
+  } catch (error) {
+    reusedKeyRefused = (error as { code?: string }).code ?? null;
+  }
+  check(
+    "the same key cannot be reused for a different action",
+    reusedKeyRefused === "IDEMPOTENCY_CONFLICT",
+    reusedKeyRefused
+  );
+
   await recordDecision({
     workspaceId: workspace.id,
     spanId: second.id,

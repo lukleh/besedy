@@ -159,9 +159,14 @@ export function CorrectionSurface({
       selectSpan(next);
       return;
     }
-    if (spansQuery.hasNextPage) {
-      await spansQuery.fetchNextPage();
-    }
+    if (!spansQuery.hasNextPage) return;
+
+    // The next span is on a page that is not loaded yet. Selecting it has to
+    // wait for the fetch, or approving the last span of a page would leave the
+    // surface sitting on it with nothing selected and nothing playing.
+    const fetched = await spansQuery.fetchNextPage();
+    const first = fetched.data?.pages.at(-1)?.spans[0];
+    if (first) selectSpan(first);
   }, [selected, spans, selectSpan, spansQuery]);
 
   const refresh = useCallback(async () => {

@@ -276,7 +276,11 @@ export function TranscriptViewer({
   // A correction-eligible primary transcript that has never been published has
   // no text to show. That is the product decision, not a missing file, so the
   // reader gets progress rather than the "not transcribed" empty state.
-  if (available?.correction) {
+  //
+  // Only when there is nothing to read, though: an actor holding
+  // see_transcript_variants is sent the machine backends as well, and ADR 0006
+  // keeps those open to them before publication.
+  if (available?.correction && available.backends.length === 0) {
     return (
       <CorrectionProgressPanel
         state={available.correction}

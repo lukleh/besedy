@@ -173,10 +173,14 @@ describe("transcript route under the publication gate", () => {
         segments: [{ start: 0, end: 1, text: "machine" }],
       });
 
+      // Both are sent: the variants the administrative view may read, and the
+      // progress a reader would see instead. The viewer shows the progress
+      // panel only when there are no backends, so this payload has to keep
+      // both for the picker to survive publication gating.
       const listing = await call();
-      await expect(listing.json()).resolves.toMatchObject({
-        backends: [MACHINE_BACKEND],
-      });
+      const body = await listing.json();
+      expect(body.backends).toEqual([MACHINE_BACKEND]);
+      expect(body.correction).toEqual(PROGRESS);
 
       const transcript = await call(MACHINE_BACKEND);
       expect(transcript.status).toBe(200);
