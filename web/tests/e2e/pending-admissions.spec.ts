@@ -263,13 +263,23 @@ test.describe("Pending Admission Management", () => {
       await expect(
         dialog.getByRole("group", { name: "Additional permissions" })
       ).toHaveCount(0);
+
+      // A catalog admin's role select carries the full role vocabulary,
+      // unlike the narrower host list asserted in the owner test below.
+      await expect(
+        dialog.getByText(
+          "You can grant: Listener, Reader, Corrector, Host, Curator, Catalog admin."
+        )
+      ).toBeVisible();
+
       const inviteButton = dialog.getByRole("button", { name: "Invite User" });
-      // Not toBeInViewport(): the footer sits inside a scrollable dialog
-      // body on narrow viewports, so the button can be visible-but-scrolled
-      // even when the scroll-to-reveal behaviour is working correctly.
-      // click() below performs its own scroll-into-view and actionability
-      // check.
-      await expect(inviteButton).toBeVisible();
+      // Explicitly scroll first: the footer sits inside a scrollable dialog
+      // body on narrow viewports (see #143), so scrollIntoViewIfNeeded()
+      // exercises the same path a real user's scroll would, and
+      // toBeInViewport() still catches a regression where the button
+      // can't be reached at all.
+      await inviteButton.scrollIntoViewIfNeeded();
+      await expect(inviteButton).toBeInViewport();
       await inviteButton.click();
 
       await expect(dialog).toBeHidden();
@@ -309,9 +319,11 @@ test.describe("Pending Admission Management", () => {
       // Wait for the invite form to mount before asserting on it.
       await expect(dialog.getByLabel("Notes")).toBeVisible();
 
-      // A host is never offered the extras fieldset (canManageExtras is
-      // catalog-admin only), same as the admin case above but for a
-      // different reason.
+      // The extras fieldset is absent here for the same reason as the
+      // admin test above, not because of host policy: GrantAccessDialog
+      // never wires canManageExtras into AccessFormFields for any actor
+      // (removed in #136), so this assertion isn't host-specific. The
+      // host-vs-admin difference is the role list asserted below.
       await expect(
         dialog.getByRole("group", { name: "Additional permissions" })
       ).toHaveCount(0);
@@ -325,7 +337,10 @@ test.describe("Pending Admission Management", () => {
       ).toBeVisible();
 
       const inviteButton = dialog.getByRole("button", { name: "Invite User" });
-      await expect(inviteButton).toBeVisible();
+      // See the admin test above for why this scrolls explicitly instead
+      // of just checking visibility.
+      await inviteButton.scrollIntoViewIfNeeded();
+      await expect(inviteButton).toBeInViewport();
       await inviteButton.click();
 
       await expect(dialog).toBeHidden();
