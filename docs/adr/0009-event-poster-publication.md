@@ -197,8 +197,11 @@ the old candidate or the new candidate, never an empty intermediate state.
 
 The singular audience endpoint resolves only the currently selected candidate
 for ordinary readers. Actors with draft visibility use the candidate image
-endpoint for previews; the main event page does not accidentally substitute a
-draft. A missing selection returns `404`.
+endpoint for previews. A missing selection returns `404`.
+[ADR 0010](0010-event-page-draft-poster-preview.md) amends what follows: when
+nothing is published yet, the main event page now shows those actors a
+labeled preview of the latest draft candidate instead of nothing, rather than
+withholding it to avoid an accidental substitution.
 
 Event-detail responses expose only published poster information to ordinary
 readers. Draft counts, labels, file metadata, and candidate IDs are returned
