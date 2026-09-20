@@ -380,7 +380,7 @@ export async function listSpans(
           select: {
             id: true,
             text: true,
-            authorId: true,
+            actorKey: true,
             createdAt: true,
             previousRevisionId: true,
           },
@@ -444,8 +444,8 @@ export async function listSpans(
         approverIds: summary.approverIds,
         disapproverIds: summary.disapproverIds,
         commentCount: commentCountBySpan.get(span.id) ?? 0,
-        lastEditedById: revision?.authorId ?? null,
-        lastEditedAt: revision?.authorId ? revision.createdAt : null,
+        lastEditedById: revision?.actorKey ?? null,
+        lastEditedAt: revision?.actorKey ? revision.createdAt : null,
       };
     }),
   };

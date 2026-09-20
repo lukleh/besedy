@@ -20,6 +20,7 @@ classify the hash as changed and revert the corrected chunks.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Iterable
@@ -133,6 +134,35 @@ def _parse_pointer(
     )
 
 
+def _artifact_matches(pointer: CorrectionIndexPointer) -> bool:
+    """Check the transcript's bytes against the hash the pointer carries.
+
+    This is the boundary that consumes the artifact, so it is where the hash is
+    worth anything. Comparing the pointer's hash against the database value
+    that produced it would only prove that two pieces of metadata agree; a
+    truncated write, a half-copied tree or an edited file would pass.
+    """
+    digest = hashlib.sha256()
+    try:
+        with pointer.transcript_path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+    except OSError as exc:
+        LOGGER.warning(
+            "Could not read correction transcript %s (%s)", pointer.transcript_path, exc
+        )
+        return False
+
+    if digest.hexdigest() != pointer.artifact_sha256:
+        LOGGER.warning(
+            "Correction transcript %s does not match its recorded hash; ignoring it",
+            pointer.transcript_path,
+        )
+        return False
+
+    return True
+
+
 def load_correction_index_pointers(
     workflow_group_id: str,
     *,
@@ -165,6 +195,8 @@ def load_correction_index_pointers(
                 path,
                 pointer.transcript_path,
             )
+            continue
+        if not _artifact_matches(pointer):
             continue
         pointers[pointer.audio_hash] = pointer
 

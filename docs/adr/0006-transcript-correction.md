@@ -50,6 +50,18 @@ recordings cannot enter the correction workflow, they also do not enter its
 publication gate: their reader and ordinary-download behavior remains the
 configured default machine transcript.
 
+Being primary is a condition on **starting**, not a continuing one. Once a
+workspace exists it latches the gate: that recording resolves through
+correction whatever its event assignment becomes afterwards. Otherwise
+detaching a recording, or promoting a different one, would silently replace a
+published corrected transcript with the machine text underneath it — an
+editorial action undoing an editorial statement nobody retracted. The
+alternative, refusing the reassignment until an administrator unpublishes,
+withdraws from search and archives, couples ordinary event editing to a
+three-step teardown; the workspace is already the unit of correction, so it is
+the thing the gate follows. A recording that never started correction is
+governed by its assignment as above.
+
 ### Four consumers deliberately resolve different text
 
 There is no single permissive "best transcript" resolver. Each surface follows
@@ -567,6 +579,9 @@ that gate.
 - A workspace eagerly imports and freezes one configured default source.
 - At most one non-archived workspace exists per recording; archived attempts
   remain available for audit.
+- Being a primary recording is a condition on starting correction. A live
+  workspace then latches the gate for that recording regardless of later
+  reassignment.
 - Every persisted text edit is paired atomically with the editor's approval.
 - Two distinct explicit approvals and no current disapproval make a span done.
 - Decisions bind to a revision ID and hash; old decisions never revive.

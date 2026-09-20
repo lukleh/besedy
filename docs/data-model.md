@@ -417,7 +417,7 @@ hash in whatever backend scope is being indexed.
 | `state` | `activating` or `active`; any other value is ignored. |
 | `backend` | The machine backend the corrections descend from. Provenance only. |
 | `transcript_path` | Path to the published `transcript.json`, relative to the corrections root, so a differently mounted reader still resolves it. |
-| `artifact_sha256` | SHA-256 of that file's bytes, which publication reconciliation checks against. Deliberately not the indexer's own source fingerprint, which is derived from segment timing and text: the two are different identities with different owners. |
+| `artifact_sha256` | SHA-256 of that file's bytes. The indexer hashes the file and ignores a pointer that does not match, so this is an integrity check at the boundary that consumes the artifact rather than metadata agreeing with metadata. Deliberately not the indexer's own source fingerprint, which is derived from segment timing and text: the two are different identities with different owners. |
 
 `activating` is honoured as readily as `active`. During the window where a
 publication has written its artifacts but has not yet committed its database

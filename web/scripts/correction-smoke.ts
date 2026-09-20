@@ -322,6 +322,60 @@ async function main() {
     (await listSpans(workspace.id)).spans[1].text
   );
 
+  // Two identical requests arriving together must both succeed, one of them by
+  // replaying the other, rather than the loser hitting the unique constraint.
+  const concurrentKey = randomUUID();
+  const concurrentSpan = (await listSpans(workspace.id)).spans[0];
+  const concurrent = await Promise.allSettled([
+    recordDecision({
+      workspaceId: workspace.id, spanId: concurrentSpan.id, userId: alice.id,
+      expectedRevisionId: concurrentSpan.revisionId, kind: "APPROVE",
+      idempotencyKey: concurrentKey,
+    }),
+    recordDecision({
+      workspaceId: workspace.id, spanId: concurrentSpan.id, userId: alice.id,
+      expectedRevisionId: concurrentSpan.revisionId, kind: "APPROVE",
+      idempotencyKey: concurrentKey,
+    }),
+  ]);
+  check(
+    "simultaneous identical requests both succeed, one as a replay",
+    concurrent.every((outcome) => outcome.status === "fulfilled") &&
+      concurrent.some(
+        (outcome) => outcome.status === "fulfilled" && outcome.value.replayed
+      ),
+    concurrent.map((o) => (o.status === "fulfilled" ? `ok replayed=${o.value.replayed}` : `rejected ${(o.reason as { code?: string }).code}`))
+  );
+
+  // The same action on a later revision is a different command.
+  const staleKey = randomUUID();
+  const revisionSpan = (await listSpans(workspace.id)).spans[1];
+  await recordDecision({
+    workspaceId: workspace.id, spanId: revisionSpan.id, userId: bob.id,
+    expectedRevisionId: revisionSpan.revisionId, kind: "APPROVE",
+    idempotencyKey: staleKey,
+  });
+  await saveAndApprove({
+    workspaceId: workspace.id, spanId: revisionSpan.id, userId: alice.id,
+    expectedRevisionId: revisionSpan.revisionId, text: "moved on",
+  });
+  let staleRevisionRefused: string | null = null;
+  try {
+    const moved = (await listSpans(workspace.id)).spans[1];
+    await recordDecision({
+      workspaceId: workspace.id, spanId: moved.id, userId: bob.id,
+      expectedRevisionId: moved.revisionId, kind: "APPROVE",
+      idempotencyKey: staleKey,
+    });
+  } catch (error) {
+    staleRevisionRefused = (error as { code?: string }).code ?? null;
+  }
+  check(
+    "the same key on a later revision is refused, not replayed",
+    staleRevisionRefused === "IDEMPOTENCY_CONFLICT",
+    staleRevisionRefused
+  );
+
   // The idempotency checks above edited this span, so work from its current
   // revision rather than the one captured when the page was first listed.
   const secondNow = (await listSpans(workspace.id)).spans[1];
@@ -467,6 +521,18 @@ async function main() {
 
   const pointer = await readIndexPointer(CATALOG_ID, AUDIO_HASH);
   check("an index pointer is published for the search side", pointer?.state === "active", pointer);
+  check(
+    "the pointer carries the artifact's real hash, which the indexer verifies",
+    pointer !== null &&
+      createHash("sha256")
+        .update(
+          fs.readFileSync(
+            resolvePublicationFilePath(CATALOG_ID, workspace.id, published.publicationId, "json"),
+            "utf-8"
+          )
+        )
+        .digest("hex") === pointer.artifact_sha256
+  );
 
   check(
     "the reader now resolves the publication",
@@ -478,7 +544,49 @@ async function main() {
   );
 
   // --- recovery is scoped to the workspace it was asked about --------------
-  const foreignWorkspaceId = "00000000-0000-4000-8000-000000000000";
+  // Against a second real workspace, not a made-up id: a missing workspace is
+  // refused by the lock before ownership is ever considered, which would test
+  // the wrong guard.
+  const otherHash = createHash("sha256").update(randomUUID()).digest("hex");
+  const otherDir = path.join(
+    transcriptsDir, `transcripts_${CATALOG_ID}`, BACKEND_WORKFLOW, BACKEND_MODEL, otherHash
+  );
+  fs.mkdirSync(otherDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(otherDir, "transcript.json"),
+    JSON.stringify({
+      meta: {
+        backend: "faster-whisper", model: "large-v3",
+        audio_filepath: `/audio/${otherHash}.wav`, duration: 4,
+        generation_params: {},
+      },
+      segments: [{ start: 0, end: 4, text: "Jina nahravka." }],
+    })
+  );
+  await prisma.catalogEntry.create({
+    data: {
+      workflowGroupId: CATALOG_ID, audioHash: otherHash, hasArchived: true,
+      hasMetadata: true, isActionable: true, isPublished: true,
+    },
+  });
+  const otherEvent = await prisma.catalogEvent.create({
+    data: {
+      workflowGroupId: CATALOG_ID, locationId: location.id, dateYear: 2026,
+      sessionIndex: 2, createdById: alice.id, updatedById: alice.id,
+    },
+  });
+  await prisma.catalogEventRecording.create({
+    data: {
+      eventId: otherEvent.id, workflowGroupId: CATALOG_ID,
+      audioHash: otherHash, isPrimary: true,
+    },
+  });
+  const otherWorkspace = await startWorkspace({
+    catalogId: CATALOG_ID, audioHash: otherHash,
+    transcriptsPath: path.join(transcriptsDir, `transcripts_${CATALOG_ID}`),
+    userId: alice.id,
+  });
+  const foreignWorkspaceId = otherWorkspace.id;
   let reconcileRefused = false;
   try {
     await reconcilePublication(published.publicationId, foreignWorkspaceId);
@@ -576,6 +684,18 @@ async function main() {
 
   // --- deleting a participant ---------------------------------------------
   console.log("\ndeleting a participant");
+
+  // Give the account being deleted a revision of its own, so the check below
+  // is about attribution surviving rather than about an absent author.
+  const bobSpan = (await listSpans(restarted.id)).spans[0];
+  const bobRevision = await saveAndApprove({
+    workspaceId: restarted.id,
+    spanId: bobSpan.id,
+    userId: bob.id,
+    expectedRevisionId: bobSpan.revisionId,
+    text: "bob wrote this",
+  });
+
   const beforeDeletion = (await listSpans(workspace.id)).spans[0];
   await prisma.user.delete({ where: { id: bob.id } });
   const afterDeletion = (await listSpans(workspace.id)).spans[0];
@@ -595,6 +715,18 @@ async function main() {
     (await prisma.transcriptSpanDecision.count({
       where: { actorKey: bob.id, userId: null },
     })) > 0
+  );
+  check(
+    "a deleted editor's revision still names them",
+    (await prisma.transcriptSpanRevision.count({
+      where: { id: bobRevision.revisionId, actorKey: bob.id, authorId: null },
+    })) === 1
+  );
+  check(
+    "span history still attributes that revision to the deleted account",
+    (await listSpanHistory(restarted.id, bobSpan.id)).some(
+      (entry) => entry.kind === "revision" && entry.userId === bob.id
+    )
   );
 
   console.log(`\ncorrections root: ${correctionsDir}`);

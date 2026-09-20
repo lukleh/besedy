@@ -141,15 +141,22 @@ async function assertWorkspaceWritable(
  * a disapproval as the earlier approval's success — the objection silently
  * discarded while the span stays publishable.
  */
-/** Names the command an idempotency key belongs to, payload included. */
+/** Names the command an idempotency key belongs to: what, on what, carrying what. */
 export interface CommandIdentity {
   name: "approve" | "disapprove" | "withdraw" | "save_and_approve";
+  /** The revision the command was issued against */
+  revisionId: string;
   /** Normalized payload, empty for commands that carry none */
   payload: string;
 }
 
 function digestCommand(identity: CommandIdentity): string {
-  return hashSpanText(`${identity.name}\u0000${identity.payload}`);
+  // The revision belongs in the identity: the same action on a later revision
+  // is a new command, and replaying the earlier response for it would report
+  // success for something never recorded.
+  return hashSpanText(
+    `${identity.name}\u0000${identity.revisionId}\u0000${identity.payload}`
+  );
 }
 
 /**
@@ -243,8 +250,15 @@ export async function recordDecision(
           : command.kind === "DISAPPROVE"
             ? "disapprove"
             : "withdraw",
+      revisionId: command.expectedRevisionId,
       payload: "",
     };
+
+    // Under the lock before looking, so two identical requests arriving
+    // together do not both find nothing: the second waits, sees the first, and
+    // replays it instead of failing on the uniqueness constraint.
+    await lockWorkspace(tx, command.workspaceId);
+
     const replay = await findReplay(tx, command, identity);
     if (replay) {
       return {
@@ -253,7 +267,6 @@ export async function recordDecision(
       };
     }
 
-    await lockWorkspace(tx, command.workspaceId);
     await assertWorkspaceWritable(tx, command.workspaceId);
     const span = await lockSpan(tx, command);
 
@@ -301,8 +314,12 @@ export async function saveAndApprove(
     // APPROVE; the command identity is what distinguishes it from one.
     const identity: CommandIdentity = {
       name: "save_and_approve",
+      revisionId: command.expectedRevisionId,
       payload: normalized,
     };
+
+    await lockWorkspace(tx, command.workspaceId);
+
     const replay = await findReplay(tx, command, identity);
     if (replay) {
       return {
@@ -311,7 +328,6 @@ export async function saveAndApprove(
       };
     }
 
-    await lockWorkspace(tx, command.workspaceId);
     await assertWorkspaceWritable(tx, command.workspaceId);
     const span = await lockSpan(tx, command);
 
@@ -334,6 +350,7 @@ export async function saveAndApprove(
           text: normalized,
           textHash: hashSpanText(normalized),
           previousRevisionId: current.id,
+          actorKey: command.userId,
           authorId: command.userId,
         },
       });
@@ -456,7 +473,7 @@ export async function listSpanHistory(
   const [revisions, decisions, comments] = await Promise.all([
     prisma.transcriptSpanRevision.findMany({
       where: { spanId },
-      select: { id: true, text: true, authorId: true, createdAt: true },
+      select: { id: true, text: true, actorKey: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
     prisma.transcriptSpanDecision.findMany({
@@ -475,7 +492,7 @@ export async function listSpanHistory(
     ...revisions.map((revision) => ({
       kind: "revision" as const,
       at: revision.createdAt,
-      userId: revision.authorId,
+      userId: revision.actorKey,
       actorName: null,
       revisionId: revision.id,
       text: revision.text,

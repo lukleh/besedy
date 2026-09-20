@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -43,6 +44,43 @@ def _write_transcript(path: Path, segments: list[dict[str, object]]) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _publish_correction(
+    corrections_root: Path,
+    *,
+    audio_hash: str,
+    segments: list[dict[str, object]] | None = None,
+    state: str = "active",
+    schema_version: int = POINTER_SCHEMA_VERSION,
+    workflow_group_id: str = CATALOG_ID,
+    corrupt: bool = False,
+) -> Path:
+    """Write a corrected transcript and a pointer that carries its real hash.
+
+    The hash has to be the file's own, because the indexer verifies it: a
+    fixture with an invented hash would be rejected, which is the point of
+    verifying it at all.
+    """
+    target = _write_pointer(
+        corrections_root,
+        audio_hash=audio_hash,
+        state=state,
+        schema_version=schema_version,
+        workflow_group_id=workflow_group_id,
+    )
+    _write_transcript(
+        target, segments or [{"start": 0.0, "end": 1.0, "text": "corrected"}]
+    )
+
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    pointer_path = (
+        corrections_root / f"corrections_{workflow_group_id}" / "index-sources" / f"{audio_hash}.json"
+    )
+    payload = json.loads(pointer_path.read_text(encoding="utf-8"))
+    payload["artifact_sha256"] = "0" * 64 if corrupt else digest
+    pointer_path.write_text(json.dumps(payload), encoding="utf-8")
+    return target
 
 
 def _write_pointer(
@@ -99,8 +137,7 @@ def test_pointer_is_ignored_without_its_transcript(corrections_root: Path) -> No
 
 def test_activating_and_active_pointers_both_resolve(corrections_root: Path) -> None:
     for audio_hash, state in ((HASH_A, "activating"), (HASH_B, "active")):
-        target = _write_pointer(corrections_root, audio_hash=audio_hash, state=state)
-        _write_transcript(target, [{"start": 0.0, "end": 1.0, "text": "corrected"}])
+        _publish_correction(corrections_root, audio_hash=audio_hash, state=state)
 
     pointers = load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
 
@@ -144,13 +181,18 @@ def test_pointer_escaping_the_corrections_root_is_ignored(
     assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
 
 
+def test_artifact_not_matching_its_hash_is_ignored(corrections_root: Path) -> None:
+    _publish_correction(corrections_root, audio_hash=HASH_A, corrupt=True)
+
+    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
+
+
 def test_correction_replaces_the_machine_source_for_its_recording(
     corrections_root: Path, tmp_path: Path
 ) -> None:
     machine = tmp_path / "machine" / "transcript.json"
     _write_transcript(machine, [{"start": 0.0, "end": 1.0, "text": "machine"}])
-    corrected = _write_pointer(corrections_root, audio_hash=HASH_A)
-    _write_transcript(corrected, [{"start": 0.0, "end": 1.0, "text": "corrected"}])
+    corrected = _publish_correction(corrections_root, audio_hash=HASH_A)
 
     resolved = resolve_effective_transcript_sources(
         workflow_group_id=CATALOG_ID,
@@ -167,8 +209,7 @@ def test_correction_replaces_the_machine_source_for_its_recording(
 def test_correction_is_included_when_the_scope_has_no_machine_transcript(
     corrections_root: Path,
 ) -> None:
-    corrected = _write_pointer(corrections_root, audio_hash=HASH_A)
-    _write_transcript(corrected, [{"start": 0.0, "end": 1.0, "text": "corrected"}])
+    _publish_correction(corrections_root, audio_hash=HASH_A)
 
     resolved = resolve_effective_transcript_sources(
         workflow_group_id=CATALOG_ID,
@@ -198,8 +239,11 @@ def test_discovery_and_chunking_use_the_corrected_text(
         [{"start": 0.0, "end": 2.0, "text": "untouched machine words"}],
     )
 
-    corrected = _write_pointer(corrections_root, audio_hash=HASH_A)
-    _write_transcript(corrected, [{"start": 0.0, "end": 2.0, "text": "misheard human words"}])
+    corrected = _publish_correction(
+        corrections_root,
+        audio_hash=HASH_A,
+        segments=[{"start": 0.0, "end": 2.0, "text": "misheard human words"}],
+    )
 
     sources = discover_transcript_sources(
         workflow_group_id=CATALOG_ID,
@@ -249,8 +293,11 @@ def test_fingerprint_changes_when_correction_replaces_machine_text(
         corrections_root=corrections_root,
     ).sources[0]
 
-    corrected = _write_pointer(corrections_root, audio_hash=HASH_A)
-    _write_transcript(corrected, [{"start": 0.0, "end": 2.0, "text": "misheard human words"}])
+    _publish_correction(
+        corrections_root,
+        audio_hash=HASH_A,
+        segments=[{"start": 0.0, "end": 2.0, "text": "misheard human words"}],
+    )
 
     after = discover_transcript_sources(
         workflow_group_id=CATALOG_ID,

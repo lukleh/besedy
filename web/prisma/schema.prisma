@@ -1092,7 +1092,11 @@ model TranscriptSpanRevision {
   text               String
   textHash           String   @map("text_hash") @db.VarChar(64)
   previousRevisionId String?  @map("previous_revision_id") @db.Uuid
-  /// Null for the revision imported from the frozen machine source
+  /// Immutable identity of the editor; null for the revision imported from the
+  /// frozen machine source, which nobody wrote. Kept alongside the nullable
+  /// relation so history can still say who created a revision after that
+  /// account is deleted, as ADR 0006 requires of it.
+  actorKey           String?  @map("actor_key")
   authorId           String?  @map("author_id")
   createdAt          DateTime @default(now()) @map("created_at")
 

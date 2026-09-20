@@ -10,6 +10,7 @@ import type { CanonicalTranscript } from "@/lib/correction/source";
 import {
   INDEX_POINTER_SCHEMA_VERSION,
   readJsonFile,
+  readTextFile,
   relativeToCorrectionsRoot,
   removeIndexPointer,
   resolvePublicationFilePath,
@@ -404,27 +405,51 @@ export async function runPublicationJob(
   // From here the workspace stays locked until the new text is verifiably the
   // effective search source, because a half-activated publication that
   // silently unlocked would let the next edit race the index.
-  await prisma.transcriptPublication.update({
-    where: { id: publicationId },
-    data: {
-      status: "ACTIVATING",
-      artifactSha256: fingerprint,
-      activatingAt: new Date(),
-    },
+  //
+  // The status transition and the pointer write happen together under the
+  // workspace lock. Every mutation of that file does, so two operations can
+  // never interleave into a pointer that names one publication and a database
+  // that names another. The transition is conditional as well: a rollback may
+  // have claimed this publication while the artifacts were being rendered.
+  const claimed = await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, publication.workspaceId);
+
+    const transitioned = await tx.transcriptPublication.updateMany({
+      where: { id: publicationId, status: "PENDING" },
+      data: {
+        status: "ACTIVATING",
+        artifactSha256: fingerprint,
+        activatingAt: new Date(),
+      },
+    });
+    if (transitioned.count === 0) return false;
+
+    await writeIndexPointer({
+      schema_version: INDEX_POINTER_SCHEMA_VERSION,
+      workflow_group_id: publication.workflowGroupId,
+      audio_hash: publication.audioHash,
+      workspace_id: publication.workspaceId,
+      publication_id: publication.id,
+      state: "activating",
+      backend: publication.workspace.sourceBackend,
+      transcript_path: relativeToCorrectionsRoot(jsonPath),
+      artifact_sha256: fingerprint,
+      updated_at: new Date().toISOString(),
+    });
+
+    return true;
   });
 
-  await writeIndexPointer({
-    schema_version: INDEX_POINTER_SCHEMA_VERSION,
-    workflow_group_id: publication.workflowGroupId,
-    audio_hash: publication.audioHash,
-    workspace_id: publication.workspaceId,
-    publication_id: publication.id,
-    state: "activating",
-    backend: publication.workspace.sourceBackend,
-    transcript_path: relativeToCorrectionsRoot(jsonPath),
-    artifact_sha256: fingerprint,
-    updated_at: new Date().toISOString(),
-  });
+  if (!claimed) {
+    const current = await prisma.transcriptPublication.findUniqueOrThrow({
+      where: { id: publicationId },
+      select: { status: true },
+    });
+    throw new CorrectionError(
+      "PUBLICATION_NOT_FOUND",
+      `Publication is ${current.status} and was not activated`
+    );
+  }
 
   return reconcilePublication(publicationId, publication.workspaceId);
 }
@@ -443,15 +468,7 @@ export async function reconcilePublication(
 ): Promise<"SUCCEEDED" | "ACTIVATING" | "FAILED"> {
   const publication = await prisma.transcriptPublication.findUnique({
     where: { id: publicationId },
-    select: {
-      id: true,
-      status: true,
-      workspaceId: true,
-      workflowGroupId: true,
-      audioHash: true,
-      artifactSha256: true,
-      workspace: { select: { sourceBackend: true } },
-    },
+    select: { id: true, status: true, workspaceId: true, artifactSha256: true },
   });
 
   // A publication is addressed by id, but the caller was authorized for one
@@ -467,9 +484,7 @@ export async function reconcilePublication(
       `Publication is ${publication.status} and cannot be reconciled`
     );
   }
-
-  const expected = publication.artifactSha256;
-  if (!expected) {
+  if (!publication.artifactSha256) {
     await failPublication(
       publicationId,
       new Error("Publication has no artifact hash to verify against")
@@ -477,56 +492,106 @@ export async function reconcilePublication(
     return "FAILED";
   }
 
-  let pointer = await readIndexPointer(
-    publication.workflowGroupId,
-    publication.audioHash
+  // Everything below runs under the workspace lock, including the pointer
+  // read and write: the status is re-read inside it, so a rollback that
+  // claimed this publication while we were getting here cannot be resurrected
+  // as SUCCEEDED, and the pointer cannot be rewritten underneath one.
+  return prisma.$transaction(
+    async (tx): Promise<"SUCCEEDED" | "ACTIVATING" | "FAILED"> => {
+      await lockWorkspace(tx, workspaceId);
+
+      const current = await tx.transcriptPublication.findUniqueOrThrow({
+        where: { id: publicationId },
+        select: {
+          status: true,
+          workflowGroupId: true,
+          audioHash: true,
+          artifactSha256: true,
+          workspace: { select: { sourceBackend: true } },
+        },
+      });
+      if (current.status === "SUCCEEDED") return "SUCCEEDED";
+      if (current.status !== "ACTIVATING") {
+        throw new CorrectionError(
+          "PUBLICATION_NOT_FOUND",
+          `Publication is ${current.status} and cannot be reconciled`
+        );
+      }
+
+      const expected = current.artifactSha256;
+      if (!expected) return "ACTIVATING";
+
+      const jsonPath = resolvePublicationFilePath(
+        current.workflowGroupId,
+        workspaceId,
+        publicationId,
+        "json"
+      );
+
+      // The artifact itself has to match, not just the metadata beside it.
+      // Comparing the database hash with the hash the database also wrote into
+      // the pointer would prove only that the two agree with each other.
+      const artifact = await readTextFile(jsonPath);
+      if (artifact === null || fingerprintContent(artifact) !== expected) {
+        throw new CorrectionError(
+          "SOURCE_MISSING",
+          "The published artifact is missing or does not match its recorded hash"
+        );
+      }
+
+      let pointer = await readIndexPointer(current.workflowGroupId, current.audioHash);
+      if (!pointer || pointer.artifact_sha256 !== expected) {
+        await writeIndexPointer({
+          schema_version: INDEX_POINTER_SCHEMA_VERSION,
+          workflow_group_id: current.workflowGroupId,
+          audio_hash: current.audioHash,
+          workspace_id: workspaceId,
+          publication_id: publicationId,
+          state: "activating",
+          backend: current.workspace.sourceBackend,
+          transcript_path: relativeToCorrectionsRoot(jsonPath),
+          artifact_sha256: expected,
+          updated_at: new Date().toISOString(),
+        });
+        pointer = await readIndexPointer(current.workflowGroupId, current.audioHash);
+        if (!pointer || pointer.artifact_sha256 !== expected) {
+          return "ACTIVATING";
+        }
+      }
+
+      await tx.transcriptWorkspace.update({
+        where: { id: workspaceId },
+        data: {
+          readerPublicationId: publicationId,
+          searchPublicationId: publicationId,
+        },
+      });
+      const finished = await tx.transcriptPublication.updateMany({
+        where: { id: publicationId, status: "ACTIVATING" },
+        data: {
+          status: "SUCCEEDED",
+          finishedAt: new Date(),
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+      if (finished.count === 0) {
+        throw new CorrectionError(
+          "PUBLICATION_NOT_FOUND",
+          "Publication left ACTIVATING while it was being reconciled"
+        );
+      }
+
+      await writeIndexPointer({
+        ...pointer,
+        state: "active",
+        updated_at: new Date().toISOString(),
+      });
+
+      return "SUCCEEDED";
+    },
+    { maxWait: 10_000, timeout: 30_000 }
   );
-
-  if (!pointer || pointer.artifact_sha256 !== expected) {
-    const jsonPath = resolvePublicationFilePath(
-      publication.workflowGroupId,
-      publication.workspaceId,
-      publication.id,
-      "json"
-    );
-    await writeIndexPointer({
-      schema_version: INDEX_POINTER_SCHEMA_VERSION,
-      workflow_group_id: publication.workflowGroupId,
-      audio_hash: publication.audioHash,
-      workspace_id: publication.workspaceId,
-      publication_id: publication.id,
-      state: "activating",
-      backend: publication.workspace.sourceBackend,
-      transcript_path: relativeToCorrectionsRoot(jsonPath),
-      artifact_sha256: expected,
-      updated_at: new Date().toISOString(),
-    });
-    pointer = await readIndexPointer(
-      publication.workflowGroupId,
-      publication.audioHash
-    );
-    if (!pointer || pointer.artifact_sha256 !== expected) {
-      return "ACTIVATING";
-    }
-  }
-
-  await prisma.$transaction([
-    prisma.transcriptWorkspace.update({
-      where: { id: publication.workspaceId },
-      data: {
-        readerPublicationId: publication.id,
-        searchPublicationId: publication.id,
-      },
-    }),
-    prisma.transcriptPublication.update({
-      where: { id: publication.id },
-      data: { status: "SUCCEEDED", finishedAt: new Date(), errorCode: null, errorMessage: null },
-    }),
-  ]);
-
-  await writeIndexPointer({ ...pointer, state: "active", updated_at: new Date().toISOString() });
-
-  return "SUCCEEDED";
 }
 
 async function failPublication(
@@ -743,6 +808,10 @@ export async function withdrawFromSearch(
     throw new CorrectionError("NO_WORKSPACE", "Correction has not been started");
   }
 
+  // The pointer is removed under the same lock. Releasing it first and
+  // unlinking afterwards let a publication start, finish and write its pointer
+  // in between — and this would then delete the new one, leaving a successful
+  // publication with nothing for the indexer to resolve.
   await prisma.$transaction(async (tx) => {
     await lockWorkspace(tx, workspace.id);
     await assertNoPublicationInFlight(workspace.id, tx);
@@ -750,11 +819,8 @@ export async function withdrawFromSearch(
       where: { id: workspace.id },
       data: { searchPublicationId: null, readerPublicationId: null },
     });
+    await removeIndexPointer(catalogId, audioHash);
   });
-
-  // After the pointers are gone, so a crash between the two leaves search
-  // resolving a snapshot the database no longer offers rather than the reverse.
-  await removeIndexPointer(catalogId, audioHash);
 }
 
 /**
@@ -765,63 +831,85 @@ export async function rollbackPublication(
   publicationId: string,
   workspaceId: string
 ): Promise<void> {
-  const publication = await prisma.transcriptPublication.findUnique({
-    where: { id: publicationId },
-    select: {
-      id: true,
-      status: true,
-      workspaceId: true,
-      workflowGroupId: true,
-      audioHash: true,
-      previousSourceKind: true,
-      previousSourceRef: true,
-      workspace: { select: { sourceBackend: true } },
-    },
-  });
+  // Claiming the publication and restoring the pointer happen together under
+  // the workspace lock, so a reconciliation cannot complete the publication
+  // this is abandoning, and cannot rewrite the pointer afterwards.
+  await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspaceId);
 
-  if (!publication || publication.workspaceId !== workspaceId) {
-    throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication not found");
-  }
-  if (publication.status !== "ACTIVATING" && publication.status !== "PENDING") {
-    throw new CorrectionError(
-      "PUBLICATION_NOT_FOUND",
-      `Publication is ${publication.status} and cannot be rolled back`
-    );
-  }
-
-  if (publication.previousSourceKind === "publication" && publication.previousSourceRef) {
-    const previous = await prisma.transcriptPublication.findUnique({
-      where: { id: publication.previousSourceRef },
-      select: { id: true, workspaceId: true, artifactSha256: true },
+    const publication = await tx.transcriptPublication.findUnique({
+      where: { id: publicationId },
+      select: {
+        id: true,
+        status: true,
+        workspaceId: true,
+        workflowGroupId: true,
+        audioHash: true,
+        previousSourceKind: true,
+        previousSourceRef: true,
+        workspace: { select: { sourceBackend: true } },
+      },
     });
-    if (previous?.artifactSha256) {
-      await writeIndexPointer({
-        schema_version: INDEX_POINTER_SCHEMA_VERSION,
-        workflow_group_id: publication.workflowGroupId,
-        audio_hash: publication.audioHash,
-        workspace_id: previous.workspaceId,
-        publication_id: previous.id,
-        state: "active",
-        backend: publication.workspace.sourceBackend,
-        transcript_path: relativeToCorrectionsRoot(
-          resolvePublicationFilePath(
-            publication.workflowGroupId,
-            previous.workspaceId,
-            previous.id,
-            "json"
-          )
-        ),
-        artifact_sha256: previous.artifactSha256,
-        updated_at: new Date().toISOString(),
-      });
-    }
-  } else {
-    await removeIndexPointer(publication.workflowGroupId, publication.audioHash);
-  }
 
-  await prisma.transcriptPublication.update({
-    where: { id: publication.id },
-    data: { status: "ROLLED_BACK", finishedAt: new Date() },
+    if (!publication || publication.workspaceId !== workspaceId) {
+      throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication not found");
+    }
+
+    // Re-running a rollback whose filesystem half did not finish is allowed,
+    // so the operation is idempotent rather than one-shot.
+    if (
+      publication.status !== "ACTIVATING" &&
+      publication.status !== "PENDING" &&
+      publication.status !== "ROLLED_BACK"
+    ) {
+      throw new CorrectionError(
+        "PUBLICATION_NOT_FOUND",
+        `Publication is ${publication.status} and cannot be rolled back`
+      );
+    }
+
+    if (publication.status !== "ROLLED_BACK") {
+      const claimed = await tx.transcriptPublication.updateMany({
+        where: { id: publicationId, status: { in: ["PENDING", "ACTIVATING"] } },
+        data: { status: "ROLLED_BACK", finishedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new CorrectionError(
+          "PUBLICATION_NOT_FOUND",
+          "Publication changed state while it was being rolled back"
+        );
+      }
+    }
+
+    if (publication.previousSourceKind === "publication" && publication.previousSourceRef) {
+      const previous = await tx.transcriptPublication.findUnique({
+        where: { id: publication.previousSourceRef },
+        select: { id: true, workspaceId: true, artifactSha256: true },
+      });
+      if (previous?.artifactSha256) {
+        await writeIndexPointer({
+          schema_version: INDEX_POINTER_SCHEMA_VERSION,
+          workflow_group_id: publication.workflowGroupId,
+          audio_hash: publication.audioHash,
+          workspace_id: previous.workspaceId,
+          publication_id: previous.id,
+          state: "active",
+          backend: publication.workspace.sourceBackend,
+          transcript_path: relativeToCorrectionsRoot(
+            resolvePublicationFilePath(
+              publication.workflowGroupId,
+              previous.workspaceId,
+              previous.id,
+              "json"
+            )
+          ),
+          artifact_sha256: previous.artifactSha256,
+          updated_at: new Date().toISOString(),
+        });
+      }
+    } else {
+      await removeIndexPointer(publication.workflowGroupId, publication.audioHash);
+    }
   });
 }
 
