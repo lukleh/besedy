@@ -370,7 +370,7 @@ export async function runPublicationJob(
   }
 
   if (publication.status === "ACTIVATING") {
-    return reconcilePublication(publicationId);
+    return reconcilePublication(publicationId, publication.workspaceId);
   }
   if (publication.status !== "PENDING") {
     throw new CorrectionError(
@@ -420,7 +420,7 @@ export async function runPublicationJob(
     updated_at: new Date().toISOString(),
   });
 
-  return reconcilePublication(publicationId);
+  return reconcilePublication(publicationId, publication.workspaceId);
 }
 
 /**
@@ -432,7 +432,8 @@ export async function runPublicationJob(
  * strand a workspace, and a rollback cannot discard their work.
  */
 export async function reconcilePublication(
-  publicationId: string
+  publicationId: string,
+  workspaceId: string
 ): Promise<"SUCCEEDED" | "ACTIVATING" | "FAILED"> {
   const publication = await prisma.transcriptPublication.findUnique({
     where: { id: publicationId },
@@ -447,7 +448,10 @@ export async function reconcilePublication(
     },
   });
 
-  if (!publication) {
+  // A publication is addressed by id, but the caller was authorized for one
+  // workspace. Answering "not found" rather than "not yours" keeps the id from
+  // telling anyone whether it exists in some other catalog.
+  if (!publication || publication.workspaceId !== workspaceId) {
     throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication not found");
   }
   if (publication.status === "SUCCEEDED") return "SUCCEEDED";
@@ -715,7 +719,10 @@ export async function withdrawFromSearch(
  * Abandon an activation and put the previous effective source back for this
  * audio hash alone.
  */
-export async function rollbackPublication(publicationId: string): Promise<void> {
+export async function rollbackPublication(
+  publicationId: string,
+  workspaceId: string
+): Promise<void> {
   const publication = await prisma.transcriptPublication.findUnique({
     where: { id: publicationId },
     select: {
@@ -730,7 +737,7 @@ export async function rollbackPublication(publicationId: string): Promise<void> 
     },
   });
 
-  if (!publication) {
+  if (!publication || publication.workspaceId !== workspaceId) {
     throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication not found");
   }
   if (publication.status !== "ACTIVATING" && publication.status !== "PENDING") {

@@ -55,13 +55,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     let result: Record<string, unknown>;
     switch (command.action) {
+      // Every branch is scoped to the workspace the access check authorized:
+      // a publication id alone must never reach across catalogs.
       case "reconcile":
         result = {
-          status: await reconcilePublication(command.publicationId),
+          status: await reconcilePublication(
+            command.publicationId,
+            workspace.id
+          ),
         };
         break;
       case "rollback":
-        await rollbackPublication(command.publicationId);
+        await rollbackPublication(command.publicationId, workspace.id);
         result = { status: "ROLLED_BACK" };
         break;
       case "withdraw_from_search":
