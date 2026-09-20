@@ -1190,6 +1190,36 @@ model WebUpdateEvent {
   @@map("web_update_event")
 }
 
+/// Authoritative record of when a web client version actually went live.
+/// Written directly by the production deploy recipe (`just prod-apply`), not
+/// by the app -- this is the definitive answer to "what was deployed when,"
+/// as opposed to a commit's timestamp, which only says when the code
+/// changed. Rows are never updated; each deploy (including a redeploy of an
+/// unchanged version) appends one.
+model WebDeployLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gitCommit  String   @map("git_commit") @db.VarChar(40)
+  webVersion String   @map("web_version") @db.VarChar(64)
+  /// timestamptz, not the schema's usual bare timestamp: this row's default
+  /// is filled by the database (CURRENT_TIMESTAMP), not by Prisma, and a
+  /// timestamp-without-time-zone column would silently store the db
+  /// session's local wall clock with no indication that it isn't UTC if
+  /// that session's TimeZone were ever changed from the current Etc/UTC
+  /// default. timestamptz stores the actual instant, so it stays correct
+  /// regardless.
+  deployedAt DateTime @default(now()) @map("deployed_at") @db.Timestamptz(3)
+  deployedBy String?  @map("deployed_by") @db.VarChar(120)
+  /// Not written by `prod-apply` and not read by any current query. Reserved
+  /// for manually backfilling a row for a deploy that didn't go through the
+  /// standard recipe (a manual `docker compose up`, an emergency hotfix), so
+  /// that path isn't permanently invisible to this log.
+  note       String?  @db.VarChar(500)
+
+  @@index([webVersion])
+  @@index([deployedAt])
+  @@map("web_deploy_log")
+}
+
 // ============================================================================
 // Global Enums (Cross-Catalog Lookup Tables)
 // ============================================================================
