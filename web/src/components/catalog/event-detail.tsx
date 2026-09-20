@@ -63,6 +63,7 @@ interface EventDetailResponse {
   canManagePosters?: boolean;
   canPublishPosters?: boolean;
   canManageSources?: boolean;
+  posterStatus?: "none" | "draft-only" | "published" | "published-with-newer-drafts";
   publishedPoster?: {
     id: string;
     publishedAt: string;
@@ -158,6 +159,23 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const canViewPosterCandidates = data.canViewPosterCandidates ?? false;
   const canManageSources = data.canManageSources ?? false;
   const publishedPoster = data.publishedPoster ?? null;
+  const posterStatus = data.posterStatus ?? "none";
+
+  const posterStatusBadge = !canViewPosterCandidates ? null : publishedPoster ? (
+    posterStatus === "published-with-newer-drafts" ? (
+      <Badge variant="secondary" className="self-start">
+        {t("newerDraftAvailable")}
+      </Badge>
+    ) : null
+  ) : posterStatus === "draft-only" ? (
+    <Badge variant="secondary" className="self-start">
+      {t("draftPosterAvailable")}
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="self-start">
+      {tRoot("recording.noPoster")}
+    </Badge>
+  );
 
   const posterPicture = publishedPoster ? (
     <EventPosterPicture
@@ -229,11 +247,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const detailExtras =
     canViewPosterCandidates || canManageSources || data.title || data.description ? (
       <div className="space-y-3">
-        {!publishedPoster && canViewPosterCandidates && (
-          <Badge variant="outline" className="self-start">
-            {tRoot("recording.noPoster")}
-          </Badge>
-        )}
+        {posterStatusBadge}
         {(canViewPosterCandidates || canManageSources) && (
           <div className="flex flex-wrap items-center gap-2">
             {canViewPosterCandidates && (
@@ -346,6 +360,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         )}
       </div>
 
+      {posterStatusBadge}
       {posterPicture}
       <div className="rounded-md border p-6 text-sm text-muted-foreground">{t("noRecordings")}</div>
       {eventNavigation}

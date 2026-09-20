@@ -16,7 +16,7 @@ import {
 } from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { getPublishedEventPoster } from "@/lib/event-poster-service";
+import { getEventPosterWorkflowStatuses, getPublishedEventPoster } from "@/lib/event-poster-service";
 import {
   finalizeStagedEventPosterAssetsRemoval,
   restoreStagedEventPosterAssets,
@@ -104,10 +104,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       });
 
     const readableEventIds = await resolveReadableEventIds(catalogId, catalogGrant);
-    const [catalogCapability, publishedPoster, sessionOrdinals] = await Promise.all([
+    const [catalogCapability, publishedPoster, sessionOrdinals, posterStatuses] = await Promise.all([
       getCatalogCapability(catalogId, userId),
       getPublishedEventPoster(catalogId, eventId),
       loadSessionOrdinals(catalogId, readableEventIds, [event]),
+      getEventPosterWorkflowStatuses(catalogId, [eventId]),
     ]);
     const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
       ordinal: 1,
@@ -117,6 +118,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const canManagePosters = catalogCapability.canManagePosters;
     const canPublishPosters = catalogCapability.canPublishPosters;
     const canManageSources = catalogCapability.canManageAccess;
+    // ADR 0009: draft counts/labels are only for actors with draft visibility;
+    // ordinary readers keep seeing only the published poster.
+    const posterStatus = canViewPosterCandidates ? (posterStatuses.get(eventId) ?? "none") : undefined;
 
     return NextResponse.json({
       id: event.id,
@@ -143,6 +147,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canPublishPosters,
       canManageSources,
       publishedPoster,
+      posterStatus,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog event", "fetch");

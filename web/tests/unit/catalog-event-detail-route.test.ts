@@ -16,6 +16,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 
 vi.mock("@/lib/event-poster-service", () => ({
   getPublishedEventPoster: vi.fn(),
+  getEventPosterWorkflowStatuses: vi.fn(),
 }));
 
 vi.mock("@/lib/event-poster-storage", () => ({
@@ -54,6 +55,7 @@ describe("catalog event detail route", () => {
   let requireCatalogEventsAccess: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
   let getPublishedEventPoster: ReturnType<typeof vi.fn>;
+  let getEventPosterWorkflowStatuses: ReturnType<typeof vi.fn>;
   let finalizeStagedEventPosterAssetsRemoval: ReturnType<typeof vi.fn>;
   let restoreStagedEventPosterAssets: ReturnType<typeof vi.fn>;
   let stageEventPosterAssetsRemoval: ReturnType<typeof vi.fn>;
@@ -76,9 +78,9 @@ describe("catalog event detail route", () => {
       typeof vi.fn
     >;
     getCatalogCapability = (await import("@/lib/access/capabilities")).getCatalogCapability as ReturnType<typeof vi.fn>;
-    getPublishedEventPoster = (await import("@/lib/event-poster-service")).getPublishedEventPoster as ReturnType<
-      typeof vi.fn
-    >;
+    const posterService = await import("@/lib/event-poster-service");
+    getPublishedEventPoster = posterService.getPublishedEventPoster as ReturnType<typeof vi.fn>;
+    getEventPosterWorkflowStatuses = posterService.getEventPosterWorkflowStatuses as ReturnType<typeof vi.fn>;
     const posterStorage = await import("@/lib/event-poster-storage");
     finalizeStagedEventPosterAssetsRemoval = posterStorage.finalizeStagedEventPosterAssetsRemoval as ReturnType<
       typeof vi.fn
@@ -118,6 +120,7 @@ describe("catalog event detail route", () => {
       canPublishPosters: false,
     });
     getPublishedEventPoster.mockResolvedValue(null);
+    getEventPosterWorkflowStatuses.mockResolvedValue(new Map());
     stageEventPosterAssetsRemoval.mockResolvedValue(null);
     restoreStagedEventPosterAssets.mockResolvedValue(undefined);
     finalizeStagedEventPosterAssetsRemoval.mockResolvedValue(undefined);
@@ -168,6 +171,41 @@ describe("catalog event detail route", () => {
     expect(body.canManageSources).toBe(false);
     expect(isPublishedVisibleEvent).not.toHaveBeenCalled();
     expect(getPublishedAccessibleRecordingHashes).not.toHaveBeenCalled();
+    expect(body.posterStatus).toBeUndefined();
+  });
+
+  it("exposes draft poster status to actors with draft visibility", async () => {
+    getCatalogCapability.mockResolvedValue({
+      canManageAccess: false,
+      canViewPosterCandidates: true,
+      canManagePosters: true,
+      canPublishPosters: true,
+    });
+    getEventPosterWorkflowStatuses.mockResolvedValue(new Map([[eventId, "draft-only"]]));
+
+    const response = await getCatalogEvent(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}`),
+      { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.publishedPoster).toBeNull();
+    expect(body.posterStatus).toBe("draft-only");
+    expect(getEventPosterWorkflowStatuses).toHaveBeenCalledWith(catalogId, [eventId]);
+  });
+
+  it("does not expose poster status to actors without draft visibility", async () => {
+    getEventPosterWorkflowStatuses.mockResolvedValue(new Map([[eventId, "draft-only"]]));
+
+    const response = await getCatalogEvent(
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}`),
+      { params: Promise.resolve({ id: catalogId, eventId: String(eventId) }) }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.posterStatus).toBeUndefined();
   });
 
   it("returns 404 for listener access when the event is not published-visible", async () => {

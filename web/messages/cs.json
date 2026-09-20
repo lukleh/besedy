@@ -1607,7 +1607,9 @@
       "recordingsMenuTitle": "Nahrávky",
       "unknownRecorder": "Neznámý zvukař",
       "unknownLocation": "Neznámé místo",
-      "noRecordings": "Tato událost zatím nemá přiřazené žádné nahrávky."
+      "noRecordings": "Tato událost zatím nemá přiřazené žádné nahrávky.",
+      "draftPosterAvailable": "K dispozici je návrh plakátu (nezveřejněn)",
+      "newerDraftAvailable": "K dispozici je novější návrh"
     },
     "navigation": {
       "ariaLabel": "Navigace mezi událostmi",
