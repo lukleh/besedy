@@ -3,7 +3,7 @@
 -- ACTIVATING. This migration follows the enum-value migration deliberately:
 -- PostgreSQL must commit a new enum value before an index predicate may use it.
 
-DROP INDEX "transcript_publication_in_flight_per_workspace_key";
+DROP INDEX IF EXISTS "transcript_publication_in_flight_per_workspace_key";
 
 CREATE UNIQUE INDEX "transcript_publication_in_flight_per_workspace_key"
 ON "transcript_publication"("workspace_id")
