@@ -1614,7 +1614,9 @@
       "recordingsMenuTitle": "Recordings",
       "unknownRecorder": "Unknown recorder",
       "unknownLocation": "Unknown location",
-      "noRecordings": "This event has no recordings attached yet."
+      "noRecordings": "This event has no recordings attached yet.",
+      "draftPosterAvailable": "Draft poster available (not published)",
+      "newerDraftAvailable": "Newer draft available"
     },
     "navigation": {
       "ariaLabel": "Event navigation",
