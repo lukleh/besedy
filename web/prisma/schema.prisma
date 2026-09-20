@@ -1129,6 +1129,12 @@ model TranscriptSpanDecision {
   kind           TranscriptDecisionKind
   /// Client-supplied key; double-clicks and retries cannot duplicate a decision
   idempotencyKey String?                @map("idempotency_key") @db.VarChar(64)
+  /// The command this row recorded, which `kind` alone cannot name: an edit
+  /// and a bare approval both store APPROVE.
+  commandName    String?                @map("command_name") @db.VarChar(32)
+  /// SHA-256 of that command's payload, so two edits carrying different text
+  /// are not mistaken for a retry of each other.
+  commandDigest  String?                @map("command_digest") @db.VarChar(64)
   createdAt      DateTime               @default(now()) @map("created_at")
 
   workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

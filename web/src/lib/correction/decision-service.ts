@@ -141,10 +141,30 @@ async function assertWorkspaceWritable(
  * a disapproval as the earlier approval's success — the objection silently
  * discarded while the span stays publishable.
  */
+/** Names the command an idempotency key belongs to, payload included. */
+export interface CommandIdentity {
+  name: "approve" | "disapprove" | "withdraw" | "save_and_approve";
+  /** Normalized payload, empty for commands that carry none */
+  payload: string;
+}
+
+function digestCommand(identity: CommandIdentity): string {
+  return hashSpanText(`${identity.name}\u0000${identity.payload}`);
+}
+
+/**
+ * Recognize a retry of the same command, and refuse a different one.
+ *
+ * A key identifies one command on one span — the operation *and* what it
+ * carried. The decision kind cannot stand in for that: an edit and a bare
+ * approval both store APPROVE, so comparing kinds would let a retry under an
+ * earlier key silently discard edited text, and would treat two edits with
+ * different wording as the same command.
+ */
 async function findReplay(
   tx: TransactionClient,
   command: SpanCommandBase,
-  kind: TranscriptDecisionKind
+  identity: CommandIdentity
 ): Promise<{ spanId: string; revisionId: string } | null> {
   if (!command.idempotencyKey) return null;
 
@@ -156,16 +176,26 @@ async function findReplay(
         idempotencyKey: command.idempotencyKey,
       },
     },
-    select: { spanId: true, revisionId: true, kind: true },
+    select: {
+      spanId: true,
+      revisionId: true,
+      commandName: true,
+      commandDigest: true,
+    },
   });
 
   if (!existing) return null;
 
-  if (existing.spanId !== command.spanId || existing.kind !== kind) {
+  const digest = digestCommand(identity);
+  if (
+    existing.spanId !== command.spanId ||
+    existing.commandName !== identity.name ||
+    existing.commandDigest !== digest
+  ) {
     throw new CorrectionError(
       "IDEMPOTENCY_CONFLICT",
-      "That idempotency key was already used for a different action",
-      { recordedKind: existing.kind, recordedSpanId: existing.spanId }
+      "That idempotency key was already used for a different command",
+      { recordedCommand: existing.commandName, recordedSpanId: existing.spanId }
     );
   }
 
@@ -206,7 +236,16 @@ export async function recordDecision(
   command: DecisionCommand
 ): Promise<SpanCommandResult> {
   return prisma.$transaction(async (tx) => {
-    const replay = await findReplay(tx, command, command.kind);
+    const identity: CommandIdentity = {
+      name:
+        command.kind === "APPROVE"
+          ? "approve"
+          : command.kind === "DISAPPROVE"
+            ? "disapprove"
+            : "withdraw",
+      payload: "",
+    };
+    const replay = await findReplay(tx, command, identity);
     if (replay) {
       return {
         ...(await summarizeSpan(tx, replay.spanId, replay.revisionId)),
@@ -227,6 +266,8 @@ export async function recordDecision(
         userId: command.userId,
         kind: command.kind,
         idempotencyKey: command.idempotencyKey ?? null,
+        commandName: identity.name,
+        commandDigest: digestCommand(identity),
       },
     });
 
@@ -256,9 +297,13 @@ export async function saveAndApprove(
   }
 
   return prisma.$transaction(async (tx) => {
-    // An edit is stored with the editor's approval, so a retry of it is a
-    // replay of an APPROVE.
-    const replay = await findReplay(tx, command, "APPROVE");
+    // An edit is stored with the editor's approval, so its recorded kind is
+    // APPROVE; the command identity is what distinguishes it from one.
+    const identity: CommandIdentity = {
+      name: "save_and_approve",
+      payload: normalized,
+    };
+    const replay = await findReplay(tx, command, identity);
     if (replay) {
       return {
         ...(await summarizeSpan(tx, replay.spanId, replay.revisionId)),
@@ -307,6 +352,8 @@ export async function saveAndApprove(
         userId: command.userId,
         kind: "APPROVE",
         idempotencyKey: command.idempotencyKey ?? null,
+        commandName: identity.name,
+        commandDigest: digestCommand(identity),
       },
     });
 

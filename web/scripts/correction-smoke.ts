@@ -284,18 +284,59 @@ async function main() {
     reusedKeyRefused
   );
 
+  // An edit and a bare approval both record APPROVE, so the decision kind
+  // cannot tell them apart; the command identity has to.
+  const editKey = randomUUID();
+  const editSpan = (await listSpans(workspace.id)).spans[1];
+  await saveAndApprove({
+    workspaceId: workspace.id,
+    spanId: editSpan.id,
+    userId: alice.id,
+    expectedRevisionId: editSpan.revisionId,
+    text: "first wording",
+    idempotencyKey: editKey,
+  });
+
+  let secondEditRefused: string | null = null;
+  try {
+    const current = (await listSpans(workspace.id)).spans[1];
+    await saveAndApprove({
+      workspaceId: workspace.id,
+      spanId: current.id,
+      userId: alice.id,
+      expectedRevisionId: current.revisionId,
+      text: "different wording",
+      idempotencyKey: editKey,
+    });
+  } catch (error) {
+    secondEditRefused = (error as { code?: string }).code ?? null;
+  }
+  check(
+    "a different edit under the same key is refused, not silently dropped",
+    secondEditRefused === "IDEMPOTENCY_CONFLICT",
+    secondEditRefused
+  );
+  check(
+    "the first wording is still the current text",
+    (await listSpans(workspace.id)).spans[1].text === "first wording",
+    (await listSpans(workspace.id)).spans[1].text
+  );
+
+  // The idempotency checks above edited this span, so work from its current
+  // revision rather than the one captured when the page was first listed.
+  const secondNow = (await listSpans(workspace.id)).spans[1];
   await recordDecision({
     workspaceId: workspace.id,
-    spanId: second.id,
+    spanId: secondNow.id,
     userId: alice.id,
-    expectedRevisionId: second.revisionId,
+    expectedRevisionId: secondNow.revisionId,
     kind: "DISAPPROVE",
   });
   await recordDecision({
     workspaceId: workspace.id,
-    spanId: second.id,
+    spanId: secondNow.id,
     userId: bob.id,
-    expectedRevisionId: second.revisionId,
+    expectedRevisionId: secondNow.revisionId,
     kind: "APPROVE",
   });
   const blocked = await getPublicationEligibility(workspace.id);
@@ -312,16 +353,16 @@ async function main() {
 
   await recordDecision({
     workspaceId: workspace.id,
-    spanId: second.id,
+    spanId: secondNow.id,
     userId: alice.id,
-    expectedRevisionId: second.revisionId,
+    expectedRevisionId: secondNow.revisionId,
     kind: "WITHDRAW",
   });
   await recordDecision({
     workspaceId: workspace.id,
-    spanId: second.id,
+    spanId: secondNow.id,
     userId: alice.id,
-    expectedRevisionId: second.revisionId,
+    expectedRevisionId: secondNow.revisionId,
     kind: "APPROVE",
   });
   const eligibility = await getPublicationEligibility(workspace.id);

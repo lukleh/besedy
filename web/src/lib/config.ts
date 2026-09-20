@@ -1,4 +1,5 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { parse as parseToml } from "@iarna/toml";
 import { getBesedyConfigSearchPaths } from "@/lib/runtime-paths";
@@ -113,8 +114,21 @@ export function getUploadsDir(): string {
 export function getCorrectionsDir(): string {
   const config = getBesedyConfig();
   const correctionsDir = config.paths.corrections_dir?.trim();
-  if (correctionsDir) return correctionsDir;
-  return path.join(config.paths.text_data_dir, "corrections");
+  if (!correctionsDir) {
+    return path.join(config.paths.text_data_dir, "corrections");
+  }
+
+  // Resolved exactly as `besedy.core.paths_runtime.resolve_corrections_root`
+  // does, because both sides have to land in the same tree: a relative value
+  // is relative to text_data_dir, not to whatever directory the web process
+  // happens to have been started in.
+  const expanded = correctionsDir.startsWith("~/")
+    ? path.join(os.homedir(), correctionsDir.slice(2))
+    : correctionsDir;
+
+  return path.isAbsolute(expanded)
+    ? expanded
+    : path.join(config.paths.text_data_dir, expanded);
 }
 
 /**
