@@ -84,6 +84,7 @@ interface RecordingTranscriptSectionProps {
   canDownloadTranscripts?: boolean;
   canSeeSpeakers?: boolean;
   canSeeTranscriptVariants?: boolean;
+  canCorrectTranscripts?: boolean;
   catalogId: string;
   currentTime: number;
   hash: string;
@@ -313,6 +314,7 @@ export function RecordingTranscriptSection({
   canDownloadTranscripts,
   canSeeSpeakers = false,
   canSeeTranscriptVariants = false,
+  canCorrectTranscripts = false,
   catalogId,
   currentTime,
   hash,
@@ -376,6 +378,7 @@ export function RecordingTranscriptSection({
           canDownload={canDownloadTranscripts}
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}
+          canCorrectTranscripts={canCorrectTranscripts}
         />
       )}
     </div>

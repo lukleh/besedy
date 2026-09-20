@@ -38,6 +38,7 @@ import {
   FileText,
   Users,
 } from "lucide-react";
+import { CorrectionProgressPanel } from "@/components/correction/correction-progress-panel";
 import {
   TranscriptContent,
   TranscriptSkeleton,
@@ -81,6 +82,7 @@ export function TranscriptViewer({
   canDownload = false,
   canSeeTranscriptVariants = false,
   canSeeSpeakers = false,
+  canCorrectTranscripts = false,
 }: TranscriptViewerProps) {
   const t = useTranslations("transcript");
   const { toast } = useToast();
@@ -269,6 +271,20 @@ export function TranscriptViewer({
 
   if (loadingBackends) {
     return <TranscriptSkeleton />;
+  }
+
+  // A correction-eligible primary transcript that has never been published has
+  // no text to show. That is the product decision, not a missing file, so the
+  // reader gets progress rather than the "not transcribed" empty state.
+  if (available?.correction) {
+    return (
+      <CorrectionProgressPanel
+        state={available.correction}
+        catalogId={groupId}
+        hash={hash}
+        canCorrect={canCorrectTranscripts}
+      />
+    );
   }
 
   if (!available || available.backends.length === 0) {

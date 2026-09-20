@@ -272,6 +272,7 @@ export default function RecordingContent({
           canDownloadTranscripts={data.canDownloadTranscripts ?? false}
           canSeeSpeakers={data.canSeeSpeakers ?? false}
           canSeeTranscriptVariants={data.canSeeTranscriptVariants ?? false}
+          canCorrectTranscripts={data.canCorrectTranscripts ?? false}
           catalogId={catalogId}
           currentTime={currentTime}
           hash={hash}
