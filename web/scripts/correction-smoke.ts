@@ -24,7 +24,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "besedy-correction-"));
 const dataDir = path.join(root, "data");
@@ -33,8 +33,19 @@ const correctionsDir = path.join(dataDir, "corrections");
 fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(correctionsDir, { recursive: true });
 
-const CATALOG_ID = "20260101_000000";
-const AUDIO_HASH = "a".repeat(64);
+// Unique per run, so the script can be run repeatedly against the same
+// throwaway database instead of failing on the second attempt.
+const now = new Date();
+const CATALOG_ID = [
+  now.getFullYear(),
+  String(now.getMonth() + 1).padStart(2, "0"),
+  String(now.getDate()).padStart(2, "0"),
+  "_",
+  String(now.getHours()).padStart(2, "0"),
+  String(now.getMinutes()).padStart(2, "0"),
+  String(now.getSeconds()).padStart(2, "0"),
+].join("");
+const AUDIO_HASH = createHash("sha256").update(randomUUID()).digest("hex");
 const BACKEND_WORKFLOW = "faster-whisper";
 const BACKEND_MODEL = "large-v3@silero_vad_v6";
 const BACKEND = `${BACKEND_WORKFLOW}/${BACKEND_MODEL}`;
@@ -101,6 +112,8 @@ async function main() {
     unpublishTranscript,
     getPublicationEligibility,
     withdrawFromSearch,
+    reconcilePublication,
+    rollbackPublication,
   } = await import("@/lib/correction/publication-service");
   const {
     resolveReaderTranscriptSource,
@@ -341,6 +354,24 @@ async function main() {
     (await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "publication"
   );
 
+  // --- recovery is scoped to the workspace it was asked about --------------
+  const foreignWorkspaceId = "00000000-0000-4000-8000-000000000000";
+  let reconcileRefused = false;
+  try {
+    await reconcilePublication(published.publicationId, foreignWorkspaceId);
+  } catch (error) {
+    reconcileRefused = (error as { code?: string }).code === "PUBLICATION_NOT_FOUND";
+  }
+  check("reconciling refuses a publication from another workspace", reconcileRefused);
+
+  let rollbackRefused = false;
+  try {
+    await rollbackPublication(published.publicationId, foreignWorkspaceId);
+  } catch (error) {
+    rollbackRefused = (error as { code?: string }).code === "PUBLICATION_NOT_FOUND";
+  }
+  check("rolling back refuses a publication from another workspace", rollbackRefused);
+
   // --- republishing an unchanged snapshot ----------------------------------
   await unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH });
   check(
@@ -422,6 +453,20 @@ async function main() {
 
   console.log(`\ncorrections root: ${correctionsDir}`);
   console.log(failures.length === 0 ? "\nALL CHECKS PASSED" : `\n${failures.length} CHECK(S) FAILED`);
+
+  // Leave the database as the run found it; the corrections tree is printed
+  // above so the Python side can be checked against it. Events and locations
+  // restrict deletion of their catalog, so they go first. A cleanup failure
+  // must not change what the run reported.
+  try {
+    await prisma.catalogEvent.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
+    await prisma.location.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
+    await prisma.workflowGroup.delete({ where: { id: CATALOG_ID } });
+    await prisma.user.deleteMany({ where: { id: { in: [alice.id, bob.id] } } });
+  } catch (error) {
+    console.warn("cleanup failed, leaving fixture rows behind:", error);
+  }
+
   await prisma.$disconnect();
   process.exit(failures.length === 0 ? 0 : 1);
 }
