@@ -230,7 +230,7 @@ export function OfflineDownloadDetail({
         data-testid="download-detail"
         data-download-key={record.key}
       >
-        {bundle?.poster && <OfflinePoster payload={bundle.poster} />}
+        {bundle?.artwork && <OfflineArtwork payload={bundle.artwork} />}
 
         <header className="space-y-2">
           <div className="flex flex-wrap gap-2">
@@ -312,26 +312,26 @@ export function OfflineDownloadDetail({
   );
 }
 
-function OfflinePoster({
+function OfflineArtwork({
   payload,
 }: {
-  payload: NonNullable<DownloadBundlePayload['poster']>;
+  payload: NonNullable<DownloadBundlePayload['artwork']>;
 }) {
-  const posterUrl = useMemo(
+  const artworkUrl = useMemo(
     () => URL.createObjectURL(payload.blob),
     [payload.blob],
   );
 
-  useEffect(() => () => URL.revokeObjectURL(posterUrl), [posterUrl]);
+  useEffect(() => () => URL.revokeObjectURL(artworkUrl), [artworkUrl]);
 
   return (
-    // The poster is a device-local Blob URL, not a Next Image candidate.
+    // The artwork is a device-local Blob URL, not a Next Image candidate.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={posterUrl}
+      src={artworkUrl}
       alt=""
       className="max-h-72 w-full rounded-lg object-contain bg-muted"
-      data-testid="download-detail-poster"
+      data-testid="download-detail-artwork"
     />
   );
 }

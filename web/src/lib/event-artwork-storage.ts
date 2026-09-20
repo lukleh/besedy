@@ -2,32 +2,32 @@ import { createHash, randomUUID } from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import sharp, { type Metadata } from "sharp";
-import { getPostersDir } from "@/lib/config";
+import { getArtworkDir } from "@/lib/config";
 import { validatePath } from "@/lib/security/path-validation";
 
-export const POSTER_VARIANTS = ["square", "landscape"] as const;
-export type PosterVariant = (typeof POSTER_VARIANTS)[number];
-export type PosterExtension = ".jpg" | ".png";
+export const ARTWORK_VARIANTS = ["square", "landscape"] as const;
+export type ArtworkVariant = (typeof ARTWORK_VARIANTS)[number];
+export type ArtworkExtension = ".jpg" | ".png";
 
-export const MAX_POSTER_UPLOAD_BYTES = 30 * 1024 * 1024;
-export const MAX_POSTER_INPUT_PIXELS = 50_000_000;
+export const MAX_ARTWORK_UPLOAD_BYTES = 30 * 1024 * 1024;
+export const MAX_ARTWORK_INPUT_PIXELS = 50_000_000;
 const ASPECT_RATIO_TOLERANCE = 0.025;
-const SHARED_POSTER_DIR_MODE = 0o2770;
-const SHARED_POSTER_FILE_MODE = 0o660;
+const SHARED_ARTWORK_DIR_MODE = 0o2770;
+const SHARED_ARTWORK_FILE_MODE = 0o660;
 
-const TARGETS: Record<PosterVariant, { ratio: number; maxWidth: number; maxHeight: number }> = {
+const TARGETS: Record<ArtworkVariant, { ratio: number; maxWidth: number; maxHeight: number }> = {
   square: { ratio: 1, maxWidth: 1600, maxHeight: 1600 },
   landscape: { ratio: 16 / 9, maxWidth: 2400, maxHeight: 1350 },
 };
 
-export interface PosterUploadInput {
+export interface ArtworkUploadInput {
   bytes: Buffer;
   originalName: string;
 }
 
-export interface ProcessedPosterAsset {
+export interface ProcessedArtworkAsset {
   bytes: Buffer;
-  extension: PosterExtension;
+  extension: ArtworkExtension;
   mimeType: "image/jpeg" | "image/png";
   originalName: string;
   sha256: string;
@@ -35,43 +35,43 @@ export interface ProcessedPosterAsset {
   height: number;
 }
 
-export interface StagedEventPosterAssetsRemoval {
+export interface StagedEventArtworkAssetsRemoval {
   originalPath: string;
   stagedPath: string;
 }
 
-export type StagedPosterCandidateAssetsRemoval = StagedEventPosterAssetsRemoval;
+export type StagedArtworkCandidateAssetsRemoval = StagedEventArtworkAssetsRemoval;
 
-export class PosterAssetError extends Error {
+export class ArtworkAssetError extends Error {
   constructor(
     message: string,
     public readonly code:
       "EMPTY_FILE" | "UPLOAD_TOO_LARGE" | "INVALID_FILE" | "INVALID_FILE_TYPE" | "INVALID_ASPECT_RATIO"
   ) {
     super(message);
-    this.name = "PosterAssetError";
+    this.name = "ArtworkAssetError";
   }
 }
 
-export function resolveEventPostersPath(catalogId: string): string {
-  return path.join(getPostersDir(), `posters_${catalogId}`, "events");
+export function resolveEventArtworksPath(catalogId: string): string {
+  return path.join(getArtworkDir(), `artwork_${catalogId}`, "events");
 }
 
-export function resolveEventPosterDir(catalogId: string, eventId: number, posterId: string): string {
-  return path.join(resolveEventPostersPath(catalogId), String(eventId), posterId);
+export function resolveEventArtworkDir(catalogId: string, eventId: number, artworkId: string): string {
+  return path.join(resolveEventArtworksPath(catalogId), String(eventId), artworkId);
 }
 
-export function resolveEventPosterAssetPath(
+export function resolveEventArtworkAssetPath(
   catalogId: string,
   eventId: number,
-  posterId: string,
-  variant: PosterVariant,
-  extension: PosterExtension
+  artworkId: string,
+  variant: ArtworkVariant,
+  extension: ArtworkExtension
 ): string {
-  return path.join(resolveEventPosterDir(catalogId, eventId, posterId), `${variant}${extension}`);
+  return path.join(resolveEventArtworkDir(catalogId, eventId, artworkId), `${variant}${extension}`);
 }
 
-export function getPosterContentType(extension: string): string {
+export function getArtworkContentType(extension: string): string {
   return extension === ".png" ? "image/png" : "image/jpeg";
 }
 
@@ -85,46 +85,46 @@ function effectiveDimensions(metadata: Metadata): {
   return swapsAxes ? { width: height, height: width } : { width, height };
 }
 
-function assertAspectRatio(variant: PosterVariant, width: number, height: number): void {
+function assertAspectRatio(variant: ArtworkVariant, width: number, height: number): void {
   if (width <= 0 || height <= 0) {
-    throw new PosterAssetError("Poster dimensions are invalid", "INVALID_FILE");
+    throw new ArtworkAssetError("Artwork dimensions are invalid", "INVALID_FILE");
   }
   const target = TARGETS[variant].ratio;
   const relativeDifference = Math.abs(width / height - target) / target;
   if (relativeDifference > ASPECT_RATIO_TOLERANCE) {
     const expected = variant === "square" ? "1:1" : "16:9";
-    throw new PosterAssetError(
-      `${variant === "square" ? "Square" : "Landscape"} poster must use a ${expected} aspect ratio`,
+    throw new ArtworkAssetError(
+      `${variant === "square" ? "Square" : "Landscape"} artwork must use a ${expected} aspect ratio`,
       "INVALID_ASPECT_RATIO"
     );
   }
 }
 
-export async function processPosterAsset(
-  input: PosterUploadInput,
-  variant: PosterVariant
-): Promise<ProcessedPosterAsset> {
+export async function processArtworkAsset(
+  input: ArtworkUploadInput,
+  variant: ArtworkVariant
+): Promise<ProcessedArtworkAsset> {
   if (input.bytes.length === 0) {
-    throw new PosterAssetError("Poster files cannot be empty", "EMPTY_FILE");
+    throw new ArtworkAssetError("Artwork files cannot be empty", "EMPTY_FILE");
   }
-  if (input.bytes.length > MAX_POSTER_UPLOAD_BYTES) {
-    throw new PosterAssetError("Poster upload is too large", "UPLOAD_TOO_LARGE");
+  if (input.bytes.length > MAX_ARTWORK_UPLOAD_BYTES) {
+    throw new ArtworkAssetError("Artwork upload is too large", "UPLOAD_TOO_LARGE");
   }
 
   const image = sharp(input.bytes, {
     failOn: "warning",
-    limitInputPixels: MAX_POSTER_INPUT_PIXELS,
+    limitInputPixels: MAX_ARTWORK_INPUT_PIXELS,
   });
 
   let metadata: Metadata;
   try {
     metadata = await image.metadata();
   } catch {
-    throw new PosterAssetError("Poster contains invalid image data", "INVALID_FILE");
+    throw new ArtworkAssetError("Artwork contains invalid image data", "INVALID_FILE");
   }
 
   if (metadata.format !== "jpeg" && metadata.format !== "png") {
-    throw new PosterAssetError("Poster files must be JPG or PNG", "INVALID_FILE_TYPE");
+    throw new ArtworkAssetError("Artwork files must be JPG or PNG", "INVALID_FILE_TYPE");
   }
 
   const dimensions = effectiveDimensions(metadata);
@@ -139,7 +139,7 @@ export async function processPosterAsset(
   });
 
   let bytes: Buffer;
-  let extension: PosterExtension;
+  let extension: ArtworkExtension;
   let mimeType: "image/jpeg" | "image/png";
   try {
     if (metadata.format === "png") {
@@ -152,7 +152,7 @@ export async function processPosterAsset(
       mimeType = "image/jpeg";
     }
   } catch {
-    throw new PosterAssetError("Poster contains invalid image data", "INVALID_FILE");
+    throw new ArtworkAssetError("Artwork contains invalid image data", "INVALID_FILE");
   }
 
   const outputMetadata = await sharp(bytes).metadata();
@@ -167,41 +167,41 @@ export async function processPosterAsset(
   };
 }
 
-export async function writePosterCandidateAssets(options: {
+export async function writeArtworkCandidateAssets(options: {
   catalogId: string;
   eventId: number;
-  posterId: string;
-  square: ProcessedPosterAsset;
-  landscape: ProcessedPosterAsset;
+  artworkId: string;
+  square: ProcessedArtworkAsset;
+  landscape: ProcessedArtworkAsset;
 }): Promise<string> {
-  const eventDir = path.join(resolveEventPostersPath(options.catalogId), String(options.eventId));
-  await fs.mkdir(eventDir, { recursive: true, mode: SHARED_POSTER_DIR_MODE });
-  const relative = path.relative(getPostersDir(), eventDir).split(path.sep);
-  let current = getPostersDir();
+  const eventDir = path.join(resolveEventArtworksPath(options.catalogId), String(options.eventId));
+  await fs.mkdir(eventDir, { recursive: true, mode: SHARED_ARTWORK_DIR_MODE });
+  const relative = path.relative(getArtworkDir(), eventDir).split(path.sep);
+  let current = getArtworkDir();
   for (const segment of relative) {
     current = path.join(current, segment);
-    await fs.chmod(current, SHARED_POSTER_DIR_MODE).catch(() => undefined);
+    await fs.chmod(current, SHARED_ARTWORK_DIR_MODE).catch(() => undefined);
   }
   const eventValidation = validatePath(eventDir);
   if (!eventValidation.valid) {
-    throw new Error("Invalid event poster directory");
+    throw new Error("Invalid event artwork directory");
   }
 
-  const finalDir = path.join(eventValidation.resolvedPath, options.posterId);
-  const tempDir = path.join(eventValidation.resolvedPath, `.tmp-${options.posterId}-${randomUUID()}`);
-  await fs.mkdir(tempDir, { recursive: false, mode: SHARED_POSTER_DIR_MODE });
-  await fs.chmod(tempDir, SHARED_POSTER_DIR_MODE);
+  const finalDir = path.join(eventValidation.resolvedPath, options.artworkId);
+  const tempDir = path.join(eventValidation.resolvedPath, `.tmp-${options.artworkId}-${randomUUID()}`);
+  await fs.mkdir(tempDir, { recursive: false, mode: SHARED_ARTWORK_DIR_MODE });
+  await fs.chmod(tempDir, SHARED_ARTWORK_DIR_MODE);
 
   try {
     const squarePath = path.join(tempDir, `square${options.square.extension}`);
     const landscapePath = path.join(tempDir, `landscape${options.landscape.extension}`);
     await Promise.all([
-      fs.writeFile(squarePath, options.square.bytes, { flag: "wx", mode: SHARED_POSTER_FILE_MODE }),
-      fs.writeFile(landscapePath, options.landscape.bytes, { flag: "wx", mode: SHARED_POSTER_FILE_MODE }),
+      fs.writeFile(squarePath, options.square.bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE }),
+      fs.writeFile(landscapePath, options.landscape.bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE }),
     ]);
     await Promise.all([
-      fs.chmod(squarePath, SHARED_POSTER_FILE_MODE),
-      fs.chmod(landscapePath, SHARED_POSTER_FILE_MODE),
+      fs.chmod(squarePath, SHARED_ARTWORK_FILE_MODE),
+      fs.chmod(landscapePath, SHARED_ARTWORK_FILE_MODE),
     ]);
     await fs.rename(tempDir, finalDir);
     return finalDir;
@@ -211,13 +211,13 @@ export async function writePosterCandidateAssets(options: {
   }
 }
 
-export async function removePosterCandidateAssets(catalogId: string, eventId: number, posterId: string): Promise<void> {
-  const candidateDir = resolveEventPosterDir(catalogId, eventId, posterId);
+export async function removeArtworkCandidateAssets(catalogId: string, eventId: number, artworkId: string): Promise<void> {
+  const candidateDir = resolveEventArtworkDir(catalogId, eventId, artworkId);
   const parentDir = path.dirname(candidateDir);
   try {
     const parentValidation = validatePath(parentDir);
     if (!parentValidation.valid) return;
-    const target = path.join(parentValidation.resolvedPath, posterId);
+    const target = path.join(parentValidation.resolvedPath, artworkId);
     await fs.rm(target, { recursive: true, force: true });
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
@@ -225,10 +225,10 @@ export async function removePosterCandidateAssets(catalogId: string, eventId: nu
   }
 }
 
-async function stagePosterDirectoryRemoval(
+async function stageArtworkDirectoryRemoval(
   originalPath: string,
   tombstoneName: string
-): Promise<StagedEventPosterAssetsRemoval | null> {
+): Promise<StagedEventArtworkAssetsRemoval | null> {
   try {
     await fs.lstat(originalPath);
   } catch (error) {
@@ -239,7 +239,7 @@ async function stagePosterDirectoryRemoval(
 
   const validation = validatePath(originalPath);
   if (!validation.valid) {
-    throw new Error("Invalid event poster directory");
+    throw new Error("Invalid event artwork directory");
   }
 
   const stagedPath = path.join(path.dirname(originalPath), tombstoneName);
@@ -247,31 +247,31 @@ async function stagePosterDirectoryRemoval(
   return { originalPath, stagedPath };
 }
 
-export async function stagePosterCandidateAssetsRemoval(
+export async function stageArtworkCandidateAssetsRemoval(
   catalogId: string,
   eventId: number,
-  posterId: string
-): Promise<StagedPosterCandidateAssetsRemoval | null> {
-  return stagePosterDirectoryRemoval(
-    resolveEventPosterDir(catalogId, eventId, posterId),
-    `.deleted-${posterId}-${randomUUID()}`
+  artworkId: string
+): Promise<StagedArtworkCandidateAssetsRemoval | null> {
+  return stageArtworkDirectoryRemoval(
+    resolveEventArtworkDir(catalogId, eventId, artworkId),
+    `.deleted-${artworkId}-${randomUUID()}`
   );
 }
 
 /**
- * Move every poster asset for an event out of its live path before deleting
+ * Move every artwork asset for an event out of its live path before deleting
  * the event row. The rename stays on the same filesystem and can be rolled
  * back if the database deletion fails.
  */
-export async function stageEventPosterAssetsRemoval(
+export async function stageEventArtworkAssetsRemoval(
   catalogId: string,
   eventId: number
-): Promise<StagedEventPosterAssetsRemoval | null> {
-  const originalPath = path.join(resolveEventPostersPath(catalogId), String(eventId));
-  return stagePosterDirectoryRemoval(originalPath, `.deleted-${eventId}-${randomUUID()}`);
+): Promise<StagedEventArtworkAssetsRemoval | null> {
+  const originalPath = path.join(resolveEventArtworksPath(catalogId), String(eventId));
+  return stageArtworkDirectoryRemoval(originalPath, `.deleted-${eventId}-${randomUUID()}`);
 }
 
-export async function restoreStagedEventPosterAssets(staged: StagedEventPosterAssetsRemoval): Promise<void> {
+export async function restoreStagedEventArtworkAssets(staged: StagedEventArtworkAssetsRemoval): Promise<void> {
   try {
     await fs.rename(staged.stagedPath, staged.originalPath);
     return;
@@ -284,7 +284,7 @@ export async function restoreStagedEventPosterAssets(staged: StagedEventPosterAs
   const liveEntries = new Set(await fs.readdir(staged.originalPath));
   const collision = stagedEntries.find((entry) => liveEntries.has(entry));
   if (collision) {
-    throw new Error(`Cannot restore event poster assets because ${collision} already exists`);
+    throw new Error(`Cannot restore event artwork assets because ${collision} already exists`);
   }
   for (const entry of stagedEntries) {
     await fs.rename(path.join(staged.stagedPath, entry), path.join(staged.originalPath, entry));
@@ -292,11 +292,11 @@ export async function restoreStagedEventPosterAssets(staged: StagedEventPosterAs
   await fs.rmdir(staged.stagedPath);
 }
 
-export async function finalizeStagedEventPosterAssetsRemoval(staged: StagedEventPosterAssetsRemoval): Promise<void> {
+export async function finalizeStagedEventArtworkAssetsRemoval(staged: StagedEventArtworkAssetsRemoval): Promise<void> {
   await fs.rm(staged.stagedPath, { recursive: true, force: true });
 }
 
-export async function readPosterAsset(filePath: string): Promise<{ bytes: Buffer; resolvedPath: string } | null> {
+export async function readArtworkAsset(filePath: string): Promise<{ bytes: Buffer; resolvedPath: string } | null> {
   const validation = validatePath(filePath);
   if (!validation.valid) {
     try {
@@ -306,7 +306,7 @@ export async function readPosterAsset(filePath: string): Promise<{ bytes: Buffer
       if (err.code === "ENOENT") return null;
       throw error;
     }
-    throw new Error("Poster asset is missing or outside the poster root");
+    throw new Error("Artwork asset is missing or outside the artwork root");
   }
   try {
     return {

@@ -28,8 +28,8 @@ export type CatalogPermission =
   | "publish_recording"
   | "manage_events"
   | "release_events"
-  | "manage_event_posters"
-  | "publish_event_posters"
+  | "manage_event_artwork"
+  | "publish_event_artwork"
   | "manage_event_sources"
   | "use_deep_search"
   | "manage_access"
@@ -70,8 +70,8 @@ export const GRANTABLE_EXTRA_PERMISSIONS = [
   "download_original_audio",
   "download_transcripts",
   "bulk_export_transcripts",
-  "manage_event_posters",
-  "publish_event_posters",
+  "manage_event_artwork",
+  "publish_event_artwork",
 ] as const satisfies readonly CatalogPermission[];
 
 export type GrantableExtraPermission =
@@ -88,8 +88,8 @@ const PERMISSIONS_BY_LEVEL: Record<AccessLevel, CatalogPermission[]> = {
     "publish_recording",
     "manage_events",
     "release_events",
-    "manage_event_posters",
-    "publish_event_posters",
+    "manage_event_artwork",
+    "publish_event_artwork",
     "manage_event_sources",
     "use_deep_search",
     "manage_access",
@@ -139,8 +139,8 @@ const EVERY_PERMISSION: Record<CatalogPermission, true> = {
   publish_recording: true,
   manage_events: true,
   release_events: true,
-  manage_event_posters: true,
-  publish_event_posters: true,
+  manage_event_artwork: true,
+  publish_event_artwork: true,
   manage_event_sources: true,
   use_deep_search: true,
   manage_access: true,
@@ -216,8 +216,8 @@ export const ROLE_PERMISSIONS: Record<
     "publish_recording",
     "manage_events",
     "release_events",
-    "manage_event_posters",
-    "publish_event_posters",
+    "manage_event_artwork",
+    "publish_event_artwork",
     "manage_event_sources",
     "use_deep_search",
     "download_audio",

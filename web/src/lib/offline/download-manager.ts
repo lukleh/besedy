@@ -21,13 +21,13 @@ import {
   buildDiarizationBackendsUrl,
   buildDiarizationUrl,
   buildEventDetailUrl,
-  buildEventPosterUrl,
+  buildEventArtworkUrl,
   buildRecordingEntryUrl,
   buildTranscriptBackendsUrl,
   buildTranscriptUrl,
   type AudioSourceOption,
 } from '@/lib/api/recording-urls';
-import { EVENT_POSTER_LANDSCAPE_MEDIA } from '@/lib/event-poster-media';
+import { EVENT_ARTWORK_LANDSCAPE_MEDIA } from '@/lib/event-artwork-media';
 import type {
   Diarization,
   Transcript,
@@ -58,7 +58,7 @@ import {
   putDownload,
   type DownloadBundlePayload,
   type DownloadEventSnapshot,
-  type DownloadPosterPayload,
+  type DownloadArtworkPayload,
   type DownloadRecord,
   type DownloadRecordingSnapshot,
 } from './downloads-db';
@@ -206,7 +206,7 @@ interface EventDetailResponse {
   sessionOrdinal?: number;
   sessionCount?: number;
   recordings: EventRecordingResponse[];
-  publishedPoster?: {
+  publishedArtwork?: {
     id: string;
     publishedAt: string;
   } | null;
@@ -279,12 +279,12 @@ async function tryFetchJson<T>(
   }
 }
 
-async function tryFetchPoster(
+async function tryFetchArtwork(
   url: string,
-  variant: DownloadPosterPayload['variant'],
-  posterId: string,
+  variant: DownloadArtworkPayload['variant'],
+  artworkId: string,
   signal: AbortSignal,
-): Promise<DownloadPosterPayload | null> {
+): Promise<DownloadArtworkPayload | null> {
   try {
     const response = await fetchResponse(url, signal);
     const blob = await response.blob();
@@ -295,7 +295,7 @@ async function tryFetchPoster(
         blob.type ??
         'application/octet-stream',
       variant,
-      posterId,
+      artworkId,
     };
   } catch (error) {
     if (isAbortError(error) || isNetworkError(error)) throw error;
@@ -494,10 +494,10 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
     sessionIndex: event.sessionIndex,
     sessionOrdinal: event.sessionOrdinal,
     sessionCount: event.sessionCount,
-    publishedPoster: event.publishedPoster
+    publishedArtwork: event.publishedArtwork
       ? {
-          id: event.publishedPoster.id,
-          publishedAt: event.publishedPoster.publishedAt,
+          id: event.publishedArtwork.id,
+          publishedAt: event.publishedArtwork.publishedAt,
         }
       : null,
   };
@@ -803,7 +803,7 @@ class DownloadManager {
       error: null,
       resumeOnReconnect: false,
       transcriptBackend: null,
-      hasPoster: false,
+      hasArtwork: false,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
@@ -1305,10 +1305,10 @@ class DownloadManager {
         diarization = transcriptPayload.diarization;
       }
 
-      let poster: DownloadPosterPayload | null = null;
+      let artwork: DownloadArtworkPayload | null = null;
       const currentEvent = this.records.get(key)?.event ?? started.event;
       if (currentEvent) {
-        poster = await this.downloadEventPoster(
+        artwork = await this.downloadEventArtwork(
           catalogId,
           currentEvent,
           signal,
@@ -1320,7 +1320,7 @@ class DownloadManager {
         transcriptBackend,
         transcript,
         diarization,
-        poster,
+        artwork,
         inlineAudio: offlineAudioBlob
           ? {
               data: await offlineAudioBlob.arrayBuffer(),
@@ -1336,7 +1336,7 @@ class DownloadManager {
         error: null,
         resumeOnReconnect: false,
         transcriptBackend,
-        hasPoster: poster !== null,
+        hasArtwork: artwork !== null,
         completedAt: Date.now(),
       });
       void warmDownloadsShell();
@@ -1424,28 +1424,28 @@ class DownloadManager {
     };
   }
 
-  private async downloadEventPoster(
+  private async downloadEventArtwork(
     catalogId: string,
     event: DownloadEventSnapshot,
     signal: AbortSignal,
-  ): Promise<DownloadPosterPayload | null> {
-    const poster = event.publishedPoster;
-    if (!poster) return null;
-    const preferred = window.matchMedia(EVENT_POSTER_LANDSCAPE_MEDIA).matches
+  ): Promise<DownloadArtworkPayload | null> {
+    const artwork = event.publishedArtwork;
+    if (!artwork) return null;
+    const preferred = window.matchMedia(EVENT_ARTWORK_LANDSCAPE_MEDIA).matches
       ? 'landscape'
       : 'square';
     const fallback = preferred === 'landscape' ? 'square' : 'landscape';
-    const preferredPoster = await tryFetchPoster(
-      buildEventPosterUrl(catalogId, event.id, preferred, poster.id),
+    const preferredArtwork = await tryFetchArtwork(
+      buildEventArtworkUrl(catalogId, event.id, preferred, artwork.id),
       preferred,
-      poster.id,
+      artwork.id,
       signal,
     );
-    if (preferredPoster) return preferredPoster;
-    return tryFetchPoster(
-      buildEventPosterUrl(catalogId, event.id, fallback, poster.id),
+    if (preferredArtwork) return preferredArtwork;
+    return tryFetchArtwork(
+      buildEventArtworkUrl(catalogId, event.id, fallback, artwork.id),
       fallback,
-      poster.id,
+      artwork.id,
       signal,
     );
   }

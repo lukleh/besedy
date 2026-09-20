@@ -17,7 +17,7 @@ latency and duplicate join logic.
 Pipeline catalog CSVs are ingest sources. A synchronization boundary
 materializes their joined serving representation in PostgreSQL. Normal API
 requests query PostgreSQL and never parse catalog CSVs directly. Transcript,
-audio, poster, and source payloads remain filesystem artifacts referenced only
+audio, artwork, and source payloads remain filesystem artifacts referenced only
 through server-controlled paths.
 
 The projection is replaceable derived data; user-authored relational state and

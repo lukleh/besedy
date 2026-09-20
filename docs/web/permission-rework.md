@@ -174,7 +174,7 @@ have to change together.
 
 Already consumed as server-computed booleans and needing no UI work: event admin
 columns, release-state indicators, the deep-search link,
-the search box, batch edit, metadata edit, poster and source management, and the
+the search box, batch edit, metadata edit, artwork and source management, and the
 offline cache button, which has no gate and needs none.
 
 ## What the writing changed

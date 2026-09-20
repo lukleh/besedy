@@ -39,7 +39,7 @@ describe('downloads database', () => {
         dateMonth: null,
         dateDay: null,
         sessionIndex: 1,
-        publishedPoster: null,
+        publishedArtwork: null,
       },
       recording: null,
       audioUrl: null,
@@ -51,7 +51,7 @@ describe('downloads database', () => {
       error: null,
       resumeOnReconnect: false,
       transcriptBackend: null,
-      hasPoster: false,
+      hasArtwork: false,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
@@ -108,8 +108,8 @@ describe('downloads database', () => {
         segments: [{ start: 0, end: 1, text: 'Hello' }],
       },
       diarization: null,
-      poster: {
-        blob: new Blob(['poster'], { type: 'image/jpeg' }),
+      artwork: {
+        blob: new Blob(['artwork'], { type: 'image/jpeg' }),
         contentType: 'image/jpeg',
         variant: 'portrait',
       },
@@ -119,7 +119,7 @@ describe('downloads database', () => {
     expect(await db.getDownloadBundle(key)).toMatchObject({
       key,
       transcriptBackend: 'whisperx/large',
-      poster: { variant: 'portrait' },
+      artwork: { variant: 'portrait' },
     });
     await db.deleteDownloadBundle(key);
     expect(await db.getDownloadBundle(key)).toBeUndefined();

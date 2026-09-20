@@ -15,7 +15,7 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => {
     if (key === "recordingsMobile") return `Recordings: ${values?.count ?? ""}`;
     if (key === "sourcesMobile") return `Sources: ${values?.count ?? ""}`;
-    if (key === "postersMobile") return `Posters: ${values?.status ?? ""}`;
+    if (key === "artworksMobile") return `Artworks: ${values?.status ?? ""}`;
     if (key === "ordinal") return `${values?.index}/${values?.count}`;
     if (key === "ordinalAria")
       return `Session ${values?.index} of ${values?.count}`;
@@ -44,7 +44,7 @@ const BASE_PROPS = {
       released: true,
       recordingCount: 3,
       sourceCount: 2,
-      posterStatus: "published" as const,
+      artworkStatus: "published" as const,
       primaryAudioHash: "a".repeat(64),
       primaryTitle: "Primary track",
       playback: null,

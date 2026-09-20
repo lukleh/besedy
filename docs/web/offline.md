@@ -23,8 +23,8 @@ The `besedy-offline` IndexedDB database has two stores:
   source of truth for the Downloads list and download status.
 - `downloadBundles` contains the larger optional payloads used by the offline
   detail view: the default transcript and diarization when the account has
-  `download_transcripts`, plus one poster Blob. Keeping these separate means
-  progress updates and list reads do not copy transcripts or posters.
+  `download_transcripts`, plus one artwork Blob. Keeping these separate means
+  progress updates and list reads do not copy transcripts or artwork.
 
 Audio is stored in 2 MB chunks in Cache Storage (`besedy-audio-v5`), with a
 metadata entry that records the size, MIME type, chunks, and completion state.
@@ -50,12 +50,12 @@ The manager:
 2. Downloads Range chunks directly to Cache Storage, persisting progress after
    each chunk so an interrupted download can resume.
 3. Stores the default transcript and optional diarization only when the entry
-   grants `download_transcripts`, plus one event poster, in the IndexedDB bundle.
+   grants `download_transcripts`, plus one event artwork, in the IndexedDB bundle.
 
 On online startup and after reconnecting, the manager rechecks completed
 downloads that contain transcript data for the signed-in account. If the server
 no longer grants transcript download permission, it removes the stored
-transcript and diarization while retaining the audio and poster. This is
+transcript and diarization while retaining the audio and artwork. This is
 best-effort revocation: a device that remains offline necessarily keeps the data
 until it reconnects, and a temporary network or authentication failure is not
 treated as a permission decision.

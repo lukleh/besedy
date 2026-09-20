@@ -40,7 +40,7 @@ describe("catalog events health route", () => {
       releasedEvents: 1,
       unreleasedEvents: 2,
       missingPrimaryRecording: 0,
-      missingPosterImage: 0,
+      missingArtworkImage: 0,
     });
   });
 

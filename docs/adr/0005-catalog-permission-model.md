@@ -311,8 +311,8 @@ than taken, which is what makes the role name worth reading.
 | `publish_recording`     | Recording publication state.                                                                                                                           |
 | `manage_events`         | Creating, editing and deleting events; attaching, detaching and choosing the primary recording.                                                        |
 | `release_events`        | Releasing an event to its audience.                                                                                                                    |
-| `manage_event_posters`  | List and preview poster candidates; create candidates and remove unselected candidates. See [ADR 0009](0009-event-poster-publication.md).              |
-| `publish_event_posters` | Select, replace, and unpublish an event's audience poster.                                                                                             |
+| `manage_event_artwork`  | List and preview artwork candidates; create candidates and remove unselected candidates. See [ADR 0009](0009-event-poster-publication.md) and [ADR 0010](0010-poster-to-artwork-rename.md).              |
+| `publish_event_artwork` | Select, replace, and unpublish an event's audience artwork.                                                                                             |
 | `manage_event_sources`  | Event source records.                                                                                                                                  |
 
 ### Access and configuration
@@ -365,7 +365,7 @@ administrative surfaces.
 | `reader`        | čtenář       | + `read_transcripts`, `search_transcripts`                                                                                                                                                                                                                                                                                                                                                        |
 | `corrector`     | korektor     | `reader` + `correct_transcripts`                                                                                                                                                                                                                                                                                                                                                                  |
 | `host`          | hostitel     | `reader` + `manage_access`                                                                                                                                                                                                                                                                                                                                                                        |
-| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `publish_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_artwork`, `publish_event_artwork`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
 | `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config`                                                                                                                                                                                                                                                                                                         |
 
 Every role below `curator` sees released events and published recordings only,
@@ -439,7 +439,7 @@ start empty.
   reaches the catalog through `isCatalogAdmin`. As `host` the two of them keep
   listening, reading, searching and managing access, and give up unreleased
   visibility, event management and release, recording publication, metadata
-  editing, posters, sources, deep search, the diarization overlay, audio
+  editing, artwork, sources, deep search, the diarization overlay, audio
   downloads and the settings page. That is acceptable because it is not what
   they do: in practice they add users and occasionally download a transcript,
   and the transcript download they keep, as an extra. The role finally describes
@@ -521,7 +521,7 @@ start empty.
   audience**, in material that is by its nature discussion. This is accepted for
   now rather than overlooked: the overlay identifies nobody, and attributing
   speech is a later phase built on the same span mechanism.
-- **Poster upload and poster publication are separate permissions, and sources
+- **Artwork upload and artwork publication are separate permissions, and sources
   remain separate from both.** See [ADR 0009](0009-event-poster-publication.md).
 - **Downloaded audio is the playable file.** Original masters are not part of
   any role.

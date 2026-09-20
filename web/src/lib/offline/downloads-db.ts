@@ -2,7 +2,7 @@
  * IndexedDB registry of downloads.
  *
  * Lightweight registry rows are the source of truth for download state. Large
- * transcript and poster payloads live in a separate store so listing downloads
+ * transcript and artwork payloads live in a separate store so listing downloads
  * and persisting progress never reads or rewrites every downloaded transcript.
  * The database name is inherited from the earlier catalog-mirror experiment.
  */
@@ -40,7 +40,7 @@ export interface DownloadEventSnapshot {
   /** Absent on records downloaded before ordinals were stored; the cue hides then. */
   sessionOrdinal?: number;
   sessionCount?: number;
-  publishedPoster: {
+  publishedArtwork: {
     id: string;
     publishedAt: string;
   } | null;
@@ -80,18 +80,18 @@ export interface DownloadRecord {
   /** Network pauses resume on reconnect; explicit user pauses do not. */
   resumeOnReconnect: boolean;
   transcriptBackend: string | null;
-  hasPoster: boolean;
+  hasArtwork: boolean;
   createdAt: number;
   updatedAt: number;
   completedAt: number | null;
 }
 
-export interface DownloadPosterPayload {
+export interface DownloadArtworkPayload {
   blob: Blob;
   contentType: string;
   /** `portrait` is retained only for bundles created before ADR 0009. */
   variant: 'square' | 'landscape' | 'portrait';
-  posterId?: string;
+  artworkId?: string;
 }
 
 export interface DownloadInlineAudioPayload {
@@ -105,7 +105,7 @@ export interface DownloadBundlePayload {
   transcriptBackend: string | null;
   transcript: Transcript | null;
   diarization: Diarization | null;
-  poster: DownloadPosterPayload | null;
+  artwork: DownloadArtworkPayload | null;
   /** WebKit-compatible copy; older bundles and non-WebKit browsers omit it. */
   inlineAudio?: DownloadInlineAudioPayload | null;
   updatedAt: number;

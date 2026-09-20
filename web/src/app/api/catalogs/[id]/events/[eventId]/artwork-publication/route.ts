@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { IntIdSchema, validateParams, validateRequestBody } from "@/lib/api/validation";
-import { requireEventPosterAccess } from "@/lib/event-poster-access";
-import { handleEventPosterRouteError } from "@/lib/event-poster-route-errors";
-import { publishEventPoster, unpublishEventPoster } from "@/lib/event-poster-service";
+import { requireEventArtworkAccess } from "@/lib/event-artwork-access";
+import { handleEventArtworkRouteError } from "@/lib/event-artwork-route-errors";
+import { publishEventArtwork, unpublishEventArtwork } from "@/lib/event-artwork-service";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ const RouteParamsSchema = z.object({
   id: TimestampIdSchema,
   eventId: IntIdSchema,
 });
-const PublishBodySchema = z.object({ posterId: z.string().uuid() }).strict();
+const PublishBodySchema = z.object({ artworkId: z.string().uuid() }).strict();
 interface RouteParams {
   params: Promise<{ id: string; eventId: string }>;
 }
@@ -24,20 +24,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id: catalogId, eventId } = paramsResult.data;
     const bodyResult = await validateRequestBody(request, PublishBodySchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { userId } = await requireEventPosterAccess(catalogId, eventId, "publish");
-    const result = await publishEventPoster({
+    const { userId } = await requireEventArtworkAccess(catalogId, eventId, "publish");
+    const result = await publishEventArtwork({
       catalogId,
       eventId,
-      posterId: bodyResult.data.posterId,
+      artworkId: bodyResult.data.artworkId,
       userId,
     });
     return NextResponse.json({
       published: true,
-      posterId: bodyResult.data.posterId,
+      artworkId: bodyResult.data.artworkId,
       ...result,
     });
   } catch (error) {
-    return handleEventPosterRouteError(error, "update");
+    return handleEventArtworkRouteError(error, "update");
   }
 }
 
@@ -46,10 +46,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const paramsResult = validateParams(await params, RouteParamsSchema);
     if (!paramsResult.success) return paramsResult.response;
     const { id: catalogId, eventId } = paramsResult.data;
-    const { userId } = await requireEventPosterAccess(catalogId, eventId, "publish");
-    const result = await unpublishEventPoster({ catalogId, eventId, userId });
+    const { userId } = await requireEventArtworkAccess(catalogId, eventId, "publish");
+    const result = await unpublishEventArtwork({ catalogId, eventId, userId });
     return NextResponse.json({ published: false, ...result });
   } catch (error) {
-    return handleEventPosterRouteError(error, "update");
+    return handleEventArtworkRouteError(error, "update");
   }
 }

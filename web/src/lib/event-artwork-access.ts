@@ -5,40 +5,40 @@ import { isPublishedVisibleEvent } from "@/lib/catalog-events/visibility";
 import prisma from "@/lib/db";
 import { requiresReleasedEventVisibilityScope } from "@/lib/policy/event";
 import {
-  canManageEventPosterCandidates,
-  canPublishEventPosters,
-  canViewEventPosterCandidates,
-} from "@/lib/policy/event-poster";
+  canManageEventArtworkCandidates,
+  canPublishEventArtwork,
+  canViewEventArtworkCandidates,
+} from "@/lib/policy/event-artwork";
 
-export type EventPosterAccessMode = "view_candidates" | "manage" | "publish";
+export type EventArtworkAccessMode = "view_candidates" | "manage" | "publish";
 
-export async function requireEventPosterAccess(
+export async function requireEventArtworkAccess(
   catalogId: string,
   eventId: number,
-  mode: EventPosterAccessMode
+  mode: EventArtworkAccessMode
 ): Promise<{ userId: string }> {
   const access = await requireCatalogEventsAccess(catalogId, "view");
   const allowed =
     mode === "view_candidates"
-      ? canViewEventPosterCandidates(access.policyContext)
+      ? canViewEventArtworkCandidates(access.policyContext)
       : mode === "manage"
-        ? canManageEventPosterCandidates(access.policyContext)
-        : canPublishEventPosters(access.policyContext);
+        ? canManageEventArtworkCandidates(access.policyContext)
+        : canPublishEventArtwork(access.policyContext);
 
   if (!allowed) {
-    await logAccessDenied(access.userId, "event_poster", String(eventId), {
+    await logAccessDenied(access.userId, "event_artwork", String(eventId), {
       catalogId,
       mode,
-      reason: "Missing event poster authority",
+      reason: "Missing event artwork authority",
     });
-    throw new AuthError("Access denied to event poster candidates", 403);
+    throw new AuthError("Access denied to event artwork candidates", 403);
   }
 
   if (
     requiresReleasedEventVisibilityScope(access.catalogGrant) &&
     !(await isPublishedVisibleEvent(prisma, catalogId, eventId))
   ) {
-    await logAccessDenied(access.userId, "event_poster", String(eventId), {
+    await logAccessDenied(access.userId, "event_artwork", String(eventId), {
       catalogId,
       mode,
       reason: "Event is outside the actor's visibility scope",

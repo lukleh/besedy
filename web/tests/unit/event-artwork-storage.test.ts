@@ -4,10 +4,10 @@ import path from "path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { config } = vi.hoisted(() => ({ config: { postersDir: "" } }));
+const { config } = vi.hoisted(() => ({ config: { artworkDir: "" } }));
 
 vi.mock("@/lib/config", () => ({
-  getPostersDir: () => config.postersDir,
+  getArtworkDir: () => config.artworkDir,
   getSourcesDir: () => {
     throw new Error("not configured");
   },
@@ -20,15 +20,15 @@ vi.mock("@/lib/config", () => ({
 }));
 
 import {
-  finalizeStagedEventPosterAssetsRemoval,
-  PosterAssetError,
-  processPosterAsset,
-  readPosterAsset,
-  resolveEventPostersPath,
-  restoreStagedEventPosterAssets,
-  stageEventPosterAssetsRemoval,
-  writePosterCandidateAssets,
-} from "@/lib/event-poster-storage";
+  finalizeStagedEventArtworkAssetsRemoval,
+  ArtworkAssetError,
+  processArtworkAsset,
+  readArtworkAsset,
+  resolveEventArtworksPath,
+  restoreStagedEventArtworkAssets,
+  stageEventArtworkAssetsRemoval,
+  writeArtworkCandidateAssets,
+} from "@/lib/event-artwork-storage";
 
 async function png(width: number, height: number): Promise<Buffer> {
   return sharp({
@@ -43,16 +43,16 @@ async function png(width: number, height: number): Promise<Buffer> {
     .toBuffer();
 }
 
-describe("event poster storage", () => {
+describe("event artwork storage", () => {
   let testRoot: string;
   let outsideRoot: string;
   let originalBaseDir: string | undefined;
   let originalAllowedPaths: string | undefined;
 
   beforeEach(async () => {
-    testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-poster-storage-"));
-    outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-poster-outside-"));
-    config.postersDir = testRoot;
+    testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-artwork-storage-"));
+    outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-artwork-outside-"));
+    config.artworkDir = testRoot;
     originalBaseDir = process.env.BESEDY_BASE_DIR;
     originalAllowedPaths = process.env.BESEDY_ALLOWED_PATHS;
     delete process.env.BESEDY_BASE_DIR;
@@ -71,7 +71,7 @@ describe("event poster storage", () => {
   });
 
   it("accepts, normalizes, and fingerprints a square image", async () => {
-    const result = await processPosterAsset({ bytes: await png(1800, 1800), originalName: "../cover.png" }, "square");
+    const result = await processArtworkAsset({ bytes: await png(1800, 1800), originalName: "../cover.png" }, "square");
 
     expect(result.originalName).toBe("cover.png");
     expect(result.extension).toBe(".png");
@@ -81,43 +81,43 @@ describe("event poster storage", () => {
   });
 
   it("accepts a 16:9 landscape image", async () => {
-    const result = await processPosterAsset({ bytes: await png(1600, 900), originalName: "wide.png" }, "landscape");
+    const result = await processArtworkAsset({ bytes: await png(1600, 900), originalName: "wide.png" }, "landscape");
 
     expect(result.width / result.height).toBeCloseTo(16 / 9, 3);
   });
 
   it("rejects an image submitted for the wrong shape", async () => {
     await expect(
-      processPosterAsset({ bytes: await png(1200, 800), originalName: "wrong.png" }, "square")
+      processArtworkAsset({ bytes: await png(1200, 800), originalName: "wrong.png" }, "square")
     ).rejects.toMatchObject({
       code: "INVALID_ASPECT_RATIO",
-    } satisfies Partial<PosterAssetError>);
+    } satisfies Partial<ArtworkAssetError>);
   });
 
   it("rejects invalid bytes", async () => {
     await expect(
-      processPosterAsset({ bytes: Buffer.from("not an image"), originalName: "fake.jpg" }, "square")
+      processArtworkAsset({ bytes: Buffer.from("not an image"), originalName: "fake.jpg" }, "square")
     ).rejects.toMatchObject({
       code: "INVALID_FILE",
-    } satisfies Partial<PosterAssetError>);
+    } satisfies Partial<ArtworkAssetError>);
   });
 
   it("writes assets with shared-group permissions under a restrictive umask", async () => {
-    const square = await processPosterAsset(
+    const square = await processArtworkAsset(
       { bytes: await png(800, 800), originalName: "square.png" },
       "square"
     );
-    const landscape = await processPosterAsset(
+    const landscape = await processArtworkAsset(
       { bytes: await png(1600, 900), originalName: "landscape.png" },
       "landscape"
     );
     const originalUmask = process.umask(0o077);
 
     try {
-      const candidateDir = await writePosterCandidateAssets({
+      const candidateDir = await writeArtworkCandidateAssets({
         catalogId: "20260919_120000",
         eventId: 7,
-        posterId: "00000000-0000-4000-8000-000000000007",
+        artworkId: "00000000-0000-4000-8000-000000000007",
         square,
         landscape,
       });
@@ -138,48 +138,48 @@ describe("event poster storage", () => {
     }
   });
 
-  it("returns no staging record when the event poster directory is absent", async () => {
-    await expect(stageEventPosterAssetsRemoval("20260919_120000", 7)).resolves.toBeNull();
+  it("returns no staging record when the event artwork directory is absent", async () => {
+    await expect(stageEventArtworkAssetsRemoval("20260919_120000", 7)).resolves.toBeNull();
   });
 
-  it("returns no asset when a poster file is missing", async () => {
-    const missingPath = path.join(resolveEventPostersPath("20260919_120000"), "7", "poster", "square.png");
+  it("returns no asset when a artwork file is missing", async () => {
+    const missingPath = path.join(resolveEventArtworksPath("20260919_120000"), "7", "artwork", "square.png");
 
-    await expect(readPosterAsset(missingPath)).resolves.toBeNull();
+    await expect(readArtworkAsset(missingPath)).resolves.toBeNull();
   });
 
-  it("rejects staging a poster directory that resolves outside the poster root", async () => {
-    const eventPath = path.join(resolveEventPostersPath("20260919_120000"), "7");
+  it("rejects staging a artwork directory that resolves outside the artwork root", async () => {
+    const eventPath = path.join(resolveEventArtworksPath("20260919_120000"), "7");
     await fs.mkdir(path.dirname(eventPath), { recursive: true });
     await fs.symlink(outsideRoot, eventPath);
 
-    await expect(stageEventPosterAssetsRemoval("20260919_120000", 7)).rejects.toThrow("Invalid event poster directory");
+    await expect(stageEventArtworkAssetsRemoval("20260919_120000", 7)).rejects.toThrow("Invalid event artwork directory");
   });
 
   it("merges staged assets back when the live directory was recreated", async () => {
-    const eventPath = path.join(resolveEventPostersPath("20260919_120000"), "7");
-    await fs.mkdir(path.join(eventPath, "old-poster"), { recursive: true });
-    await fs.writeFile(path.join(eventPath, "old-poster", "square.png"), "old");
-    const staged = await stageEventPosterAssetsRemoval("20260919_120000", 7);
+    const eventPath = path.join(resolveEventArtworksPath("20260919_120000"), "7");
+    await fs.mkdir(path.join(eventPath, "old-artwork"), { recursive: true });
+    await fs.writeFile(path.join(eventPath, "old-artwork", "square.png"), "old");
+    const staged = await stageEventArtworkAssetsRemoval("20260919_120000", 7);
     expect(staged).not.toBeNull();
 
-    await fs.mkdir(path.join(eventPath, "new-poster"), { recursive: true });
-    await fs.writeFile(path.join(eventPath, "new-poster", "square.png"), "new");
-    await restoreStagedEventPosterAssets(staged!);
+    await fs.mkdir(path.join(eventPath, "new-artwork"), { recursive: true });
+    await fs.writeFile(path.join(eventPath, "new-artwork", "square.png"), "new");
+    await restoreStagedEventArtworkAssets(staged!);
 
-    await expect(fs.readFile(path.join(eventPath, "old-poster", "square.png"), "utf8")).resolves.toBe("old");
-    await expect(fs.readFile(path.join(eventPath, "new-poster", "square.png"), "utf8")).resolves.toBe("new");
+    await expect(fs.readFile(path.join(eventPath, "old-artwork", "square.png"), "utf8")).resolves.toBe("old");
+    await expect(fs.readFile(path.join(eventPath, "new-artwork", "square.png"), "utf8")).resolves.toBe("new");
     await expect(fs.lstat(staged!.stagedPath)).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
 
   it("removes a staged directory during finalization", async () => {
-    const eventPath = path.join(resolveEventPostersPath("20260919_120000"), "7");
+    const eventPath = path.join(resolveEventArtworksPath("20260919_120000"), "7");
     await fs.mkdir(eventPath, { recursive: true });
-    const staged = await stageEventPosterAssetsRemoval("20260919_120000", 7);
+    const staged = await stageEventArtworkAssetsRemoval("20260919_120000", 7);
 
-    await finalizeStagedEventPosterAssetsRemoval(staged!);
+    await finalizeStagedEventArtworkAssetsRemoval(staged!);
 
     await expect(fs.lstat(staged!.stagedPath)).rejects.toMatchObject({
       code: "ENOENT",

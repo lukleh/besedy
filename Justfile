@@ -351,9 +351,13 @@ web-test:
 # Web App - Operator Tools
 # ============================================================================
 
-# Event poster candidates and publication (see: just posters --help)
-posters *args:
-    cd web && npm run posters -- "$@"
+# Event artwork candidates and publication (see: just artwork --help)
+artwork *args:
+    cd web && npm run artwork -- "$@"
+
+# One-time storage rename: posters_<catalogId> -> artwork_<catalogId> (see: just artwork-storage --help)
+artwork-storage *args:
+    cd web && npm run storage:artwork-rename -- "$@"
 
 # ============================================================================
 # Web App - Development (port 3001)
