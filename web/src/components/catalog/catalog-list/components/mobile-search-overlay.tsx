@@ -49,7 +49,8 @@ export function MobileSearchOverlay({
     >
       <DialogContent
         showCloseButton={false}
-        className="!inset-0 !m-0 !flex !h-[100dvh] !w-screen !max-h-none !max-w-none !flex-col !gap-0 overflow-hidden rounded-none border-0 p-0"
+        className="!inset-0 !m-0 !h-[100dvh] !w-screen !max-h-none !max-w-none overflow-hidden rounded-none border-0"
+        bodyClassName="!gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">{t("ragSearch.submit")}</DialogTitle>
         <div className="flex h-full flex-col bg-background safe-top">
