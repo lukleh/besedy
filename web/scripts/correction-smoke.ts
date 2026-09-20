@@ -603,6 +603,27 @@ async function main() {
   }
   check("rolling back refuses a publication from another workspace", rollbackRefused);
 
+  // A rollback is one-shot. Replaying an old one must not reach past a
+  // publication that has succeeded since and take its pointer away.
+  let staleRollbackTouchedPointer = false;
+  const pointerBefore = await readIndexPointer(CATALOG_ID, AUDIO_HASH);
+  await prisma.transcriptPublication.update({
+    where: { id: published.publicationId },
+    data: { status: "ROLLED_BACK" },
+  });
+  await rollbackPublication(published.publicationId, workspace.id);
+  const pointerAfter = await readIndexPointer(CATALOG_ID, AUDIO_HASH);
+  staleRollbackTouchedPointer =
+    JSON.stringify(pointerBefore) !== JSON.stringify(pointerAfter);
+  await prisma.transcriptPublication.update({
+    where: { id: published.publicationId },
+    data: { status: "SUCCEEDED" },
+  });
+  check(
+    "replaying a finished rollback leaves the pointer alone",
+    !staleRollbackTouchedPointer
+  );
+
   // --- republishing an unchanged snapshot ----------------------------------
   await unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH });
   check(
@@ -637,7 +658,43 @@ async function main() {
   }
   check("archiving refuses a workspace that still backs a publication", archiveRefused === "PUBLICATION_ACTIVE", archiveRefused);
 
+  // A withdrawal interrupted after its intent commits must leave search on the
+  // correction the reader has already released, and must be resumable.
+  await prisma.transcriptWorkspace.update({
+    where: { id: workspace.id },
+    data: {
+      searchPublicationId: null,
+      readerPublicationId: null,
+      searchWithdrawalAt: new Date(),
+    },
+  });
+  check(
+    "an interrupted withdrawal leaves search ahead of the reader",
+    (await readIndexPointer(CATALOG_ID, AUDIO_HASH)) !== null &&
+      (await resolveReaderTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "withheld"
+  );
+
+  let publishDuringWithdrawal: string | null = null;
+  try {
+    await publishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH, userId: alice.id });
+  } catch (error) {
+    publishDuringWithdrawal = (error as { code?: string }).code ?? null;
+  }
+  check(
+    "an unfinished withdrawal blocks publication",
+    publishDuringWithdrawal === "PUBLICATION_IN_FLIGHT",
+    publishDuringWithdrawal
+  );
+
+  // Resuming finishes it.
   await withdrawFromSearch(CATALOG_ID, AUDIO_HASH);
+  check(
+    "resuming clears the intent",
+    (await prisma.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: workspace.id },
+      select: { searchWithdrawalAt: true },
+    })).searchWithdrawalAt === null
+  );
   check(
     "withdrawing from search returns both sides to the machine transcript",
     (await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "machine" &&

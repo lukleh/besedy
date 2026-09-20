@@ -1,4 +1,7 @@
-import { Prisma } from "@/generated/prisma/client";
+import {
+  Prisma,
+  type TranscriptPublicationStatus,
+} from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
 import {
@@ -234,6 +237,7 @@ export async function publishTranscript(
           sourceBackend: true,
           readerPublicationId: true,
           searchPublicationId: true,
+          searchWithdrawalAt: true,
           publications: {
             where: { status: { in: ["PENDING", "ACTIVATING"] } },
             select: { id: true },
@@ -247,6 +251,14 @@ export async function publishTranscript(
           "PUBLICATION_IN_FLIGHT",
           "A publication for this workspace is already running",
           { publicationId: workspace.publications[0].id }
+        );
+      }
+      if (workspace.searchWithdrawalAt) {
+        // Publishing now would write an index pointer that the unfinished
+        // withdrawal removes when it resumes.
+        throw new CorrectionError(
+          "PUBLICATION_IN_FLIGHT",
+          "A withdrawal from search is unfinished; complete it before publishing"
         );
       }
 
@@ -398,7 +410,7 @@ export async function runPublicationJob(
     fingerprint = rendered.fingerprint;
     jsonPath = rendered.jsonPath;
   } catch (error) {
-    await failPublication(publicationId, error);
+    await failPublication(publicationId, publication.workspaceId, ["PENDING"], error);
     return "FAILED";
   }
 
@@ -487,6 +499,8 @@ export async function reconcilePublication(
   if (!publication.artifactSha256) {
     await failPublication(
       publicationId,
+      workspaceId,
+      ["ACTIVATING"],
       new Error("Publication has no artifact hash to verify against")
     );
     return "FAILED";
@@ -594,22 +608,34 @@ export async function reconcilePublication(
   );
 }
 
+/**
+ * Record a failure, but only against the state that failed.
+ *
+ * Rendering happens outside the workspace lock, so a rollback can claim the
+ * publication while it runs. An unconditional update would then turn a
+ * deliberate ROLLED_BACK into FAILED and lose what actually happened.
+ */
 async function failPublication(
   publicationId: string,
+  workspaceId: string,
+  expected: TranscriptPublicationStatus[],
   error: unknown
 ): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
   const code =
     error instanceof CorrectionError ? error.code : "PUBLICATION_JOB_FAILED";
 
-  await prisma.transcriptPublication.update({
-    where: { id: publicationId },
-    data: {
-      status: "FAILED",
-      finishedAt: new Date(),
-      errorCode: code.slice(0, 64),
-      errorMessage: message.slice(0, 2000),
-    },
+  await prisma.$transaction(async (tx) => {
+    await lockWorkspace(tx, workspaceId);
+    await tx.transcriptPublication.updateMany({
+      where: { id: publicationId, status: { in: expected } },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        errorCode: code.slice(0, 64),
+        errorMessage: message.slice(0, 2000),
+      },
+    });
   });
 }
 
@@ -802,31 +828,47 @@ export async function withdrawFromSearch(
 ): Promise<void> {
   const workspace = await prisma.transcriptWorkspace.findFirst({
     where: { workflowGroupId: catalogId, audioHash, status: "ACTIVE" },
-    select: { id: true },
+    select: { id: true, searchWithdrawalAt: true },
   });
   if (!workspace) {
     throw new CorrectionError("NO_WORKSPACE", "Correction has not been started");
   }
 
-  // The pointer is removed under the same lock. Releasing it first and
-  // unlinking afterwards let a publication start, finish and write its pointer
-  // in between — and this would then delete the new one, leaving a successful
-  // publication with nothing for the indexer to resolve.
+  // Step one: commit the intent along with the pointers it releases. From here
+  // the database names no correction while the index still serves one, which
+  // is search ahead of the reader — the direction this design allows. The
+  // intent also blocks publication, whose pointer step two would otherwise
+  // delete.
+  if (!workspace.searchWithdrawalAt) {
+    await prisma.$transaction(async (tx) => {
+      await lockWorkspace(tx, workspace.id);
+      await assertNoPublicationInFlight(workspace.id, tx);
+      await tx.transcriptWorkspace.update({
+        where: { id: workspace.id },
+        data: {
+          searchPublicationId: null,
+          readerPublicationId: null,
+          searchWithdrawalAt: new Date(),
+        },
+      });
+    });
+  }
+
+  // Step two, under the lock so no publication can write a pointer across it.
+  // A crash here leaves the intent committed and the operation resumable:
+  // calling withdraw again picks up from this point.
   await prisma.$transaction(async (tx) => {
     await lockWorkspace(tx, workspace.id);
-    await assertNoPublicationInFlight(workspace.id, tx);
-    await tx.transcriptWorkspace.update({
-      where: { id: workspace.id },
-      data: { searchPublicationId: null, readerPublicationId: null },
-    });
     await removeIndexPointer(catalogId, audioHash);
+  });
+
+  // Step three: the intent is spent.
+  await prisma.transcriptWorkspace.update({
+    where: { id: workspace.id },
+    data: { searchWithdrawalAt: null },
   });
 }
 
-/**
- * Abandon an activation and put the previous effective source back for this
- * audio hash alone.
- */
 export async function rollbackPublication(
   publicationId: string,
   workspaceId: string
@@ -855,30 +897,33 @@ export async function rollbackPublication(
       throw new CorrectionError("PUBLICATION_NOT_FOUND", "Publication not found");
     }
 
-    // Re-running a rollback whose filesystem half did not finish is allowed,
-    // so the operation is idempotent rather than one-shot.
-    if (
-      publication.status !== "ACTIVATING" &&
-      publication.status !== "PENDING" &&
-      publication.status !== "ROLLED_BACK"
-    ) {
+    // Already rolled back: nothing to do, and nothing safe to redo. Repeating
+    // the pointer restore would let a stale retry reach past a publication
+    // that has succeeded since, removing its pointer or replacing it with this
+    // one's predecessor while the database still names the newer one.
+    //
+    // Nor is the branch needed for repair. The status change and the pointer
+    // restore are one transaction, so a crash before it commits leaves the
+    // publication PENDING or ACTIVATING, and the retry comes back through the
+    // ordinary path.
+    if (publication.status === "ROLLED_BACK") return;
+
+    if (publication.status !== "ACTIVATING" && publication.status !== "PENDING") {
       throw new CorrectionError(
         "PUBLICATION_NOT_FOUND",
         `Publication is ${publication.status} and cannot be rolled back`
       );
     }
 
-    if (publication.status !== "ROLLED_BACK") {
-      const claimed = await tx.transcriptPublication.updateMany({
-        where: { id: publicationId, status: { in: ["PENDING", "ACTIVATING"] } },
-        data: { status: "ROLLED_BACK", finishedAt: new Date() },
-      });
-      if (claimed.count === 0) {
-        throw new CorrectionError(
-          "PUBLICATION_NOT_FOUND",
-          "Publication changed state while it was being rolled back"
-        );
-      }
+    const claimed = await tx.transcriptPublication.updateMany({
+      where: { id: publicationId, status: { in: ["PENDING", "ACTIVATING"] } },
+      data: { status: "ROLLED_BACK", finishedAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      throw new CorrectionError(
+        "PUBLICATION_NOT_FOUND",
+        "Publication changed state while it was being rolled back"
+      );
     }
 
     if (publication.previousSourceKind === "publication" && publication.previousSourceRef) {

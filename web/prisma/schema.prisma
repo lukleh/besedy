@@ -1033,6 +1033,16 @@ model TranscriptWorkspace {
   readerPublicationId String?                   @unique @map("reader_publication_id") @db.Uuid
   /// Snapshot search indexing and MCP resolve; an ordinary unpublish keeps it
   searchPublicationId String?                   @unique @map("search_publication_id") @db.Uuid
+  /// Set while corrected text is being taken back out of search.
+  ///
+  /// PostgreSQL and the filesystem cannot commit together, so withdrawal is a
+  /// committed intent rather than one step: the pointers are cleared first,
+  /// the index pointer removed second, the intent cleared last. A crash in
+  /// between leaves search still resolving the correction while the reader has
+  /// already let go of it — newer search, older reader, which is the direction
+  /// this design allows. It also blocks publication, which would otherwise
+  /// write a pointer that the resumed withdrawal would delete.
+  searchWithdrawalAt  DateTime?                 @map("search_withdrawal_at")
   startedById         String?                   @map("started_by")
   archivedById        String?                   @map("archived_by")
   archiveReason       String?                   @map("archive_reason")
