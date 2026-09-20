@@ -16,6 +16,10 @@ from besedy.core.paths import (
     sanitize_component,
 )
 from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.rag_correction_sources import (
+    EffectiveTranscriptSource,
+    resolve_effective_transcript_sources,
+)
 from besedy.lib.rag_retrieval_chunking import (
     CHUNK_MAX_SEGMENT_TOKENS,
     CHUNK_VERSION,
@@ -23,6 +27,7 @@ from besedy.lib.rag_retrieval_chunking import (
     # and audio-hash inference helpers so DB and sidecar retrievers stay identical.
     _discover_backend_transcripts,
     _infer_audio_hash,
+    _is_full_sha256,
     _segments_from_transcript,
     chunk_segments,
     get_chunk_token_counter,
@@ -134,23 +139,18 @@ def _stable_fingerprint(payload: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def build_transcript_source(
+def _resolve_source_audio_hash(
     *,
     transcript_path: Path,
     transcripts_root: Path,
     backend_key: str,
-    chunk_tokenizer_model: str | None = None,
-    token_counter=None,
-) -> TranscriptSource:
-    """Build the canonical transcript source state for one transcript file."""
+    data: dict[str, Any],
+    resolved_audio_hash: str | None,
+) -> str:
+    """Identify the recording a transcript file belongs to."""
 
-    chunk_token_counter = token_counter or _get_chunk_token_counter(
-        chunk_tokenizer_model=chunk_tokenizer_model,
-    )
-
-    data = load_json_with_fallback(transcript_path)
-    if not isinstance(data, dict):
-        raise ValueError(f"Invalid transcript JSON: {transcript_path}")
+    if resolved_audio_hash:
+        return resolved_audio_hash
 
     components = parse_transcript_components(transcript_path, transcripts_root)
     if components is None:
@@ -164,6 +164,88 @@ def build_transcript_source(
     audio_hash = _infer_audio_hash(hash_component, data)
     if audio_hash is None:
         raise ValueError(f"Could not infer audio hash from transcript: {transcript_path}")
+    return audio_hash
+
+
+def _resolve_scope_transcripts(
+    *,
+    workflow_group_id: str,
+    transcripts_root: Path,
+    backend_key: str,
+    corrections_root: Path | str | None = None,
+) -> list[EffectiveTranscriptSource]:
+    """Resolve the effective transcript for every recording in one scope.
+
+    This is the single indexing input resolver. Every full and incremental
+    build goes through it, so a routine sync can never revert corrected chunks
+    to the machine text underneath them.
+    """
+
+    machine_transcripts: list[tuple[str, Path]] = []
+    unmatched: list[Path] = []
+
+    for transcript_path in _discover_backend_transcripts(transcripts_root, backend_key):
+        components = parse_transcript_components(transcript_path, transcripts_root)
+        if components is None:
+            unmatched.append(transcript_path)
+            continue
+        hash_component = components[2].lower()
+        if _is_full_sha256(hash_component):
+            machine_transcripts.append((hash_component, transcript_path))
+        else:
+            # A short directory name needs the file itself to name the
+            # recording; such a transcript simply cannot be matched to a
+            # correction pointer, which is always keyed by the full hash.
+            unmatched.append(transcript_path)
+
+    resolved = resolve_effective_transcript_sources(
+        workflow_group_id=workflow_group_id,
+        machine_transcripts=machine_transcripts,
+        corrections_root=corrections_root,
+    )
+
+    return resolved + [
+        EffectiveTranscriptSource(
+            audio_hash="",
+            transcript_path=transcript_path,
+            origin="machine",
+        )
+        for transcript_path in unmatched
+    ]
+
+
+def build_transcript_source(
+    *,
+    transcript_path: Path,
+    transcripts_root: Path,
+    backend_key: str,
+    chunk_tokenizer_model: str | None = None,
+    token_counter=None,
+    resolved_audio_hash: str | None = None,
+) -> TranscriptSource:
+    """Build the canonical transcript source state for one transcript file.
+
+    ``resolved_audio_hash`` names the recording when the file does not live
+    under the transcripts root — a published corrected transcript, which
+    belongs to the same recording and the same backend scope but is stored
+    with the correction workspace.
+    """
+
+    chunk_token_counter = token_counter or _get_chunk_token_counter(
+        chunk_tokenizer_model=chunk_tokenizer_model,
+    )
+
+    data = load_json_with_fallback(transcript_path)
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid transcript JSON: {transcript_path}")
+
+    audio_hash = _resolve_source_audio_hash(
+        transcript_path=transcript_path,
+        transcripts_root=transcripts_root,
+        backend_key=backend_key,
+        data=data,
+        resolved_audio_hash=resolved_audio_hash,
+    )
 
     segments = _segments_from_transcript(data, token_counter=chunk_token_counter)
     transcript_fingerprint = _stable_fingerprint(
@@ -192,15 +274,25 @@ def discover_transcript_sources(
     backend_key: str,
     transcripts_root: Path | str | None = None,
     chunk_tokenizer_model: str | None = None,
+    corrections_root: Path | str | None = None,
 ) -> TranscriptSourceBuild:
-    """Discover transcript sources and fingerprints for one transcript backend scope."""
+    """Discover transcript sources and fingerprints for one transcript backend scope.
+
+    A published corrected transcript is the source for its recording; every
+    other recording keeps its machine transcript.
+    """
 
     normalized_backend = normalize_backend_key(backend_key)
     resolved_transcripts_root = resolve_transcripts_root(transcripts_root)
     if resolved_transcripts_root.is_symlink():
         resolved_transcripts_root = resolved_transcripts_root.resolve()
     run_id = require_run_id_from_transcripts_root(resolved_transcripts_root)
-    transcript_paths = _discover_backend_transcripts(resolved_transcripts_root, normalized_backend)
+    scope_transcripts = _resolve_scope_transcripts(
+        workflow_group_id=workflow_group_id,
+        transcripts_root=resolved_transcripts_root,
+        backend_key=normalized_backend,
+        corrections_root=corrections_root,
+    )
     token_counter = _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
@@ -208,7 +300,8 @@ def discover_transcript_sources(
     sources_by_hash: dict[str, TranscriptSource] = {}
     transcript_paths_by_hash: dict[str, str] = {}
     skipped = 0
-    for transcript_path in transcript_paths:
+    for scope_transcript in scope_transcripts:
+        transcript_path = scope_transcript.transcript_path
         try:
             source = build_transcript_source(
                 transcript_path=transcript_path,
@@ -216,6 +309,7 @@ def discover_transcript_sources(
                 backend_key=normalized_backend,
                 chunk_tokenizer_model=chunk_tokenizer_model,
                 token_counter=token_counter,
+                resolved_audio_hash=scope_transcript.audio_hash or None,
             )
             _register_unique_transcript_audio_hash(
                 audio_hash=source.audio_hash,
@@ -237,7 +331,7 @@ def discover_transcript_sources(
         backend_key=normalized_backend,
         run_id=run_id,
         transcripts_root=str(resolved_transcripts_root),
-        transcript_files=len(transcript_paths),
+        transcript_files=len(scope_transcripts),
         transcripts_skipped=skipped,
         sources=sorted(sources_by_hash.values(), key=lambda source: source.audio_hash),
     )
@@ -255,8 +349,14 @@ def build_chunks_for_transcript(
     overlap_tokens: int,
     chunk_tokenizer_model: str | None = None,
     token_counter=None,
+    resolved_audio_hash: str | None = None,
 ) -> tuple[list[RagChunk], list[ChunkWindow]]:
-    """Build canonical Besedy chunks for a single transcript file."""
+    """Build canonical Besedy chunks for a single transcript file.
+
+    A corrected transcript chunks exactly as a machine one does: same backend
+    scope, same chunk identity derived from the audio hash and the time window.
+    Only the text differs, which is the whole point.
+    """
 
     chunk_token_counter = token_counter or _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
@@ -266,18 +366,13 @@ def build_chunks_for_transcript(
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
 
-    components = parse_transcript_components(transcript_path, transcripts_root)
-    if components is None:
-        raise ValueError(f"Transcript path is outside transcripts root: {transcript_path}")
-
-    workflow, model_component, hash_component = components
-    file_backend = f"{workflow}/{model_component}"
-    if file_backend != backend_key:
-        raise ValueError(f"Transcript backend mismatch for {transcript_path}: {file_backend}")
-
-    audio_hash = _infer_audio_hash(hash_component, data)
-    if audio_hash is None:
-        raise ValueError(f"Could not infer audio hash from transcript: {transcript_path}")
+    audio_hash = _resolve_source_audio_hash(
+        transcript_path=transcript_path,
+        transcripts_root=transcripts_root,
+        backend_key=backend_key,
+        data=data,
+        resolved_audio_hash=resolved_audio_hash,
+    )
 
     segments = _segments_from_transcript(data, token_counter=chunk_token_counter)
     prepared_segments = split_segments_for_chunking(
@@ -329,6 +424,7 @@ def build_chunk_corpus(
     max_chunk_tokens: int = 300,
     overlap_tokens: int = 50,
     chunk_tokenizer_model: str | None = None,
+    corrections_root: Path | str | None = None,
 ) -> ChunkCorpusBuild:
     """Build the canonical chunk corpus for one transcript backend scope."""
 
@@ -337,7 +433,12 @@ def build_chunk_corpus(
     if resolved_transcripts_root.is_symlink():
         resolved_transcripts_root = resolved_transcripts_root.resolve()
     run_id = require_run_id_from_transcripts_root(resolved_transcripts_root)
-    transcript_paths = _discover_backend_transcripts(resolved_transcripts_root, normalized_backend)
+    scope_transcripts = _resolve_scope_transcripts(
+        workflow_group_id=workflow_group_id,
+        transcripts_root=resolved_transcripts_root,
+        backend_key=normalized_backend,
+        corrections_root=corrections_root,
+    )
 
     chunks_by_id: dict[str, RagChunk] = {}
     skipped = 0
@@ -347,7 +448,8 @@ def build_chunk_corpus(
     all_windows: list[ChunkWindow] = []
     transcript_paths_by_hash: dict[str, str] = {}
 
-    for transcript_path in transcript_paths:
+    for scope_transcript in scope_transcripts:
+        transcript_path = scope_transcript.transcript_path
         try:
             transcript_chunks, windows = build_chunks_for_transcript(
                 transcript_path=transcript_path,
@@ -360,6 +462,7 @@ def build_chunk_corpus(
                 overlap_tokens=overlap_tokens,
                 chunk_tokenizer_model=chunk_tokenizer_model,
                 token_counter=chunk_token_counter,
+                resolved_audio_hash=scope_transcript.audio_hash or None,
             )
         except DuplicateTranscriptAudioHashError:
             raise
@@ -401,7 +504,7 @@ def build_chunk_corpus(
         backend_key=normalized_backend,
         run_id=run_id,
         transcripts_root=str(resolved_transcripts_root),
-        transcript_files=len(transcript_paths),
+        transcript_files=len(scope_transcripts),
         transcripts_skipped=skipped,
         chunk_version=CHUNK_VERSION,
         chunks=chunks,

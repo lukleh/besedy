@@ -1,0 +1,230 @@
+"""Effective transcript sources for search indexing.
+
+Search indexes whatever text is currently the transcript of a recording. Once
+a corrected transcript has been published, that is the corrected text; until
+then it is the configured machine transcript. This module answers that question
+for one catalog, and it is the only place that knows corrections exist.
+
+The web application owns the correction database, but an index build has no
+database. The two sides already share a filesystem, so the web application
+publishes the effective search source for an audio hash as a small pointer
+file, exactly as transcripts themselves are published as files. A pointer in
+``activating`` state is honoured as readily as an ``active`` one: during the
+window where a publication has written its artifacts but has not yet committed
+its database pointers, a routine sync must resolve the new text, or it would
+classify the hash as changed and revert the corrected chunks.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+
+from besedy.core.paths_runtime import resolve_corrections_root
+
+LOGGER = logging.getLogger(__name__)
+
+POINTER_SCHEMA_VERSION = 1
+POINTER_DIR_NAME = "index-sources"
+ACTIVE_POINTER_STATES = frozenset({"activating", "active"})
+
+
+@dataclass(frozen=True)
+class CorrectionIndexPointer:
+    """One catalog's claim about the effective transcript for an audio hash."""
+
+    workflow_group_id: str
+    audio_hash: str
+    workspace_id: str
+    publication_id: str
+    state: str
+    backend: str
+    transcript_path: Path
+    transcript_fingerprint: str
+
+
+@dataclass(frozen=True)
+class EffectiveTranscriptSource:
+    """A transcript file to index, and where it came from."""
+
+    audio_hash: str
+    transcript_path: Path
+    origin: str  # "machine" or "correction"
+    publication_id: str | None = None
+    transcript_fingerprint: str | None = None
+
+
+def resolve_catalog_corrections_root(
+    workflow_group_id: str,
+    *,
+    corrections_root: Path | str | None = None,
+) -> Path:
+    return resolve_corrections_root(corrections_root) / f"corrections_{workflow_group_id}"
+
+
+def _parse_pointer(
+    path: Path,
+    *,
+    corrections_root: Path,
+    workflow_group_id: str,
+) -> CorrectionIndexPointer | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        LOGGER.warning("Skipping unreadable correction pointer %s (%s)", path, exc)
+        return None
+
+    if not isinstance(payload, dict):
+        LOGGER.warning("Skipping malformed correction pointer %s", path)
+        return None
+
+    if payload.get("schema_version") != POINTER_SCHEMA_VERSION:
+        LOGGER.warning(
+            "Skipping correction pointer %s with unsupported schema_version %r",
+            path,
+            payload.get("schema_version"),
+        )
+        return None
+
+    state = str(payload.get("state") or "")
+    if state not in ACTIVE_POINTER_STATES:
+        return None
+
+    if payload.get("workflow_group_id") != workflow_group_id:
+        LOGGER.warning(
+            "Skipping correction pointer %s belonging to catalog %r",
+            path,
+            payload.get("workflow_group_id"),
+        )
+        return None
+
+    audio_hash = str(payload.get("audio_hash") or "")
+    relative_path = str(payload.get("transcript_path") or "")
+    fingerprint = str(payload.get("transcript_fingerprint") or "")
+    if not audio_hash or not relative_path or not fingerprint:
+        LOGGER.warning("Skipping incomplete correction pointer %s", path)
+        return None
+
+    transcript_path = (corrections_root / relative_path).resolve()
+    try:
+        transcript_path.relative_to(corrections_root.resolve())
+    except ValueError:
+        LOGGER.warning(
+            "Skipping correction pointer %s whose transcript escapes the corrections root",
+            path,
+        )
+        return None
+
+    return CorrectionIndexPointer(
+        workflow_group_id=workflow_group_id,
+        audio_hash=audio_hash,
+        workspace_id=str(payload.get("workspace_id") or ""),
+        publication_id=str(payload.get("publication_id") or ""),
+        state=state,
+        backend=str(payload.get("backend") or ""),
+        transcript_path=transcript_path,
+        transcript_fingerprint=fingerprint,
+    )
+
+
+def load_correction_index_pointers(
+    workflow_group_id: str,
+    *,
+    corrections_root: Path | str | None = None,
+) -> dict[str, CorrectionIndexPointer]:
+    """Read every usable pointer for one catalog, keyed by audio hash."""
+
+    try:
+        root = resolve_corrections_root(corrections_root)
+    except RuntimeError as exc:
+        LOGGER.debug("No corrections root configured (%s)", exc)
+        return {}
+
+    pointer_dir = root / f"corrections_{workflow_group_id}" / POINTER_DIR_NAME
+    if not pointer_dir.is_dir():
+        return {}
+
+    pointers: dict[str, CorrectionIndexPointer] = {}
+    for path in sorted(pointer_dir.glob("*.json")):
+        pointer = _parse_pointer(
+            path,
+            corrections_root=root,
+            workflow_group_id=workflow_group_id,
+        )
+        if pointer is None:
+            continue
+        if not pointer.transcript_path.is_file():
+            LOGGER.warning(
+                "Correction pointer %s names a missing transcript %s",
+                path,
+                pointer.transcript_path,
+            )
+            continue
+        pointers[pointer.audio_hash] = pointer
+
+    return pointers
+
+
+def resolve_effective_transcript_sources(
+    *,
+    workflow_group_id: str,
+    machine_transcripts: Iterable[tuple[str, Path]],
+    corrections_root: Path | str | None = None,
+) -> list[EffectiveTranscriptSource]:
+    """Resolve what to index for one backend scope.
+
+    ``machine_transcripts`` is the discovered ``(audio_hash, path)`` pairs for
+    the scope. A corrected publication replaces the machine transcript for its
+    audio hash and is also included when the hash has no machine transcript in
+    this scope, because a corrected transcript is the transcript of that
+    recording rather than an alternative backend for it.
+    """
+
+    pointers = load_correction_index_pointers(
+        workflow_group_id,
+        corrections_root=corrections_root,
+    )
+
+    resolved: list[EffectiveTranscriptSource] = []
+    seen: set[str] = set()
+
+    for audio_hash, transcript_path in machine_transcripts:
+        seen.add(audio_hash)
+        pointer = pointers.get(audio_hash)
+        if pointer is None:
+            resolved.append(
+                EffectiveTranscriptSource(
+                    audio_hash=audio_hash,
+                    transcript_path=transcript_path,
+                    origin="machine",
+                )
+            )
+            continue
+        resolved.append(
+            EffectiveTranscriptSource(
+                audio_hash=audio_hash,
+                transcript_path=pointer.transcript_path,
+                origin="correction",
+                publication_id=pointer.publication_id,
+                transcript_fingerprint=pointer.transcript_fingerprint,
+            )
+        )
+
+    for audio_hash, pointer in pointers.items():
+        if audio_hash in seen:
+            continue
+        resolved.append(
+            EffectiveTranscriptSource(
+                audio_hash=audio_hash,
+                transcript_path=pointer.transcript_path,
+                origin="correction",
+                publication_id=pointer.publication_id,
+                transcript_fingerprint=pointer.transcript_fingerprint,
+            )
+        )
+
+    resolved.sort(key=lambda source: source.audio_hash)
+    return resolved
