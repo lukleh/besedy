@@ -23,7 +23,7 @@ fi
 EXTRA_MAP_FILE="${EXTRA_MAP_FILE:-$COMPOSE_DIR/setup/backup/besedy-extra.paths}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-30}"
 REMOTE_SYNC_MAX_AGE_HOURS="${REMOTE_SYNC_MAX_AGE_HOURS:-$MAX_AGE_HOURS}"
-PROJECT_REQUIRED_PATHS="${PROJECT_REQUIRED_PATHS:-projects/besedy,projects/besedy_data,projects/besedy_artwork,projects/besedy_sources}"
+PROJECT_REQUIRED_PATHS="${PROJECT_REQUIRED_PATHS:-projects/besedy,projects/besedy_data,projects/besedy_artwork|projects/besedy_posters,projects/besedy_sources}"
 DB_DUMP_PATTERN="${DB_DUMP_PATTERN:-besedy_[0-9]*_[0-9]*.sql.gz}"
 
 declare -a failures=()
@@ -143,6 +143,9 @@ check_snapshot_root() {
     local age_hours=0
     local required_path=""
     local -a required_paths=()
+    local -a alternatives=()
+    local alt=""
+    local found=0
 
     if [ ! -d "$snapshot_root" ]; then
         failures+=("$name snapshot root missing: $snapshot_root")
@@ -168,10 +171,21 @@ check_snapshot_root() {
         required_path="$(trim_whitespace "$required_path")"
         [ -n "$required_path" ] || continue
 
-        if [ ! -e "$latest_snapshot/$required_path" ]; then
+        # A "|"-separated entry is a set of acceptable alternatives (e.g. the
+        # renamed artwork path and its pre-ADR-0010 name): pass if any exists,
+        # since operations.md documents keeping the old host directory name
+        # as a supported state until it's renamed.
+        found=0
+        IFS='|' read -r -a alternatives <<< "$required_path"
+        for alt in "${alternatives[@]}"; do
+            if [ -e "$latest_snapshot/$alt" ]; then
+                found=1
+                info+=("${name}_path_ok=$alt")
+                break
+            fi
+        done
+        if [ "$found" -eq 0 ]; then
             failures+=("$name snapshot missing required path: $latest_snapshot/$required_path")
-        else
-            info+=("${name}_path_ok=$required_path")
         fi
     done
 

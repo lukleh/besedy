@@ -1537,7 +1537,6 @@
       "missingPrimary": "Chybí primární",
       "recordingsMobile": "Nahrávky: {count}",
       "sourcesMobile": "Zdroje: {count}",
-      "artworkMobile": "Obálka: {status}",
       "artworkMissing": "Chybí",
       "artworkDraftOnly": "Jen koncept",
       "artworkPublished": "Zveřejněno",

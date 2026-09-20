@@ -194,6 +194,37 @@ artwork_dir = "/data/artworks"
 
     expect(getArtworkDir()).toBe("/data/artworks");
   });
+
+  it("falls back to the legacy posters_dir when artwork_dir is not configured", async () => {
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(`
+[paths]
+text_data_dir = "/data/text"
+transcripts_dir = "transcripts"
+posters_dir = "/data/posters"
+`);
+
+    const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(getArtworkDir()).toBe("/data/posters");
+  });
+
+  it("throws instead of silently resolving to text_data_dir when neither key is configured", async () => {
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(`
+[paths]
+text_data_dir = "/data/text"
+transcripts_dir = "transcripts"
+`);
+
+    const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(() => getArtworkDir()).toThrow(/artwork_dir is required/);
+  });
 });
 
 describe("getDeepSearchDefaultInstructions", () => {

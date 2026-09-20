@@ -107,7 +107,10 @@ function parseArgs(argv: string[]): Args {
 
 async function exists(targetPath: string): Promise<boolean> {
   try {
-    await fs.stat(targetPath);
+    // lstat, not stat: a dangling symlink must still count as "occupies this
+    // name" so the collision refusal below fires instead of fs.rename
+    // failing later with a raw ENOTDIR/EEXIST.
+    await fs.lstat(targetPath);
     return true;
   } catch {
     return false;
@@ -117,35 +120,42 @@ async function exists(targetPath: string): Promise<boolean> {
 async function renameCatalogDirs(root: string, reverse: boolean, dryRun: boolean): Promise<RenameSummary> {
   const [from, to] = reverse ? [PREFIX, LEGACY_PREFIX] : [LEGACY_PREFIX, PREFIX];
   const entries = await fs.readdir(root, { withFileTypes: true });
-  let renamed = 0;
+  const existingNames = new Set(entries.map((entry) => entry.name));
+
+  // Resolve every rename and check every collision against the pre-run
+  // snapshot FIRST, before touching the filesystem. A collision anywhere
+  // must abort with zero renames done, not a half-migrated root.
+  const planned: { source: string; target: string; name: string; targetName: string }[] = [];
   let alreadyDone = 0;
 
   for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith(from)) continue;
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(to)) {
+      alreadyDone += 1;
+      continue;
+    }
+    if (!entry.name.startsWith(from)) continue;
+
     const catalogId = entry.name.slice(from.length);
     if (!catalogId) throw new Error(`Refusing to rename bare prefix directory: ${entry.name}`);
 
-    const source = path.join(root, entry.name);
-    const target = path.join(root, `${to}${catalogId}`);
-
-    if (await exists(target)) {
+    const targetName = `${to}${catalogId}`;
+    if (existingNames.has(targetName)) {
       throw new Error(
-        `Refusing to rename ${entry.name}: ${to}${catalogId} already exists. ` +
+        `Refusing to rename ${entry.name}: ${targetName} already exists. ` +
           "Inspect the root by hand before rerunning."
       );
     }
 
-    console.log(`[artwork-storage] ${dryRun ? "would rename" : "renaming"} ${entry.name} -> ${to}${catalogId}`);
+    planned.push({ source: path.join(root, entry.name), target: path.join(root, targetName), name: entry.name, targetName });
+  }
+
+  for (const { source, target, name, targetName } of planned) {
+    console.log(`[artwork-storage] ${dryRun ? "would rename" : "renaming"} ${name} -> ${targetName}`);
     if (!dryRun) await fs.rename(source, target);
-    renamed += 1;
   }
 
-  for (const entry of entries) {
-    if (entry.isDirectory() && entry.name.startsWith(to)) alreadyDone += 1;
-  }
-  if (!reverse) alreadyDone -= renamed;
-
-  return { renamed, alreadyDone: Math.max(alreadyDone, 0) };
+  return { renamed: planned.length, alreadyDone };
 }
 
 async function verifyParity(root: string, connectionString: string): Promise<void> {

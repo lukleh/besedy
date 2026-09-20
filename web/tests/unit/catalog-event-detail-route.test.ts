@@ -119,8 +119,8 @@ describe("catalog event detail route", () => {
     getCatalogCapability.mockResolvedValue({
       canManageAccess: false,
       canViewArtworkCandidates: false,
-      canManageArtworks: false,
-      canPublishArtworks: false,
+      canManageArtwork: false,
+      canPublishArtwork: false,
     });
     getPublishedEventArtwork.mockResolvedValue(null);
     getEventArtworkWorkflowStatuses.mockResolvedValue(new Map());
@@ -168,9 +168,9 @@ describe("catalog event detail route", () => {
     expect(body.recordings).toHaveLength(0);
     expect(body.sessionOrdinal).toBe(1);
     expect(body.sessionCount).toBe(1);
-    expect(body.canManageArtworks).toBe(false);
+    expect(body.canManageArtwork).toBe(false);
     expect(body.canViewArtworkCandidates).toBe(false);
-    expect(body.canPublishArtworks).toBe(false);
+    expect(body.canPublishArtwork).toBe(false);
     expect(body.publishedArtwork).toBeNull();
     expect(body.canManageSources).toBe(false);
     expect(isPublishedVisibleEvent).not.toHaveBeenCalled();
@@ -182,8 +182,8 @@ describe("catalog event detail route", () => {
     getCatalogCapability.mockResolvedValue({
       canManageAccess: false,
       canViewArtworkCandidates: true,
-      canManageArtworks: true,
-      canPublishArtworks: true,
+      canManageArtwork: true,
+      canPublishArtwork: true,
     });
     getEventArtworkWorkflowStatuses.mockResolvedValue(new Map([[eventId, "draft-only"]]));
     getLatestEventArtworkCandidate.mockResolvedValue({

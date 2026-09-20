@@ -51,6 +51,23 @@ Everything ADR 0009 decided about candidates, publication, permissions,
 presentation, and the local CLI's authority model still applies under the new
 names; this ADR only retires "poster" as the name for it.
 
+Per `docs/adr/README.md`'s own rule, ADR 0009 and every other historical ADR
+that mentions "poster" in passing (0003, 0005, 0006) keep that wording
+unchanged — they describe decisions as understood at the time, and are not
+retroactively rewritten to look like "artwork" was the original name. This
+ADR is the sole record of the rename. Living, non-ADR documentation
+(`docs/web/operations.md`, `data-and-database.md`, `permission-rework.md`,
+`offline.md`) is updated in place instead, since it documents current
+behavior rather than a past decision.
+
+For one release, `getArtworkDir()` (`web/src/lib/config.ts`) and
+`docker-compose.yml`'s artwork volume mount both still read the legacy
+`posters_dir`/`POSTERS_DIR` name as a fallback if `artwork_dir`/`ARTWORK_DIR`
+isn't set, and error loudly rather than silently resolving to the read-only
+`text_data_dir` mount if neither is configured. Drop the fallback, along with
+the storage-rename shim above, in the pending ADR 0009 cleanup once every
+deployment's config has been renamed.
+
 ## Migration
 
 This lands after ADR 0009's production cutover (2026-09-19), so real rows and
@@ -79,3 +96,7 @@ names once it lands.
 - Anyone with a bookmarked `/poster`-family URL or a script hard-coding the
   old permission strings needs to update it; none were found in this
   repository outside the app itself.
+- The offline downloads IndexedDB schema bumps to version 5 to rewrite the
+  renamed field names (`hasPoster`, `event.publishedPoster`, bundle `poster`)
+  on records already saved by installed clients; without it, previously
+  downloaded artwork would silently stop showing and never re-fetch.

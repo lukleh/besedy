@@ -66,7 +66,7 @@ interface EventDetailResponse {
   sessionCount: number;
   description: string | null;
   released: boolean;
-  canManageArtworks?: boolean;
+  canManageArtwork?: boolean;
   canManageSources?: boolean;
   recordings: EventRecording[];
 }
@@ -377,7 +377,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
   }
 
   const primaryRecording = data.recordings.find((recording) => recording.isPrimary) ?? null;
-  const canManageArtworks = data.canManageArtworks ?? false;
+  const canManageArtwork = data.canManageArtwork ?? false;
   const canManageSources = data.canManageSources ?? false;
 
   return (
@@ -405,7 +405,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
             sessionOrdinal={data.sessionOrdinal}
             sessionCount={data.sessionCount}
           />
-          {canManageArtworks && (
+          {canManageArtwork && (
             <Button asChild variant="outline">
               <Link href={`/catalog/${catalogId}/event/${eventId}/artwork`}>
                 {tRoot("recording.editArtwork")}

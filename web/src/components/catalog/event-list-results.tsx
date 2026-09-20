@@ -112,10 +112,10 @@ export function EventListResults({
   };
 
   const getArtworkStatusLabel = (status: CatalogEventRow["artworkStatus"]) => {
-    if (status === "published-with-newer-drafts") return t("artworksPublishedWithDrafts");
-    if (status === "published") return t("artworksPublished");
-    if (status === "draft-only") return t("artworksDraftOnly");
-    return t("artworksMissing");
+    if (status === "published-with-newer-drafts") return t("artworkPublishedWithDrafts");
+    if (status === "published") return t("artworkPublished");
+    if (status === "draft-only") return t("artworkDraftOnly");
+    return t("artworkMissing");
   };
 
   const getArtworkStatusVariant = (status: CatalogEventRow["artworkStatus"]): "default" | "secondary" | "outline" => {
@@ -160,7 +160,7 @@ export function EventListResults({
                     </button>
                   </TableHead>
                   <TableHead className="text-right">{t("columnSources")}</TableHead>
-                  <TableHead>{t("columnArtworks")}</TableHead>
+                  <TableHead>{t("columnArtwork")}</TableHead>
                   <TableHead>{t("columnPrimaryRecording")}</TableHead>
                   <TableHead aria-sort={getSortAria("released")}>
                     <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort("released")}>

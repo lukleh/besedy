@@ -87,8 +87,8 @@ export interface CatalogCapability extends PortalCapability {
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
   canViewArtworkCandidates: boolean;
-  canManageArtworks: boolean;
-  canPublishArtworks: boolean;
+  canManageArtwork: boolean;
+  canPublishArtwork: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -146,8 +146,8 @@ export function buildCatalogCapability(
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),
     canViewArtworkCandidates: canViewEventArtworkCandidates(policyContext),
-    canManageArtworks: canManageEventArtworkCandidates(policyContext),
-    canPublishArtworks: canPublishEventArtwork(policyContext),
+    canManageArtwork: canManageEventArtworkCandidates(policyContext),
+    canPublishArtwork: canPublishEventArtwork(policyContext),
   };
 }
 

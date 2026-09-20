@@ -94,7 +94,87 @@ describe('downloads database', () => {
       'downloads',
       'pendingPlaybackProgress',
     ]);
-    expect(database.version).toBe(4);
+    expect(database.version).toBe(5);
+  });
+
+  it('rewrites pre-rename poster field names on already-downloaded records', async () => {
+    const legacyKey = 'cat:' + HASH;
+    const legacy = indexedDB.open('besedy-offline', 4);
+    await new Promise<void>((resolve, reject) => {
+      legacy.onupgradeneeded = () => {
+        const database = legacy.result;
+        const downloads = database.createObjectStore('downloads', { keyPath: 'key' });
+        downloads.createIndex('byCatalog', 'catalogId');
+        downloads.createIndex('byEventKey', 'eventKey');
+        downloads.createIndex('byStatus', 'status');
+        database.createObjectStore('downloadBundles', { keyPath: 'key' });
+        const progress = database.createObjectStore('pendingPlaybackProgress', { keyPath: 'key' });
+        progress.createIndex('byUser', 'userId');
+      };
+      legacy.onsuccess = () => {
+        const database = legacy.result;
+        const tx = database.transaction(['downloads', 'downloadBundles'], 'readwrite');
+        tx.objectStore('downloads').put({
+          key: legacyKey,
+          catalogId: 'cat',
+          catalogLabel: null,
+          hash: HASH,
+          userId: 'u1',
+          eventKey: 'cat:3',
+          event: {
+            id: 3,
+            title: null,
+            locationName: null,
+            dateYear: 2026,
+            dateMonth: null,
+            dateDay: null,
+            sessionIndex: 1,
+            publishedPoster: { id: 'p1', publishedAt: '2026-09-19T00:00:00Z' },
+          },
+          recording: null,
+          audioUrl: null,
+          audioCacheKey: null,
+          status: 'complete',
+          progress: 100,
+          bytesLoaded: 10,
+          totalBytes: 10,
+          error: null,
+          resumeOnReconnect: false,
+          transcriptBackend: null,
+          hasPoster: true,
+          createdAt: 0,
+          updatedAt: 0,
+          completedAt: 0,
+        });
+        tx.objectStore('downloadBundles').put({
+          key: legacyKey,
+          transcriptBackend: null,
+          transcript: null,
+          diarization: null,
+          poster: { blob: new Blob(['x']), contentType: 'image/jpeg', variant: 'square', posterId: 'p1' },
+          updatedAt: 0,
+        });
+        tx.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      legacy.onerror = () => reject(legacy.error);
+    });
+
+    const db = await loadDb();
+    const record = await db.getDownload(legacyKey);
+    expect(record).toMatchObject({ hasArtwork: true });
+    expect((record?.event as { publishedArtwork?: unknown } | null)?.publishedArtwork).toEqual({
+      id: 'p1',
+      publishedAt: '2026-09-19T00:00:00Z',
+    });
+    expect(record).not.toHaveProperty('hasPoster');
+
+    const bundle = await db.getDownloadBundle(legacyKey);
+    expect(bundle?.artwork).toMatchObject({ contentType: 'image/jpeg', variant: 'square', artworkId: 'p1' });
+    expect(bundle).not.toHaveProperty('poster');
   });
 
   it('keeps large payloads separate from lightweight registry rows', async () => {

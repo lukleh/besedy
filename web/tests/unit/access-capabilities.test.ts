@@ -121,8 +121,8 @@ describe("access capabilities", () => {
       canManageCatalogConfiguration: false,
       canUseRagSearch: true,
       canViewArtworkCandidates: true,
-      canManageArtworks: false,
-      canPublishArtworks: false,
+      canManageArtwork: false,
+      canPublishArtwork: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -154,8 +154,8 @@ describe("access capabilities", () => {
       canAccessSettings: true,
       canManageCatalogConfiguration: false,
       canViewArtworkCandidates: true,
-      canManageArtworks: true,
-      canPublishArtworks: true,
+      canManageArtwork: true,
+      canPublishArtwork: true,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });

@@ -210,7 +210,7 @@ the canonical schema** — the released transcript, every span verified and
 substituted in. It is written at release and at no other time.
 
 It lives in its own writable tree, keyed by the generation it resolves against
-and then by `audio_hash`, just as artwork and sources have writable trees of
+and then by `audio_hash`, just as posters and sources have writable trees of
 their own. It is not written inside the transcript generation.
 [ADR 0002](0002-artifact-generations.md) treats a generation's contents as
 published artifacts whose only mutable coordination state is the symlink, so

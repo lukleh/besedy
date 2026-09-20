@@ -1538,7 +1538,6 @@
       "missingPrimary": "Missing primary",
       "recordingsMobile": "Recordings: {count}",
       "sourcesMobile": "Sources: {count}",
-      "artworkMobile": "Artwork: {status}",
       "artworkMissing": "Missing",
       "artworkDraftOnly": "Draft only",
       "artworkPublished": "Published",

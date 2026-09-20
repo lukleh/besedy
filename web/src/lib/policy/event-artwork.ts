@@ -4,10 +4,6 @@ import {
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
 
-export function canViewPublishedEventArtwork(context: CatalogPolicyContext): boolean {
-  return hasCatalogAccess(context);
-}
-
 export function canViewEventArtworkCandidates(context: CatalogPolicyContext): boolean {
   return (
     hasCatalogAccess(context) &&

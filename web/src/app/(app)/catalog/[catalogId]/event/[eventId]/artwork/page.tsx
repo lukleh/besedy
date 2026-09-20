@@ -37,8 +37,8 @@ interface EventDetailResponse {
   id: number;
   title: string | null;
   canViewArtworkCandidates?: boolean;
-  canManageArtworks?: boolean;
-  canPublishArtworks?: boolean;
+  canManageArtwork?: boolean;
+  canPublishArtwork?: boolean;
 }
 
 interface ArtworkCandidate {
@@ -94,8 +94,8 @@ export default function EventArtworkPage({ params }: EventArtworkPageProps) {
     queryFn: () => fetchJson(buildEventDetailUrl(catalogId, parsedEventId)),
     enabled: Number.isSafeInteger(parsedEventId) && parsedEventId > 0,
   });
-  const canManage = detailQuery.data?.canManageArtworks ?? false;
-  const canPublish = detailQuery.data?.canPublishArtworks ?? false;
+  const canManage = detailQuery.data?.canManageArtwork ?? false;
+  const canPublish = detailQuery.data?.canPublishArtwork ?? false;
   const canView = detailQuery.data?.canViewArtworkCandidates ?? false;
   const refetchDetail = detailQuery.refetch;
   const candidatesQuery = useQuery<CandidatesResponse>({

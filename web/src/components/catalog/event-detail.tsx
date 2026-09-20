@@ -60,8 +60,8 @@ interface EventDetailResponse {
   released: boolean;
   recordings: EventRecording[];
   canViewArtworkCandidates?: boolean;
-  canManageArtworks?: boolean;
-  canPublishArtworks?: boolean;
+  canManageArtwork?: boolean;
+  canPublishArtwork?: boolean;
   canManageSources?: boolean;
   artworkStatus?: "none" | "draft-only" | "published" | "published-with-newer-drafts";
   publishedArtwork?: {

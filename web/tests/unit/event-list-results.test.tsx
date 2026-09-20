@@ -15,7 +15,6 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => {
     if (key === "recordingsMobile") return `Recordings: ${values?.count ?? ""}`;
     if (key === "sourcesMobile") return `Sources: ${values?.count ?? ""}`;
-    if (key === "artworksMobile") return `Artworks: ${values?.status ?? ""}`;
     if (key === "ordinal") return `${values?.index}/${values?.count}`;
     if (key === "ordinalAria")
       return `Session ${values?.index} of ${values?.count}`;
