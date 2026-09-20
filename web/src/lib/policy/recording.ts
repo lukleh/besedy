@@ -4,8 +4,8 @@ import {
   canDownloadAudio,
   canEditCatalogMetadata,
   canViewCatalogTranscripts,
+  hasCatalogAccess,
   hasCatalogPermission,
-  hasCatalogManagementAuthority,
   canViewCatalog,
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
@@ -120,5 +120,8 @@ export function canEditRecordingMetadata(context: CatalogPolicyContext): boolean
 }
 
 export function canPublishRecording(context: CatalogPolicyContext): boolean {
-  return hasCatalogManagementAuthority(context);
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "publish_recording")
+  );
 }
