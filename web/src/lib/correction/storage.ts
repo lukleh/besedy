@@ -102,8 +102,27 @@ export function relativeToCorrectionsRoot(absolutePath: string): string {
   return path.relative(getCorrectionsDir(), absolutePath).split(path.sep).join("/");
 }
 
-async function ensureDir(dir: string): Promise<void> {
+/**
+ * Create the directory, then check it is somewhere this application is allowed
+ * to read from.
+ *
+ * The check has to come second, because `validatePath` resolves symlinks and
+ * so rejects a path that does not exist yet. Doing it at all matters because
+ * writes and reads would otherwise disagree: a corrections root outside the
+ * allowed directories would accept every write and fail every read, and the
+ * failure would surface much later as a missing artifact.
+ */
+async function ensureWritableDir(dir: string): Promise<string> {
   await fs.mkdir(dir, { recursive: true, mode: SHARED_DIR_MODE });
+
+  const result = validatePath(dir);
+  if (!result.valid) {
+    throw new Error(
+      `Corrections directory is outside the allowed paths: ${dir} (${result.reason}). ` +
+        "Set [paths].corrections_dir inside text_data_dir, or add it to BESEDY_ALLOWED_PATHS."
+    );
+  }
+  return result.resolvedPath;
 }
 
 /**
@@ -115,12 +134,12 @@ export async function writeFileAtomic(
   filePath: string,
   content: string
 ): Promise<void> {
-  const dir = path.dirname(filePath);
-  await ensureDir(dir);
+  const dir = await ensureWritableDir(path.dirname(filePath));
+  const target = path.join(dir, path.basename(filePath));
   const temporaryPath = path.join(dir, `.${path.basename(filePath)}.${randomUUID()}.tmp`);
   try {
     await fs.writeFile(temporaryPath, content, { encoding: "utf-8", mode: SHARED_FILE_MODE });
-    await fs.rename(temporaryPath, filePath);
+    await fs.rename(temporaryPath, target);
   } catch (error) {
     await fs.rm(temporaryPath, { force: true });
     throw error;

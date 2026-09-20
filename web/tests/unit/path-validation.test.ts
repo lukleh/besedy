@@ -14,6 +14,9 @@ vi.mock("@/lib/config", () => ({
   getUploadsDir: () => process.env.TEST_UPLOADS_DIR || (() => {
     throw new Error("config not available");
   })(),
+  getCorrectionsDir: () => process.env.TEST_CORRECTIONS_DIR || (() => {
+    throw new Error("config not available");
+  })(),
 }));
 
 describe("path-validation", () => {
@@ -35,10 +38,25 @@ describe("path-validation", () => {
     it("returns empty array when no base dir configured", async () => {
       delete process.env.BESEDY_BASE_DIR;
       delete process.env.BESEDY_ALLOWED_PATHS;
+      delete process.env.TEST_CORRECTIONS_DIR;
 
       const { getAllowedBaseDirs } = await import("@/lib/security/path-validation");
       const dirs = getAllowedBaseDirs();
       expect(dirs).toEqual([]);
+    });
+
+    // Correction artifacts are written and read back through the same
+    // validation. A writable root missing from this list fails in one
+    // direction only: the write succeeds and the file then reads as missing.
+    it("includes the corrections directory when configured", async () => {
+      delete process.env.BESEDY_BASE_DIR;
+      delete process.env.BESEDY_ALLOWED_PATHS;
+      process.env.TEST_CORRECTIONS_DIR = "/test/corrections";
+
+      const { getAllowedBaseDirs } = await import("@/lib/security/path-validation");
+      const dirs = getAllowedBaseDirs();
+
+      expect(dirs.some((dir) => dir.endsWith("/test/corrections"))).toBe(true);
     });
 
     it("includes BESEDY_BASE_DIR when set", async () => {
