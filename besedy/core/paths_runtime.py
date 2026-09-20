@@ -282,6 +282,36 @@ def resolve_catalogs_root() -> Path:
     return catalogs_dir
 
 
+def resolve_corrections_root(root: Path | str | None = None) -> Path:
+    """Resolve the directory holding human transcript correction artifacts.
+
+    Correction work is written while it is in progress, so it cannot live
+    inside a transcript generation. It sits beside the catalogs under the text
+    data root, and the web application resolves the same directory.
+    """
+    if root is not None and root != "":
+        return resolve_project_path(root)
+
+    env_value = os.getenv("BESEDY_CORRECTIONS_ROOT")
+    if env_value:
+        candidate = Path(env_value).expanduser()
+        return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
+
+    text_root = resolve_text_data_root()
+    try:
+        from besedy.config.settings import config
+
+        configured = getattr(config.paths, "corrections_dir", "") or ""
+    except Exception:
+        configured = ""
+
+    if configured:
+        candidate = Path(configured).expanduser()
+        return candidate if candidate.is_absolute() else text_root / candidate
+
+    return text_root / "corrections"
+
+
 def resolve_transcripts_root(root: Path | str | None = None) -> Path:
     """Resolve the current transcripts directory (timestamped)."""
     if root is not None and root != "":

@@ -166,6 +166,19 @@ model User {
   recordingPlaybackProgress    RecordingPlaybackProgress[]
   /// Recording uploads this user submitted for ingest
   recordingIntakes             RecordingIntake[]           @relation("RecordingIntakeRequestedBy")
+  /// Correction workspaces this user started or archived
+  transcriptWorkspacesStarted  TranscriptWorkspace[]       @relation("TranscriptWorkspaceStartedBy")
+  transcriptWorkspacesArchived TranscriptWorkspace[]       @relation("TranscriptWorkspaceArchivedBy")
+  /// Span text revisions written by this user
+  transcriptSpanRevisions      TranscriptSpanRevision[]    @relation("TranscriptSpanRevisionAuthor")
+  /// Approvals, disapprovals and withdrawals by this user
+  transcriptSpanDecisions      TranscriptSpanDecision[]    @relation("TranscriptSpanDecisionUser")
+  /// Span comments written by this user
+  transcriptSpanComments       TranscriptSpanComment[]     @relation("TranscriptSpanCommentAuthor")
+  /// Transcript publications performed by this user
+  transcriptPublications       TranscriptPublication[]     @relation("TranscriptPublicationPublishedBy")
+  /// Correction guide revisions written by this user
+  transcriptGuideRevisions     TranscriptGuideRevision[]   @relation("TranscriptGuideRevisionAuthor")
 
   @@map("users")
 }
@@ -598,6 +611,10 @@ model WorkflowGroup {
   catalogEventRecordings  CatalogEventRecording[]
   /// Deep-search job shares scoped to this catalog
   deepSearchJobShares     DeepSearchJobShare[]
+  /// Correction workspaces for recordings in this catalog
+  transcriptWorkspaces     TranscriptWorkspace[]
+  /// Correction guide revisions for this catalog
+  transcriptGuideRevisions TranscriptGuideRevision[]
   recorders               Recorder[]
   locations               Location[]
   albums                  Album[]
@@ -970,6 +987,249 @@ model TranscriptBackendPriority {
 }
 
 // ============================================================================
+// Human Transcript Correction (ADR 0006)
+// ============================================================================
+
+/// Lifecycle of a correction workspace. A workspace is archived only by the
+/// exceptional administrative path; archived rows stay for audit, which is why
+/// the one-workspace-per-recording rule is a partial unique index over
+/// non-archived rows rather than a plain `@@unique`. See the migration.
+enum TranscriptWorkspaceStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/// Publication job states. `PENDING` and `ACTIVATING` both lock the workspace;
+/// only `ACTIVATING` may be completed by reconciliation after a crash.
+enum TranscriptPublicationStatus {
+  PENDING
+  ACTIVATING
+  SUCCEEDED
+  FAILED
+  ROLLED_BACK
+}
+
+/// One person's action against one immutable text revision.
+enum TranscriptDecisionKind {
+  APPROVE
+  DISAPPROVE
+  WITHDRAW
+}
+
+/// One correction workspace over a frozen machine transcript.
+model TranscriptWorkspace {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  workflowGroupId     String                    @map("workflow_group_id") @db.VarChar(15)
+  audioHash           String                    @map("audio_hash") @db.VarChar(64)
+  /// Backend key ({workflow}/{model}) frozen when correction started
+  sourceBackend       String                    @map("source_backend") @db.VarChar(255)
+  /// SHA-256 of the frozen source transcript.json bytes
+  sourceFingerprint   String                    @map("source_fingerprint") @db.VarChar(64)
+  /// Total duration covered by source spans, in seconds
+  spanDurationSeconds Float                     @default(0) @map("span_duration_seconds")
+  spanCount           Int                       @default(0) @map("span_count")
+  status              TranscriptWorkspaceStatus @default(ACTIVE)
+  /// Snapshot the reader, ordinary download and bulk export serve
+  readerPublicationId String?                   @unique @map("reader_publication_id") @db.Uuid
+  /// Snapshot search indexing and MCP resolve; an ordinary unpublish keeps it
+  searchPublicationId String?                   @unique @map("search_publication_id") @db.Uuid
+  startedById         String?                   @map("started_by")
+  archivedById        String?                   @map("archived_by")
+  archiveReason       String?                   @map("archive_reason")
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
+  archivedAt          DateTime?                 @map("archived_at")
+
+  workflowGroup     WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  startedBy         User?                   @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  archivedBy        User?                   @relation("TranscriptWorkspaceArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  spans             TranscriptSpan[]
+  revisions         TranscriptSpanRevision[]
+  decisions         TranscriptSpanDecision[]
+  comments          TranscriptSpanComment[]
+  publications      TranscriptPublication[]
+  readerPublication TranscriptPublication?  @relation("TranscriptWorkspaceReaderPublication", fields: [readerPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  searchPublication TranscriptPublication?  @relation("TranscriptWorkspaceSearchPublication", fields: [searchPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([workflowGroupId, audioHash])
+  @@index([workflowGroupId, status])
+  @@map("transcript_workspace")
+}
+
+/// One source segment. Boundaries are fixed for the life of the workspace.
+model TranscriptSpan {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  /// Source order, 0-based
+  ordinal           Int
+  startSeconds      Float    @map("start_seconds")
+  endSeconds        Float    @map("end_seconds")
+  originalText      String   @map("original_text")
+  originalTextHash  String   @map("original_text_hash") @db.VarChar(64)
+  /// Set immediately after the imported revision rows are written
+  currentRevisionId String?  @map("current_revision_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  workspace       TranscriptWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  currentRevision TranscriptSpanRevision?    @relation("TranscriptSpanCurrentRevision", fields: [currentRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  revisions       TranscriptSpanRevision[]   @relation("TranscriptSpanRevisions")
+  decisions       TranscriptSpanDecision[]
+  comments        TranscriptSpanComment[]
+  publicationSpans TranscriptPublicationSpan[]
+
+  @@unique([workspaceId, ordinal])
+  @@index([workspaceId, startSeconds])
+  @@map("transcript_span")
+}
+
+/// Immutable normalized text. Decisions bind to a revision, never to a hash
+/// alone, so returning to earlier wording never revives an old approval.
+model TranscriptSpanRevision {
+  id                 String   @id @default(uuid()) @db.Uuid
+  workspaceId        String   @map("workspace_id") @db.Uuid
+  spanId             String   @map("span_id") @db.Uuid
+  text               String
+  textHash           String   @map("text_hash") @db.VarChar(64)
+  previousRevisionId String?  @map("previous_revision_id") @db.Uuid
+  /// Null for the revision imported from the frozen machine source
+  authorId           String?  @map("author_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  workspace        TranscriptWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  span             TranscriptSpan             @relation("TranscriptSpanRevisions", fields: [spanId], references: [id], onDelete: Cascade)
+  previousRevision TranscriptSpanRevision?    @relation("TranscriptSpanRevisionChain", fields: [previousRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  nextRevisions    TranscriptSpanRevision[]   @relation("TranscriptSpanRevisionChain")
+  author           User?                      @relation("TranscriptSpanRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  currentOfSpans   TranscriptSpan[]           @relation("TranscriptSpanCurrentRevision")
+  decisions        TranscriptSpanDecision[]
+  comments         TranscriptSpanComment[]
+  publicationSpans TranscriptPublicationSpan[]
+
+  @@index([spanId, createdAt])
+  @@index([workspaceId])
+  @@map("transcript_span_revision")
+}
+
+/// Immutable approve / disapprove / withdraw. History is append-only; the
+/// latest row per (revision, user) is that person's effective decision.
+model TranscriptSpanDecision {
+  id             String                 @id @default(uuid()) @db.Uuid
+  workspaceId    String                 @map("workspace_id") @db.Uuid
+  spanId         String                 @map("span_id") @db.Uuid
+  revisionId     String                 @map("revision_id") @db.Uuid
+  userId         String                 @map("user_id")
+  kind           TranscriptDecisionKind
+  /// Client-supplied key; double-clicks and retries cannot duplicate a decision
+  idempotencyKey String?                @map("idempotency_key") @db.VarChar(64)
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
+  revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  user      User                   @relation("TranscriptSpanDecisionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, idempotencyKey])
+  @@index([revisionId, userId, createdAt])
+  @@index([spanId, createdAt])
+  @@map("transcript_span_decision")
+}
+
+/// Optional discussion attached to a span. Never blocks publication and
+/// survives later edits; it records the revision its author had seen.
+model TranscriptSpanComment {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  spanId      String   @map("span_id") @db.Uuid
+  /// Revision visible to the author when the comment was written
+  revisionId  String   @map("revision_id") @db.Uuid
+  authorId    String   @map("author_id")
+  body        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
+  revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  author    User                   @relation("TranscriptSpanCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([spanId, createdAt])
+  @@map("transcript_span_comment")
+}
+
+/// An immutable snapshot of one exact revision per span, plus the job that
+/// materializes, renders, indexes and activates it.
+model TranscriptPublication {
+  id                    String                      @id @default(uuid()) @db.Uuid
+  workspaceId           String                      @map("workspace_id") @db.Uuid
+  /// Denormalized so the indexing resolver can answer per audio hash
+  workflowGroupId       String                      @map("workflow_group_id") @db.VarChar(15)
+  audioHash             String                      @map("audio_hash") @db.VarChar(64)
+  status                TranscriptPublicationStatus @default(PENDING)
+  /// Historical policy: v1 always records 2
+  requiredApprovals     Int                         @default(2) @map("required_approvals")
+  guideRevisionId       String?                     @map("guide_revision_id") @db.Uuid
+  publishedById         String?                     @map("published_by")
+  spanCount             Int                         @default(0) @map("span_count")
+  durationSeconds       Float                       @default(0) @map("duration_seconds")
+  /// Content-derived fingerprint of the rendered transcript.json
+  transcriptFingerprint String?                     @map("transcript_fingerprint") @db.VarChar(64)
+  /// Effective search source before this publication, for rollback
+  previousSourceKind    String?                     @map("previous_source_kind") @db.VarChar(16)
+  previousSourceRef     String?                     @map("previous_source_ref")
+  attemptCount          Int                         @default(0) @map("attempt_count")
+  errorCode             String?                     @map("error_code") @db.VarChar(64)
+  errorMessage          String?                     @map("error_message")
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  updatedAt             DateTime                    @updatedAt @map("updated_at")
+  activatingAt          DateTime?                   @map("activating_at")
+  finishedAt            DateTime?                   @map("finished_at")
+
+  workspace        TranscriptWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  guideRevision    TranscriptGuideRevision?   @relation(fields: [guideRevisionId], references: [id], onDelete: SetNull)
+  publishedBy      User?                      @relation("TranscriptPublicationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  spans            TranscriptPublicationSpan[]
+  readerOfWorkspace TranscriptWorkspace?      @relation("TranscriptWorkspaceReaderPublication")
+  searchOfWorkspace TranscriptWorkspace?      @relation("TranscriptWorkspaceSearchPublication")
+
+  @@index([workspaceId, createdAt])
+  @@index([workflowGroupId, audioHash, status])
+  @@map("transcript_publication")
+}
+
+/// The exact text revision used for every span in one publication.
+model TranscriptPublicationSpan {
+  publicationId String @map("publication_id") @db.Uuid
+  spanId        String @map("span_id") @db.Uuid
+  revisionId    String @map("revision_id") @db.Uuid
+  ordinal       Int
+
+  publication TranscriptPublication  @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  span        TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
+  revision    TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@id([publicationId, spanId])
+  @@index([publicationId, ordinal])
+  @@map("transcript_publication_span")
+}
+
+/// Immutable revisions of the per-catalog correction guide. The newest row is
+/// the active guide; only `manage_catalog_config` may add one.
+model TranscriptGuideRevision {
+  id              String   @id @default(uuid()) @db.Uuid
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  body            String
+  authorId        String?  @map("author_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  workflowGroup WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  author        User?                   @relation("TranscriptGuideRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  publications  TranscriptPublication[]
+
+  @@index([workflowGroupId, createdAt])
+  @@map("transcript_guide_revision")
+}
+
+// ============================================================================
 // Audit Logging
 // ============================================================================
 
@@ -1019,6 +1279,13 @@ enum AuditAction {
   EVENT_POSTER_DELETED
   EVENT_POSTER_PUBLISHED
   EVENT_POSTER_UNPUBLISHED
+  // Transcript correction
+  TRANSCRIPT_CORRECTION_STARTED
+  TRANSCRIPT_CORRECTION_ARCHIVED
+  TRANSCRIPT_GUIDE_UPDATED
+  TRANSCRIPT_PUBLISHED
+  TRANSCRIPT_UNPUBLISHED
+  TRANSCRIPT_ORIGINAL_DOWNLOADED
   RECORDING_INGEST_REQUESTED
   RECORDING_INGEST_REMOVED
   // Security events
