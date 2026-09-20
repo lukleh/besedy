@@ -51,12 +51,16 @@ export default async function WebUpdatesPage({
   await requireAdminPageAccess();
   const params = await searchParams;
   const range = parseWebUpdateRange(params?.range);
-  const [t, locale, analytics] = await Promise.all([
+  const [t, locale] = await Promise.all([
     getTranslations('admin.webUpdates'),
     getLocale(),
-    getWebUpdateAnalytics(range),
   ]);
-  const dailySeries = await getWebUpdateDailyVersionSeries(range, locale);
+  // Both scan web_update_event over the same window; run them together
+  // rather than serializing the second behind the first.
+  const [analytics, dailySeries] = await Promise.all([
+    getWebUpdateAnalytics(range),
+    getWebUpdateDailyVersionSeries(range, locale),
+  ]);
   const dateFormatter = new Intl.DateTimeFormat(locale, {
     dateStyle: 'short',
     timeStyle: 'medium',

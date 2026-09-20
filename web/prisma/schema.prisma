@@ -1202,6 +1202,10 @@ model WebDeployLog {
   webVersion String   @map("web_version") @db.VarChar(64)
   deployedAt DateTime @default(now()) @map("deployed_at")
   deployedBy String?  @map("deployed_by") @db.VarChar(120)
+  /// Not written by `prod-apply` and not read by any current query. Reserved
+  /// for manually backfilling a row for a deploy that didn't go through the
+  /// standard recipe (a manual `docker compose up`, an emergency hotfix), so
+  /// that path isn't permanently invisible to this log.
   note       String?  @db.VarChar(500)
 
   @@index([webVersion])

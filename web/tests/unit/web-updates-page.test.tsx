@@ -13,6 +13,7 @@ const clientMessages = {
       trendTitle: 'Daily version adoption',
       trendDescription: 'Distinct users observed per day.',
       trendRangeHint: 'Select 7 days or 30 days to see the daily trend.',
+      trendEmpty: 'No telemetry was recorded in this window yet.',
       unknownVersion: 'Unknown version',
       status: { other: 'Other', unknown: 'Unknown' },
     },
@@ -50,6 +51,7 @@ describe('WebUpdatesPage', () => {
     vi.clearAllMocks();
     mocks.requireAdminPageAccess.mockResolvedValue(undefined);
     mocks.getWebUpdateDailyVersionSeries.mockResolvedValue({
+      supportsDailyTrend: true,
       series: [],
       points: [],
     });

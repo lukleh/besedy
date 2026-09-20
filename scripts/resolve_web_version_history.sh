@@ -26,10 +26,8 @@
 #                    recently.
 #
 # Output: one pipe-delimited line per requested hash, in the order given:
-#   <hash>|FOUND|<commit>|<commit-iso-date>|<superseded-by-commit>|<superseded-iso-date>
+#   <hash>|FOUND|<commit>|<commit-iso-date>
 #   <hash>|NOT_FOUND|<candidates-scanned>
-# (the superseded-by fields are empty when the hash is still the newest one
-# seen in the scanned history)
 
 set -euo pipefail
 
@@ -67,35 +65,21 @@ mapfile -t candidates < <(
 
 declare -A found_commit=()
 declare -A found_date=()
-declare -A superseded_commit=()
-declare -A superseded_date=()
 
-prev_fp=""
 for commit in "${candidates[@]}"; do
   fp="$(web_version_fingerprint "$repo_root" "$commit" || true)"
-
-  # The previous candidate's fingerprint held until this commit changed it.
-  if [ -n "$prev_fp" ] && [ -n "${found_commit[$prev_fp]+x}" ] && [ -z "${superseded_commit[$prev_fp]}" ]; then
-    superseded_commit[$prev_fp]="$commit"
-    superseded_date[$prev_fp]="$(git -C "$repo_root" show -s --format=%cI "$commit")"
-  fi
 
   for t in "${targets[@]}"; do
     if [ "$fp" = "$t" ] && [ -z "${found_commit[$t]+x}" ]; then
       found_commit[$t]="$commit"
       found_date[$t]="$(git -C "$repo_root" show -s --format=%cI "$commit")"
-      superseded_commit[$t]=""
-      superseded_date[$t]=""
     fi
   done
-
-  prev_fp="$fp"
 done
 
 for t in "${targets[@]}"; do
   if [ -n "${found_commit[$t]+x}" ]; then
-    printf '%s|FOUND|%s|%s|%s|%s\n' \
-      "$t" "${found_commit[$t]}" "${found_date[$t]}" "${superseded_commit[$t]}" "${superseded_date[$t]}"
+    printf '%s|FOUND|%s|%s\n' "$t" "${found_commit[$t]}" "${found_date[$t]}"
   else
     printf '%s|NOT_FOUND|%s\n' "$t" "${#candidates[@]}"
   fi

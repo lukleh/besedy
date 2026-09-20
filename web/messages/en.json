@@ -630,6 +630,7 @@
       "trendTitle": "Daily version adoption",
       "trendDescription": "Distinct users observed per day, by the version they were last seen on.",
       "trendRangeHint": "Select 7 days or 30 days to see the daily trend.",
+      "trendEmpty": "No telemetry was recorded in this window yet.",
       "distributionTitle": "Version distribution",
       "deployedAtHint": "When this version actually went live, recorded at deploy time. A dash means it predates that record or was never deployed through the standard process.",
       "usersTitle": "Latest observation per user",

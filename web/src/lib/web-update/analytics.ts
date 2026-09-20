@@ -236,6 +236,10 @@ export interface WebUpdateDailySeriesPoint {
 }
 
 export interface WebUpdateDailySeries {
+  /** False only for the 24h range, where a single day of buckets isn't a
+   * trend. An empty `series` with this true means the range genuinely has
+   * no telemetry yet -- the two are distinct empty states for the caller. */
+  supportsDailyTrend: boolean;
   series: WebUpdateDailySeriesEntry[];
   points: WebUpdateDailySeriesPoint[];
 }
@@ -258,7 +262,7 @@ export async function getWebUpdateDailyVersionSeries(
 ): Promise<WebUpdateDailySeries> {
   // A single day of buckets isn't a trend; the page shows a hint instead.
   if (range === '24h') {
-    return { series: [], points: [] };
+    return { supportsDailyTrend: false, series: [], points: [] };
   }
 
   const currentVersion = getCurrentWebVersion();
@@ -295,12 +299,15 @@ export async function getWebUpdateDailyVersionSeries(
     .sort((left, right) => right[1] - left[1])
     .map(([version]) => version);
 
+  // The current version (when present) is always featured on top of this
+  // cap, so it doesn't crowd out an other version's spot -- otherwise
+  // whether current happens to be observed would silently change how many
+  // other versions get their own line.
   const featured = new Set<string>();
   if (currentVersion && totalsByVersion.has(currentVersion)) {
     featured.add(currentVersion);
   }
-  for (const version of rankedOtherVersions) {
-    if (featured.size >= MAX_FEATURED_VERSIONS) break;
+  for (const version of rankedOtherVersions.slice(0, MAX_FEATURED_VERSIONS)) {
     featured.add(version);
   }
 
@@ -368,9 +375,13 @@ export async function getWebUpdateDailyVersionSeries(
     valuesByDay.set(dayKey, dayValues);
   }
 
+  // Bucket keys and cursor below are UTC-midnight Dates; format in UTC too,
+  // or a host timezone behind UTC renders every label and tooltip one day
+  // early (UTC midnight is still "yesterday evening" there).
   const dateFormatter = new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
+    timeZone: 'UTC',
   });
 
   const points: WebUpdateDailySeriesPoint[] = [];
@@ -396,5 +407,5 @@ export async function getWebUpdateDailyVersionSeries(
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  return { series, points };
+  return { supportsDailyTrend: true, series, points };
 }

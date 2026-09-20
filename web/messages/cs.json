@@ -630,6 +630,7 @@
       "trendTitle": "Denní přechod na nové verze",
       "trendDescription": "Počet jednotlivých uživatelů za den podle verze, na které byli naposledy zaznamenáni.",
       "trendRangeHint": "Pro zobrazení denního trendu vyberte 7 nebo 30 dní.",
+      "trendEmpty": "V tomto období zatím nebyla zaznamenána žádná telemetrie.",
       "distributionTitle": "Rozložení verzí",
       "deployedAtHint": "Kdy byla tato verze skutečně nasazena, zaznamenáno v okamžiku nasazení. Pomlčka znamená, že nasazení předchází tomuto záznamu nebo neproběhlo standardním procesem.",
       "usersTitle": "Poslední záznam jednotlivých uživatelů",

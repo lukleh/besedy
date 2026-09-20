@@ -46,6 +46,11 @@ function seriesLabel(
 // (current first, then by popularity); the aggregate "other"/"unknown"
 // buckets stay a neutral, non-hued gray so they never compete visually
 // with an actual version's identity color.
+//
+// Known limitation: colors are assigned by position in that list, not by a
+// stable per-version key, so a version's color can change between renders
+// as the popularity ranking shifts (see the caveat on categoricalSeriesColors
+// in theme.ts). A version's line color is only meaningful within one render.
 function assignSeriesColors(
   series: WebUpdateDailySeriesEntry[],
 ): Map<string, string> {
@@ -68,7 +73,7 @@ function assignSeriesColors(
 export function VersionTrendChart({ data }: VersionTrendChartProps) {
   const t = useTranslations('admin.webUpdates');
 
-  if (data.series.length === 0) {
+  if (!data.supportsDailyTrend || data.series.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -77,7 +82,7 @@ export function VersionTrendChart({ data }: VersionTrendChartProps) {
         </CardHeader>
         <CardContent>
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {t('trendRangeHint')}
+            {data.supportsDailyTrend ? t('trendEmpty') : t('trendRangeHint')}
           </p>
         </CardContent>
       </Card>

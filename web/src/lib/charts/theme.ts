@@ -32,8 +32,12 @@ export const chartConfig = {
 };
 
 // Validated categorical palette (dataviz skill default): fixed hue order,
-// worst adjacent CVD Delta E 9.1 (>=8 target). Never cycle or reassign by
-// rank -- a series keeps its color as the set of series changes.
+// worst adjacent CVD Delta E 9.1 (>=8 target). The dataviz guideline is to
+// key a color to a stable per-entity identity rather than by rank, so a
+// series keeps its color as the set of series changes; version-trend-chart's
+// assignSeriesColors does not currently do this (it assigns by position in a
+// popularity-sorted list, which can reassign a version's color between
+// renders) -- see the comment there before assuming this guarantee holds.
 export const categoricalSeriesColors = [
   '#2a78d6', // blue
   '#eb6834', // orange

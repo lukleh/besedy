@@ -454,12 +454,15 @@ ORDER BY ('$CURRENT_WEB_VERSION' <> ''
 # Authoritative "when was this deployed" lookup: web_deploy_log is written
 # directly by `just prod-apply` at the moment each version actually went
 # live (see Justfile), so it's the definitive source -- unlike source-commit
-# time, it can't be thrown off by a deploy lagging its commit.
+# time, it can't be thrown off by a deploy lagging its commit. Guarded like
+# the other optional lookups below: the table is new in the same change that
+# introduced this query, so an already-updated checkout can still hit a
+# database that hasn't run the migration yet.
 DEPLOY_LOG_RAW=$(db_query "
-SELECT web_version || '|' || to_char(MAX(deployed_at), 'YYYY-MM-DD\"T\"HH24:MI:SS')
+SELECT web_version || '|' || to_char(MAX(deployed_at), 'YYYY-MM-DD\"T\"HH24:MI:SSOF')
 FROM web_deploy_log
 GROUP BY web_version
-")
+" 2>/dev/null || true)
 declare -A DEPLOY_LOG_DATE=()
 while IFS='|' read -r log_version log_deployed_at; do
     [ -z "$log_version" ] && continue
@@ -494,7 +497,7 @@ if [ "${#VERSIONS_TO_RESOLVE[@]}" -gt 0 ]; then
         REPO_ROOT="$PROJECT_DIR" \
         "$PROJECT_DIR/scripts/resolve_web_version_history.sh" "${VERSIONS_TO_RESOLVE[@]}" 2>/dev/null || true
     )"
-    while IFS='|' read -r hv status _commit commit_date _superseded_commit _superseded_date; do
+    while IFS='|' read -r hv status _commit commit_date; do
         [ -z "$hv" ] && continue
         if [ "$status" = "FOUND" ]; then
             AGE_TEXT="$(format_commit_age "$commit_date")" && VERSION_AGE_TEXT["$hv"]="first seen $AGE_TEXT"
@@ -515,7 +518,7 @@ while IFS='|' read -r dist_version dist_count; do
         else
             line_suffix=""
             if [ -n "${VERSION_AGE_TEXT[$dist_version]+x}" ]; then
-                line_suffix="$line_suffix, ${VERSION_AGE_TEXT[$dist_version]}"
+                line_suffix=", ${VERSION_AGE_TEXT[$dist_version]}"
             fi
         fi
     fi
