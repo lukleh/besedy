@@ -1,151 +1,189 @@
 # Offline Mode
 
-Besedy's offline mode is a device-local Downloads library, similar to a
-podcast app. A user explicitly downloads an event or recording while online,
-then opens it from `/downloads` without a connection. Catalog, event, and
-recording pages are not offline navigation entry points: they cannot be opened
-or reloaded without a connection. An event or recording page that is already
-open can keep playing a downloaded recording after connectivity drops.
+## Status and intent
 
-This deliberately avoids mirroring server-rendered pages and API responses.
-Those pages depend on the current session and changing server data, while the
-Downloads library needs only a small, stable playback model.
+This document defines the target offline experience and the boundary that will
+support it. It is deliberately broader than the current implementation. The
+current implementation has a device-local `/downloads` shell, a fixed offline
+banner, and a separate reduced download-detail page. Those are transition
+mechanisms, not the intended product model.
 
-## Stored data
+Offline mode is user-centric: a person who prepared events while connected
+must be able to keep listening when connectivity disappears and move between
+their downloaded events without having to understand cache state, routes, or
+whether they entered through a special part of the application. It is not a
+general offline mirror of Besedy.
 
-A download is identified by `catalogId` and audio hash. An event download uses
-the event's primary recording and includes an event snapshot.
+The product promise is:
 
-The `besedy-offline` IndexedDB database has two stores:
+1. A downloaded event remains playable when the device loses connectivity,
+   including while it is already playing.
+2. While offline, the person can find and switch among downloaded events.
+3. Each downloaded event presents the familiar event page, using local content
+   where necessary.
 
-- `downloads` contains lightweight registry rows: state, progress, byte counts,
-  the selected audio URL, and small event/recording snapshots. This is the
-  source of truth for the Downloads list and download status.
-- `downloadBundles` contains the larger optional payloads used by the offline
-  detail view: the default transcript and diarization when the account has
-  `download_transcripts`, plus one artwork Blob. Keeping these separate means
-  progress updates and list reads do not copy transcripts or artwork.
+Everything else follows from that promise. In particular, a Downloads section
+is useful for managing downloaded content, but it must not be the only way to
+continue listening or to change event while offline.
 
-Audio is stored in 2 MB chunks in Cache Storage (`besedy-audio-v5`), with a
-metadata entry that records the size, MIME type, chunks, and completion state.
-Only a complete download can be served to the player.
+## User experience
 
-The remaining caches are intentionally small:
+### Connectivity indicator
 
-- `besedy-offline-shell-v1` contains one HTML document, keyed as `/downloads`.
-- `besedy-offline-static-v1` contains at most 96 content-hashed Next.js assets
-  requested by Downloads, plus app icons and the web manifest.
+Offline state is represented by a crossed-Wi-Fi icon in the persistent app
+menubar. It is visible on desktop and mobile, has an accessible offline label,
+and is the single app-level connectivity indicator. It may open the local
+downloads view, but it must not obscure content or interrupt playback.
 
-Normal application HTML and API JSON are never put in an offline cache.
+The existing fixed offline banner/overlay is removed. Connection loss is a
+state change, not an error dialog: a downloaded recording that is playing
+continues, and the menubar icon tells the person why network-only actions are
+unavailable.
 
-## Download engine
+### Finding and switching downloaded events
 
-`web/src/lib/offline/download-manager.ts` runs downloads in the page. Service
-workers may be terminated while idle, so they are not reliable owners of long
-mobile downloads. The worker only reads completed audio.
+The normal event-list and event-detail experience is the primary way to use
+downloaded content. When offline, the list shows the downloaded events that
+are locally available in the current catalog; selecting one uses the normal
+event route and event-page presentation. The list may make its reduced scope
+explicit (for example, “Downloaded events”), but it must preserve the normal
+card, title, artwork, and playback affordances. A person can therefore move
+from one downloaded event to another in the same way they do online.
 
-The manager:
+The Downloads section remains a complementary library and management surface:
+it can show all local downloads, progress, storage usage, retry, and remove
+actions. Selecting an event there opens the same event page as selecting it
+from the normal event list. It must not own a separate, visually reduced event
+detail implementation.
 
-1. Fetches recording/event metadata and selects the audio source.
-2. Downloads Range chunks directly to Cache Storage, persisting progress after
-   each chunk so an interrupted download can resume.
-3. Stores the default transcript and optional diarization only when the entry
-   grants `download_transcripts`, plus one event artwork, in the IndexedDB bundle.
+### Event-page parity
 
-On online startup and after reconnecting, the manager rechecks completed
-downloads that contain transcript data for the signed-in account. If the server
-no longer grants transcript download permission, it removes the stored
-transcript and diarization while retaining the audio and artwork. This is
-best-effort revocation: a device that remains offline necessarily keeps the data
-until it reconnects, and a temporary network or authentication failure is not
-treated as a permission decision.
+An event opened from local data has the same information hierarchy and core
+components as the normal event page. The page is clearly allowed to adapt
+actions whose data or authority cannot exist offline: server-only edits,
+search, fresh permission checks, and recordings that were not downloaded are
+not offered as working offline actions. This is capability adaptation, not a
+second offline-specific page.
 
-Only one queued download runs at a time. A global Web Lock prevents two tabs
-from processing the queue concurrently, and a per-download lock prevents one
-tab from removing data while another is writing it. A BroadcastChannel shares
-registry changes and abort requests, so pause and remove also stop work owned
-by another tab.
+If a normal event page is already open when connectivity disappears, playback
+of a downloaded selected recording continues. If playback starts after the
+transition, the player selects the locally stored audio before attempting the
+network. The same rule applies whether the person arrived from the normal list
+or Downloads.
 
-The manager asks for persistent browser storage before the first download.
-User-paused downloads resume on demand. Downloads paused by a network failure
-are tagged separately and resume when the browser reports that it is back
-online. A download interrupted by a page close is changed from `downloading`
-to `queued` when the registry is next hydrated.
+## Offline event package
 
-## Session-free Downloads route
+A completed event download is an atomic local event package for the purpose of
+offline presentation. It contains only the material needed for the experience
+above:
 
-`/downloads` is under its own Next.js route-group root layout. That layout does
-not read the server session, so the cached HTML document can start offline. The
-online proxy still protects the route normally.
+| Content | Offline behavior |
+| --- | --- |
+| Audio | The selected event recording, stored in chunks and served with range support so playback and seeking work offline. |
+| Transcript | The permitted default transcript as plain readable text. Offline transcript view has no diarization, timestamps, speaker controls, or time-synchronised seeking. |
+| Artwork | The published event artwork used by the normal event page. |
+| Event metadata | The stable title, date, location, session ordering, and recording identity needed to render a card and event page and to switch events. |
 
-The route is client-rendered from the local registry. After the first download
-completes, the manager loads the real Downloads route in a hidden frame so its
-HTML and content-hashed build graph are cached without scraping or synthesizing
-framework assets. An ordinary online visit refreshes the same shell.
-Only the `?warm=1` response permits same-origin framing; the normal Downloads
-response and every other page retain the global framing denial.
-Selecting a download uses `?item=<download-key>` in the current document rather
-than a server navigation. The detail view reuses the normal audio player and
-transcript renderer, but supplies them with the downloaded audio URL and
-IndexedDB payload.
+An event is marked downloaded only after every required part of its package is
+available. The downloaded state must be derived from durable local identity
+(catalog/event key and selected recording hash), rather than a stale event-card
+snapshot. The same state is rendered on desktop and mobile event cards.
 
-The normal application uses a separate root layout because it still needs the
-server session. This split is why the Downloads shell can be cached safely
-without pretending that authenticated catalog pages are static.
+The package deliberately excludes diarization and transcript timestamps. They
+do not serve the offline listening task and would create a second, more complex
+transcript experience. It also excludes non-downloaded recordings and other
+server-backed event data.
 
-## Service worker (`web/public/sw.js`)
+Transcript download permission still applies. If a user is not entitled to
+retain a transcript, the package contains audio, artwork, and metadata but no
+transcript. On a later successful connection, the app reconciles retained
+protected content with the user’s current entitlement. This is best effort: a
+device that remains offline necessarily retains its local package until it
+reconnects.
 
-The worker handles requests in this order:
+## The online/offline content seam
 
-| Request                      | Strategy                                                                                                                                           |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Downloaded audio             | Serve byte ranges from complete cached chunks, streaming one chunk at a time; otherwise use the network. `?download=true` is never intercepted.    |
-| `/downloads` navigation      | Network-first and refresh the one cached shell. On a network error, return the cached shell with `x-besedy-offline: 1`.                            |
-| Other application navigation | Network-only. On a network error, redirect to `/downloads?from=<original path>` if the shell exists; otherwise return a small inline offline page. |
-| `/_next/static/*`            | Cache-first for existing entries. New entries are cached only when requested by Downloads, with a 96-entry limit.                                  |
-| Manifest and app icons       | Network-first with cache fallback.                                                                                                                 |
-| API and other requests       | Not intercepted.                                                                                                                                   |
+Online and offline pages must meet at a content-source seam, not at two
+independent page implementations or service-worker routing rules. Presentation
+components consume an event-page model and a collection model; they do not
+know whether those values came from the API or from local storage.
 
-Range parsing is strict: unsupported multiple ranges and invalid or reversed
-ranges return `416`. Audio is streamed from the chunk cache without joining the
-whole file in memory.
+The seam has two sources:
 
-The worker also retains the existing web-update handshake, push notifications,
-and notification-click behavior. Activating a new worker deletes obsolete
-Besedy cache versions.
+| Source | Responsibility |
+| --- | --- |
+| Online source | Retrieves current event data and permissions from the API and creates the normal event/list models. |
+| Local source | Reads completed local event packages and creates the same models, with only the capabilities and content that the package provides. |
 
-## User-visible behavior
+Source selection is resilient rather than relying solely on `navigator.onLine`:
+the app attempts the online source where appropriate and falls back to a
+complete local package when it cannot obtain network data. The audio resolver
+likewise chooses the locally cached URL for a downloaded recording on network
+failure. This covers the important online-to-offline transition, where a page
+is already open and `navigator.onLine` alone is not a reliable statement about
+whether a request can succeed.
 
-Offline mode supports:
+The source returns explicit capabilities (for example, `canPlay`,
+`hasTranscript`, and `canManageDownload`) together with the model. Shared
+event/list components use those capabilities to show valid actions; they must
+not infer offline behavior from the current route or duplicate presentation in
+an `OfflineDownloadDetail` component. The service worker remains a transport
+mechanism for cached audio and app assets, not the owner of product routing or
+page data.
 
-- opening the Downloads library;
-- listing device-local downloads;
-- opening a downloaded event or recording from that list;
-- audio playback and seeking;
-- continuing or starting playback on an already-open event or recording page
-  when its selected recording was downloaded before connectivity dropped;
-- the downloaded default transcript and diarization; and
-- locally saved playback position.
+This seam is also the migration boundary:
 
-Offline mode does not support offline navigation to or reloads of catalog,
-event, or recording pages; search; edits; fresh access checks; or other
-API-backed features—even if the item was downloaded. A failed navigation to one
-of those pages redirects to Downloads. This is an intentional product boundary,
-not a cache miss.
+1. Define the shared event and event-list models and capability contract.
+2. Make the current normal pages consume the online source through that
+   contract.
+3. Build the local source from completed event packages and render it through
+   the same pages/components.
+4. Make Downloads link to those shared pages, then retire the separate offline
+   detail renderer and the fixed offline banner.
 
-Signing out deletes the downloads database and protected audio/shell caches.
-The static asset cache is not user-specific.
+The current bug-fix work remains intentionally narrower: it makes the existing
+downloaded audio playable and fixes downloaded markers. It does not claim to
+implement this migration.
 
-## Platform notes and troubleshooting
+## Storage and transport
 
-- Service workers require HTTPS or `localhost`; plain `http://<LAN-IP>` does
-  not support this mode.
-- Safari may evict site storage after seven days without use unless the app is
-  installed to the home screen.
-- Background Fetch and periodic sync are not used. Downloads run while an app
-  page is open.
-- To reset offline data, use DevTools → Application → Storage → Clear site data.
-- If Downloads cannot open offline, complete a download or visit it online and
-  check `besedy-offline-shell-v1` plus `besedy-offline-static-v1`.
-- If playback fails for a complete record, inspect its metadata and chunks in
-  `besedy-audio-v5`; removing and downloading it again rebuilds them.
+The download manager runs in the page, writes audio in resumable chunks to
+Cache Storage, and stores the local event package in IndexedDB. A service
+worker serves byte ranges from complete cached audio and caches the minimal app
+assets needed for the local experience. A download may be reported complete
+only once the service worker can serve its exact saved audio URL offline.
+
+Normal online HTML and API JSON must not be blindly cached as an offline
+mirror. The local source owns the small, explicit, permission-aware package
+described above. This keeps offline behavior predictable, limits retained data,
+and avoids treating a stale server-rendered document as an authenticated page.
+
+Downloads run while an app page is open. They can resume after a network
+interruption, but background fetch and periodic sync are not requirements.
+Signing out deletes user-owned local packages and protected audio caches.
+
+## Out of scope
+
+Offline mode does not promise a full offline catalog, global search, edits,
+fresh access checks, administration, or arbitrary server navigation. An event
+that was not downloaded must explain that it is unavailable offline rather than
+showing an apparently functional page that fails on interaction. These limits
+are compatible with seamless offline listening and event switching because the
+local event collection contains the user’s downloaded events.
+
+## Verification criteria for the implementation
+
+- A downloaded marker is visible on the same event card on desktop and mobile.
+- Start a downloaded recording online, disable connectivity, and verify that
+  audio continues and seeking still works.
+- Disable connectivity before pressing play on an already-open downloaded event
+  and verify that it starts from local audio.
+- While offline, open the menubar indicator, reach downloaded events, and
+  switch between at least two downloaded event pages without an API response.
+- Open the same event from Downloads and from the normal event list; verify
+  that it uses the same event-page implementation and content hierarchy.
+- Verify that the offline transcript has plain text only—no diarization,
+  timestamps, speaker controls, or transcript-driven seeking—and that artwork
+  is present.
+- Verify that an event without a completed local package exposes no false
+  offline-playback affordance.
