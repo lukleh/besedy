@@ -238,10 +238,6 @@ export const CATALOG_ROLE_COLORS: Record<CatalogRole, string> = {
 
 export const CATALOG_ROLE_VALUES = Object.values(CatalogRole);
 
-export function resolvedCatalogRole(role: CatalogRole | null): CatalogRole {
-  return role ?? "listener";
-}
-
 /**
  * Which cards of the settings page the actor may see.
  *

@@ -21,7 +21,6 @@ import {
 import { PermissionIcons } from "@/components/catalog/permission-icons";
 import type { CatalogRole } from "@/generated/prisma/enums";
 import {
-  resolvedCatalogRole,
   type PendingCatalogGrant,
   type PendingUsersResponse,
 } from "./catalog-settings-content-types";
@@ -48,8 +47,7 @@ export function CatalogSettingsPendingUsersCard({
   const filteredPendingUsers =
     pendingUsersData?.pendingUsers.filter(
       (user) =>
-        (roleFilter === "all" ||
-          resolvedCatalogRole(user.role) === roleFilter) &&
+        (roleFilter === "all" || user.role === roleFilter) &&
         (!search || user.email.toLowerCase().includes(search.toLowerCase()))
     ) ?? [];
 
@@ -80,7 +78,7 @@ export function CatalogSettingsPendingUsersCard({
           </TableHeader>
           <TableBody>
             {filteredPendingUsers.map((pendingUser) => {
-              const role = resolvedCatalogRole(pendingUser.role);
+              const role = pendingUser.role;
               return (
                 <TableRow key={pendingUser.id}>
                   <TableCell>
@@ -91,9 +89,13 @@ export function CatalogSettingsPendingUsersCard({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Badge className={roleColors[role]}>
-                        {t(`catalogRoles.${role}`)}
-                      </Badge>
+                      {role ? (
+                        <Badge className={roleColors[role]}>
+                          {t(`catalogRoles.${role}`)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">—</Badge>
+                      )}
                       <PermissionIcons
                         role={role}
                         extraPermissions={pendingUser.extraPermissions}

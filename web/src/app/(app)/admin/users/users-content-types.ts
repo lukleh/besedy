@@ -9,7 +9,7 @@ export const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 export interface CatalogAccess {
   catalogId: string;
   catalogLabel: string | null;
-  role: CatalogRole;
+  role: CatalogRole | null;
   extraPermissions: string[];
 }
 

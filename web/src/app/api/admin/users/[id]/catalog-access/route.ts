@@ -50,7 +50,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const result = catalogAccess.map((access) => ({
       catalogId: access.catalogId,
       catalogLabel: access.catalog.label,
-      role: access.role ?? "listener",
+      role: access.role,
       extraPermissions: access.extraPermissions ?? [],
     }));
 

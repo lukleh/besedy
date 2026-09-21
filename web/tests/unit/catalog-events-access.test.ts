@@ -158,10 +158,10 @@ describe("requireCatalogEventsAccess", () => {
     });
   });
 
-  it("returns 403 for edit access when the user is neither owner nor admin", async () => {
+  it("returns 403 for edit access when the user lacks manage_events", async () => {
     await expect(requireCatalogEventsAccess(catalogId, "edit")).rejects.toMatchObject({
       name: "AuthError",
-      message: "Owner or admin access required for event edit operations",
+      message: "Event-management permission required for event edit operations",
       statusCode: 403,
     });
   });
@@ -237,14 +237,14 @@ describe("requireCatalogEventsAccess", () => {
       requireCatalogEventsAccess(catalogId, "attach_recording")
     ).rejects.toMatchObject({
       name: "AuthError",
-      message: "Owner or admin access required to attach recordings to events",
+      message: "Event-management permission required to attach recordings to events",
       statusCode: 403,
     });
     await expect(
       requireCatalogEventsAccess(catalogId, "set_primary_recording")
     ).rejects.toMatchObject({
       name: "AuthError",
-      message: "Owner or admin access required to set the primary recording",
+      message: "Event-management permission required to set the primary recording",
       statusCode: 403,
     });
   });

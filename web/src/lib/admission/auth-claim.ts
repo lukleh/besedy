@@ -96,6 +96,7 @@ export async function consumePortalAdmissionForUser(
       },
       select: {
         catalogId: true,
+        accessLevel: true,
         role: true,
         extraPermissions: true,
         grantedById: true,
@@ -134,6 +135,9 @@ export async function consumePortalAdmissionForUser(
         data: pendingGrants.map((grant) => ({
           userId: user.id,
           catalogId: grant.catalogId,
+          // Nothing reads the legacy column, but until it is dropped it is
+          // copied so claimed and directly granted rows carry the same value.
+          accessLevel: grant.accessLevel,
           role: grant.role,
           extraPermissions: grant.extraPermissions,
           grantedById: grant.grantedById,
