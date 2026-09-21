@@ -8,11 +8,17 @@ current implementation has a device-local `/downloads` shell, a fixed offline
 banner, and a separate reduced download-detail page. Those are transition
 mechanisms, not the intended product model.
 
-Offline mode is user-centric: a person who prepared events while connected
-must be able to keep listening when connectivity disappears and move between
-their downloaded events without having to understand cache state, routes, or
-whether they entered through a special part of the application. It is not a
-general offline mirror of Besedy.
+Offline is a first-class operating mode of Besedy, not an add-on, a separate
+mini-app, or a feature that requires entering a special Downloads area. The
+same Besedy navigation, event cards, event page, artwork, transcript, and
+player continue to serve the person; only the source of available content and
+the set of valid actions change.
+
+The mode is user-centric: a person who prepared events while connected must be
+able to keep listening when connectivity disappears and move between their
+downloaded events without having to understand cache state, routes, or whether
+they entered through a special part of the application. It is not a general
+offline mirror of Besedy.
 
 The product promise is:
 
@@ -22,9 +28,10 @@ The product promise is:
 3. Each downloaded event presents the familiar event page, using local content
    where necessary.
 
-Everything else follows from that promise. In particular, a Downloads section
-is useful for managing downloaded content, but it must not be the only way to
-continue listening or to change event while offline.
+Everything else follows from that promise. Downloads is a supporting library
+for managing local packages, not a replacement navigation system or a separate
+offline product. The normal experience remains the primary experience in both
+connectivity states.
 
 ## User experience
 
@@ -48,7 +55,7 @@ are locally available in the current catalog; selecting one uses the normal
 event route and event-page presentation. The list may make its reduced scope
 explicit (for example, “Downloaded events”), but it must preserve the normal
 card, title, artwork, and playback affordances. A person can therefore move
-from one downloaded event to another in the same way they do online.
+from one downloaded event to another in the same Besedy flow they use online.
 
 The Downloads section remains a complementary library and management surface:
 it can show all local downloads, progress, storage usage, retry, and remove
@@ -142,10 +149,11 @@ reconnects.
 
 ## The online/offline content seam
 
-Online and offline pages must meet at a content-source seam, not at two
-independent page implementations or service-worker routing rules. Presentation
-components consume an event-page model and a collection model; they do not
-know whether those values came from the API or from local storage.
+Online and offline are modes of the same pages, not two applications. They
+meet at a content-source seam, rather than at independent page implementations
+or service-worker routing rules. Presentation components consume an event-page
+model and a collection model; they do not know whether those values came from
+the API or from local storage.
 
 The seam has two sources:
 
