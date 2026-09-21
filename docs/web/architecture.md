@@ -1,6 +1,6 @@
 # Web Application Architecture
 
-> **Last Updated:** 2026-04-20
+> **Last Updated:** 2026-09-21
 
 ## Architecture Diagram
 
@@ -98,29 +98,31 @@ For `web/src/app/api/**/route.ts` handlers:
 3. Use shared API error helpers for bad request / not found / conflict / Prisma failures.
 4. Add audit logging for sensitive mutations.
 
-Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authenticated (most reads) -- Admin (catalog management, admissions, admin UI) -- Superadmin (admin-role changes). Admins and superadmins act as catalog administrators for every catalog and hold every catalog permission.
+Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authenticated (most reads) -- Admin (catalog management, admissions, admin UI) -- Superadmin (admin-role changes). Admins/superadmins hold every catalog permission in every catalog (`isCatalogAdmin`), per [ADR 0005](../adr/0005-catalog-permission-model.md).
+
+Per-catalog authorization no longer uses an ordered access-level scale. An actor holds a `CatalogRole` (`listener`, `reader`, `corrector`, `host`, `curator`, `catalog_admin`) plus additive `extraPermissions`; every gate below asks whether a specific permission (e.g. `browse_recordings`, `edit_metadata`, `manage_access`) is present rather than whether a level is high enough. See [ADR 0005](../adr/0005-catalog-permission-model.md) for the full permission catalogue and role table, and `web/src/lib/policy/*.ts` for the gates themselves.
 
 ### Catalog Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalog` | Any grant (scoped without `see_unreleased`) | List entries with filters |
-| GET | `/api/catalog/filter-options` | Any grant (scoped without `see_unreleased`) | Dynamic filter values/counts |
-| GET | `/api/catalogs/:id/recordings/:hash/entry` | Any grant | Single enriched entry |
+| GET | `/api/catalog` | `browse_recordings` | List entries with filters |
+| GET | `/api/catalog/filter-options` | `browse_recordings` | Dynamic filter values/counts |
+| GET | `/api/catalogs/:id/recordings/:hash/entry` | Catalog access, release-scoped | Single enriched entry |
 | GET | `/api/catalogs/:id/recordings/:hash/details` | `edit_metadata` | Full source details for edit UI |
-| GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | Any grant | Audio source options |
-| GET | `/api/catalogs/:id/recordings/:hash/audio` | `stream_audio` stream, `download_audio` download | Stream or download audio |
+| GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | Catalog access, release-scoped | Audio source options |
+| GET | `/api/catalogs/:id/recordings/:hash/audio` | Catalog access, release-scoped to stream; `download_audio` to force a download; `original` source additionally requires `download_original_audio` | Stream or download audio |
 
-- Without `see_unreleased` (every role but `curator`), catalog data is scoped to published, actionable recordings only (`status=ready`; no unpublished or non-actionable rows).
-- `/api/catalog/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). Requests without `see_unreleased` are visibility-scoped before counts.
+- "Catalog access, release-scoped" means: the actor holds a grant on the catalog, and if that grant lacks `see_unreleased` the recording must also be published and actionable (`status=ready`); no unpublished or non-actionable rows otherwise. `browse_recordings` is carried by `curator` and `catalog_admin` by default and can otherwise only be granted as a named extra -- `listener`, `reader`, `corrector` and `host` do not have it out of the box.
+- `/api/catalog/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). Requests from a grant without `see_unreleased` are visibility-scoped before counts.
 
 ### Event Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalog-events?group=:id` | Any grant (events feature) | List visible events |
+| GET | `/api/catalog-events?group=:id` | Catalog access | List visible events |
 | POST | `/api/catalog-events` | `manage_events` | Create event |
-| GET | `/api/catalogs/:id/events/:eventId` | Any grant (events feature) | Event detail |
+| GET | `/api/catalogs/:id/events/:eventId` | Catalog access | Event detail |
 | PATCH/DELETE | `/api/catalogs/:id/events/:eventId` | `manage_events` | Update/delete event |
 | POST | `/api/catalogs/:id/events/:eventId/recordings` | `manage_events` | Attach recordings |
 | DELETE | `/api/catalogs/:id/events/:eventId/recordings/:audioHash` | `manage_events` | Detach recording |
@@ -128,32 +130,38 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 | GET | `/api/catalog-events/unassigned?group=:id` | `manage_events` | Unassigned actionable entries |
 | GET | `/api/catalogs/:id/events/health` | `manage_events` | Event health counters |
 
-- Event visibility is enforced server-side via shared access guards.
-- Without `see_unreleased`, events are scoped by release state and by the visibility of their primary recording.
+- Event visibility is enforced server-side via shared access guards (`requireCatalogEventsAccess` in `web/src/lib/catalog-events/access.ts`).
+- For a grant without `see_unreleased`, an event is visible only once released, with a published, actionable primary recording; a grant holding `see_unreleased` (`curator`, `catalog_admin`) sees every event regardless of release state.
+- ADR 0005 names a separate `release_events` permission, but no route currently gates on it: `canReleaseEvent` in `web/src/lib/policy/event.ts` is presently the same check as `canEditEvent` (`manage_events`), so changing an event's `released` flag requires only `manage_events` today.
 
 ### Transcript Endpoints
 
+All four routes first require the recording itself be visible (catalog access, release-scoped, as in the Catalog Endpoints table above), then the permission below.
+
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/transcript/:hash` | `read_transcripts` | Transcript or available backends |
-| GET | `/api/transcript/:hash/speakers` | `read_transcripts` (`see_speakers` for diarization) | Diarization or available backends |
+| GET | `/api/transcript/:hash` | `read_transcripts`; a non-default backend additionally requires `see_transcript_variants`; the `speaker` field on segments additionally requires `see_speakers` | Transcript or available backends |
+| GET | `/api/transcript/:hash/speakers` | `read_transcripts` + `see_speakers` | Diarization or available backends |
 | GET | `/api/transcript/:hash/formats` | `read_transcripts` | Available download formats |
-| GET | `/api/transcript/:hash/download` | `download_transcripts` | Download transcript sidecar |
+| GET | `/api/transcript/:hash/download` | `read_transcripts` + `download_transcripts` | Download transcript sidecar |
 
 ### Metadata Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalogs/:id/recordings/:hash/metadata` | Any grant | Get curated metadata |
+| GET | `/api/catalogs/:id/recordings/:hash/metadata` | Catalog access, release-scoped | Get curated metadata |
 | PUT | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Upsert curated metadata |
 | DELETE | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Delete curated metadata |
-| GET/POST | `/api/metadata/recorders` | Auth / `edit_metadata` | List or create recorders |
-| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Auth / `edit_metadata` | Manage recorder |
-| GET/POST | `/api/metadata/locations` | Auth / `edit_metadata` | List or create locations |
-| GET/PUT/DELETE | `/api/metadata/locations/:id` | Auth / `edit_metadata` | Manage location |
-| GET | `/api/metadata/artists` | Auth | Distinct artist values for filter |
-| GET | `/api/metadata/albums` | Auth | Distinct album values for filter |
-| GET | `/api/metadata/duplicate-counts` | Auth | Duplicate count options for filter |
+| GET/POST | `/api/metadata/recorders` | Catalog access / `edit_metadata` | List or create recorders |
+| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Catalog access / `edit_metadata` | Manage recorder |
+| GET/POST | `/api/metadata/locations` | Catalog access / `edit_metadata` | List or create locations |
+| GET/PUT/DELETE | `/api/metadata/locations/:id` | Catalog access / `edit_metadata` | Manage location |
+| GET/POST | `/api/metadata/albums` | Catalog access / `edit_metadata` | List or create albums |
+| GET/PUT/DELETE | `/api/metadata/albums/:id` | Catalog access / `edit_metadata` | Manage album |
+| GET | `/api/metadata/artists` | Catalog access | Distinct artist values for filter |
+| GET | `/api/metadata/duplicate-counts` | Catalog access | Duplicate count options for filter |
+
+`edit_metadata` is carried only by `curator` and `catalog_admin`, and cannot be granted as an extra. "Catalog access" for a plain read means any active grant on the catalog, or `isCatalogAdmin` -- there is no per-recording release scoping on the lookup/filter endpoints.
 
 ### Catalog Management Endpoints
 
@@ -170,7 +178,7 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 | PUT/DELETE | `/api/catalogs/:id/pending-catalog-grants/:email` | `manage_access` | Manage pending grant |
 
 - POST pending-catalog-grants: if the email belongs to an existing user, access is granted directly.
-- A `host` can grant `listener`, `reader` and `corrector`. Granting `curator`, `host` or `catalog_admin`, or attaching extra permissions, requires a catalog administrator (`docs/adr/0005-catalog-permission-model.md`).
+- `manage_access` is carried by `host` and `catalog_admin` only (not `curator`). Two permissions are protected: `manage_access` and `see_unreleased`. A holder of `manage_access` may grant, update, restore, or revoke only a role that carries neither protected permission -- today `listener`, `reader`, or `corrector` -- and the same protected-permission test applies to the role being replaced; revocation ignores extras on the existing grant, so a `host` can still cut off a `reader` carrying an administrator-assigned extra. Only `catalog_admin` (or a system admin/superadmin) may grant a role carrying a protected permission (`host`, `curator`) or assign extra permissions, and nobody may change their own access. See `canGrantCatalogGrant` / `mayPassOnGrant` in `web/src/lib/policy/catalog.ts` and the "Granting rule" section of [ADR 0005](../adr/0005-catalog-permission-model.md) for the full rule.
 
 ### Admin Endpoints
 
@@ -276,12 +284,12 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 | Page | Route | Access |
 |------|-------|--------|
 | Home | `/` | Auth (redirects to active catalog or admin) |
-| Catalog | `/catalog/[catalogId]` | Any grant |
-| Event Detail | `/catalog/[catalogId]/event/[eventId]` | Any grant |
+| Catalog | `/catalog/[catalogId]` | Catalog access (any active grant, or `isCatalogAdmin`); `?tab=recordings` additionally requires `browse_recordings` |
+| Event Detail | `/catalog/[catalogId]/event/[eventId]` | Catalog access |
 | Event Edit | `/catalog/[catalogId]/event/[eventId]/edit` | `manage_events` |
-| Recording | `/catalog/[catalogId]/recording/[hash]` | Any grant (transcripts: `read_transcripts`) |
+| Recording | `/catalog/[catalogId]/recording/[hash]` | Catalog access, release-scoped (transcripts: `read_transcripts`) |
 | Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | `edit_metadata` |
-| Catalog Settings | `/catalog/[catalogId]/settings` | Any of `manage_access`, `manage_catalog_config`, `manage_events`, `bulk_export_transcripts` |
+| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts` |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
 | Admin Ingest | `/admin/ingest` | Admin |
@@ -289,7 +297,7 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 
 - Auth proxy (`src/proxy.ts`) redirects unauthenticated users to `/auth/signin`.
 - Catalog access is enforced by API routes; pages may render but show errors if access is denied.
-- `/catalog/[catalogId]` is events-first for listeners; recordings list available for event-management roles.
+- `/catalog/[catalogId]` is events-first by default: viewing events only needs catalog access, while the recordings list needs the `browse_recordings` permission, which `curator` and `catalog_admin` carry by default and any role can otherwise be granted as a named extra.
 
 ## Responsive Design
 

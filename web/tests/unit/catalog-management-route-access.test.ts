@@ -130,6 +130,42 @@ describe("catalog management route access", () => {
     expect(result.policyContext.catalogGrant).toEqual(grantForRole("curator"));
   });
 
+  // The gate is enforced here, not only in the payload the list reads, so the
+  // other side of the role split is asserted against the route helper itself:
+  // the curator case above passes, a host carrying manage_access does not.
+  it("refuses a host at the publication gate despite manage_access", async () => {
+    requireAuth.mockResolvedValue("host-1");
+    resolveCatalogActorContext.mockResolvedValue({
+      catalogExists: true,
+      canEnterPortal: true,
+      catalogGrant: grantForRole("host"),
+      isCatalogAdmin: false,
+    });
+
+    const result = await requireCatalogManagementAccess("catalog-1", {
+      auditResource: "catalog_publication",
+      auditResourceId: "hash-1",
+      deniedMessage: "Only owner/admin can update publication state",
+      deniedReason: "Only owner/admin can update publication state",
+      authorize: canPublishRecording,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected access failure");
+    }
+    expect(result.response.status).toBe(403);
+    expect(logAccessDenied).toHaveBeenCalledWith(
+      "host-1",
+      "catalog_publication",
+      "hash-1",
+      {
+        catalogId: "catalog-1",
+        reason: "Only owner/admin can update publication state",
+      }
+    );
+  });
+
   it("preserves admin management authority when inactive-catalog checks are disabled", async () => {
     requireAuth.mockResolvedValue("admin-1");
     resolveCatalogActorContext.mockResolvedValue({

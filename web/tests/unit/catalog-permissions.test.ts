@@ -9,7 +9,11 @@ import {
   permissionsForRole,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
-import { canSeeSpeakers, canSeeTranscriptVariants } from "@/lib/policy/recording";
+import {
+  canPublishRecording,
+  canSeeSpeakers,
+  canSeeTranscriptVariants,
+} from "@/lib/policy/recording";
 import {
   canBatchEditCatalogMetadata,
   canBulkExportTranscripts,
@@ -216,6 +220,48 @@ describe("file delivery", () => {
       expect(curator.has(permission)).toBe(true);
     }
     expect(curator.has("download_original_audio")).toBe(false);
+  });
+});
+
+describe("recording publication", () => {
+  // Publication is editorial, and `publish_recording` is the whole answer to
+  // who may do it. The gate used to ask `manage_access` instead, which the
+  // level scale hid because OWNER carried both permissions at once. Role-native
+  // grants separate them: a host manages access without publishing anything,
+  // and a curator publishes without managing anyone.
+  // Asked of every role rather than of the two that differ, so that a role
+  // added later has to declare which side of the gate it falls on.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from publish_recording alone",
+    (role) => {
+      expect(canPublishRecording(context(role))).toBe(
+        permissionsForRole(role).has("publish_recording")
+      );
+    }
+  );
+
+  // The regression this pins: both directions at once, so neither half can be
+  // collapsed back into the other.
+  it("separates publication from access management in both directions", () => {
+    const host = context("host");
+    expect(hasCatalogManagementAuthority(host)).toBe(true);
+    expect(canPublishRecording(host)).toBe(false);
+
+    const curator = context("curator");
+    expect(hasCatalogManagementAuthority(curator)).toBe(false);
+    expect(canPublishRecording(curator)).toBe(true);
+  });
+
+  it("gives publication to an administrator holding no grant", () => {
+    expect(canPublishRecording(context(null, true))).toBe(true);
+  });
+
+  it("refuses an actor who cannot open the catalog", () => {
+    // The permission on its own would answer for someone who may not be here
+    // at all, so the gate asks about access first.
+    const curator = context("curator");
+    expect(canPublishRecording({ ...curator, canEnterPortal: false })).toBe(false);
+    expect(canPublishRecording({ ...curator, catalogExists: false })).toBe(false);
   });
 });
 
