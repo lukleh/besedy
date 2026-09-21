@@ -126,7 +126,7 @@ services:
       # Text data: catalogs and transcripts
       - ${TEXT_DATA_DIR:-./tests/e2e/fixtures}:/data/text:ro
       # Artworks (writable)
-      - ${ARTWORK_DIR:-${POSTERS_DIR:-./tests/e2e/fixtures/artwork}}:/data/artwork:rw
+      - ${ARTWORK_DIR:-./tests/e2e/fixtures/artwork}:/data/artwork:rw
       # Recording sources (writable)
       - ${SOURCES_DIR:-./tests/e2e/fixtures/sources}:/data/sources:rw
       # Admin-uploaded recordings awaiting ingest (writable, shared with the host ingest worker)

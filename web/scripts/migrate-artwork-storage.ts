@@ -129,12 +129,22 @@ async function renameCatalogDirs(root: string, reverse: boolean, dryRun: boolean
   let alreadyDone = 0;
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith(to)) {
+    const matchesTarget = entry.name.startsWith(to);
+    const matchesSource = entry.name.startsWith(from);
+    if (!matchesTarget && !matchesSource) continue;
+    // A symlink or file carrying a catalog prefix must not be skipped quietly:
+    // the DB migration that follows would then point at a directory that was
+    // never renamed. (Production has none as of 2026-09-21; this is a guard.)
+    if (!entry.isDirectory()) {
+      throw new Error(
+        `Refusing to continue: ${entry.name} matches a catalog storage prefix but is not a plain directory. ` +
+          "Inspect the root by hand before rerunning."
+      );
+    }
+    if (matchesTarget) {
       alreadyDone += 1;
       continue;
     }
-    if (!entry.name.startsWith(from)) continue;
 
     const catalogId = entry.name.slice(from.length);
     if (!catalogId) throw new Error(`Refusing to rename bare prefix directory: ${entry.name}`);

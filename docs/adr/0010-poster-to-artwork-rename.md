@@ -60,13 +60,14 @@ ADR is the sole record of the rename. Living, non-ADR documentation
 `offline.md`) is updated in place instead, since it documents current
 behavior rather than a past decision.
 
-For one release, `getArtworkDir()` (`web/src/lib/config.ts`) and
-`docker-compose.yml`'s artwork volume mount both still read the legacy
-`posters_dir`/`POSTERS_DIR` name as a fallback if `artwork_dir`/`ARTWORK_DIR`
-isn't set, and error loudly rather than silently resolving to the read-only
-`text_data_dir` mount if neither is configured. Drop the fallback, along with
-the storage-rename shim above, in the pending ADR 0009 cleanup once every
-deployment's config has been renamed.
+The configuration rename is a hard cut with no compatibility read.
+`getArtworkDir()` (`web/src/lib/config.ts`) resolves only `artwork_dir` /
+`ARTWORK_DIR`, and `docker-compose.yml` mounts the artwork volume only from
+`ARTWORK_DIR` at `/data/artwork`. A deployment whose untracked TOML or env file
+still carries `posters_dir` / `POSTERS_DIR` fails loudly at the first artwork
+request instead of resolving to a path the container no longer mounts. The
+operator steps to rename both, and the host directory, are in
+`docs/web/operations.md` under "Event artwork cutover".
 
 ## Migration
 

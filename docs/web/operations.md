@@ -195,6 +195,40 @@ for the schema, storage, and CLI rename and its own migration
 (`20260920160000_rename_event_poster_to_artwork`), which ran after this
 cutover.
 
+#### ADR 0010 rename cutover
+
+The poster-to-artwork rename is a hard cut: nothing reads `POSTERS_DIR`,
+`posters_dir`, or the `posters_<catalogId>` directory layout after it. The
+storage rename, the config rename, and the database migration must all land in
+one downtime window, in this order. Filesystem first, because it has no
+transactional rollback: a failure there aborts before any schema change.
+
+1. Stop the web container and scheduled backup so nothing writes artwork while
+   paths move, leaving the database up for the migration:
+   `cd web && bash ../scripts/run_web_compose.sh production stop web backup`
+   (the same step `just prod-apply` performs; `just prod-down` would also stop
+   the database).
+2. Rename the host directory and update the operator files outside the checkout:
+   - `mv ~/projects/besedy_posters ~/projects/besedy_artwork`
+   - in the production env file (`CONFIG_FILE`'s sibling `web.env.prod`):
+     replace `POSTERS_DIR=...` with `ARTWORK_DIR=/home/<user>/projects/besedy_artwork`
+   - in the container TOML that `CONFIG_FILE` points at: replace
+     `posters_dir = "/data/posters"` with `artwork_dir = "/data/artwork"`
+3. Rename the per-catalog directories inside the storage root:
+   `just artwork-storage --prod --dry-run`, review, then
+   `just artwork-storage --prod --yes`. The script refuses to touch a root
+   where a prefixed entry is not a plain directory or where both names exist.
+4. `just prod-build`, then `just prod-apply`, which takes the pre-migration
+   backup, runs migration `20260920160000_rename_event_poster_to_artwork`, and
+   restarts web with the renamed mount.
+5. `just artwork-storage --prod --verify` to confirm every
+   `catalog_event_artwork` row's files exist at the renamed paths.
+
+Rolling back before step 4 is `just artwork-storage --prod --reverse --yes`
+plus restoring the two operator files and the host directory name. After step
+4 the database rename has committed; use the pre-migration backup that
+`just prod-apply` takes.
+
 Use the retained artwork CLI for normal event artwork operations:
 
 ```bash
@@ -737,8 +771,8 @@ Host-side rsnapshot coverage is intentionally split:
 - **Generic project root:** `/mnt/data/<user>/Backups/rsnapshot`
   - backs up `/home/<user>/projects`
   - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_artwork`, and `projects/besedy_sources`
-    (rename the host directory from `projects/besedy_posters` to match `ARTWORK_DIR`
-    when applying ADR 0010; until then, point `ARTWORK_DIR` at the existing path)
+    (`projects/besedy_artwork` is the renamed `projects/besedy_posters`; see the
+    ADR 0010 cutover steps above)
 - **Besedy extra root:** `/mnt/data/<user>/Backups/rsnapshot_besedy_extra`
   - backs up non-project Besedy paths via [web/setup/backup/besedy-extra.paths.example](../../web/setup/backup/besedy-extra.paths.example) (copy to the gitignored `besedy-extra.paths`)
   - includes `audio/besedy_audio`, `audio/original`, `state/db_dumps`, `config/lukleh_besedy`, and `state/web_logs`

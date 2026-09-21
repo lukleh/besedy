@@ -195,7 +195,8 @@ artwork_dir = "/data/artworks"
     expect(getArtworkDir()).toBe("/data/artworks");
   });
 
-  it("falls back to the legacy posters_dir when artwork_dir is not configured", async () => {
+  it("does not read the legacy posters_dir key or POSTERS_DIR variable", async () => {
+    vi.stubEnv("POSTERS_DIR", "/host/besedy-posters");
     vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(`
@@ -208,10 +209,10 @@ posters_dir = "/data/posters"
     const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
     clearConfigCache();
 
-    expect(getArtworkDir()).toBe("/data/posters");
+    expect(() => getArtworkDir()).toThrow(/artwork_dir is required/);
   });
 
-  it("throws instead of silently resolving to text_data_dir when neither key is configured", async () => {
+  it("throws instead of silently resolving to text_data_dir when artwork_dir is not configured", async () => {
     vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(`

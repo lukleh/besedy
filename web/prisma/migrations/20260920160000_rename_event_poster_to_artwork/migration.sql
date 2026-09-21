@@ -79,59 +79,90 @@ UPDATE "pending_catalog_grant" SET "extra_permissions" = array_replace(array_rep
   "extra_permissions", 'manage_event_posters', 'manage_event_artwork'), 'publish_event_posters', 'publish_event_artwork')
 WHERE "extra_permissions" && ARRAY['manage_event_posters','publish_event_posters']::text[];
 
--- 5. Audit facets (resource/subject_type/details) -- same class of bug as #4:
---    web/src/lib/audit/model.ts and event-artwork-access.ts write "event_poster"
---    as a typed facet value, independent of the enum action names above.
---    `details` additionally carries, as plain data rather than a name Prisma
---    tracks: the payload key "previousPosterId" (case-sensitive -- distinct
---    from "posterId", not caught by that replace), and free-text summary/
---    label strings written at audit time by buildAuditSummary/logArtworkAudit
---    (pre-rename: "Poster candidate created for Event 12 poster", etc).
+-- 5. Audit facets (resource/subject_type/details). web/src/lib/audit/model.ts and
+--    event-artwork-access.ts write "event_poster" as a typed facet value,
+--    independent of the enum action names above.
 UPDATE "audit_log" SET "resource" = 'event_artwork' WHERE "resource" = 'event_poster';
 UPDATE "audit_log" SET "subject_type" = 'event_artwork' WHERE "subject_type" = 'event_poster';
 
--- A DO block with a local variable, rather than one deeply nested replace()
--- expression, so each substitution is a plain, independently-checkable
--- statement (a mismatched paren in an 8-deep nested call fails silently
--- until it doesn't -- it did, during review of this very migration).
-DO $$
-DECLARE
-  row_record RECORD;
-  rewritten text;
-BEGIN
-  FOR row_record IN
-    SELECT "id", "details"::text AS details_text FROM "audit_log"
-    WHERE "details"::text LIKE '%"posterId"%'
-       OR "details"::text LIKE '%"previousPosterId"%'
-       OR "details"::text LIKE '%"event_poster"%'
-  LOOP
-    rewritten := row_record.details_text;
-    rewritten := replace(rewritten, '"posterId"', '"artworkId"');
-    rewritten := replace(rewritten, '"previousPosterId"', '"previousArtworkId"');
-    rewritten := replace(rewritten, '"event_poster"', '"event_artwork"');
-    rewritten := replace(rewritten, 'Poster candidate created for', 'Artwork candidate created for');
-    rewritten := replace(rewritten, 'Poster candidate deleted for', 'Artwork candidate deleted for');
-    rewritten := replace(rewritten, 'Poster published for', 'Artwork published for');
-    rewritten := replace(rewritten, 'Poster unpublished for', 'Artwork unpublished for');
-    -- Trailing subject label, e.g. "...for Event 12 poster" and the
-    -- subjectSnapshot.label field itself, "Event 12 poster".
-    rewritten := replace(rewritten, ' poster"', ' artwork"');
+-- `details` is rewritten by JSON path only, never by text substitution over the
+-- serialized document. It carries user-entered strings next to the app's own
+-- field names -- in production the candidate `label` payload reads
+-- "Imported legacy poster (...)" -- and those must stay byte-for-byte as the
+-- user typed them. Every statement below targets one key the artwork code
+-- path wrote (see logArtworkAudit in event-artwork-service.ts and
+-- buildAuditDetails/buildAuditSummary in audit/model.ts), and is scoped to
+-- rows that code path produced: the actions renamed in step 1, plus
+-- ACCESS_DENIED rows logged against the (already renamed) resource.
 
-    UPDATE "audit_log" SET "details" = rewritten::jsonb WHERE "id" = row_record.id;
-  END LOOP;
-END $$;
+-- Payload keys "posterId" / "previousPosterId" -> "artworkId" / "previousArtworkId".
+UPDATE "audit_log"
+SET "details" =
+  ("details" - 'posterId' - 'previousPosterId')
+  || CASE WHEN "details" ? 'posterId'
+          THEN jsonb_build_object('artworkId', "details"->'posterId') ELSE '{}'::jsonb END
+  || CASE WHEN "details" ? 'previousPosterId'
+          THEN jsonb_build_object('previousArtworkId', "details"->'previousPosterId') ELSE '{}'::jsonb END
+WHERE ("action"::text LIKE 'EVENT_ARTWORK_%' OR "resource" = 'event_artwork')
+  AND ("details" ? 'posterId' OR "details" ? 'previousPosterId');
 
--- 6. Guard: fail the migration loudly rather than leave a silent partial rename.
+-- Envelope facets audit.subjectType / audit.subjectSnapshot.type.
+UPDATE "audit_log"
+SET "details" = jsonb_set("details", '{audit,subjectType}', '"event_artwork"'::jsonb)
+WHERE "details" #>> '{audit,subjectType}' = 'event_poster';
+
+UPDATE "audit_log"
+SET "details" = jsonb_set("details", '{audit,subjectSnapshot,type}', '"event_artwork"'::jsonb)
+WHERE "details" #>> '{audit,subjectSnapshot,type}' = 'event_poster';
+
+-- App-generated subject label, exactly "Event <id> poster".
+UPDATE "audit_log"
+SET "details" = jsonb_set(
+  "details", '{audit,subjectSnapshot,label}',
+  to_jsonb(regexp_replace("details" #>> '{audit,subjectSnapshot,label}', '^(Event [0-9]+) poster$', '\1 artwork'))
+)
+WHERE ("action"::text LIKE 'EVENT_ARTWORK_%' OR "resource" = 'event_artwork')
+  AND "details" #>> '{audit,subjectSnapshot,label}' ~ '^Event [0-9]+ poster$';
+
+-- App-generated summary, exactly "<Poster verb> for Event <id> poster".
+UPDATE "audit_log"
+SET "details" = jsonb_set(
+  "details", '{audit,summary}',
+  to_jsonb(regexp_replace(
+    "details" #>> '{audit,summary}',
+    '^Poster (candidate created|candidate deleted|published|unpublished) for (Event [0-9]+) poster$',
+    'Artwork \1 for \2 artwork'
+  ))
+)
+WHERE "action"::text LIKE 'EVENT_ARTWORK_%'
+  AND "details" #>> '{audit,summary}' ~ '^Poster (candidate created|candidate deleted|published|unpublished) for Event [0-9]+ poster$';
+
+-- ACCESS_DENIED reason written by requireEventArtworkAccess.
+UPDATE "audit_log"
+SET "details" = jsonb_set("details", '{reason}', '"Missing event artwork authority"'::jsonb)
+WHERE "resource" = 'event_artwork'
+  AND "details" ->> 'reason' = 'Missing event poster authority';
+
+-- 6. Guard: fail loudly rather than leave a silent partial rename. Every check
+--    is structural (a permission string, a facet column, a JSON key or an
+--    app-generated field at a known path) and scoped to the artwork rows, so
+--    unrelated audit rows whose free text happens to contain "poster" -- a
+--    recording title, a user-typed label -- can neither trip it nor be
+--    rewritten by the statements above.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "catalog_access" WHERE "extra_permissions" && ARRAY['manage_event_posters','publish_event_posters']::text[])
   OR EXISTS (SELECT 1 FROM "pending_catalog_grant" WHERE "extra_permissions" && ARRAY['manage_event_posters','publish_event_posters']::text[])
   OR EXISTS (SELECT 1 FROM "audit_log" WHERE "resource" = 'event_poster' OR "subject_type" = 'event_poster')
-  OR EXISTS (SELECT 1 FROM "audit_log" WHERE "details"::text LIKE '%"posterId"%'
-                                            OR "details"::text LIKE '%"previousPosterId"%'
-                                            OR "details"::text LIKE '%"event_poster"%'
-                                            OR "details"::text LIKE '%Poster %'
-                                            OR "details"::text LIKE '% poster"%') THEN
+  OR EXISTS (SELECT 1 FROM "audit_log"
+             WHERE ("action"::text LIKE 'EVENT_ARTWORK_%' OR "resource" = 'event_artwork')
+               AND ("details" ? 'posterId'
+                 OR "details" ? 'previousPosterId'
+                 OR "details" #>> '{audit,subjectType}' = 'event_poster'
+                 OR "details" #>> '{audit,subjectSnapshot,type}' = 'event_poster'
+                 OR "details" #>> '{audit,subjectSnapshot,label}' ~ '^Event [0-9]+ poster$'
+                 OR "details" #>> '{audit,summary}' ~ '^Poster (candidate created|candidate deleted|published|unpublished) for '
+                 OR "details" ->> 'reason' = 'Missing event poster authority')) THEN
     RAISE EXCEPTION 'Poster names survived the artwork rename';
   END IF;
 END $$;
