@@ -13,7 +13,7 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [rag-oblique-eval.md](rag-oblique-eval.md) -- time-grounded evaluation for implicit retrieval queries
 - [backends.md](backends.md) -- ML backend infrastructure: serving, config tuning, verification
 - [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface
-- [web/offline.md](web/offline.md) -- downloads, service worker caching, offline behavior
+- [web/offline.md](web/offline.md) -- current Downloads/service-worker implementation and the target first-class offline Besedy mode
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
 - [web/recording-ingest.md](web/recording-ingest.md) -- admin recording upload processed by a host Prefect worker, with auto catalog sync
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration

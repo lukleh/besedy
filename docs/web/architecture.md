@@ -365,13 +365,12 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
 
 ## Offline
 
-Offline mode is documented in [offline.md](offline.md). In short: users
-download events or recordings from the page-side download manager
-(`lib/offline/download-manager.ts`), the registry lives in IndexedDB, and the
-service worker (`public/sw.js`) serves downloaded audio and the dedicated
-session-free `/downloads` shell when the network is unavailable. Normal
-application pages and API responses are not cached for offline use; failed
-offline navigations are redirected to the device-local Downloads library.
+Offline mode is documented in [offline.md](offline.md). Its **Current
+implementation** section describes the production Downloads library: the
+page-side download manager (`lib/offline/download-manager.ts`), IndexedDB
+registry, chunked audio cache, and session-free `/downloads` shell. The same
+document defines the target first-class offline mode, in which normal Besedy
+pages use online or local content sources rather than a separate offline page.
 
 Catalog staleness markers are unrelated to downloads: `useCatalogStatus`
 stores `lastModifiedAt` in `localStorage` to detect server-side changes while
