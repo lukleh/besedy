@@ -306,15 +306,17 @@ Deploy the lookup ownership change separately from the role cutover:
    ```sql
    SELECT count(*) AS grants_without_role FROM catalog_access WHERE role IS NULL;
    SELECT count(*) AS pending_without_role FROM pending_catalog_grant WHERE role IS NULL;
-   SELECT role, extra_permissions, count(*)
+   SELECT access_level, role, extra_permissions, count(*)
      FROM catalog_access
-    GROUP BY role, extra_permissions
-    ORDER BY role;
+    GROUP BY access_level, role, extra_permissions
+    ORDER BY access_level, role;
    ```
 
    The first two counts must be zero. Compare the grouped mapping with the
    preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
-   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
+   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`. This
+   check must run before step 5: once `access_level` is dropped, only the two
+   `role IS NULL` counts remain meaningful.
 5. Once the role-native web release (#151) is live and nothing reads
    `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
    plain `just prod-deploy`. It refuses to run while any grant lacks a role,
