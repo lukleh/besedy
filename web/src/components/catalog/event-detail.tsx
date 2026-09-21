@@ -10,6 +10,9 @@ import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/r
 import { formatPartialDate } from "@/lib/date-format";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildEventDetailUrl } from "@/lib/api/recording-urls";
+import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
+import { useLocalArtworkUrl } from "@/hooks/use-local-package";
+import type { EventDetailResponse } from "@/types/event-detail";
 import { DownloadButton } from "@/components/offline/download-button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -34,51 +37,6 @@ interface EventDetailProps {
   showReleaseState: boolean;
 }
 
-interface EventRecording {
-  audioHash: string;
-  isPrimary: boolean;
-  sortOrder: number;
-  title: string;
-  artist: string | null;
-  durationHms: string | null;
-  verified: boolean;
-  recorder: { id: number; name: string } | null;
-}
-
-interface EventDetailResponse {
-  id: number;
-  workflowGroupId: string;
-  title: string | null;
-  location: { id: number; name: string } | null;
-  dateYear: number;
-  dateMonth: number | null;
-  dateDay: number | null;
-  sessionIndex: number;
-  sessionOrdinal: number;
-  sessionCount: number;
-  description: string | null;
-  released: boolean;
-  recordings: EventRecording[];
-  canViewArtworkCandidates?: boolean;
-  canManageArtwork?: boolean;
-  canPublishArtwork?: boolean;
-  canManageSources?: boolean;
-  artworkStatus?: "none" | "draft-only" | "published" | "published-with-newer-drafts";
-  publishedArtwork?: {
-    id: string;
-    publishedAt: string;
-    assets: {
-      square: { bytes: number; sha256: string };
-      landscape: { bytes: number; sha256: string };
-    };
-  } | null;
-  latestDraftCandidate?: {
-    id: string;
-    label: string | null;
-    createdAt: string;
-  } | null;
-}
-
 export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showReleaseState }: EventDetailProps) {
   const locale = useLocale();
   const t = useTranslations("events.detail");
@@ -93,8 +51,15 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
 
   const { data, isLoading, error } = useQuery<EventDetailResponse>({
     queryKey: ["catalog-event-detail", eventId],
-    queryFn: () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
+    // Network first; a complete local package answers when the request itself
+    // cannot be made, so the same page renders online and offline.
+    queryFn: () =>
+      withLocalFallback(
+        () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
+        () => readLocalEventDetail(catalogId, eventId)
+      ),
   });
+  const localArtworkUrl = useLocalArtworkUrl(catalogId, eventId, data?.publishedArtwork?.id ?? null);
 
   const defaultSelectedHash = useMemo(
     () => data?.recordings.find((recording) => recording.isPrimary)?.audioHash ?? data?.recordings[0]?.audioHash ?? "",
@@ -183,7 +148,13 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
 
   const artworkAlt = data.title ?? t("eventFallbackTitle", { id: data.id });
   const artworkPicture = publishedArtwork ? (
-    <EventArtworkPicture catalogId={catalogId} eventId={eventId} artworkId={publishedArtwork.id} alt={artworkAlt} />
+    <EventArtworkPicture
+      catalogId={catalogId}
+      eventId={eventId}
+      artworkId={publishedArtwork.id}
+      alt={artworkAlt}
+      srcOverride={localArtworkUrl}
+    />
   ) : canViewArtworkCandidates && latestDraftCandidate ? (
     <div className="relative">
       <EventArtworkPicture
@@ -308,6 +279,8 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
+        // The event route already validated catalog access on the server.
+        skipCatalogValidation
         beforeAudioPlayer={artworkPicture}
         afterAudioPlayer={
           <div className="space-y-4">

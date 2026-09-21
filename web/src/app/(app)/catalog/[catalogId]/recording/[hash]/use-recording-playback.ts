@@ -5,10 +5,15 @@ import { useSearchParams } from "next/navigation";
 import { useRadioMode } from "@/contexts/radio-mode-context";
 import { useAudioPlayback } from "@/contexts/audio-playback-context";
 import { useSession } from "@/contexts/session-context";
+import { useDownloadRecord } from "@/hooks/use-downloads";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildPlaybackProgressUrl } from "@/lib/api/recording-urls";
 import { getPendingPlaybackProgress } from "@/lib/offline/downloads-db";
-import { flushPendingPlaybackProgress } from "@/lib/offline/playback-progress-sync";
+import { isNetworkFailure } from "@/lib/offline/local-source";
+import {
+  flushPendingPlaybackProgress,
+  queuePlaybackProgress,
+} from "@/lib/offline/playback-progress-sync";
 import {
   getSavedPlaybackPosition,
   isPlaybackCompleted,
@@ -49,6 +54,10 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const { setRecordingPlaying } = useAudioPlayback();
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
+  // The session-free offline shell has no signed-in user; progress made there
+  // is queued for the account that downloaded the recording.
+  const downloadRecord = useDownloadRecord(catalogId, hash);
+  const progressOwnerId = userId ?? downloadRecord?.userId ?? null;
   const fromRadio = searchParams.get("fromRadio") === "true";
   const seekParam = searchParams.get("seek");
   const endParam = searchParams.get("end");
@@ -70,6 +79,25 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [seekRequest, setSeekRequest] = useState<RecordingSeekRequest | undefined>(undefined);
   const [autoPlayOnSeek, setAutoPlayOnSeek] = useState(false);
+
+  // Durable offline progress: synchronised by the download-manager bridge on
+  // the next successful connection.
+  const queueOfflineProgress = useCallback(
+    (options: { completed: boolean; positionSec: number; durationSec: number }) => {
+      if (!progressOwnerId) return;
+      void queuePlaybackProgress({
+        userId: progressOwnerId,
+        catalogId,
+        hash,
+        positionSec: options.positionSec,
+        durationSec: options.durationSec > 0 ? options.durationSec : null,
+        completed: options.completed,
+      }).catch(() => {
+        // Local storage still preserves resume state if IndexedDB is blocked.
+      });
+    },
+    [catalogId, hash, progressOwnerId]
+  );
 
   const sendPlaybackProgress = useCallback(
     (options: Required<Pick<PlaybackPersistOptions, "completed">> & {
@@ -100,12 +128,20 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
           body: JSON.stringify(body),
           keepalive: options.keepalive,
         }
-      ).catch(() => {
-        // Local storage remains the offline fallback; retry on a later visit.
+      ).catch((error: unknown) => {
+        // A request that never reached the server is kept for the next
+        // connection; a server verdict is left to a later visit.
+        if (isNetworkFailure(error)) {
+          queueOfflineProgress({
+            completed: options.completed,
+            positionSec: options.positionSec,
+            durationSec: options.durationSec,
+          });
+        }
       });
       lastServerSyncRef.current = now;
     },
-    [catalogId, hash]
+    [catalogId, hash, queueOfflineProgress]
   );
 
   const persistCurrentPlaybackPosition = useCallback(
@@ -138,7 +174,14 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
 
       savePlaybackPosition(hash, positionSec, { clearWhenZero: true });
       lastLocalSaveRef.current = Date.now();
-      if (restorePendingRef.current || restoreFailedRef.current) return;
+      if (restorePendingRef.current) return;
+      if (restoreFailedRef.current) {
+        // The server could not be reached for this view. Writing directly
+        // could overwrite a further position from another device, so the
+        // position is queued and merged on reconnect instead.
+        queueOfflineProgress({ completed: false, positionSec, durationSec });
+        return;
+      }
 
       sendPlaybackProgress({
         completed: false,
@@ -147,7 +190,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
         durationSec,
       });
     },
-    [hash, sendPlaybackProgress]
+    [hash, queueOfflineProgress, sendPlaybackProgress]
   );
 
   useEffect(() => {

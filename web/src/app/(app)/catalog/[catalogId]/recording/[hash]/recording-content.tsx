@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
-import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useLocalAudioSrc } from "@/hooks/use-local-package";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
@@ -14,7 +14,6 @@ import {
   buildAudioUrl,
 } from "@/lib/api/recording-urls";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
-import { useDownloadRecord } from "@/hooks/use-downloads";
 import {
   RecordingAudioSection,
   RecordingHeader,
@@ -93,8 +92,6 @@ export default function RecordingContent({
   // playback behavior and view sections live in sibling modules.
   const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
-  const downloadRecord = useDownloadRecord(catalogId, hash);
-  const { isOnline } = useOnlineStatus();
   const queryClient = useQueryClient();
   // Keep the legacy key so existing users keep their saved transcript view preference.
   // Reading is the default view. The stream is the administrative one, and is
@@ -175,6 +172,10 @@ export default function RecordingContent({
       ? savedPreference.sourceId
       : null;
   const audioSource = preferredSource || sourcesData?.defaultSource || "archived";
+  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
+  // A complete local package plays in preference to the network; the page
+  // never learns how it is stored.
+  const localAudio = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
 
   const handleSourceChange = (sourceId: string) => {
     savePreference.mutate(sourceId);
@@ -193,7 +194,7 @@ export default function RecordingContent({
   // soon as that response resolves.
   const recording = data?.entry ?? (isValidatingAccess ? cachedData?.entry : undefined);
 
-  if (catalogValidationLoading || (isLoading && !recording)) {
+  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending) {
     return (
       <div className="space-y-3">
         <RecordingPageSkeleton />
@@ -239,16 +240,7 @@ export default function RecordingContent({
   const handleAudioDownload = (source: "original" | "archived") => {
     window.open(buildAudioDownloadUrl(catalogId, hash, source), "_blank");
   };
-  // Use the exact cached URL while offline or when source metadata could not
-  // be loaded. While online, keep honoring the user's selected source even
-  // when another variant of this recording has been downloaded.
-  const downloadedAudioUrl =
-    downloadRecord?.status === "complete" ? downloadRecord.audioUrl : null;
-  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
-  const audioUrl =
-    downloadedAudioUrl && (!isOnline || availableSources.length === 0)
-      ? downloadedAudioUrl
-      : selectedAudioUrl;
+  const audioUrl = localAudio.src ?? selectedAudioUrl;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">

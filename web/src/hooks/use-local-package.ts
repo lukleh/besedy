@@ -1,0 +1,133 @@
+"use client";
+
+/**
+ * Hooks that resolve media from a completed download package for the shared
+ * event and recording pages. Pages stay unaware of caches, data URLs and
+ * storage formats; they receive a `src` and use it.
+ */
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import {
+  getAudioCacheKey,
+  requiresInlineOfflineAudio,
+} from "@/lib/offline/audio-cache-format";
+import { getDownloadBundle } from "@/lib/offline/downloads-db";
+
+/**
+ * Encode a stored recording as a data URL.
+ *
+ * WebKit rejects service-worker and blob-backed media once offline, so those
+ * browsers play from an inline copy. This is the transport #163 replaces; it
+ * lives here so it can be removed in one place.
+ */
+export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): string {
+  const bytes = new Uint8Array(data);
+  const encodedChunks: string[] = [];
+  // Keep non-final chunks divisible by three so concatenated base64 has no
+  // interior padding, while avoiding one extra full-size binary string.
+  const chunkSize = 24 * 1024;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    encodedChunks.push(
+      btoa(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)))
+    );
+  }
+  return `data:${contentType};base64,${encodedChunks.join("")}`;
+}
+
+export interface LocalAudioSource {
+  /** Playable local source, or null when the page should use its network URL. */
+  src: string | null;
+  /** The local source is being prepared; hold the player until it resolves. */
+  pending: boolean;
+}
+
+/**
+ * Prefer a complete local recording over the network.
+ *
+ * The bytes are identical by hash, playback starts without a connection, and
+ * losing connectivity mid-play stops being a special case. A downloaded
+ * variant that differs from the listener's current source selection is used
+ * only when that selection cannot be honoured: source metadata is unknown or
+ * the browser is offline.
+ */
+export function useLocalAudioSrc(
+  catalogId: string,
+  hash: string,
+  selectedUrl: string,
+  sourcesKnown: boolean
+): LocalAudioSource {
+  const record = useDownloadRecord(catalogId, hash);
+  const { isOnline } = useOnlineStatus();
+  const complete = record?.status === "complete" && !!record.audioUrl;
+  const matchesSelection = useMemo(() => {
+    if (!complete || !record?.audioCacheKey || typeof window === "undefined") {
+      return false;
+    }
+    return (
+      getAudioCacheKey(selectedUrl, window.location.origin) === record.audioCacheKey
+    );
+  }, [complete, record?.audioCacheKey, selectedUrl]);
+  const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
+  const needsInline =
+    typeof navigator !== "undefined" && requiresInlineOfflineAudio(navigator.userAgent);
+
+  const inline = useQuery({
+    queryKey: ["local-inline-audio", record?.key ?? null],
+    enabled: useLocal && needsInline,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      const bundle = record ? await getDownloadBundle(record.key) : undefined;
+      return bundle?.inlineAudio
+        ? inlineAudioDataUrl(bundle.inlineAudio.data, bundle.inlineAudio.contentType)
+        : null;
+    },
+  });
+
+  if (!useLocal || !record?.audioUrl) return { src: null, pending: false };
+  if (!needsInline) return { src: record.audioUrl, pending: false };
+  if (inline.isPending) return { src: null, pending: true };
+  return { src: inline.data ?? record.audioUrl, pending: false };
+}
+
+/**
+ * Object URL for the artwork stored with a downloaded event, used while the
+ * browser is offline so the shared event page keeps its artwork. Online, the
+ * responsive published variants come from the server as usual.
+ */
+export function useLocalArtworkUrl(
+  catalogId: string,
+  eventId: number,
+  artworkId: string | null
+): string | null {
+  const record = useEventDownload(catalogId, eventId);
+  const { isOnline } = useOnlineStatus();
+  const key =
+    !isOnline && record?.status === "complete" && record.hasArtwork ? record.key : null;
+
+  const { data: blob } = useQuery({
+    queryKey: ["local-artwork", key, artworkId],
+    enabled: key !== null && artworkId !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      const bundle = key ? await getDownloadBundle(key) : undefined;
+      const artwork = bundle?.artwork;
+      if (!artwork) return null;
+      if (artwork.artworkId && artwork.artworkId !== artworkId) return null;
+      return artwork.blob;
+    },
+  });
+
+  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
+  useEffect(() => {
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [url]);
+  return url;
+}

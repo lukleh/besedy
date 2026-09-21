@@ -47,6 +47,15 @@ new navigation or reload; a failed normal navigation redirects to Downloads
 when its cached shell is available. An already-open normal event or recording
 page can play a downloaded selected recording after connectivity drops.
 
+The normal event and recording pages already contain the first half of the
+content-source seam. Their data queries call the API first and, when the
+request itself cannot be made, read the same shapes from a complete local
+package through `web/src/lib/offline/local-source.ts`: event detail, recording
+entry with package-derived capabilities, and the stored transcript and
+diarization. Audio prefers a complete local package even while online when it
+matches the selected source. Playback progress made without a reachable server
+is queued for the downloading account and synchronised on reconnect.
+
 This is the legacy path that remains supported until the target architecture is
 implemented and rolled out. Its data and transport behavior are as follows.
 
@@ -58,8 +67,9 @@ The `besedy-offline` IndexedDB database currently has three stores:
   progress, byte counts, selected audio URL, event/recording snapshots, and
   download status.
 - `downloadBundles` holds large optional payloads: the default transcript and
-  diarization when permitted, published artwork, and a WebKit-compatible inline
-  audio copy where required by that platform fallback.
+  diarization when permitted, published artwork, the event-detail and
+  recording-entry payloads the shared pages render from, and a
+  WebKit-compatible inline audio copy where required by that platform fallback.
 - `pendingPlaybackProgress` retains local playback changes for later account
   synchronisation.
 
@@ -90,10 +100,11 @@ requests persistent storage before the first download. User-paused downloads
 resume on demand; network-paused downloads resume after reconnection; a
 download interrupted by page close returns to `queued` at hydration.
 
-On startup and reconnect, the manager rechecks completed downloaded transcripts
-for the signed-in account. If the account no longer has transcript-download
+On startup and reconnect, the manager rechecks completed packages for the
+signed-in account. If the account no longer has transcript-download
 permission, it removes the stored transcript and diarization while retaining
-audio and artwork. This best-effort revocation cannot remove data from a device
+audio and artwork; packages written before the event-detail and entry payloads
+were stored receive them. This best-effort revocation cannot remove data from a device
 that remains offline; temporary network or authentication failures are not
 treated as permission decisions. Signing out deletes the database and
 protected audio/shell caches.

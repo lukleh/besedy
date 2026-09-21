@@ -12,6 +12,9 @@ interface EventArtworkPictureProps {
    * endpoint (gated on draft-visibility) instead of the audience-facing
    * published-artwork endpoint. */
   source?: "published" | "candidate";
+  /** A local image (object URL) that replaces the server variants, e.g. the
+   * artwork stored with a downloaded event while offline. */
+  srcOverride?: string | null;
 }
 
 export function EventArtworkPicture({
@@ -21,11 +24,22 @@ export function EventArtworkPicture({
   alt,
   className,
   source = "published",
+  srcOverride = null,
 }: EventArtworkPictureProps) {
   const buildUrl = (variant: "square" | "landscape") =>
     source === "candidate"
       ? buildEventArtworkCandidateImageUrl(catalogId, eventId, artworkId, variant)
       : buildEventArtworkUrl(catalogId, eventId, variant, artworkId);
+
+  if (srcOverride) {
+    return (
+      <div className={cn("event-artwork-frame overflow-hidden rounded-xl border border-border/50 bg-muted", className)}>
+        {/* Device-local image; a single stored variant serves every breakpoint. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={srcOverride} alt={alt} className="h-full w-full object-contain" />
+      </div>
+    );
+  }
 
   return (
     <div className={cn("event-artwork-frame overflow-hidden rounded-xl border border-border/50 bg-muted", className)}>
