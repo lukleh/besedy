@@ -82,7 +82,6 @@ describe("catalog pending record route", () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
       email: EMAIL,
       catalogId: CATALOG_ID,
-      accessLevel: "OWNER",
       role: "host",
       extraPermissions: [],
       grantedById: "admin-1",
@@ -131,7 +130,6 @@ describe("catalog pending record route", () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
       email: EMAIL,
       catalogId: CATALOG_ID,
-      accessLevel: "OWNER",
       role: "host",
       extraPermissions: [],
       grantedById: "admin-1",

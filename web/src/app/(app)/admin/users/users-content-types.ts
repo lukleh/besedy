@@ -9,14 +9,14 @@ export const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 export interface CatalogAccess {
   catalogId: string;
   catalogLabel: string | null;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
 }
 
 export interface PendingPortalAdmissionGrant {
   catalogId: string;
   catalogLabel: string;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   grantedAt: string;
   grantedBy: { id: string; name: string | null; email: string } | null;
@@ -49,6 +49,7 @@ export interface PendingPortalAdmission {
   pendingGrantCount: number;
   catalogId: string | null;
   catalogLabel: string | null;
+  /** The single pending grant's role; null when the admission has none or several. */
   role: CatalogRole | null;
   invitedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;

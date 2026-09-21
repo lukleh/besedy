@@ -7,7 +7,7 @@ export interface PendingCatalogGrantItem {
   id: string;
   type: "pending_catalog_grant";
   email: string;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   notes: string | null;
   createdAt: string;

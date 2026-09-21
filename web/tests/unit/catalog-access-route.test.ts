@@ -199,7 +199,6 @@ describe("catalog access routes", () => {
         id: "a",
         userId,
         catalogId,
-        accessLevel: role === "listener" ? "LISTENER" : "VIEWER",
         status: "ACTIVE",
         createdAt: new Date(),
         user: { id: userId, name: "U", email: "u@test.com" },
@@ -250,7 +249,6 @@ describe("catalog access routes", () => {
       catalogId,
       // A lateral move the old self-check let through: it fired only when an
       // OWNER was leaving OWNER.
-      accessLevel: "MEMBER",
       role: "reader",
       status: "ACTIVE",
       user: { id: userId, email: "self@test.com" },
@@ -280,7 +278,6 @@ describe("catalog access routes", () => {
     prisma.catalogAccess.findUnique.mockResolvedValue({
       userId,
       catalogId,
-      accessLevel: "OWNER",
       role: "host",
       status: "REVOKED",
       user: { email: "self@test.com" },
@@ -308,7 +305,6 @@ describe("catalog access routes", () => {
     prisma.workflowGroup.findUnique.mockResolvedValue({ id: catalogId });
     prisma.user.findUnique.mockResolvedValue({ id: userId });
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "OWNER",
       role: "host",
       extraPermissions: [],
       status: "REVOKED",
@@ -342,7 +338,6 @@ describe("catalog access routes", () => {
       makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "VIEWER",
       role: "reader",
       status: "REVOKED",
     });
@@ -401,7 +396,6 @@ describe("catalog access routes", () => {
       makeManagementAccess({ resolvedUserId: userId, isCatalogAdmin: true })
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "VIEWER",
       role: "reader",
       status: "ACTIVE",
       user: { email: "self@test.com" },
@@ -430,7 +424,6 @@ describe("catalog access routes", () => {
       makeManagementAccess({ resolvedUserId: "admin-1", isCatalogAdmin: true })
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "VIEWER",
       role: "reader",
       status: "ACTIVE",
       user: { email: "viewer@test.com" },
@@ -463,7 +456,7 @@ describe("catalog access routes", () => {
             "Content-Type": "application/json",
             Origin: "https://evil.example",
           },
-          body: JSON.stringify({ userId, accessLevel: "VIEWER" }),
+          body: JSON.stringify({ userId, role: "reader" }),
         }),
         { params: Promise.resolve({ id: catalogId }) }
       );
@@ -493,7 +486,6 @@ describe("catalog access routes", () => {
           id: "access-1",
           userId: "user-1",
           catalogId,
-          accessLevel: "OWNER",
           role: "host",
           extraPermissions: ["download_transcripts"],
           status: "ACTIVE",
@@ -504,7 +496,6 @@ describe("catalog access routes", () => {
           id: "access-2",
           userId: "user-2",
           catalogId,
-          accessLevel: "VIEWER",
           role: "reader",
           extraPermissions: [],
           status: "ACTIVE",
@@ -521,8 +512,8 @@ describe("catalog access routes", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
         accessList: [
-          expect.objectContaining({ accessLevel: "OWNER", canManage: true }),
-          expect.objectContaining({ accessLevel: "VIEWER", canManage: true }),
+          expect.objectContaining({ role: "host", canManage: true }),
+          expect.objectContaining({ role: "reader", canManage: true }),
         ],
         canManageAccess: true,
         canManageCatalogConfig: true,
@@ -554,7 +545,6 @@ describe("catalog access routes", () => {
           id: "access-self",
           userId: "admin-1",
           catalogId,
-          accessLevel: "OWNER",
           role: "catalog_admin",
           extraPermissions: [],
           status: "ACTIVE",
@@ -595,7 +585,6 @@ describe("catalog access routes", () => {
         id: "new-access",
         userId,
         catalogId,
-        accessLevel: "LISTENER",
         status: "ACTIVE",
         grantedById: "owner-1",
         createdAt: new Date(),
@@ -622,7 +611,6 @@ describe("catalog access routes", () => {
         data: { name: "Updated User" },
       });
       await expect(response.json()).resolves.toMatchObject({
-        accessLevel: "LISTENER",
         status: "ACTIVE",
       });
     });
@@ -649,7 +637,6 @@ describe("catalog access routes", () => {
         id: "new-owner-access",
         userId,
         catalogId,
-        accessLevel: "OWNER",
         status: "ACTIVE",
         grantedById: "admin-1",
         createdAt: new Date(),
@@ -667,7 +654,6 @@ describe("catalog access routes", () => {
 
       expect(response.status).toBe(201);
       await expect(response.json()).resolves.toMatchObject({
-        accessLevel: "OWNER",
       });
     });
 
@@ -683,7 +669,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
-        accessLevel: "VIEWER",
         role: "reader",
         extraPermissions: ["future_permission"],
         status: "ACTIVE",
@@ -692,7 +677,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.update.mockResolvedValue({
         userId,
         catalogId,
-        accessLevel: "EDITOR",
         status: "ACTIVE",
         user: { id: userId, name: "User", email: "user@test.com" },
       });
@@ -711,7 +695,6 @@ describe("catalog access routes", () => {
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
-        accessLevel: "EDITOR",
       });
     });
 
@@ -726,7 +709,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
-        accessLevel: "VIEWER",
         role: "reader",
         extraPermissions: ["future_permission"],
         status: "ACTIVE",
@@ -736,7 +718,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.update.mockResolvedValue({
         userId,
         catalogId,
-        accessLevel: "VIEWER",
         status: "ACTIVE",
         notes: null,
         user: { id: userId, name: "User", email: "user@test.com" },
@@ -778,7 +759,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId: targetUserId,
         catalogId,
-        accessLevel: "LISTENER",
         role: "reader",
         extraPermissions: ["download_audio"],
         status: "ACTIVE",
@@ -787,7 +767,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.update.mockResolvedValue({
         userId: targetUserId,
         catalogId,
-        accessLevel: "LISTENER",
         status: "REVOKED",
       });
 
@@ -817,7 +796,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.findUnique.mockResolvedValue({
         userId,
         catalogId,
-        accessLevel: "VIEWER",
         role: "reader",
         status: "REVOKED",
         revokedById: "owner-1",
@@ -827,7 +805,6 @@ describe("catalog access routes", () => {
       prisma.catalogAccess.update.mockResolvedValue({
         userId,
         catalogId,
-        accessLevel: "VIEWER",
         status: "ACTIVE",
         revokedById: null,
         revokedAt: null,

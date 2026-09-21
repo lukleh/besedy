@@ -64,7 +64,7 @@ const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 interface CatalogAccess {
   id: string;
   catalogId: string;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   catalog: {
     id: string;
@@ -117,9 +117,6 @@ export default function UserDetailContent() {
 
   const getCatalogRoleLabel = (role: CatalogRole): string =>
     t(`catalogRoles.${role}`);
-  // A grant without a role is shown as such rather than as a listener.
-  const roleLabelOf = (access: CatalogAccess): string =>
-    access.role ? getCatalogRoleLabel(access.role) : "—";
 
   const [blockConfirm, setBlockConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -674,7 +671,7 @@ export default function UserDetailContent() {
                   </div>
                   <div className="flex items-center gap-2">
                     <ResponsiveSelect
-                      value={access.role ?? ""}
+                      value={access.role}
                       onValueChange={(value) =>
                         updateCatalogAccess.mutate({
                           catalogId: access.catalogId,
@@ -688,7 +685,7 @@ export default function UserDetailContent() {
                         aria-label={t("userDetail.role")}
                       >
                         <ResponsiveSelectValue
-                          displayValue={roleLabelOf(access)}
+                          displayValue={getCatalogRoleLabel(access.role)}
                         />
                       </ResponsiveSelectTrigger>
                       <ResponsiveSelectContent title={t("userDetail.role")}>

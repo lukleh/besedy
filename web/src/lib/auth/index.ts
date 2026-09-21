@@ -265,7 +265,7 @@ export const auth = betterAuth({
                 portalAdmissionId: string | null;
                 grants: Array<{
                   catalogId: string;
-                  role: string | null;
+                  role: string;
                   grantedById: string | null;
                   notes: string | null;
                 }>;

@@ -97,16 +97,6 @@ describe("a grant resolves through its role", () => {
     }
   });
 
-  it("gives a grant without a role nothing but its extras", () => {
-    // The role column is still nullable. A row without one is not a listener;
-    // it fails closed to whatever extras it carries.
-    expect(permissionsForGrant({ role: null, extras: [] }).size).toBe(0);
-    expect([...permissionsForGrant({ role: null, extras: ["download_audio"] })]).toEqual([
-      "download_audio",
-    ]);
-    expect(grantHasPermission({ role: null, extras: [] }, false, "stream_audio")).toBe(false);
-  });
-
   it("adds extras to the role and never subtracts", () => {
     const host = { role: "host" as const, extras: ["download_transcripts"] };
     const resolved = permissionsForGrant(host);

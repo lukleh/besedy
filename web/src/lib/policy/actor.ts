@@ -136,7 +136,7 @@ export async function resolveCatalogActorContext(
   const catalogGrant: CatalogGrant | null =
     access?.status === "ACTIVE"
       ? {
-          role: access.role ?? null,
+          role: access.role,
           extras: access.extraPermissions ?? [],
         }
       : null;

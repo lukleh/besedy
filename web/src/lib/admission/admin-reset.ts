@@ -13,7 +13,7 @@ export interface PortalAdmissionResetResult {
   pendingGrantCount: number;
   reopenedGrants: Array<{
     catalogId: string;
-    role: string | null;
+    role: string;
   }>;
 }
 

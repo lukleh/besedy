@@ -314,7 +314,18 @@ Deploy the lookup ownership change separately from the role cutover:
 
    The first two counts must be zero. Compare the grouped mapping with the
    preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
-   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
+   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`. This
+   check must run before step 5: once `access_level` is dropped, only the two
+   `role IS NULL` counts remain meaningful.
+5. Once the role-native web release (#151) is live and nothing reads
+   `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
+   plain `just prod-deploy`. It refuses to run while any grant lacks a role,
+   then makes `role` NOT NULL and drops `access_level` and the `AccessLevel`
+   enum. There is no reverse migration, and the previous image alone cannot
+   run against the migrated schema: its claim path still selects
+   `access_level`, so first sign-in for invited users would fail. Roll back
+   with the guarded `prod-rollback` recipe (see Rollback below), which
+   restores the retained pre-migration backup together with the image.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating

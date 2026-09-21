@@ -379,9 +379,7 @@ export default function CatalogSettingsContent({
   // Open edit dialog for pending user
   const openEditPendingDialog = (pendingUser: PendingCatalogGrant) => {
     setEditPendingForm({
-      // The form needs a selection; a grant without a role starts from the
-      // least-privileged one, which the admin then has to confirm.
-      role: pendingUser.role ?? "listener",
+      role: pendingUser.role,
       extraPermissions: pendingUser.extraPermissions.filter((permission) =>
         grantableExtraPermissions.includes(
           permission as GrantableExtraPermission

@@ -69,7 +69,7 @@ const PERMISSION_ICONS: PermissionConfig[] = [
 ];
 
 interface PermissionIconsProps {
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions?: string[];
   className?: string;
 }

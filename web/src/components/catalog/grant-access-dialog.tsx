@@ -29,8 +29,8 @@ interface UserSearchResult {
   email: string | null;
   image: string | null;
   type: "active" | "available" | "revoked";
-  currentRole?: CatalogRole | null;
-  previousRole?: CatalogRole | null;
+  currentRole?: CatalogRole;
+  previousRole?: CatalogRole;
   extraPermissions?: string[];
   notes?: string | null;
 }
@@ -413,7 +413,7 @@ export function GrantAccessDialog({
                   onNotesChange={setNotes}
                   manageableRoles={manageableRoles}
                   idPrefix="grant"
-                  showAccessLevelHint
+                  showRoleHint
                 />
 
                 {/* Back button */}
