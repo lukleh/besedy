@@ -2,7 +2,7 @@
 
 > Status: authenticated read surface implemented
 >
-> Last updated: 2026-09-02
+> Last updated: 2026-09-20
 
 This document covers the design of the MCP server: scope, architecture,
 authentication, access rules, catalog resolution, telemetry, testing, and the
@@ -198,31 +198,55 @@ into the client configuration.
 
 ## Access matrix
 
-The table is the intended MCP read surface for an active user. `ADMIN` includes
-superadmins. Every active account receives all tools; catalog grants determine
-which catalogs contain readable data.
+The table is the intended MCP read surface for an active user, keyed by the
+actor's [`CatalogRole`](../adr/0005-catalog-permission-model.md) for the
+catalog in question (`listener`, `reader`, `corrector`, `host`, `curator`, or
+`catalog_admin`). The system-level `admin`/`superadmin` tiers hold no catalog
+grant at all and reach every catalog through `isCatalogAdmin`; every other row
+is an ordinary per-catalog role. Every active account receives all tools;
+catalog grants determine which catalogs contain readable data.
 
 | User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata |             Get transcript |                              Search transcripts |
-| ------------------------- | ------------------: | ------------------: | -------------------: | ---------------------: | -------------------------: | ----------------------------------------------: |
-| No grant                  |                  No |                  No |                   No |                     No |                         No |                                              No |
-| `LISTENER`                |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `VIEWER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `MEMBER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `EDITOR`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `OWNER`                   |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `ADMIN`                   | All active catalogs | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| -------------------------- | ------------------: | ------------------: | -------------------: | ----------------------: | --------------------------: | ----------------------------------------------: |
+| No grant                   |                  No |                  No |                   No |                     No |                          No |                                              No |
+| `listener`                 |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `reader`                   |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `corrector`                |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `host`                     |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `curator`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| `catalog_admin`            |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| System admin / superadmin  | All active catalogs | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
 
-For a `LISTENER`, an event is visible only when all of these are true:
+For every role, an event is visible only when all of these are true:
 
 1. the event is released;
 2. its primary recording is actionable/ready; and
 3. its primary recording is published.
 
-Listener-visible attached recordings are likewise restricted to actionable,
+Role-visible attached recordings are likewise restricted to actionable,
 published recordings. Direct recording metadata and transcript reads also
-require a link to at least one listener-visible released event. MCP applies this
-visibility at every catalog access level; higher web roles do not expose
-unreleased data through MCP.
+require a link to at least one role-visible released event.
+
+MCP applies this visibility uniformly to every catalog role, including
+`curator` and `catalog_admin`. Those two roles hold `see_unreleased` for the
+web application ([ADR 0005](../adr/0005-catalog-permission-model.md)), but MCP
+reads never consult `see_unreleased`, or any other per-catalog permission, at
+all. Every MCP call — including `search_transcripts` and
+`find_transcript_mentions` — resolves visibility against a fixed internal
+grant equivalent to the `listener` role (`MCP_VISIBILITY_GRANT` in
+`web/src/lib/mcp/read-service.ts`), never against the caller's real role or
+permissions. `getMcpAccessProfile` and `BesedyMcpRequestContext` carry only
+catalog IDs, labels, and the default flag; no per-catalog role or permission
+ever reaches the MCP layer, so no tool has the information to differentiate a
+`catalog_admin` from a `listener` even in principle.
+
+[ADR 0005](../adr/0005-catalog-permission-model.md) describes catalog search
+as scoped alike by `see_unreleased` on the web and through MCP ("in the web
+application and through MCP alike. There is no special rule"). The current
+MCP search implementation has not been updated to match that description: an
+unreleased event's transcripts remain unsearchable through MCP for every
+role, `catalog_admin` included. Treat this matrix, not that ADR section, as
+authoritative for what MCP currently does.
 
 Portal status is evaluated before catalog role. Unauthenticated, `PENDING`, and
 `BLOCKED` users receive no protected MCP tools or data. An active user with no
@@ -231,7 +255,7 @@ catalog-scoped data.
 
 ### Design decision: listener transcript access through MCP
 
-A `LISTENER` grant cannot open transcript text or transcript search in the web
+A `listener` grant cannot open transcript text or transcript search in the web
 UI, yet the same grant can read and search transcripts through MCP. This is a
 deliberate decision, not an oversight, and it was confirmed on 2026-09-02.
 
@@ -245,18 +269,20 @@ longer one to the end, and an agent asked for the whole text can hand it over.
 A listener's agent can therefore retrieve any released, published transcript in
 full through MCP. What still applies without exception is listener visibility:
 released events and published, actionable recordings only, with no widening for
-higher web roles.
+any other catalog role, including `curator` and `catalog_admin` (see the
+access matrix above).
 
 Consequences to keep in mind when changing either surface:
 
 - MCP transcript access is not a strict subset of web transcript access, and it
   is not bounded to excerpts. Do not "fix" the web denial by pointing at MCP or
   vice versa, and do not describe MCP access as excerpt-only.
-- If a catalog ever needs transcripts withheld from listeners on both surfaces,
-  that is a new MCP capability rule, not a listener-visibility change.
-- The optional web role gate `canViewCatalogTranscripts` is intentionally not
-  consulted by MCP reads. Tests that assert listener transcript access through
-  MCP are asserting this decision, not a bug.
+- If a catalog ever needs transcripts withheld from the `listener` role on both
+  surfaces, that is a new MCP capability rule, not a listener-visibility change.
+- The optional web permission gate `canViewCatalogTranscripts` (backed by
+  `read_transcripts`) is intentionally not consulted by MCP reads. Tests that
+  assert listener transcript access through MCP are asserting this decision,
+  not a bug.
 
 ## Tool discovery and per-call authorization
 
@@ -364,7 +390,7 @@ metadata reads, complete transcript retrieval, exact result key sets, and a
 grounded RAG result from a deterministic test-only ColBERT mock. Catalog-scoped
 calls do not supply `catalogId`, so the same run covers default selection.
 
-The second enforces the access matrix. It signs in as the seeded `LISTENER` and
+The second enforces the access matrix. It signs in as the seeded `listener` and
 checks that only released events are listed, that the unreleased event, its
 recording, and its transcript all return `not_found` from every read and search
 tool, and that a released transcript and a grounded search result are still
