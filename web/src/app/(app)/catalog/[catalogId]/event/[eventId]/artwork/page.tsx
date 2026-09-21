@@ -23,25 +23,25 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildEventDetailUrl,
-  buildEventPosterCandidateUrl,
-  buildEventPosterCandidateImageUrl,
-  buildEventPosterCandidatesUrl,
-  buildEventPosterPublicationUrl,
+  buildEventArtworkCandidateUrl,
+  buildEventArtworkCandidateImageUrl,
+  buildEventArtworkCandidatesUrl,
+  buildEventArtworkPublicationUrl,
 } from "@/lib/api/recording-urls";
 
-interface EventPosterPageProps {
+interface EventArtworkPageProps {
   params: Promise<{ catalogId: string; eventId: string }>;
 }
 
 interface EventDetailResponse {
   id: number;
   title: string | null;
-  canViewPosterCandidates?: boolean;
-  canManagePosters?: boolean;
-  canPublishPosters?: boolean;
+  canViewArtworkCandidates?: boolean;
+  canManageArtwork?: boolean;
+  canPublishArtwork?: boolean;
 }
 
-interface PosterCandidate {
+interface ArtworkCandidate {
   id: string;
   eventId: number;
   label: string | null;
@@ -56,13 +56,13 @@ interface PosterCandidate {
 }
 
 interface CandidatesResponse {
-  candidates: PosterCandidate[];
+  candidates: ArtworkCandidate[];
 }
 
-export default function EventPosterPage({ params }: EventPosterPageProps) {
+export default function EventArtworkPage({ params }: EventArtworkPageProps) {
   const { catalogId, eventId } = use(params);
   const parsedEventId = Number.parseInt(eventId, 10);
-  const t = useTranslations("events.poster");
+  const t = useTranslations("events.artwork");
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -71,7 +71,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   const [landscapeFile, setLandscapeFile] = useState<File | null>(null);
   const [confirmation, setConfirmation] = useState<{
     action: "delete" | "unpublish";
-    candidate: PosterCandidate;
+    candidate: ArtworkCandidate;
   } | null>(null);
 
   const squarePreview = useMemo(() => (squareFile ? URL.createObjectURL(squareFile) : null), [squareFile]);
@@ -94,19 +94,19 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
     queryFn: () => fetchJson(buildEventDetailUrl(catalogId, parsedEventId)),
     enabled: Number.isSafeInteger(parsedEventId) && parsedEventId > 0,
   });
-  const canManage = detailQuery.data?.canManagePosters ?? false;
-  const canPublish = detailQuery.data?.canPublishPosters ?? false;
-  const canView = detailQuery.data?.canViewPosterCandidates ?? false;
+  const canManage = detailQuery.data?.canManageArtwork ?? false;
+  const canPublish = detailQuery.data?.canPublishArtwork ?? false;
+  const canView = detailQuery.data?.canViewArtworkCandidates ?? false;
   const refetchDetail = detailQuery.refetch;
   const candidatesQuery = useQuery<CandidatesResponse>({
-    queryKey: ["event-poster-candidates", catalogId, parsedEventId],
-    queryFn: () => fetchJson(buildEventPosterCandidatesUrl(catalogId, parsedEventId)),
+    queryKey: ["event-artwork-candidates", catalogId, parsedEventId],
+    queryFn: () => fetchJson(buildEventArtworkCandidatesUrl(catalogId, parsedEventId)),
     enabled: canView,
   });
   useEffect(() => {
     if (detailQuery.data && !canView) {
       queryClient.removeQueries({
-        queryKey: ["event-poster-candidates", catalogId, parsedEventId],
+        queryKey: ["event-artwork-candidates", catalogId, parsedEventId],
       });
       router.replace(`/catalog/${catalogId}/event/${parsedEventId}`);
     }
@@ -120,7 +120,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: ["event-poster-candidates", catalogId, parsedEventId],
+        queryKey: ["event-artwork-candidates", catalogId, parsedEventId],
       }),
       queryClient.invalidateQueries({
         queryKey: ["catalog-event-detail", parsedEventId],
@@ -138,7 +138,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
       form.append("square", squareFile);
       form.append("landscape", landscapeFile);
       if (label.trim()) form.append("label", label.trim());
-      return fetchJson(buildEventPosterCandidatesUrl(catalogId, parsedEventId), {
+      return fetchJson(buildEventArtworkCandidatesUrl(catalogId, parsedEventId), {
         method: "POST",
         body: form,
       });
@@ -159,11 +159,11 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   });
 
   const publishMutation = useMutation({
-    mutationFn: (posterId: string) =>
-      fetchJson(buildEventPosterPublicationUrl(catalogId, parsedEventId), {
+    mutationFn: (artworkId: string) =>
+      fetchJson(buildEventArtworkPublicationUrl(catalogId, parsedEventId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posterId }),
+        body: JSON.stringify({ artworkId }),
       }),
     onSuccess: async () => {
       await refresh();
@@ -179,7 +179,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
 
   const unpublishMutation = useMutation({
     mutationFn: () =>
-      fetchJson(buildEventPosterPublicationUrl(catalogId, parsedEventId), {
+      fetchJson(buildEventArtworkPublicationUrl(catalogId, parsedEventId), {
         method: "DELETE",
       }),
     onSuccess: async () => {
@@ -195,8 +195,8 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (posterId: string) =>
-      fetchJson(buildEventPosterCandidateUrl(catalogId, parsedEventId, posterId), {
+    mutationFn: (artworkId: string) =>
+      fetchJson(buildEventArtworkCandidateUrl(catalogId, parsedEventId, artworkId), {
         method: "DELETE",
       }),
     onSuccess: async () => {
@@ -266,7 +266,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
             />
           </label>
           <div className="grid gap-5 md:grid-cols-[9fr_16fr] md:gap-x-5 md:gap-y-2">
-            <PosterFileInput
+            <ArtworkFileInput
               title={t("square")}
               hint={t("squareHint")}
               file={squareFile}
@@ -275,7 +275,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
               onChange={setSquareFile}
               disabled={isBusy}
             />
-            <PosterFileInput
+            <ArtworkFileInput
               title={t("landscape")}
               hint={t("landscapeHint")}
               file={landscapeFile}
@@ -357,12 +357,12 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
                 <div className="grid gap-4 md:grid-cols-[9fr_16fr]">
                   <CandidateImage
                     title={t("square")}
-                    src={buildEventPosterCandidateImageUrl(catalogId, parsedEventId, candidate.id, "square")}
+                    src={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "square")}
                     aspectClass="aspect-square"
                   />
                   <CandidateImage
                     title={t("landscape")}
-                    src={buildEventPosterCandidateImageUrl(catalogId, parsedEventId, candidate.id, "landscape")}
+                    src={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "landscape")}
                     aspectClass="aspect-video"
                   />
                 </div>
@@ -414,7 +414,7 @@ export default function EventPosterPage({ params }: EventPosterPageProps) {
   );
 }
 
-function PosterFileInput({
+function ArtworkFileInput({
   title,
   hint,
   file,

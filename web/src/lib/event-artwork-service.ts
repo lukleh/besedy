@@ -3,28 +3,28 @@ import type { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit/logger";
 import {
-  getPosterContentType,
-  finalizeStagedEventPosterAssetsRemoval,
-  processPosterAsset,
-  readPosterAsset,
-  removePosterCandidateAssets,
-  resolveEventPosterAssetPath,
-  restoreStagedEventPosterAssets,
-  stagePosterCandidateAssetsRemoval,
-  writePosterCandidateAssets,
-  type PosterExtension,
-  type PosterUploadInput,
-  type PosterVariant,
-  type StagedPosterCandidateAssetsRemoval,
-} from "@/lib/event-poster-storage";
+  getArtworkContentType,
+  finalizeStagedEventArtworkAssetsRemoval,
+  processArtworkAsset,
+  readArtworkAsset,
+  removeArtworkCandidateAssets,
+  resolveEventArtworkAssetPath,
+  restoreStagedEventArtworkAssets,
+  stageArtworkCandidateAssetsRemoval,
+  writeArtworkCandidateAssets,
+  type ArtworkExtension,
+  type ArtworkUploadInput,
+  type ArtworkVariant,
+  type StagedArtworkCandidateAssetsRemoval,
+} from "@/lib/event-artwork-storage";
 
-export class EventPosterServiceError extends Error {
+export class EventArtworkServiceError extends Error {
   constructor(
     message: string,
     public readonly statusCode: 404 | 409
   ) {
     super(message);
-    this.name = "EventPosterServiceError";
+    this.name = "EventArtworkServiceError";
   }
 }
 
@@ -49,13 +49,13 @@ const candidateSelect = {
   publication: {
     select: { publishedAt: true, publishedById: true },
   },
-} satisfies Prisma.CatalogEventPosterSelect;
+} satisfies Prisma.CatalogEventArtworkSelect;
 
-type CandidateRecord = Prisma.CatalogEventPosterGetPayload<{
+type CandidateRecord = Prisma.CatalogEventArtworkGetPayload<{
   select: typeof candidateSelect;
 }>;
 
-export interface EventPosterCandidateView {
+export interface EventArtworkCandidateView {
   id: string;
   eventId: number;
   label: string | null;
@@ -77,7 +77,7 @@ export interface EventPosterCandidateView {
   };
 }
 
-export interface PublishedEventPosterView {
+export interface PublishedEventArtworkView {
   id: string;
   publishedAt: string;
   assets: {
@@ -86,7 +86,7 @@ export interface PublishedEventPosterView {
   };
 }
 
-function toCandidateView(candidate: CandidateRecord): EventPosterCandidateView {
+function toCandidateView(candidate: CandidateRecord): EventArtworkCandidateView {
   return {
     id: candidate.id,
     eventId: candidate.eventId,
@@ -116,7 +116,7 @@ async function requireEvent(catalogId: string, eventId: number): Promise<void> {
     select: { id: true },
   });
   if (!event) {
-    throw new EventPosterServiceError("Event not found", 404);
+    throw new EventArtworkServiceError("Event not found", 404);
   }
 }
 
@@ -129,49 +129,49 @@ async function lockEvent(tx: Prisma.TransactionClient, catalogId: string, eventI
     FOR UPDATE
   `;
   if (rows.length === 0) {
-    throw new EventPosterServiceError("Event not found", 404);
+    throw new EventArtworkServiceError("Event not found", 404);
   }
 }
 
-async function logPosterAudit(options: {
-  action: "EVENT_POSTER_CREATED" | "EVENT_POSTER_DELETED" | "EVENT_POSTER_PUBLISHED" | "EVENT_POSTER_UNPUBLISHED";
+async function logArtworkAudit(options: {
+  action: "EVENT_ARTWORK_CREATED" | "EVENT_ARTWORK_DELETED" | "EVENT_ARTWORK_PUBLISHED" | "EVENT_ARTWORK_UNPUBLISHED";
   userId: string;
   catalogId: string;
   eventId: number;
-  posterId: string;
+  artworkId: string;
   payload?: Record<string, unknown>;
 }): Promise<void> {
   await logAuditEvent({
     action: options.action,
     userId: options.userId,
-    resource: "event_poster",
-    resourceId: options.posterId,
+    resource: "event_artwork",
+    resourceId: options.artworkId,
     catalogId: options.catalogId,
     domain: "content",
     outcome: "changed",
-    subjectType: "event_poster",
-    subjectId: options.posterId,
+    subjectType: "event_artwork",
+    subjectId: options.artworkId,
     payload: {
       catalogId: options.catalogId,
       eventId: options.eventId,
-      posterId: options.posterId,
+      artworkId: options.artworkId,
       ...options.payload,
     },
     subjectSnapshot: {
-      type: "event_poster",
-      id: options.posterId,
-      label: `Event ${options.eventId} poster`,
+      type: "event_artwork",
+      id: options.artworkId,
+      label: `Event ${options.eventId} artwork`,
       catalogId: options.catalogId,
     },
   });
 }
 
-export async function listEventPosterCandidates(
+export async function listEventArtworkCandidates(
   catalogId: string,
   eventId: number
-): Promise<EventPosterCandidateView[]> {
+): Promise<EventArtworkCandidateView[]> {
   await requireEvent(catalogId, eventId);
-  const candidates = await prisma.catalogEventPoster.findMany({
+  const candidates = await prisma.catalogEventArtwork.findMany({
     where: { workflowGroupId: catalogId, eventId },
     select: candidateSelect,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -179,35 +179,35 @@ export async function listEventPosterCandidates(
   return candidates.map(toCandidateView);
 }
 
-export async function createEventPosterCandidate(options: {
+export async function createEventArtworkCandidate(options: {
   catalogId: string;
   eventId: number;
   userId: string;
   label?: string | null;
-  square: PosterUploadInput;
-  landscape: PosterUploadInput;
-}): Promise<EventPosterCandidateView> {
+  square: ArtworkUploadInput;
+  landscape: ArtworkUploadInput;
+}): Promise<EventArtworkCandidateView> {
   await requireEvent(options.catalogId, options.eventId);
 
   // Decode sequentially so one request cannot hold two maximum-size Sharp
   // pipelines at the same time.
-  const square = await processPosterAsset(options.square, "square");
-  const landscape = await processPosterAsset(options.landscape, "landscape");
-  const posterId = randomUUID();
+  const square = await processArtworkAsset(options.square, "square");
+  const landscape = await processArtworkAsset(options.landscape, "landscape");
+  const artworkId = randomUUID();
 
-  await writePosterCandidateAssets({
+  await writeArtworkCandidateAssets({
     catalogId: options.catalogId,
     eventId: options.eventId,
-    posterId,
+    artworkId,
     square,
     landscape,
   });
 
   let candidate: CandidateRecord;
   try {
-    candidate = await prisma.catalogEventPoster.create({
+    candidate = await prisma.catalogEventArtwork.create({
       data: {
-        id: posterId,
+        id: artworkId,
         workflowGroupId: options.catalogId,
         eventId: options.eventId,
         label: options.label?.trim().slice(0, 255) || null,
@@ -224,16 +224,16 @@ export async function createEventPosterCandidate(options: {
       select: candidateSelect,
     });
   } catch (error) {
-    await removePosterCandidateAssets(options.catalogId, options.eventId, posterId).catch(() => undefined);
+    await removeArtworkCandidateAssets(options.catalogId, options.eventId, artworkId).catch(() => undefined);
     throw error;
   }
 
-  await logPosterAudit({
-    action: "EVENT_POSTER_CREATED",
+  await logArtworkAudit({
+    action: "EVENT_ARTWORK_CREATED",
     userId: options.userId,
     catalogId: options.catalogId,
     eventId: options.eventId,
-    posterId,
+    artworkId,
     payload: {
       label: candidate.label,
       squareSha256: square.sha256,
@@ -243,40 +243,40 @@ export async function createEventPosterCandidate(options: {
   return toCandidateView(candidate);
 }
 
-export async function publishEventPoster(options: {
+export async function publishEventArtwork(options: {
   catalogId: string;
   eventId: number;
-  posterId: string;
+  artworkId: string;
   userId: string;
-}): Promise<{ changed: boolean; previousPosterId: string | null }> {
+}): Promise<{ changed: boolean; previousArtworkId: string | null }> {
   const result = await prisma.$transaction(async (tx) => {
     await lockEvent(tx, options.catalogId, options.eventId);
 
-    const candidate = await tx.catalogEventPoster.findFirst({
+    const candidate = await tx.catalogEventArtwork.findFirst({
       where: {
-        id: options.posterId,
+        id: options.artworkId,
         eventId: options.eventId,
         workflowGroupId: options.catalogId,
       },
       select: { id: true },
     });
     if (!candidate) {
-      throw new EventPosterServiceError("Poster candidate not found", 404);
+      throw new EventArtworkServiceError("Artwork candidate not found", 404);
     }
 
-    const current = await tx.catalogEventPosterPublication.findUnique({
+    const current = await tx.catalogEventArtworkPublication.findUnique({
       where: {
         workflowGroupId_eventId: {
           workflowGroupId: options.catalogId,
           eventId: options.eventId,
         },
       },
-      select: { posterId: true },
+      select: { artworkId: true },
     });
-    if (current?.posterId === options.posterId) {
-      return { changed: false, previousPosterId: current.posterId };
+    if (current?.artworkId === options.artworkId) {
+      return { changed: false, previousArtworkId: current.artworkId };
     }
-    await tx.catalogEventPosterPublication.upsert({
+    await tx.catalogEventArtworkPublication.upsert({
       where: {
         workflowGroupId_eventId: {
           workflowGroupId: options.catalogId,
@@ -286,51 +286,51 @@ export async function publishEventPoster(options: {
       create: {
         workflowGroupId: options.catalogId,
         eventId: options.eventId,
-        posterId: options.posterId,
+        artworkId: options.artworkId,
         publishedById: options.userId,
       },
       update: {
-        posterId: options.posterId,
+        artworkId: options.artworkId,
         publishedById: options.userId,
         publishedAt: new Date(),
       },
     });
-    return { changed: true, previousPosterId: current?.posterId ?? null };
+    return { changed: true, previousArtworkId: current?.artworkId ?? null };
   });
 
   if (result.changed) {
-    await logPosterAudit({
-      action: "EVENT_POSTER_PUBLISHED",
+    await logArtworkAudit({
+      action: "EVENT_ARTWORK_PUBLISHED",
       userId: options.userId,
       catalogId: options.catalogId,
       eventId: options.eventId,
-      posterId: options.posterId,
-      payload: { previousPosterId: result.previousPosterId },
+      artworkId: options.artworkId,
+      payload: { previousArtworkId: result.previousArtworkId },
     });
   }
   return result;
 }
 
-export async function unpublishEventPoster(options: {
+export async function unpublishEventArtwork(options: {
   catalogId: string;
   eventId: number;
   userId: string;
-}): Promise<{ changed: boolean; previousPosterId: string | null }> {
+}): Promise<{ changed: boolean; previousArtworkId: string | null }> {
   const result = await prisma.$transaction(async (tx) => {
     await lockEvent(tx, options.catalogId, options.eventId);
-    const current = await tx.catalogEventPosterPublication.findUnique({
+    const current = await tx.catalogEventArtworkPublication.findUnique({
       where: {
         workflowGroupId_eventId: {
           workflowGroupId: options.catalogId,
           eventId: options.eventId,
         },
       },
-      select: { posterId: true },
+      select: { artworkId: true },
     });
     if (!current) {
-      return { changed: false, previousPosterId: null };
+      return { changed: false, previousArtworkId: null };
     }
-    await tx.catalogEventPosterPublication.delete({
+    await tx.catalogEventArtworkPublication.delete({
       where: {
         workflowGroupId_eventId: {
           workflowGroupId: options.catalogId,
@@ -338,77 +338,77 @@ export async function unpublishEventPoster(options: {
         },
       },
     });
-    return { changed: true, previousPosterId: current.posterId };
+    return { changed: true, previousArtworkId: current.artworkId };
   });
 
-  if (result.changed && result.previousPosterId) {
-    await logPosterAudit({
-      action: "EVENT_POSTER_UNPUBLISHED",
+  if (result.changed && result.previousArtworkId) {
+    await logArtworkAudit({
+      action: "EVENT_ARTWORK_UNPUBLISHED",
       userId: options.userId,
       catalogId: options.catalogId,
       eventId: options.eventId,
-      posterId: result.previousPosterId,
+      artworkId: result.previousArtworkId,
     });
   }
   return result;
 }
 
-export async function deleteEventPosterCandidate(options: {
+export async function deleteEventArtworkCandidate(options: {
   catalogId: string;
   eventId: number;
-  posterId: string;
+  artworkId: string;
   userId: string;
 }): Promise<void> {
-  let stagedAssets: StagedPosterCandidateAssetsRemoval | null = null;
+  let stagedAssets: StagedArtworkCandidateAssetsRemoval | null = null;
   try {
     await prisma.$transaction(async (tx) => {
       await lockEvent(tx, options.catalogId, options.eventId);
-      const candidate = await tx.catalogEventPoster.findFirst({
+      const candidate = await tx.catalogEventArtwork.findFirst({
         where: {
-          id: options.posterId,
+          id: options.artworkId,
           eventId: options.eventId,
           workflowGroupId: options.catalogId,
         },
-        select: { id: true, publication: { select: { posterId: true } } },
+        select: { id: true, publication: { select: { artworkId: true } } },
       });
       if (!candidate) {
-        throw new EventPosterServiceError("Poster candidate not found", 404);
+        throw new EventArtworkServiceError("Artwork candidate not found", 404);
       }
       if (candidate.publication) {
-        throw new EventPosterServiceError("Published poster must be unpublished before deletion", 409);
+        throw new EventArtworkServiceError("Published artwork must be unpublished before deletion", 409);
       }
-      stagedAssets = await stagePosterCandidateAssetsRemoval(options.catalogId, options.eventId, options.posterId);
-      await tx.catalogEventPoster.delete({ where: { id: options.posterId } });
+      stagedAssets = await stageArtworkCandidateAssetsRemoval(options.catalogId, options.eventId, options.artworkId);
+      await tx.catalogEventArtwork.delete({ where: { id: options.artworkId } });
     });
   } catch (error) {
     if (stagedAssets) {
-      await restoreStagedEventPosterAssets(stagedAssets);
+      await restoreStagedEventArtworkAssets(stagedAssets);
     }
     throw error;
   }
 
-  await logPosterAudit({
-    action: "EVENT_POSTER_DELETED",
+  await logArtworkAudit({
+    action: "EVENT_ARTWORK_DELETED",
     userId: options.userId,
     catalogId: options.catalogId,
     eventId: options.eventId,
-    posterId: options.posterId,
+    artworkId: options.artworkId,
   });
   if (stagedAssets) {
-    await finalizeStagedEventPosterAssetsRemoval(stagedAssets).catch((error) => {
-      console.error("Failed to finalize poster candidate cleanup:", error);
+    await finalizeStagedEventArtworkAssetsRemoval(stagedAssets).catch((error) => {
+      console.error("Failed to finalize artwork candidate cleanup:", error);
     });
   }
 }
 
-async function findPosterAssetRecord(options: {
+async function findArtworkAssetRecord(options: {
   catalogId: string;
   eventId: number;
-  posterId?: string;
+  artworkId?: string;
   publishedOnly: boolean;
 }) {
   if (options.publishedOnly) {
-    const publication = await prisma.catalogEventPosterPublication.findUnique({
+    const publication = await prisma.catalogEventArtworkPublication.findUnique({
       where: {
         workflowGroupId_eventId: {
           workflowGroupId: options.catalogId,
@@ -416,7 +416,7 @@ async function findPosterAssetRecord(options: {
         },
       },
       select: {
-        poster: {
+        artwork: {
           select: {
             id: true,
             squareExtension: true,
@@ -425,13 +425,13 @@ async function findPosterAssetRecord(options: {
         },
       },
     });
-    return publication?.poster ?? null;
+    return publication?.artwork ?? null;
   }
 
-  if (!options.posterId) return null;
-  return prisma.catalogEventPoster.findFirst({
+  if (!options.artworkId) return null;
+  return prisma.catalogEventArtwork.findFirst({
     where: {
-      id: options.posterId,
+      id: options.artworkId,
       workflowGroupId: options.catalogId,
       eventId: options.eventId,
     },
@@ -443,36 +443,36 @@ async function findPosterAssetRecord(options: {
   });
 }
 
-export async function loadEventPosterAsset(options: {
+export async function loadEventArtworkAsset(options: {
   catalogId: string;
   eventId: number;
-  posterId?: string;
-  variant: PosterVariant;
+  artworkId?: string;
+  variant: ArtworkVariant;
   publishedOnly: boolean;
 }): Promise<{
   bytes: Buffer;
   contentType: string;
-  posterId: string;
+  artworkId: string;
   sha256: string;
 } | null> {
-  const poster = await findPosterAssetRecord(options);
-  if (!poster) return null;
+  const artwork = await findArtworkAssetRecord(options);
+  if (!artwork) return null;
   const extension = (
-    options.variant === "square" ? poster.squareExtension : poster.landscapeExtension
-  ) as PosterExtension;
-  const filePath = resolveEventPosterAssetPath(
+    options.variant === "square" ? artwork.squareExtension : artwork.landscapeExtension
+  ) as ArtworkExtension;
+  const filePath = resolveEventArtworkAssetPath(
     options.catalogId,
     options.eventId,
-    poster.id,
+    artwork.id,
     options.variant,
     extension
   );
-  const asset = await readPosterAsset(filePath);
+  const asset = await readArtworkAsset(filePath);
   if (!asset) return null;
   return {
     bytes: asset.bytes,
-    contentType: getPosterContentType(extension),
-    posterId: poster.id,
+    contentType: getArtworkContentType(extension),
+    artworkId: artwork.id,
     sha256: createAssetEtag(asset.bytes),
   };
 }
@@ -483,17 +483,17 @@ function createAssetEtag(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-export async function getPublishedEventPoster(
+export async function getPublishedEventArtwork(
   catalogId: string,
   eventId: number
-): Promise<PublishedEventPosterView | null> {
-  const publication = await prisma.catalogEventPosterPublication.findUnique({
+): Promise<PublishedEventArtworkView | null> {
+  const publication = await prisma.catalogEventArtworkPublication.findUnique({
     where: {
       workflowGroupId_eventId: { workflowGroupId: catalogId, eventId },
     },
     select: {
       publishedAt: true,
-      poster: {
+      artwork: {
         select: {
           id: true,
           squareBytes: true,
@@ -506,32 +506,32 @@ export async function getPublishedEventPoster(
   });
   if (!publication) return null;
   return {
-    id: publication.poster.id,
+    id: publication.artwork.id,
     publishedAt: publication.publishedAt.toISOString(),
     assets: {
       square: {
-        bytes: publication.poster.squareBytes,
-        sha256: publication.poster.squareSha256,
+        bytes: publication.artwork.squareBytes,
+        sha256: publication.artwork.squareSha256,
       },
       landscape: {
-        bytes: publication.poster.landscapeBytes,
-        sha256: publication.poster.landscapeSha256,
+        bytes: publication.artwork.landscapeBytes,
+        sha256: publication.artwork.landscapeSha256,
       },
     },
   };
 }
 
-export interface LatestEventPosterCandidateView {
+export interface LatestEventArtworkCandidateView {
   id: string;
   label: string | null;
   createdAt: string;
 }
 
-export async function getLatestEventPosterCandidate(
+export async function getLatestEventArtworkCandidate(
   catalogId: string,
   eventId: number
-): Promise<LatestEventPosterCandidateView | null> {
-  const candidate = await prisma.catalogEventPoster.findFirst({
+): Promise<LatestEventArtworkCandidateView | null> {
+  const candidate = await prisma.catalogEventArtwork.findFirst({
     where: { workflowGroupId: catalogId, eventId },
     select: { id: true, label: true, createdAt: true },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -544,21 +544,21 @@ export async function getLatestEventPosterCandidate(
   };
 }
 
-export type PosterWorkflowStatus = "none" | "draft-only" | "published" | "published-with-newer-drafts";
+export type ArtworkWorkflowStatus = "none" | "draft-only" | "published" | "published-with-newer-drafts";
 
-export async function getEventPosterWorkflowStatuses(
+export async function getEventArtworkWorkflowStatuses(
   catalogId: string,
   eventIds: number[]
-): Promise<Map<number, PosterWorkflowStatus>> {
-  const result = new Map<number, PosterWorkflowStatus>();
+): Promise<Map<number, ArtworkWorkflowStatus>> {
+  const result = new Map<number, ArtworkWorkflowStatus>();
   for (const eventId of eventIds) result.set(eventId, "none");
   if (eventIds.length === 0) return result;
 
-  const candidates = await prisma.catalogEventPoster.findMany({
+  const candidates = await prisma.catalogEventArtwork.findMany({
     where: { workflowGroupId: catalogId, eventId: { in: eventIds } },
     select: { eventId: true, createdAt: true },
   });
-  const publications = await prisma.catalogEventPosterPublication.findMany({
+  const publications = await prisma.catalogEventArtworkPublication.findMany({
     where: { workflowGroupId: catalogId, eventId: { in: eventIds } },
     select: { eventId: true, publishedAt: true },
   });

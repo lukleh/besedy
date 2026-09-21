@@ -39,10 +39,10 @@ import {
   canViewRecordingTranscript,
 } from "@/lib/policy/recording";
 import {
-  canManageEventPosterCandidates,
-  canPublishEventPosters,
-  canViewEventPosterCandidates,
-} from "@/lib/policy/event-poster";
+  canManageEventArtworkCandidates,
+  canPublishEventArtwork,
+  canViewEventArtworkCandidates,
+} from "@/lib/policy/event-artwork";
 
 export interface PortalCapability {
   userId: string | null;
@@ -86,9 +86,9 @@ export interface CatalogCapability extends PortalCapability {
   canAccessSettings: boolean;
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
-  canViewPosterCandidates: boolean;
-  canManagePosters: boolean;
-  canPublishPosters: boolean;
+  canViewArtworkCandidates: boolean;
+  canManageArtwork: boolean;
+  canPublishArtwork: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -145,9 +145,9 @@ export function buildCatalogCapability(
     canAccessSettings: canAccessCatalogSettings(policyContext),
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),
-    canViewPosterCandidates: canViewEventPosterCandidates(policyContext),
-    canManagePosters: canManageEventPosterCandidates(policyContext),
-    canPublishPosters: canPublishEventPosters(policyContext),
+    canViewArtworkCandidates: canViewEventArtworkCandidates(policyContext),
+    canManageArtwork: canManageEventArtworkCandidates(policyContext),
+    canPublishArtwork: canPublishEventArtwork(policyContext),
   };
 }
 

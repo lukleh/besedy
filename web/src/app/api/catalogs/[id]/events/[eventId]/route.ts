@@ -17,15 +17,15 @@ import {
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
 import {
-  getEventPosterWorkflowStatuses,
-  getLatestEventPosterCandidate,
-  getPublishedEventPoster,
-} from "@/lib/event-poster-service";
+  getEventArtworkWorkflowStatuses,
+  getLatestEventArtworkCandidate,
+  getPublishedEventArtwork,
+} from "@/lib/event-artwork-service";
 import {
-  finalizeStagedEventPosterAssetsRemoval,
-  restoreStagedEventPosterAssets,
-  stageEventPosterAssetsRemoval,
-} from "@/lib/event-poster-storage";
+  finalizeStagedEventArtworkAssetsRemoval,
+  restoreStagedEventArtworkAssets,
+  stageEventArtworkAssetsRemoval,
+} from "@/lib/event-artwork-storage";
 import { canReleaseEvent } from "@/lib/policy/event";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 
@@ -108,28 +108,28 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       });
 
     const readableEventIds = await resolveReadableEventIds(catalogId, catalogGrant);
-    const [catalogCapability, publishedPoster, sessionOrdinals, posterStatuses] = await Promise.all([
+    const [catalogCapability, publishedArtwork, sessionOrdinals, artworkStatuses] = await Promise.all([
       getCatalogCapability(catalogId, userId),
-      getPublishedEventPoster(catalogId, eventId),
+      getPublishedEventArtwork(catalogId, eventId),
       loadSessionOrdinals(catalogId, readableEventIds, [event]),
-      getEventPosterWorkflowStatuses(catalogId, [eventId]),
+      getEventArtworkWorkflowStatuses(catalogId, [eventId]),
     ]);
     const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
       ordinal: 1,
       count: 1,
     };
-    const canViewPosterCandidates = catalogCapability.canViewPosterCandidates;
-    const canManagePosters = catalogCapability.canManagePosters;
-    const canPublishPosters = catalogCapability.canPublishPosters;
+    const canViewArtworkCandidates = catalogCapability.canViewArtworkCandidates;
+    const canManageArtwork = catalogCapability.canManageArtwork;
+    const canPublishArtwork = catalogCapability.canPublishArtwork;
     const canManageSources = catalogCapability.canManageAccess;
     // ADR 0009: draft counts/labels are only for actors with draft visibility;
-    // ordinary readers keep seeing only the published poster.
-    const posterStatus = canViewPosterCandidates ? (posterStatuses.get(eventId) ?? "none") : undefined;
+    // ordinary readers keep seeing only the published artwork.
+    const artworkStatus = canViewArtworkCandidates ? (artworkStatuses.get(eventId) ?? "none") : undefined;
     // Admins with draft visibility get a labeled preview of the latest draft
-    // when nothing is published yet, instead of an empty poster area.
+    // when nothing is published yet, instead of an empty artwork area.
     const latestDraftCandidate =
-      canViewPosterCandidates && posterStatus === "draft-only"
-        ? await getLatestEventPosterCandidate(catalogId, eventId)
+      canViewArtworkCandidates && artworkStatus === "draft-only"
+        ? await getLatestEventArtworkCandidate(catalogId, eventId)
         : null;
 
     return NextResponse.json({
@@ -152,12 +152,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
       recordings,
-      canViewPosterCandidates,
-      canManagePosters,
-      canPublishPosters,
+      canViewArtworkCandidates,
+      canManageArtwork,
+      canPublishArtwork,
       canManageSources,
-      publishedPoster,
-      posterStatus,
+      publishedArtwork,
+      artworkStatus,
       latestDraftCandidate,
     });
   } catch (error) {
@@ -371,28 +371,28 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     await requireCatalogEventsAccess(catalogId, "edit");
 
-    const stagedPosterAssets = await stageEventPosterAssetsRemoval(catalogId, eventId);
+    const stagedArtworkAssets = await stageEventArtworkAssetsRemoval(catalogId, eventId);
     let deleted: { count: number };
     try {
       deleted = await prisma.catalogEvent.deleteMany({
         where: { id: eventId, workflowGroupId: catalogId },
       });
     } catch (error) {
-      if (stagedPosterAssets) {
-        await restoreStagedEventPosterAssets(stagedPosterAssets);
+      if (stagedArtworkAssets) {
+        await restoreStagedEventArtworkAssets(stagedArtworkAssets);
       }
       throw error;
     }
     if (deleted.count === 0) {
-      if (stagedPosterAssets) {
-        await restoreStagedEventPosterAssets(stagedPosterAssets);
+      if (stagedArtworkAssets) {
+        await restoreStagedEventArtworkAssets(stagedArtworkAssets);
       }
       return notFound("catalog event");
     }
 
-    if (stagedPosterAssets) {
-      await finalizeStagedEventPosterAssetsRemoval(stagedPosterAssets).catch((error) => {
-        console.error("Failed to finalize event poster cleanup:", error);
+    if (stagedArtworkAssets) {
+      await finalizeStagedEventArtworkAssetsRemoval(stagedArtworkAssets).catch((error) => {
+        console.error("Failed to finalize event artwork cleanup:", error);
       });
     }
 

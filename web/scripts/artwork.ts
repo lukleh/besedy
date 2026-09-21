@@ -17,7 +17,7 @@ interface Args {
   catalogId: string;
   eventId: number | null;
   actor: string | null;
-  posterId: string | null;
+  artworkId: string | null;
   squarePath: string | null;
   landscapePath: string | null;
   label: string | null;
@@ -27,11 +27,11 @@ interface Args {
 
 function usage(): never {
   console.log(`Usage:
-  npm run posters -- list --catalog <id> --event <id> --actor <email-or-id> [--prod]
-  npm run posters -- create --catalog <id> --event <id> --actor <email-or-id> --square <file> --landscape <file> [--label <text>] [--prod] [--yes]
-  npm run posters -- publish --catalog <id> --event <id> --actor <email-or-id> --poster <id> [--prod] [--yes]
-  npm run posters -- unpublish --catalog <id> --event <id> --actor <email-or-id> [--prod] [--yes]
-  npm run posters -- delete --catalog <id> --event <id> --actor <email-or-id> --poster <id> [--prod] [--yes]
+  npm run artwork -- list --catalog <id> --event <id> --actor <email-or-id> [--prod]
+  npm run artwork -- create --catalog <id> --event <id> --actor <email-or-id> --square <file> --landscape <file> [--label <text>] [--prod] [--yes]
+  npm run artwork -- publish --catalog <id> --event <id> --actor <email-or-id> --artwork <id> [--prod] [--yes]
+  npm run artwork -- unpublish --catalog <id> --event <id> --actor <email-or-id> [--prod] [--yes]
+  npm run artwork -- delete --catalog <id> --event <id> --actor <email-or-id> --artwork <id> [--prod] [--yes]
 
 Production mutations require --yes.`);
   process.exit(0);
@@ -46,7 +46,7 @@ function parseArgs(argv: string[]): Args {
 
   const values = new Map<string, string>();
   const flags = new Set<string>();
-  const valueOptions = new Set(["--catalog", "--event", "--actor", "--poster", "--square", "--landscape", "--label"]);
+  const valueOptions = new Set(["--catalog", "--event", "--actor", "--artwork", "--square", "--landscape", "--label"]);
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
     if (["--prod", "--yes"].includes(arg)) {
@@ -68,9 +68,9 @@ function parseArgs(argv: string[]): Args {
   if (eventValue && (!Number.isSafeInteger(eventId) || eventId! <= 0)) {
     throw new Error("--event must be a positive integer");
   }
-  const posterId = values.get("--poster") ?? null;
-  if (posterId !== null && !UUID_PATTERN.test(posterId)) {
-    throw new Error("--poster must be a valid UUID");
+  const artworkId = values.get("--artwork") ?? null;
+  if (artworkId !== null && !UUID_PATTERN.test(artworkId)) {
+    throw new Error("--artwork must be a valid UUID");
   }
 
   return {
@@ -78,7 +78,7 @@ function parseArgs(argv: string[]): Args {
     catalogId,
     eventId,
     actor: values.get("--actor") ?? null,
-    posterId,
+    artworkId,
     squarePath: values.get("--square") ?? null,
     landscapePath: values.get("--landscape") ?? null,
     label: values.get("--label") ?? null,
@@ -103,18 +103,18 @@ async function main(): Promise<void> {
   const envFile = loadScriptEnv(mode);
   const databaseUrl = getHostDatabaseUrlOrThrow();
   process.env.DATABASE_URL = databaseUrl;
-  console.log(`[posters] mode=${mode} env=${envFile ?? "environment"}`);
-  console.log(`[posters] database=${redactDatabaseUrl(databaseUrl)}`);
+  console.log(`[artwork] mode=${mode} env=${envFile ?? "environment"}`);
+  console.log(`[artwork] database=${redactDatabaseUrl(databaseUrl)}`);
 
   const mutating = args.command !== "list";
   if (args.prod && mutating && !args.yes) {
-    throw new Error("Production poster mutations require --yes");
+    throw new Error("Production artwork mutations require --yes");
   }
 
-  const [{ default: prisma }, service, posterPolicy, actorPolicy] = await Promise.all([
+  const [{ default: prisma }, service, artworkPolicy, actorPolicy] = await Promise.all([
     import("../src/lib/db"),
-    import("../src/lib/event-poster-service"),
-    import("../src/lib/policy/event-poster"),
+    import("../src/lib/event-artwork-service"),
+    import("../src/lib/policy/event-artwork"),
     import("../src/lib/policy/actor"),
   ]);
 
@@ -132,22 +132,22 @@ async function main(): Promise<void> {
       catalogGrant: actor.catalogGrant,
       isCatalogAdmin: actor.isCatalogAdmin
     };
-    const canView = posterPolicy.canViewEventPosterCandidates(context);
-    const canManage = posterPolicy.canManageEventPosterCandidates(context);
-    const canPublish = posterPolicy.canPublishEventPosters(context);
+    const canView = artworkPolicy.canViewEventArtworkCandidates(context);
+    const canManage = artworkPolicy.canManageEventArtworkCandidates(context);
+    const canPublish = artworkPolicy.canPublishEventArtwork(context);
 
     if (args.command === "list") {
-      if (!canView) throw new Error("Actor cannot view poster candidates");
-      console.log(JSON.stringify(await service.listEventPosterCandidates(args.catalogId, requireEventId(args)), null, 2));
+      if (!canView) throw new Error("Actor cannot view artwork candidates");
+      console.log(JSON.stringify(await service.listEventArtworkCandidates(args.catalogId, requireEventId(args)), null, 2));
       return;
     }
 
     if (args.command === "create") {
-      if (!canManage) throw new Error("Actor cannot create poster candidates");
+      if (!canManage) throw new Error("Actor cannot create artwork candidates");
       const eventId = requireEventId(args);
       const squarePath = path.resolve(requireValue(args.squarePath, "--square"));
       const landscapePath = path.resolve(requireValue(args.landscapePath, "--landscape"));
-      const candidate = await service.createEventPosterCandidate({
+      const candidate = await service.createEventArtworkCandidate({
         catalogId: args.catalogId,
         eventId,
         userId: user.id,
@@ -166,12 +166,12 @@ async function main(): Promise<void> {
     }
 
     if (args.command === "publish") {
-      if (!canPublish) throw new Error("Actor cannot publish event posters");
+      if (!canPublish) throw new Error("Actor cannot publish event artwork");
       console.log(
-        await service.publishEventPoster({
+        await service.publishEventArtwork({
           catalogId: args.catalogId,
           eventId: requireEventId(args),
-          posterId: requireValue(args.posterId, "--poster"),
+          artworkId: requireValue(args.artworkId, "--artwork"),
           userId: user.id
         })
       );
@@ -179,9 +179,9 @@ async function main(): Promise<void> {
     }
 
     if (args.command === "unpublish") {
-      if (!canPublish) throw new Error("Actor cannot unpublish event posters");
+      if (!canPublish) throw new Error("Actor cannot unpublish event artwork");
       console.log(
-        await service.unpublishEventPoster({
+        await service.unpublishEventArtwork({
           catalogId: args.catalogId,
           eventId: requireEventId(args),
           userId: user.id
@@ -191,11 +191,11 @@ async function main(): Promise<void> {
     }
 
     if (args.command === "delete") {
-      if (!canManage) throw new Error("Actor cannot delete poster candidates");
-      await service.deleteEventPosterCandidate({
+      if (!canManage) throw new Error("Actor cannot delete artwork candidates");
+      await service.deleteEventArtworkCandidate({
         catalogId: args.catalogId,
         eventId: requireEventId(args),
-        posterId: requireValue(args.posterId, "--poster"),
+        artworkId: requireValue(args.artworkId, "--artwork"),
         userId: user.id
       });
       console.log("deleted");
@@ -207,6 +207,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error("[posters] FAILED", error);
+  console.error("[artwork] FAILED", error);
   process.exit(1);
 });

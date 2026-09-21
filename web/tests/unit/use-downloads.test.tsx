@@ -48,7 +48,7 @@ function record(overrides: Partial<DownloadRecord>): DownloadRecord {
     error: null,
     resumeOnReconnect: false,
     transcriptBackend: null,
-    hasPoster: false,
+    hasArtwork: false,
     createdAt: 1,
     updatedAt: 1,
     completedAt: 1,
@@ -91,7 +91,7 @@ describe('useDownloadedEvents', () => {
           dateMonth: null,
           dateDay: null,
           sessionIndex: 1,
-          publishedPoster: null,
+          publishedArtwork: null,
         },
       }),
     );

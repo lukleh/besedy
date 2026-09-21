@@ -35,7 +35,7 @@ vi.mock('@/lib/config', () => ({
   getTextDataDir: () => {
     throw new Error('not configured');
   },
-  getPostersDir: () => {
+  getArtworkDir: () => {
     throw new Error('not configured');
   },
   getSourcesDir: () => {

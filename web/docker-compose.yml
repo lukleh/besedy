@@ -125,8 +125,8 @@ services:
       - ${WEB_LOGS_DIR:-${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/web/logs/dev}:/var/log/besedy:rw
       # Text data: catalogs and transcripts
       - ${TEXT_DATA_DIR:-./tests/e2e/fixtures}:/data/text:ro
-      # Posters (writable)
-      - ${POSTERS_DIR:-./tests/e2e/fixtures/posters}:/data/posters:rw
+      # Artworks (writable)
+      - ${ARTWORK_DIR:-./tests/e2e/fixtures/artwork}:/data/artwork:rw
       # Recording sources (writable)
       - ${SOURCES_DIR:-./tests/e2e/fixtures/sources}:/data/sources:rw
       # Admin-uploaded recordings awaiting ingest (writable, shared with the host ingest worker)

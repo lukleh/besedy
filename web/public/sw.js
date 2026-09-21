@@ -3,7 +3,7 @@
  *
  * The worker intentionally knows nothing about catalog/event page data. Normal
  * application pages remain network-only. The page-side download manager stores
- * registry metadata and transcript/poster payloads in IndexedDB and writes
+ * registry metadata and transcript/artwork payloads in IndexedDB and writes
  * audio chunks to Cache Storage. This worker only:
  *
  *   - serves complete downloaded audio with bounded-memory Range streaming;
