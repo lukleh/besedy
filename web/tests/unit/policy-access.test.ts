@@ -165,9 +165,8 @@ describe("policy access helpers", () => {
         extras: [],
       })
     ).toBe(false);
-    // canPublishRecording is gated on manage_access, which a host holds,
-    // not on the publish_recording permission itself.
-    expect(canPublishRecording(hostContext)).toBe(true);
+    // Publication follows publish_recording, which a host does not carry.
+    expect(canPublishRecording(hostContext)).toBe(false);
     expect(requiresReadyRecordingScope(grantForRole("host"))).toBe(true);
   });
 
@@ -195,9 +194,8 @@ describe("policy access helpers", () => {
     expect(canAccessCatalogSettings(curatorContext)).toBe(false);
     expect(canManageCatalogConfiguration(curatorContext)).toBe(false);
     expect(canGrantCatalogGrant(curatorContext, "listener")).toBe(false);
-    // canPublishRecording is gated on manage_access rather than on the
-    // publish_recording permission the curator actually carries.
-    expect(canPublishRecording(curatorContext)).toBe(false);
+    // Publication follows publish_recording, which the curator carries.
+    expect(canPublishRecording(curatorContext)).toBe(true);
     expect(requiresReadyRecordingScope(grantForRole("curator"))).toBe(false);
   });
 
