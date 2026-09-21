@@ -151,8 +151,9 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 | GET/PUT/DELETE | `/api/metadata/recorders/:id` | Auth / EDITOR+ | Manage recorder |
 | GET/POST | `/api/metadata/locations` | Auth / EDITOR+ | List or create locations |
 | GET/PUT/DELETE | `/api/metadata/locations/:id` | Auth / EDITOR+ | Manage location |
+| GET/POST | `/api/metadata/albums` | Catalog access / edit_metadata | List or create albums |
+| GET/PUT/DELETE | `/api/metadata/albums/:id` | Catalog access / edit_metadata | Manage album |
 | GET | `/api/metadata/artists` | Auth | Distinct artist values for filter |
-| GET | `/api/metadata/albums` | Auth | Distinct album values for filter |
 | GET | `/api/metadata/duplicate-counts` | Auth | Duplicate count options for filter |
 
 ### Catalog Management Endpoints
