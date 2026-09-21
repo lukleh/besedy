@@ -1,8 +1,8 @@
-# ADR 0010: Rename "poster" to "artwork" (Czech: "obálka")
+# ADR 0011: Rename "poster" to "artwork" (Czech: "obálka")
 
 - **Status:** Accepted
 - **Date:** 2026-09-20
-- **Canonical references:** [Versioned event posters and publication](0009-event-poster-publication.md)
+- **Canonical references:** [Versioned event posters and publication](0009-event-poster-publication.md), [Event page draft poster preview](0010-event-page-draft-poster-preview.md)
 
 ## Context
 

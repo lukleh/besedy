@@ -190,12 +190,12 @@ artwork candidates. Candidate/file hashes matched, the publication table
 remained empty, and the temporary legacy inventory/import commands were then
 retired. The obsolete `poster_status` table was already absent through
 migration `20260218100000_drop_poster_status`. The concept was later renamed
-from "poster" to "artwork"; see [ADR 0010](../adr/0010-poster-to-artwork-rename.md)
+from "poster" to "artwork"; see [ADR 0011](../adr/0011-poster-to-artwork-rename.md)
 for the schema, storage, and CLI rename and its own migration
 (`20260920160000_rename_event_poster_to_artwork`), which ran after this
 cutover.
 
-#### ADR 0010 rename cutover
+#### ADR 0011 rename cutover
 
 The poster-to-artwork rename is a hard cut: nothing reads `POSTERS_DIR`,
 `posters_dir`, or the `posters_<catalogId>` directory layout after it. The
@@ -772,7 +772,7 @@ Host-side rsnapshot coverage is intentionally split:
   - backs up `/home/<user>/projects`
   - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_artwork`, and `projects/besedy_sources`
     (`projects/besedy_artwork` is the renamed `projects/besedy_posters`; see the
-    ADR 0010 cutover steps above)
+    ADR 0011 cutover steps above)
 - **Besedy extra root:** `/mnt/data/<user>/Backups/rsnapshot_besedy_extra`
   - backs up non-project Besedy paths via [web/setup/backup/besedy-extra.paths.example](../../web/setup/backup/besedy-extra.paths.example) (copy to the gitignored `besedy-extra.paths`)
   - includes `audio/besedy_audio`, `audio/original`, `state/db_dumps`, `config/lukleh_besedy`, and `state/web_logs`

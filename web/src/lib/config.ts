@@ -64,7 +64,7 @@ export function getTextDataDir(): string {
  * selected production environment points BESEDY_CONFIG at a container-only
  * path.
  *
- * The pre-ADR-0010 names (`posters_dir` / `POSTERS_DIR`) are deliberately not
+ * The pre-ADR-0011 names (`posters_dir` / `POSTERS_DIR`) are deliberately not
  * read: the rename is a hard cut, and a stale key must fail loudly here rather
  * than resolve to a path the container no longer mounts.
  */
@@ -74,7 +74,7 @@ export function getArtworkDir(): string {
     const dir = config.paths.artwork_dir;
     if (!dir) {
       throw new Error(
-        "artwork_dir is required in besedy.toml (the legacy posters_dir key is no longer read; see ADR 0010)."
+        "artwork_dir is required in besedy.toml (the legacy posters_dir key is no longer read; see ADR 0011)."
       );
     }
     return dir;

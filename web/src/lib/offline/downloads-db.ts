@@ -178,7 +178,7 @@ export function isIndexedDBAvailable(): boolean {
 /**
  * Rewrites the pre-rename field names (`hasPoster`, `event.publishedPoster`,
  * `bundle.poster`, `poster.posterId`) left on records written before the
- * poster->artwork rename (ADR 0010). Without this, records saved by an
+ * poster->artwork rename (ADR 0011). Without this, records saved by an
  * earlier release keep the old keys forever: reads of the new field names
  * silently return `undefined` instead of throwing, so stale offline artwork
  * would just disappear rather than fail loudly.
