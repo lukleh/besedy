@@ -64,10 +64,11 @@ not a migration and not a runtime editor.
 
 `CatalogAccess.role` stores the role and `extraPermissions` sits beside it as a
 list on the same row, so an account's effective set is readable without a join.
-The legacy non-null `accessLevel` remains as a write-time compatibility
-projection during the migration window; it is not authoritative once `role` is
-present. Identifiers are English and lower case; the Czech names in this record
-are what the interface and this conversation use.
+The legacy `accessLevel` column stayed as a write-time compatibility projection
+during the migration window and was dropped on 2026-09-21, once every grant
+carried a role (`20260921170000_drop_legacy_access_level`). Identifiers are
+English and lower case; the Czech names in this record are what the interface
+and this conversation use.
 
 | Identifier      | Name here    |
 | --------------- | ------------ |

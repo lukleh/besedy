@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       const catalogRoles = new Set<string>();
 
       for (const access of user.catalogAccess) {
-        if (access.role) catalogRoles.add(access.role);
+        catalogRoles.add(access.role);
         catalogNames.push(access.catalog.label || access.catalog.id);
       }
 

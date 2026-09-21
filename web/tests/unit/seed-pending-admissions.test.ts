@@ -59,7 +59,6 @@ describe("seed pending admissions", () => {
       create: expect.objectContaining({
         email: "username@gmail.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
         role: "curator",
         status: "PENDING",
         grantedById: "admin-1",
@@ -67,7 +66,6 @@ describe("seed pending admissions", () => {
         notes: "seeded catalog invite",
       }),
       update: expect.objectContaining({
-        accessLevel: "EDITOR",
         role: "curator",
         status: "PENDING",
         consumedById: null,

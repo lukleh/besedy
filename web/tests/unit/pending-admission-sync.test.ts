@@ -100,13 +100,11 @@ describe("pending admission sync", () => {
       create: expect.objectContaining({
         email: "pending@example.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
         status: "PENDING",
         grantedById: "owner-1",
         notes: "catalog invite",
       }),
       update: expect.objectContaining({
-        accessLevel: "EDITOR",
         status: "PENDING",
         grantedById: "owner-1",
         consumedById: null,

@@ -1,12 +1,10 @@
-import type { AccessLevel, CatalogRole } from "@/generated/prisma/client";
+import type { CatalogRole } from "@/generated/prisma/client";
 
 /**
  * What an actor may do in one catalog.
  *
  * Every catalog gate asks whether a permission is present. Stored roles and
- * additive extras are authoritative; the retired access-level scale plays no
- * part in it. `legacyLevelForRole`/`grantFieldsForRole` below are write-side
- * plumbing only, kept until a follow-up migration drops the legacy column.
+ * additive extras are authoritative.
  *
  * Some of these are not asked about anywhere yet. They exist because the roles
  * below are defined over the whole vocabulary rather than over the part that
@@ -211,42 +209,19 @@ export function permissionsForRole(
  * What one grant carries. `role` is authoritative; extras are additive.
  */
 export interface CatalogGrant {
-  role: CatalogRole | null;
+  role: CatalogRole;
   extras: string[];
 }
 
-/**
- * Compatibility value for `pending_catalog_grant.access_level`, which is
- * still `NOT NULL` with no default. Nothing reads this value for permissions
- * or display any more; it exists only to satisfy the column until a
- * follow-up migration drops it (see docs/adr/0005-catalog-permission-model.md).
- */
-export function legacyLevelForRole(role: CatalogRole): AccessLevel {
-  switch (role) {
-    case "listener":
-      return "LISTENER";
-    case "reader":
-    case "corrector":
-      return "VIEWER";
-    case "curator":
-      return "EDITOR";
-    case "host":
-    case "catalog_admin":
-      return "OWNER";
-  }
-}
-
-/** Fields stored for a role-native grant while the legacy column still exists. */
+/** The stored fields of a grant, with duplicate extras collapsed, ready to spread into a write. */
 export function grantFieldsForRole(
   role: CatalogRole,
   extras: readonly string[] = []
 ): {
-  accessLevel: AccessLevel;
   role: CatalogRole;
   extraPermissions: string[];
 } {
   return {
-    accessLevel: legacyLevelForRole(role),
     role,
     extraPermissions: [...new Set(extras)],
   };

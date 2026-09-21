@@ -20,18 +20,8 @@ enum UserStatus {
   BLOCKED // Cannot access (replaces SUSPENDED + DEACTIVATED)
 }
 
-/// Access level for catalog access (hierarchical: LISTENER < VIEWER < MEMBER < EDITOR < OWNER)
-enum AccessLevel {
-  LISTENER // Browse catalog, stream audio, view metadata (no transcripts)
-  VIEWER // + view transcripts
-  MEMBER // + download
-  EDITOR // + edit metadata
-  OWNER // + manage access, manage pending access (can grant up to EDITOR; Admin required for OWNER)
-}
-
-/// Role a catalog grant carries once roles replace the ordered access levels.
-/// Null until the accounts are migrated; `accessLevel` stays authoritative
-/// meanwhile, so both representations are valid at the same time.
+/// Role a catalog grant carries. Permissions come from the role plus the
+/// grant's extra permissions (docs/adr/0005-catalog-permission-model.md).
 enum CatalogRole {
   listener
   reader
@@ -425,13 +415,8 @@ model CatalogAccess {
   userId           String       @map("user_id")
   /// Workflow group (catalog) being accessed
   catalogId        String       @map("catalog_id") @db.VarChar(15)
-  /// Access level: LISTENER < VIEWER < MEMBER < EDITOR < OWNER.
-  /// Retired as a source of permissions; every grant carries a role. Kept
-  /// until the column is dropped, and still what the interface names.
-  accessLevel      AccessLevel  @default(LISTENER) @map("access_level")
-  /// Role this grant carries. Authoritative: it is where permissions come
-  /// from, and `accessLevel` answers only for a row that predates it.
-  role             CatalogRole? @map("role")
+  /// Role this grant carries. Authoritative: it is where permissions come from.
+  role             CatalogRole  @map("role")
   /// Permissions granted to this account on top of its role, never subtracted.
   /// Stored as names so the set can grow without a migration; unknown names are
   /// ignored when the set is resolved.
@@ -508,12 +493,9 @@ model PendingCatalogGrant {
   email            String
   /// Target catalog for the future grant
   catalogId        String                    @map("catalog_id") @db.VarChar(15)
-  /// Access level to grant when consumed. Retired: the role below is what a
-  /// claim now copies. Kept until the column is dropped.
-  accessLevel      AccessLevel               @map("access_level")
   /// Role to grant when consumed, and any permissions on top of it. A claim
   /// copies both onto the CatalogAccess row it creates.
-  role             CatalogRole?              @map("role")
+  role             CatalogRole               @map("role")
   extraPermissions String[]                  @default([]) @map("extra_permissions")
   /// Pending-grant lifecycle
   status           PendingCatalogGrantStatus

@@ -1,6 +1,6 @@
 import prisma from "@/lib/db";
 import {
-  canViewRecordingForAccessLevel,
+  canViewRecordingForGrant,
   requiresReadyRecordingScope,
 } from "@/lib/policy/recording";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
@@ -125,7 +125,7 @@ export async function loadCatalogHashes(groupId: string): Promise<Set<string>> {
  *
  * Delivery is never broader than reading: anything handed over in bulk has to
  * be something the same account could have opened one at a time, which is what
- * `canViewRecordingForAccessLevel` decides for a single recording.
+ * `canViewRecordingForGrant` decides for a single recording.
  */
 export async function loadVisibleCatalogHashes(
   groupId: string,
@@ -146,7 +146,7 @@ export async function loadVisibleCatalogHashes(
 
   return new Set(
     rows
-      .filter((row) => canViewRecordingForAccessLevel(catalogGrant, row))
+      .filter((row) => canViewRecordingForGrant(catalogGrant, row))
       .map((row) => row.audioHash)
   );
 }

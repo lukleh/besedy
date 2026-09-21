@@ -143,7 +143,6 @@ describe("catalog pending grant create", () => {
 
   it("blocks owners from reopening revoked pending OWNER grants through create", async () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
-      accessLevel: "OWNER",
       role: "host",
       extraPermissions: [],
       status: "REVOKED",

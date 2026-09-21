@@ -306,15 +306,21 @@ Deploy the lookup ownership change separately from the role cutover:
    ```sql
    SELECT count(*) AS grants_without_role FROM catalog_access WHERE role IS NULL;
    SELECT count(*) AS pending_without_role FROM pending_catalog_grant WHERE role IS NULL;
-   SELECT access_level, role, extra_permissions, count(*)
+   SELECT role, extra_permissions, count(*)
      FROM catalog_access
-    GROUP BY access_level, role, extra_permissions
-    ORDER BY access_level, role;
+    GROUP BY role, extra_permissions
+    ORDER BY role;
    ```
 
    The first two counts must be zero. Compare the grouped mapping with the
    preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
    `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
+5. Once the role-native web release (#151) is live and nothing reads
+   `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
+   plain `just prod-deploy`. It refuses to run while any grant lacks a role,
+   then makes `role` NOT NULL and drops `access_level` and the `AccessLevel`
+   enum. Rollback is the retained pre-migration backup; there is no reverse
+   migration.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating

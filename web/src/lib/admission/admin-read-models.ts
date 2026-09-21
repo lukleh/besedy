@@ -24,7 +24,7 @@ export interface PendingAdminAdmissionItem {
 export interface PendingAdminAdmissionGrant {
   catalogId: string;
   catalogLabel: string;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   grantedAt: string;
   grantedBy: { id: string; name: string | null; email: string } | null;

@@ -89,13 +89,9 @@ export function CatalogSettingsPendingUsersCard({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {role ? (
-                        <Badge className={roleColors[role]}>
-                          {t(`catalogRoles.${role}`)}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">—</Badge>
-                      )}
+                      <Badge className={roleColors[role]}>
+                        {t(`catalogRoles.${role}`)}
+                      </Badge>
                       <PermissionIcons
                         role={role}
                         extraPermissions={pendingUser.extraPermissions}
