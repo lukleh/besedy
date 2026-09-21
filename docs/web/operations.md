@@ -319,8 +319,11 @@ Deploy the lookup ownership change separately from the role cutover:
    `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
    plain `just prod-deploy`. It refuses to run while any grant lacks a role,
    then makes `role` NOT NULL and drops `access_level` and the `AccessLevel`
-   enum. Rollback is the retained pre-migration backup; there is no reverse
-   migration.
+   enum. There is no reverse migration, and the previous image alone cannot
+   run against the migrated schema: its claim path still selects
+   `access_level`, so first sign-in for invited users would fail. Roll back
+   with the guarded `prod-rollback` recipe (see Rollback below), which
+   restores the retained pre-migration backup together with the image.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating

@@ -6,10 +6,9 @@
 -- makes `role` what the schema requires, not merely what every row happens to
 -- carry (docs/adr/0005-catalog-permission-model.md, #166).
 
--- 1. Refuse to run while any grant lacks a role. A row without one would be
---    left with no permissions at all once NOT NULL is enforced below fails on
---    it anyway; the explicit check names the cause instead of a constraint
---    error, and points at the migration that assigns roles.
+-- 1. Refuse to run while any grant lacks a role. SET NOT NULL below would fail
+--    on such a row anyway; the explicit check names the cause instead of a
+--    constraint error, and points at the migration that assigns roles.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "catalog_access" WHERE "role" IS NULL)

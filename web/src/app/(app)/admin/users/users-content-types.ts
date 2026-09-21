@@ -49,7 +49,8 @@ export interface PendingPortalAdmission {
   pendingGrantCount: number;
   catalogId: string | null;
   catalogLabel: string | null;
-  role: CatalogRole;
+  /** The single pending grant's role; null when the admission has none or several. */
+  role: CatalogRole | null;
   invitedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;
 }
