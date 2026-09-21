@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
@@ -13,6 +14,7 @@ import {
   buildAudioUrl,
 } from "@/lib/api/recording-urls";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
+import { useDownloadRecord } from "@/hooks/use-downloads";
 import {
   RecordingAudioSection,
   RecordingHeader,
@@ -91,6 +93,8 @@ export default function RecordingContent({
   // playback behavior and view sections live in sibling modules.
   const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
+  const downloadRecord = useDownloadRecord(catalogId, hash);
+  const { isOnline } = useOnlineStatus();
   const queryClient = useQueryClient();
   // Keep the legacy key so existing users keep their saved transcript view preference.
   // Reading is the default view. The stream is the administrative one, and is
@@ -164,7 +168,8 @@ export default function RecordingContent({
   });
 
   // Determine current audio source (saved preference or default)
-  const availableSourceIds = sourcesData?.sources.map((s) => s.id) ?? [];
+  const availableSources = sourcesData?.sources ?? [];
+  const availableSourceIds = availableSources.map((source) => source.id);
   const preferredSource =
     savedPreference?.sourceId && availableSourceIds.includes(savedPreference.sourceId)
       ? savedPreference.sourceId
@@ -234,7 +239,16 @@ export default function RecordingContent({
   const handleAudioDownload = (source: "original" | "archived") => {
     window.open(buildAudioDownloadUrl(catalogId, hash, source), "_blank");
   };
-  const audioUrl = buildAudioUrl(catalogId, hash, audioSource, sourcesData?.sources ?? []);
+  // Use the exact cached URL while offline or when source metadata could not
+  // be loaded. While online, keep honoring the user's selected source even
+  // when another variant of this recording has been downloaded.
+  const downloadedAudioUrl =
+    downloadRecord?.status === "complete" ? downloadRecord.audioUrl : null;
+  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
+  const audioUrl =
+    downloadedAudioUrl && (!isOnline || availableSources.length === 0)
+      ? downloadedAudioUrl
+      : selectedAudioUrl;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">
@@ -265,7 +279,7 @@ export default function RecordingContent({
         recording={recording}
         savedSourceId={savedPreference?.sourceId ?? null}
         seekRequest={seekRequest}
-        sources={sourcesData?.sources ?? []}
+        sources={availableSources}
       />
       {data?.canViewTranscripts && (
         <RecordingTranscriptSection

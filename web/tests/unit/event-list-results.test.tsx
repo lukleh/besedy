@@ -45,6 +45,7 @@ const BASE_PROPS = {
       recordingCount: 3,
       sourceCount: 2,
       posterStatus: "published" as const,
+      primaryAudioHash: "a".repeat(64),
       primaryTitle: "Primary track",
       playback: null,
     },

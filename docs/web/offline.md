@@ -3,7 +3,9 @@
 Besedy's offline mode is a device-local Downloads library, similar to a
 podcast app. A user explicitly downloads an event or recording while online,
 then opens it from `/downloads` without a connection. Catalog, event, and
-recording pages remain online-only.
+recording pages are not offline navigation entry points: they cannot be opened
+or reloaded without a connection. An event or recording page that is already
+open can keep playing a downloaded recording after connectivity drops.
 
 This deliberately avoids mirroring server-rendered pages and API responses.
 Those pages depend on the current session and changing server data, while the
@@ -120,13 +122,16 @@ Offline mode supports:
 - listing device-local downloads;
 - opening a downloaded event or recording from that list;
 - audio playback and seeking;
+- continuing or starting playback on an already-open event or recording page
+  when its selected recording was downloaded before connectivity dropped;
 - the downloaded default transcript and diarization; and
 - locally saved playback position.
 
-Offline mode does not support catalog/event lists, normal event or recording
-pages, search, edits, fresh access checks, or other API-backed features—even if
-the item was downloaded. A failed navigation to one of those pages redirects to
-Downloads. This is an intentional product boundary, not a cache miss.
+Offline mode does not support offline navigation to or reloads of catalog,
+event, or recording pages; search; edits; fresh access checks; or other
+API-backed features—even if the item was downloaded. A failed navigation to one
+of those pages redirects to Downloads. This is an intentional product boundary,
+not a cache miss.
 
 Signing out deletes the downloads database and protected audio/shell caches.
 The static asset cache is not user-specific.

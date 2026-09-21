@@ -264,12 +264,37 @@ describe('download manager', () => {
     cacheStorage = new MemoryCacheStorage();
     vi.stubGlobal('indexedDB', new IDBFactory());
     vi.stubGlobal('caches', cacheStorage);
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { controller: {}, ready: Promise.resolve({}) },
+    });
     // localStorage is a mock in tests/setup.ts; the manager tolerates that.
   });
 
   afterEach(() => {
+    Reflect.deleteProperty(navigator, 'serviceWorker');
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('does not create a download until a service worker can serve it offline', async () => {
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: null,
+        register: vi.fn().mockRejectedValue(new Error('registration failed')),
+      },
+    });
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await expect(
+      downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH }),
+    ).rejects.toThrow('registration failed');
+    expect(downloadManager.getSnapshot().records).toHaveLength(0);
+    expect(server.fetchMock).not.toHaveBeenCalled();
   });
 
   it('downloads a recording and its offline payload', async () => {
