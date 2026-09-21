@@ -71,6 +71,45 @@ transition, the player selects the locally stored audio before attempting the
 network. The same rule applies whether the person arrived from the normal list
 or Downloads.
 
+## Change inventory
+
+The following tables are the implementation scope for this target design. They
+separate visible product changes from the supporting work so a future delivery
+can be divided into reviewable slices without reintroducing a separate offline
+application.
+
+### Affected UI elements
+
+| Element | Visual change | Behavioral change |
+| --- | --- | --- |
+| Persistent app menubar/header | Add a crossed-Wi-Fi icon while offline on both desktop and mobile; provide an accessible label. | Becomes the single app-level connectivity indicator and an optional entry point to local downloads. It never blocks the page or playback. |
+| Fixed offline banner/overlay | Remove it entirely. | Remove its redirect-style “view downloads” recovery path; connection loss is communicated by the menubar icon instead. |
+| Downloads entry and library | Retain the Downloads entry; present it as a library/management surface, not as a replacement app. | Continue to list all packages and provide progress, retry, remove, and storage management. Opening an event delegates to the shared event page. |
+| Event cards (desktop and mobile) | Show the same downloaded marker, artwork, title, and playback affordances at every breakpoint. | Determine the marker from the durable completed package identity. Offline cards represent only locally available events. |
+| Normal event list | Reuse the normal list and cards; add a concise “Downloaded events” scope indication when local data is being shown. | Read the local collection when network data is unavailable, so a person can select and switch downloaded events offline. |
+| Normal event page | Preserve its information hierarchy and core components for local events; do not use a visually reduced offline page. | Resolve through the local source when necessary and adapt or omit only actions that require server data or a non-downloaded recording. |
+| Audio player | Keep the usual player controls and optionally identify local availability without introducing a new player. | Continue active playback across connection loss; start, seek, and resume a downloaded recording from cached range-served audio. |
+| Transcript panel | Render a plain, readable transcript; remove speaker/diarization controls, timestamps, and transcript-driven seek affordances in local mode. | Display the locally retained permitted default transcript without time synchronisation. |
+| Event artwork | Use the same published artwork placement and styling as the normal event page. | Resolve artwork from the local package when offline. |
+| Current `OfflineDownloadDetail` | Retire the separate reduced detail frame, badges, and bespoke layout after migration. | Replace it with navigation to the shared event page; it no longer owns playback or transcript rendering. |
+| Offline-unavailable state | Provide a clear, non-blocking empty/unavailable state for events without a completed package. | Do not expose a false play action or attempt a server-only page when no local source can satisfy it. |
+
+### Non-UI elements
+
+| Element | Required change |
+| --- | --- |
+| Shared event/list models | Define source-neutral event-page and event-collection models plus explicit capabilities. Components receive these models rather than API or IndexedDB records directly. |
+| Content-source seam | Implement online and local sources behind the same contract. The online source reads current API data; the local source reads only completed event packages. |
+| Source selection | Prefer current online data when it can be obtained, then fall back to a complete local package. Do not use `navigator.onLine` as the sole decision because it does not prove a request will succeed. |
+| Routing and application shell | Make normal event/list presentation reachable from local data without treating cached server HTML as authenticated content. Downloads navigation must route into this shared presentation. |
+| Download package schema | Store a complete package: selected audio, published artwork, stable event metadata, and permitted plain transcript. Remove diarization and timestamp-dependent transcript payloads from the offline contract. |
+| Download completion and markers | Mark an event complete only when every required package part and the exact cached audio source are available. Derive status from catalog/event identity and recording hash, with migration support for existing records. |
+| Audio cache and service worker | Keep resumable chunk storage and strict range serving. The worker serves complete local audio; it does not decide product routing or own long-running downloads. |
+| Permissions and lifecycle | Retain transcript content only when permitted, reconcile it after a successful reconnect, and delete user-owned packages and protected caches on sign-out. |
+| Playback progress | Preserve local playback position while offline and synchronise it when the account reconnects, using the existing durable pending-progress mechanism. |
+| Migration and cleanup | Migrate existing registry/bundle records where possible; retire the separate offline-detail implementation and fixed banner only after shared local pages are in use. |
+| Test coverage | Add browser-level coverage for offline transition, offline event switching, shared-page parity, marker visibility on mobile/desktop, plain transcripts, artwork, permissions, and unavailable local content. |
+
 ## Offline event package
 
 A completed event download is an atomic local event package for the purpose of
