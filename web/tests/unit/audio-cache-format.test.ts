@@ -97,7 +97,7 @@ describe("audio cache format", () => {
     ).toBe(100);
   });
 
-  it("recognizes WebKit browsers that need direct cached playback", () => {
+  it("recognizes mobile browsers and Safari that need inline playback", () => {
     expect(
       requiresInlineOfflineAudio(
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/26.6 Mobile/15E148 Safari/604.1"
@@ -111,6 +111,11 @@ describe("audio cache format", () => {
     expect(
       requiresInlineOfflineAudio(
         "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/151.0.0.0 Mobile Safari/537.36"
+      )
+    ).toBe(true);
+    expect(
+      requiresInlineOfflineAudio(
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
       )
     ).toBe(false);
   });
