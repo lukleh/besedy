@@ -69,7 +69,7 @@ const PERMISSION_ICONS: PermissionConfig[] = [
 ];
 
 interface PermissionIconsProps {
-  role: CatalogRole;
+  role: CatalogRole | null;
   extraPermissions?: string[];
   className?: string;
 }
@@ -81,7 +81,6 @@ export function PermissionIcons({
 }: PermissionIconsProps) {
   const t = useTranslations("permissions");
   const permissions = permissionsForGrant({
-    level: null,
     role,
     extras: extraPermissions,
   });

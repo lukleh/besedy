@@ -97,7 +97,7 @@ export function UserEntityCard({ user }: { user: RelatedUser }) {
                   <div key={access.id} className="flex justify-between text-sm">
                     <span>{access.catalog.label || access.catalogId}</span>
                     <Badge variant="outline" className="text-xs">
-                      {access.accessLevel}
+                      {access.role}
                     </Badge>
                   </div>
                 ))}

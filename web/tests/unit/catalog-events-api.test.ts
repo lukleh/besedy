@@ -105,7 +105,6 @@ describe("catalog events API", () => {
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "admin-user",
-      accessLevel: "OWNER",
     });
     createEventNotifications.mockResolvedValue({
       created: 0,

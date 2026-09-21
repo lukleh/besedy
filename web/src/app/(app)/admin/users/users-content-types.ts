@@ -1,7 +1,7 @@
 "use client";
 
 import { Ban, Clock, UserCheck } from "lucide-react";
-import { AccessLevel, CatalogRole, UserStatus } from "@/generated/prisma/enums";
+import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import { CATALOG_ROLES } from "@/lib/policy/catalog-permissions";
 
 export const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
@@ -9,16 +9,14 @@ export const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 export interface CatalogAccess {
   catalogId: string;
   catalogLabel: string | null;
-  accessLevel: AccessLevel;
-  role: CatalogRole;
+  role: CatalogRole | null;
   extraPermissions: string[];
 }
 
 export interface PendingPortalAdmissionGrant {
   catalogId: string;
   catalogLabel: string;
-  accessLevel: AccessLevel;
-  role: CatalogRole;
+  role: CatalogRole | null;
   extraPermissions: string[];
   grantedAt: string;
   grantedBy: { id: string; name: string | null; email: string } | null;

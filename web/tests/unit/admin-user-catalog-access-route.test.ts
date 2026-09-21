@@ -54,7 +54,7 @@ describe("admin user catalog access route", () => {
     prisma.catalogAccess.findMany.mockResolvedValue([
       {
         catalogId: "cat-1",
-        accessLevel: "EDITOR",
+        role: "curator",
         catalog: { id: "cat-1", label: "Catalog A" },
       },
     ]);
@@ -77,7 +77,6 @@ describe("admin user catalog access route", () => {
       {
         catalogId: "cat-1",
         catalogLabel: "Catalog A",
-        accessLevel: "EDITOR",
         role: "curator",
         extraPermissions: [],
       },

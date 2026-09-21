@@ -113,6 +113,8 @@ describe("admission auth claim", () => {
     const pendingGrant = {
       catalogId: "20260101_000000",
       accessLevel: "EDITOR",
+      role: "curator",
+      extraPermissions: [],
       grantedById: "owner-1",
       notes: "catalog grant",
     };
@@ -187,6 +189,8 @@ describe("admission auth claim", () => {
           userId: "user-1",
           catalogId: "20260101_000000",
           accessLevel: "EDITOR",
+          role: "curator",
+          extraPermissions: [],
           grantedById: "owner-1",
           notes: "catalog grant",
         },

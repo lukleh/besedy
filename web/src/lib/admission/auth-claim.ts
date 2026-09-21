@@ -1,4 +1,4 @@
-import type { AccessLevel, PrismaClient } from "@/generated/prisma/client";
+import type { CatalogRole, PrismaClient } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { canonicalizeEmail } from "@/lib/email";
 
@@ -13,7 +13,7 @@ export interface PendingPortalAdmission {
 
 export interface ConsumedPendingCatalogGrant {
   catalogId: string;
-  accessLevel: AccessLevel;
+  role: CatalogRole | null;
   grantedById: string | null;
   notes: string | null;
 }
@@ -135,9 +135,9 @@ export async function consumePortalAdmissionForUser(
         data: pendingGrants.map((grant) => ({
           userId: user.id,
           catalogId: grant.catalogId,
+          // Nothing reads the legacy column, but until it is dropped it is
+          // copied so claimed and directly granted rows carry the same value.
           accessLevel: grant.accessLevel,
-          // The role is what the grant is; carrying only the level would land
-          // a row with no permissions at all.
           role: grant.role,
           extraPermissions: grant.extraPermissions,
           grantedById: grant.grantedById,

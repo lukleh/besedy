@@ -160,11 +160,20 @@ function getCatalogId(
   return subjectSnapshot?.catalogId ?? getString(payload?.catalogId) ?? getString(payload?.groupId);
 }
 
+/**
+ * The level or role a grant event should headline, oldest record shape first.
+ *
+ * `accessLevel`/`newAccessLevel`/`previousAccessLevel` are the retired
+ * scale, present only in payloads written before the role-based rework; new
+ * records carry `role` instead. Both are read so old and new audit rows
+ * render the same way.
+ */
 function getAccessLevel(payload: Record<string, unknown> | null, action: string): string | null {
   return (
     getString(payload?.accessLevel) ??
     getString(payload?.newAccessLevel) ??
-    (action === "CATALOG_ACCESS_REVOKED" ? getString(payload?.previousAccessLevel) : null)
+    (action === "CATALOG_ACCESS_REVOKED" ? getString(payload?.previousAccessLevel) : null) ??
+    getString(payload?.role)
   );
 }
 

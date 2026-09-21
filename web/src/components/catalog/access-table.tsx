@@ -43,17 +43,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AccessLevel,
-  AccessStatus,
-  CatalogRole,
-} from "@/generated/prisma/enums";
+import { AccessStatus, CatalogRole } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 import { fetchJson } from "@/lib/api/fetch-json";
-import {
-  roleForLevel,
-  type GrantableExtraPermission,
-} from "@/lib/policy/catalog-permissions";
+import type { GrantableExtraPermission } from "@/lib/policy/catalog-permissions";
 
 const ROLE_COLORS: Record<CatalogRole, string> = {
   listener: "bg-slate-600 text-white",
@@ -75,7 +68,6 @@ interface UserInfo {
 interface AccessGrant {
   id: string;
   userId: string;
-  accessLevel: AccessLevel;
   role: CatalogRole | null;
   extraPermissions: string[];
   canManage: boolean;
@@ -225,7 +217,9 @@ export function AccessTable({
   });
 
   const openEditDialog = (grant: AccessGrant) => {
-    setEditRole(grant.role ?? roleForLevel(grant.accessLevel).role);
+    // The form needs a selection; a grant without a role starts from the
+    // least-privileged one, which the admin then has to confirm.
+    setEditRole(grant.role ?? "listener");
     setEditExtraPermissions(
       grant.extraPermissions.filter((permission) =>
         grantableExtraPermissions.includes(
@@ -277,8 +271,10 @@ export function AccessTable({
   };
 
   // Separate active and revoked users based on filter
-  const roleOf = (grant: AccessGrant) =>
-    grant.role ?? roleForLevel(grant.accessLevel).role;
+  // A grant without a role is shown as such rather than as a listener.
+  const roleOf = (grant: AccessGrant): CatalogRole | null => grant.role;
+  const roleLabel = (role: CatalogRole | null) =>
+    role ? t(`catalogRoles.${role}`) : "—";
   const isRevokedFilter = roleFilter === "revoked";
   const activeUsers = isRevokedFilter
     ? []
@@ -335,8 +331,11 @@ export function AccessTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <Badge className={cn(ROLE_COLORS[role], "text-white")}>
-                      {t(`catalogRoles.${role}`)}
+                    <Badge
+                      variant={role ? "default" : "outline"}
+                      className={cn(role && ROLE_COLORS[role], role && "text-white")}
+                    >
+                      {roleLabel(role)}
                     </Badge>
                     <PermissionIcons
                       role={role}
@@ -419,7 +418,7 @@ export function AccessTable({
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-foreground/70">
-                      {t(`catalogRoles.${role}`)}
+                      {roleLabel(role)}
                     </Badge>
                     <PermissionIcons
                       role={role}
@@ -588,9 +587,7 @@ export function AccessTable({
               {t("dialogs.restore.description", {
                 name:
                   restoreDialog?.user.name ?? restoreDialog?.user.email ?? "—",
-                level: restoreDialog
-                  ? t(`catalogRoles.${roleOf(restoreDialog)}`)
-                  : "—",
+                level: restoreDialog ? roleLabel(roleOf(restoreDialog)) : "—",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>

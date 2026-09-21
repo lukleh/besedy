@@ -183,7 +183,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = bodyResult.data;
 
     if (body.released !== undefined && access.policyContext !== undefined && !canReleaseEvent(access.policyContext)) {
-      return forbidden("Owner or admin access required to change event release state");
+      return forbidden("Event-management permission required to change event release state");
     }
 
     const existingEvent = await prisma.catalogEvent.findFirst({

@@ -806,7 +806,6 @@
       "addCatalogAccess": "Přidat přístup ke katalogu",
       "selectCatalog": "Vybrat katalog",
       "enterName": "Zadejte jméno",
-      "accessLevel": "Úroveň přístupu",
       "role": "Role"
     },
     "actions": {
@@ -854,14 +853,11 @@
         "noAccessYet": "Zatím nebyl udělen přístup k žádnému katalogu.",
         "addAccess": "Přidat přístup ke katalogu",
         "selectCatalog": "Vybrat katalog",
-        "accessLevel": "Úroveň přístupu",
         "role": "Role"
       },
       "editPendingAdmission": {
         "title": "Upravit čekající přijetí",
         "description": "Aktualizovat čekající přijetí pro {email}",
-        "accessLevel": "Úroveň přístupu",
-        "selectAccessLevel": "Vyberte úroveň přístupu",
         "role": "Role",
         "notes": "Poznámky",
         "notesPlaceholder": "Volitelné poznámky k čekajícímu přijetí...",
@@ -901,8 +897,6 @@
         "assignAccess": "Volitelné: Přiřadit přístup ke katalogu",
         "catalog": "Katalog",
         "noCatalog": "Bez katalogu (přidat později)",
-        "accessLevel": "Úroveň přístupu",
-        "selectAccessLevel": "Vybrat úroveň přístupu",
         "role": "Role",
         "selectRole": "Vybrat roli"
       },
@@ -936,18 +930,6 @@
       "pendingAdmissionRevoked": "Čekající přijetí zrušeno",
       "pendingAdmissionHasBeenRevoked": "Čekající přijetí bylo zrušeno.",
       "error": "Chyba"
-    },
-    "accessLevels": {
-      "listener": "Posluchač",
-      "listenerDesc": "Může procházet katalog a streamovat audio",
-      "viewer": "Prohlížeč",
-      "viewerDesc": "Může prohlížet nahrávky a přepisy",
-      "member": "Člen",
-      "memberDesc": "Může prohlížet a přehrávat audio",
-      "editor": "Editor",
-      "editorDesc": "Může upravovat metadata",
-      "owner": "Vlastník",
-      "ownerDesc": "Plný přístup včetně stahování"
     },
     "catalogRoles": {
       "listener": "Posluchač",
@@ -990,9 +972,7 @@
         "emailPlaceholder": "uzivatel@example.com",
         "assignAccess": "Volitelné: Přiřadit přístup ke katalogu",
         "catalog": "Katalog",
-        "noCatalog": "Bez katalogu (přidat později)",
-        "accessLevel": "Úroveň přístupu",
-        "selectAccessLevel": "Vybrat úroveň přístupu"
+        "noCatalog": "Bez katalogu (přidat později)"
       },
       "toast": {
         "userAdded": "Uživatel přidán",
@@ -1103,7 +1083,7 @@
         "default": "Výchozí",
         "active": "Aktivní",
         "inactive": "Neaktivní",
-        "accessLevel": "Úroveň přístupu",
+        "role": "Role",
         "consumed": "Spotřebováno",
         "granted": "Uděleno",
         "revoked": "Odebráno",
@@ -1432,9 +1412,7 @@
     "copyPath": "Kopírovat cestu",
     "technicalInfo": "Technické informace",
     "editArtwork": "Upravit obálku",
-    "noArtwork": "Bez obálky",
-    "transcriptRestricted": "Přístup k přepisu omezen",
-    "transcriptRestrictedDescription": "Pro zobrazení přepisů potřebujete úroveň PROHLÍŽEČ nebo vyšší."
+    "noArtwork": "Bez obálky"
   },
   "events": {
       "session": {
@@ -1730,14 +1708,12 @@
       "title": "Čekající uživatelé",
       "description": "Uživatelé, kteří byli přidáni, ale ještě se nepřihlásili",
       "email": "E-mail",
-      "accessLevel": "Úroveň přístupu",
       "role": "Role",
       "addedBy": "Přidal"
     },
     "accessControl": {
       "title": "Uživatelé s přístupem",
       "user": "Uživatel",
-      "accessLevel": "Úroveň přístupu",
       "grantedBy": "Udělil",
       "empty": "Zatím nemá přístup žádný uživatel. Udělte přístup pro přidání uživatelů.",
       "adminOnly": "Pouze admin",
@@ -1779,7 +1755,6 @@
         "description": "Zadejte e-mail pro udělení přístupu k tomuto katalogu. Pokud uživatel již má účet, přístup bude udělen okamžitě.",
         "emailLabel": "E-mailová adresa",
         "emailPlaceholder": "uzivatel@example.com",
-        "accessLevelLabel": "Úroveň přístupu",
         "roleLabel": "Role",
         "extraPermissionsLabel": "Dodatečná oprávnění",
         "noteLabel": "Poznámka (volitelné)",
@@ -1809,7 +1784,6 @@
         "previousLevel": "Předchozí úroveň: {level}",
         "nameLabel": "Zobrazované jméno",
         "namePlaceholder": "Zadejte zobrazované jméno...",
-        "accessLevelLabel": "Úroveň přístupu",
         "roleLabel": "Role",
         "extraPermissionsLabel": "Dodatečná oprávnění",
         "notesLabel": "Poznámky (volitelné)",
@@ -1826,7 +1800,6 @@
         "description": "Aktualizovat přístup pro {name}",
         "nameLabel": "Zobrazované jméno",
         "namePlaceholder": "Zadejte zobrazované jméno...",
-        "accessLevelLabel": "Úroveň přístupu",
         "notesLabel": "Poznámky (volitelné)",
         "notesPlaceholder": "Důvod přístupu..."
       },
@@ -1849,18 +1822,6 @@
         "title": "Upravit čekajícího uživatele",
         "description": "Aktualizovat pozvánku pro {email}"
       }
-    },
-    "accessLevels": {
-      "listener": "POSLUCHAČ",
-      "listenerDesc": "Procházení katalogu, streamování audia (bez přepisů)",
-      "viewer": "PROHLÍŽEČ",
-      "viewerDesc": "Prohlížení a streamování s přepisy",
-      "member": "ČLEN",
-      "memberDesc": "Komentování a stahování",
-      "editor": "EDITOR",
-      "editorDesc": "Editace metadat",
-      "owner": "VLASTNÍK",
-      "ownerDesc": "Plný přístup"
     },
     "catalogRoles": {
       "listener": "Posluchač",

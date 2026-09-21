@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogUsers } from "@/app/api/catalogs/[id]/users/route";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
@@ -58,7 +58,7 @@ describe("catalog users search route", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: false,
       },
     });
@@ -106,7 +106,6 @@ describe("catalog users search route", () => {
       .mockResolvedValueOnce([
         {
           id: "grant-1",
-          accessLevel: "VIEWER",
           role: "reader",
           extraPermissions: [],
           notes: "existing notes",
@@ -138,7 +137,6 @@ describe("catalog users search route", () => {
           email: "viewer@example.com",
           image: null,
           type: "active",
-          currentAccessLevel: "VIEWER",
           currentRole: "reader",
           extraPermissions: [],
           notes: "existing notes",
@@ -198,7 +196,6 @@ describe("catalog users search route", () => {
   it("pages past unmanageable grants without loading an unbounded result", async () => {
     const protectedPage = Array.from({ length: 50 }, (_, index) => ({
       id: `protected-${String(index).padStart(2, "0")}`,
-      accessLevel: "OWNER",
       role: "catalog_admin",
       extraPermissions: [],
       notes: null,
@@ -215,7 +212,6 @@ describe("catalog users search route", () => {
       return [
         {
           id: "reader-grant",
-          accessLevel: "VIEWER",
           role: "reader",
           extraPermissions: [],
           notes: null,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   canAttachRecordingToEvent,
   canBrowseEvents,
@@ -28,7 +28,7 @@ describe("event and ui policies", () => {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("LISTENER"),
+        catalogGrant: grantForRole("listener"),
         isCatalogAdmin: false,
       })
     ).toBe(true);
@@ -37,7 +37,7 @@ describe("event and ui policies", () => {
         featureEnabled: false,
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: true,
       })
     ).toBe(false);
@@ -49,7 +49,7 @@ describe("event and ui policies", () => {
         featureEnabled: true,
         catalogExists: false,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("LISTENER"),
+        catalogGrant: grantForRole("listener"),
         isCatalogAdmin: false,
       })
     ).toBe(false);
@@ -58,38 +58,38 @@ describe("event and ui policies", () => {
         featureEnabled: true,
         catalogExists: true,
         canEnterPortal: false,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: false,
       })
     ).toBe(false);
   });
 
-  it("allows owner/admin event actions when the feature is enabled", () => {
-    const ownerContext = {
+  it("allows curator/admin event actions when the feature is enabled", () => {
+    const curatorContext = {
       featureEnabled: true,
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
       isCatalogAdmin: false,
     };
 
     expect(
-      canEditCatalogEvents(ownerContext)
+      canEditCatalogEvents(curatorContext)
     ).toBe(true);
     expect(
-      canEditEvent(ownerContext)
+      canEditEvent(curatorContext)
     ).toBe(true);
     expect(
-      canReleaseEvent(ownerContext)
+      canReleaseEvent(curatorContext)
     ).toBe(true);
     expect(
-      canAttachRecordingToEvent(ownerContext)
+      canAttachRecordingToEvent(curatorContext)
     ).toBe(true);
     expect(
-      canSetPrimaryRecording(ownerContext)
+      canSetPrimaryRecording(curatorContext)
     ).toBe(true);
     expect(
-      canCreateEventFromRecording(ownerContext)
+      canCreateEventFromRecording(curatorContext)
     ).toBe(true);
     expect(
       canEditCatalogEvents({
@@ -116,7 +116,7 @@ describe("event and ui policies", () => {
           featureEnabled: true,
           catalogExists: true,
           canEnterPortal: true,
-          catalogGrant: grantFromLevel("LISTENER"),
+          catalogGrant: grantForRole("listener"),
           isCatalogAdmin: false,
         },
         visibleState
@@ -128,7 +128,7 @@ describe("event and ui policies", () => {
           featureEnabled: true,
           catalogExists: true,
           canEnterPortal: true,
-          catalogGrant: grantFromLevel("LISTENER"),
+          catalogGrant: grantForRole("listener"),
           isCatalogAdmin: false,
         },
         {
@@ -138,8 +138,8 @@ describe("event and ui policies", () => {
         }
       )
     ).toBe(false);
-    expect(requiresReleasedEventVisibilityScope(grantFromLevel("LISTENER"))).toBe(true);
-    expect(requiresReleasedEventVisibilityScope(grantFromLevel("OWNER"))).toBe(false);
+    expect(requiresReleasedEventVisibilityScope(grantForRole("listener"))).toBe(true);
+    expect(requiresReleasedEventVisibilityScope(grantForRole("curator"))).toBe(false);
   });
 
   it("shows tabs to whoever can browse both surfaces, editing or not", () => {
@@ -174,19 +174,19 @@ describe("event and ui policies", () => {
       })
     ).toBe(false);
     expect(
-      canSeeAllEventColumns({ catalogGrant: grantFromLevel("OWNER"), isCatalogAdmin: false })
+      canSeeAllEventColumns({ catalogGrant: grantForRole("curator"), isCatalogAdmin: false })
     ).toBe(true);
     expect(
       canSeeAllEventColumns({ catalogGrant: null, isCatalogAdmin: true })
     ).toBe(true);
     expect(
-      canSeeReleaseState({ catalogGrant: grantFromLevel("VIEWER"), isCatalogAdmin: false })
+      canSeeReleaseState({ catalogGrant: grantForRole("curator"), isCatalogAdmin: false })
     ).toBe(true);
     expect(
       canSeeReleaseState({ catalogGrant: null, isCatalogAdmin: true })
     ).toBe(true);
     expect(
-      canSeeReleaseState({ catalogGrant: grantFromLevel("LISTENER"), isCatalogAdmin: false })
+      canSeeReleaseState({ catalogGrant: grantForRole("listener"), isCatalogAdmin: false })
     ).toBe(false);
   });
 });

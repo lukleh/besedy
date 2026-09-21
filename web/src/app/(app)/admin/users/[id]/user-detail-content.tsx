@@ -57,14 +57,13 @@ import { useAdminStatus } from "@/hooks/use-admin-status";
 import { useCatalogs } from "@/hooks/use-catalogs";
 import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
-import { CATALOG_ROLES, roleForLevel } from "@/lib/policy/catalog-permissions";
+import { CATALOG_ROLES } from "@/lib/policy/catalog-permissions";
 
 const CATALOG_ROLE_VALUES = [...CATALOG_ROLES];
 
 interface CatalogAccess {
   id: string;
   catalogId: string;
-  accessLevel: "LISTENER" | "VIEWER" | "MEMBER" | "EDITOR" | "OWNER";
   role: CatalogRole | null;
   extraPermissions: string[];
   catalog: {
@@ -118,8 +117,9 @@ export default function UserDetailContent() {
 
   const getCatalogRoleLabel = (role: CatalogRole): string =>
     t(`catalogRoles.${role}`);
-  const roleOf = (access: CatalogAccess): CatalogRole =>
-    access.role ?? roleForLevel(access.accessLevel).role;
+  // A grant without a role is shown as such rather than as a listener.
+  const roleLabelOf = (access: CatalogAccess): string =>
+    access.role ? getCatalogRoleLabel(access.role) : "—";
 
   const [blockConfirm, setBlockConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -674,7 +674,7 @@ export default function UserDetailContent() {
                   </div>
                   <div className="flex items-center gap-2">
                     <ResponsiveSelect
-                      value={roleOf(access)}
+                      value={access.role ?? ""}
                       onValueChange={(value) =>
                         updateCatalogAccess.mutate({
                           catalogId: access.catalogId,
@@ -688,7 +688,7 @@ export default function UserDetailContent() {
                         aria-label={t("userDetail.role")}
                       >
                         <ResponsiveSelectValue
-                          displayValue={getCatalogRoleLabel(roleOf(access))}
+                          displayValue={roleLabelOf(access)}
                         />
                       </ResponsiveSelectTrigger>
                       <ResponsiveSelectContent title={t("userDetail.role")}>

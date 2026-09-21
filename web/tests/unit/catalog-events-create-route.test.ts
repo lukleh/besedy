@@ -76,7 +76,6 @@ describe("catalog events create route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "admin-user",
-      accessLevel: "OWNER",
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: catalogId });
     prisma.location.findFirst.mockResolvedValue({ id: 7, name: "Praha" });

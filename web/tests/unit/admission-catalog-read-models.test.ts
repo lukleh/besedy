@@ -8,7 +8,8 @@ describe("catalog admission read models", () => {
         findMany: vi.fn().mockResolvedValue([
           {
             email: "pending@example.com",
-            accessLevel: "EDITOR",
+            role: "curator",
+            extraPermissions: [],
             notes: "pending note",
             grantedAt: new Date("2026-03-10T10:00:00.000Z"),
             grantedBy: {
@@ -33,7 +34,6 @@ describe("catalog admission read models", () => {
       },
       select: {
         email: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         notes: true,
@@ -49,7 +49,6 @@ describe("catalog admission read models", () => {
         id: "pending@example.com",
         type: "pending_catalog_grant",
         email: "pending@example.com",
-        accessLevel: "EDITOR",
         role: "curator",
         extraPermissions: [],
         notes: "pending note",
@@ -69,7 +68,8 @@ describe("catalog admission read models", () => {
         findMany: vi.fn().mockResolvedValue([
           {
             email: "johndoe@gmail.com",
-            accessLevel: "VIEWER",
+            role: "reader",
+            extraPermissions: [],
             notes: "shadow note",
             grantedAt: new Date("2026-03-10T11:00:00.000Z"),
             grantedBy: {
@@ -92,7 +92,6 @@ describe("catalog admission read models", () => {
         id: "johndoe@gmail.com",
         type: "pending_catalog_grant",
         email: "johndoe@gmail.com",
-        accessLevel: "VIEWER",
         role: "reader",
         extraPermissions: [],
         notes: "shadow note",
@@ -112,7 +111,8 @@ describe("catalog admission read models", () => {
         findMany: vi.fn().mockResolvedValue([
           {
             email: "orphan@example.com",
-            accessLevel: "VIEWER",
+            role: "reader",
+            extraPermissions: [],
             notes: null,
             grantedAt: new Date("2026-03-10T10:00:00.000Z"),
             grantedBy: null,
@@ -131,7 +131,6 @@ describe("catalog admission read models", () => {
         id: "orphan@example.com",
         type: "pending_catalog_grant",
         email: "orphan@example.com",
-        accessLevel: "VIEWER",
         role: "reader",
         extraPermissions: [],
         notes: null,

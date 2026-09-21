@@ -366,7 +366,7 @@ export function UsersDialogs({
                     </div>
                     <div className="flex items-center gap-2">
                       <ResponsiveSelect
-                        value={access.role}
+                        value={access.role ?? ""}
                         onValueChange={(value) =>
                           onUpdateCatalogAccess(
                             access.catalogId,
@@ -380,7 +380,9 @@ export function UsersDialogs({
                           aria-label={roleLabel}
                         >
                           <ResponsiveSelectValue
-                            displayValue={getCatalogRoleLabel(access.role)}
+                            displayValue={
+                              access.role ? getCatalogRoleLabel(access.role) : "—"
+                            }
                           />
                         </ResponsiveSelectTrigger>
                         <ResponsiveSelectContent title={roleLabel}>

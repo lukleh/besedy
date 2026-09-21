@@ -806,7 +806,6 @@
       "addCatalogAccess": "Add Catalog Access",
       "selectCatalog": "Select catalog",
       "enterName": "Enter name",
-      "accessLevel": "Access Level",
       "role": "Role"
     },
     "actions": {
@@ -854,14 +853,11 @@
         "noAccessYet": "No catalog access granted yet.",
         "addAccess": "Add Catalog Access",
         "selectCatalog": "Select catalog",
-        "accessLevel": "Access Level",
         "role": "Role"
       },
       "editPendingAdmission": {
         "title": "Edit Pending Admission",
         "description": "Update the pending admission for {email}",
-        "accessLevel": "Access Level",
-        "selectAccessLevel": "Select access level",
         "role": "Role",
         "notes": "Notes",
         "notesPlaceholder": "Optional notes about this pending admission...",
@@ -901,8 +897,6 @@
         "assignAccess": "Optional: Assign catalog access",
         "catalog": "Catalog",
         "noCatalog": "No catalog (add later)",
-        "accessLevel": "Access Level",
-        "selectAccessLevel": "Select access level",
         "role": "Role",
         "selectRole": "Select role"
       },
@@ -936,18 +930,6 @@
       "pendingAdmissionRevoked": "Pending admission revoked",
       "pendingAdmissionHasBeenRevoked": "The pending admission has been revoked.",
       "error": "Error"
-    },
-    "accessLevels": {
-      "listener": "Listener",
-      "listenerDesc": "Can browse catalog and stream audio",
-      "viewer": "Viewer",
-      "viewerDesc": "Can view recordings and transcripts",
-      "member": "Member",
-      "memberDesc": "Can view and play audio",
-      "editor": "Editor",
-      "editorDesc": "Can edit metadata",
-      "owner": "Owner",
-      "ownerDesc": "Full access including download"
     },
     "catalogRoles": {
       "listener": "Listener",
@@ -990,9 +972,7 @@
         "emailPlaceholder": "user@example.com",
         "assignAccess": "Optional: Assign catalog access",
         "catalog": "Catalog",
-        "noCatalog": "No catalog (add later)",
-        "accessLevel": "Access Level",
-        "selectAccessLevel": "Select access level"
+        "noCatalog": "No catalog (add later)"
       },
       "toast": {
         "userAdded": "User added",
@@ -1103,7 +1083,7 @@
         "default": "Default",
         "active": "Active",
         "inactive": "Inactive",
-        "accessLevel": "Access level",
+        "role": "Role",
         "consumed": "Consumed",
         "granted": "Granted",
         "revoked": "Revoked",
@@ -1433,9 +1413,7 @@
     "copyPath": "Copy path",
     "technicalInfo": "Technical info",
     "editArtwork": "Edit artwork",
-    "noArtwork": "No artwork",
-    "transcriptRestricted": "Transcript Access Restricted",
-    "transcriptRestrictedDescription": "You need VIEWER access or higher to view transcripts."
+    "noArtwork": "No artwork"
   },
   "events": {
       "session": {
@@ -1731,14 +1709,12 @@
       "title": "Pending Users",
       "description": "Users who have been added but haven't logged in yet",
       "email": "Email",
-      "accessLevel": "Access Level",
       "role": "Role",
       "addedBy": "Added By"
     },
     "accessControl": {
       "title": "Users with Access",
       "user": "User",
-      "accessLevel": "Access Level",
       "grantedBy": "Granted By",
       "empty": "No users have access yet. Grant access to add users.",
       "adminOnly": "Admin only",
@@ -1780,7 +1756,6 @@
         "description": "Enter an email to grant access to this catalog. If the user already has an account, access will be granted immediately.",
         "emailLabel": "Email Address",
         "emailPlaceholder": "user@example.com",
-        "accessLevelLabel": "Access Level",
         "roleLabel": "Role",
         "extraPermissionsLabel": "Additional permissions",
         "noteLabel": "Note (optional)",
@@ -1810,7 +1785,6 @@
         "previousLevel": "Previous level: {level}",
         "nameLabel": "Display Name",
         "namePlaceholder": "Enter display name...",
-        "accessLevelLabel": "Access Level",
         "roleLabel": "Role",
         "extraPermissionsLabel": "Additional permissions",
         "notesLabel": "Notes (optional)",
@@ -1827,7 +1801,6 @@
         "description": "Update access for {name}",
         "nameLabel": "Display Name",
         "namePlaceholder": "Enter display name...",
-        "accessLevelLabel": "Access Level",
         "notesLabel": "Notes (optional)",
         "notesPlaceholder": "Reason for access..."
       },
@@ -1850,18 +1823,6 @@
         "title": "Edit Pending User",
         "description": "Update invitation for {email}"
       }
-    },
-    "accessLevels": {
-      "listener": "LISTENER",
-      "listenerDesc": "Browse catalog, stream audio (no transcripts)",
-      "viewer": "VIEWER",
-      "viewerDesc": "View and stream with transcripts",
-      "member": "MEMBER",
-      "memberDesc": "Comment and download",
-      "editor": "EDITOR",
-      "editorDesc": "Edit metadata",
-      "owner": "OWNER",
-      "ownerDesc": "Full access"
     },
     "catalogRoles": {
       "listener": "Listener",

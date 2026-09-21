@@ -5,7 +5,7 @@ import {
   POST as postAccess,
 } from "@/app/api/catalogs/[id]/access/route";
 import {
-  grantFromLevel,
+  grantForRole,
   type CatalogGrant,
 } from "@/lib/policy/catalog-permissions";
 import {
@@ -54,7 +54,7 @@ const browserMutationHeaders = {
 
 function makeManagementAccess({
   resolvedUserId = "owner-1",
-  catalogGrant = grantFromLevel("OWNER"),
+  catalogGrant = grantForRole("host"),
   isCatalogAdmin = false,
   canEnterPortal = true,
   catalogExists = true,
@@ -118,7 +118,7 @@ describe("catalog access routes", () => {
     resolveCatalogManagementActor.mockResolvedValue(
       makeManagementAccess({
         resolvedUserId: "user-1",
-        catalogGrant: grantFromLevel("VIEWER"),
+        catalogGrant: grantForRole("reader"),
       })
     );
     prisma.workflowGroup.findUnique.mockResolvedValue({
@@ -251,6 +251,7 @@ describe("catalog access routes", () => {
       // A lateral move the old self-check let through: it fired only when an
       // OWNER was leaving OWNER.
       accessLevel: "MEMBER",
+      role: "reader",
       status: "ACTIVE",
       user: { id: userId, email: "self@test.com" },
     });
@@ -280,6 +281,7 @@ describe("catalog access routes", () => {
       userId,
       catalogId,
       accessLevel: "OWNER",
+      role: "host",
       status: "REVOKED",
       user: { email: "self@test.com" },
     });
@@ -307,6 +309,8 @@ describe("catalog access routes", () => {
     prisma.user.findUnique.mockResolvedValue({ id: userId });
     prisma.catalogAccess.findUnique.mockResolvedValue({
       accessLevel: "OWNER",
+      role: "host",
+      extraPermissions: [],
       status: "REVOKED",
     });
 
@@ -339,6 +343,7 @@ describe("catalog access routes", () => {
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
       accessLevel: "VIEWER",
+      role: "reader",
       status: "REVOKED",
     });
 
@@ -397,6 +402,7 @@ describe("catalog access routes", () => {
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
       accessLevel: "VIEWER",
+      role: "reader",
       status: "ACTIVE",
       user: { email: "self@test.com" },
     });
@@ -425,6 +431,7 @@ describe("catalog access routes", () => {
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
       accessLevel: "VIEWER",
+      role: "reader",
       status: "ACTIVE",
       user: { email: "viewer@test.com" },
     });
@@ -811,6 +818,7 @@ describe("catalog access routes", () => {
         userId,
         catalogId,
         accessLevel: "VIEWER",
+        role: "reader",
         status: "REVOKED",
         revokedById: "owner-1",
         revokedAt: new Date(),

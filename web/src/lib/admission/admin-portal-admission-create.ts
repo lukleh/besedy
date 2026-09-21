@@ -8,7 +8,6 @@ import {
 } from "@/lib/audit/logger";
 import { syncPendingAdmissionState } from "@/lib/admission/pending-admission-sync";
 import { requireAdminCapability } from "@/lib/access/require-admin";
-import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 
 export async function createPortalAdmission(request: NextRequest) {
   try {
@@ -67,7 +66,7 @@ export async function createPortalAdmission(request: NextRequest) {
         resourceId: `${email}:${catalogId}`,
         email,
         catalogId,
-        accessLevel: grantFieldsForRole(role, extraPermissions).accessLevel,
+        role,
         details: {
           email,
           catalogId,

@@ -130,7 +130,6 @@ describe("catalog entry route", () => {
     getRecordingCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "MEMBER",
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
       canEditRecording: false,

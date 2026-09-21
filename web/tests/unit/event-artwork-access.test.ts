@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 const { isPublishedVisibleEvent, logAccessDenied, requireCatalogEventsAccess } = vi.hoisted(() => ({
   isPublishedVisibleEvent: vi.fn(),
@@ -25,7 +25,7 @@ describe("event artwork access", () => {
 
   it("does not let an additive artwork permission reveal an unreleased event", async () => {
     const catalogGrant = {
-      ...grantFromLevel("LISTENER"),
+      ...grantForRole("listener"),
       extras: ["manage_event_artwork" as const],
     };
     requireCatalogEventsAccess.mockResolvedValue({
@@ -56,7 +56,7 @@ describe("event artwork access", () => {
 
   it("allows the same capability for a listener-visible event", async () => {
     const catalogGrant = {
-      ...grantFromLevel("LISTENER"),
+      ...grantForRole("listener"),
       extras: ["manage_event_artwork" as const],
     };
     requireCatalogEventsAccess.mockResolvedValue({
@@ -78,7 +78,7 @@ describe("event artwork access", () => {
   });
 
   it("does not query listener visibility for an actor who can see unreleased events", async () => {
-    const catalogGrant = grantFromLevel("OWNER");
+    const catalogGrant = grantForRole("curator");
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       catalogGrant,

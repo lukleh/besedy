@@ -5,7 +5,7 @@ import {
 } from "@/lib/access/catalog-management-route-access";
 import { canAttemptCatalogManagement } from "@/lib/policy/catalog";
 import { canPublishRecording } from "@/lib/policy/recording";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
@@ -72,7 +72,7 @@ describe("catalog management route access", () => {
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
       isCatalogAdmin: false,
     });
 
@@ -104,11 +104,13 @@ describe("catalog management route access", () => {
   });
 
   it("supports route-specific authorization predicates", async () => {
-    requireAuth.mockResolvedValue("owner-1");
+    requireAuth.mockResolvedValue("curator-1");
+    // The predicate replaces the management check: a curator carries
+    // publish_recording without manage_access and still gets through.
     resolveCatalogActorContext.mockResolvedValue({
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
       isCatalogAdmin: false,
     });
 
@@ -124,8 +126,8 @@ describe("catalog management route access", () => {
     if (!result.ok) {
       throw new Error("expected access success");
     }
-    expect(result.userId).toBe("owner-1");
-    expect(result.policyContext.catalogGrant).toEqual(grantFromLevel("OWNER"));
+    expect(result.userId).toBe("curator-1");
+    expect(result.policyContext.catalogGrant).toEqual(grantForRole("curator"));
   });
 
   it("preserves admin management authority when inactive-catalog checks are disabled", async () => {

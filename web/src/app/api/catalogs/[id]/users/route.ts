@@ -6,7 +6,6 @@ import {
   canAttemptCatalogManagement,
   canManageExistingCatalogGrant,
 } from "@/lib/policy/catalog";
-import { roleForLevel } from "@/lib/policy/catalog-permissions";
 import {
   TimestampIdParamSchema,
   UserSearchQuerySchema,
@@ -117,7 +116,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
           select: {
             id: true,
-            accessLevel: true,
             role: true,
             extraPermissions: true,
             notes: true,
@@ -133,7 +131,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         for (const grant of candidates) {
           if (
             canManageExistingCatalogGrant(access.policyContext, {
-              level: grant.accessLevel,
               role: grant.role,
               extras: grant.extraPermissions,
             })
@@ -200,8 +197,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         email: access.user.email,
         image: access.user.image,
         type: "active" as const,
-        currentAccessLevel: access.accessLevel,
-        currentRole: access.role ?? roleForLevel(access.accessLevel).role,
+        currentRole: access.role,
         extraPermissions: access.extraPermissions ?? [],
         notes: access.notes,
       })),
@@ -212,8 +208,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         email: access.user.email,
         image: access.user.image,
         type: "revoked" as const,
-        previousAccessLevel: access.accessLevel,
-        previousRole: access.role ?? roleForLevel(access.accessLevel).role,
+        previousRole: access.role,
         extraPermissions: access.extraPermissions ?? [],
       })),
       // Available users last (no current access)

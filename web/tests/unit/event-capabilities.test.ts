@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogFeaturesResponse } from "@/lib/features/capabilities";
-import { grantForRole, grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 function deepSearch(enabled: boolean, canView: boolean) {
   return {
@@ -67,9 +67,9 @@ describe("event capabilities", () => {
     });
   });
 
-  it("lets owners edit events and use both catalog tabs", () => {
+  it("lets curators edit events and use both catalog tabs", () => {
     const result = buildCatalogFeaturesResponse(
-      grantFromLevel("OWNER"),
+      grantForRole("curator"),
       false,
       false
     );
@@ -93,9 +93,9 @@ describe("event capabilities", () => {
     });
   });
 
-  it("lets owners use deep search only when Labs is enabled", () => {
+  it("lets curators use deep search only when Labs is enabled", () => {
     const result = buildCatalogFeaturesResponse(
-      grantFromLevel("OWNER"),
+      grantForRole("curator"),
       true,
       false
     );
@@ -106,7 +106,6 @@ describe("event capabilities", () => {
   it("requires transcript read permission for deep search", () => {
     const result = buildCatalogFeaturesResponse(
       {
-        level: null,
         role: "listener",
         extras: ["use_deep_search"],
       },
@@ -169,7 +168,7 @@ describe("event capabilities", () => {
 
   it("never reports event access when admission or catalog state is impossible", () => {
     const result = buildCatalogFeaturesResponse(
-      grantFromLevel("LISTENER"),
+      grantForRole("listener"),
       true,
       false,
       {
