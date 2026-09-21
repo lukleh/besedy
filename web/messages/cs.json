@@ -1943,7 +1943,10 @@
     "backToDownloads": "Zpět ke staženým",
     "backToCatalog": "Zpět do katalogu",
     "detailUnavailable": "Stažení není k dispozici",
-    "detailUnavailableDescription": "Tato položka již není v tomto zařízení uložena. Vraťte se ke staženým nebo ji znovu uložte online."
+    "detailUnavailableDescription": "Tato položka již není v tomto zařízení uložena. Vraťte se ke staženým nebo ji znovu uložte online.",
+    "downloadedEvents": "Stažené události",
+    "unavailableOffline": "Offline nedostupné",
+    "unavailableOfflineDescription": "Tato stránka potřebuje připojení. Stažené události se otevřou i bez něj."
   },
   "googleTranslate": {
     "warningMessage": "Byl detekován překlad prohlížeče. Pro nejlepší zážitek použijte přepínač jazyka.",

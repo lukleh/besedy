@@ -1944,7 +1944,10 @@
     "backToDownloads": "Back to downloads",
     "backToCatalog": "Back to catalog",
     "detailUnavailable": "Download unavailable",
-    "detailUnavailableDescription": "This item is no longer stored on this device. Return to Downloads or save it again while online."
+    "detailUnavailableDescription": "This item is no longer stored on this device. Return to Downloads or save it again while online.",
+    "downloadedEvents": "Downloaded events",
+    "unavailableOffline": "Not available offline",
+    "unavailableOfflineDescription": "This page needs a connection. Downloaded events open without one."
   },
   "errors": {
     "notFound": "Page not found",

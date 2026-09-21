@@ -40,12 +40,16 @@ connectivity states.
 
 ## Current implementation
 
-Today, offline support is a device-local Downloads library. A user downloads an
-event or recording while online and can then open it from `/downloads` without
-a connection. Catalog, event, and recording pages still require the server for
-new navigation or reload; a failed normal navigation redirects to Downloads
-when its cached shell is available. An already-open normal event or recording
-page can play a downloaded selected recording after connectivity drops.
+Today, offline support is a device-local Downloads library plus a local-mode
+bootstrap for the normal pages. A user downloads an event or recording while
+online. Without a connection, the service worker answers any failed
+application navigation with the cached session-free `/downloads` document at
+the requested URL, and that document renders the Downloads library, a
+catalog's downloaded events through the normal list component, or the normal
+event and recording pages from local packages. Opening a download from
+Downloads navigates to the normal event or recording URL. An already-open
+normal event or recording page keeps playing a downloaded selected recording
+after connectivity drops.
 
 The normal event and recording pages already contain the first half of the
 content-source seam. Their data queries call the API first and, when the
@@ -53,8 +57,12 @@ request itself cannot be made, read the same shapes from a complete local
 package through `web/src/lib/offline/local-source.ts`: event detail, recording
 entry with package-derived capabilities, and the stored transcript and
 diarization. Audio prefers a complete local package even while online when it
-matches the selected source. Playback progress made without a reachable server
-is queued for the downloading account and synchronised on reconnect.
+matches the selected source; the local source URL carries a `local=1` marker
+that the worker and server ignore, so the browser treats the switch to local
+playback as a new media resource rather than resuming a network stream that
+may have died, and the player carries position and play intent across that
+switch. Playback progress made without a reachable server is queued for the
+downloading account and synchronised on reconnect.
 
 This is the legacy path that remains supported until the target architecture is
 implemented and rolled out. Its data and transport behavior are as follows.
@@ -109,20 +117,27 @@ that remains offline; temporary network or authentication failures are not
 treated as permission decisions. Signing out deletes the database and
 protected audio/shell caches.
 
-### Downloads shell and worker
+### Local-mode shell and worker
 
-`/downloads` has a session-free Next.js root layout and is rendered from the
-local registry. After the first completed download, the manager warms its
-actual HTML and asset graph through a hidden `?warm=1` frame. A normal online
-visit refreshes that shell. Selection currently uses `?item=<download-key>` in
-the current document and a dedicated `OfflineDownloadDetail` renderer.
+`/downloads` has a session-free Next.js root layout that renders the shared
+Header and `LocalModeShell`. The shell reads the document URL after hydration
+and renders Downloads, `LocalEventList` for `/catalog/{id}`, `EventDetail` for
+an event URL, or `RecordingContent` for a recording URL; any other URL gets a
+non-blocking "not available offline" state. The shared pages are imported
+statically so their chunks belong to this document. After the first completed
+download, the manager warms the document's HTML and asset graph through a
+hidden `?warm=1` frame; a normal online visit refreshes it. Navigation between
+local pages is ordinary Next.js navigation: when the data fetch fails, Next
+falls back to a full navigation, which the worker answers with this document
+again. The `?item=<download-key>` selection and the `OfflineDownloadDetail`
+renderer still exist but are no longer reached from Downloads.
 
 `web/public/sw.js` serves complete downloaded audio first, serves `/downloads`
-network-first with a cached-shell fallback, and redirects failed other app
-navigations to Downloads when the shell exists. It cache-serves existing
-Downloads static assets, handles manifest/app-icon fallback, and leaves API
-requests alone. It also retains the web-update, push-notification, and
-notification-click protocols.
+network-first with a cached-shell fallback, and answers other failed app
+navigations with that cached document at the requested URL, marked with the
+`x-besedy-offline` header. It cache-serves existing Downloads static assets,
+handles manifest/app-icon fallback, and leaves API requests alone. It also
+retains the web-update, push-notification, and notification-click protocols.
 
 ## Target user experience
 

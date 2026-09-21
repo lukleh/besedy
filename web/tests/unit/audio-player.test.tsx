@@ -427,6 +427,120 @@ describe("AudioPlayer retry logic", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("resumes after reconnection when the browser paused the element before reporting the error", async () => {
+    vi.useFakeTimers();
+
+    const { audio, container } = renderPlayer();
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+
+    const playButton = container.querySelector('button[aria-label="Play"]') as HTMLButtonElement | null;
+    await act(async () => {
+      playButton?.click();
+    });
+    await act(async () => {
+      audio.dispatchEvent(new Event("play"));
+    });
+    expect(playMock).toHaveBeenCalledTimes(1);
+
+    // Chrome fires `pause` and then `error` when a paused network stream dies
+    // (for example when the connection is lost after a download completed).
+    const setPaused = mockPaused(audio, true);
+    setAudioError(audio, 2);
+    audio.currentTime = 12;
+    await act(async () => {
+      audio.dispatchEvent(new Event("pause"));
+      audio.dispatchEvent(new Event("error"));
+    });
+
+    audio.currentTime = 0;
+    setPaused(true);
+    await act(async () => {
+      audio.dispatchEvent(new Event("canplay"));
+    });
+
+    expect(audio.currentTime).toBe(12);
+    expect(playMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not resume after reconnection when the listener had paused deliberately", async () => {
+    vi.useFakeTimers();
+
+    const { audio, container } = renderPlayer();
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+    audio.pause = vi.fn(() => {
+      audio.dispatchEvent(new Event("pause"));
+    });
+
+    const playButton = container.querySelector('button[aria-label="Play"]') as HTMLButtonElement | null;
+    await act(async () => {
+      playButton?.click();
+    });
+    await act(async () => {
+      audio.dispatchEvent(new Event("play"));
+    });
+    const pauseButton = container.querySelector('button[aria-label="Pause"]') as HTMLButtonElement | null;
+    await act(async () => {
+      pauseButton?.click();
+    });
+
+    const setPaused = mockPaused(audio, true);
+    setAudioError(audio, 2);
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    setPaused(true);
+    await act(async () => {
+      audio.dispatchEvent(new Event("canplay"));
+    });
+
+    expect(playMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps position and playback when the same recording switches to a local source", async () => {
+    const hash = "a".repeat(64);
+    const networkSrc = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const utils = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AudioPlayer src={networkSrc} recordingHash={hash} />
+      </NextIntlClientProvider>
+    );
+    const audio = utils.container.querySelector("audio") as HTMLAudioElement;
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+    audio.pause = vi.fn();
+    mockReadyState(audio, 4);
+
+    const playButton = utils.container.querySelector('button[aria-label="Play"]') as HTMLButtonElement | null;
+    await act(async () => {
+      playButton?.click();
+    });
+    await act(async () => {
+      audio.dispatchEvent(new Event("play"));
+    });
+    audio.currentTime = 30;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+
+    // The element resets for the new src before effects run.
+    audio.currentTime = 0;
+    await act(async () => {
+      utils.rerender(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <AudioPlayer src={`${networkSrc}?local=1`} recordingHash={hash} />
+        </NextIntlClientProvider>
+      );
+    });
+    await act(async () => {
+      audio.dispatchEvent(new Event("loadedmetadata"));
+    });
+
+    expect(audio.currentTime).toBe(30);
+    expect(playMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry MEDIA_ERR_SRC_NOT_SUPPORTED when metadata never loaded", async () => {
     vi.useFakeTimers();
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");

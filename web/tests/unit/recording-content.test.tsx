@@ -228,7 +228,8 @@ describe("RecordingContent transcript toggle", () => {
 
     expect(audioPlayerMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
+        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile&local=1`,
+        recordingHash: HASH,
       })
     );
   });
@@ -239,7 +240,8 @@ describe("RecordingContent transcript toggle", () => {
     useDownloadRecordMock.mockReturnValue({
       status: "complete",
       audioUrl: url,
-      audioCacheKey: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
+      // Cache keys are absolute, as the download manager stores them.
+      audioCacheKey: new URL(url, window.location.origin).toString(),
     });
     useQueryMock.mockImplementation(
       ({ queryKey }: { queryKey?: unknown[] } = {}) => {
@@ -271,7 +273,7 @@ describe("RecordingContent transcript toggle", () => {
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
     expect(audioPlayerMock).toHaveBeenCalledWith(
-      expect.objectContaining({ src: url })
+      expect.objectContaining({ src: `${url}&local=1` })
     );
   });
 

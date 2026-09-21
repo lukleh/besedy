@@ -1,9 +1,11 @@
-import { DownloadsContent } from "@/components/offline/downloads-content";
+import { LocalModeShell } from "@/components/offline/local-mode-shell";
 
 /**
- * Downloads page. The service worker caches this page's HTML so an offline
- * navigation anywhere in the app can land here.
+ * Session-free local-mode document. The service worker caches this page's
+ * HTML and replays it, at the requested URL, for any navigation that cannot
+ * reach the server. The shell then renders Downloads, a catalog's downloaded
+ * events, or the shared event and recording pages from local packages.
  */
 export default function DownloadsPage() {
-  return <DownloadsContent />;
+  return <LocalModeShell />;
 }
