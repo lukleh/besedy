@@ -52,8 +52,8 @@ describe("catalog management route access", () => {
     const result = await requireCatalogManagementAccess("catalog-1", {
       auditResource: "catalog_publication",
       auditResourceId: "hash-1",
-      deniedMessage: "Only owner/admin can update publication state",
-      deniedReason: "Only owner/admin can update publication state",
+      deniedMessage: "Publish-recording permission required to change recording publication state",
+      deniedReason: "Publish-recording permission required to change recording publication state",
     });
 
     expect(result.ok).toBe(false);
@@ -117,8 +117,8 @@ describe("catalog management route access", () => {
     const result = await requireCatalogManagementAccess("catalog-1", {
       auditResource: "catalog_publication",
       auditResourceId: "hash-1",
-      deniedMessage: "Only owner/admin can update publication state",
-      deniedReason: "Only owner/admin can update publication state",
+      deniedMessage: "Publish-recording permission required to change recording publication state",
+      deniedReason: "Publish-recording permission required to change recording publication state",
       authorize: canPublishRecording,
     });
 
@@ -145,8 +145,8 @@ describe("catalog management route access", () => {
     const result = await requireCatalogManagementAccess("catalog-1", {
       auditResource: "catalog_publication",
       auditResourceId: "hash-1",
-      deniedMessage: "Only owner/admin can update publication state",
-      deniedReason: "Only owner/admin can update publication state",
+      deniedMessage: "Publish-recording permission required to change recording publication state",
+      deniedReason: "Publish-recording permission required to change recording publication state",
       authorize: canPublishRecording,
     });
 
@@ -161,7 +161,7 @@ describe("catalog management route access", () => {
       "hash-1",
       {
         catalogId: "catalog-1",
-        reason: "Only owner/admin can update publication state",
+        reason: "Publish-recording permission required to change recording publication state",
       }
     );
   });
