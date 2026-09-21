@@ -72,7 +72,7 @@ interface FakeServerOptions {
   invalidRangeAtOffset?: number | null;
   canViewTranscripts?: boolean;
   canDownloadTranscripts?: boolean;
-  posterStatus?: number;
+  artworkStatus?: number;
 }
 
 function createFakeServer(options: FakeServerOptions = {}) {
@@ -217,16 +217,16 @@ function createFakeServer(options: FakeServerOptions = {}) {
               recorder: { id: 1, name: 'Zoom' },
             },
           ],
-          publishedPoster: {
+          publishedArtwork: {
             id: '4b58cb81-ad10-4b7f-98ca-f05946711b37',
             publishedAt: '2026-05-01T00:00:00.000Z',
           },
         });
       }
-      if (pathname.endsWith('/poster')) {
-        if (options.posterStatus) {
-          return new Response('poster unavailable', {
-            status: options.posterStatus,
+      if (pathname.endsWith('/artwork')) {
+        if (options.artworkStatus) {
+          return new Response('artwork unavailable', {
+            status: options.artworkStatus,
           });
         }
         return new Response(new Uint8Array([1, 2, 3]), {
@@ -264,12 +264,37 @@ describe('download manager', () => {
     cacheStorage = new MemoryCacheStorage();
     vi.stubGlobal('indexedDB', new IDBFactory());
     vi.stubGlobal('caches', cacheStorage);
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { controller: {}, ready: Promise.resolve({}) },
+    });
     // localStorage is a mock in tests/setup.ts; the manager tolerates that.
   });
 
   afterEach(() => {
+    Reflect.deleteProperty(navigator, 'serviceWorker');
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('does not create a download until a service worker can serve it offline', async () => {
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: null,
+        register: vi.fn().mockRejectedValue(new Error('registration failed')),
+      },
+    });
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await expect(
+      downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH }),
+    ).rejects.toThrow('registration failed');
+    expect(downloadManager.getSnapshot().records).toHaveLength(0);
+    expect(server.fetchMock).not.toHaveBeenCalled();
   });
 
   it('downloads a recording and its offline payload', async () => {
@@ -378,7 +403,7 @@ describe('download manager', () => {
       error: null,
       resumeOnReconnect: false,
       transcriptBackend: 'whisperx/large',
-      hasPoster: true,
+      hasArtwork: true,
       createdAt: now,
       updatedAt: now,
       completedAt: now,
@@ -393,8 +418,8 @@ describe('download manager', () => {
         numSpeakers: 0,
         segments: [],
       },
-      poster: {
-        blob: new Blob(['poster'], { type: 'image/jpeg' }),
+      artwork: {
+        blob: new Blob(['artwork'], { type: 'image/jpeg' }),
         contentType: 'image/jpeg',
         variant: 'portrait',
       },
@@ -413,7 +438,7 @@ describe('download manager', () => {
       transcriptBackend: null,
       transcript: null,
       diarization: null,
-      poster: { contentType: 'image/jpeg', variant: 'portrait' },
+      artwork: { contentType: 'image/jpeg', variant: 'portrait' },
     });
   });
 
@@ -497,7 +522,7 @@ describe('download manager', () => {
     expect(downloadManager.getSnapshot().records[0].bytesLoaded).toBe(CHUNK);
   });
 
-  it('downloads an event through its primary recording and stores its poster payload', async () => {
+  it('downloads an event through its primary recording and stores its artwork payload', async () => {
     const server = createFakeServer();
     vi.stubGlobal('fetch', server.fetchMock);
     const { downloadManager } = await loadManager();
@@ -518,15 +543,15 @@ describe('download manager', () => {
     await waitFor(
       () => downloadManager.getSnapshot().records[0]?.status === 'complete',
     );
-    expect(downloadManager.getSnapshot().records[0].hasPoster).toBe(true);
+    expect(downloadManager.getSnapshot().records[0].hasArtwork).toBe(true);
     expect(downloadManager.findEventRecord(CATALOG, 7)?.status).toBe(
       'complete',
     );
 
     const { getDownloadBundle } = await import('@/lib/offline/downloads-db');
     const bundle = await getDownloadBundle(record.key);
-    expect(bundle?.poster?.variant).toBe('square');
-    expect(bundle?.poster?.contentType).toBe('image/jpeg');
+    expect(bundle?.artwork?.variant).toBe('square');
+    expect(bundle?.artwork?.contentType).toBe('image/jpeg');
     expect(
       server.fetchMock.mock.calls.filter(([input]) =>
         new URL(String(input), window.location.origin).pathname.endsWith(
@@ -573,12 +598,12 @@ describe('download manager', () => {
 
     const done = downloadManager.getSnapshot().records[0];
     expect(done.eventKey).toBe(`${CATALOG}:7`);
-    expect(done.hasPoster).toBe(true);
+    expect(done.hasArtwork).toBe(true);
     expect(downloadManager.getSnapshot().records).toHaveLength(1);
   });
 
-  it('completes an event download when its optional poster is unavailable', async () => {
-    const server = createFakeServer({ posterStatus: 500 });
+  it('completes an event download when its optional artwork is unavailable', async () => {
+    const server = createFakeServer({ artworkStatus: 500 });
     vi.stubGlobal('fetch', server.fetchMock);
     const { downloadManager } = await loadManager();
     await downloadManager.hydrate();
@@ -587,7 +612,7 @@ describe('download manager', () => {
     await waitFor(
       () => downloadManager.getSnapshot().records[0]?.status === 'complete',
     );
-    expect(downloadManager.getSnapshot().records[0].hasPoster).toBe(false);
+    expect(downloadManager.getSnapshot().records[0].hasArtwork).toBe(false);
   });
 
   it('removes a download together with its cached bundle', async () => {
@@ -641,7 +666,7 @@ describe('download manager', () => {
       error: null,
       resumeOnReconnect: false,
       transcriptBackend: null,
-      hasPoster: false,
+      hasArtwork: false,
       createdAt: now,
       updatedAt: now,
       completedAt: null,

@@ -10,10 +10,6 @@ vi.mock("@/lib/catalog-events/visibility", () => ({
   getPublishedVisibleEventIds: vi.fn(),
 }));
 
-vi.mock("@/lib/event-posters", () => ({
-  getPosterStatus: vi.fn(),
-}));
-
 vi.mock("@/lib/event-sources", () => ({
   readEventSources: vi.fn(),
 }));

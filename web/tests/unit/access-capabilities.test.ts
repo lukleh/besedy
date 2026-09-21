@@ -120,11 +120,11 @@ describe("access capabilities", () => {
       canAccessSettings: false,
       canManageCatalogConfiguration: false,
       canUseRagSearch: true,
-      // Poster candidates need see_unreleased or a poster permission; a
+      // Artwork candidates need see_unreleased or a artwork permission; a
       // reader carries none of them.
-      canViewPosterCandidates: false,
-      canManagePosters: false,
-      canPublishPosters: false,
+      canViewArtworkCandidates: false,
+      canManageArtwork: false,
+      canPublishArtwork: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -157,9 +157,9 @@ describe("access capabilities", () => {
       // to the curator instead.
       canEditMetadata: false,
       canBatchEditMetadata: false,
-      canViewPosterCandidates: false,
-      canManagePosters: false,
-      canPublishPosters: false,
+      canViewArtworkCandidates: false,
+      canManageArtwork: false,
+      canPublishArtwork: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -188,9 +188,9 @@ describe("access capabilities", () => {
       canEditMetadata: true,
       canBatchEditMetadata: true,
       canManageCatalogConfiguration: false,
-      canViewPosterCandidates: true,
-      canManagePosters: true,
-      canPublishPosters: true,
+      canViewArtworkCandidates: true,
+      canManageArtwork: true,
+      canPublishArtwork: true,
       // The editorial role does not manage who else has access.
       canManageAccess: false,
       canAccessSettings: false,

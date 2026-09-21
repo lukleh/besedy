@@ -160,25 +160,42 @@ superadmin_email = "override@example.org"
   });
 });
 
-describe("getPostersDir", () => {
+describe("getArtworkDir", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
   });
 
-  it("uses the host poster path without loading a container-only config path", async () => {
-    vi.stubEnv("POSTERS_DIR", " /host/besedy-posters ");
+  it("uses the host artwork path without loading a container-only config path", async () => {
+    vi.stubEnv("ARTWORK_DIR", " /host/besedy-artworks ");
     vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
     vi.mocked(fs.existsSync).mockReturnValue(false);
 
-    const { getPostersDir, clearConfigCache } = await import("@/lib/config");
+    const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
     clearConfigCache();
 
-    expect(getPostersDir()).toBe("/host/besedy-posters");
+    expect(getArtworkDir()).toBe("/host/besedy-artworks");
     expect(fs.readFileSync).not.toHaveBeenCalled();
   });
 
   it("prefers the application config when both paths are available", async () => {
+    vi.stubEnv("ARTWORK_DIR", "/host/besedy-artworks");
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(`
+[paths]
+text_data_dir = "/data/text"
+transcripts_dir = "transcripts"
+artwork_dir = "/data/artworks"
+`);
+
+    const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(getArtworkDir()).toBe("/data/artworks");
+  });
+
+  it("does not read the legacy posters_dir key or POSTERS_DIR variable", async () => {
     vi.stubEnv("POSTERS_DIR", "/host/besedy-posters");
     vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
     vi.mocked(fs.existsSync).mockReturnValue(true);
@@ -189,10 +206,25 @@ transcripts_dir = "transcripts"
 posters_dir = "/data/posters"
 `);
 
-    const { getPostersDir, clearConfigCache } = await import("@/lib/config");
+    const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
     clearConfigCache();
 
-    expect(getPostersDir()).toBe("/data/posters");
+    expect(() => getArtworkDir()).toThrow(/artwork_dir is required/);
+  });
+
+  it("throws instead of silently resolving to text_data_dir when artwork_dir is not configured", async () => {
+    vi.stubEnv("BESEDY_CONFIG", "/data/config/besedy.toml");
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(`
+[paths]
+text_data_dir = "/data/text"
+transcripts_dir = "transcripts"
+`);
+
+    const { getArtworkDir, clearConfigCache } = await import("@/lib/config");
+    clearConfigCache();
+
+    expect(() => getArtworkDir()).toThrow(/artwork_dir is required/);
   });
 });
 

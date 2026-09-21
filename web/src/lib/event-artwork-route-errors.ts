@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { AuthError } from "@/lib/auth/permissions";
 import { handlePrismaError } from "@/lib/api";
-import { EventPosterServiceError } from "@/lib/event-poster-service";
-import { PosterAssetError } from "@/lib/event-poster-storage";
+import { EventArtworkServiceError } from "@/lib/event-artwork-service";
+import { ArtworkAssetError } from "@/lib/event-artwork-storage";
 
-export function handleEventPosterRouteError(
+export function handleEventArtworkRouteError(
   error: unknown,
   operation: "fetch" | "create" | "update" | "delete"
 ): NextResponse {
-  if (error instanceof PosterAssetError) {
+  if (error instanceof ArtworkAssetError) {
     const status = error.code === "UPLOAD_TOO_LARGE" ? 413 : 400;
     return NextResponse.json({ error: error.message, code: error.code }, { status });
   }
-  if (error instanceof EventPosterServiceError) {
+  if (error instanceof EventArtworkServiceError) {
     return NextResponse.json(
       {
         error: error.message,
@@ -24,5 +24,5 @@ export function handleEventPosterRouteError(
   if (error instanceof AuthError) {
     return NextResponse.json({ error: error.message }, { status: error.statusCode });
   }
-  return handlePrismaError(error, "event poster", operation);
+  return handlePrismaError(error, "event artwork", operation);
 }

@@ -18,10 +18,10 @@ import {
   requiresReleasedEventVisibilityScope,
 } from "@/lib/policy/event";
 import {
-  canManageEventPosterCandidates,
-  canPublishEventPosters,
-  canViewEventPosterCandidates,
-} from "@/lib/policy/event-poster";
+  canManageEventArtworkCandidates,
+  canPublishEventArtwork,
+  canViewEventArtworkCandidates,
+} from "@/lib/policy/event-artwork";
 import {
   canPublishRecording,
   requiresReadyRecordingScope,
@@ -87,9 +87,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(listenerContext)).toBe(false);
     expect(canUseCatalogRag(listenerContext)).toBe(false);
     expect(canViewUnreleasedEvents(listenerContext)).toBe(false);
-    expect(canViewEventPosterCandidates(listenerContext)).toBe(false);
-    expect(canManageEventPosterCandidates(listenerContext)).toBe(false);
-    expect(canPublishEventPosters(listenerContext)).toBe(false);
+    expect(canViewEventArtworkCandidates(listenerContext)).toBe(false);
+    expect(canManageEventArtworkCandidates(listenerContext)).toBe(false);
+    expect(canPublishEventArtwork(listenerContext)).toBe(false);
     expect(
       canViewRecording(listenerContext, {
         isActionable: true,
@@ -126,15 +126,15 @@ describe("policy access helpers", () => {
     };
 
     expect(canViewCatalog(hostContext)).toBe(true);
-    // browse_recordings, see_unreleased and the poster permissions belong to
+    // browse_recordings, see_unreleased and the artwork permissions belong to
     // the curator; a host is a reader plus manage_access, nothing else.
     expect(canBrowseRecordings(hostContext)).toBe(false);
     expect(canViewCatalogTranscripts(hostContext)).toBe(true);
     expect(canUseCatalogRag(hostContext)).toBe(true);
     expect(canViewUnreleasedEvents(hostContext)).toBe(false);
-    expect(canViewEventPosterCandidates(hostContext)).toBe(false);
-    expect(canManageEventPosterCandidates(hostContext)).toBe(false);
-    expect(canPublishEventPosters(hostContext)).toBe(false);
+    expect(canViewEventArtworkCandidates(hostContext)).toBe(false);
+    expect(canManageEventArtworkCandidates(hostContext)).toBe(false);
+    expect(canPublishEventArtwork(hostContext)).toBe(false);
     // Without see_unreleased, an unscoped recording-state check needs a
     // state to answer from; a host supplies none here, so both refuse.
     expect(canViewRecording(hostContext)).toBe(false);
@@ -183,9 +183,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(curatorContext)).toBe(true);
     expect(canUseCatalogRag(curatorContext)).toBe(true);
     expect(canViewUnreleasedEvents(curatorContext)).toBe(true);
-    expect(canViewEventPosterCandidates(curatorContext)).toBe(true);
-    expect(canManageEventPosterCandidates(curatorContext)).toBe(true);
-    expect(canPublishEventPosters(curatorContext)).toBe(true);
+    expect(canViewEventArtworkCandidates(curatorContext)).toBe(true);
+    expect(canManageEventArtworkCandidates(curatorContext)).toBe(true);
+    expect(canPublishEventArtwork(curatorContext)).toBe(true);
     expect(canViewRecording(curatorContext)).toBe(true);
     expect(canViewRecordingTranscript(curatorContext)).toBe(true);
     // The editorial role does not manage who else has access.
@@ -212,9 +212,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(adminContext)).toBe(true);
     expect(canUseCatalogRag(adminContext)).toBe(true);
     expect(canViewUnreleasedEvents(adminContext)).toBe(true);
-    expect(canViewEventPosterCandidates(adminContext)).toBe(true);
-    expect(canManageEventPosterCandidates(adminContext)).toBe(true);
-    expect(canPublishEventPosters(adminContext)).toBe(true);
+    expect(canViewEventArtworkCandidates(adminContext)).toBe(true);
+    expect(canManageEventArtworkCandidates(adminContext)).toBe(true);
+    expect(canPublishEventArtwork(adminContext)).toBe(true);
     expect(canAttemptCatalogManagement(adminContext)).toBe(true);
     expect(hasCatalogManagementAuthority(adminContext)).toBe(true);
     expect(canAccessCatalogSettings(adminContext)).toBe(true);
@@ -241,9 +241,9 @@ describe("policy access helpers", () => {
     expect(canAttemptCatalogManagement(readerContext)).toBe(false);
     expect(canUseCatalogRag(readerContext)).toBe(true);
     expect(canViewUnreleasedEvents(readerContext)).toBe(false);
-    expect(canViewEventPosterCandidates(readerContext)).toBe(false);
-    expect(canManageEventPosterCandidates(readerContext)).toBe(false);
-    expect(canPublishEventPosters(readerContext)).toBe(false);
+    expect(canViewEventArtworkCandidates(readerContext)).toBe(false);
+    expect(canManageEventArtworkCandidates(readerContext)).toBe(false);
+    expect(canPublishEventArtwork(readerContext)).toBe(false);
     expect(hasCatalogManagementAuthority(readerContext)).toBe(false);
     expect(canGrantCatalogGrant(readerContext, "reader")).toBe(false);
     expect(

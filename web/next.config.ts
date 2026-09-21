@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
   // Enable experimental features
   experimental: {
     // Next.js 16 renamed middleware.* config to proxy.*.
-    // Allow larger request bodies for file uploads (sources, posters, etc.)
+    // Allow larger request bodies for file uploads (sources, artworks, etc.)
     proxyClientMaxBodySize: "100mb",
   },
   // Keep Turbopack scoped to the web app (avoid repo-root lockfile ambiguity)

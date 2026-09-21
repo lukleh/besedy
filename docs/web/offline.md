@@ -3,7 +3,9 @@
 Besedy's offline mode is a device-local Downloads library, similar to a
 podcast app. A user explicitly downloads an event or recording while online,
 then opens it from `/downloads` without a connection. Catalog, event, and
-recording pages remain online-only.
+recording pages are not offline navigation entry points: they cannot be opened
+or reloaded without a connection. An event or recording page that is already
+open can keep playing a downloaded recording after connectivity drops.
 
 This deliberately avoids mirroring server-rendered pages and API responses.
 Those pages depend on the current session and changing server data, while the
@@ -21,8 +23,8 @@ The `besedy-offline` IndexedDB database has two stores:
   source of truth for the Downloads list and download status.
 - `downloadBundles` contains the larger optional payloads used by the offline
   detail view: the default transcript and diarization when the account has
-  `download_transcripts`, plus one poster Blob. Keeping these separate means
-  progress updates and list reads do not copy transcripts or posters.
+  `download_transcripts`, plus one artwork Blob. Keeping these separate means
+  progress updates and list reads do not copy transcripts or artwork.
 
 Audio is stored in 2 MB chunks in Cache Storage (`besedy-audio-v5`), with a
 metadata entry that records the size, MIME type, chunks, and completion state.
@@ -48,12 +50,12 @@ The manager:
 2. Downloads Range chunks directly to Cache Storage, persisting progress after
    each chunk so an interrupted download can resume.
 3. Stores the default transcript and optional diarization only when the entry
-   grants `download_transcripts`, plus one event poster, in the IndexedDB bundle.
+   grants `download_transcripts`, plus one event artwork, in the IndexedDB bundle.
 
 On online startup and after reconnecting, the manager rechecks completed
 downloads that contain transcript data for the signed-in account. If the server
 no longer grants transcript download permission, it removes the stored
-transcript and diarization while retaining the audio and poster. This is
+transcript and diarization while retaining the audio and artwork. This is
 best-effort revocation: a device that remains offline necessarily keeps the data
 until it reconnects, and a temporary network or authentication failure is not
 treated as a permission decision.
@@ -120,13 +122,16 @@ Offline mode supports:
 - listing device-local downloads;
 - opening a downloaded event or recording from that list;
 - audio playback and seeking;
+- continuing or starting playback on an already-open event or recording page
+  when its selected recording was downloaded before connectivity dropped;
 - the downloaded default transcript and diarization; and
 - locally saved playback position.
 
-Offline mode does not support catalog/event lists, normal event or recording
-pages, search, edits, fresh access checks, or other API-backed features—even if
-the item was downloaded. A failed navigation to one of those pages redirects to
-Downloads. This is an intentional product boundary, not a cache miss.
+Offline mode does not support offline navigation to or reloads of catalog,
+event, or recording pages; search; edits; fresh access checks; or other
+API-backed features—even if the item was downloaded. A failed navigation to one
+of those pages redirects to Downloads. This is an intentional product boundary,
+not a cache miss.
 
 Signing out deletes the downloads database and protected audio/shell caches.
 The static asset cache is not user-specific.

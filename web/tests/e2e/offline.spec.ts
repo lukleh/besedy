@@ -8,8 +8,15 @@
  */
 
 import { test, expect } from './helpers/base-test';
+import type { APIRequestContext } from '@playwright/test';
 import { loginAs } from './helpers/auth';
-import { URLS, FIRST_RECORDING, TEST_CATALOG_ID } from './helpers/fixtures';
+import {
+  URLS,
+  FIRST_RECORDING,
+  TEST_AUDIO_FILES,
+  TEST_CATALOG_ID,
+  TEST_EVENTS,
+} from './helpers/fixtures';
 import { waitForPageReady } from './helpers/navigation';
 import {
   clearOfflineStorage,
@@ -22,10 +29,31 @@ import {
   waitForServiceWorker,
 } from './helpers/offline';
 
+async function getEventIdByTitle(
+  request: APIRequestContext,
+  title: string,
+): Promise<number> {
+  const params = new URLSearchParams({
+    group: TEST_CATALOG_ID,
+    search: title,
+    limit: '50',
+  });
+  const response = await request.get(
+    `/api/catalog-events?${params.toString()}`,
+  );
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    events: Array<{ id: number; title: string | null }>;
+  };
+  const event = body.events.find((item) => item.title === title);
+  if (!event) throw new Error(`Seeded event not found: ${title}`);
+  return event.id;
+}
+
 test.describe('Offline Mode', () => {
   test.skip(
-    ({ browserName }) => browserName !== 'chromium',
-    'Offline tests require Chromium',
+    ({ browserName }) => browserName === 'firefox',
+    'Offline tests require Chromium or WebKit',
   );
 
   test.describe('Offline Banner', () => {
@@ -125,6 +153,86 @@ test.describe('Offline Mode', () => {
   });
 
   test.describe('Offline playback', () => {
+    test('a downloaded event advances playback when opened from Downloads offline', async ({
+      page,
+      context,
+    }) => {
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+      const primaryRecording = TEST_AUDIO_FILES.find(
+        (recording) => recording.shortHash === event.primaryRecording,
+      );
+      if (!primaryRecording) throw new Error('Seeded primary recording not found');
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await expect(eventDownload).toHaveAttribute('data-status', 'none');
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(async () => {
+            const cache = await caches.open('besedy-offline-shell-v1');
+            return Boolean(await cache.match('/downloads'));
+          }),
+        )
+        .toBe(true);
+
+      await page.goto('/downloads');
+      const card = page.getByTestId(
+        `download-card-${primaryRecording.hash}`,
+      );
+      await expect(card).toContainText(event.title, { timeout: 15_000 });
+      await setOffline(context, true);
+      await waitForOfflineBanner(page);
+      await card.getByRole('button', { name: /open|otevřít/i }).click();
+
+      const audio = page.locator('audio');
+      const isAndroid = await page.evaluate(() =>
+        /Android/.test(navigator.userAgent),
+      );
+      if (isAndroid) {
+        await expect(audio).toHaveAttribute('src', /^data:audio\//);
+      }
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () =>
+            audio.evaluate((element: HTMLAudioElement) => ({
+              currentTime: element.currentTime,
+              error: element.error?.code ?? null,
+              paused: element.paused,
+              readyState: element.readyState,
+            })),
+          { timeout: 15_000 },
+        )
+        .toMatchObject({
+          currentTime: expect.any(Number),
+          error: null,
+          paused: false,
+        });
+      await expect
+        .poll(
+          () =>
+            audio.evaluate(
+              (element: HTMLAudioElement) => element.currentTime,
+            ),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(0.5);
+    });
+
     test('a downloaded recording plays offline and syncs progress on reconnect', async ({
       page,
       context,

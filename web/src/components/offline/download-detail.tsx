@@ -26,6 +26,22 @@ interface OfflineDownloadDetailProps {
   onBack: () => void;
 }
 
+function audioDataUrl(data: ArrayBuffer, contentType: string): string {
+  // WebKit rejects service-worker and blob-backed media once it is offline.
+  // A data URL keeps the media loader entirely within the current document.
+  const bytes = new Uint8Array(data);
+  const encodedChunks: string[] = [];
+  // Keep non-final chunks divisible by three so concatenated base64 has no
+  // interior padding, while avoiding one extra full-size binary string.
+  const chunkSize = 24 * 1024;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    encodedChunks.push(
+      btoa(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))),
+    );
+  }
+  return `data:${contentType};base64,${encodedChunks.join('')}`;
+}
+
 export function OfflineDownloadDetail({
   record,
   onBack,
@@ -35,7 +51,8 @@ export function OfflineDownloadDetail({
   const [bundleState, setBundleState] = useState<{
     key: string | null;
     bundle: DownloadBundlePayload | null;
-  }>({ key: null, bundle: null });
+    audioDataUrl: string | null;
+  }>({ key: null, bundle: null, audioDataUrl: null });
   const [currentTime, setCurrentTime] = useState(0);
   const [seekTo, setSeekTo] = useState<number | undefined>();
   const [seekKey, setSeekKey] = useState(0);
@@ -49,7 +66,6 @@ export function OfflineDownloadDetail({
   const recordingHash = record?.hash ?? null;
   const catalogId = record?.catalogId ?? null;
   const ownerUserId = record?.userId ?? null;
-
   useEffect(() => {
     let cancelled = false;
     if (!recordKey) return;
@@ -61,7 +77,18 @@ export function OfflineDownloadDetail({
       } catch {
         // The audio remains useful if IndexedDB cannot read the optional payload.
       } finally {
-        if (!cancelled) setBundleState({ key: recordKey, bundle });
+        if (!cancelled) {
+          setBundleState({
+            key: recordKey,
+            bundle,
+            audioDataUrl: bundle?.inlineAudio
+              ? audioDataUrl(
+                  bundle.inlineAudio.data,
+                  bundle.inlineAudio.contentType,
+                )
+              : null,
+          });
+        }
       }
     })();
     return () => {
@@ -133,6 +160,10 @@ export function OfflineDownloadDetail({
   );
 
   const bundle = bundleState.key === record?.key ? bundleState.bundle : null;
+  const audioSource =
+    bundleState.key === record?.key && bundleState.audioDataUrl
+      ? bundleState.audioDataUrl
+      : record?.audioUrl;
   const loading = record !== null && bundleState.key !== record.key;
 
   const identity = useMemo(() => {
@@ -199,7 +230,7 @@ export function OfflineDownloadDetail({
         data-testid="download-detail"
         data-download-key={record.key}
       >
-        {bundle?.poster && <OfflinePoster payload={bundle.poster} />}
+        {bundle?.artwork && <OfflineArtwork payload={bundle.artwork} />}
 
         <header className="space-y-2">
           <div className="flex flex-wrap gap-2">
@@ -214,13 +245,13 @@ export function OfflineDownloadDetail({
           )}
         </header>
 
-        {record.audioUrl ? (
+        {audioSource ? (
           <section
             aria-label={t('offlinePlayer')}
             data-testid="download-detail-player"
           >
             <AudioPlayer
-              src={record.audioUrl}
+              src={audioSource}
               catalogId={record.catalogId}
               onTimeUpdate={handleTimeUpdate}
               onPlayingChange={(isPlaying) => {
@@ -281,26 +312,26 @@ export function OfflineDownloadDetail({
   );
 }
 
-function OfflinePoster({
+function OfflineArtwork({
   payload,
 }: {
-  payload: NonNullable<DownloadBundlePayload['poster']>;
+  payload: NonNullable<DownloadBundlePayload['artwork']>;
 }) {
-  const posterUrl = useMemo(
+  const artworkUrl = useMemo(
     () => URL.createObjectURL(payload.blob),
     [payload.blob],
   );
 
-  useEffect(() => () => URL.revokeObjectURL(posterUrl), [posterUrl]);
+  useEffect(() => () => URL.revokeObjectURL(artworkUrl), [artworkUrl]);
 
   return (
-    // The poster is a device-local Blob URL, not a Next Image candidate.
+    // The artwork is a device-local Blob URL, not a Next Image candidate.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={posterUrl}
+      src={artworkUrl}
       alt=""
       className="max-h-72 w-full rounded-lg object-contain bg-muted"
-      data-testid="download-detail-poster"
+      data-testid="download-detail-artwork"
     />
   );
 }

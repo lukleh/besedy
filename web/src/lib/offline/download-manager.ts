@@ -21,13 +21,13 @@ import {
   buildDiarizationBackendsUrl,
   buildDiarizationUrl,
   buildEventDetailUrl,
-  buildEventPosterUrl,
+  buildEventArtworkUrl,
   buildRecordingEntryUrl,
   buildTranscriptBackendsUrl,
   buildTranscriptUrl,
   type AudioSourceOption,
 } from '@/lib/api/recording-urls';
-import { EVENT_POSTER_LANDSCAPE_MEDIA } from '@/lib/event-poster-media';
+import { EVENT_ARTWORK_LANDSCAPE_MEDIA } from '@/lib/event-artwork-media';
 import type {
   Diarization,
   Transcript,
@@ -37,7 +37,9 @@ import {
   deleteAudioCacheEntries,
   getAudioCacheKey,
   getAudioChunkKey,
+  readCompleteAudioBlob,
   readAudioCacheMeta,
+  requiresInlineOfflineAudio,
   writeAudioCacheMeta,
   type AudioCacheMeta,
 } from './audio-cache-format';
@@ -56,7 +58,7 @@ import {
   putDownload,
   type DownloadBundlePayload,
   type DownloadEventSnapshot,
-  type DownloadPosterPayload,
+  type DownloadArtworkPayload,
   type DownloadRecord,
   type DownloadRecordingSnapshot,
 } from './downloads-db';
@@ -66,7 +68,44 @@ const QUEUE_LOCK_NAME = 'besedy-downloads-queue';
 const DOWNLOAD_LOCK_PREFIX = 'besedy-download:';
 const CHANNEL_NAME = 'besedy-downloads';
 const PERSIST_REQUESTED_KEY = 'besedy-storage-persist-requested';
+const SERVICE_WORKER_CONTROL_TIMEOUT_MS = 10_000;
 let downloadsShellWarmPromise: Promise<void> | null = null;
+
+/**
+ * Cached chunks are useful only when a controlling service worker can serve
+ * them back to an audio element. Cache Storage itself is available before a
+ * newly registered worker claims the page, which previously let us mark a
+ * download complete even though it could not play offline.
+ */
+async function ensureOfflinePlaybackWorker(): Promise<void> {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker) {
+    throw new Error('Offline playback requires a service worker');
+  }
+  if (navigator.serviceWorker.controller) return;
+
+  await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  if (navigator.serviceWorker.controller) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      window.clearTimeout(timeoutId);
+      navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+    };
+    const onChange = () => {
+      if (!navigator.serviceWorker.controller) return;
+      finish();
+      resolve();
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish();
+      reject(new Error('Offline playback is still preparing. Please try again.'));
+    }, SERVICE_WORKER_CONTROL_TIMEOUT_MS);
+    navigator.serviceWorker.addEventListener('controllerchange', onChange);
+    // Avoid missing a controllerchange between the check above and listener
+    // registration.
+    onChange();
+  });
+}
 
 /** Load the real session-free route so its HTML and build graph are cached. */
 function warmDownloadsShell(): Promise<void> {
@@ -167,7 +206,7 @@ interface EventDetailResponse {
   sessionOrdinal?: number;
   sessionCount?: number;
   recordings: EventRecordingResponse[];
-  publishedPoster?: {
+  publishedArtwork?: {
     id: string;
     publishedAt: string;
   } | null;
@@ -240,12 +279,12 @@ async function tryFetchJson<T>(
   }
 }
 
-async function tryFetchPoster(
+async function tryFetchArtwork(
   url: string,
-  variant: DownloadPosterPayload['variant'],
-  posterId: string,
+  variant: DownloadArtworkPayload['variant'],
+  artworkId: string,
   signal: AbortSignal,
-): Promise<DownloadPosterPayload | null> {
+): Promise<DownloadArtworkPayload | null> {
   try {
     const response = await fetchResponse(url, signal);
     const blob = await response.blob();
@@ -256,7 +295,7 @@ async function tryFetchPoster(
         blob.type ??
         'application/octet-stream',
       variant,
-      posterId,
+      artworkId,
     };
   } catch (error) {
     if (isAbortError(error) || isNetworkError(error)) throw error;
@@ -455,10 +494,10 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
     sessionIndex: event.sessionIndex,
     sessionOrdinal: event.sessionOrdinal,
     sessionCount: event.sessionCount,
-    publishedPoster: event.publishedPoster
+    publishedArtwork: event.publishedArtwork
       ? {
-          id: event.publishedPoster.id,
-          publishedAt: event.publishedPoster.publishedAt,
+          id: event.publishedArtwork.id,
+          publishedAt: event.publishedArtwork.publishedAt,
         }
       : null,
   };
@@ -533,7 +572,8 @@ export function isDownloadSupported(): boolean {
     typeof window !== 'undefined' &&
     'caches' in window &&
     isIndexedDBAvailable() &&
-    typeof fetch === 'function'
+    typeof fetch === 'function' &&
+    'serviceWorker' in navigator
   );
 }
 
@@ -619,6 +659,38 @@ class DownloadManager {
       if (next !== record) recovered.push(next);
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
+    if (
+      this.online &&
+      typeof navigator !== 'undefined' &&
+      requiresInlineOfflineAudio(navigator.userAgent)
+    ) {
+      const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+      for (const record of this.records.values()) {
+        if (record.status !== 'complete' || !record.audioCacheKey) continue;
+        try {
+          const bundle = await getDownloadBundle(record.key);
+          if (!bundle || bundle.inlineAudio?.data) continue;
+          const blob = await readCompleteAudioBlob(
+            audioCache,
+            record.audioCacheKey,
+          );
+          if (!blob) continue;
+          await putDownloadBundle({
+            ...bundle,
+            inlineAudio: {
+              data: await blob.arrayBuffer(),
+              contentType: blob.type || 'audio/webm',
+            },
+            updatedAt: Date.now(),
+          });
+        } catch (error) {
+          logger.warn('Failed to prepare existing WebKit offline audio', {
+            key: record.key,
+            error,
+          });
+        }
+      }
+    }
     this.publish({ supported: true, hydrated: true });
     void this.refreshStorageEstimate();
     if (
@@ -667,6 +739,7 @@ class DownloadManager {
   async enqueueRecording(
     input: EnqueueRecordingInput,
   ): Promise<DownloadRecord> {
+    await ensureOfflinePlaybackWorker();
     await this.hydrate();
     const key = makeDownloadKey(input.catalogId, input.hash);
     const existing = this.records.get(key);
@@ -730,7 +803,7 @@ class DownloadManager {
       error: null,
       resumeOnReconnect: false,
       transcriptBackend: null,
-      hasPoster: false,
+      hasArtwork: false,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
@@ -1144,6 +1217,7 @@ class DownloadManager {
     this.activeKey = key;
 
     try {
+      await ensureOfflinePlaybackWorker();
       const started = await this.update(key, {
         status: 'downloading',
         error: null,
@@ -1207,6 +1281,15 @@ class DownloadManager {
           });
         },
       });
+      const needsInlineAudio =
+        typeof navigator !== 'undefined' &&
+        requiresInlineOfflineAudio(navigator.userAgent);
+      const offlineAudioBlob = needsInlineAudio
+        ? await readCompleteAudioBlob(audioCache, audioCacheKey)
+        : null;
+      if (needsInlineAudio && !offlineAudioBlob) {
+        throw new Error('Downloaded audio cache is incomplete');
+      }
 
       let transcriptBackend: string | null = null;
       let transcript: Transcript | null = null;
@@ -1222,10 +1305,10 @@ class DownloadManager {
         diarization = transcriptPayload.diarization;
       }
 
-      let poster: DownloadPosterPayload | null = null;
+      let artwork: DownloadArtworkPayload | null = null;
       const currentEvent = this.records.get(key)?.event ?? started.event;
       if (currentEvent) {
-        poster = await this.downloadEventPoster(
+        artwork = await this.downloadEventArtwork(
           catalogId,
           currentEvent,
           signal,
@@ -1237,7 +1320,13 @@ class DownloadManager {
         transcriptBackend,
         transcript,
         diarization,
-        poster,
+        artwork,
+        inlineAudio: offlineAudioBlob
+          ? {
+              data: await offlineAudioBlob.arrayBuffer(),
+              contentType: offlineAudioBlob.type || 'audio/webm',
+            }
+          : null,
         updatedAt: Date.now(),
       });
 
@@ -1247,7 +1336,7 @@ class DownloadManager {
         error: null,
         resumeOnReconnect: false,
         transcriptBackend,
-        hasPoster: poster !== null,
+        hasArtwork: artwork !== null,
         completedAt: Date.now(),
       });
       void warmDownloadsShell();
@@ -1335,28 +1424,28 @@ class DownloadManager {
     };
   }
 
-  private async downloadEventPoster(
+  private async downloadEventArtwork(
     catalogId: string,
     event: DownloadEventSnapshot,
     signal: AbortSignal,
-  ): Promise<DownloadPosterPayload | null> {
-    const poster = event.publishedPoster;
-    if (!poster) return null;
-    const preferred = window.matchMedia(EVENT_POSTER_LANDSCAPE_MEDIA).matches
+  ): Promise<DownloadArtworkPayload | null> {
+    const artwork = event.publishedArtwork;
+    if (!artwork) return null;
+    const preferred = window.matchMedia(EVENT_ARTWORK_LANDSCAPE_MEDIA).matches
       ? 'landscape'
       : 'square';
     const fallback = preferred === 'landscape' ? 'square' : 'landscape';
-    const preferredPoster = await tryFetchPoster(
-      buildEventPosterUrl(catalogId, event.id, preferred, poster.id),
+    const preferredArtwork = await tryFetchArtwork(
+      buildEventArtworkUrl(catalogId, event.id, preferred, artwork.id),
       preferred,
-      poster.id,
+      artwork.id,
       signal,
     );
-    if (preferredPoster) return preferredPoster;
-    return tryFetchPoster(
-      buildEventPosterUrl(catalogId, event.id, fallback, poster.id),
+    if (preferredArtwork) return preferredArtwork;
+    return tryFetchArtwork(
+      buildEventArtworkUrl(catalogId, event.id, fallback, artwork.id),
       fallback,
-      poster.id,
+      artwork.id,
       signal,
     );
   }

@@ -2,18 +2,18 @@
  * IndexedDB registry of downloads.
  *
  * Lightweight registry rows are the source of truth for download state. Large
- * transcript and poster payloads live in a separate store so listing downloads
+ * transcript and artwork payloads live in a separate store so listing downloads
  * and persisting progress never reads or rewrites every downloaded transcript.
  * The database name is inherited from the earlier catalog-mirror experiment.
  */
-import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { deleteDB, openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
 import type {
   Diarization,
   Transcript,
 } from '@/components/transcript/transcript-viewer-types';
 
 export const DOWNLOADS_DB_NAME = 'besedy-offline';
-const DOWNLOADS_DB_VERSION = 4;
+const DOWNLOADS_DB_VERSION = 5;
 const DOWNLOADS_STORE = 'downloads';
 const DOWNLOAD_BUNDLES_STORE = 'downloadBundles';
 const PLAYBACK_PROGRESS_STORE = 'pendingPlaybackProgress';
@@ -40,7 +40,7 @@ export interface DownloadEventSnapshot {
   /** Absent on records downloaded before ordinals were stored; the cue hides then. */
   sessionOrdinal?: number;
   sessionCount?: number;
-  publishedPoster: {
+  publishedArtwork: {
     id: string;
     publishedAt: string;
   } | null;
@@ -80,18 +80,23 @@ export interface DownloadRecord {
   /** Network pauses resume on reconnect; explicit user pauses do not. */
   resumeOnReconnect: boolean;
   transcriptBackend: string | null;
-  hasPoster: boolean;
+  hasArtwork: boolean;
   createdAt: number;
   updatedAt: number;
   completedAt: number | null;
 }
 
-export interface DownloadPosterPayload {
+export interface DownloadArtworkPayload {
   blob: Blob;
   contentType: string;
   /** `portrait` is retained only for bundles created before ADR 0009. */
   variant: 'square' | 'landscape' | 'portrait';
-  posterId?: string;
+  artworkId?: string;
+}
+
+export interface DownloadInlineAudioPayload {
+  data: ArrayBuffer;
+  contentType: string;
 }
 
 export interface DownloadBundlePayload {
@@ -100,7 +105,9 @@ export interface DownloadBundlePayload {
   transcriptBackend: string | null;
   transcript: Transcript | null;
   diarization: Diarization | null;
-  poster: DownloadPosterPayload | null;
+  artwork: DownloadArtworkPayload | null;
+  /** WebKit-compatible copy; older bundles and non-WebKit browsers omit it. */
+  inlineAudio?: DownloadInlineAudioPayload | null;
   updatedAt: number;
 }
 
@@ -168,6 +175,63 @@ export function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== 'undefined';
 }
 
+/**
+ * Rewrites the pre-rename field names (`hasPoster`, `event.publishedPoster`,
+ * `bundle.poster`, `poster.posterId`) left on records written before the
+ * poster->artwork rename (ADR 0011). Without this, records saved by an
+ * earlier release keep the old keys forever: reads of the new field names
+ * silently return `undefined` instead of throwing, so stale offline artwork
+ * would just disappear rather than fail loudly.
+ */
+async function migrateLegacyArtworkFields(
+  transaction: IDBPTransaction<
+    DownloadsDBSchema,
+    ('downloads' | 'downloadBundles' | 'pendingPlaybackProgress')[],
+    'versionchange'
+  >,
+): Promise<void> {
+  const downloadsStore = transaction.objectStore(DOWNLOADS_STORE);
+  let downloadCursor = await downloadsStore.openCursor();
+  while (downloadCursor) {
+    const record = downloadCursor.value as DownloadRecord & {
+      hasPoster?: boolean;
+      event: (DownloadEventSnapshot & { publishedPoster?: DownloadEventSnapshot['publishedArtwork'] }) | null;
+    };
+    let changed = false;
+    if (record.hasPoster !== undefined) {
+      record.hasArtwork = record.hasPoster;
+      delete record.hasPoster;
+      changed = true;
+    }
+    if (record.event && record.event.publishedPoster !== undefined) {
+      record.event.publishedArtwork = record.event.publishedPoster;
+      delete record.event.publishedPoster;
+      changed = true;
+    }
+    if (changed) await downloadCursor.update(record);
+    downloadCursor = await downloadCursor.continue();
+  }
+
+  const bundlesStore = transaction.objectStore(DOWNLOAD_BUNDLES_STORE);
+  let bundleCursor = await bundlesStore.openCursor();
+  while (bundleCursor) {
+    const bundle = bundleCursor.value as DownloadBundlePayload & {
+      poster?: (Omit<DownloadArtworkPayload, 'artworkId'> & { posterId?: string }) | null;
+    };
+    if (bundle.poster !== undefined) {
+      if (bundle.poster) {
+        const { posterId, ...rest } = bundle.poster;
+        bundle.artwork = { ...rest, artworkId: posterId };
+      } else {
+        bundle.artwork = null;
+      }
+      delete bundle.poster;
+      await bundleCursor.update(bundle);
+    }
+    bundleCursor = await bundleCursor.continue();
+  }
+}
+
 let dbPromise: Promise<IDBPDatabase<DownloadsDBSchema>> | null = null;
 
 export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
@@ -176,7 +240,7 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
       DOWNLOADS_DB_NAME,
       DOWNLOADS_DB_VERSION,
       {
-        upgrade(db) {
+        async upgrade(db, oldVersion, _newVersion, transaction) {
           for (const name of Array.from(db.objectStoreNames)) {
             if (
               name !== DOWNLOADS_STORE &&
@@ -202,6 +266,9 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
               keyPath: 'key',
             });
             store.createIndex('byUser', 'userId');
+          }
+          if (oldVersion > 0 && oldVersion < 5) {
+            await migrateLegacyArtworkFields(transaction);
           }
         },
         blocking() {

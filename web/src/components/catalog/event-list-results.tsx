@@ -58,7 +58,7 @@ export function EventListResults({
   const router = useRouter();
   const t = useTranslations("events.list");
   const tDownloads = useTranslations("downloads");
-  const downloadedEvents = useDownloadedEvents(catalogId);
+  const downloadedEvents = useDownloadedEvents(catalogId, events);
 
   const renderDownloadMarker = (eventId: number) => {
     const status = downloadedEvents.get(eventId);
@@ -111,14 +111,14 @@ export function EventListResults({
     return sortDir === "asc" ? "ascending" : "descending";
   };
 
-  const getPosterStatusLabel = (status: CatalogEventRow["posterStatus"]) => {
-    if (status === "published-with-newer-drafts") return t("postersPublishedWithDrafts");
-    if (status === "published") return t("postersPublished");
-    if (status === "draft-only") return t("postersDraftOnly");
-    return t("postersMissing");
+  const getArtworkStatusLabel = (status: CatalogEventRow["artworkStatus"]) => {
+    if (status === "published-with-newer-drafts") return t("artworkPublishedWithDrafts");
+    if (status === "published") return t("artworkPublished");
+    if (status === "draft-only") return t("artworkDraftOnly");
+    return t("artworkMissing");
   };
 
-  const getPosterStatusVariant = (status: CatalogEventRow["posterStatus"]): "default" | "secondary" | "outline" => {
+  const getArtworkStatusVariant = (status: CatalogEventRow["artworkStatus"]): "default" | "secondary" | "outline" => {
     if (status === "published") return "default";
     if (status === "published-with-newer-drafts") return "secondary";
     if (status === "draft-only") return "secondary";
@@ -160,7 +160,7 @@ export function EventListResults({
                     </button>
                   </TableHead>
                   <TableHead className="text-right">{t("columnSources")}</TableHead>
-                  <TableHead>{t("columnPosters")}</TableHead>
+                  <TableHead>{t("columnArtwork")}</TableHead>
                   <TableHead>{t("columnPrimaryRecording")}</TableHead>
                   <TableHead aria-sort={getSortAria("released")}>
                     <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort("released")}>
@@ -299,8 +299,8 @@ export function EventListResults({
                         <TableCell className="text-right">{catalogEvent.recordingCount}</TableCell>
                         <TableCell className="text-right">{catalogEvent.sourceCount}</TableCell>
                         <TableCell>
-                          <Badge variant={getPosterStatusVariant(catalogEvent.posterStatus)}>
-                            {getPosterStatusLabel(catalogEvent.posterStatus)}
+                          <Badge variant={getArtworkStatusVariant(catalogEvent.artworkStatus)}>
+                            {getArtworkStatusLabel(catalogEvent.artworkStatus)}
                           </Badge>
                         </TableCell>
                         <TableCell className="max-w-[320px] truncate">
