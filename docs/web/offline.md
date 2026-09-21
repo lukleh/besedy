@@ -97,7 +97,7 @@ application.
 | Normal event page | Preserve its information hierarchy and core components for local events; do not use a visually reduced offline page. | Resolve through the local source when necessary and adapt or omit only actions that require server data or a non-downloaded recording. |
 | Audio player | Keep the usual player controls and optionally identify local availability without introducing a new player. | Continue active playback across connection loss; start, seek, and resume a downloaded recording from cached range-served audio. |
 | Transcript panel | Render a plain, readable transcript; remove speaker/diarization controls, timestamps, and transcript-driven seek affordances in local mode. | Display the locally retained permitted default transcript without time synchronisation. |
-| Event artwork | Use the same published artwork placement and styling as the normal event page. | Resolve artwork from the local package when offline. |
+| Event artwork | Use the same published artwork placement, styling, and no-artwork fallback as the normal event page. | Resolve published artwork from the local package when offline; an event with no published artwork remains downloadable. |
 | Current `OfflineDownloadDetail` | Retire the separate reduced detail frame, badges, and bespoke layout after migration. | Replace it with navigation to the shared event page; it no longer owns playback or transcript rendering. |
 | Offline-unavailable state | Provide a clear, non-blocking empty/unavailable state for events without a completed package. | Do not expose a false play action or attempt a server-only page when no local source can satisfy it. |
 
@@ -108,44 +108,52 @@ application.
 | Shared event/list models | Define source-neutral event-page and event-collection models plus explicit capabilities. Components receive these models rather than API or IndexedDB records directly. |
 | Content-source seam | Implement online and local sources behind the same contract. The online source reads current API data; the local source reads only completed event packages. |
 | Source selection | Prefer current online data when it can be obtained, then fall back to a complete local package. Do not use `navigator.onLine` as the sole decision because it does not prove a request will succeed. |
-| Routing and application shell | Make normal event/list presentation reachable from local data without treating cached server HTML as authenticated content. Downloads navigation must route into this shared presentation. |
-| Download package schema | Store a complete package: selected audio, published artwork, stable event metadata, and permitted plain transcript. Remove diarization and timestamp-dependent transcript payloads from the offline contract. |
-| Download completion and markers | Mark an event complete only when every required package part and the exact cached audio source are available. Derive status from catalog/event identity and recording hash, with migration support for existing records. |
+| Routing and application shell | Cache a session-free local-mode bootstrap that can start after a reload or browser/PWA restart without changing the requested normal event/list URL. The bootstrap renders the shared presentation and lets the client content source resolve the URL; Downloads navigation routes into the same presentation. |
+| Download package schema | Store the selected audio and every read-only display value required by the shared event-page and event-card models. Store published artwork and a permitted plain transcript conditionally, with an explicit content-availability manifest. Remove diarization and timestamp-dependent transcript payloads from the offline contract. |
+| Download completion and markers | Mark an event complete only when the exact cached audio source is range-servable, required model data is durable, and each conditional payload is either stored or authoritatively known to be unavailable or not permitted. Derive status from catalog/event identity and recording hash, with migration support for existing records. |
 | Audio cache and service worker | Keep resumable chunk storage and strict range serving. The worker serves complete local audio; it does not decide product routing or own long-running downloads. |
 | Permissions and lifecycle | Retain transcript content only when permitted, reconcile it after a successful reconnect, and delete user-owned packages and protected caches on sign-out. |
 | Playback progress | Preserve local playback position while offline and synchronise it when the account reconnects, using the existing durable pending-progress mechanism. |
 | Migration and cleanup | Migrate existing registry/bundle records where possible; retire the separate offline-detail implementation and fixed banner only after shared local pages are in use. |
-| Test coverage | Add browser-level coverage for offline transition, offline event switching, shared-page parity, marker visibility on mobile/desktop, plain transcripts, artwork, permissions, and unavailable local content. |
+| Test coverage | Add browser-level coverage for offline transition, offline cold start and reload, event switching, shared-page parity, marker visibility on mobile/desktop, plain transcripts, events with and without artwork, permissions, and unavailable local content. |
 
 ## Offline event package
 
 A completed event download is an atomic local event package for the purpose of
-offline presentation. It contains only the material needed for the experience
-above:
+offline presentation. Atomic means that each required or conditional part has
+reached a durable, known state; it does not mean that every event has artwork
+or a transcript. The package contains only the material needed for the
+experience above:
 
 | Content | Offline behavior |
 | --- | --- |
 | Audio | The selected event recording, stored in chunks and served with range support so playback and seeking work offline. |
-| Transcript | The permitted default transcript as plain readable text. Offline transcript view has no diarization, timestamps, speaker controls, or time-synchronised seeking. |
-| Artwork | The published event artwork used by the normal event page. |
-| Event metadata | The stable title, date, location, session ordering, and recording identity needed to render a card and event page and to switch events. |
+| Transcript | The default transcript as plain readable text when one exists and the user may retain it. Offline transcript view has no diarization, timestamps, speaker controls, or time-synchronised seeking. |
+| Artwork | The published event artwork used by the normal event page when one exists. A package records the no-artwork state otherwise so the shared page can render its normal fallback. |
+| Event and recording metadata | Every read-only display value required to construct the shared event-page and event-card models. At minimum this includes catalog and event identity, catalog label, event title and description, date, location, session ordering, and the selected recording's hash, title, artist, duration, and recorder. |
+| Availability manifest | Whether conditional artwork and transcript content is stored, unavailable, or not permitted. The local source uses this state to derive capabilities instead of treating a missing value as a completed fetch. |
 
-An event is marked downloaded only after every required part of its package is
-available. The downloaded state must be derived from durable local identity
-(catalog/event key and selected recording hash), rather than a stale event-card
-snapshot. The same state is rendered on desktop and mobile event cards.
+An event is marked downloaded only after its audio is range-servable, its
+required model data is durable, and every conditional part is either stored or
+authoritatively known to be unavailable or not permitted. If the online event
+model advertises artwork or a permitted transcript but retrieving it fails,
+the download remains incomplete and can be retried; a transient failure must
+not be recorded as absence. The downloaded state is derived from durable local
+identity (catalog/event key and selected recording hash), rather than a stale
+event-card snapshot. The same state is rendered on desktop and mobile event
+cards.
 
 The package deliberately excludes diarization and transcript timestamps. They
 do not serve the offline listening task and would create a second, more complex
 transcript experience. It also excludes non-downloaded recordings and other
 server-backed event data.
 
-Transcript download permission still applies. If a user is not entitled to
-retain a transcript, the package contains audio, artwork, and metadata but no
-transcript. On a later successful connection, the app reconciles retained
-protected content with the user’s current entitlement. This is best effort: a
-device that remains offline necessarily retains its local package until it
-reconnects.
+Transcript download permission still applies. If no default transcript exists
+or the user is not entitled to retain it, the availability manifest records
+that state and the package can still complete without transcript content. On a
+later successful connection, the app reconciles retained protected content
+with the user’s current entitlement. This is best effort: a device that remains
+offline necessarily retains its local package until it reconnects.
 
 ## The online/offline content seam
 
@@ -171,10 +179,12 @@ is already open and `navigator.onLine` alone is not a reliable statement about
 whether a request can succeed.
 
 The source returns explicit capabilities (for example, `canPlay`,
-`hasTranscript`, and `canManageDownload`) together with the model. Shared
-event/list components use those capabilities to show valid actions; they must
-not infer offline behavior from the current route or duplicate presentation in
-an `OfflineDownloadDetail` component. The service worker remains a transport
+`hasTranscript`, and `canManageDownload`) together with the model. The local
+source derives them from the durable package and its availability manifest;
+it does not persist a stale copy of online authority. Shared event/list
+components use those capabilities to show valid actions; they must not infer
+offline behavior from the current route or duplicate presentation in an
+`OfflineDownloadDetail` component. The service worker remains a transport
 mechanism for cached audio and app assets, not the owner of product routing or
 page data.
 
@@ -197,8 +207,18 @@ implement this migration.
 The download manager runs in the page, writes audio in resumable chunks to
 Cache Storage, and stores the local event package in IndexedDB. A service
 worker serves byte ranges from complete cached audio and caches the minimal app
-assets needed for the local experience. A download may be reported complete
-only once the service worker can serve its exact saved audio URL offline.
+assets needed for the local experience. Those assets include a session-free
+local-mode bootstrap that can start the shared event/list presentation after a
+reload or browser/PWA restart while offline. A download may be reported
+complete only once the service worker can serve its exact saved audio URL
+offline.
+
+When an application navigation cannot reach the server, the worker returns the
+local-mode bootstrap as a transport fallback without changing the requested
+normal URL. The bootstrap contains no session or event data; it passes the URL
+to the client content-source seam, which either renders a complete local
+package through the shared components or shows the offline-unavailable state.
+This generic fallback does not make the worker the owner of product routing.
 
 Normal online HTML and API JSON must not be blindly cached as an offline
 mirror. The local source owns the small, explicit, permission-aware package
@@ -227,10 +247,19 @@ local event collection contains the user’s downloaded events.
   and verify that it starts from local audio.
 - While offline, open the menubar indicator, reach downloaded events, and
   switch between at least two downloaded event pages without an API response.
+- After completing those downloads, close every Besedy tab or terminate the
+  installed PWA, disable connectivity, and reopen Besedy. Verify that the
+  shared event list and both event pages load and playback starts without an
+  API response.
+- Reload a downloaded event at its normal event URL while offline and verify
+  that the session-free local-mode bootstrap preserves the URL and renders the
+  shared event page from its local package.
 - Open the same event from Downloads and from the normal event list; verify
   that it uses the same event-page implementation and content hierarchy.
-- Verify that the offline transcript has plain text only—no diarization,
-  timestamps, speaker controls, or transcript-driven seeking—and that artwork
-  is present.
+- For an event with a permitted transcript and published artwork, verify that
+  the transcript has plain text only—no diarization, timestamps, speaker
+  controls, or transcript-driven seeking—and that the artwork is present.
+- Download an event with no published artwork and verify that it reaches the
+  complete state and the shared page renders its normal no-artwork fallback.
 - Verify that an event without a completed local package exposes no false
   offline-playback affordance.
