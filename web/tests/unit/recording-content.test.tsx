@@ -10,6 +10,7 @@ const useHydratedBooleanMock = vi.fn();
 const useRecordingEntryMock = vi.fn();
 const useCatalogContextMock = vi.fn();
 const useRecordingPlaybackMock = vi.fn();
+const useDownloadRecordMock = vi.fn();
 const audioPlayerMock = vi.fn();
 
 const HASH = "a".repeat(64);
@@ -56,6 +57,10 @@ vi.mock("@/hooks/use-hydrated-state", () => ({
 
 vi.mock("@/hooks/use-recording-entry", () => ({
   useRecordingEntry: (...args: unknown[]) => useRecordingEntryMock(...args),
+}));
+
+vi.mock("@/hooks/use-downloads", () => ({
+  useDownloadRecord: (...args: unknown[]) => useDownloadRecordMock(...args),
 }));
 
 vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback", () => ({
@@ -118,6 +123,7 @@ describe("RecordingContent transcript toggle", () => {
       seekRequest: undefined,
       setCurrentTime: vi.fn(),
     });
+    useDownloadRecordMock.mockReturnValue(null);
     useRecordingEntryMock.mockReturnValue({
       data: {
         entry: {
@@ -201,6 +207,22 @@ describe("RecordingContent transcript toggle", () => {
 
     expect(audioPlayerMock).toHaveBeenCalledWith(
       expect.objectContaining({ downloadEventId: 42 })
+    );
+  });
+
+  it("uses a completed download's exact audio URL in the normal player", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useDownloadRecordMock.mockReturnValue({
+      status: "complete",
+      audioUrl: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
+    });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
+      })
     );
   });
 

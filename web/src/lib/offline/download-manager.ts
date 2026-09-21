@@ -66,7 +66,44 @@ const QUEUE_LOCK_NAME = 'besedy-downloads-queue';
 const DOWNLOAD_LOCK_PREFIX = 'besedy-download:';
 const CHANNEL_NAME = 'besedy-downloads';
 const PERSIST_REQUESTED_KEY = 'besedy-storage-persist-requested';
+const SERVICE_WORKER_CONTROL_TIMEOUT_MS = 10_000;
 let downloadsShellWarmPromise: Promise<void> | null = null;
+
+/**
+ * Cached chunks are useful only when a controlling service worker can serve
+ * them back to an audio element. Cache Storage itself is available before a
+ * newly registered worker claims the page, which previously let us mark a
+ * download complete even though it could not play offline.
+ */
+async function ensureOfflinePlaybackWorker(): Promise<void> {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker) {
+    throw new Error('Offline playback requires a service worker');
+  }
+  if (navigator.serviceWorker.controller) return;
+
+  await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  if (navigator.serviceWorker.controller) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      window.clearTimeout(timeoutId);
+      navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+    };
+    const onChange = () => {
+      if (!navigator.serviceWorker.controller) return;
+      finish();
+      resolve();
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish();
+      reject(new Error('Offline playback is still preparing. Please try again.'));
+    }, SERVICE_WORKER_CONTROL_TIMEOUT_MS);
+    navigator.serviceWorker.addEventListener('controllerchange', onChange);
+    // Avoid missing a controllerchange between the check above and listener
+    // registration.
+    onChange();
+  });
+}
 
 /** Load the real session-free route so its HTML and build graph are cached. */
 function warmDownloadsShell(): Promise<void> {
@@ -533,7 +570,8 @@ export function isDownloadSupported(): boolean {
     typeof window !== 'undefined' &&
     'caches' in window &&
     isIndexedDBAvailable() &&
-    typeof fetch === 'function'
+    typeof fetch === 'function' &&
+    'serviceWorker' in navigator
   );
 }
 
@@ -667,6 +705,7 @@ class DownloadManager {
   async enqueueRecording(
     input: EnqueueRecordingInput,
   ): Promise<DownloadRecord> {
+    await ensureOfflinePlaybackWorker();
     await this.hydrate();
     const key = makeDownloadKey(input.catalogId, input.hash);
     const existing = this.records.get(key);
@@ -1144,6 +1183,7 @@ class DownloadManager {
     this.activeKey = key;
 
     try {
+      await ensureOfflinePlaybackWorker();
       const started = await this.update(key, {
         status: 'downloading',
         error: null,

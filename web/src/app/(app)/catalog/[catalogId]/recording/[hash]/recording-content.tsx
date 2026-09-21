@@ -13,6 +13,7 @@ import {
   buildAudioUrl,
 } from "@/lib/api/recording-urls";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
+import { useDownloadRecord } from "@/hooks/use-downloads";
 import {
   RecordingAudioSection,
   RecordingHeader,
@@ -91,6 +92,7 @@ export default function RecordingContent({
   // playback behavior and view sections live in sibling modules.
   const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
+  const downloadRecord = useDownloadRecord(catalogId, hash);
   const queryClient = useQueryClient();
   // Keep the legacy key so existing users keep their saved transcript view preference.
   // Reading is the default view. The stream is the administrative one, and is
@@ -234,7 +236,15 @@ export default function RecordingContent({
   const handleAudioDownload = (source: "original" | "archived") => {
     window.open(buildAudioDownloadUrl(catalogId, hash, source), "_blank");
   };
-  const audioUrl = buildAudioUrl(catalogId, hash, audioSource, sourcesData?.sources ?? []);
+  // Use the exact URL that was cached for a completed offline download. The
+  // normal player otherwise recomputes its source from API data, which can
+  // fall back to archived audio while offline even when the downloaded bytes
+  // are a listening variant.
+  const downloadedAudioUrl =
+    downloadRecord?.status === "complete" ? downloadRecord.audioUrl : null;
+  const audioUrl =
+    downloadedAudioUrl ??
+    buildAudioUrl(catalogId, hash, audioSource, sourcesData?.sources ?? []);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">

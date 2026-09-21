@@ -31,6 +31,7 @@ export interface CatalogEventRow {
   recordingCount: number;
   sourceCount: number;
   posterStatus: "none" | "draft-only" | "published" | "published-with-newer-drafts";
+  primaryAudioHash: string | null;
   primaryTitle: string | null;
   playback: PlaybackProgressSummary | null;
 }
@@ -74,6 +75,7 @@ export const catalogEventRowSchema = z.object({
   recordingCount: z.number(),
   sourceCount: z.number(),
   posterStatus: z.enum(["none", "draft-only", "published", "published-with-newer-drafts"]),
+  primaryAudioHash: z.string().nullable(),
   primaryTitle: z.string().nullable(),
   playback: z
     .object({

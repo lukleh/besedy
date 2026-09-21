@@ -58,7 +58,7 @@ export function EventListResults({
   const router = useRouter();
   const t = useTranslations("events.list");
   const tDownloads = useTranslations("downloads");
-  const downloadedEvents = useDownloadedEvents(catalogId);
+  const downloadedEvents = useDownloadedEvents(catalogId, events);
 
   const renderDownloadMarker = (eventId: number) => {
     const status = downloadedEvents.get(eventId);
