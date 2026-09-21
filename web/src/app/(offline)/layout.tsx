@@ -8,7 +8,6 @@ import { AppProviders } from '@/components/app-providers';
 import { GoogleTranslateWarning } from '@/components/google-translate-warning';
 import { Header } from '@/components/header';
 import { MobileToastOverlay } from '@/components/mobile-toast-overlay';
-import { OfflineBanner } from '@/components/offline-banner';
 import { UpdateBanner } from '@/components/update-banner';
 
 const geistSans = Geist({
@@ -90,7 +89,6 @@ export default async function OfflineRootLayout({
           </div>
           <Toaster richColors position="top-right" />
           <MobileToastOverlay />
-          <OfflineBanner />
           <UpdateBanner />
         </AppProviders>
       </body>

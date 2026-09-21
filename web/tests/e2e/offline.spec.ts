@@ -24,8 +24,8 @@ import {
   downloadCurrentRecording,
   expectDownloadStatus,
   setOffline,
-  waitForOfflineBanner,
-  waitForOfflineBannerGone,
+  waitForOfflineIndicator,
+  waitForOfflineIndicatorGone,
   waitForServiceWorker,
 } from './helpers/offline';
 
@@ -68,8 +68,8 @@ test.describe('Offline Mode', () => {
     'Offline tests require Chromium or WebKit',
   );
 
-  test.describe('Offline Banner', () => {
-    test('shows banner with a Downloads shortcut when the network disconnects', async ({
+  test.describe('Connectivity indicator', () => {
+    test('shows a crossed-Wi-Fi indicator in the header that leads to Downloads', async ({
       page,
       context,
     }) => {
@@ -77,18 +77,16 @@ test.describe('Offline Mode', () => {
       await page.goto(URLS.catalog);
       await waitForPageReady(page);
 
-      const banner = page.getByTestId('offline-banner');
-      await expect(banner).not.toBeVisible();
+      const indicator = page.getByTestId('offline-indicator');
+      await expect(indicator).not.toBeVisible();
 
       await setOffline(context, true);
-      await waitForOfflineBanner(page);
-      await expect(banner).toContainText(/offline/i);
-      await expect(
-        banner.getByRole('link', { name: /downloads|stažené/i }),
-      ).toHaveAttribute('href', '/downloads');
+      await waitForOfflineIndicator(page);
+      await expect(indicator).toHaveAttribute('href', '/downloads');
+      await expect(indicator).toHaveAccessibleName(/offline/i);
 
       await setOffline(context, false);
-      await waitForOfflineBannerGone(page);
+      await waitForOfflineIndicatorGone(page);
     });
   });
 
@@ -189,7 +187,7 @@ test.describe('Offline Mode', () => {
 
       // The page is already open; only the network goes away.
       await setOffline(context, true);
-      await waitForOfflineBanner(page);
+      await waitForOfflineIndicator(page);
 
       const audio = page.locator('audio');
       const needsInlineAudio = await page.evaluate(
@@ -258,7 +256,7 @@ test.describe('Offline Mode', () => {
       );
       await expect(card).toContainText(event.title, { timeout: 15_000 });
       await setOffline(context, true);
-      await waitForOfflineBanner(page);
+      await waitForOfflineIndicator(page);
       await card.getByRole('link', { name: /open|otevřít/i }).click();
       // Downloads delegates to the normal event page, served offline by the
       // worker at its own URL.

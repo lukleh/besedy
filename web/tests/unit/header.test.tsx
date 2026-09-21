@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     hydrated: true,
     records: [] as Array<{ key: string }>,
   },
+  isOnline: true,
 }));
 
 vi.mock("next-intl", () => ({
@@ -50,6 +51,10 @@ vi.mock("@/hooks/use-downloads", () => ({
   useDownloadManager: () => mocks.downloadSnapshot,
 }));
 
+vi.mock("@/hooks/use-online-status", () => ({
+  useOnlineStatus: () => ({ isOnline: mocks.isOnline }),
+}));
+
 vi.mock("@/components/theme-toggle", () => ({ ThemeToggle: () => null }));
 vi.mock("@/components/text-size-toggle", () => ({ TextSizeToggle: () => null }));
 vi.mock("@/components/language-switcher", () => ({ LanguageSwitcher: () => null }));
@@ -65,6 +70,28 @@ describe("Header", () => {
   beforeEach(() => {
     mocks.session = { user: { id: "user-1", name: "Listener" } };
     mocks.downloadSnapshot = { hydrated: true, records: [] };
+    mocks.isOnline = true;
+  });
+
+  it("shows the crossed-Wi-Fi indicator only while offline, leading to Downloads", () => {
+    const { rerender } = render(<Header />);
+    expect(screen.queryByTestId("offline-indicator")).not.toBeInTheDocument();
+
+    mocks.isOnline = false;
+    rerender(<Header />);
+    const indicator = screen.getByTestId("offline-indicator");
+    expect(indicator).toHaveAttribute("href", "/downloads");
+    expect(indicator).toHaveAccessibleName("offline.offlineMode");
+    expect(indicator.querySelector(".lucide-wifi-off")).toBeInTheDocument();
+  });
+
+  it("keeps the Downloads shortcut in the session-free shell when downloads exist", () => {
+    mocks.session = null;
+    mocks.downloadSnapshot = { hydrated: true, records: [{ key: "one" }] };
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
   });
 
   it("provides signed-in users a direct Downloads shortcut", () => {

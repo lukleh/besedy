@@ -1891,8 +1891,7 @@
     "inviteUsers": "Pozvání uživatelů"
   },
   "offline": {
-    "offlineMode": "Jste offline. K dispozici je pouze stažený obsah.",
-    "viewDownloads": "Stažené"
+    "offlineMode": "Jste offline. K dispozici je pouze stažený obsah."
   },
   "downloads": {
     "title": "Stažené",
@@ -1930,20 +1929,11 @@
     "storageUsed": "Využito {used} z {quota}",
     "storageUnknown": "Využití úložiště není k dispozici",
     "installHint": "Přidejte aplikaci na plochu, aby prohlížeč stažené soubory nemazal při úklidu úložiště.",
-    "offlineRedirect": "Jste offline a tato stránka není stažená. Zde je to, co je k dispozici.",
     "unknownCatalog": "Katalog {id}",
     "unknownTitle": "Nahrávka bez názvu",
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
-    "availableOffline": "Dostupné offline",
-    "offlinePlayer": "Offline přehrávač",
-    "audioUnavailable": "Stažený zvuk není k dispozici. Odeberte toto stažení a uložte jej znovu online.",
-    "transcript": "Přepis",
-    "noOfflineTranscript": "S tímto stažením nebyl uložen žádný přepis.",
-    "backToDownloads": "Zpět ke staženým",
     "backToCatalog": "Zpět do katalogu",
-    "detailUnavailable": "Stažení není k dispozici",
-    "detailUnavailableDescription": "Tato položka již není v tomto zařízení uložena. Vraťte se ke staženým nebo ji znovu uložte online.",
     "downloadedEvents": "Stažené události",
     "unavailableOffline": "Offline nedostupné",
     "unavailableOfflineDescription": "Tato stránka potřebuje připojení. Stažené události se otevřou i bez něj."

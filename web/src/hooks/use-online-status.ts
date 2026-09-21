@@ -41,7 +41,7 @@ function getServerSnapshot(): boolean {
  *   const { isOnline } = useOnlineStatus();
  *
  *   if (!isOnline) {
- *     return <OfflineBanner />;
+ *     return <OfflineIndicator />;
  *   }
  *
  *   return <OnlineContent />;
