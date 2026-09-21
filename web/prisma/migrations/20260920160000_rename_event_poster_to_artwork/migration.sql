@@ -1,6 +1,7 @@
 -- Rename the event poster concept to artwork (English) / obálka (Czech).
--- Data-preserving throughout: tables, the column, the audit enum labels, and the
--- stored permission names are renamed in place. Nothing is dropped or recreated.
+-- Tables, the column, the audit enum labels, and the stored permission names are
+-- renamed in place; no table is dropped or recreated. The only rows removed are
+-- the handful of pre-rename artwork audit entries (step 5).
 -- The filesystem rename (scripts/migrate-artwork-storage.ts) runs in the same
 -- downtime window, before this migration.
 
@@ -79,90 +80,33 @@ UPDATE "pending_catalog_grant" SET "extra_permissions" = array_replace(array_rep
   "extra_permissions", 'manage_event_posters', 'manage_event_artwork'), 'publish_event_posters', 'publish_event_artwork')
 WHERE "extra_permissions" && ARRAY['manage_event_posters','publish_event_posters']::text[];
 
--- 5. Audit facets (resource/subject_type/details). web/src/lib/audit/model.ts and
---    event-artwork-access.ts write "event_poster" as a typed facet value,
---    independent of the enum action names above.
-UPDATE "audit_log" SET "resource" = 'event_artwork' WHERE "resource" = 'event_poster';
-UPDATE "audit_log" SET "subject_type" = 'event_artwork' WHERE "subject_type" = 'event_poster';
-
--- `details` is rewritten by JSON path only, never by text substitution over the
--- serialized document. It carries user-entered strings next to the app's own
--- field names -- in production the candidate `label` payload reads
--- "Imported legacy poster (...)" -- and those must stay byte-for-byte as the
--- user typed them. Every statement below targets one key the artwork code
--- path wrote (see logArtworkAudit in event-artwork-service.ts and
--- buildAuditDetails/buildAuditSummary in audit/model.ts), and is scoped to
--- rows that code path produced: the actions renamed in step 1, plus
--- ACCESS_DENIED rows logged against the (already renamed) resource.
-
--- Payload keys "posterId" / "previousPosterId" -> "artworkId" / "previousArtworkId".
-UPDATE "audit_log"
-SET "details" =
-  ("details" - 'posterId' - 'previousPosterId')
-  || CASE WHEN "details" ? 'posterId'
-          THEN jsonb_build_object('artworkId', "details"->'posterId') ELSE '{}'::jsonb END
-  || CASE WHEN "details" ? 'previousPosterId'
-          THEN jsonb_build_object('previousArtworkId', "details"->'previousPosterId') ELSE '{}'::jsonb END
-WHERE ("action"::text LIKE 'EVENT_ARTWORK_%' OR "resource" = 'event_artwork')
-  AND ("details" ? 'posterId' OR "details" ? 'previousPosterId');
-
--- Envelope facets audit.subjectType / audit.subjectSnapshot.type.
-UPDATE "audit_log"
-SET "details" = jsonb_set("details", '{audit,subjectType}', '"event_artwork"'::jsonb)
-WHERE "details" #>> '{audit,subjectType}' = 'event_poster';
-
-UPDATE "audit_log"
-SET "details" = jsonb_set("details", '{audit,subjectSnapshot,type}', '"event_artwork"'::jsonb)
-WHERE "details" #>> '{audit,subjectSnapshot,type}' = 'event_poster';
-
--- App-generated subject label, exactly "Event <id> poster".
-UPDATE "audit_log"
-SET "details" = jsonb_set(
-  "details", '{audit,subjectSnapshot,label}',
-  to_jsonb(regexp_replace("details" #>> '{audit,subjectSnapshot,label}', '^(Event [0-9]+) poster$', '\1 artwork'))
-)
-WHERE ("action"::text LIKE 'EVENT_ARTWORK_%' OR "resource" = 'event_artwork')
-  AND "details" #>> '{audit,subjectSnapshot,label}' ~ '^Event [0-9]+ poster$';
-
--- App-generated summary, exactly "<Poster verb> for Event <id> poster".
-UPDATE "audit_log"
-SET "details" = jsonb_set(
-  "details", '{audit,summary}',
-  to_jsonb(regexp_replace(
-    "details" #>> '{audit,summary}',
-    '^Poster (candidate created|candidate deleted|published|unpublished) for (Event [0-9]+) poster$',
-    'Artwork \1 for \2 artwork'
-  ))
-)
+-- 5. Pre-rename audit rows. Besides the enum action, these rows encode the old
+--    name as data: resource / subject_type = 'event_poster', payload keys
+--    "posterId" / "previousPosterId", and app-generated summary and label text
+--    inside `details`. Rewriting `details` in place would mean editing audit
+--    history (and risking user-entered strings such as candidate labels), so the
+--    rows are dropped instead. At the time of writing production holds four such
+--    rows, all EVENT_POSTER_CREATED entries from the 2026-09-19 import; the
+--    candidates themselves are unaffected. Runs after step 1, so the action
+--    labels already read EVENT_ARTWORK_*; the app has not yet written any row
+--    under the new name when this migration executes.
+DELETE FROM "audit_log"
 WHERE "action"::text LIKE 'EVENT_ARTWORK_%'
-  AND "details" #>> '{audit,summary}' ~ '^Poster (candidate created|candidate deleted|published|unpublished) for Event [0-9]+ poster$';
-
--- ACCESS_DENIED reason written by requireEventArtworkAccess.
-UPDATE "audit_log"
-SET "details" = jsonb_set("details", '{reason}', '"Missing event artwork authority"'::jsonb)
-WHERE "resource" = 'event_artwork'
-  AND "details" ->> 'reason' = 'Missing event poster authority';
+   OR "resource" = 'event_poster'
+   OR "subject_type" = 'event_poster';
 
 -- 6. Guard: fail loudly rather than leave a silent partial rename. Every check
---    is structural (a permission string, a facet column, a JSON key or an
---    app-generated field at a known path) and scoped to the artwork rows, so
---    unrelated audit rows whose free text happens to contain "poster" -- a
---    recording title, a user-typed label -- can neither trip it nor be
---    rewritten by the statements above.
+--    is structural (a permission string, a facet column, an action or enum
+--    label); `details` is deliberately not inspected, so an unrelated audit row
+--    whose payload happens to contain "poster" or even a "posterId" key -- a
+--    recording title, a user-typed label, a metadata payload -- cannot trip it.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "catalog_access" WHERE "extra_permissions" && ARRAY['manage_event_posters','publish_event_posters']::text[])
   OR EXISTS (SELECT 1 FROM "pending_catalog_grant" WHERE "extra_permissions" && ARRAY['manage_event_posters','publish_event_posters']::text[])
   OR EXISTS (SELECT 1 FROM "audit_log" WHERE "resource" = 'event_poster' OR "subject_type" = 'event_poster')
-  OR EXISTS (SELECT 1 FROM "audit_log"
-             WHERE ("action"::text LIKE 'EVENT_ARTWORK_%' OR "resource" = 'event_artwork')
-               AND ("details" ? 'posterId'
-                 OR "details" ? 'previousPosterId'
-                 OR "details" #>> '{audit,subjectType}' = 'event_poster'
-                 OR "details" #>> '{audit,subjectSnapshot,type}' = 'event_poster'
-                 OR "details" #>> '{audit,subjectSnapshot,label}' ~ '^Event [0-9]+ poster$'
-                 OR "details" #>> '{audit,summary}' ~ '^Poster (candidate created|candidate deleted|published|unpublished) for '
-                 OR "details" ->> 'reason' = 'Missing event poster authority')) THEN
+  OR EXISTS (SELECT 1 FROM "audit_log" WHERE "action"::text LIKE 'EVENT_ARTWORK_%')
+  OR EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel LIKE 'EVENT_POSTER_%') THEN
     RAISE EXCEPTION 'Poster names survived the artwork rename';
   END IF;
 END $$;

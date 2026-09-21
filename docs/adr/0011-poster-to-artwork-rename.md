@@ -28,8 +28,8 @@ ADR 0009 established:
   `catalog_event_poster(_publication)` → `catalog_event_artwork(_publication)`;
   column `poster_id` → `artwork_id`.
 - `AuditAction` enum values `EVENT_POSTER_*` → `EVENT_ARTWORK_*`, renamed in
-  place (`ALTER TYPE ... RENAME VALUE`) so existing audit rows keep their
-  meaning.
+  place (`ALTER TYPE ... RENAME VALUE`). The pre-rename audit rows under those
+  actions are dropped by the migration; see below.
 - Permissions `manage_event_posters` / `publish_event_posters` →
   `manage_event_artwork` / `publish_event_artwork` (singular — "artwork" is
   normally a mass noun, unlike the countable "posters" it replaces). Existing
@@ -75,9 +75,12 @@ This lands after ADR 0009's production cutover (2026-09-19), so real rows and
 files exist. One hand-written migration
 (`20260920160000_rename_event_poster_to_artwork`) renames tables, the column,
 constraints, indexes, and the enum values in place, and rewrites the
-`extra_permissions` arrays and audit `resource`/`subject_type`/`details`
-values that separately encode `event_poster` as data rather than as a name
-Prisma tracks. A companion script, `scripts/migrate-artwork-storage.ts`, does
+`extra_permissions` arrays that encode the permission names as data. The few
+pre-rename artwork audit rows (four `EVENT_POSTER_CREATED` entries from the
+2026-09-19 import) are deleted rather than rewritten: their `details` carry
+the old name in field names and generated text next to user-entered labels,
+and editing audit history in place is not worth the risk for four rows whose
+subject candidates still exist. A companion script, `scripts/migrate-artwork-storage.ts`, does
 the equivalent one-level directory rename on disk. Both are idempotent and run
 inside the same deploy downtime window as the migration, filesystem first (no
 transactional rollback there, so a failure there aborts before any schema
