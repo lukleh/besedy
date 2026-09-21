@@ -59,10 +59,17 @@ const nextConfig: NextConfig = {
   webpack(config, { webpack }) {
     if (process.env.NODE_ENV === "development") {
       config.resolve = config.resolve ?? {};
+      // Next 16.3 hands webpack the tsconfig-resolved absolute path for
+      // "@/lib/..." imports, so the "@/" keys alone no longer match and the
+      // real module (and its pg dependency) leaks into the instrumentation
+      // compile. Keep both spellings so the stub applies either way.
+      const catalogSyncStartupSource = `${process.cwd()}/src/lib/catalog-sync-startup`;
       config.resolve.alias = {
         ...(config.resolve.alias ?? {}),
         "@/lib/catalog-sync-startup$": catalogSyncStartupStub,
         "@/lib/catalog-sync-startup.ts$": catalogSyncStartupStub,
+        [`${catalogSyncStartupSource}$`]: catalogSyncStartupStub,
+        [`${catalogSyncStartupSource}.ts$`]: catalogSyncStartupStub,
         "pg-native": false,
       };
       config.resolve.fallback = {
