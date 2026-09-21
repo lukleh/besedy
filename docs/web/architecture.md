@@ -98,59 +98,59 @@ For `web/src/app/api/**/route.ts` handlers:
 3. Use shared API error helpers for bad request / not found / conflict / Prisma failures.
 4. Add audit logging for sensitive mutations.
 
-Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authenticated (most reads) -- Admin (catalog management, admissions, admin UI) -- Superadmin (admin-role changes). Admins/superadmins effectively have owner-level access across catalogs.
+Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authenticated (most reads) -- Admin (catalog management, admissions, admin UI) -- Superadmin (admin-role changes). Admins and superadmins act as catalog administrators for every catalog and hold every catalog permission.
 
 ### Catalog Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalog` | LISTENER+ | List entries with filters |
-| GET | `/api/catalog/filter-options` | LISTENER+ | Dynamic filter values/counts |
-| GET | `/api/catalogs/:id/recordings/:hash/entry` | LISTENER+ | Single enriched entry |
-| GET | `/api/catalogs/:id/recordings/:hash/details` | EDITOR+ | Full source details for edit UI |
-| GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | LISTENER+ | Audio source options |
-| GET | `/api/catalogs/:id/recordings/:hash/audio` | LISTENER+ stream, MEMBER+ download | Stream or download audio |
+| GET | `/api/catalog` | Any grant (scoped without `see_unreleased`) | List entries with filters |
+| GET | `/api/catalog/filter-options` | Any grant (scoped without `see_unreleased`) | Dynamic filter values/counts |
+| GET | `/api/catalogs/:id/recordings/:hash/entry` | Any grant | Single enriched entry |
+| GET | `/api/catalogs/:id/recordings/:hash/details` | `edit_metadata` | Full source details for edit UI |
+| GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | Any grant | Audio source options |
+| GET | `/api/catalogs/:id/recordings/:hash/audio` | `stream_audio` stream, `download_audio` download | Stream or download audio |
 
-- LISTENER catalog data is scoped to published, actionable recordings only (`status=ready`; no unpublished or non-actionable rows).
-- `/api/catalog/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). LISTENER requests are visibility-scoped before counts.
+- Without `see_unreleased` (every role but `curator`), catalog data is scoped to published, actionable recordings only (`status=ready`; no unpublished or non-actionable rows).
+- `/api/catalog/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). Requests without `see_unreleased` are visibility-scoped before counts.
 
 ### Event Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalog-events?group=:id` | LISTENER+ | List visible events |
-| POST | `/api/catalog-events` | OWNER/Admin | Create event |
-| GET | `/api/catalogs/:id/events/:eventId` | LISTENER+ | Event detail |
-| PATCH/DELETE | `/api/catalogs/:id/events/:eventId` | OWNER/Admin | Update/delete event |
-| POST | `/api/catalogs/:id/events/:eventId/recordings` | OWNER/Admin | Attach recordings |
-| DELETE | `/api/catalogs/:id/events/:eventId/recordings/:audioHash` | OWNER/Admin | Detach recording |
-| POST | `/api/catalogs/:id/events/:eventId/recordings/:audioHash/set-primary` | OWNER/Admin | Set primary recording |
-| GET | `/api/catalog-events/unassigned?group=:id` | OWNER/Admin | Unassigned actionable entries |
-| GET | `/api/catalogs/:id/events/health` | OWNER/Admin | Event health counters |
+| GET | `/api/catalog-events?group=:id` | Any grant (events feature) | List visible events |
+| POST | `/api/catalog-events` | `manage_events` | Create event |
+| GET | `/api/catalogs/:id/events/:eventId` | Any grant (events feature) | Event detail |
+| PATCH/DELETE | `/api/catalogs/:id/events/:eventId` | `manage_events` | Update/delete event |
+| POST | `/api/catalogs/:id/events/:eventId/recordings` | `manage_events` | Attach recordings |
+| DELETE | `/api/catalogs/:id/events/:eventId/recordings/:audioHash` | `manage_events` | Detach recording |
+| POST | `/api/catalogs/:id/events/:eventId/recordings/:audioHash/set-primary` | `manage_events` | Set primary recording |
+| GET | `/api/catalog-events/unassigned?group=:id` | `manage_events` | Unassigned actionable entries |
+| GET | `/api/catalogs/:id/events/health` | `manage_events` | Event health counters |
 
 - Event visibility is enforced server-side via shared access guards.
-- Listener-visible events are scoped by event release state and primary-recording listener visibility.
+- Without `see_unreleased`, events are scoped by release state and by the visibility of their primary recording.
 
 ### Transcript Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/transcript/:hash` | VIEWER+ | Transcript or available backends |
-| GET | `/api/transcript/:hash/speakers` | VIEWER+ | Diarization or available backends |
-| GET | `/api/transcript/:hash/formats` | VIEWER+ | Available download formats |
-| GET | `/api/transcript/:hash/download` | MEMBER+ | Download transcript sidecar |
+| GET | `/api/transcript/:hash` | `read_transcripts` | Transcript or available backends |
+| GET | `/api/transcript/:hash/speakers` | `read_transcripts` (`see_speakers` for diarization) | Diarization or available backends |
+| GET | `/api/transcript/:hash/formats` | `read_transcripts` | Available download formats |
+| GET | `/api/transcript/:hash/download` | `download_transcripts` | Download transcript sidecar |
 
 ### Metadata Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalogs/:id/recordings/:hash/metadata` | LISTENER+ | Get curated metadata |
-| PUT | `/api/catalogs/:id/recordings/:hash/metadata` | EDITOR+ | Upsert curated metadata |
-| DELETE | `/api/catalogs/:id/recordings/:hash/metadata` | EDITOR+ | Delete curated metadata |
-| GET/POST | `/api/metadata/recorders` | Auth / EDITOR+ | List or create recorders |
-| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Auth / EDITOR+ | Manage recorder |
-| GET/POST | `/api/metadata/locations` | Auth / EDITOR+ | List or create locations |
-| GET/PUT/DELETE | `/api/metadata/locations/:id` | Auth / EDITOR+ | Manage location |
+| GET | `/api/catalogs/:id/recordings/:hash/metadata` | Any grant | Get curated metadata |
+| PUT | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Upsert curated metadata |
+| DELETE | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Delete curated metadata |
+| GET/POST | `/api/metadata/recorders` | Auth / `edit_metadata` | List or create recorders |
+| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Auth / `edit_metadata` | Manage recorder |
+| GET/POST | `/api/metadata/locations` | Auth / `edit_metadata` | List or create locations |
+| GET/PUT/DELETE | `/api/metadata/locations/:id` | Auth / `edit_metadata` | Manage location |
 | GET | `/api/metadata/artists` | Auth | Distinct artist values for filter |
 | GET | `/api/metadata/albums` | Auth | Distinct album values for filter |
 | GET | `/api/metadata/duplicate-counts` | Auth | Duplicate count options for filter |
@@ -164,13 +164,13 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 | GET/PUT/DELETE | `/api/catalogs/:id` | Admin | Manage catalog |
 | GET | `/api/catalogs/discover` | Admin | Discover catalogs on disk |
 | GET/POST | `/api/catalogs/:id/variants` | Admin | Manage variants |
-| GET/POST | `/api/catalogs/:id/access` | OWNER/Admin | List/grant access |
-| PUT/DELETE | `/api/catalogs/:id/access/:userId` | OWNER/Admin | Update/revoke access |
-| GET/POST | `/api/catalogs/:id/pending-catalog-grants` | OWNER/Admin | List or create pending grants |
-| PUT/DELETE | `/api/catalogs/:id/pending-catalog-grants/:email` | OWNER/Admin | Manage pending grant |
+| GET/POST | `/api/catalogs/:id/access` | `manage_access` | List/grant access |
+| PUT/DELETE | `/api/catalogs/:id/access/:userId` | `manage_access` | Update/revoke access |
+| GET/POST | `/api/catalogs/:id/pending-catalog-grants` | `manage_access` | List or create pending grants |
+| PUT/DELETE | `/api/catalogs/:id/pending-catalog-grants/:email` | `manage_access` | Manage pending grant |
 
 - POST pending-catalog-grants: if the email belongs to an existing user, access is granted directly.
-- OWNERs can grant LISTENER/VIEWER/MEMBER/EDITOR; only Admins can create OWNER-level pending grants.
+- A `host` can grant `listener`, `reader` and `corrector`. Granting `curator`, `host` or `catalog_admin`, or attaching extra permissions, requires a catalog administrator (`docs/adr/0005-catalog-permission-model.md`).
 
 ### Admin Endpoints
 
@@ -276,12 +276,12 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 | Page | Route | Access |
 |------|-------|--------|
 | Home | `/` | Auth (redirects to active catalog or admin) |
-| Catalog | `/catalog/[catalogId]` | LISTENER+ |
-| Event Detail | `/catalog/[catalogId]/event/[eventId]` | LISTENER+ |
-| Event Edit | `/catalog/[catalogId]/event/[eventId]/edit` | OWNER/Admin |
-| Recording | `/catalog/[catalogId]/recording/[hash]` | LISTENER+ (transcripts: VIEWER+) |
-| Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | EDITOR+ |
-| Catalog Settings | `/catalog/[catalogId]/settings` | OWNER/Admin |
+| Catalog | `/catalog/[catalogId]` | Any grant |
+| Event Detail | `/catalog/[catalogId]/event/[eventId]` | Any grant |
+| Event Edit | `/catalog/[catalogId]/event/[eventId]/edit` | `manage_events` |
+| Recording | `/catalog/[catalogId]/recording/[hash]` | Any grant (transcripts: `read_transcripts`) |
+| Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | `edit_metadata` |
+| Catalog Settings | `/catalog/[catalogId]/settings` | Any of `manage_access`, `manage_catalog_config`, `manage_events`, `bulk_export_transcripts` |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
 | Admin Ingest | `/admin/ingest` | Admin |

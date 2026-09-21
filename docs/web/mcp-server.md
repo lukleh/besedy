@@ -200,19 +200,17 @@ into the client configuration.
 
 The table is the intended MCP read surface for an active user. `ADMIN` includes
 superadmins. Every active account receives all tools; catalog grants determine
-which catalogs contain readable data.
+which catalogs contain readable data. MCP applies the same listener-level
+visibility to every catalog role, including `curator`, whose `see_unreleased`
+widens the web UI but not MCP.
 
 | User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata |             Get transcript |                              Search transcripts |
 | ------------------------- | ------------------: | ------------------: | -------------------: | ---------------------: | -------------------------: | ----------------------------------------------: |
 | No grant                  |                  No |                  No |                   No |                     No |                         No |                                              No |
-| `LISTENER`                |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `VIEWER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `MEMBER`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `EDITOR`                  |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
-| `OWNER`                   |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
+| Any grant (every role)    |                 Yes | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
 | `ADMIN`                   | All active catalogs | Released/ready only |                   No |   Published/ready only | Published/ready recordings | Released events with published/ready recordings |
 
-For a `LISTENER`, an event is visible only when all of these are true:
+For any grant, an event is visible through MCP only when all of these are true:
 
 1. the event is released;
 2. its primary recording is actionable/ready; and
@@ -221,7 +219,7 @@ For a `LISTENER`, an event is visible only when all of these are true:
 Listener-visible attached recordings are likewise restricted to actionable,
 published recordings. Direct recording metadata and transcript reads also
 require a link to at least one listener-visible released event. MCP applies this
-visibility at every catalog access level; higher web roles do not expose
+visibility for every catalog role; higher web roles do not expose
 unreleased data through MCP.
 
 Portal status is evaluated before catalog role. Unauthenticated, `PENDING`, and
@@ -231,7 +229,7 @@ catalog-scoped data.
 
 ### Design decision: listener transcript access through MCP
 
-A `LISTENER` grant cannot open transcript text or transcript search in the web
+A `listener` grant cannot open transcript text or transcript search in the web
 UI, yet the same grant can read and search transcripts through MCP. This is a
 deliberate decision, not an oversight, and it was confirmed on 2026-09-02.
 
@@ -364,7 +362,7 @@ metadata reads, complete transcript retrieval, exact result key sets, and a
 grounded RAG result from a deterministic test-only ColBERT mock. Catalog-scoped
 calls do not supply `catalogId`, so the same run covers default selection.
 
-The second enforces the access matrix. It signs in as the seeded `LISTENER` and
+The second enforces the access matrix. It signs in as the seeded `listener` and
 checks that only released events are listed, that the unreleased event, its
 recording, and its transcript all return `not_found` from every read and search
 tool, and that a released transcript and a grounded search result are still
