@@ -199,6 +199,12 @@ test.describe('Offline Mode', () => {
       await card.getByRole('button', { name: /open|otevřít/i }).click();
 
       const audio = page.locator('audio');
+      const isAndroid = await page.evaluate(() =>
+        /Android/.test(navigator.userAgent),
+      );
+      if (isAndroid) {
+        await expect(audio).toHaveAttribute('src', /^data:audio\//);
+      }
       await page.getByTestId('audio-play-button').click();
       await expect
         .poll(
