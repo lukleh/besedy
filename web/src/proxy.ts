@@ -345,7 +345,7 @@ function buildCsp(nonce: string, allowSameOriginFrame = false): string {
     "img-src 'self' data: blob: https://www.google.com https://*.googleusercontent.com https://avatars.githubusercontent.com https://lh3.googleusercontent.com",
     "font-src 'self'",
     "connect-src 'self'",
-    "media-src 'self' blob:",
+    "media-src 'self' blob: data:",
     "object-src 'none'",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
