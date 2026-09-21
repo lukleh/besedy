@@ -74,9 +74,11 @@ second offline-specific page.
 
 If a normal event page is already open when connectivity disappears, playback
 of a downloaded selected recording continues. If playback starts after the
-transition, the player selects the locally stored audio before attempting the
-network. The same rule applies whether the person arrived from the normal list
-or Downloads.
+transition, the player resolves a complete local playable asset before
+attempting the network. The asset can use any supported, versioned media
+transport; the page and visible player do not depend on its storage format.
+The same rule applies whether the person arrived from the normal list or
+Downloads.
 
 ## Change inventory
 
@@ -95,7 +97,7 @@ application.
 | Event cards (desktop and mobile) | Show the same downloaded marker, artwork, title, and playback affordances at every breakpoint. | Determine the marker from the durable completed package identity. Offline cards represent only locally available events. |
 | Normal event list | Reuse the normal list and cards; add a concise “Downloaded events” scope indication when local data is being shown. | Read the local collection when network data is unavailable, so a person can select and switch downloaded events offline. |
 | Normal event page | Preserve its information hierarchy and core components for local events; do not use a visually reduced offline page. | Resolve through the local source when necessary and adapt or omit only actions that require server data or a non-downloaded recording. |
-| Audio player | Keep the usual player controls and optionally identify local availability without introducing a new player. | Continue active playback across connection loss; start, seek, and resume a downloaded recording from cached range-served audio. |
+| Audio player | Keep the usual player controls and optionally identify local availability without introducing a new visible player. | Resolve a versioned online or local playback descriptor through a media-engine adapter; continue active playback across connection loss and start, seek, and resume a complete downloaded recording without exposing the backing transport to the UI. |
 | Transcript panel | Render a plain, readable transcript; remove speaker/diarization controls, timestamps, and transcript-driven seek affordances in local mode. | Display the locally retained permitted default transcript without time synchronisation. |
 | Event artwork | Use the same published artwork placement, styling, and no-artwork fallback as the normal event page. | Resolve published artwork from the local package when offline; an event with no published artwork remains downloadable. |
 | Current `OfflineDownloadDetail` | Retire the separate reduced detail frame, badges, and bespoke layout after migration. | Replace it with navigation to the shared event page; it no longer owns playback or transcript rendering. |
@@ -105,17 +107,17 @@ application.
 
 | Element | Required change |
 | --- | --- |
-| Shared event/list models | Define source-neutral event-page and event-collection models plus explicit capabilities. Components receive these models rather than API or IndexedDB records directly. |
+| Shared event/list models | Define source-neutral event-page and event-collection models plus explicit capabilities and a storage-independent playback descriptor. Components receive these models rather than API, IndexedDB, cache, or player-engine records directly. |
 | Content-source seam | Implement online and local sources behind the same contract. The online source reads current API data; the local source reads only completed event packages. |
 | Source selection | Prefer current online data when it can be obtained, then fall back to a complete local package. Do not use `navigator.onLine` as the sole decision because it does not prove a request will succeed. |
 | Routing and application shell | Cache a session-free local-mode bootstrap that can start after a reload or browser/PWA restart without changing the requested normal event/list URL. The bootstrap renders the shared presentation and lets the client content source resolve the URL; Downloads navigation routes into the same presentation. |
-| Download package schema | Store the selected audio and every read-only display value required by the shared event-page and event-card models. Store published artwork and a permitted plain transcript conditionally, with an explicit content-availability manifest. Remove diarization and timestamp-dependent transcript payloads from the offline contract. |
-| Download completion and markers | Mark an event complete only when the exact cached audio source is range-servable, required model data is durable, and each conditional payload is either stored or authoritatively known to be unavailable or not permitted. Derive status from catalog/event identity and recording hash, with migration support for existing records. |
-| Audio cache and service worker | Keep resumable chunk storage and strict range serving. The worker serves complete local audio; it does not decide product routing or own long-running downloads. |
+| Download package schema | Store the selected recording identity, a versioned playback-package descriptor, and every read-only display value required by the shared event-page and event-card models. Store published artwork and a permitted plain transcript conditionally, with an explicit content-availability manifest. Remove diarization and timestamp-dependent transcript payloads from the offline contract. |
+| Download completion and markers | Mark an event complete only when the selected media engine can initialize, play, and seek its durable local playback package, required model data is durable, and each conditional payload is either stored or authoritatively known to be unavailable or not permitted. Derive status from catalog/event identity and recording hash, with migration support for existing records. |
+| Audio storage and transport | Put resumable media storage and online/local resolution behind a versioned playback descriptor and media-engine adapter. Implementations must keep memory bounded relative to their segment/read window rather than recording duration. The service worker or player networking adapter transports local media; neither decides product routing nor owns long-running downloads. |
 | Permissions and lifecycle | Retain transcript content only when permitted, reconcile it after a successful reconnect, and delete user-owned packages and protected caches on sign-out. |
 | Playback progress | Preserve local playback position while offline and synchronise it when the account reconnects, using the existing durable pending-progress mechanism. |
-| Migration and cleanup | Migrate existing registry/bundle records where possible; retire the separate offline-detail implementation and fixed banner only after shared local pages are in use. |
-| Test coverage | Add browser-level coverage for offline transition, offline cold start and reload, event switching, shared-page parity, marker visibility on mobile/desktop, plain transcripts, events with and without artwork, permissions, and unavailable local content. |
+| Migration and cleanup | Version playback packages so the legacy and replacement media engines can coexist during an opt-in rollout. Migrate existing registry/bundle records where possible; retire a legacy engine, the separate offline-detail implementation, and the fixed banner only after their replacements pass the physical-device matrix and rollback is no longer required. |
+| Test coverage | Add browser-level coverage for offline transition, offline cold start and reload, event switching, shared-page parity, marker visibility on mobile/desktop, plain transcripts, events with and without artwork, permissions, unavailable local content, playback-package versions, bounded memory, and feature-flag rollback. |
 
 ## Offline event package
 
@@ -127,21 +129,22 @@ experience above:
 
 | Content | Offline behavior |
 | --- | --- |
-| Audio | The selected event recording, stored in chunks and served with range support so playback and seeking work offline. |
+| Audio | The selected recording identity and a versioned local playback package that the chosen media engine can initialize, play, and seek with bounded memory. Its cache, file, segment, or transport representation is private to the media layer. |
 | Transcript | The default transcript as plain readable text when one exists and the user may retain it. Offline transcript view has no diarization, timestamps, speaker controls, or time-synchronised seeking. |
 | Artwork | The published event artwork used by the normal event page when one exists. A package records the no-artwork state otherwise so the shared page can render its normal fallback. |
 | Event and recording metadata | Every read-only display value required to construct the shared event-page and event-card models. At minimum this includes catalog and event identity, catalog label, event title and description, date, location, session ordering, and the selected recording's hash, title, artist, duration, and recorder. |
-| Availability manifest | Whether conditional artwork and transcript content is stored, unavailable, or not permitted. The local source uses this state to derive capabilities instead of treating a missing value as a completed fetch. |
+| Availability manifest | The playback-package format/version and whether conditional artwork and transcript content is stored, unavailable, or not permitted. The local source uses this state to derive capabilities instead of treating a missing value as a completed fetch. |
 
-An event is marked downloaded only after its audio is range-servable, its
-required model data is durable, and every conditional part is either stored or
-authoritatively known to be unavailable or not permitted. If the online event
-model advertises artwork or a permitted transcript but retrieving it fails,
-the download remains incomplete and can be retried; a transient failure must
-not be recorded as absence. The downloaded state is derived from durable local
-identity (catalog/event key and selected recording hash), rather than a stale
-event-card snapshot. The same state is rendered on desktop and mobile event
-cards.
+An event is marked downloaded only after its selected media engine passes a
+readiness check against the complete local playback package, its required model
+data is durable, and every conditional part is either stored or authoritatively
+known to be unavailable or not permitted. File presence or registry state alone
+does not prove playability. If the online event model advertises artwork or a
+permitted transcript but retrieving it fails, the download remains incomplete
+and can be retried; a transient failure must not be recorded as absence. The
+downloaded state is derived from durable local identity (catalog/event key and
+selected recording hash), rather than a stale event-card snapshot. The same
+state is rendered on desktop and mobile event cards.
 
 The package deliberately excludes diarization and transcript timestamps. They
 do not serve the offline listening task and would create a second, more complex
@@ -173,10 +176,11 @@ The seam has two sources:
 Source selection is resilient rather than relying solely on `navigator.onLine`:
 the app attempts the online source where appropriate and falls back to a
 complete local package when it cannot obtain network data. The audio resolver
-likewise chooses the locally cached URL for a downloaded recording on network
-failure. This covers the important online-to-offline transition, where a page
-is already open and `navigator.onLine` alone is not a reliable statement about
-whether a request can succeed.
+likewise chooses an online or complete local playback descriptor without
+requiring presentation components to understand URLs, manifests, segments,
+caches, or player engines. This covers the important online-to-offline
+transition, where a page is already open and `navigator.onLine` alone is not a
+reliable statement about whether a request can succeed.
 
 The source returns explicit capabilities (for example, `canPlay`,
 `hasTranscript`, and `canManageDownload`) together with the model. The local
@@ -184,34 +188,81 @@ source derives them from the durable package and its availability manifest;
 it does not persist a stale copy of online authority. Shared event/list
 components use those capabilities to show valid actions; they must not infer
 offline behavior from the current route or duplicate presentation in an
-`OfflineDownloadDetail` component. The service worker remains a transport
-mechanism for cached audio and app assets, not the owner of product routing or
-page data.
+`OfflineDownloadDetail` component. Media transport belongs to a playback
+adapter and its storage/networking implementation. The service worker remains
+a possible transport for local media and app assets, not the owner of product
+routing or page data.
 
 This seam is also the migration boundary:
 
-1. Define the shared event and event-list models and capability contract.
+1. Define the shared event and event-list models, playback descriptor, and
+   capability contract.
 2. Make the current normal pages consume the online source through that
    contract.
-3. Build the local source from completed event packages and render it through
+3. Put the current and replacement media engines behind the same player adapter
+   and select them by playback-package version and a reversible feature flag.
+4. Build the local source from completed event packages and render it through
    the same pages/components.
-4. Make Downloads link to those shared pages, then retire the separate offline
+5. Make Downloads link to those shared pages, then retire the separate offline
    detail renderer and the fixed offline banner.
 
-The current bug-fix work remains intentionally narrower: it makes the existing
-downloaded audio playable and fixes downloaded markers. It does not claim to
-implement this migration.
+Legacy and replacement playback paths may coexist during migration, but they
+must share the visible player and source-neutral model. New transport work must
+not deepen dependencies on the temporary offline-detail page. A legacy engine
+is removed only after the replacement passes online and offline verification on
+physical supported devices and the rollback window has ended.
+
+## Media transport boundary and rollout
+
+The event model exposes a playback descriptor rather than a raw assumption
+about one URL or cache format. At minimum, that descriptor identifies the
+recording, its transport/package version, and the information the matching
+engine needs to resolve online or durable local media. Transient object or data
+URLs are runtime details and are not durable event-package identity.
+
+The visible player is shared. A media-engine adapter maps a descriptor to the
+underlying implementation and exposes common play, pause, seek, duration,
+buffer, playback-rate, volume, error, and lifecycle behavior. A replacement
+engine may therefore be tested beside the current engine without duplicating
+the player UI or changing the event page.
+
+Rollout is reversible:
+
+1. Add new indexing, storage, or transport infrastructure without changing the
+   default player.
+2. Enable the replacement engine for explicit testers and representative
+   recordings through a runtime feature flag.
+3. Version offline playback packages so existing downloads continue through
+   their matching legacy engine while test downloads use the replacement.
+4. Expand through a measured canary only after online playback succeeds.
+5. Make the replacement the default for new downloads only after physical
+   desktop and mobile offline tests pass.
+6. Migrate or explicitly redownload legacy packages before removing their
+   engine. Never reinterpret an old package as a new format based only on
+   application version.
+
+Only one playback package is stored for an ordinary user and recording. A
+diagnostic comparison may retain both formats temporarily for an explicit
+tester, but duplication is not the production model.
 
 ## Storage and transport
 
-The download manager runs in the page, writes audio in resumable chunks to
-Cache Storage, and stores the local event package in IndexedDB. A service
-worker serves byte ranges from complete cached audio and caches the minimal app
-assets needed for the local experience. Those assets include a session-free
-local-mode bootstrap that can start the shared event/list presentation after a
-reload or browser/PWA restart while offline. A download may be reported
-complete only once the service worker can serve its exact saved audio URL
-offline.
+The download manager runs in the page and writes through a versioned offline
+media-store interface because browsers may terminate idle service workers
+during a long download. The implementation must persist resumable progress and
+keep memory bounded for multi-hour recordings. Cache Storage chunks, virtual
+segments, or a file-backed representation can coexist as separately versioned
+package formats during migration; pages and presentation models do not depend
+on that choice.
+
+The local event package and its availability manifest are stored durably, and
+the minimal app assets needed for the local experience are cached. Those assets
+include a session-free local-mode bootstrap that can start the shared
+event/list presentation after a reload or browser/PWA restart while offline. A
+download may be reported complete only after its selected media engine can
+initialize, play, and seek the exact durable local package. No completion path
+may assemble or Base64-encode a complete multi-hour recording in JavaScript
+memory.
 
 When an application navigation cannot reach the server, the worker returns the
 local-mode bootstrap as a transport fallback without changing the requested
@@ -227,7 +278,8 @@ and avoids treating a stale server-rendered document as an authenticated page.
 
 Downloads run while an app page is open. They can resume after a network
 interruption, but background fetch and periodic sync are not requirements.
-Signing out deletes user-owned local packages and protected audio caches.
+Signing out deletes user-owned local packages and protected media storage for
+every supported playback-package version.
 
 ## Out of scope
 
@@ -245,6 +297,15 @@ local event collection contains the user’s downloaded events.
   audio continues and seeking still works.
 - Disable connectivity before pressing play on an already-open downloaded event
   and verify that it starts from local audio.
+- Verify the same player controls and event-page presentation with every
+  enabled media-engine implementation; the active engine is visible only in
+  diagnostics, not as a second product UI.
+- With a representative multi-hour recording, verify that download and
+  playback memory remain bounded by the configured segment/read and playback
+  buffer windows rather than growing with recording duration.
+- Keep existing legacy downloads playable while the replacement engine is
+  enabled for an explicit tester, then disable the feature flag and verify that
+  the legacy path still works without migration or data loss.
 - While offline, open the menubar indicator, reach downloaded events, and
   switch between at least two downloaded event pages without an API response.
 - After completing those downloads, close every Besedy tab or terminate the
