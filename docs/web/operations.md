@@ -81,8 +81,10 @@ catalogs, transcripts, and audio from mounted host paths.
 - [ ] `AUTH_SECRET`
 - [ ] `AUTH_URL` (must match domain and OAuth redirect URI)
 - [ ] `NEXT_PUBLIC_APP_URL` matches `AUTH_URL`
-- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`
+- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`
 - [ ] `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`
+      (production refuses to render the Compose configuration if any data
+      directory above is unset; there is no fixtures fallback outside dev/test)
 - [ ] `BACKUP_DIR` (outside container mounts)
 - [ ] `WEB_LOGS_DIR` (persisted web logs on host)
 - [ ] `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
