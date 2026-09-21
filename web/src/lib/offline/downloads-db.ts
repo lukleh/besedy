@@ -94,6 +94,11 @@ export interface DownloadPosterPayload {
   posterId?: string;
 }
 
+export interface DownloadInlineAudioPayload {
+  data: ArrayBuffer;
+  contentType: string;
+}
+
 export interface DownloadBundlePayload {
   /** Same `${catalogId}:${hash}` key as the lightweight registry row. */
   key: string;
@@ -101,6 +106,8 @@ export interface DownloadBundlePayload {
   transcript: Transcript | null;
   diarization: Diarization | null;
   poster: DownloadPosterPayload | null;
+  /** WebKit-compatible copy; older bundles and non-WebKit browsers omit it. */
+  inlineAudio?: DownloadInlineAudioPayload | null;
   updatedAt: number;
 }
 

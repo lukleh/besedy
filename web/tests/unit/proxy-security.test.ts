@@ -43,6 +43,7 @@ describe("proxy security controls", () => {
     expect(csp).toBeTruthy();
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("https://www.google.com");
+    expect(csp).toContain("media-src 'self' blob: data:");
     expect(csp).not.toContain("'unsafe-eval'");
     // script-src is nonce + strict-dynamic, with no 'unsafe-inline'
     expect(csp).toMatch(/script-src [^;]*'nonce-[^']+'/);

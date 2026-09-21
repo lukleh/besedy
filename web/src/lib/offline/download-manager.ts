@@ -37,7 +37,9 @@ import {
   deleteAudioCacheEntries,
   getAudioCacheKey,
   getAudioChunkKey,
+  readCompleteAudioBlob,
   readAudioCacheMeta,
+  requiresInlineOfflineAudio,
   writeAudioCacheMeta,
   type AudioCacheMeta,
 } from './audio-cache-format';
@@ -657,6 +659,38 @@ class DownloadManager {
       if (next !== record) recovered.push(next);
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
+    if (
+      this.online &&
+      typeof navigator !== 'undefined' &&
+      requiresInlineOfflineAudio(navigator.userAgent)
+    ) {
+      const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+      for (const record of this.records.values()) {
+        if (record.status !== 'complete' || !record.audioCacheKey) continue;
+        try {
+          const bundle = await getDownloadBundle(record.key);
+          if (!bundle || bundle.inlineAudio?.data) continue;
+          const blob = await readCompleteAudioBlob(
+            audioCache,
+            record.audioCacheKey,
+          );
+          if (!blob) continue;
+          await putDownloadBundle({
+            ...bundle,
+            inlineAudio: {
+              data: await blob.arrayBuffer(),
+              contentType: blob.type || 'audio/webm',
+            },
+            updatedAt: Date.now(),
+          });
+        } catch (error) {
+          logger.warn('Failed to prepare existing WebKit offline audio', {
+            key: record.key,
+            error,
+          });
+        }
+      }
+    }
     this.publish({ supported: true, hydrated: true });
     void this.refreshStorageEstimate();
     if (
@@ -1247,6 +1281,15 @@ class DownloadManager {
           });
         },
       });
+      const needsInlineAudio =
+        typeof navigator !== 'undefined' &&
+        requiresInlineOfflineAudio(navigator.userAgent);
+      const offlineAudioBlob = needsInlineAudio
+        ? await readCompleteAudioBlob(audioCache, audioCacheKey)
+        : null;
+      if (needsInlineAudio && !offlineAudioBlob) {
+        throw new Error('Downloaded audio cache is incomplete');
+      }
 
       let transcriptBackend: string | null = null;
       let transcript: Transcript | null = null;
@@ -1278,6 +1321,12 @@ class DownloadManager {
         transcript,
         diarization,
         poster,
+        inlineAudio: offlineAudioBlob
+          ? {
+              data: await offlineAudioBlob.arrayBuffer(),
+              contentType: offlineAudioBlob.type || 'audio/webm',
+            }
+          : null,
         updatedAt: Date.now(),
       });
 

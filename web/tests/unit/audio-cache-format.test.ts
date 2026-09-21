@@ -7,7 +7,9 @@ import {
   getAudioChunkKey,
   getAudioMetaKey,
   isAudioCacheEntryFor,
+  readCompleteAudioBlob,
   readAudioCacheMeta,
+  requiresInlineOfflineAudio,
   summarizeAudioCacheMeta,
   writeAudioCacheMeta,
 } from "@/lib/offline/audio-cache-format";
@@ -93,6 +95,42 @@ describe("audio cache format", () => {
     expect(
       summarizeAudioCacheMeta({ ...meta!, chunkSizes: [4, 6], complete: true }).progress
     ).toBe(100);
+  });
+
+  it("recognizes WebKit browsers that need direct cached playback", () => {
+    expect(
+      requiresInlineOfflineAudio(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/26.6 Mobile/15E148 Safari/604.1"
+      )
+    ).toBe(true);
+    expect(
+      requiresInlineOfflineAudio(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.6 Safari/605.1.15"
+      )
+    ).toBe(true);
+    expect(
+      requiresInlineOfflineAudio(
+        "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/151.0.0.0 Mobile Safari/537.36"
+      )
+    ).toBe(false);
+  });
+
+  it("assembles a complete cached recording as a Blob", async () => {
+    const cache = new MemoryCache();
+    const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
+    await writeAudioCacheMeta(cache as unknown as Cache, base, {
+      totalSize: 5,
+      chunkCount: 2,
+      chunkSizes: [2, 3],
+      contentType: "audio/webm",
+      complete: true,
+    });
+    await cache.put(getAudioChunkKey(base, 0), new Response(new Uint8Array([1, 2])));
+    await cache.put(getAudioChunkKey(base, 1), new Response(new Uint8Array([3, 4, 5])));
+
+    const blob = await readCompleteAudioBlob(cache as unknown as Cache, base);
+    expect(blob?.type).toBe("audio/webm");
+    expect(blob?.size).toBe(5);
   });
 
   it("rejects malformed metadata", async () => {
