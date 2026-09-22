@@ -1,37 +1,22 @@
 'use client';
 
 /**
- * Audio Player with Network Resilience
+ * Audio player for one recording.
  *
- * This component handles audio playback with automatic recovery from network errors,
- * which is particularly useful during server deployments when active streams are interrupted.
+ * The visible controls live in AudioPlayerChrome; this component owns the
+ * media element and three behaviours around it:
  *
- * ## Network Error Recovery
+ * - Source switches for the same recording. The page hands the player a
+ *   network URL first and, once a download completes, the local package URL
+ *   (or an inline copy on browsers that need it). The switch is a real
+ *   source change; position and play intent carry across it.
+ * - Recovery from network errors while streaming a recording that is not
+ *   downloaded: exponential retries that reload the element, then restore
+ *   position and resume when the listener had asked for playback.
+ * - Position restore after a mobile browser discarded the media in the
+ *   background, from the position saved in localStorage.
  *
- * When a network error (MEDIA_ERR_NETWORK) or connection loss (MEDIA_ERR_SRC_NOT_SUPPORTED)
- * occurs during playback:
- *
- * 1. The player saves the current playback position and playing state
- * 2. Shows a pulsing WifiOff icon on the play button (button is disabled)
- * 3. Attempts to reload the audio with exponential backoff:
- *    - Attempt 1: 1 second delay
- *    - Attempt 2: 2 seconds
- *    - Attempt 3: 4 seconds
- *    - ...up to 30 second cap
- * 4. On successful reconnection:
- *    - Seeks to the saved position
- *    - Automatically resumes playback if it was playing
- * 5. After 10 failed attempts (~3 minutes), gives up and returns to normal state
- *
- * ## Testing
- *
- * To test the retry behavior:
- * 1. Start playing audio
- * 2. In DevTools → Network tab, set to "Offline"
- * 3. Observe the WifiOff icon pulsing
- * 4. Go back online - playback should resume automatically
- *
- * Or trigger a server deployment while audio is playing.
+ * A debug panel (toggle in the chrome) shows buffer state and the event log.
  */
 
 import {
@@ -95,7 +80,8 @@ export function AudioPlayer({
     return recordingHash ?? extractRecordingHash(src);
   }, [recordingHash, src]);
 
-  // Download state drives the switch from network streaming to cached playback.
+  // Download state feeds the cached indicator and the debug panel; the switch
+  // to local playback itself arrives as a new src from the page.
   const downloadRecord = useDownloadRecord(catalogId ?? null, hash);
   const cacheStatus = downloadRecord?.status ?? 'none';
 
@@ -152,8 +138,6 @@ export function AudioPlayer({
   // Last playback position React observed; survives the element reset that a
   // src change performs before effects run.
   const lastTimeRef = useRef(0);
-  const prevCacheStatusRef = useRef(cacheStatus); // Track cache status for reload on complete
-  const cacheReloadSrcRef = useRef(src);
   // Whether the listener wants playback. The browser pauses the element
   // before it reports a media error, so `audio.paused` alone cannot tell an
   // interrupted play from a deliberate pause when deciding to resume.
@@ -773,69 +757,6 @@ export function AudioPlayer({
     updateDebugInfo,
   ]);
 
-  // Reload the audio element when a download completes so playback switches
-  // from the network stream to the service worker cache. If `src` changes before loadedmetadata
-  // fires (e.g. user navigates to another recording), the cleanup removes the
-  // restorePosition listener so we never apply the old position to the new
-  // src.
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const prevStatus = prevCacheStatusRef.current;
-    prevCacheStatusRef.current = cacheStatus;
-    const srcChanged = cacheReloadSrcRef.current !== src;
-    cacheReloadSrcRef.current = src;
-
-    if (prevStatus !== 'downloading' || cacheStatus !== 'complete') return;
-    // A page that switches to a local source on completion already reloads
-    // through the src change above, which also restores position and play.
-    if (srcChanged) return;
-
-    // Don't collide with a retry-in-flight. The retry effect already owns
-    // the audio element and will call audio.load() itself; a second load()
-    // here would cancel the retry mid-load and duplicate restorePosition
-    // logic. After RECOVERED, subsequent range requests go through the SW
-    // and pick up the cached data naturally.
-    if (
-      retryStateRef.current.phase === 'scheduled' ||
-      retryStateRef.current.phase === 'reloading'
-    ) {
-      logDebugEvent(
-        'loaded',
-        'Cache complete',
-        'Retry in flight; skipping cache-reload to avoid collision',
-      );
-      return;
-    }
-
-    const wasPlaying = !audio.paused;
-    const position = audio.currentTime;
-
-    logDebugEvent(
-      'loaded',
-      'Cache complete',
-      'Reloading audio to use cached data',
-    );
-
-    audio.load();
-
-    const restorePosition = () => {
-      audio.removeEventListener('loadedmetadata', restorePosition);
-      if (position > 0) {
-        audio.currentTime = position;
-      }
-      if (wasPlaying) {
-        safePlay(audio, 'cache-complete resume', logDebugEvent);
-      }
-    };
-    audio.addEventListener('loadedmetadata', restorePosition);
-
-    return () => {
-      audio.removeEventListener('loadedmetadata', restorePosition);
-    };
-  }, [cacheStatus, src, logDebugEvent]);
-
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -1027,10 +948,3 @@ export function AudioPlayer({
     </div>
   );
 }
-
-// Expose a method to seek from outside the component
-AudioPlayer.seek = (audioElement: HTMLAudioElement | null, time: number) => {
-  if (audioElement) {
-    audioElement.currentTime = time;
-  }
-};
