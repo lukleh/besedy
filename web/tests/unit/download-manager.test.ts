@@ -246,9 +246,12 @@ async function loadManager() {
   return mod;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 5000) {
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 5000,
+) {
   const started = Date.now();
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - started > timeoutMs) {
       throw new Error('Timed out waiting for condition');
     }
@@ -377,6 +380,128 @@ describe('download manager', () => {
     const { getDownloadBundle } = await import('@/lib/offline/downloads-db');
     const bundle = await getDownloadBundle(done.key);
     expect(bundle?.transcript).toBeNull();
+  });
+
+  it('stores the event and entry payloads on a package written before they were part of the bundle', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: `${CATALOG}:7`,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'cached-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: null,
+      hasArtwork: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+    await db.putDownloadBundle({
+      key,
+      transcriptBackend: null,
+      transcript: null,
+      diarization: null,
+      artwork: null,
+      updatedAt: now,
+    });
+
+    const { downloadManager } = await loadManager();
+    downloadManager.setUserId('user-1');
+    await downloadManager.hydrate();
+    await waitFor(async () => {
+      const bundle = await db.getDownloadBundle(key);
+      return bundle?.entry !== undefined && bundle?.eventDetail !== undefined;
+    });
+
+    const bundle = await db.getDownloadBundle(key);
+    expect(bundle?.entry?.entry.hash).toBe(HASH);
+    expect(bundle?.eventDetail?.id).toBe(7);
+    expect(bundle?.eventDetail?.recordings).toHaveLength(2);
+  });
+
+  it('drops the stored speaker overlay once that permission is revoked', async () => {
+    // The fake server's entry carries no canSeeSpeakers, i.e. revoked.
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'cached-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: 'whisperx/large',
+      hasArtwork: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+    await db.putDownloadBundle({
+      key,
+      transcriptBackend: 'whisperx/large',
+      transcript: { backend: 'whisperx/large', segments: [] },
+      diarization: { hash: HASH, model: 'pyannote', numSpeakers: 0, segments: [] },
+      artwork: null,
+      entry: {
+        entry: {
+          hash: HASH,
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: false,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownloadAudio: true,
+        canDownloadTranscripts: true,
+        canSeeSpeakers: true,
+      },
+      updatedAt: now,
+    });
+
+    const { downloadManager } = await loadManager();
+    downloadManager.setUserId('user-1');
+    await downloadManager.hydrate();
+    await waitFor(async () => {
+      const bundle = await db.getDownloadBundle(key);
+      return bundle?.diarization === null;
+    });
+
+    const bundle = await db.getDownloadBundle(key);
+    expect(bundle?.entry?.canSeeSpeakers).not.toBe(true);
+    // The transcript itself is still permitted and stays.
+    expect(bundle?.transcript).not.toBeNull();
+    expect(downloadManager.getSnapshot().records[0]?.transcriptBackend).toBe('whisperx/large');
   });
 
   it('removes a previously cached transcript after permission is narrowed', async () => {
@@ -552,13 +677,17 @@ describe('download manager', () => {
     const bundle = await getDownloadBundle(record.key);
     expect(bundle?.artwork?.variant).toBe('square');
     expect(bundle?.artwork?.contentType).toBe('image/jpeg');
+    // Once to choose the recording at enqueue time, once inside the job to
+    // store the payload the offline event page renders from.
     expect(
       server.fetchMock.mock.calls.filter(([input]) =>
         new URL(String(input), window.location.origin).pathname.endsWith(
           `/events/7`,
         ),
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    expect(bundle?.eventDetail?.id).toBe(7);
+    expect(bundle?.entry?.entry.hash).toBe(HASH);
 
     // A second request for the same event reuses the record instead of duplicating it.
     const again = await downloadManager.enqueueEvent({

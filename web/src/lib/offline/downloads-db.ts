@@ -11,6 +11,8 @@ import type {
   Diarization,
   Transcript,
 } from '@/components/transcript/transcript-viewer-types';
+import type { CatalogEntryWithPermissions } from '@/types/catalog';
+import type { EventDetailResponse } from '@/types/event-detail';
 
 export const DOWNLOADS_DB_NAME = 'besedy-offline';
 const DOWNLOADS_DB_VERSION = 5;
@@ -108,6 +110,17 @@ export interface DownloadBundlePayload {
   artwork: DownloadArtworkPayload | null;
   /** WebKit-compatible copy; older bundles and non-WebKit browsers omit it. */
   inlineAudio?: DownloadInlineAudioPayload | null;
+  /**
+   * Event detail payload as served when the event was downloaded. The local
+   * content source renders the shared event page from it. Absent on bundles
+   * written before it was stored and on recording-only downloads.
+   */
+  eventDetail?: EventDetailResponse | null;
+  /**
+   * Recording entry with the permissions observed at download time. Absent on
+   * bundles written before it was stored.
+   */
+  entry?: CatalogEntryWithPermissions | null;
   updatedAt: number;
 }
 

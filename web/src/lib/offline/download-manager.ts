@@ -32,6 +32,11 @@ import type {
   Diarization,
   Transcript,
 } from '@/components/transcript/transcript-viewer-types';
+import type {
+  CatalogEntryResponse,
+  CatalogEntryWithPermissions,
+} from '@/types/catalog';
+import type { EventDetailResponse, EventRecording } from '@/types/event-detail';
 import {
   AUDIO_CHUNK_SIZE,
   deleteAudioCacheEntries,
@@ -151,23 +156,6 @@ function warmDownloadsShell(): Promise<void> {
 // Server response shapes (only the fields the manager reads)
 // ---------------------------------------------------------------------------
 
-interface EntryResponse {
-  entry: {
-    hash: string;
-    title?: string | null;
-    curatedTitle?: string | null;
-    artist?: string | null;
-    curatedArtist?: string | null;
-    duration?: string | null;
-    dateYear?: number | null;
-    dateMonth?: number | null;
-    dateDay?: number | null;
-    recorder?: { id: number; name: string } | null;
-  };
-  canViewTranscripts: boolean;
-  canDownloadTranscripts: boolean;
-}
-
 interface SourcesResponse {
   sources: AudioSourceOption[];
   defaultSource: string;
@@ -183,33 +171,6 @@ interface TranscriptBackendsResponse {
 
 interface DiarizationBackendsResponse {
   backends: string[];
-}
-
-interface EventRecordingResponse {
-  audioHash: string;
-  isPrimary: boolean;
-  sortOrder: number;
-  title: string;
-  artist: string | null;
-  durationHms: string | null;
-  recorder: { id: number; name: string } | null;
-}
-
-interface EventDetailResponse {
-  id: number;
-  title: string | null;
-  location: { id: number; name: string } | null;
-  dateYear: number;
-  dateMonth: number | null;
-  dateDay: number | null;
-  sessionIndex: number;
-  sessionOrdinal?: number;
-  sessionCount?: number;
-  recordings: EventRecordingResponse[];
-  publishedArtwork?: {
-    id: string;
-    publishedAt: string;
-  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -504,7 +465,7 @@ function snapshotEvent(event: EventDetailResponse): DownloadEventSnapshot {
 }
 
 function snapshotEventRecording(
-  recording: EventRecordingResponse,
+  recording: EventRecording,
   event: EventDetailResponse,
 ): DownloadRecordingSnapshot {
   return {
@@ -519,7 +480,7 @@ function snapshotEventRecording(
 }
 
 function snapshotEntryRecording(
-  entry: EntryResponse['entry'],
+  entry: CatalogEntryResponse,
 ): DownloadRecordingSnapshot {
   return {
     title: entry.curatedTitle ?? entry.title ?? null,
@@ -530,6 +491,16 @@ function snapshotEntryRecording(
     dateMonth: entry.dateMonth ?? null,
     dateDay: entry.dateDay ?? null,
   };
+}
+
+/** The event id encoded in a record's event key, when it belongs to `catalogId`. */
+function eventIdFromKey(
+  eventKey: string | null,
+  catalogId: string,
+): number | null {
+  if (!eventKey || !eventKey.startsWith(`${catalogId}:`)) return null;
+  const eventId = Number(eventKey.slice(catalogId.length + 1));
+  return Number.isSafeInteger(eventId) && eventId >= 0 ? eventId : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -960,31 +931,50 @@ class DownloadManager {
       });
   }
 
+  /**
+   * Re-check completed packages against the server while online: drop a
+   * transcript the account may no longer retain, keep the stored entry's
+   * permissions current (the local reader derives the speaker overlay from
+   * them), and store the event detail and entry payloads on packages written
+   * before they were part of the bundle, so the shared pages can render them
+   * offline.
+   */
   private async reconcileTranscriptPermissions(userId: string): Promise<void> {
     const signal = new AbortController().signal;
     const candidates = Array.from(this.records.values()).filter(
       (record) =>
         record.status === 'complete' &&
-        record.transcriptBackend !== null &&
         (record.userId === null || record.userId === userId),
     );
 
     for (const record of candidates) {
       if (!this.online || this.userId !== userId) return;
 
+      let bundle: DownloadBundlePayload | undefined;
       try {
-        const entry = await fetchJson<EntryResponse>(
+        bundle = await getDownloadBundle(record.key);
+      } catch {
+        bundle = undefined;
+      }
+      const missingEntry = !bundle?.entry;
+      const missingEventDetail =
+        record.eventKey !== null && !bundle?.eventDetail;
+      const needsPackageRefresh = missingEntry || missingEventDetail;
+      if (record.transcriptBackend === null && !needsPackageRefresh) continue;
+
+      let entry: CatalogEntryWithPermissions | null = null;
+      try {
+        entry = await fetchJson<CatalogEntryWithPermissions>(
           buildRecordingEntryUrl(record.catalogId, record.hash),
           signal,
         );
-        if (entry.canViewTranscripts && entry.canDownloadTranscripts) continue;
       } catch (error) {
         if (isNetworkError(error)) return;
         const permissionDenied =
           error instanceof DownloadHttpError &&
           (error.status === 403 || error.status === 404);
         if (!permissionDenied) {
-          logger.debug('Could not refresh offline transcript permission', {
+          logger.debug('Could not refresh an offline package', {
             key: record.key,
             error,
           });
@@ -993,13 +983,64 @@ class DownloadManager {
       }
 
       if (!this.online || this.userId !== userId) return;
-      try {
-        await this.removeStoredTranscript(record);
-      } catch (error) {
-        logger.warn('Failed to remove an offline transcript', {
-          key: record.key,
-          error,
-        });
+      const transcriptPermitted =
+        entry?.canViewTranscripts === true &&
+        entry.canDownloadTranscripts === true;
+      if (record.transcriptBackend !== null && !transcriptPermitted) {
+        try {
+          await this.removeStoredTranscript(record);
+        } catch (error) {
+          logger.warn('Failed to remove an offline transcript', {
+            key: record.key,
+            error,
+          });
+        }
+      }
+
+      const speakersPermitted = entry?.canSeeSpeakers === true;
+      const entitlementChanged =
+        entry !== null &&
+        (bundle?.entry?.canSeeSpeakers === true) !== speakersPermitted;
+      const dropDiarization =
+        entry !== null && !speakersPermitted && !!bundle?.diarization;
+      if (entry && (needsPackageRefresh || entitlementChanged || dropDiarization)) {
+        let eventDetail = bundle?.eventDetail ?? null;
+        const eventId = eventIdFromKey(record.eventKey, record.catalogId);
+        if (missingEventDetail && eventId !== null) {
+          try {
+            eventDetail = await tryFetchJson<EventDetailResponse>(
+              buildEventDetailUrl(record.catalogId, eventId),
+              signal,
+            );
+          } catch (error) {
+            if (isNetworkError(error)) return;
+            eventDetail = null;
+          }
+        }
+        if (!this.online || this.userId !== userId) return;
+        try {
+          const current = (await getDownloadBundle(record.key)) ?? {
+            key: record.key,
+            transcriptBackend: null,
+            transcript: null,
+            diarization: null,
+            artwork: null,
+            updatedAt: 0,
+          };
+          await putDownloadBundle({
+            ...current,
+            entry,
+            eventDetail: eventDetail ?? current.eventDetail ?? null,
+            // The overlay is administrative; a revoked permission removes it.
+            diarization: speakersPermitted ? current.diarization : null,
+            updatedAt: Date.now(),
+          });
+        } catch (error) {
+          logger.warn('Failed to refresh an offline package', {
+            key: record.key,
+            error,
+          });
+        }
       }
     }
   }
@@ -1228,10 +1269,19 @@ class DownloadManager {
       const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
       const { catalogId, hash } = started;
 
-      const entry = await fetchJson<EntryResponse>(
+      const entry = await fetchJson<CatalogEntryWithPermissions>(
         buildRecordingEntryUrl(catalogId, hash),
         signal,
       );
+      // The event page renders from this payload when the network is gone.
+      const eventId = eventIdFromKey(started.eventKey, catalogId);
+      const eventDetail =
+        eventId === null
+          ? null
+          : await tryFetchJson<EventDetailResponse>(
+              buildEventDetailUrl(catalogId, eventId),
+              signal,
+            );
       const sources = await tryFetchJson<SourcesResponse>(
         buildAudioSourcesUrl(catalogId, hash),
         signal,
@@ -1298,6 +1348,9 @@ class DownloadManager {
         const transcriptPayload = await this.downloadTranscriptBundle(
           catalogId,
           hash,
+          // The speaker overlay is administrative; store it only for an
+          // account that may see it, so the offline page cannot show more.
+          entry.canSeeSpeakers === true,
           signal,
         );
         transcriptBackend = transcriptPayload.transcriptBackend;
@@ -1321,6 +1374,8 @@ class DownloadManager {
         transcript,
         diarization,
         artwork,
+        eventDetail,
+        entry,
         inlineAudio: offlineAudioBlob
           ? {
               data: await offlineAudioBlob.arrayBuffer(),
@@ -1380,6 +1435,7 @@ class DownloadManager {
   private async downloadTranscriptBundle(
     catalogId: string,
     hash: string,
+    includeDiarization: boolean,
     signal: AbortSignal,
   ): Promise<
     Pick<
@@ -1392,10 +1448,12 @@ class DownloadManager {
         buildTranscriptBackendsUrl(hash, catalogId),
         signal,
       ),
-      tryFetchJson<DiarizationBackendsResponse>(
-        buildDiarizationBackendsUrl(hash, catalogId),
-        signal,
-      ),
+      includeDiarization
+        ? tryFetchJson<DiarizationBackendsResponse>(
+            buildDiarizationBackendsUrl(hash, catalogId),
+            signal,
+          )
+        : Promise.resolve(null),
     ]);
     const backend = backends?.backends[0];
     if (!backend) {

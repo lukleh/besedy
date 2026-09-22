@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildRecordingEntryUrl } from "@/lib/api/recording-urls";
+import { readLocalRecordingEntry, withLocalFallback } from "@/lib/offline/local-source";
 import {
   AUTH_SENSITIVE_QUERY_OPTIONS,
   getStableAccessData,
@@ -48,14 +49,17 @@ export function useRecordingEntry({
 }: UseRecordingEntryParams) {
   const query = useQuery<CatalogEntryWithPermissions>({
     queryKey: ["catalog-entry", hash, groupKey],
-    queryFn: async () => {
-      return fetchJson<CatalogEntryWithPermissions>(
-        buildRecordingEntryUrl(catalogId, hash),
-        {
-          schema: catalogEntryWithPermissionsSchema,
-        }
-      );
-    },
+    queryFn: async () =>
+      withLocalFallback(
+        () =>
+          fetchJson<CatalogEntryWithPermissions>(
+            buildRecordingEntryUrl(catalogId, hash),
+            {
+              schema: catalogEntryWithPermissionsSchema,
+            }
+          ),
+        () => readLocalRecordingEntry(catalogId, hash)
+      ),
     enabled,
     retry: false,
     ...AUTH_SENSITIVE_QUERY_OPTIONS,

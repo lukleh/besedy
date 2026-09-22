@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   },
   setRecordingPlaying: vi.fn(),
   session: { userId: null as string | null },
+  downloadRecord: null as { userId: string | null } | null,
   flushPendingPlaybackProgress: vi.fn(),
+  queuePlaybackProgress: vi.fn(() => Promise.resolve()),
   getPendingPlaybackProgress: vi.fn(),
 }));
 
@@ -42,6 +44,11 @@ vi.mock("@/contexts/session-context", () => ({
 
 vi.mock("@/lib/offline/playback-progress-sync", () => ({
   flushPendingPlaybackProgress: mocks.flushPendingPlaybackProgress,
+  queuePlaybackProgress: mocks.queuePlaybackProgress,
+}));
+
+vi.mock("@/hooks/use-downloads", () => ({
+  useDownloadRecord: () => mocks.downloadRecord,
 }));
 
 vi.mock("@/lib/offline/downloads-db", () => ({
@@ -300,6 +307,42 @@ describe("useRecordingPlayback", () => {
     expect(mocks.flushPendingPlaybackProgress).toHaveBeenCalledWith("u1");
     expect(result.current.seekRequest?.time).toBe(20);
     expect(localStorage.getItem(STORAGE_KEY)).toBe("20");
+  });
+
+  it("queues progress for the download owner when the server is unreachable", async () => {
+    mocks.session.userId = null;
+    mocks.downloadRecord = { userId: "owner" };
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.setCurrentTime(30);
+    });
+    act(() => {
+      result.current.handlePlayingChange(false);
+    });
+
+    expect(mocks.queuePlaybackProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "owner",
+        catalogId: CATALOG_ID,
+        hash: HASH,
+        positionSec: 30,
+        completed: false,
+      })
+    );
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("30");
+    // No server write: the position is merged on the next connection instead.
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
 
   it("imports a browser position when it is further than server progress", async () => {

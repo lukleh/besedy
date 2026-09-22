@@ -233,6 +233,48 @@ describe("RecordingContent transcript toggle", () => {
     );
   });
 
+  it("plays a completed download while online when it matches the selected source", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;
+    useDownloadRecordMock.mockReturnValue({
+      status: "complete",
+      audioUrl: url,
+      audioCacheKey: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
+    });
+    useQueryMock.mockImplementation(
+      ({ queryKey }: { queryKey?: unknown[] } = {}) => {
+        const key = queryKey?.[0];
+        if (key === "audio-source-preference") {
+          return { data: { hash: HASH, sourceId: "mobile" } };
+        }
+        if (key === "audio-variants") {
+          return {
+            data: {
+              hash: HASH,
+              sources: [
+                {
+                  id: "mobile",
+                  label: "Mobile",
+                  type: "listening",
+                  variant: "mobile",
+                  available: true,
+                },
+              ],
+              defaultSource: "mobile",
+            },
+          };
+        }
+        return { data: undefined };
+      }
+    );
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ src: url })
+    );
+  });
+
   it("honors the selected audio source while online after a different variant was downloaded", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useDownloadRecordMock.mockReturnValue({
