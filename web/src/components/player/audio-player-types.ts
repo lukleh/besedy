@@ -1,5 +1,10 @@
 export interface AudioPlayerProps {
   src: string;
+  /**
+   * The recording behind `src`. Needed when `src` is not the recording's API
+   * URL (a local data URL, for example) so download state still resolves.
+   */
+  recordingHash?: string;
   catalogId?: string;
   downloadEventId?: number;
   onTimeUpdate?: (time: number) => void;

@@ -213,7 +213,7 @@ export function DownloadsContent() {
                     record={record}
                     isActive={record.key === activeKey}
                     locale={locale}
-                    onOpen={() => setSelectedDownload(record.key)}
+                    href={recordPageUrl(record)}
                   />
                 ))}
               </div>
@@ -246,14 +246,26 @@ export function DownloadsContent() {
   );
 }
 
+/** The normal page for a download: the event page, or the recording page. */
+export function recordPageUrl(record: DownloadRecord): string {
+  const eventId = record.eventKey
+    ? Number(record.eventKey.slice(record.catalogId.length + 1))
+    : record.event?.id;
+  if (eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0) {
+    return `/catalog/${record.catalogId}/event/${eventId}`;
+  }
+  return `/catalog/${record.catalogId}/recording/${record.hash}`;
+}
+
 interface DownloadCardProps {
   record: DownloadRecord;
   isActive: boolean;
   locale: string;
-  onOpen: () => void;
+  /** The normal page for this download. */
+  href: string;
 }
 
-function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
+function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
   const t = useTranslations('downloads');
   const event = record.event;
   const recording = record.recording;
@@ -383,9 +395,13 @@ function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
 
         <div className="flex shrink-0 items-center gap-2">
           {record.status === 'complete' && (
-            <Button size="sm" variant="default" onClick={onOpen}>
-              <Play className="mr-2 h-4 w-4" />
-              {t('open')}
+            // A document navigation: Downloads lives in its own root layout,
+            // and the worker serves the target from local packages offline.
+            <Button size="sm" variant="default" asChild>
+              <a href={href}>
+                <Play className="mr-2 h-4 w-4" />
+                {t('open')}
+              </a>
             </Button>
           )}
           {(record.status === 'downloading' || record.status === 'queued') && (

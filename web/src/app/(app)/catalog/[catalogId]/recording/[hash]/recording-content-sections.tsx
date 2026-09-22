@@ -252,6 +252,7 @@ export function RecordingAudioSection({
 
       <AudioPlayer
         src={audioUrl}
+        recordingHash={hash}
         catalogId={catalogId}
         downloadEventId={downloadEventId}
         onTimeUpdate={currentTimeSetter}

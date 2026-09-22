@@ -36,6 +36,16 @@ export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): stri
   return `data:${contentType};base64,${encodedChunks.join("")}`;
 }
 
+/**
+ * The URL the player uses for a complete local recording. It differs from the
+ * network URL only by a marker the worker and the server ignore, so the
+ * browser treats the switch to local playback as a new media resource
+ * instead of resuming a network stream that may have died.
+ */
+export function localAudioSrc(audioUrl: string): string {
+  return `${audioUrl}${audioUrl.includes("?") ? "&" : "?"}local=1`;
+}
+
 export interface LocalAudioSource {
   /** Playable local source, or null when the page should use its network URL. */
   src: string | null;
@@ -88,9 +98,10 @@ export function useLocalAudioSrc(
   });
 
   if (!useLocal || !record?.audioUrl) return { src: null, pending: false };
-  if (!needsInline) return { src: record.audioUrl, pending: false };
+  const local = localAudioSrc(record.audioUrl);
+  if (!needsInline) return { src: local, pending: false };
   if (inline.isPending) return { src: null, pending: true };
-  return { src: inline.data ?? record.audioUrl, pending: false };
+  return { src: inline.data ?? local, pending: false };
 }
 
 /**

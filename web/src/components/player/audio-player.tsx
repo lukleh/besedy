@@ -73,6 +73,7 @@ function resolvePlaybackEnd(value: number | undefined): number | null {
 
 export function AudioPlayer({
   src,
+  recordingHash,
   catalogId,
   downloadEventId,
   onTimeUpdate,
@@ -88,10 +89,11 @@ export function AudioPlayer({
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Extract hash from audio URL for cache management
+  // The recording identity drives download state; fall back to the API URL
+  // shape when the caller did not name it.
   const hash = useMemo(() => {
-    return extractRecordingHash(src);
-  }, [src]);
+    return recordingHash ?? extractRecordingHash(src);
+  }, [recordingHash, src]);
 
   // Download state drives the switch from network streaming to cached playback.
   const downloadRecord = useDownloadRecord(catalogId ?? null, hash);
@@ -146,7 +148,16 @@ export function AudioPlayer({
   );
   const isReconnecting = isRetrying(retryState);
   const prevSrcRef = useRef(src); // Track previous src for change detection
+  const prevRecordingHashRef = useRef(recordingHash);
+  // Last playback position React observed; survives the element reset that a
+  // src change performs before effects run.
+  const lastTimeRef = useRef(0);
   const prevCacheStatusRef = useRef(cacheStatus); // Track cache status for reload on complete
+  const cacheReloadSrcRef = useRef(src);
+  // Whether the listener wants playback. The browser pauses the element
+  // before it reports a media error, so `audio.paused` alone cannot tell an
+  // interrupted play from a deliberate pause when deciding to resume.
+  const playIntentRef = useRef(false);
   // Tracks whether metadata has loaded successfully for the current src.
   // Used to avoid retry-looping on MEDIA_ERR_SRC_NOT_SUPPORTED when the format
   // is genuinely unplayable (vs. a network blip mid-stream).
@@ -363,10 +374,17 @@ export function AudioPlayer({
     }
     const previousHash = extractRecordingHash(previousSrc);
     const nextHash = extractRecordingHash(src);
+    // Same recording, different transport or variant: a named recording hash
+    // covers sources whose URL carries no hash, such as a local data URL.
     const sameRecording =
-      !!previousHash && !!nextHash && previousHash === nextHash;
+      (!!previousHash && !!nextHash && previousHash === nextHash) ||
+      (recordingHash !== undefined &&
+        prevRecordingHashRef.current === recordingHash);
 
     prevSrcRef.current = src;
+    prevRecordingHashRef.current = recordingHash;
+    // A different recording starts from the listener's next decision.
+    if (!sameRecording) playIntentRef.current = false;
 
     // Reset user interaction tracking
     userInitiatedRef.current = false;
@@ -387,11 +405,14 @@ export function AudioPlayer({
       if (sameRecording) {
         if (queuedSeek) {
           restoreAfterSourceSwitch = queuedSeek;
-        } else if (audio.currentTime > 0 || !audio.paused) {
-          restoreAfterSourceSwitch = {
-            time: audio.currentTime,
-            autoPlay: !audio.paused,
-          };
+        } else {
+          // The element may already have reset for the new src; the refs hold
+          // what the listener last saw and wanted.
+          const time = Math.max(audio.currentTime, lastTimeRef.current);
+          const autoPlay = !audio.paused || playIntentRef.current;
+          if (time > 0 || autoPlay) {
+            restoreAfterSourceSwitch = { time, autoPlay };
+          }
         }
       }
       audio.pause();
@@ -414,7 +435,11 @@ export function AudioPlayer({
       setDebugEvents([]);
       onPlayingChange?.(false);
     });
-  }, [src, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
+  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
+
+  useEffect(() => {
+    lastTimeRef.current = currentTime;
+  }, [currentTime]);
 
   // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
   // For streaming audio, the request stays open until the entire file downloads, so it's not
@@ -493,7 +518,7 @@ export function AudioPlayer({
       dispatchRetry({
         type: 'ERROR_DETECTED',
         savedPosition: audio.currentTime || 0,
-        wasPlaying: !audio.paused,
+        wasPlaying: !audio.paused || playIntentRef.current,
       });
       setIsPlaying(false);
       onPlayingChange?.(false);
@@ -555,6 +580,8 @@ export function AudioPlayer({
       ) {
         playbackEndRef.current = null;
         audio.currentTime = linkedPlaybackEnd;
+        // A finished excerpt is a deliberate stop, not an interrupted play.
+        playIntentRef.current = false;
         setCurrentTime(linkedPlaybackEnd);
         onTimeUpdate?.(linkedPlaybackEnd);
         audio.pause();
@@ -613,12 +640,14 @@ export function AudioPlayer({
     };
 
     const handleEnded = () => {
+      playIntentRef.current = false;
       setIsPlaying(false);
       onPlayingChange?.(false);
       onEnded?.(Number.isFinite(audio.duration) ? audio.duration : 0);
     };
 
     const handlePlay = () => {
+      playIntentRef.current = true;
       setIsPlaying(true);
       // Show spinner immediately if we don't have enough data to play
       // readyState: 0=NOTHING, 1=METADATA, 2=CURRENT_DATA, 3=FUTURE_DATA, 4=ENOUGH_DATA
@@ -755,8 +784,13 @@ export function AudioPlayer({
 
     const prevStatus = prevCacheStatusRef.current;
     prevCacheStatusRef.current = cacheStatus;
+    const srcChanged = cacheReloadSrcRef.current !== src;
+    cacheReloadSrcRef.current = src;
 
     if (prevStatus !== 'downloading' || cacheStatus !== 'complete') return;
+    // A page that switches to a local source on completion already reloads
+    // through the src change above, which also restores position and play.
+    if (srcChanged) return;
 
     // Don't collide with a retry-in-flight. The retry effect already owns
     // the audio element and will call audio.load() itself; a second load()
@@ -810,6 +844,7 @@ export function AudioPlayer({
     // This ensures consistent behavior between button clicks and keyboard shortcuts
     userInitiatedRef.current = true;
     if (isPlaying) {
+      playIntentRef.current = false;
       audio.pause();
     } else {
       safePlay(audio, 'toggle play button', logDebugEvent);
@@ -892,6 +927,7 @@ export function AudioPlayer({
           e.preventDefault();
           userInitiatedRef.current = true;
           if (isPlaying) {
+            playIntentRef.current = false;
             audio.pause();
           } else {
             safePlay(audio, 'space keyboard shortcut', logDebugEvent);
