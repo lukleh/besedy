@@ -11,7 +11,6 @@ import {
   canCreateEventFromRecording,
   canDetachRecordingFromEvent,
   canEditEvent,
-  canReleaseEvent,
   canSetPrimaryRecording,
   type EventFeaturePolicyContext,
 } from "@/lib/policy/event";
@@ -19,7 +18,6 @@ import {
 export type CatalogEventsAccessMode =
   | "view"
   | "edit"
-  | "release_event"
   | "attach_recording"
   | "detach_recording"
   | "set_primary_recording"
@@ -44,8 +42,6 @@ function isAllowedForCatalogEventsMode(
       return canBrowseEvents(context);
     case "edit":
       return canEditEvent(context);
-    case "release_event":
-      return canReleaseEvent(context);
     case "attach_recording":
       return canAttachRecordingToEvent(context);
     case "detach_recording":
@@ -63,8 +59,6 @@ function deniedMessageForCatalogEventsMode(mode: CatalogEventsAccessMode): strin
       return "Catalog access required";
     case "edit":
       return "Event-management permission required for event edit operations";
-    case "release_event":
-      return "Event-management permission required to change event release state";
     case "attach_recording":
       return "Event-management permission required to attach recordings to events";
     case "detach_recording":

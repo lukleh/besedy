@@ -31,6 +31,9 @@ import { TimestampIdSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
 
+const RELEASE_DENIED_MESSAGE =
+  "Release-events permission required to change event release state";
+
 interface RouteParams {
   params: Promise<{ id: string; eventId: string }>;
 }
@@ -65,7 +68,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!paramsResult.success) return paramsResult.response;
     const { id: catalogId, eventId } = paramsResult.data;
 
-    const { userId, catalogGrant } = await requireCatalogEventsAccess(catalogId, "view");
+    const { userId, catalogGrant, policyContext } = await requireCatalogEventsAccess(catalogId, "view");
 
     const readable = await loadReadableCatalogEvent(
       catalogId,
@@ -122,6 +125,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const canManageArtwork = catalogCapability.canManageArtwork;
     const canPublishArtwork = catalogCapability.canPublishArtwork;
     const canManageSources = catalogCapability.canManageEventSources;
+    const canRelease = canReleaseEvent(policyContext);
     // ADR 0009: draft counts/labels are only for actors with draft visibility;
     // ordinary readers keep seeing only the published artwork.
     const artworkStatus = canViewArtworkCandidates ? (artworkStatuses.get(eventId) ?? "none") : undefined;
@@ -156,6 +160,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canManageArtwork,
       canPublishArtwork,
       canManageSources,
+      canRelease,
       publishedArtwork,
       artworkStatus,
       latestDraftCandidate,
@@ -182,8 +187,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!bodyResult.success) return bodyResult.response;
     const body = bodyResult.data;
 
-    if (body.released !== undefined && access.policyContext !== undefined && !canReleaseEvent(access.policyContext)) {
-      return forbidden("Event-management permission required to change event release state");
+    // A second gate on top of "edit": manage_events reaches the event,
+    // release_events changes whether its audience sees it.
+    if (body.released !== undefined && !canReleaseEvent(access.policyContext)) {
+      return forbidden(RELEASE_DENIED_MESSAGE);
     }
 
     const existingEvent = await prisma.catalogEvent.findFirst({

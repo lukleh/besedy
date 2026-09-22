@@ -123,7 +123,7 @@ Per-catalog authorization no longer uses an ordered access-level scale. An actor
 | GET | `/api/catalog-events?group=:id` | Catalog access | List visible events |
 | POST | `/api/catalog-events` | `manage_events` | Create event |
 | GET | `/api/catalogs/:id/events/:eventId` | Catalog access | Event detail |
-| PATCH/DELETE | `/api/catalogs/:id/events/:eventId` | `manage_events` | Update/delete event |
+| PATCH/DELETE | `/api/catalogs/:id/events/:eventId` | `manage_events`; a PATCH that changes `released` additionally requires `release_events` | Update/delete event |
 | POST | `/api/catalogs/:id/events/:eventId/recordings` | `manage_events` | Attach recordings |
 | DELETE | `/api/catalogs/:id/events/:eventId/recordings/:audioHash` | `manage_events` | Detach recording |
 | POST | `/api/catalogs/:id/events/:eventId/recordings/:audioHash/set-primary` | `manage_events` | Set primary recording |
@@ -135,7 +135,7 @@ Per-catalog authorization no longer uses an ordered access-level scale. An actor
 - Event visibility is enforced server-side via shared access guards (`requireCatalogEventsAccess` in `web/src/lib/catalog-events/access.ts`).
 - Event sources are editorial material, so every source route, reads included, asks `manage_event_sources` (carried by `curator` and `catalog_admin`); `manage_access` does not reach them. The event detail response's `canManageSources` flag follows the same permission.
 - For a grant without `see_unreleased`, an event is visible only once released, with a published, actionable primary recording; a grant holding `see_unreleased` (`curator`, `catalog_admin`) sees every event regardless of release state.
-- ADR 0005 names a separate `release_events` permission, but no route currently gates on it: `canReleaseEvent` in `web/src/lib/policy/event.ts` is presently the same check as `canEditEvent` (`manage_events`), so changing an event's `released` flag requires only `manage_events` today.
+- Release is a second gate on top of edit. `canReleaseEvent` in `web/src/lib/policy/event.ts` asks `release_events`; the PATCH route reaches it only after the `manage_events` check, so an actor needs both to release. The event detail response's `canRelease` flag drives the release control in the editor. Both permissions sit on `curator` and `catalog_admin` today and neither is grantable as an extra, so no current grant holds one without the other.
 
 ### Transcript Endpoints
 

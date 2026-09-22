@@ -114,6 +114,13 @@ describe("catalog event detail route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       catalogGrant: grantForRole("curator"),
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: grantForRole("curator"),
+        isCatalogAdmin: false,
+      },
     });
     // manage_access on, manage_event_sources off: the sources flag has to follow
     // the second, not the first.
@@ -175,6 +182,8 @@ describe("catalog event detail route", () => {
     expect(body.canPublishArtwork).toBe(false);
     expect(body.publishedArtwork).toBeNull();
     expect(body.canManageSources).toBe(false);
+    // The curator carries release_events, so the editor is told it may release.
+    expect(body.canRelease).toBe(true);
     expect(isPublishedVisibleEvent).not.toHaveBeenCalled();
     expect(getPublishedAccessibleRecordingHashes).not.toHaveBeenCalled();
     expect(body.artworkStatus).toBeUndefined();
@@ -260,6 +269,13 @@ describe("catalog event detail route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
       catalogGrant: grantForRole("listener"),
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: grantForRole("listener"),
+        isCatalogAdmin: false,
+      },
     });
     isPublishedVisibleEvent.mockResolvedValue(false);
 
@@ -276,6 +292,13 @@ describe("catalog event detail route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
       catalogGrant: grantForRole("listener"),
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: grantForRole("listener"),
+        isCatalogAdmin: false,
+      },
     });
     prisma.catalogEvent.findFirst.mockResolvedValue({
       id: eventId,
@@ -329,6 +352,7 @@ describe("catalog event detail route", () => {
     const body = await response.json();
     expect(body.recordings).toHaveLength(1);
     expect(body.recordings[0].audioHash).toBe(primaryHash);
+    expect(body.canRelease).toBe(false);
   });
 
   it("stages and removes artwork assets when deleting an event", async () => {
