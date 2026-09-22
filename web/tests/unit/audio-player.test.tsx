@@ -311,6 +311,43 @@ describe("AudioPlayer bounded playback", () => {
     expect(pauseMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not resume a finished linked excerpt after an error recovery", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer({ playbackEnd: 20 });
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+    audio.pause = vi.fn(() => {
+      audio.dispatchEvent(new Event("pause"));
+    });
+
+    const playButton = container.querySelector('button[aria-label="Play"]') as HTMLButtonElement | null;
+    await act(async () => {
+      playButton?.click();
+    });
+    await act(async () => {
+      audio.dispatchEvent(new Event("play"));
+    });
+    expect(playMock).toHaveBeenCalledTimes(1);
+
+    // The excerpt reaches its linked end and stops on its own.
+    audio.currentTime = 20.4;
+    await act(async () => {
+      fireEvent.timeUpdate(audio);
+    });
+
+    const setPaused = mockPaused(audio, true);
+    setAudioError(audio, 2);
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    setPaused(true);
+    await act(async () => {
+      audio.dispatchEvent(new Event("canplay"));
+    });
+
+    expect(playMock).toHaveBeenCalledTimes(1);
+  });
+
   it("disarms the linked end after a manual skip", async () => {
     const { audio, container } = renderPlayer({ playbackEnd: 20 });
     const pauseMock = vi.fn();

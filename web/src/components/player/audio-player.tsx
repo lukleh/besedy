@@ -383,6 +383,8 @@ export function AudioPlayer({
 
     prevSrcRef.current = src;
     prevRecordingHashRef.current = recordingHash;
+    // A different recording starts from the listener's next decision.
+    if (!sameRecording) playIntentRef.current = false;
 
     // Reset user interaction tracking
     userInitiatedRef.current = false;
@@ -578,6 +580,8 @@ export function AudioPlayer({
       ) {
         playbackEndRef.current = null;
         audio.currentTime = linkedPlaybackEnd;
+        // A finished excerpt is a deliberate stop, not an interrupted play.
+        playIntentRef.current = false;
         setCurrentTime(linkedPlaybackEnd);
         onTimeUpdate?.(linkedPlaybackEnd);
         audio.pause();
