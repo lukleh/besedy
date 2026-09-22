@@ -163,6 +163,69 @@ test.describe('Offline Mode', () => {
   });
 
   test.describe('Offline playback', () => {
+    test('playback that started online continues uninterrupted when connectivity drops', async ({
+      page,
+      context,
+    }) => {
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+
+      // Play from the completed package while still online.
+      const audio = page.locator('audio');
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentTime),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(2);
+      const beforeOffline = await audio.evaluate(
+        (element: HTMLAudioElement) => element.currentTime,
+      );
+
+      // Pull the plug mid-stream. Nothing should stall, error, or pause.
+      await setOffline(context, true);
+      await waitForOfflineIndicator(page);
+      await page.waitForTimeout(4000);
+      await expect
+        .poll(
+          () =>
+            audio.evaluate((element: HTMLAudioElement) => ({
+              currentTime: element.currentTime,
+              error: element.error?.code ?? null,
+              paused: element.paused,
+              ended: element.ended,
+            })),
+          { timeout: 5_000 },
+        )
+        .toMatchObject({ error: null, paused: false, ended: false });
+      const afterOffline = await audio.evaluate(
+        (element: HTMLAudioElement) => element.currentTime,
+      );
+      expect(afterOffline).toBeGreaterThan(beforeOffline + 3);
+      await expect(page.getByTestId('audio-play-button')).toHaveAttribute(
+        'aria-label',
+        /pause|buffering/i,
+      );
+
+      await setOffline(context, false);
+    });
+
     test('an already-open downloaded event keeps playing after connectivity drops', async ({
       page,
       context,
