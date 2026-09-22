@@ -98,6 +98,23 @@ export function canCreateEventFromRecording(context: EventFeaturePolicyContext):
   return canEditEvent(context);
 }
 
+/**
+ * Whether the actor may read and write an event's source records.
+ *
+ * Asked of the catalog context rather than the events feature context because
+ * the capability projection answers it before any feature flag is known; the
+ * source routes still pass the events "view" gate first. The permission is
+ * `manage_event_sources`, which sits with the curator. Under the level scale the
+ * routes fell through to `manage_access`, which handed sources to the host and
+ * withheld them from the curator, the opposite of what ADR 0005 assigns.
+ */
+export function canManageEventSources(context: CatalogPolicyContext): boolean {
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "manage_event_sources")
+  );
+}
+
 export function isReleasedVisibleEventState(
   state: ReleasedVisibleEventState
 ): boolean {

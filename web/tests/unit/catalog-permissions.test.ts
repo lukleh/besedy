@@ -14,6 +14,7 @@ import {
   canSeeSpeakers,
   canSeeTranscriptVariants,
 } from "@/lib/policy/recording";
+import { canManageEventSources } from "@/lib/policy/event";
 import {
   canBatchEditCatalogMetadata,
   canBulkExportTranscripts,
@@ -262,6 +263,42 @@ describe("recording publication", () => {
     const curator = context("curator");
     expect(canPublishRecording({ ...curator, canEnterPortal: false })).toBe(false);
     expect(canPublishRecording({ ...curator, catalogExists: false })).toBe(false);
+  });
+});
+
+describe("event sources", () => {
+  // Sources are editorial material, and `manage_event_sources` is the whole
+  // answer to who may handle them. The routes used to fall through to the
+  // default management check, `manage_access`, which under the level scale was
+  // indistinguishable because OWNER carried both. Under roles it was backwards:
+  // the host could read and write sources and the curator could not.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from manage_event_sources alone",
+    (role) => {
+      expect(canManageEventSources(context(role))).toBe(
+        permissionsForRole(role).has("manage_event_sources")
+      );
+    }
+  );
+
+  it("separates sources from access management in both directions", () => {
+    const host = context("host");
+    expect(hasCatalogManagementAuthority(host)).toBe(true);
+    expect(canManageEventSources(host)).toBe(false);
+
+    const curator = context("curator");
+    expect(hasCatalogManagementAuthority(curator)).toBe(false);
+    expect(canManageEventSources(curator)).toBe(true);
+  });
+
+  it("gives sources to an administrator holding no grant", () => {
+    expect(canManageEventSources(context(null, true))).toBe(true);
+  });
+
+  it("refuses an actor who cannot open the catalog", () => {
+    const curator = context("curator");
+    expect(canManageEventSources({ ...curator, canEnterPortal: false })).toBe(false);
+    expect(canManageEventSources({ ...curator, catalogExists: false })).toBe(false);
   });
 });
 

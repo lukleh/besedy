@@ -115,8 +115,11 @@ describe("catalog event detail route", () => {
       userId: "owner-1",
       catalogGrant: grantForRole("curator"),
     });
+    // manage_access on, manage_event_sources off: the sources flag has to follow
+    // the second, not the first.
     getCatalogCapability.mockResolvedValue({
-      canManageAccess: false,
+      canManageAccess: true,
+      canManageEventSources: false,
       canViewArtworkCandidates: false,
       canManageArtwork: false,
       canPublishArtwork: false,

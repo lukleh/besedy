@@ -121,7 +121,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const canViewArtworkCandidates = catalogCapability.canViewArtworkCandidates;
     const canManageArtwork = catalogCapability.canManageArtwork;
     const canPublishArtwork = catalogCapability.canPublishArtwork;
-    const canManageSources = catalogCapability.canManageAccess;
+    const canManageSources = catalogCapability.canManageEventSources;
     // ADR 0009: draft counts/labels are only for actors with draft visibility;
     // ordinary readers keep seeing only the published artwork.
     const artworkStatus = canViewArtworkCandidates ? (artworkStatuses.get(eventId) ?? "none") : undefined;
