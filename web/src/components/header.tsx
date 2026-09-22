@@ -23,7 +23,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CircularBackLink } from "@/components/navigation/circular-back-control";
 
-export function Header() {
+interface HeaderProps {
+  /**
+   * The session is being requested again after a reconnect; keep the account
+   * area empty until it settles.
+   */
+  sessionRecovering?: boolean;
+}
+
+export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const t = useTranslations();
   const { session, isPending: sessionPending } = useSession();
   const { hydrated: downloadsHydrated, records: downloads } = useDownloadManager();
@@ -38,7 +46,8 @@ export function Header() {
   // Offering sign-in and the signed-out appearance toggles in either state
   // would be misleading, so the account area is left empty until the answer
   // is known.
-  const sessionUnknown = !isSignedIn && (!isOnline || sessionPending);
+  const sessionUnknown =
+    !isSignedIn && (!isOnline || sessionPending || sessionRecovering);
   const downloadCount = downloadsHydrated ? downloads.length : 0;
   const downloadCountLabel = downloadCount > 99 ? "99+" : String(downloadCount);
   const downloadsLabel =

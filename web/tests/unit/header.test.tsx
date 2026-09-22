@@ -116,6 +116,15 @@ describe("Header", () => {
     expect(screen.getByTestId("offline-indicator")).toBeInTheDocument();
   });
 
+  it("keeps the account area empty while the session is being recovered after a reconnect", () => {
+    mocks.session = null;
+
+    render(<Header sessionRecovering />);
+
+    expect(screen.queryByTestId("user-menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("language-switcher")).not.toBeInTheDocument();
+  });
+
   it("keeps the Downloads shortcut in the session-free shell when downloads exist", () => {
     mocks.session = null;
     mocks.downloadSnapshot = { hydrated: true, records: [{ key: "one" }] };
