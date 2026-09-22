@@ -33,6 +33,10 @@ export function Header() {
   // Don't show app navigation on auth pages
   const isAuthPage = route.isAuthPage;
   const isSignedIn = !!session?.user;
+  // The session-free local shell cannot learn who is signed in while offline.
+  // Offering sign-in and the signed-out appearance toggles there would be
+  // misleading, so the account area is left empty until a connection returns.
+  const sessionUnknown = !isSignedIn && !isOnline;
   const downloadCount = downloadsHydrated ? downloads.length : 0;
   const downloadCountLabel = downloadCount > 99 ? "99+" : String(downloadCount);
   const downloadsLabel =
@@ -145,14 +149,14 @@ export function Header() {
               <span className="sr-only">{t("nav.contactSupport")}</span>
             </Button>
             {/* Show appearance toggles when not signed in (otherwise they're in user menu) */}
-            {!isSignedIn && (
+            {!isSignedIn && !sessionUnknown && (
               <>
                 <LanguageSwitcher />
                 <TextSizeToggle />
                 <ThemeToggle />
               </>
             )}
-            <UserMenu />
+            {!sessionUnknown && <UserMenu />}
           </div>
         </div>
       </header>

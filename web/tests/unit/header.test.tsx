@@ -57,8 +57,12 @@ vi.mock("@/hooks/use-online-status", () => ({
 
 vi.mock("@/components/theme-toggle", () => ({ ThemeToggle: () => null }));
 vi.mock("@/components/text-size-toggle", () => ({ TextSizeToggle: () => null }));
-vi.mock("@/components/language-switcher", () => ({ LanguageSwitcher: () => null }));
-vi.mock("@/components/auth/user-menu", () => ({ UserMenu: () => null }));
+vi.mock("@/components/language-switcher", () => ({
+  LanguageSwitcher: () => <div data-testid="language-switcher" />,
+}));
+vi.mock("@/components/auth/user-menu", () => ({
+  UserMenu: () => <div data-testid="user-menu" />,
+}));
 vi.mock("@/components/radio/radio-button", () => ({ RadioButton: () => null }));
 vi.mock("@/components/notifications/notification-bell", () => ({
   NotificationBell: () => null,
@@ -83,6 +87,17 @@ describe("Header", () => {
     expect(indicator).toHaveAttribute("href", "/downloads");
     expect(indicator).toHaveAccessibleName("offline.offlineMode");
     expect(indicator.querySelector(".lucide-wifi-off")).toBeInTheDocument();
+  });
+
+  it("hides sign-in and the signed-out toggles while offline without a session", () => {
+    mocks.session = null;
+    mocks.isOnline = false;
+
+    render(<Header />);
+
+    expect(screen.queryByTestId("user-menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("language-switcher")).not.toBeInTheDocument();
+    expect(screen.getByTestId("offline-indicator")).toBeInTheDocument();
   });
 
   it("keeps the Downloads shortcut in the session-free shell when downloads exist", () => {
