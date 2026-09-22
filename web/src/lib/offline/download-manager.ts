@@ -45,6 +45,7 @@ import {
   readCompleteAudioBlob,
   readAudioCacheMeta,
   requiresInlineOfflineAudio,
+  verifyAudioCache,
   writeAudioCacheMeta,
   type AudioCacheMeta,
 } from './audio-cache-format';
@@ -74,6 +75,9 @@ const DOWNLOAD_LOCK_PREFIX = 'besedy-download:';
 const CHANNEL_NAME = 'besedy-downloads';
 const PERSIST_REQUESTED_KEY = 'besedy-storage-persist-requested';
 const SERVICE_WORKER_CONTROL_TIMEOUT_MS = 10_000;
+/** Shown in Downloads when a completed record's audio is no longer in the cache. */
+export const INCOMPLETE_PACKAGE_ERROR =
+  'Downloaded audio is incomplete on this device. Download it again.';
 let downloadsShellWarmPromise: Promise<void> | null = null;
 
 /**
@@ -630,6 +634,7 @@ class DownloadManager {
       if (next !== record) recovered.push(next);
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
+    await this.verifyCompletePackages();
     if (
       this.online &&
       typeof navigator !== 'undefined' &&
@@ -908,6 +913,49 @@ class DownloadManager {
       await navigator.storage.persist();
     } catch {
       // Best effort; the browser may refuse or storage may be unavailable.
+    }
+  }
+
+  /**
+   * Registry state alone does not prove playability. A record marked complete
+   * whose audio is missing or incomplete in Cache Storage becomes a retryable
+   * error instead of a download that fails when played; Retry resumes from
+   * the chunks that exist.
+   */
+  private async verifyCompletePackages(): Promise<void> {
+    let audioCache: Cache;
+    try {
+      audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+    } catch (error) {
+      logger.warn('Could not open the audio cache to verify downloads', { error });
+      return;
+    }
+    for (const record of Array.from(this.records.values())) {
+      if (record.status !== 'complete') continue;
+      let verified = false;
+      try {
+        verified =
+          record.audioCacheKey !== null &&
+          (await verifyAudioCache(audioCache, record.audioCacheKey));
+      } catch (error) {
+        logger.warn('Could not verify a downloaded package', {
+          key: record.key,
+          error,
+        });
+        continue;
+      }
+      if (verified) continue;
+      logger.warn('Downloaded audio is missing or incomplete; marking for retry', {
+        key: record.key,
+      });
+      await this.write({
+        ...record,
+        status: 'error',
+        error: INCOMPLETE_PACKAGE_ERROR,
+        progress: 0,
+        resumeOnReconnect: false,
+        completedAt: null,
+      });
     }
   }
 

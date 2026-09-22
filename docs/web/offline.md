@@ -102,6 +102,13 @@ each chunk, stores permitted transcript/diarization and artwork payloads, and
 requires a controlling service worker before reporting a cache-backed download
 complete.
 
+On hydration the manager verifies every completed package against Cache
+Storage: the metadata entry must be complete and every chunk present. A record
+that fails this check is not shown as downloaded; it becomes a retryable
+error with the message that the audio is incomplete on this device, and Retry
+resumes the download from the chunks that exist. Registry state alone never
+proves playability.
+
 One queued download runs at a time. A global Web Lock prevents queue ownership
 in two tabs, a per-download lock prevents concurrent mutation of one record,
 and a BroadcastChannel shares registry changes and abort requests. The manager
@@ -124,7 +131,9 @@ protected audio/shell caches.
 Header and `LocalModeShell`. The shell reads the document URL after hydration
 and renders Downloads, `LocalEventList` for `/catalog/{id}`, `EventDetail` for
 an event URL, or `RecordingContent` for a recording URL; any other URL gets a
-non-blocking "not available offline" state. The shared pages are imported
+non-blocking "not available offline" state. `LocalEventList` keeps the normal
+catalog heading with an offline scope note: it lists downloaded events only,
+while recording-only downloads remain in Downloads. The shared pages are imported
 statically so their chunks belong to this document. After the first completed
 download, the manager warms the document's HTML and asset graph through a
 hidden `?warm=1` frame; a normal online visit refreshes it. Navigation between

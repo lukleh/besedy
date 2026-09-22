@@ -7,7 +7,7 @@
  */
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2, WifiOff } from 'lucide-react';
 import { EventListResults } from '@/components/catalog/event-list-results';
 import type { CatalogEventRow } from '@/components/catalog/event-list-types';
 import { useDownloadManager } from '@/hooks/use-downloads';
@@ -92,6 +92,7 @@ const noop = () => {};
 
 export function LocalEventList({ catalogId }: LocalEventListProps) {
   const t = useTranslations('downloads');
+  const tList = useTranslations('events.list');
   const { records, hydrated } = useDownloadManager();
   const events = useMemo(() => localEventRows(records, catalogId), [records, catalogId]);
   const catalogLabel =
@@ -108,14 +109,22 @@ export function LocalEventList({ catalogId }: LocalEventListProps) {
 
   return (
     <div className="@container/catalog w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6 space-y-4">
+      {/* The normal catalog heading: this is the catalog in offline mode, not a
+          second Downloads library. The scope note says what is missing. */}
       <header className="space-y-1">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          <Download className="h-6 w-6" aria-hidden="true" />
-          {t('downloadedEvents')}
-        </h1>
-        {catalogLabel && (
-          <p className="text-sm text-muted-foreground">{catalogLabel}</p>
-        )}
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-2xl font-semibold">{tList('title')}</h1>
+          {catalogLabel && (
+            <p className="text-sm text-muted-foreground">{catalogLabel}</p>
+          )}
+        </div>
+        <p
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+          data-testid="offline-catalog-scope"
+        >
+          <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {t('offlineCatalogScope')}
+        </p>
       </header>
       <div data-testid="local-event-list">
         <EventListResults

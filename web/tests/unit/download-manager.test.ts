@@ -12,6 +12,7 @@ import {
   getAudioCacheKey,
   getAudioChunkKey,
   getAudioMetaKey,
+  writeAudioCacheMeta,
 } from '@/lib/offline/audio-cache-format';
 import { OFFLINE_CACHE_NAMES } from '@/lib/offline/cache-names';
 
@@ -20,6 +21,28 @@ const OTHER_HASH = 'd'.repeat(64);
 const CATALOG = '20260101_000000';
 const CHUNK = 2 * 1024 * 1024;
 const AUDIO_SIZE = CHUNK * 2 + 1234;
+
+/** Store a complete one-chunk recording so a seeded complete record verifies. */
+async function seedCompleteAudioCache(
+  storage: { open(name: string): Promise<Cache> },
+  baseKey: string,
+  size = 5,
+) {
+  const cache = await storage.open(OFFLINE_CACHE_NAMES.audio);
+  await cache.put(
+    getAudioChunkKey(baseKey, 0),
+    new Response(new Uint8Array(size), {
+      headers: { 'content-type': 'audio/webm' },
+    }),
+  );
+  await writeAudioCacheMeta(cache, baseKey, {
+    totalSize: size,
+    chunkCount: 1,
+    chunkSizes: [size],
+    contentType: 'audio/webm',
+    complete: true,
+  });
+}
 
 class MemoryCache {
   store = new Map<string, Response>();
@@ -388,6 +411,7 @@ describe('download manager', () => {
     const db = await import('@/lib/offline/downloads-db');
     const now = Date.now();
     const key = db.makeDownloadKey(CATALOG, HASH);
+    await seedCompleteAudioCache(cacheStorage, 'cached-audio');
     await db.putDownload({
       key,
       catalogId: CATALOG,
@@ -441,6 +465,7 @@ describe('download manager', () => {
     const db = await import('@/lib/offline/downloads-db');
     const now = Date.now();
     const key = db.makeDownloadKey(CATALOG, HASH);
+    await seedCompleteAudioCache(cacheStorage, 'cached-audio');
     await db.putDownload({
       key,
       catalogId: CATALOG,
@@ -504,12 +529,53 @@ describe('download manager', () => {
     expect(downloadManager.getSnapshot().records[0]?.transcriptBackend).toBe('whisperx/large');
   });
 
+  it('turns a completed record whose audio is missing from the cache into a retryable error', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'gone-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: null,
+      hasArtwork: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+
+    const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
+    await downloadManager.hydrate();
+
+    const record = downloadManager.getSnapshot().records[0];
+    expect(record.status).toBe('error');
+    expect(record.error).toBe(INCOMPLETE_PACKAGE_ERROR);
+    expect(record.completedAt).toBeNull();
+    expect((await db.getDownload(key))?.status).toBe('error');
+  });
+
   it('removes a previously cached transcript after permission is narrowed', async () => {
     const server = createFakeServer({ canDownloadTranscripts: false });
     vi.stubGlobal('fetch', server.fetchMock);
     const db = await import('@/lib/offline/downloads-db');
     const now = Date.now();
     const key = db.makeDownloadKey(CATALOG, HASH);
+    await seedCompleteAudioCache(cacheStorage, 'cached-audio');
     await db.putDownload({
       key,
       catalogId: CATALOG,

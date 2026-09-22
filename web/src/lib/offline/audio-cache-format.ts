@@ -134,6 +134,29 @@ export function requiresInlineOfflineAudio(userAgent: string): boolean {
   return /Macintosh/.test(userAgent) && /Version\/[^ ]+.*Safari\//.test(userAgent);
 }
 
+/**
+ * Whether the cache holds a complete recording for `baseKey`: complete
+ * metadata whose chunk sizes add up, and every chunk present. Presence is
+ * enough here; the worker validates chunk lengths when it serves them.
+ */
+export async function verifyAudioCache(
+  cache: Cache,
+  baseKey: string,
+): Promise<boolean> {
+  const meta = await readAudioCacheMeta(cache, baseKey);
+  if (!meta?.complete || meta.totalSize <= 0) return false;
+  if (
+    meta.chunkSizes.length === 0 ||
+    meta.chunkSizes.reduce((sum, size) => sum + size, 0) !== meta.totalSize
+  ) {
+    return false;
+  }
+  for (let index = 0; index < meta.chunkSizes.length; index += 1) {
+    if (!(await cache.match(getAudioChunkKey(baseKey, index)))) return false;
+  }
+  return true;
+}
+
 /** Assemble a complete cached recording without copying all chunks into one ArrayBuffer. */
 export async function readCompleteAudioBlob(
   cache: Cache,
