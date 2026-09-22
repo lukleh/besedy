@@ -535,6 +535,17 @@ describe("AudioPlayer retry logic", () => {
     expect(playMock).toHaveBeenCalledTimes(1);
   });
 
+  it("opens the debug log with the initial source's transport", () => {
+    const { getAllByRole, getByText } = renderPlayer({
+      src: "/api/catalogs/c/recordings/abc/audio?source=listening&local=1",
+    });
+
+    // The chrome renders one toggle per layout (phone and desktop).
+    fireEvent.click(getAllByRole("button", { name: "Toggle debug info" })[0]);
+
+    expect(getByText("Source: worker-cache")).toBeInTheDocument();
+  });
+
   it("keeps position and playback when the same recording switches to a local source", async () => {
     const hash = "a".repeat(64);
     const networkSrc = `/api/catalogs/cat/recordings/${hash}/audio`;

@@ -102,8 +102,10 @@ download (`inline`). The browser default comes from
 `requiresInlineOfflineAudio` (WebKit on iOS and macOS, and Android browsers).
 That default was chosen on emulator evidence only, so the player's debug panel
 (the bug icon under the controls) shows the source kind the element was handed,
-the active transport, the browser default, whether a worker controls the page,
-and an `auto | worker | inline` override. The override is stored in
+the requested transport, the browser default, whether a worker controls the
+page, and an `auto | worker | inline` override. The two can differ: `inline`
+requested without a stored inline copy is served from the worker cache, and
+the Source line is the one that tells the truth. The override is stored in
 `localStorage` under `besedy:offline-audio-transport` on that device alone; no
 other user or device is affected, and `auto` removes it. To test a phone: set
 `worker`, open a downloaded recording, switch to airplane mode, play and seek,

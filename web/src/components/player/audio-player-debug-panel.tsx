@@ -261,16 +261,18 @@ export function AudioPlayerDebugPanel({
 }
 
 /**
- * Which transport this device uses for complete local recordings, with a
+ * Which transport this device asks for on complete local recordings, with a
  * per-device override. The override lives in localStorage and is set only
  * here, so it lets one phone try the other transport without a release and
- * without touching anybody else's playback.
+ * without touching anybody else's playback. What the element actually got is
+ * the Source line above: a requested `inline` without a stored copy falls
+ * back to the worker URL.
  */
 function LocalTransportControl() {
   const override = useOfflineAudioTransportOverride();
   const { isOnline } = useOnlineStatus();
   const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const active = resolveOfflineAudioTransport(userAgent, override);
+  const requested = resolveOfflineAudioTransport(userAgent, override);
   const browserDefault = defaultOfflineAudioTransport(userAgent);
   const controller =
     typeof navigator !== "undefined" && navigator.serviceWorker?.controller
@@ -281,9 +283,9 @@ function LocalTransportControl() {
     <div className="space-y-1 text-[10px]" data-testid="audio-debug-transport">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
         <span>
-          <span className="text-muted-foreground">Local transport: </span>
-          <span className="text-foreground" data-testid="audio-debug-transport-active">
-            {active}
+          <span className="text-muted-foreground">Requested transport: </span>
+          <span className="text-foreground" data-testid="audio-debug-transport-requested">
+            {requested}
           </span>
           {override !== "auto" && <span className="text-orange-500"> (override)</span>}
         </span>
@@ -320,7 +322,7 @@ function LocalTransportControl() {
       </div>
       <div className="text-muted-foreground">
         Applies to downloaded recordings on this device only. inline needs the copy this
-        browser stores at download time; without one the worker URL is used.
+        browser stores at download time; without one the Source line shows worker-cache.
       </div>
     </div>
   );

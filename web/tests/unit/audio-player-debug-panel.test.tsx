@@ -69,7 +69,7 @@ describe("AudioPlayerDebugPanel source section", () => {
 
     expect(screen.getByTestId("audio-debug-source-kind")).toHaveTextContent("inline-data");
     expect(screen.getByTestId("audio-debug-source")).not.toHaveTextContent(payload.slice(0, 32));
-    expect(screen.getByTestId("audio-debug-transport-active")).toHaveTextContent("inline");
+    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("inline");
     expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("Browser default: inline");
     expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("Online: no");
   });
@@ -80,13 +80,13 @@ describe("AudioPlayerDebugPanel source section", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "worker" }));
     expect(localStorage.getItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY)).toBe("worker");
-    expect(screen.getByTestId("audio-debug-transport-active")).toHaveTextContent("worker");
+    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("worker");
     expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("(override)");
     expect(screen.getByRole("button", { name: "worker" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "auto" }));
     expect(localStorage.getItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY)).toBeNull();
-    expect(screen.getByTestId("audio-debug-transport-active")).toHaveTextContent("inline");
+    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("inline");
     expect(screen.getByTestId("audio-debug-transport")).not.toHaveTextContent("(override)");
   });
 });
