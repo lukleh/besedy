@@ -29,6 +29,7 @@ import {
 } from 'react';
 import { AudioPlayerChrome } from './audio-player-chrome';
 import { AudioPlayerDebugPanel } from './audio-player-debug-panel';
+import { describeAudioSource } from '@/lib/offline/audio-transport';
 import {
   INITIAL_RETRY_STATE,
   isRetrying,
@@ -417,9 +418,21 @@ export function AudioPlayer({
       setIsPlaying(false);
       resetBufferDiagnostics();
       setDebugEvents([]);
+      // First entry of the fresh log: which transport this source uses, so a
+      // later stall or error is attributable to the network, the worker
+      // cache or inline data.
+      const source = describeAudioSource(src);
+      logDebugEvent('source', `Source: ${source.kind}`, source.summary);
       onPlayingChange?.(false);
     });
-  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
+  }, [
+    src,
+    recordingHash,
+    onPlayingChange,
+    dispatchRetry,
+    resetBufferDiagnostics,
+    logDebugEvent,
+  ]);
 
   useEffect(() => {
     lastTimeRef.current = currentTime;
@@ -943,6 +956,7 @@ export function AudioPlayer({
           debugInfo={debugInfo}
           duration={duration}
           isBuffering={isBuffering}
+          src={src}
         />
       )}
     </div>

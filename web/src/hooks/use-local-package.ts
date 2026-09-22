@@ -8,11 +8,9 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
+import { useOfflineAudioTransport } from "@/hooks/use-offline-audio-transport";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import {
-  getAudioCacheKey,
-  requiresInlineOfflineAudio,
-} from "@/lib/offline/audio-cache-format";
+import { getAudioCacheKey } from "@/lib/offline/audio-cache-format";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
 
 /**
@@ -80,8 +78,9 @@ export function useLocalAudioSrc(
     );
   }, [complete, record?.audioCacheKey, selectedUrl]);
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
-  const needsInline =
-    typeof navigator !== "undefined" && requiresInlineOfflineAudio(navigator.userAgent);
+  // The browser default can be overridden per device from the player's debug
+  // panel, so a transport can be tried on a real phone without a release.
+  const needsInline = useOfflineAudioTransport() === "inline";
 
   const inline = useQuery({
     queryKey: ["local-inline-audio", record?.key ?? null],

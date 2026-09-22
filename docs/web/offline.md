@@ -93,6 +93,22 @@ recording in memory. The remaining caches are intentionally small:
 
 Normal application HTML and API JSON are not placed in an offline cache.
 
+### Diagnosing the local transport on a device
+
+A complete local recording reaches the media element in one of two ways: the
+service worker answers Range requests from the chunked cache (`worker`), or the
+player loads a Base64 data URL built from the inline copy stored with the
+download (`inline`). The browser default comes from
+`requiresInlineOfflineAudio` (WebKit on iOS and macOS, and Android browsers).
+That default was chosen on emulator evidence only, so the player's debug panel
+(the bug icon under the controls) shows the source kind the element was handed,
+the active transport, the browser default, whether a worker controls the page,
+and an `auto | worker | inline` override. The override is stored in
+`localStorage` under `besedy:offline-audio-transport` on that device alone; no
+other user or device is affected, and `auto` removes it. To test a phone: set
+`worker`, open a downloaded recording, switch to airplane mode, play and seek,
+then read the event log in the same panel.
+
 ### Download manager and lifecycle
 
 `web/src/lib/offline/download-manager.ts` owns downloads in the page because

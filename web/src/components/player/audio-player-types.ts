@@ -45,7 +45,8 @@ export type DebugEventType =
   | "seek"
   | "play"
   | "pause"
-  | "loaded";
+  | "loaded"
+  | "source";
 
 export interface DebugEvent {
   id: number;
