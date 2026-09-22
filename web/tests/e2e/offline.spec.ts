@@ -185,8 +185,15 @@ test.describe('Offline Mode', () => {
         timeout: 120_000,
       });
 
-      // Play from the completed package while still online.
+      // The completed package must be the media source before playing: the
+      // local marker on the worker-served URL, or the inline copy.
       const audio = page.locator('audio');
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentSrc),
+          { timeout: 15_000 },
+        )
+        .toMatch(/[?&]local=1(&|$)|^data:audio\//);
       await page.getByTestId('audio-play-button').click();
       await expect
         .poll(
@@ -194,19 +201,22 @@ test.describe('Offline Mode', () => {
           { timeout: 15_000 },
         )
         .toBeGreaterThan(2);
-      const beforeOffline = await audio.evaluate(
-        (element: HTMLAudioElement) => element.currentTime,
-      );
 
-      // Pull the plug mid-stream. Nothing should stall, error, or pause.
+      // Pull the plug mid-stream, then force a read past anything buffered
+      // while online by seeking near the end. Nothing should stall, error,
+      // or pause, and the position must keep advancing from there.
       await setOffline(context, true);
       await waitForOfflineIndicator(page);
+      const seekTarget = await audio.evaluate((element: HTMLAudioElement) => {
+        const target = Math.max(0, element.duration - 8);
+        element.currentTime = target;
+        return target;
+      });
       await page.waitForTimeout(4000);
       await expect
         .poll(
           () =>
             audio.evaluate((element: HTMLAudioElement) => ({
-              currentTime: element.currentTime,
               error: element.error?.code ?? null,
               paused: element.paused,
               ended: element.ended,
@@ -217,7 +227,7 @@ test.describe('Offline Mode', () => {
       const afterOffline = await audio.evaluate(
         (element: HTMLAudioElement) => element.currentTime,
       );
-      expect(afterOffline).toBeGreaterThan(beforeOffline + 3);
+      expect(afterOffline).toBeGreaterThan(seekTarget + 3);
       await expect(page.getByTestId('audio-play-button')).toHaveAttribute(
         'aria-label',
         /pause|buffering/i,
