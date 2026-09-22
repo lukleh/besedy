@@ -39,11 +39,13 @@ import type {
 import type { EventDetailResponse, EventRecording } from '@/types/event-detail';
 import {
   AUDIO_CHUNK_SIZE,
+  audioCacheMetaBytes,
   deleteAudioCacheEntries,
   getAudioCacheKey,
   getAudioChunkKey,
   readCompleteAudioBlob,
   readAudioCacheMeta,
+  isConsistentAudioCacheMeta,
   requiresInlineOfflineAudio,
   verifyAudioCache,
   writeAudioCacheMeta,
@@ -375,14 +377,28 @@ export async function downloadAudioChunks(options: {
     const prefix = await countContiguousChunks(cache, cacheKey, meta);
     if (prefix === 0) {
       meta = null;
-    } else if (prefix < meta.chunkSizes.length) {
-      meta = {
+    } else {
+      // Metadata that verification would reject must not pass the fast path
+      // below: normalise the completion flag to the bytes actually recorded
+      // and start over when the sizes cannot be trusted.
+      const chunkSizes = meta.chunkSizes.slice(0, prefix);
+      const candidate: AudioCacheMeta = {
         ...meta,
         chunkCount: prefix,
-        chunkSizes: meta.chunkSizes.slice(0, prefix),
-        complete: false,
+        chunkSizes,
+        complete: audioCacheMetaBytes({ chunkSizes }) === meta.totalSize,
       };
-      await writeAudioCacheMeta(cache, cacheKey, meta);
+      if (!isConsistentAudioCacheMeta(candidate)) {
+        meta = null;
+      } else if (
+        candidate.chunkCount !== meta.chunkCount ||
+        candidate.complete !== meta.complete
+      ) {
+        meta = candidate;
+        await writeAudioCacheMeta(cache, cacheKey, meta);
+      } else {
+        meta = candidate;
+      }
     }
   }
   if (!meta) {
@@ -645,13 +661,22 @@ class DownloadManager {
       if (next !== record) recovered.push(next);
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
-    await this.verifyCompletePackages();
+    // One cache handle for hydration. When it cannot be opened, verification
+    // marks every completed package retryable and inline preparation is
+    // skipped; hydration still finishes so the queue and Retry keep working.
+    let audioCache: Cache | null = null;
+    try {
+      audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+    } catch (error) {
+      logger.warn('Could not open the audio cache during hydration', { error });
+    }
+    await this.verifyCompletePackages(audioCache);
     if (
+      audioCache !== null &&
       this.online &&
       typeof navigator !== 'undefined' &&
       requiresInlineOfflineAudio(navigator.userAgent)
     ) {
-      const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
       for (const record of this.records.values()) {
         if (record.status !== 'complete' || !record.audioCacheKey) continue;
         try {
@@ -933,15 +958,9 @@ class DownloadManager {
    * error instead of a download that fails when played; Retry resumes from
    * the chunks that exist.
    */
-  private async verifyCompletePackages(): Promise<void> {
-    let audioCache: Cache | null = null;
-    try {
-      audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
-    } catch (error) {
-      // Fail closed: a package that cannot be read cannot be offered as
-      // downloaded. Each record below becomes retryable.
-      logger.warn('Could not open the audio cache to verify downloads', { error });
-    }
+  private async verifyCompletePackages(audioCache: Cache | null): Promise<void> {
+    // Fail closed: with no readable cache every completed package below
+    // becomes retryable, because bytes that cannot be read cannot be offered.
     for (const key of Array.from(this.records.keys())) {
       if (this.records.get(key)?.status !== 'complete') continue;
       // Another tab may remove or change this download while hydration runs.
