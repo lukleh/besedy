@@ -1037,6 +1037,65 @@ describe('MCP personalized tool surface', () => {
     });
   });
 
+  it('explains which recordings a search covered from the applied filters', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', true)],
+    };
+    vi.mocked(searchMcpTranscripts).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      query: 'search phrase',
+      results: [],
+    });
+    vi.mocked(findMcpTranscriptMentions).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      query: 'exact phrase',
+      retrieval: {
+        matchMode: 'all_terms',
+        totalMatches: 0,
+      },
+      results: [],
+    });
+
+    const renderedText = async (
+      name: 'search_transcripts' | 'find_transcript_mentions',
+      args: Record<string, unknown>,
+    ) => {
+      const body = await invokeMcp('tools/call', { name, arguments: args });
+      expect(body.error).toBeUndefined();
+      const content = body.result?.content as Array<{ text: string }>;
+      return content[0]?.text ?? '';
+    };
+
+    const byDefault = await renderedText('search_transcripts', {
+      query: 'search phrase',
+    });
+    expect(byDefault).toContain(
+      "Only each event's primary recording was searched",
+    );
+    expect(byDefault).toContain('filters.includeSecondaryRecordings');
+
+    const byHash = await renderedText('search_transcripts', {
+      query: 'search phrase',
+      filters: { audioHashes: ['b'.repeat(64)] },
+    });
+    expect(byHash).toContain(
+      'Only the recordings named in filters.audioHashes were searched',
+    );
+    expect(byHash).not.toContain('primary recording was searched');
+
+    const withSecondary = await renderedText('find_transcript_mentions', {
+      query: 'exact phrase',
+      filters: { includeSecondaryRecordings: true },
+    });
+    expect(withSecondary).toContain('Secondary recordings were included');
+    expect(withSecondary).toContain('Group results by event ID');
+    expect(withSecondary).not.toContain('primary recording was searched');
+  });
+
   it('applies symmetric lexical-search defaults and match mode', async () => {
     accessProfile = {
       userId: 'user-1',
