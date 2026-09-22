@@ -148,6 +148,15 @@ All four routes first require the recording itself be visible (catalog access, r
 | GET | `/api/transcript/:hash/formats` | `read_transcripts` | Available download formats |
 | GET | `/api/transcript/:hash/download` | `read_transcripts` + `download_transcripts` | Download transcript sidecar |
 
+Semantic search is catalog-wide rather than per recording:
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| POST | `/api/catalogs/:id/search` | `read_transcripts` + `search_transcripts` | Semantic transcript search, release-scoped to what the grant may read |
+
+- `canUseCatalogRag` in `web/src/lib/policy/catalog.ts` requires both, so search is never broader than reading. Every role that reads also searches today; the second permission exists so a reading-only role can be defined later.
+- MCP transcript search does not consult this gate or any per-catalog permission; see [mcp-server.md](mcp-server.md).
+
 ### Metadata Endpoints
 
 | Method | Endpoint | Access | Description |
@@ -155,16 +164,16 @@ All four routes first require the recording itself be visible (catalog access, r
 | GET | `/api/catalogs/:id/recordings/:hash/metadata` | Catalog access, release-scoped | Get curated metadata |
 | PUT | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Upsert curated metadata |
 | DELETE | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Delete curated metadata |
-| GET/POST | `/api/metadata/recorders` | Catalog access / `edit_metadata` | List or create recorders |
-| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Catalog access / `edit_metadata` | Manage recorder |
-| GET/POST | `/api/metadata/locations` | Catalog access / `edit_metadata` | List or create locations |
-| GET/PUT/DELETE | `/api/metadata/locations/:id` | Catalog access / `edit_metadata` | Manage location |
-| GET/POST | `/api/metadata/albums` | Catalog access / `edit_metadata` | List or create albums |
-| GET/PUT/DELETE | `/api/metadata/albums/:id` | Catalog access / `edit_metadata` | Manage album |
+| GET/POST | `/api/metadata/recorders` | Catalog access / `manage_lookups` | List or create recorders |
+| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Catalog access / `manage_lookups` | Manage recorder |
+| GET/POST | `/api/metadata/locations` | Catalog access / `manage_lookups` | List or create locations |
+| GET/PUT/DELETE | `/api/metadata/locations/:id` | Catalog access / `manage_lookups` | Manage location |
+| GET/POST | `/api/metadata/albums` | Catalog access / `manage_lookups` | List or create albums |
+| GET/PUT/DELETE | `/api/metadata/albums/:id` | Catalog access / `manage_lookups` | Manage album |
 | GET | `/api/metadata/artists` | Catalog access | Distinct artist values for filter |
 | GET | `/api/metadata/duplicate-counts` | Catalog access | Duplicate count options for filter |
 
-`edit_metadata` is carried only by `curator` and `catalog_admin`, and cannot be granted as an extra. "Catalog access" for a plain read means any active grant on the catalog, or `isCatalogAdmin` -- there is no per-recording release scoping on the lookup/filter endpoints.
+`edit_metadata` (curated metadata of one recording) and `manage_lookups` (the recorder, location and album rows, per [ADR 0007](../adr/0007-per-catalog-lookups.md)) are both carried only by `curator` and `catalog_admin`, and neither can be granted as an extra. "Catalog access" for a plain read means any active grant on the catalog, or `isCatalogAdmin` -- there is no per-recording release scoping on the lookup/filter endpoints.
 
 ### Catalog Management Endpoints
 

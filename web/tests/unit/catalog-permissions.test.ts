@@ -27,8 +27,10 @@ import {
   canEditCatalogMetadata,
   canGrantCatalogGrant,
   canManageCatalogConfiguration,
+  canManageCatalogLookups,
   canManageExistingCatalogGrant,
   canRevokeExistingCatalogGrant,
+  canUseCatalogRag,
   canViewCatalogTranscripts,
   hasCatalogManagementAuthority,
   isSelfCatalogAccessChange,
@@ -355,6 +357,80 @@ describe("event release", () => {
     expect(canReleaseEvent({ ...curator, featureEnabled: false })).toBe(false);
     expect(canReleaseEvent({ ...curator, canEnterPortal: false })).toBe(false);
     expect(canReleaseEvent({ ...curator, catalogExists: false })).toBe(false);
+  });
+});
+
+describe("catalog lookups", () => {
+  // The recorder, location and album rows have their own permission per
+  // ADR 0007. The CRUD factory used to ask `edit_metadata`, the per-recording
+  // permission, which the same role carries, so nothing could tell them apart.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from manage_lookups alone",
+    (role) => {
+      expect(canManageCatalogLookups(context(role))).toBe(
+        permissionsForRole(role).has("manage_lookups")
+      );
+    }
+  );
+
+  // Neither permission is grantable, so the grants that separate them are
+  // constructed directly.
+  it("separates lookups from recording metadata in both directions", () => {
+    const editsMetadata = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["edit_metadata"] },
+    };
+    expect(canEditCatalogMetadata(editsMetadata)).toBe(true);
+    expect(canManageCatalogLookups(editsMetadata)).toBe(false);
+
+    const managesLookups = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["manage_lookups"] },
+    };
+    expect(canEditCatalogMetadata(managesLookups)).toBe(false);
+    expect(canManageCatalogLookups(managesLookups)).toBe(true);
+  });
+
+  it("gives lookups to an administrator holding no grant", () => {
+    expect(canManageCatalogLookups(context(null, true))).toBe(true);
+  });
+});
+
+describe("transcript search", () => {
+  // Search returns transcript-derived content, so it is a conjunction: never
+  // broader than reading, and gated by its own permission on top. Both come
+  // with the reader bundle, so on role-native grants the answer is whether
+  // the role reads at all.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from read_transcripts and search_transcripts together",
+    (role) => {
+      const permissions = permissionsForRole(role);
+      expect(canUseCatalogRag(context(role))).toBe(
+        permissions.has("read_transcripts") && permissions.has("search_transcripts")
+      );
+    }
+  );
+
+  it("requires both permissions, so neither half suffices alone", () => {
+    const readsOnly = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["read_transcripts"] },
+    };
+    expect(canViewCatalogTranscripts(readsOnly)).toBe(true);
+    expect(canUseCatalogRag(readsOnly)).toBe(false);
+
+    // The invariant the conjunction protects: search is never broader than
+    // reading, so the search permission without the reading one grants nothing.
+    const searchesOnly = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["search_transcripts"] },
+    };
+    expect(canViewCatalogTranscripts(searchesOnly)).toBe(false);
+    expect(canUseCatalogRag(searchesOnly)).toBe(false);
+  });
+
+  it("gives search to an administrator holding no grant", () => {
+    expect(canUseCatalogRag(context(null, true))).toBe(true);
   });
 });
 

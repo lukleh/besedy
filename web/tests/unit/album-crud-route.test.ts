@@ -64,15 +64,15 @@ describe("album CRUD routes", () => {
     loadCatalogHashes = (await import("@/lib/catalog")).loadCatalogHashes as ReturnType<typeof vi.fn>;
   });
 
-  /** Put the caller in one catalog, optionally with edit rights on it. */
-  function inCatalog(canEditMetadata: boolean) {
+  /** Put the caller in one catalog, optionally with lookup rights on it. */
+  function inCatalog(canManageLookups: boolean) {
     vi.mocked(requireAuth).mockResolvedValue("user-1");
     vi.mocked(resolveActiveGroupWithAccess).mockResolvedValue({
       group: { id: "20251222_144441" },
       hasAccess: true,
     });
     vi.mocked(loadCatalogHashes).mockResolvedValue(new Set(["hash1"]));
-    vi.mocked(getCatalogCapability).mockResolvedValue({ canEditMetadata });
+    vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups });
   }
 
   it("GET /api/metadata/albums returns album list", async () => {
@@ -94,7 +94,7 @@ describe("album CRUD routes", () => {
       { albumId: 1, _count: { _all: 5 } },
     ]);
 
-    vi.mocked(getCatalogCapability).mockResolvedValue({ canEditMetadata: false });
+    vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups: false });
 
     const request = new NextRequest("http://localhost/api/metadata/albums");
     const response = await getAlbums(request);
