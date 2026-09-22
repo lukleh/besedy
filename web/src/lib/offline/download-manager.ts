@@ -930,31 +930,43 @@ class DownloadManager {
       logger.warn('Could not open the audio cache to verify downloads', { error });
       return;
     }
-    for (const record of Array.from(this.records.values())) {
-      if (record.status !== 'complete') continue;
-      let verified = false;
-      try {
-        verified =
-          record.audioCacheKey !== null &&
-          (await verifyAudioCache(audioCache, record.audioCacheKey));
-      } catch (error) {
-        logger.warn('Could not verify a downloaded package', {
-          key: record.key,
-          error,
+    for (const key of Array.from(this.records.keys())) {
+      if (this.records.get(key)?.status !== 'complete') continue;
+      // Another tab may remove or change this download while hydration runs.
+      // Verify and write under its lock against the persisted row, so a
+      // download removed elsewhere is never recreated here as an error.
+      await this.withDownloadLock(key, async () => {
+        const persisted = await getDownload(key);
+        if (!persisted) {
+          this.records.delete(key);
+          return;
+        }
+        if (persisted.status !== 'complete') {
+          this.records.set(key, persisted);
+          return;
+        }
+        let verified = false;
+        try {
+          verified =
+            persisted.audioCacheKey !== null &&
+            (await verifyAudioCache(audioCache, persisted.audioCacheKey));
+        } catch (error) {
+          logger.warn('Could not verify a downloaded package', { key, error });
+          return;
+        }
+        if (verified) return;
+        logger.warn(
+          'Downloaded audio is missing or incomplete; marking for retry',
+          { key },
+        );
+        await this.write({
+          ...persisted,
+          status: 'error',
+          error: INCOMPLETE_PACKAGE_ERROR,
+          progress: 0,
+          resumeOnReconnect: false,
+          completedAt: null,
         });
-        continue;
-      }
-      if (verified) continue;
-      logger.warn('Downloaded audio is missing or incomplete; marking for retry', {
-        key: record.key,
-      });
-      await this.write({
-        ...record,
-        status: 'error',
-        error: INCOMPLETE_PACKAGE_ERROR,
-        progress: 0,
-        resumeOnReconnect: false,
-        completedAt: null,
       });
     }
   }

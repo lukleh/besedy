@@ -571,6 +571,60 @@ describe('download manager', () => {
     expect((await db.getDownload(key))?.status).toBe('error');
   });
 
+  it('does not resurrect a download that another tab removed while hydration verified it', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'gone-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: null,
+      hasArtwork: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+
+    // Hold the audio cache open until the other tab's removal has landed, so
+    // verification observes the registry after the removal.
+    let releaseCache: (() => void) | null = null;
+    const originalOpen = cacheStorage.open.bind(cacheStorage);
+    vi.spyOn(cacheStorage, 'open').mockImplementation(async (name: string) => {
+      if (name === OFFLINE_CACHE_NAMES.audio && releaseCache === null) {
+        await new Promise<void>((resolve) => {
+          releaseCache = resolve;
+        });
+      }
+      return originalOpen(name);
+    });
+
+    const { downloadManager } = await loadManager();
+    const hydration = downloadManager.hydrate();
+    await waitFor(() => releaseCache !== null);
+    await db.deleteDownloadRecord(key);
+    releaseCache!();
+    await hydration;
+
+    expect(downloadManager.getSnapshot().records).toHaveLength(0);
+    expect(await db.getDownload(key)).toBeUndefined();
+  });
+
   it('removes a previously cached transcript after permission is narrowed', async () => {
     const server = createFakeServer({ canDownloadTranscripts: false });
     vi.stubGlobal('fetch', server.fetchMock);
