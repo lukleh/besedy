@@ -234,6 +234,48 @@ describe("RecordingContent transcript toggle", () => {
     );
   });
 
+  it("uses the worker URL on an inline-default browser when the device overrides the transport", () => {
+    const IPHONE_UA =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1";
+    Object.defineProperty(navigator, "userAgent", { value: IPHONE_UA, configurable: true });
+    // The global setup's localStorage mock stores nothing; use a real store here.
+    const store: Record<string, string> = {};
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key in store ? store[key] : null),
+      setItem: (key: string, value: string) => {
+        store[key] = value;
+      },
+      removeItem: (key: string) => {
+        delete store[key];
+      },
+    });
+    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useOnlineStatusMock.mockReturnValue({ isOnline: false });
+    useDownloadRecordMock.mockReturnValue({ key: "k", status: "complete", audioUrl: url });
+    try {
+      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+      const inlineQuery = useQueryMock.mock.calls
+        .map(([options]) => options as { queryKey?: unknown[]; enabled?: boolean })
+        .find((options) => options.queryKey?.[0] === "local-inline-audio");
+      expect(inlineQuery?.enabled).toBe(true);
+
+      vi.clearAllMocks();
+      localStorage.setItem("besedy:offline-audio-transport", "worker");
+      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+      const overriddenQuery = useQueryMock.mock.calls
+        .map(([options]) => options as { queryKey?: unknown[]; enabled?: boolean })
+        .find((options) => options.queryKey?.[0] === "local-inline-audio");
+      expect(overriddenQuery?.enabled).toBe(false);
+      expect(audioPlayerMock).toHaveBeenCalledWith(
+        expect.objectContaining({ src: `${url}&local=1` })
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      delete (navigator as { userAgent?: string }).userAgent;
+    }
+  });
+
   it("plays a completed download while online when it matches the selected source", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;

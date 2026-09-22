@@ -29,6 +29,7 @@ import {
 } from 'react';
 import { AudioPlayerChrome } from './audio-player-chrome';
 import { AudioPlayerDebugPanel } from './audio-player-debug-panel';
+import { describeAudioSource } from '@/lib/offline/audio-transport';
 import {
   INITIAL_RETRY_STATE,
   isRetrying,
@@ -54,6 +55,18 @@ function resolvePlaybackEnd(value: number | undefined): number | null {
   return value !== undefined && Number.isFinite(value) && value >= 0
     ? value
     : null;
+}
+
+/** The log entry naming the transport behind a source. */
+function createSourceEvent(id: number, src: string): DebugEvent {
+  const source = describeAudioSource(src);
+  return {
+    id,
+    timestamp: new Date(),
+    type: 'source',
+    message: `Source: ${source.kind}`,
+    details: source.summary,
+  };
 }
 
 export function AudioPlayer({
@@ -107,9 +120,13 @@ export function AudioPlayer({
     playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
   }, [playbackEnd]);
 
-  // Background event log - always collects events even when debug is off
-  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
-  const debugEventIdRef = useRef(0);
+  // Background event log - always collects events even when debug is off.
+  // It opens with the initial source's transport; the source-change effect
+  // below skips the mount, so that entry is created here.
+  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>(() => [
+    createSourceEvent(0, src),
+  ]);
+  const debugEventIdRef = useRef(1);
 
   const logDebugEvent = useCallback(
     (type: DebugEventType, message: string, details?: string) => {
@@ -416,7 +433,9 @@ export function AudioPlayer({
       setDuration(0);
       setIsPlaying(false);
       resetBufferDiagnostics();
-      setDebugEvents([]);
+      // The fresh log opens with this source's transport, so a later stall or
+      // error is attributable to the network, the worker cache or inline data.
+      setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
       onPlayingChange?.(false);
     });
   }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
@@ -943,6 +962,7 @@ export function AudioPlayer({
           debugInfo={debugInfo}
           duration={duration}
           isBuffering={isBuffering}
+          src={src}
         />
       )}
     </div>
