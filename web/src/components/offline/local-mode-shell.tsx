@@ -14,8 +14,9 @@
  * The shared pages are imported statically so their chunks belong to this
  * document and are cached by the same warm-up that caches the shell itself.
  */
+import { useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Loader2, WifiOff } from 'lucide-react';
 import RecordingContent from '@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content';
@@ -57,9 +58,32 @@ export function resolveLocalRoute(pathname: string): LocalRoute {
   return { kind: 'unavailable' };
 }
 
+/**
+ * A worker from before the URL-preserving shell answers a failed navigation
+ * with a redirect to `/downloads?from=<original>`. Until that worker is
+ * replaced, honour the original URL so the person still reaches the page they
+ * asked for.
+ */
+function redirectedFromPath(from: string | null): string | null {
+  if (!from || !from.startsWith('/') || from.startsWith('//')) return null;
+  return from.split('?')[0];
+}
+
 export function LocalModeShell() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const hydrated = useIsHydrated();
+  const redirectedFrom =
+    pathname === DOWNLOADS_PATH
+      ? redirectedFromPath(searchParams.get('from'))
+      : null;
+  const effectivePath = redirectedFrom ?? pathname ?? DOWNLOADS_PATH;
+
+  useEffect(() => {
+    if (!hydrated || !redirectedFrom) return;
+    // Show the URL the person asked for; no navigation is involved.
+    window.history.replaceState(window.history.state, '', redirectedFrom);
+  }, [hydrated, redirectedFrom]);
 
   // The server renders this document for /downloads. The URL it is replayed
   // at is only known on the client, so route after hydration to keep the
@@ -72,7 +96,7 @@ export function LocalModeShell() {
     );
   }
 
-  const route = resolveLocalRoute(pathname ?? DOWNLOADS_PATH);
+  const route = resolveLocalRoute(effectivePath);
   switch (route.kind) {
     case 'downloads':
       return <DownloadsContent />;

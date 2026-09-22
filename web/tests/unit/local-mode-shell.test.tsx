@@ -7,12 +7,14 @@ import {
 
 const mocks = vi.hoisted(() => ({
   pathname: '/downloads',
+  search: '',
   eventDetail: vi.fn(),
   recordingContent: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mocks.pathname,
+  useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
 vi.mock('next-intl', () => ({
@@ -85,8 +87,26 @@ describe('resolveLocalRoute', () => {
 
 describe('LocalModeShell', () => {
   beforeEach(() => {
+    mocks.search = '';
     mocks.eventDetail.mockClear();
     mocks.recordingContent.mockClear();
+  });
+
+  it("honours a legacy worker's ?from= redirect and restores the requested URL", () => {
+    mocks.pathname = '/downloads';
+    mocks.search = `from=${encodeURIComponent('/catalog/cat-1/event/7?x=1')}`;
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    render(<LocalModeShell />);
+    expect(screen.getByTestId('event-detail')).toBeInTheDocument();
+    expect(replaceState.mock.calls.at(-1)?.[2]).toBe('/catalog/cat-1/event/7');
+    replaceState.mockRestore();
+  });
+
+  it('ignores a ?from= that is not a same-origin path', () => {
+    mocks.pathname = '/downloads';
+    mocks.search = 'from=//evil.example/x';
+    render(<LocalModeShell />);
+    expect(screen.getByTestId('downloads-content')).toBeInTheDocument();
   });
 
   it('renders the Downloads library at its own URL', () => {
