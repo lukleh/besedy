@@ -144,8 +144,11 @@ again. The former `?item=<download-key>` selection, the separate
 `OfflineDownloadDetail` renderer, and the fixed offline banner have been
 removed; the header's crossed-Wi-Fi indicator links to Downloads and is the
 only connectivity cue. In the shell the Header renders after hydration, and
-while offline without a session it shows neither sign-in nor the signed-out
-appearance toggles, because the shell cannot learn who is signed in.
+while the session is unknown (offline without a session, or the client
+session request still pending) it shows neither sign-in nor the signed-out
+appearance toggles. When the connection returns, the shell requests the
+session again so the header shows the signed-in account without a full
+navigation.
 
 A worker from before this shell answers a failed navigation with a redirect to
 `/downloads?from=<original URL>`. Until the new worker is applied through the

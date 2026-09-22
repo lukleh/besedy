@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     records: [] as Array<{ key: string }>,
   },
   isOnline: true,
+  sessionPending: false,
 }));
 
 vi.mock("next-intl", () => ({
@@ -18,7 +19,11 @@ vi.mock("next-intl", () => ({
 }));
 
 vi.mock("@/contexts/session-context", () => ({
-  useSession: () => ({ session: mocks.session }),
+  useSession: () => ({
+    session: mocks.session,
+    isPending: mocks.sessionPending,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock("@/hooks/use-catalog-route-state", () => ({
@@ -75,6 +80,17 @@ describe("Header", () => {
     mocks.session = { user: { id: "user-1", name: "Listener" } };
     mocks.downloadSnapshot = { hydrated: true, records: [] };
     mocks.isOnline = true;
+    mocks.sessionPending = false;
+  });
+
+  it("hides sign-in and the signed-out toggles while the session request is still pending", () => {
+    mocks.session = null;
+    mocks.sessionPending = true;
+
+    render(<Header />);
+
+    expect(screen.queryByTestId("user-menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("language-switcher")).not.toBeInTheDocument();
   });
 
   it("shows the crossed-Wi-Fi indicator only while offline, leading to Downloads", () => {

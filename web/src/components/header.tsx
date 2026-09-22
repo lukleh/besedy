@@ -25,7 +25,7 @@ import { CircularBackLink } from "@/components/navigation/circular-back-control"
 
 export function Header() {
   const t = useTranslations();
-  const { session } = useSession();
+  const { session, isPending: sessionPending } = useSession();
   const { hydrated: downloadsHydrated, records: downloads } = useDownloadManager();
   const { isOnline } = useOnlineStatus();
   const route = useCatalogRouteState();
@@ -33,10 +33,12 @@ export function Header() {
   // Don't show app navigation on auth pages
   const isAuthPage = route.isAuthPage;
   const isSignedIn = !!session?.user;
-  // The session-free local shell cannot learn who is signed in while offline.
-  // Offering sign-in and the signed-out appearance toggles there would be
-  // misleading, so the account area is left empty until a connection returns.
-  const sessionUnknown = !isSignedIn && !isOnline;
+  // The session-free local shell cannot learn who is signed in while offline,
+  // and no page knows it while the client session request is still pending.
+  // Offering sign-in and the signed-out appearance toggles in either state
+  // would be misleading, so the account area is left empty until the answer
+  // is known.
+  const sessionUnknown = !isSignedIn && (!isOnline || sessionPending);
   const downloadCount = downloadsHydrated ? downloads.length : 0;
   const downloadCountLabel = downloadCount > 99 ? "99+" : String(downloadCount);
   const downloadsLabel =
