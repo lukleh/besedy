@@ -14,7 +14,6 @@
  * The shared pages are imported statically so their chunks belong to this
  * document and are cached by the same warm-up that caches the shell itself.
  */
-import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -22,6 +21,7 @@ import { Loader2, WifiOff } from 'lucide-react';
 import RecordingContent from '@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content';
 import { EventDetail } from '@/components/catalog/event-detail';
 import { Button } from '@/components/ui/button';
+import { useIsHydrated } from '@/hooks/use-is-hydrated';
 import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
 import { DownloadsContent } from './downloads-content';
 import { LocalEventList } from './local-event-list';
@@ -55,17 +55,6 @@ export function resolveLocalRoute(pathname: string): LocalRoute {
     if (RECORDING_HASH.test(hash)) return { kind: 'recording', catalogId, hash };
   }
   return { kind: 'unavailable' };
-}
-
-const subscribeToNothing = () => () => {};
-
-/** False during server rendering and hydration, true once the client owns the tree. */
-function useIsHydrated(): boolean {
-  return useSyncExternalStore(
-    subscribeToNothing,
-    () => true,
-    () => false,
-  );
 }
 
 export function LocalModeShell() {
