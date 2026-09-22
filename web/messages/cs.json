@@ -1934,6 +1934,7 @@
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
     "backToCatalog": "Zpět do katalogu",
+    "errorIncompletePackage": "Stažené audio je v tomto zařízení neúplné. Stáhněte je znovu.",
     "offlineCatalogScope": "Offline. Zobrazeny jsou jen stažené události; ostatní stažené položky najdete ve Stažených.",
     "unavailableOffline": "Offline nedostupné",
     "unavailableOfflineDescription": "Tato stránka potřebuje připojení. Stažené události se otevřou i bez něj."

@@ -12,6 +12,7 @@ import {
   getAudioCacheKey,
   getAudioChunkKey,
   getAudioMetaKey,
+  readAudioCacheMeta,
   writeAudioCacheMeta,
 } from '@/lib/offline/audio-cache-format';
 import { OFFLINE_CACHE_NAMES } from '@/lib/offline/cache-names';
@@ -529,6 +530,83 @@ describe('download manager', () => {
     // The transcript itself is still permitted and stays.
     expect(bundle?.transcript).not.toBeNull();
     expect(downloadManager.getSnapshot().records[0]?.transcriptBackend).toBe('whisperx/large');
+  });
+
+  it('resumes a download from the surviving contiguous prefix when a later chunk is missing', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const cache = (await cacheStorage.open(OFFLINE_CACHE_NAMES.audio)) as unknown as Cache;
+    const cacheKey = 'prefix-audio';
+    // Chunks 0 and 1 stored, chunk 2 missing, metadata claims all three.
+    for (const index of [0, 1]) {
+      await cache.put(
+        getAudioChunkKey(cacheKey, index),
+        new Response(server.audio.slice(index * CHUNK, (index + 1) * CHUNK)),
+      );
+    }
+    await writeAudioCacheMeta(cache, cacheKey, {
+      totalSize: AUDIO_SIZE,
+      chunkCount: 3,
+      chunkSizes: [CHUNK, CHUNK, AUDIO_SIZE - 2 * CHUNK],
+      contentType: 'audio/webm',
+      complete: true,
+    });
+
+    const { downloadAudioChunks } = await loadManager();
+    const total = await downloadAudioChunks({
+      cache,
+      url: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      cacheKey,
+      signal: new AbortController().signal,
+      onProgress: async () => {},
+    });
+
+    expect(total).toBe(AUDIO_SIZE);
+    // Only the missing tail was fetched; the prefix stayed.
+    expect(server.rangeRequests).toEqual([`bytes=${2 * CHUNK}-${AUDIO_SIZE - 1}`]);
+    const meta = await readAudioCacheMeta(cache, cacheKey);
+    expect(meta?.complete).toBe(true);
+    expect(meta?.chunkSizes).toEqual([CHUNK, CHUNK, AUDIO_SIZE - 2 * CHUNK]);
+  });
+
+  it('fails closed when the audio cache cannot be opened during verification', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await seedCompleteAudioCache(cacheStorage, 'cached-audio');
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'cached-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: null,
+      hasArtwork: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+    vi.spyOn(cacheStorage, 'open').mockRejectedValue(new Error('storage unavailable'));
+
+    const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
+    await downloadManager.hydrate();
+
+    const record = downloadManager.getSnapshot().records[0];
+    expect(record.status).toBe('error');
+    expect(record.error).toBe(INCOMPLETE_PACKAGE_ERROR);
   });
 
   it('turns a completed record whose audio is missing from the cache into a retryable error', async () => {
