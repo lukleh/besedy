@@ -208,6 +208,8 @@ def validate_diarization_file(
         _record(status="missing", message="file not found")
         return False
 
+    _emit(f"Validating: {path.name}")
+
     try:
         data = load_json(path)
     except ValueError as exc:

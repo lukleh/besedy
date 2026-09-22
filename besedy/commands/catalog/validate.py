@@ -16,8 +16,11 @@ from besedy.core.paths import resolve_project_path, resolve_transcripts_root
 from besedy.lib.validation.core import (
     batch_validate,
     batch_validate_diarization,
+    validate_diarization_file,
     validate_single_file,
 )
+
+DIARIZATION_FILENAME = "speakers.json"
 
 
 def _parse_validation_log(log: str) -> dict:
@@ -47,6 +50,34 @@ def _parse_validation_log(log: str) -> dict:
         if "Schema validation passed" in line:
             summary["schema_passed"] = True
             add_step("schema", "passed")
+            continue
+
+        if "Diarization file is valid" in line:
+            summary["diarization_passed"] = True
+            summary["status"] = "passed"
+            add_step("diarization", "passed")
+            continue
+
+        if match := re.search(r"Diarization validation failed \((\d+) issue\(s\)\)", line):
+            count = int(match.group(1))
+            summary["diarization_passed"] = False
+            summary["status"] = "failed"
+            summary["issue_count"] = count
+            add_step("diarization", "failed", count)
+            continue
+
+        if "Missing or empty 'segments' list" in line:
+            summary["diarization_passed"] = False
+            summary["status"] = "failed"
+            summary["message"] = "missing segments"
+            add_step("diarization", "failed")
+            continue
+
+        if line.startswith("Error:"):
+            # File not found or unreadable JSON, before any validator ran.
+            summary["status"] = "failed"
+            summary["message"] = line.removeprefix("Error:").strip()
+            add_step("load", "failed")
             continue
 
         if match := re.search(r"Segments:\s+(\d+),\s+Words:\s+(\d+)", line):
@@ -225,13 +256,26 @@ def _run_validate(
                 data["diarization"] = diarization_summary
             return 0, data
 
-        success = validate_single_file(target_path, verbose=args.verbose)
-        return 0, {
+        # A lone speakers.json is a diarization output, not a transcript, so
+        # it must not be checked against the transcript schema. The directory
+        # mode already routes these through batch_validate_diarization.
+        single: dict[str, object] = {
             "mode": "single",
             "input_path": str(target_path),
             "verbose": args.verbose,
-            "passed": success,
         }
+        if target_path.name == DIARIZATION_FILENAME:
+            diarization_summary: dict[str, object] = {}
+            success = validate_diarization_file(
+                target_path, verbose=args.verbose, summary=diarization_summary
+            )
+            single["kind"] = "diarization"
+            single["diarization"] = diarization_summary
+        else:
+            success = validate_single_file(target_path, verbose=args.verbose)
+            single["kind"] = "transcript"
+        single["passed"] = success
+        return 0, single
 
     if json_mode:
         assert captured is not None
@@ -239,7 +283,14 @@ def _run_validate(
             exit_code, data = _validate()
         log_text = captured.getvalue()
         if log_text:
-            data["report"] = _parse_validation_log(log_text)
+            report = _parse_validation_log(log_text)
+            if data.get("mode") == "single":
+                # The validator's return value is authoritative; the parsed
+                # log only adds detail. Keep the two from disagreeing when a
+                # failure path prints a line the parser does not know.
+                report_summary = report.setdefault("summary", {})
+                report_summary["status"] = "passed" if data.get("passed") else "failed"
+            data["report"] = report
         return exit_code, data, ""
 
     exit_code, data = _validate()
