@@ -14,7 +14,7 @@ describe('web update email report', () => {
     );
     expect(weeklyReport).toContain('printenv WEB_VERSION 2>/dev/null || true');
     expect(weeklyReport).toContain(
-      'CURRENT_WEB_VERSION_DISPLAY="${CURRENT_WEB_VERSION:-unknown}"',
+      'CURRENT_WEB_VERSION_DISPLAY="${CURRENT_WEB_VERSION:-unknown}${CURRENT_WEB_VERSION_AGE}"',
     );
     expect(weeklyReport).toContain('CLIENT_CURRENT_USERS="unavailable"');
     expect(weeklyReport).not.toContain(
@@ -39,5 +39,12 @@ describe('web update email report', () => {
     expect(weeklyReport).toContain('Current version:    $CLIENT_CURRENT_USERS');
     expect(weeklyReport).toContain('Latest observation per user:');
     expect(weeklyReport).not.toContain('CLIENT_VERSION_PER_USER');
+  });
+
+  it('prefers the authoritative deploy log over the source-history guess for version ages', () => {
+    expect(weeklyReport).toContain('FROM web_deploy_log');
+    expect(weeklyReport).toContain('GROUP BY web_version');
+    expect(weeklyReport).toContain('DEPLOY_LOG_DATE["$log_version"]=');
+    expect(weeklyReport).toContain('resolve_web_version_history.sh');
   });
 });

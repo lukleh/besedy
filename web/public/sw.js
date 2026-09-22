@@ -1,15 +1,16 @@
 /**
- * Besedy service worker (v10): device-local Downloads shell and chunked audio.
+ * Besedy service worker (v11): local-mode shell and chunked audio.
  *
  * The worker intentionally knows nothing about catalog/event page data. Normal
  * application pages remain network-only. The page-side download manager stores
- * registry metadata and transcript/poster payloads in IndexedDB and writes
+ * registry metadata and transcript/artwork payloads in IndexedDB and writes
  * audio chunks to Cache Storage. This worker only:
  *
  *   - serves complete downloaded audio with bounded-memory Range streaming;
  *   - stores and replays the one session-free /downloads document;
  *   - caches build assets actually requested by that offline root;
- *   - redirects failed normal navigations to the offline library;
+ *   - answers a failed normal navigation with that document at the requested
+ *     URL, so the page can render a downloaded event from local data;
  *   - handles the existing update and push-notification protocols.
  */
 
@@ -196,12 +197,11 @@ async function handleApplicationNavigation(request, url) {
       cache: 'no-store',
     });
   } catch (error) {
+    // The session-free document is a transport fallback, not a redirect: the
+    // URL stays what the person asked for and the page resolves it against the
+    // local download packages.
     const cached = await matchDownloadsShell();
-    if (cached) {
-      const target = new URL(DOWNLOADS_PATH, self.location.origin);
-      target.searchParams.set('from', url.pathname + url.search);
-      return Response.redirect(target.toString(), 302);
-    }
+    if (cached) return markOffline(cached);
     console.log(
       '[SW] Navigation failed without an offline shell:',
       url.pathname,

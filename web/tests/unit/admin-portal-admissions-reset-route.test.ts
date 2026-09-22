@@ -53,7 +53,7 @@ describe("admin portal admission reset route", () => {
       reopenedGrants: [
         {
           catalogId: "20260101_000000",
-          accessLevel: "EDITOR",
+          role: "curator",
         },
       ],
     });
@@ -80,7 +80,7 @@ describe("admin portal admission reset route", () => {
       reopenedGrants: [
         {
           catalogId: "20260101_000000",
-          accessLevel: "EDITOR",
+          role: "curator",
         },
       ],
     });

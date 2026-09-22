@@ -9,6 +9,19 @@ services:
     # The mutable :prod tag is used for normal deploys. prod-build also retains
     # the same image under its source commit for an exact rollback.
     image: ${BESEDY_WEB_IMAGE:-besedy-web:prod}
+    # The base file defaults every data mount to a fixtures directory inside
+    # the checkout so the dev and test stacks start with no configuration. In
+    # production that default silently binds a checkout path (an empty,
+    # root-owned directory Docker creates on the fly), so require each host
+    # directory here instead: rendering the configuration fails before any
+    # container is created, replaced, or stopped.
+    volumes:
+      - ${TEXT_DATA_DIR:?TEXT_DATA_DIR is required in production}:/data/text:ro
+      - ${ARTWORK_DIR:?ARTWORK_DIR is required in production}:/data/artwork:rw
+      - ${SOURCES_DIR:?SOURCES_DIR is required in production}:/data/sources:rw
+      - ${UPLOADS_DIR:?UPLOADS_DIR is required in production}:/data/uploads:rw
+      - ${AUDIO_DIR:?AUDIO_DIR is required in production}:/data/audio:ro
+      - ${ORIGINAL_AUDIO_DIR:?ORIGINAL_AUDIO_DIR is required in production}:/data/original:ro
 
 volumes:
   postgres_data:

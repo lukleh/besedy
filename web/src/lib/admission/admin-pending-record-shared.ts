@@ -26,7 +26,6 @@ export async function loadPendingAdmissionState(canonicalEmail: string) {
       },
       select: {
         catalogId: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         notes: true,

@@ -5,8 +5,8 @@
 [paths]
 # Text data mounted at /data/text (catalogs/, transcripts/)
 text_data_dir = "/data/text"
-# Posters stored separately (writable volume)
-posters_dir = "/data/posters"
+# Artworks stored separately (writable volume)
+artwork_dir = "/data/artwork"
 # Recording sources stored separately (writable volume)
 sources_dir = "/data/sources"
 # Admin-uploaded recordings awaiting ingest (writable volume)

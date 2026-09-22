@@ -127,20 +127,16 @@ export async function resolveCatalogActorContext(
           },
         },
         select: {
-          accessLevel: true,
           role: true,
           extraPermissions: true,
           status: true,
         },
       });
 
-  // The role is authoritative once a grant carries one; the level is what
-  // answers for grants the assignment has not reached yet.
   const catalogGrant: CatalogGrant | null =
     access?.status === "ACTIVE"
       ? {
-          level: access.accessLevel,
-          role: access.role ?? null,
+          role: access.role,
           extras: access.extraPermissions ?? [],
         }
       : null;

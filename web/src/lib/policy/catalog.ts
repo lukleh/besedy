@@ -136,6 +136,21 @@ export function canEditCatalogMetadata(context: CatalogPolicyContext): boolean {
   );
 }
 
+/**
+ * The recorder, location and album rows of this catalog.
+ *
+ * A different thing from `edit_metadata`, which is the curated metadata of one
+ * recording: a lookup row is shared by every recording and event that names
+ * it, so ADR 0007 gives it a permission of its own. The two sit on the same
+ * role today, so this changes nothing for any current grant; it makes the
+ * permission mean what it says.
+ */
+export function canManageCatalogLookups(context: CatalogPolicyContext): boolean {
+  return (
+    hasCatalogAccess(context) && hasCatalogPermission(context, "manage_lookups")
+  );
+}
+
 export function hasCatalogManagementAuthority(
   context: CatalogPolicyContext
 ): boolean {
@@ -173,7 +188,7 @@ export function canGrantCatalogGrant(
   role: CatalogRole,
   extras: readonly GrantableExtraPermission[] = []
 ): boolean {
-  return mayPassOnGrant(context, { level: null, role, extras: [...extras] });
+  return mayPassOnGrant(context, { role, extras: [...extras] });
 }
 
 /** Whether the actor may update or restore an existing grant. */
@@ -253,8 +268,22 @@ export function canBatchEditCatalogMetadata(
   );
 }
 
+/**
+ * Semantic transcript search in the web application.
+ *
+ * Search returns transcript-derived content, so it must never be broader than
+ * direct transcript access: `read_transcripts` is required, and
+ * `search_transcripts` is required on top of it rather than instead of it.
+ * Every role that reads also searches today, so the second permission changes
+ * nothing for current grants; it exists so that a role that reads without
+ * searching can be defined later.
+ *
+ * MCP does not consult this gate. Its reads resolve against a fixed listener
+ * grant and no per-catalog permission (see docs/web/mcp-server.md).
+ */
 export function canUseCatalogRag(context: CatalogPolicyContext): boolean {
-  // Search returns transcript-derived content, so it must never be broader than
-  // direct transcript access. Web and MCP both consume this capability.
-  return canViewCatalogTranscripts(context);
+  return (
+    canViewCatalogTranscripts(context) &&
+    hasCatalogPermission(context, "search_transcripts")
+  );
 }

@@ -43,17 +43,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AccessLevel,
-  AccessStatus,
-  CatalogRole,
-} from "@/generated/prisma/enums";
+import { AccessStatus, CatalogRole } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 import { fetchJson } from "@/lib/api/fetch-json";
-import {
-  roleForLevel,
-  type GrantableExtraPermission,
-} from "@/lib/policy/catalog-permissions";
+import type { GrantableExtraPermission } from "@/lib/policy/catalog-permissions";
 
 const ROLE_COLORS: Record<CatalogRole, string> = {
   listener: "bg-slate-600 text-white",
@@ -75,8 +68,7 @@ interface UserInfo {
 interface AccessGrant {
   id: string;
   userId: string;
-  accessLevel: AccessLevel;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   canManage: boolean;
   canRevoke: boolean;
@@ -225,7 +217,7 @@ export function AccessTable({
   });
 
   const openEditDialog = (grant: AccessGrant) => {
-    setEditRole(grant.role ?? roleForLevel(grant.accessLevel).role);
+    setEditRole(grant.role);
     setEditExtraPermissions(
       grant.extraPermissions.filter((permission) =>
         grantableExtraPermissions.includes(
@@ -277,8 +269,7 @@ export function AccessTable({
   };
 
   // Separate active and revoked users based on filter
-  const roleOf = (grant: AccessGrant) =>
-    grant.role ?? roleForLevel(grant.accessLevel).role;
+  const roleOf = (grant: AccessGrant) => grant.role;
   const isRevokedFilter = roleFilter === "revoked";
   const activeUsers = isRevokedFilter
     ? []

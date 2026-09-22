@@ -120,7 +120,6 @@ const mocks = vi.hoisted(() => {
       hasNextPage: false,
       hasPrevPage: false,
     },
-    accessLevel: "EDITOR",
     canBatchEditMetadata: true,
     canUseRagSearch: true,
     canManageAccess: true,

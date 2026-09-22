@@ -12,16 +12,16 @@ import {
   canViewCatalogTranscripts,
 } from "@/lib/policy/catalog";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   canViewUnreleasedEvents,
   requiresReleasedEventVisibilityScope,
 } from "@/lib/policy/event";
 import {
-  canManageEventPosterCandidates,
-  canPublishEventPosters,
-  canViewEventPosterCandidates,
-} from "@/lib/policy/event-poster";
+  canManageEventArtworkCandidates,
+  canPublishEventArtwork,
+  canViewEventArtworkCandidates,
+} from "@/lib/policy/event-artwork";
 import {
   canPublishRecording,
   requiresReadyRecordingScope,
@@ -32,27 +32,48 @@ import {
 
 describe("policy access helpers", () => {
   it.each([
-    ["LISTENER", false],
-    ["VIEWER", true],
-    ["MEMBER", true],
-    ["EDITOR", true],
-    ["OWNER", true],
+    ["listener", false],
+    ["reader", true],
+    ["corrector", true],
+    ["host", true],
+    ["curator", true],
   ] as const)(
-    "keeps transcript, search, and unreleased-event access aligned for %s",
-    (level, canReadTranscriptContent) => {
-      const catalogGrant = grantFromLevel(level);
+    "gates transcript reading on read_transcripts and search on both permissions for %s",
+    (role, canReadTranscriptContent) => {
       const context = {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant,
+        catalogGrant: grantForRole(role),
         isCatalogAdmin: false,
       };
 
       expect(canViewCatalogTranscripts(context)).toBe(canReadTranscriptContent);
+      // Every role that reads also searches, so on role-native grants the two
+      // agree; the conjunction itself is pinned in catalog-permissions.test.ts.
       expect(canUseCatalogRag(context)).toBe(canReadTranscriptContent);
-      expect(canViewUnreleasedEvents(context)).toBe(
-        level !== "LISTENER"
-      );
+    }
+  );
+
+  // Unlike transcript reading, unreleased-event visibility is not "everyone
+  // above listener" any more: only the curator (and the administrator
+  // wildcard) carries see_unreleased. The two axes are independent.
+  it.each([
+    ["listener", false],
+    ["reader", false],
+    ["corrector", false],
+    ["host", false],
+    ["curator", true],
+  ] as const)(
+    "gates unreleased-event visibility on see_unreleased for %s",
+    (role, canSeeUnreleased) => {
+      const context = {
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: grantForRole(role),
+        isCatalogAdmin: false,
+      };
+
+      expect(canViewUnreleasedEvents(context)).toBe(canSeeUnreleased);
     }
   );
 
@@ -60,7 +81,7 @@ describe("policy access helpers", () => {
     const listenerContext = {
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
       isCatalogAdmin: false,
     };
 
@@ -68,9 +89,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(listenerContext)).toBe(false);
     expect(canUseCatalogRag(listenerContext)).toBe(false);
     expect(canViewUnreleasedEvents(listenerContext)).toBe(false);
-    expect(canViewEventPosterCandidates(listenerContext)).toBe(false);
-    expect(canManageEventPosterCandidates(listenerContext)).toBe(false);
-    expect(canPublishEventPosters(listenerContext)).toBe(false);
+    expect(canViewEventArtworkCandidates(listenerContext)).toBe(false);
+    expect(canManageEventArtworkCandidates(listenerContext)).toBe(false);
+    expect(canPublishEventArtwork(listenerContext)).toBe(false);
     expect(
       canViewRecording(listenerContext, {
         isActionable: true,
@@ -95,61 +116,92 @@ describe("policy access helpers", () => {
         isPublished: true,
       })
     ).toBe(false);
-    expect(requiresReadyRecordingScope(grantFromLevel("LISTENER"))).toBe(true);
+    expect(requiresReadyRecordingScope(grantForRole("listener"))).toBe(true);
   });
 
-  it("grants owner-level management while keeping transcript access role-based", () => {
-    const ownerContext = {
+  it("grants host access-management authority while leaving content gated by role", () => {
+    const hostContext = {
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("host"),
       isCatalogAdmin: false,
     };
 
-    expect(canViewCatalog(ownerContext)).toBe(true);
-    expect(canBrowseRecordings(ownerContext)).toBe(true);
-    expect(canViewCatalogTranscripts(ownerContext)).toBe(true);
-    expect(canUseCatalogRag(ownerContext)).toBe(true);
-    expect(canViewUnreleasedEvents(ownerContext)).toBe(true);
-    expect(canViewEventPosterCandidates(ownerContext)).toBe(true);
-    expect(canManageEventPosterCandidates(ownerContext)).toBe(true);
-    expect(canPublishEventPosters(ownerContext)).toBe(true);
-    expect(canViewRecording(ownerContext)).toBe(true);
-    expect(canViewRecordingTranscript(ownerContext)).toBe(true);
-    expect(canAttemptCatalogManagement(ownerContext)).toBe(true);
-    expect(hasCatalogManagementAuthority(ownerContext)).toBe(true);
-    expect(canAccessCatalogSettings(ownerContext)).toBe(true);
-    expect(canManageCatalogConfiguration(ownerContext)).toBe(false);
-    expect(canGrantCatalogGrant(ownerContext, "listener")).toBe(true);
-    expect(canGrantCatalogGrant(ownerContext, "curator")).toBe(false);
-    expect(canGrantCatalogGrant(ownerContext, "host")).toBe(false);
+    expect(canViewCatalog(hostContext)).toBe(true);
+    // browse_recordings, see_unreleased and the artwork permissions belong to
+    // the curator; a host is a reader plus manage_access, nothing else.
+    expect(canBrowseRecordings(hostContext)).toBe(false);
+    expect(canViewCatalogTranscripts(hostContext)).toBe(true);
+    expect(canUseCatalogRag(hostContext)).toBe(true);
+    expect(canViewUnreleasedEvents(hostContext)).toBe(false);
+    expect(canViewEventArtworkCandidates(hostContext)).toBe(false);
+    expect(canManageEventArtworkCandidates(hostContext)).toBe(false);
+    expect(canPublishEventArtwork(hostContext)).toBe(false);
+    // Without see_unreleased, an unscoped recording-state check needs a
+    // state to answer from; a host supplies none here, so both refuse.
+    expect(canViewRecording(hostContext)).toBe(false);
+    expect(canViewRecordingTranscript(hostContext)).toBe(false);
+    expect(canAttemptCatalogManagement(hostContext)).toBe(true);
+    expect(hasCatalogManagementAuthority(hostContext)).toBe(true);
+    expect(canAccessCatalogSettings(hostContext)).toBe(true);
+    expect(canManageCatalogConfiguration(hostContext)).toBe(false);
+    expect(canGrantCatalogGrant(hostContext, "listener")).toBe(true);
+    expect(canGrantCatalogGrant(hostContext, "curator")).toBe(false);
+    expect(canGrantCatalogGrant(hostContext, "host")).toBe(false);
     expect(
-      canManageExistingCatalogGrant(ownerContext, {
-        level: null,
+      canManageExistingCatalogGrant(hostContext, {
         role: "listener",
         extras: [],
       })
     ).toBe(true);
     // The reader role carries neither protected permission.
     expect(
-      canManageExistingCatalogGrant(ownerContext, {
-        level: null,
+      canManageExistingCatalogGrant(hostContext, {
         role: "reader",
         extras: [],
       })
     ).toBe(true);
     expect(
-      canManageExistingCatalogGrant(ownerContext, {
-        level: null,
+      canManageExistingCatalogGrant(hostContext, {
         role: "host",
         extras: [],
       })
     ).toBe(false);
-    expect(canPublishRecording(ownerContext)).toBe(true);
-    expect(requiresReadyRecordingScope(grantFromLevel("OWNER"))).toBe(false);
+    // Publication follows publish_recording, which a host does not carry.
+    expect(canPublishRecording(hostContext)).toBe(false);
+    expect(requiresReadyRecordingScope(grantForRole("host"))).toBe(true);
   });
 
-  it("lets catalog admins manage access even without relying on owner-only checks", () => {
+  it("grants curator content visibility and editorial permissions without access-management authority", () => {
+    const curatorContext = {
+      catalogExists: true,
+      canEnterPortal: true,
+      catalogGrant: grantForRole("curator"),
+      isCatalogAdmin: false,
+    };
+
+    expect(canViewCatalog(curatorContext)).toBe(true);
+    expect(canBrowseRecordings(curatorContext)).toBe(true);
+    expect(canViewCatalogTranscripts(curatorContext)).toBe(true);
+    expect(canUseCatalogRag(curatorContext)).toBe(true);
+    expect(canViewUnreleasedEvents(curatorContext)).toBe(true);
+    expect(canViewEventArtworkCandidates(curatorContext)).toBe(true);
+    expect(canManageEventArtworkCandidates(curatorContext)).toBe(true);
+    expect(canPublishEventArtwork(curatorContext)).toBe(true);
+    expect(canViewRecording(curatorContext)).toBe(true);
+    expect(canViewRecordingTranscript(curatorContext)).toBe(true);
+    // The editorial role does not manage who else has access.
+    expect(canAttemptCatalogManagement(curatorContext)).toBe(false);
+    expect(hasCatalogManagementAuthority(curatorContext)).toBe(false);
+    expect(canAccessCatalogSettings(curatorContext)).toBe(false);
+    expect(canManageCatalogConfiguration(curatorContext)).toBe(false);
+    expect(canGrantCatalogGrant(curatorContext, "listener")).toBe(false);
+    // Publication follows publish_recording, which the curator carries.
+    expect(canPublishRecording(curatorContext)).toBe(true);
+    expect(requiresReadyRecordingScope(grantForRole("curator"))).toBe(false);
+  });
+
+  it("lets catalog admins manage access even without relying on a stored grant", () => {
     const adminContext = {
       catalogExists: true,
       canEnterPortal: true,
@@ -162,9 +214,9 @@ describe("policy access helpers", () => {
     expect(canViewCatalogTranscripts(adminContext)).toBe(true);
     expect(canUseCatalogRag(adminContext)).toBe(true);
     expect(canViewUnreleasedEvents(adminContext)).toBe(true);
-    expect(canViewEventPosterCandidates(adminContext)).toBe(true);
-    expect(canManageEventPosterCandidates(adminContext)).toBe(true);
-    expect(canPublishEventPosters(adminContext)).toBe(true);
+    expect(canViewEventArtworkCandidates(adminContext)).toBe(true);
+    expect(canManageEventArtworkCandidates(adminContext)).toBe(true);
+    expect(canPublishEventArtwork(adminContext)).toBe(true);
     expect(canAttemptCatalogManagement(adminContext)).toBe(true);
     expect(hasCatalogManagementAuthority(adminContext)).toBe(true);
     expect(canAccessCatalogSettings(adminContext)).toBe(true);
@@ -172,7 +224,6 @@ describe("policy access helpers", () => {
     expect(canGrantCatalogGrant(adminContext, "catalog_admin")).toBe(true);
     expect(
       canManageExistingCatalogGrant(adminContext, {
-        level: null,
         role: "catalog_admin",
         extras: [],
       })
@@ -181,44 +232,46 @@ describe("policy access helpers", () => {
     expect(requiresReadyRecordingScope(null)).toBe(false);
   });
 
-  it("keeps publication controls closed to non-owner non-admin viewers", () => {
-    const viewerContext = {
+  it("keeps publication and management controls closed to an ordinary reader", () => {
+    const readerContext = {
       catalogExists: true,
       canEnterPortal: true,
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
       isCatalogAdmin: false,
     };
 
-    expect(canAttemptCatalogManagement(viewerContext)).toBe(false);
-    expect(canUseCatalogRag(viewerContext)).toBe(true);
-    expect(canViewUnreleasedEvents(viewerContext)).toBe(true);
-    expect(canViewEventPosterCandidates(viewerContext)).toBe(true);
-    expect(canManageEventPosterCandidates(viewerContext)).toBe(false);
-    expect(canPublishEventPosters(viewerContext)).toBe(false);
-    expect(hasCatalogManagementAuthority(viewerContext)).toBe(false);
-    expect(canGrantCatalogGrant(viewerContext, "reader")).toBe(false);
+    expect(canAttemptCatalogManagement(readerContext)).toBe(false);
+    expect(canUseCatalogRag(readerContext)).toBe(true);
+    expect(canViewUnreleasedEvents(readerContext)).toBe(false);
+    expect(canViewEventArtworkCandidates(readerContext)).toBe(false);
+    expect(canManageEventArtworkCandidates(readerContext)).toBe(false);
+    expect(canPublishEventArtwork(readerContext)).toBe(false);
+    expect(hasCatalogManagementAuthority(readerContext)).toBe(false);
+    expect(canGrantCatalogGrant(readerContext, "reader")).toBe(false);
     expect(
-      canManageExistingCatalogGrant(viewerContext, {
-        level: null,
+      canManageExistingCatalogGrant(readerContext, {
         role: "reader",
         extras: [],
       })
     ).toBe(false);
-    expect(canPublishRecording(viewerContext)).toBe(false);
+    expect(canPublishRecording(readerContext)).toBe(false);
   });
 });
 
 describe("unreleased-visibility threshold", () => {
-  // Asked of every level rather than of the lowest one, so that a level inserted
-  // below VIEWER has to declare which side of the threshold it falls on.
+  // Asked of every role rather than of the lowest one, so that a role
+  // inserted below curator has to declare which side of the threshold it
+  // falls on. Only the curator carries see_unreleased; every other role is
+  // scoped, including host and reader, which the retired cumulative scale
+  // would have left unscoped.
   it.each([
-    ["LISTENER", true],
-    ["VIEWER", false],
-    ["MEMBER", false],
-    ["EDITOR", false],
-    ["OWNER", false],
-  ] as const)("scopes %s to released material: %s", (level, scoped) => {
-    const grant = grantFromLevel(level);
+    ["listener", true],
+    ["reader", true],
+    ["corrector", true],
+    ["host", true],
+    ["curator", false],
+  ] as const)("scopes %s to released material: %s", (role, scoped) => {
+    const grant = grantForRole(role);
     expect(lacksUnreleasedVisibility(grant)).toBe(scoped);
     expect(requiresReadyRecordingScope(grant)).toBe(scoped);
     expect(requiresReleasedEventVisibilityScope(grant)).toBe(scoped);
@@ -234,36 +287,37 @@ describe("unreleased-visibility threshold", () => {
   );
 
   it.each([
-    ["LISTENER", false],
-    ["VIEWER", true],
-    ["MEMBER", true],
-    ["EDITOR", true],
-    ["OWNER", true],
+    ["listener", false],
+    ["reader", false],
+    ["corrector", false],
+    ["host", false],
+    ["curator", true],
   ] as const)(
     "lets %s open an unpublished recording directly: %s",
-    (level, visible) => {
+    (role, visible) => {
       const context = {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel(level),
+        catalogGrant: grantForRole(role),
         isCatalogAdmin: false,
       };
       expect(
         canViewRecording(context, { isActionable: true, isPublished: false })
       ).toBe(visible);
-      // The per-recording gate must agree with the list scope, or a level
+      // The per-recording gate must agree with the list scope, or a role
       // hidden from the list could still be reached by direct URL.
-      expect(visible).toBe(!requiresReadyRecordingScope(grantFromLevel(level)));
+      expect(visible).toBe(!requiresReadyRecordingScope(grantForRole(role)));
     }
   );
 
   it("keeps both scopes answering alike for every input", () => {
     for (const grant of [
-      grantFromLevel("LISTENER"),
-      grantFromLevel("VIEWER"),
-      grantFromLevel("MEMBER"),
-      grantFromLevel("EDITOR"),
-      grantFromLevel("OWNER"),
+      grantForRole("listener"),
+      grantForRole("reader"),
+      grantForRole("corrector"),
+      grantForRole("host"),
+      grantForRole("curator"),
+      grantForRole("catalog_admin"),
       null,
       undefined,
     ]) {

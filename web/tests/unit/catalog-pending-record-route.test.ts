@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   deletePendingCatalogRecord,
   updatePendingCatalogRecord,
@@ -72,7 +72,7 @@ describe("catalog pending record route", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: false,
       },
     });
@@ -82,7 +82,8 @@ describe("catalog pending record route", () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
       email: EMAIL,
       catalogId: CATALOG_ID,
-      accessLevel: "OWNER",
+      role: "host",
+      extraPermissions: [],
       grantedById: "admin-1",
       grantedAt: new Date("2026-01-01T00:00:00.000Z"),
       notes: "admin-only",
@@ -129,7 +130,8 @@ describe("catalog pending record route", () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
       email: EMAIL,
       catalogId: CATALOG_ID,
-      accessLevel: "OWNER",
+      role: "host",
+      extraPermissions: [],
       grantedById: "admin-1",
       grantedAt: new Date("2026-01-01T00:00:00.000Z"),
       notes: "admin-only",

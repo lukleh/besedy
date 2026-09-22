@@ -15,6 +15,10 @@ import { McpReadError } from '@/lib/mcp/read-service';
 import { createServerLogger } from '@/lib/log/server';
 import type { BesedyMcpRequestContext } from '@/lib/mcp/tools/types';
 import { trackMcpToolInvocation } from '@/lib/mcp/usage';
+import {
+  searchesPrimaryRecordingsOnly,
+  type SearchMetadataFilters,
+} from '@/app/api/catalogs/[id]/search/search-route-helpers';
 
 const DEFAULT_LOOKUP_PAGE_SIZE = 50;
 const MAX_LOOKUP_PAGE_SIZE = 100;
@@ -26,6 +30,28 @@ const logger = createServerLogger('mcp-tools');
 // returned; verification only adds context when the window widens.
 export const TRANSCRIPT_VERIFICATION_GUIDANCE =
   "Verify important evidence with get_transcript: copy the result's transcriptRequest, widen startSec and endSec, then call the tool; unchanged values only replay that passage. Do not rely on an important candidate when the request is unavailable.";
+
+const PARALLEL_CAPTURES_NOTE =
+  'other recordings of the same event are parallel captures of the same session, not independent evidence.';
+
+/**
+ * Explain which recordings a search covered, based on the filters that were
+ * applied. Mirrors searchesPrimaryRecordingsOnly so the explanatory text can
+ * never contradict the result set.
+ */
+export function describeSearchedRecordings(
+  filters: SearchMetadataFilters | null | undefined,
+  itemNoun: 'candidate' | 'match',
+): string {
+  const lead = `Each ${itemNoun} includes its authoritative event date, location, and ID.`;
+  if (filters?.audioHashes && filters.audioHashes.length > 0) {
+    return `${lead} Only the recordings named in filters.audioHashes were searched, whether or not they are their event's primary recording; ${PARALLEL_CAPTURES_NOTE}`;
+  }
+  if (searchesPrimaryRecordingsOnly(filters)) {
+    return `${lead} Only each event's primary recording was searched; ${PARALLEL_CAPTURES_NOTE} Set filters.includeSecondaryRecordings to true to search them as well.`;
+  }
+  return `${lead} Secondary recordings were included because filters.includeSecondaryRecordings is true; ${PARALLEL_CAPTURES_NOTE} Group results by event ID.`;
+}
 
 export function createLookupListInputSchema(itemName: string) {
   return z.object({

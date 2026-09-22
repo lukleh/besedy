@@ -8,8 +8,15 @@
  */
 
 import { test, expect } from './helpers/base-test';
+import type { APIRequestContext } from '@playwright/test';
 import { loginAs } from './helpers/auth';
-import { URLS, FIRST_RECORDING, TEST_CATALOG_ID } from './helpers/fixtures';
+import {
+  URLS,
+  FIRST_RECORDING,
+  TEST_AUDIO_FILES,
+  TEST_CATALOG_ID,
+  TEST_EVENTS,
+} from './helpers/fixtures';
 import { waitForPageReady } from './helpers/navigation';
 import {
   clearOfflineStorage,
@@ -17,19 +24,52 @@ import {
   downloadCurrentRecording,
   expectDownloadStatus,
   setOffline,
-  waitForOfflineBanner,
-  waitForOfflineBannerGone,
+  waitForOfflineIndicator,
+  waitForOfflineIndicatorGone,
   waitForServiceWorker,
 } from './helpers/offline';
 
+/**
+ * Playwright's WebKit build cannot navigate to a document served by a
+ * service worker while offline ("WebKit encountered an internal error").
+ * Real Safari is verified on physical devices (#163 step 0).
+ */
+function skipOfflineNavigationOnWebKit(browserName: string) {
+  test.skip(
+    browserName === 'webkit',
+    'Playwright WebKit cannot load a service-worker-served document offline',
+  );
+}
+
+async function getEventIdByTitle(
+  request: APIRequestContext,
+  title: string,
+): Promise<number> {
+  const params = new URLSearchParams({
+    group: TEST_CATALOG_ID,
+    search: title,
+    limit: '50',
+  });
+  const response = await request.get(
+    `/api/catalog-events?${params.toString()}`,
+  );
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    events: Array<{ id: number; title: string | null }>;
+  };
+  const event = body.events.find((item) => item.title === title);
+  if (!event) throw new Error(`Seeded event not found: ${title}`);
+  return event.id;
+}
+
 test.describe('Offline Mode', () => {
   test.skip(
-    ({ browserName }) => browserName !== 'chromium',
-    'Offline tests require Chromium',
+    ({ browserName }) => browserName === 'firefox',
+    'Offline tests require Chromium or WebKit',
   );
 
-  test.describe('Offline Banner', () => {
-    test('shows banner with a Downloads shortcut when the network disconnects', async ({
+  test.describe('Connectivity indicator', () => {
+    test('shows a crossed-Wi-Fi indicator in the header that leads to Downloads', async ({
       page,
       context,
     }) => {
@@ -37,18 +77,16 @@ test.describe('Offline Mode', () => {
       await page.goto(URLS.catalog);
       await waitForPageReady(page);
 
-      const banner = page.getByTestId('offline-banner');
-      await expect(banner).not.toBeVisible();
+      const indicator = page.getByTestId('offline-indicator');
+      await expect(indicator).not.toBeVisible();
 
       await setOffline(context, true);
-      await waitForOfflineBanner(page);
-      await expect(banner).toContainText(/offline/i);
-      await expect(
-        banner.getByRole('link', { name: /downloads|stažené/i }),
-      ).toHaveAttribute('href', '/downloads');
+      await waitForOfflineIndicator(page);
+      await expect(indicator).toHaveAttribute('href', '/downloads');
+      await expect(indicator).toHaveAccessibleName(/offline/i);
 
       await setOffline(context, false);
-      await waitForOfflineBannerGone(page);
+      await waitForOfflineIndicatorGone(page);
     });
   });
 
@@ -125,10 +163,235 @@ test.describe('Offline Mode', () => {
   });
 
   test.describe('Offline playback', () => {
-    test('a downloaded recording plays offline and syncs progress on reconnect', async ({
+    test('playback that started online continues uninterrupted when connectivity drops', async ({
       page,
       context,
     }) => {
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+
+      // The completed package must be the media source before playing: the
+      // local marker on the worker-served URL, or the inline copy.
+      const audio = page.locator('audio');
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentSrc),
+          { timeout: 15_000 },
+        )
+        .toMatch(/[?&]local=1(&|$)|^data:audio\//);
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentTime),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(2);
+
+      // 1. Uninterrupted continuation: pull the plug mid-stream and touch
+      // nothing. The position must keep advancing with no error, pause or end.
+      const atDisconnect = await audio.evaluate((element: HTMLAudioElement) => ({
+        currentTime: element.currentTime,
+        bufferedEnd:
+          element.buffered.length > 0
+            ? element.buffered.end(element.buffered.length - 1)
+            : 0,
+        duration: element.duration,
+      }));
+      await setOffline(context, true);
+      await waitForOfflineIndicator(page);
+      await page.waitForTimeout(4000);
+      const playbackState = () =>
+        audio.evaluate((element: HTMLAudioElement) => ({
+          currentTime: element.currentTime,
+          error: element.error?.code ?? null,
+          paused: element.paused,
+          ended: element.ended,
+        }));
+      const continued = await playbackState();
+      expect(continued).toMatchObject({ error: null, paused: false, ended: false });
+      expect(continued.currentTime).toBeGreaterThan(atDisconnect.currentTime + 3);
+
+      // 2. Cache read offline: seek beyond what had been buffered when the
+      // connection dropped, or near the end when the small fixture was already
+      // buffered whole. In that second case the source assertion above is
+      // what proves the bytes came from the package rather than the network.
+      const seekTarget = Math.min(
+        Math.max(atDisconnect.bufferedEnd + 1, atDisconnect.duration - 8),
+        atDisconnect.duration - 4,
+      );
+      await audio.evaluate((element: HTMLAudioElement, target: number) => {
+        element.currentTime = target;
+      }, seekTarget);
+      await page.waitForTimeout(3000);
+      const afterSeek = await playbackState();
+      expect(afterSeek).toMatchObject({ error: null, paused: false, ended: false });
+      expect(afterSeek.currentTime).toBeGreaterThan(seekTarget + 2);
+      await expect(page.getByTestId('audio-play-button')).toHaveAttribute(
+        'aria-label',
+        /pause|buffering/i,
+      );
+
+      await setOffline(context, false);
+    });
+
+    test('an already-open downloaded event keeps playing after connectivity drops', async ({
+      page,
+      context,
+    }) => {
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+
+      // The page is already open; only the network goes away.
+      await setOffline(context, true);
+      await waitForOfflineIndicator(page);
+
+      const audio = page.locator('audio');
+      const needsInlineAudio = await page.evaluate(
+        () =>
+          /AppleWebKit\//.test(navigator.userAgent) &&
+          /Android|iPhone|iPad|iPod/.test(navigator.userAgent),
+      );
+      if (needsInlineAudio) {
+        await expect(audio).toHaveAttribute('src', /^data:audio\//, {
+          timeout: 15_000,
+        });
+      }
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentTime),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(0.5);
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete');
+
+      await setOffline(context, false);
+    });
+
+    test('a downloaded event advances playback when opened from Downloads offline', async ({
+      page,
+      context,
+      browserName,
+    }) => {
+      skipOfflineNavigationOnWebKit(browserName);
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+      const primaryRecording = TEST_AUDIO_FILES.find(
+        (recording) => recording.shortHash === event.primaryRecording,
+      );
+      if (!primaryRecording) throw new Error('Seeded primary recording not found');
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await expect(eventDownload).toHaveAttribute('data-status', 'none');
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(async () => {
+            const cache = await caches.open('besedy-offline-shell-v1');
+            return Boolean(await cache.match('/downloads'));
+          }),
+        )
+        .toBe(true);
+
+      await page.goto('/downloads');
+      const card = page.getByTestId(
+        `download-card-${primaryRecording.hash}`,
+      );
+      await expect(card).toContainText(event.title, { timeout: 15_000 });
+      await setOffline(context, true);
+      await waitForOfflineIndicator(page);
+      await card.getByRole('link', { name: /open|otevřít/i }).click();
+      // Downloads delegates to the normal event page, served offline by the
+      // worker at its own URL.
+      await expect(page).toHaveURL(
+        new RegExp(`/catalog/${TEST_CATALOG_ID}/event/${eventId}$`),
+        { timeout: 15_000 },
+      );
+
+      const audio = page.locator('audio');
+      const isAndroid = await page.evaluate(() =>
+        /Android/.test(navigator.userAgent),
+      );
+      if (isAndroid) {
+        await expect(audio).toHaveAttribute('src', /^data:audio\//);
+      }
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () =>
+            audio.evaluate((element: HTMLAudioElement) => ({
+              currentTime: element.currentTime,
+              error: element.error?.code ?? null,
+              paused: element.paused,
+              readyState: element.readyState,
+            })),
+          { timeout: 15_000 },
+        )
+        .toMatchObject({
+          currentTime: expect.any(Number),
+          error: null,
+          paused: false,
+        });
+      await expect
+        .poll(
+          () =>
+            audio.evaluate(
+              (element: HTMLAudioElement) => element.currentTime,
+            ),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(0.5);
+    });
+
+    test('a downloaded recording plays offline and syncs progress on reconnect', async ({
+      page,
+      context,
+      browserName,
+    }) => {
+      skipOfflineNavigationOnWebKit(browserName);
       // Use a separate account because progress is backend state and the
       // service-worker streaming test runs concurrently as the viewer.
       await loginAs(page, 'listener');
@@ -206,10 +469,12 @@ test.describe('Offline Mode', () => {
       const card = page.getByTestId(`download-card-${FIRST_RECORDING.hash}`);
       await expect(card).toBeVisible({ timeout: 15_000 });
       await expect(card).toHaveAttribute('data-status', 'complete');
-      await card.getByRole('button', { name: /open|otevřít/i }).click();
+      await card.getByRole('link', { name: /open|otevřít/i }).click();
 
-      await expect(page.getByTestId('download-detail')).toBeVisible();
-      await expect(page).toHaveURL(/\/downloads\?.*item=/);
+      await expect(page).toHaveURL(
+        new RegExp(`/catalog/${TEST_CATALOG_ID}/recording/${FIRST_RECORDING.hash}$`),
+        { timeout: 15_000 },
+      );
       await expect(page.getByTestId('audio-play-button')).toBeVisible({
         timeout: 15_000,
       });
@@ -283,23 +548,108 @@ test.describe('Offline Mode', () => {
         .toBe(5);
     });
 
-    test('an offline navigation to an unknown page lands on Downloads', async ({
+    test('an offline navigation keeps its URL and explains what is unavailable', async ({
       page,
       context,
+      browserName,
     }) => {
+      skipOfflineNavigationOnWebKit(browserName);
       await loginAs(page, 'viewer');
       await page.goto('/downloads');
       await waitForPageReady(page);
       await waitForServiceWorker(page);
 
       await setOffline(context, true);
-      await page.goto(`${URLS.catalog}/does-not-exist/event/999999`);
-      await expect(page).toHaveURL(/\/downloads\?from=/);
-      await expect(
-        page.getByTestId('downloads-offline-redirect'),
-      ).toBeVisible();
+      await page.goto('/settings');
+      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page.getByTestId('offline-unavailable')).toBeVisible();
+      await expect(page.getByRole('banner')).toBeVisible();
 
       await setOffline(context, false);
+    });
+
+    test('a downloaded event cold-starts at its normal URL and is reachable from the catalog list offline', async ({
+      page,
+      context,
+      browserName,
+    }) => {
+      skipOfflineNavigationOnWebKit(browserName);
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(async () => {
+            const cache = await caches.open('besedy-offline-shell-v1');
+            return Boolean(await cache.match('/downloads'));
+          }),
+        )
+        .toBe(true);
+
+      // A fresh document at the normal event URL, without a connection.
+      await setOffline(context, true);
+      await page.goto(URLS.event(eventId));
+      await expect(page).toHaveURL(
+        new RegExp(`/catalog/${TEST_CATALOG_ID}/event/${eventId}$`),
+      );
+      await expect(page.getByRole('banner')).toBeVisible();
+      await expect(page.getByTestId('audio-play-button')).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // The catalog list shows the downloaded events and opens one.
+      await page.goto(URLS.catalog);
+      await expect(page.getByTestId('local-event-list')).toBeVisible({
+        timeout: 15_000,
+      });
+      // The list renders cards on phones and table rows on desktop.
+      const eventCard = page
+        .getByTestId(`event-card-${eventId}`)
+        .filter({ visible: true });
+      if ((await eventCard.count()) > 0) {
+        await eventCard.first().click();
+      } else {
+        await page
+          .getByRole('row')
+          .filter({ has: page.getByTestId(`event-downloaded-${eventId}`) })
+          .click();
+      }
+      await expect(page).toHaveURL(
+        new RegExp(`/catalog/${TEST_CATALOG_ID}/event/${eventId}$`),
+        { timeout: 15_000 },
+      );
+      await expect(page.getByTestId('audio-play-button')).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // Back online in the same session-free document: the header must show
+      // the signed-in account again, not a sign-in button.
+      await setOffline(context, false);
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await waitForOfflineIndicatorGone(page);
+      // The menu renders a trigger per layout; one of them is visible.
+      await expect(
+        page.getByTestId('user-menu-trigger').filter({ visible: true }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByRole('link', { name: /sign in|přihlásit/i }),
+      ).toHaveCount(0);
     });
   });
 });

@@ -364,7 +364,6 @@ export async function GET(request: NextRequest) {
       canBatchEditMetadata: capability.canBatchEditMetadata,
       canManageAccess: capability.canManageAccess,
       canPublishRecording: capability.canPublishRecording,
-      accessLevel: capability.accessLevel,
       canSeeUnreleased: capability.canSeeUnreleased,
       canUseRagSearch: capability.canUseRagSearch,
     });

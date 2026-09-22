@@ -4,9 +4,9 @@ import prisma from "@/lib/db";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
 import { handlePrismaError, badRequest, conflict, notFound } from "@/lib/api";
 import { validateRequestBody } from "@/lib/api/validation";
-import { getEventPosterWorkflowStatuses, type PosterWorkflowStatus } from "@/lib/event-poster-service";
+import { getEventArtworkWorkflowStatuses, type ArtworkWorkflowStatus } from "@/lib/event-artwork-service";
 import { readEventSources } from "@/lib/event-sources";
-import { canViewEventPosterCandidates } from "@/lib/policy/event-poster";
+import { canViewEventArtworkCandidates } from "@/lib/policy/event-artwork";
 import { CatalogEventsGroupQuerySchema, CreateCatalogEventSchema } from "@/lib/catalog-events/validation";
 import {
   deriveEventTitle,
@@ -275,11 +275,11 @@ export async function GET(request: NextRequest) {
       events.map(async (event) => [event.id, await loadEventAssetSummary(workflowGroupId, event.id)] as const)
     );
     const eventAssetsById = new Map(eventAssetPairs);
-    const posterStatuses = await getEventPosterWorkflowStatuses(
+    const artworkStatuses = await getEventArtworkWorkflowStatuses(
       workflowGroupId,
       events.map((event) => event.id)
     );
-    const canSeeDraftPosterState = canViewEventPosterCandidates(policyContext);
+    const canSeeDraftArtworkState = canViewEventArtworkCandidates(policyContext);
 
     const serialized = events.map((event) => {
       const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
@@ -298,10 +298,10 @@ export async function GET(request: NextRequest) {
       const eventAssets = eventAssetsById.get(event.id) ?? {
         sourceCount: 0,
       };
-      const rawPosterStatus = posterStatuses.get(event.id) ?? "none";
-      const posterStatus: PosterWorkflowStatus = canSeeDraftPosterState
-        ? rawPosterStatus
-        : rawPosterStatus === "published" || rawPosterStatus === "published-with-newer-drafts"
+      const rawArtworkStatus = artworkStatuses.get(event.id) ?? "none";
+      const artworkStatus: ArtworkWorkflowStatus = canSeeDraftArtworkState
+        ? rawArtworkStatus
+        : rawArtworkStatus === "published" || rawArtworkStatus === "published-with-newer-drafts"
           ? "published"
           : "none";
       const playback = selectEventPlaybackProgress(
@@ -329,7 +329,7 @@ export async function GET(request: NextRequest) {
         updatedAt: event.updatedAt,
         recordingCount: event.recordings.length,
         sourceCount: eventAssets.sourceCount,
-        posterStatus,
+        artworkStatus,
         primaryAudioHash,
         primaryTitle,
         playback,

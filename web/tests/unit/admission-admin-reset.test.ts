@@ -37,7 +37,7 @@ describe("admission admin reset", () => {
         findMany: vi.fn().mockResolvedValue([
           {
             catalogId: "20260101_000000",
-            accessLevel: "EDITOR",
+            role: "curator",
             grantedById: "owner-1",
             grantedAt: new Date("2026-03-10T11:00:00.000Z"),
             notes: "catalog grant",
@@ -61,7 +61,7 @@ describe("admission admin reset", () => {
       reopenedGrants: [
         {
           catalogId: "20260101_000000",
-          accessLevel: "EDITOR",
+          role: "curator",
         },
       ],
     });

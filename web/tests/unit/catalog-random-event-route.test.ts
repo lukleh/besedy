@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getRandomEvent } from "@/app/api/catalogs/[id]/random-event/route";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", () => ({
   getCurrentUserId: vi.fn(),
@@ -130,8 +130,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: false,
       hasAccess: true,
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("host"),
     });
 
     const response = await callRoute();
@@ -146,8 +145,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([]);
 
@@ -167,8 +165,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1]);
     prisma.catalogEvent.findMany.mockResolvedValue([eventRow()]);
@@ -198,8 +195,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("host"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1]);
     prisma.catalogEvent.findMany.mockResolvedValue([eventRow()]);
@@ -223,8 +219,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("host"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1]);
     prisma.catalogEvent.findMany.mockResolvedValue([eventRow()]);
@@ -245,8 +240,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1]);
     prisma.catalogEvent.findMany.mockResolvedValue([eventRow({ title: null })]);
@@ -264,8 +258,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1]);
     // Year-only event date (no month/day).
@@ -288,8 +281,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1]);
     prisma.catalogEvent.findMany.mockResolvedValue([eventRow()]);
@@ -313,8 +305,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1, 2]);
     prisma.catalogEvent.findMany.mockResolvedValue([
@@ -349,8 +340,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     isFeatureEnabledForUser.mockReturnValue(false);
 
@@ -369,8 +359,7 @@ describe("catalog random event route", () => {
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
       hasAccess: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([1, 2]);
     prisma.catalogEvent.findMany.mockResolvedValue([

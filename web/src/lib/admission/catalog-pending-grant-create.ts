@@ -118,7 +118,7 @@ export async function createPendingCatalogGrant(
         targetEmail: email,
         catalogId,
         catalogLabel: catalog.label,
-        accessLevel: newAccess.accessLevel,
+        role: newAccess.role,
         details: {
           targetUserId: existingUser.id,
           email,
@@ -157,7 +157,6 @@ export async function createPendingCatalogGrant(
           },
         },
         select: {
-          accessLevel: true,
           role: true,
           extraPermissions: true,
           status: true,
@@ -168,7 +167,6 @@ export async function createPendingCatalogGrant(
     if (
       existingPendingGrant &&
       !canManageExistingCatalogGrant(managementAccess.policyContext, {
-        level: existingPendingGrant.accessLevel,
         role: existingPendingGrant.role,
         extras: existingPendingGrant.extraPermissions,
       })
@@ -211,7 +209,7 @@ export async function createPendingCatalogGrant(
       email,
       catalogId,
       catalogLabel: catalog.label,
-      accessLevel: grantFieldsForRole(role, extraPermissions).accessLevel,
+      role,
       details: {
         email,
         portalAdmissionResourceId: email,

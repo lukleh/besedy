@@ -31,7 +31,7 @@ interface AccessFormFieldsProps {
   /** Prefix for unique form field IDs (e.g., "grant" or "edit") */
   idPrefix?: string;
   /** Show hint text below access level select */
-  showAccessLevelHint?: boolean;
+  showRoleHint?: boolean;
   /** Pending invitations have no profile name to edit. */
   showUserName?: boolean;
 }
@@ -49,7 +49,7 @@ export function AccessFormFields({
   canManageExtras = false,
   grantableExtraPermissions = [],
   idPrefix = "access",
-  showAccessLevelHint = false,
+  showRoleHint = false,
   showUserName = true,
 }: AccessFormFieldsProps) {
   const t = useTranslations("catalogSettings");
@@ -113,7 +113,7 @@ export function AccessFormFields({
             ))}
           </ResponsiveSelectContent>
         </ResponsiveSelect>
-        {showAccessLevelHint && manageableRoles.length > 0 && (
+        {showRoleHint && manageableRoles.length > 0 && (
           // Named from the list rather than from the actor's own standing, so
           // the hint cannot drift from what the server will accept.
           <p className="mt-1 text-xs text-muted-foreground">

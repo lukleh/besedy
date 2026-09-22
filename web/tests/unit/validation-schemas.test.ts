@@ -4,7 +4,6 @@ import {
   CuidSchema,
   HashSchema,
   EmailSchema,
-  AccessLevelSchema,
   AccessStatusSchema,
   UserStatusSchema,
   TranscriptBackendSchema,
@@ -153,21 +152,6 @@ describe("EmailSchema", () => {
     expect(EmailSchema.safeParse("invalid").success).toBe(false);
     expect(EmailSchema.safeParse("@example.com").success).toBe(false);
     expect(EmailSchema.safeParse("test@").success).toBe(false);
-  });
-});
-
-describe("AccessLevelSchema", () => {
-  it("accepts valid access levels", () => {
-    expect(AccessLevelSchema.safeParse("VIEWER").success).toBe(true);
-    expect(AccessLevelSchema.safeParse("MEMBER").success).toBe(true);
-    expect(AccessLevelSchema.safeParse("EDITOR").success).toBe(true);
-    expect(AccessLevelSchema.safeParse("OWNER").success).toBe(true);
-  });
-
-  it("rejects invalid access levels", () => {
-    expect(AccessLevelSchema.safeParse("viewer").success).toBe(false); // lowercase
-    expect(AccessLevelSchema.safeParse("ADMIN").success).toBe(false);
-    expect(AccessLevelSchema.safeParse("invalid").success).toBe(false);
   });
 });
 

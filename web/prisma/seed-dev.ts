@@ -21,7 +21,7 @@
  *   just dev-seed
  */
 
-import { PrismaClient, UserStatus, AccessLevel } from "../src/generated/prisma/client";
+import { PrismaClient, UserStatus, CatalogRole } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { TEST_USERS } from "./test-data";
 import { syncSeedPendingAdmissions } from "./seed-pending-admissions";
@@ -46,11 +46,16 @@ const ADMIN = {
 
 // Other users get pending admissions (they will be created via Better Auth when they log in)
 const INVITED_USERS = [
-  { email: TEST_USERS.owner.email, name: TEST_USERS.owner.name, catalogAccess: "OWNER" as AccessLevel },
-  { email: TEST_USERS.editor.email, name: TEST_USERS.editor.name, catalogAccess: "EDITOR" as AccessLevel },
-  { email: TEST_USERS.member.email, name: TEST_USERS.member.name, catalogAccess: "MEMBER" as AccessLevel },
-  { email: TEST_USERS.viewer.email, name: TEST_USERS.viewer.name, catalogAccess: "VIEWER" as AccessLevel },
-  { email: TEST_USERS.listener.email, name: TEST_USERS.listener.name, catalogAccess: "LISTENER" as AccessLevel },
+  {
+    email: TEST_USERS.owner.email,
+    name: TEST_USERS.owner.name,
+    role: "host" as CatalogRole,
+    extraPermissions: ["download_transcripts"],
+  },
+  { email: TEST_USERS.editor.email, name: TEST_USERS.editor.name, role: "curator" as CatalogRole },
+  { email: TEST_USERS.member.email, name: TEST_USERS.member.name, role: "reader" as CatalogRole },
+  { email: TEST_USERS.viewer.email, name: TEST_USERS.viewer.name, role: "reader" as CatalogRole },
+  { email: TEST_USERS.listener.email, name: TEST_USERS.listener.name, role: "listener" as CatalogRole },
   { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name },
   { email: TEST_USERS.mutation.email, name: TEST_USERS.mutation.name },
   { email: TEST_USERS.pending.email, name: TEST_USERS.pending.name },
@@ -142,11 +147,12 @@ async function main() {
         email: userData.email,
         createdById: superadmin.id,
         createdAt: new Date(),
-        catalogId: userData.catalogAccess ? defaultCatalog?.id ?? null : null,
-        accessLevel: userData.catalogAccess || null,
+        catalogId: userData.role ? defaultCatalog?.id ?? null : null,
+        role: userData.role ?? null,
+        extraPermissions: userData.extraPermissions,
         notes: `Test user: ${userData.name}`,
       });
-      console.log(`  ✓ ${userData.email}${userData.catalogAccess ? ` (${userData.catalogAccess})` : ""}`);
+      console.log(`  ✓ ${userData.email}${userData.role ? ` (${userData.role})` : ""}`);
     }
 
     console.log("\n=== Seed Complete ===\n");

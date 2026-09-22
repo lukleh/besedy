@@ -1,0 +1,99 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
+
+const { isPublishedVisibleEvent, logAccessDenied, requireCatalogEventsAccess } = vi.hoisted(() => ({
+  isPublishedVisibleEvent: vi.fn(),
+  logAccessDenied: vi.fn(),
+  requireCatalogEventsAccess: vi.fn(),
+}));
+
+vi.mock("@/lib/catalog-events/access", () => ({ requireCatalogEventsAccess }));
+vi.mock("@/lib/catalog-events/visibility", () => ({ isPublishedVisibleEvent }));
+vi.mock("@/lib/audit/logger", () => ({ logAccessDenied }));
+vi.mock("@/lib/db", () => ({ default: {} }));
+
+import { requireEventArtworkAccess } from "@/lib/event-artwork-access";
+
+describe("event artwork access", () => {
+  const catalogId = "20260919_120000";
+  const eventId = 7;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPublishedVisibleEvent.mockResolvedValue(true);
+  });
+
+  it("does not let an additive artwork permission reveal an unreleased event", async () => {
+    const catalogGrant = {
+      ...grantForRole("listener"),
+      extras: ["manage_event_artwork" as const],
+    };
+    requireCatalogEventsAccess.mockResolvedValue({
+      userId: "listener-1",
+      catalogGrant,
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant,
+        isCatalogAdmin: false,
+      },
+    });
+    isPublishedVisibleEvent.mockResolvedValue(false);
+
+    await expect(requireEventArtworkAccess(catalogId, eventId, "manage")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(logAccessDenied).toHaveBeenCalledWith(
+      "listener-1",
+      "event_artwork",
+      String(eventId),
+      expect.objectContaining({
+        reason: "Event is outside the actor's visibility scope",
+      })
+    );
+  });
+
+  it("allows the same capability for a listener-visible event", async () => {
+    const catalogGrant = {
+      ...grantForRole("listener"),
+      extras: ["manage_event_artwork" as const],
+    };
+    requireCatalogEventsAccess.mockResolvedValue({
+      userId: "listener-1",
+      catalogGrant,
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant,
+        isCatalogAdmin: false,
+      },
+    });
+
+    await expect(requireEventArtworkAccess(catalogId, eventId, "manage")).resolves.toEqual({
+      userId: "listener-1",
+    });
+    expect(isPublishedVisibleEvent).toHaveBeenCalledWith({}, catalogId, eventId);
+  });
+
+  it("does not query listener visibility for an actor who can see unreleased events", async () => {
+    const catalogGrant = grantForRole("curator");
+    requireCatalogEventsAccess.mockResolvedValue({
+      userId: "owner-1",
+      catalogGrant,
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant,
+        isCatalogAdmin: false,
+      },
+    });
+
+    await expect(requireEventArtworkAccess(catalogId, eventId, "publish")).resolves.toEqual({
+      userId: "owner-1",
+    });
+    expect(isPublishedVisibleEvent).not.toHaveBeenCalled();
+  });
+});

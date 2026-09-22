@@ -26,8 +26,9 @@ interface CatalogScopeResolution {
  * Resolve the catalog these lookups belong to.
  *
  * Lookups are per catalog, so every read is filtered by the resolved catalog and
- * every write both requires edit rights on it and files the row under it. Edit
- * rights are `canEditMetadata` on this catalog, not editor anywhere.
+ * every write both requires `manage_lookups` on it and files the row under it.
+ * That is the permission ADR 0007 names for these rows; it is not
+ * `edit_metadata`, which is the curated metadata of one recording.
  */
 async function resolveCatalogScope(
   request: NextRequest,
@@ -51,11 +52,11 @@ async function resolveCatalogScope(
   return {
     groupId: group.id,
     catalogHashes: await loadCatalogHashes(group.id),
-    canEdit: capability.canEditMetadata,
+    canEdit: capability.canManageLookups,
   };
 }
 
-/** Resolve the scope for a write, refusing when the actor may not edit here. */
+/** Resolve the scope for a write, refusing when the actor may not manage lookups here. */
 async function resolveEditScope(
   request: NextRequest
 ): Promise<CatalogScopeResolution> {
@@ -63,7 +64,10 @@ async function resolveEditScope(
   const scope = await resolveCatalogScope(request, userId);
   if (scope.response) return scope;
   if (!scope.canEdit) {
-    return { ...scope, response: forbidden("Editor access to this catalog required") };
+    return {
+      ...scope,
+      response: forbidden("Lookup-management permission required to edit catalog lookups"),
+    };
   }
   return scope;
 }

@@ -5,6 +5,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { requireCatalogManagementAccess } from "@/lib/access/catalog-management-route-access";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
+import { canManageEventSources } from "@/lib/policy/event";
 import { IntIdSchema, validateParams } from "@/lib/api/validation";
 import { validatePath } from "@/lib/security/path-validation";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
@@ -21,6 +22,9 @@ import type {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const SOURCES_DENIED_MESSAGE =
+  "Event-sources permission required to manage event sources";
 
 const MAX_UPLOAD_BYTES = 100 * 1000 * 1000; // 100 MB
 
@@ -95,8 +99,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       userId,
       auditResource: "event_sources",
       auditResourceId: String(eventId),
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      deniedMessage: SOURCES_DENIED_MESSAGE,
+      deniedReason: SOURCES_DENIED_MESSAGE,
+      authorize: canManageEventSources,
     });
     if (!access.ok) {
       return access.response;
@@ -143,8 +148,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       userId,
       auditResource: "event_sources",
       auditResourceId: String(eventId),
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      deniedMessage: SOURCES_DENIED_MESSAGE,
+      deniedReason: SOURCES_DENIED_MESSAGE,
+      authorize: canManageEventSources,
     });
     if (!access.ok) {
       return access.response;

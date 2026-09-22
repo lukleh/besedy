@@ -64,10 +64,6 @@ vi.mock("@/components/google-translate-warning", () => ({
   GoogleTranslateWarning: () => <div data-testid="google-translate-warning" />,
 }));
 
-vi.mock("@/components/offline-banner", () => ({
-  OfflineBanner: () => <div data-testid="offline-banner" />,
-}));
-
 vi.mock("@/components/pwa/install-banner", () => ({
   InstallBanner: () => <div data-testid="install-banner" />,
 }));

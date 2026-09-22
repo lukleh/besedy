@@ -20,12 +20,13 @@ export async function setOffline(context: BrowserContext, offline: boolean): Pro
   await context.setOffline(offline);
 }
 
-export async function waitForOfflineBanner(page: Page, timeout = 5000): Promise<void> {
-  await page.getByTestId("offline-banner").waitFor({ state: "visible", timeout });
+/** The crossed-Wi-Fi indicator in the header, the app's single connectivity cue. */
+export async function waitForOfflineIndicator(page: Page, timeout = 5000): Promise<void> {
+  await page.getByTestId("offline-indicator").waitFor({ state: "visible", timeout });
 }
 
-export async function waitForOfflineBannerGone(page: Page, timeout = 5000): Promise<void> {
-  await expect(page.getByTestId("offline-banner")).not.toBeVisible({ timeout });
+export async function waitForOfflineIndicatorGone(page: Page, timeout = 5000): Promise<void> {
+  await expect(page.getByTestId("offline-indicator")).not.toBeVisible({ timeout });
 }
 
 /** The first visible download button on the page (player, card, or event header). */

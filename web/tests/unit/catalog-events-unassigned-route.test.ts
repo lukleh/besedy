@@ -40,7 +40,6 @@ describe("catalog events unassigned route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "admin-user",
-      accessLevel: "OWNER",
     });
     mockedPrisma.workflowGroup.findFirst.mockResolvedValue({ id: catalogId });
   });

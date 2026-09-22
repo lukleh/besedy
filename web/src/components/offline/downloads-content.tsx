@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertCircle,
@@ -12,7 +11,6 @@ import {
   Pause,
   Play,
   Trash2,
-  WifiOff,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -33,48 +31,20 @@ import { formatPartialDate } from '@/lib/date-format';
 import { formatBytes } from '@/lib/format-bytes';
 import {
   downloadManager,
+  INCOMPLETE_PACKAGE_ERROR,
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
 import { cn } from '@/lib/utils';
 import { CircularBackLink } from '@/components/navigation/circular-back-control';
-import { OfflineDownloadDetail } from './download-detail';
 import { SessionOrdinalBadge } from '@/components/catalog/session-ordinal-badge';
 
 export function DownloadsContent() {
   const t = useTranslations('downloads');
   const locale = useLocale();
-  const searchParams = useSearchParams();
-  const redirectedFrom = searchParams.get('from');
-  const [selectedKey, setSelectedKey] = useState<string | null>(() =>
-    searchParams.get('item'),
-  );
   const { records, supported, hydrated, storage, activeKey } =
     useDownloadManager();
   const { isInstalled } = useInstallPrompt();
   const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      setSelectedKey(new URL(window.location.href).searchParams.get('item'));
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const setSelectedDownload = useCallback((key: string | null) => {
-    const url = new URL(window.location.href);
-    if (key) {
-      url.searchParams.set('item', key);
-    } else {
-      url.searchParams.delete('item');
-    }
-    window.history.pushState({}, '', url);
-    setSelectedKey(key);
-  }, []);
-
-  const selectedRecord = selectedKey
-    ? (records.find((record) => record.key === selectedKey) ?? null)
-    : null;
 
   const groups = useMemo(() => {
     const byCatalog = new Map<string, DownloadRecord[]>();
@@ -99,15 +69,6 @@ export function DownloadsContent() {
     0,
   );
 
-  if (selectedKey && hydrated) {
-    return (
-      <OfflineDownloadDetail
-        record={selectedRecord}
-        onBack={() => setSelectedDownload(null)}
-      />
-    );
-  }
-
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       <header className="flex items-start gap-3">
@@ -125,17 +86,6 @@ export function DownloadsContent() {
           <p className="text-sm text-muted-foreground">{t('description')}</p>
         </div>
       </header>
-
-      {redirectedFrom && (
-        <div
-          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
-          role="status"
-          data-testid="downloads-offline-redirect"
-        >
-          <WifiOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>{t('offlineRedirect')}</span>
-        </div>
-      )}
 
       {hydrated && !supported && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
@@ -213,7 +163,7 @@ export function DownloadsContent() {
                     record={record}
                     isActive={record.key === activeKey}
                     locale={locale}
-                    onOpen={() => setSelectedDownload(record.key)}
+                    href={recordPageUrl(record)}
                   />
                 ))}
               </div>
@@ -246,14 +196,26 @@ export function DownloadsContent() {
   );
 }
 
+/** The normal page for a download: the event page, or the recording page. */
+export function recordPageUrl(record: DownloadRecord): string {
+  const eventId = record.eventKey
+    ? Number(record.eventKey.slice(record.catalogId.length + 1))
+    : record.event?.id;
+  if (eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0) {
+    return `/catalog/${record.catalogId}/event/${eventId}`;
+  }
+  return `/catalog/${record.catalogId}/recording/${record.hash}`;
+}
+
 interface DownloadCardProps {
   record: DownloadRecord;
   isActive: boolean;
   locale: string;
-  onOpen: () => void;
+  /** The normal page for this download. */
+  href: string;
 }
 
-function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
+function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
   const t = useTranslations('downloads');
   const event = record.event;
   const recording = record.recording;
@@ -360,7 +322,11 @@ function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
             {recording?.durationHms && <span>{recording.durationHms}</span>}
             {sizeLabel && <span>{sizeLabel}</span>}
             {record.error && (
-              <span className="text-destructive">{record.error}</span>
+              <span className="text-destructive">
+                {record.error === INCOMPLETE_PACKAGE_ERROR
+                  ? t('errorIncompletePackage')
+                  : record.error}
+              </span>
             )}
           </div>
           {(record.status === 'downloading' ||
@@ -383,9 +349,13 @@ function DownloadCard({ record, isActive, locale, onOpen }: DownloadCardProps) {
 
         <div className="flex shrink-0 items-center gap-2">
           {record.status === 'complete' && (
-            <Button size="sm" variant="default" onClick={onOpen}>
-              <Play className="mr-2 h-4 w-4" />
-              {t('open')}
+            // A document navigation: Downloads lives in its own root layout,
+            // and the worker serves the target from local packages offline.
+            <Button size="sm" variant="default" asChild>
+              <a href={href}>
+                <Play className="mr-2 h-4 w-4" />
+                {t('open')}
+              </a>
             </Button>
           )}
           {(record.status === 'downloading' || record.status === 'queued') && (

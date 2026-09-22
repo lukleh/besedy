@@ -65,7 +65,6 @@ import {
   pendingUsersResponseSchema,
   type PendingCatalogGrant,
   type PendingUsersResponse,
-  resolvedCatalogRole,
 } from "./catalog-settings-content-types";
 
 export default function CatalogSettingsContent({
@@ -380,7 +379,7 @@ export default function CatalogSettingsContent({
   // Open edit dialog for pending user
   const openEditPendingDialog = (pendingUser: PendingCatalogGrant) => {
     setEditPendingForm({
-      role: resolvedCatalogRole(pendingUser.role, pendingUser.accessLevel),
+      role: pendingUser.role,
       extraPermissions: pendingUser.extraPermissions.filter((permission) =>
         grantableExtraPermissions.includes(
           permission as GrantableExtraPermission
@@ -464,13 +463,11 @@ export default function CatalogSettingsContent({
     );
   };
 
-  // Count by role (only ACTIVE users). Legacy rows are resolved for the
-  // migration window, but new writes always carry a role.
+  // Count by role (only ACTIVE users).
   const countByRole = (role: CatalogRole) =>
     data?.accessList?.filter(
       (grant) =>
-        grant.status === "ACTIVE" &&
-        resolvedCatalogRole(grant.role, grant.accessLevel) === role
+        grant.status === "ACTIVE" && grant.role === role
     ).length ?? 0;
 
   // Count total active users

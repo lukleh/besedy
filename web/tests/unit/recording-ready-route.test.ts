@@ -67,7 +67,7 @@ describe("recording ready route", () => {
     requireCatalogManagementAccess.mockResolvedValue({
       ok: false,
       response: new Response(
-        JSON.stringify({ error: "Only owner/admin can update publication state" }),
+        JSON.stringify({ error: "Publish-recording permission required to change recording publication state" }),
         {
           status: 403,
           headers: { "Content-Type": "application/json" },

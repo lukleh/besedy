@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { canManageEventSources } from "@/lib/policy/event";
 import { GET as listEventSources } from "@/app/api/catalogs/[id]/events/[eventId]/sources/route";
 
 vi.mock("@/lib/catalog-events/access", () => ({
@@ -55,14 +56,16 @@ describe("catalog event sources route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "viewer-1",
-      accessLevel: "VIEWER",
     });
     requireCatalogManagementAccess.mockResolvedValue({
       ok: false,
-      response: new Response(JSON.stringify({ error: "Access denied to sources" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }),
+      response: new Response(
+        JSON.stringify({ error: "Event-sources permission required to manage event sources" }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }
+      ),
     });
   });
 
@@ -77,8 +80,9 @@ describe("catalog event sources route", () => {
       userId: "viewer-1",
       auditResource: "event_sources",
       auditResourceId: String(eventId),
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      deniedMessage: "Event-sources permission required to manage event sources",
+      deniedReason: "Event-sources permission required to manage event sources",
+      authorize: canManageEventSources,
     });
     expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
     expect(readEventSources).not.toHaveBeenCalled();

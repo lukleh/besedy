@@ -33,7 +33,7 @@ vi.mock(
 
 import { executeCatalogLexicalSearch } from '@/app/api/catalogs/[id]/search/search-service';
 import { getSearchConfig } from '@/app/api/catalogs/[id]/search/search-route-helpers';
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 describe('catalog lexical search service', () => {
   beforeEach(() => {
@@ -86,14 +86,15 @@ describe('catalog lexical search service', () => {
       limit: 50,
       maxPerAudio: 10,
       metadataFilters: filters,
-      catalogGrant: grantFromLevel('VIEWER'),
+      catalogGrant: grantForRole('reader'),
       config,
     });
 
     expect(mocks.buildEligibleAudioHashesQuery).toHaveBeenCalledWith(
       'catalog-a',
-      grantFromLevel('VIEWER'),
+      grantForRole('reader'),
       filters,
+      { primaryRecordingsOnly: true },
     );
     expect(mocks.queryRaw).toHaveBeenCalledWith({ query: 'eligible' });
     expect(mocks.queryLexicalService).toHaveBeenCalledWith(
@@ -123,5 +124,59 @@ describe('catalog lexical search service', () => {
         citation: { workflowGroupId: 'catalog-a' },
       },
     ]);
+  });
+
+  it('searches secondary recordings only when the caller opts out of the primary restriction', async () => {
+    const config = getSearchConfig();
+
+    await executeCatalogLexicalSearch({
+      catalogId: 'catalog-a',
+      query: 'literal evidence',
+      matchMode: 'phrase',
+      limit: 50,
+      maxPerAudio: 10,
+      metadataFilters: { includeSecondaryRecordings: true },
+      catalogGrant: grantForRole('reader'),
+      config,
+    });
+    expect(mocks.buildEligibleAudioHashesQuery).toHaveBeenLastCalledWith(
+      'catalog-a',
+      grantForRole('reader'),
+      { includeSecondaryRecordings: true },
+      { primaryRecordingsOnly: false },
+    );
+
+    await executeCatalogLexicalSearch({
+      catalogId: 'catalog-a',
+      query: 'literal evidence',
+      matchMode: 'phrase',
+      limit: 50,
+      maxPerAudio: 10,
+      metadataFilters: { audioHashes: ['b'.repeat(64)] },
+      catalogGrant: grantForRole('reader'),
+      config,
+    });
+    expect(mocks.buildEligibleAudioHashesQuery).toHaveBeenLastCalledWith(
+      'catalog-a',
+      grantForRole('reader'),
+      { audioHashes: ['b'.repeat(64)] },
+      { primaryRecordingsOnly: false },
+    );
+
+    await executeCatalogLexicalSearch({
+      catalogId: 'catalog-a',
+      query: 'literal evidence',
+      matchMode: 'phrase',
+      limit: 50,
+      maxPerAudio: 10,
+      catalogGrant: grantForRole('reader'),
+      config,
+    });
+    expect(mocks.buildEligibleAudioHashesQuery).toHaveBeenLastCalledWith(
+      'catalog-a',
+      grantForRole('reader'),
+      null,
+      { primaryRecordingsOnly: true },
+    );
   });
 });

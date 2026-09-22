@@ -1,0 +1,106 @@
+# ADR 0011: Rename "poster" to "artwork" (Czech: "obálka")
+
+- **Status:** Accepted
+- **Date:** 2026-09-20
+- **Canonical references:** [Versioned event posters and publication](0009-event-poster-publication.md), [Event page draft poster preview](0010-event-page-draft-poster-preview.md)
+
+## Context
+
+ADR 0009 named this concept "poster." It is not a poster in the print sense —
+it is cover art for a recording/event, the same kind of asset a podcast or
+album calls its "artwork." "Poster" reads as a promotional print, which is not
+what candidates, publication, or the presentation rules in ADR 0009 describe.
+
+The Czech UI used "plakát" (poster), which carries the same mismatch and is
+grammatically masculine.
+
+## Decision
+
+Rename the concept, everywhere it appears, without changing the architecture
+ADR 0009 established:
+
+- English: "poster" → "artwork".
+- Czech: "plakát" → "obálka" (feminine — every Czech string was rewritten for
+  gender agreement, not word-substituted; e.g. "Plakát byl zveřejněn" →
+  "Obálka byla zveřejněna").
+- Prisma models `CatalogEventPoster` / `CatalogEventPosterPublication` →
+  `CatalogEventArtwork` / `CatalogEventArtworkPublication`; tables
+  `catalog_event_poster(_publication)` → `catalog_event_artwork(_publication)`;
+  column `poster_id` → `artwork_id`.
+- `AuditAction` enum values `EVENT_POSTER_*` → `EVENT_ARTWORK_*`, renamed in
+  place (`ALTER TYPE ... RENAME VALUE`). The pre-rename audit rows under those
+  actions are dropped by the migration; see below.
+- Permissions `manage_event_posters` / `publish_event_posters` →
+  `manage_event_artwork` / `publish_event_artwork` (singular — "artwork" is
+  normally a mass noun, unlike the countable "posters" it replaces). Existing
+  grants are rewritten in the same migration, not reissued.
+- API routes `/poster`, `/posters`, `/poster-publication` → `/artwork`,
+  `/artworks`, `/artwork-publication`; page route `.../event/[eventId]/poster`
+  → `.../artwork`. No external or mobile consumer calls these routes, so this
+  is a clean-break rename with no redirect or alias.
+- On-disk layout `posters_<catalogId>/events/<eventId>/<id>/{square,landscape}`
+  → `artwork_<catalogId>/...`; env var `POSTERS_DIR` / TOML `posters_dir` →
+  `ARTWORK_DIR` / `artwork_dir`.
+- CLI `web/scripts/posters.ts` (`just posters`) → `web/scripts/artwork.ts`
+  (`just artwork`).
+- Deleted (not renamed): ~30 `recording.poster*` i18n keys and
+  `catalog.filters.*Posters*` keys left over from an earlier single-image
+  upload UI that ADR 0009 already superseded, with zero remaining consumers.
+
+Everything ADR 0009 decided about candidates, publication, permissions,
+presentation, and the local CLI's authority model still applies under the new
+names; this ADR only retires "poster" as the name for it.
+
+Per `docs/adr/README.md`'s own rule, ADR 0009 and every other historical ADR
+that mentions "poster" in passing (0003, 0005, 0006) keep that wording
+unchanged — they describe decisions as understood at the time, and are not
+retroactively rewritten to look like "artwork" was the original name. This
+ADR is the sole record of the rename. Living, non-ADR documentation
+(`docs/web/operations.md`, `data-and-database.md`, `permission-rework.md`,
+`offline.md`) is updated in place instead, since it documents current
+behavior rather than a past decision.
+
+The configuration rename is a hard cut with no compatibility read.
+`getArtworkDir()` (`web/src/lib/config.ts`) resolves only `artwork_dir` /
+`ARTWORK_DIR`, and `docker-compose.yml` mounts the artwork volume only from
+`ARTWORK_DIR` at `/data/artwork`. A deployment whose untracked TOML or env file
+still carries `posters_dir` / `POSTERS_DIR` fails loudly at the first artwork
+request instead of resolving to a path the container no longer mounts. The
+operator steps to rename both, and the host directory, are in
+`docs/web/operations.md` under "Event artwork cutover".
+
+## Migration
+
+This lands after ADR 0009's production cutover (2026-09-19), so real rows and
+files exist. One hand-written migration
+(`20260920160000_rename_event_poster_to_artwork`) renames tables, the column,
+constraints, indexes, and the enum values in place, and rewrites the
+`extra_permissions` arrays that encode the permission names as data. The few
+pre-rename artwork audit rows (four `EVENT_POSTER_CREATED` entries from the
+2026-09-19 import) are deleted rather than rewritten: their `details` carry
+the old name in field names and generated text next to user-entered labels,
+and editing audit history in place is not worth the risk for four rows whose
+subject candidates still exist. A companion script, `scripts/migrate-artwork-storage.ts`, does
+the equivalent one-level directory rename on disk. Both are idempotent and run
+inside the same deploy downtime window as the migration, filesystem first (no
+transactional rollback there, so a failure there aborts before any schema
+change).
+
+ADR 0009 also named a pending follow-up cleanup (retiring the `inventory` and
+`import-legacy` CLI subcommands and the poster branch of
+`migrate-recording-assets-to-events.ts`). That cleanup is independent of this
+rename and still outstanding; expect its diff to need re-basing over the new
+names once it lands.
+
+## Consequences
+
+- No behavior changes; every rename here is 1:1 with ADR 0009's design.
+- The one-time storage and database migrations must be sequenced together at
+  deploy time, in the same downtime window `just prod-apply` already uses.
+- Anyone with a bookmarked `/poster`-family URL or a script hard-coding the
+  old permission strings needs to update it; none were found in this
+  repository outside the app itself.
+- The offline downloads IndexedDB schema bumps to version 5 to rewrite the
+  renamed field names (`hasPoster`, `event.publishedPoster`, bundle `poster`)
+  on records already saved by installed clients; without it, previously
+  downloaded artwork would silently stop showing and never re-fetch.

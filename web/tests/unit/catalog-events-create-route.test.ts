@@ -10,10 +10,6 @@ vi.mock("@/lib/catalog-events/visibility", () => ({
   getPublishedVisibleEventIds: vi.fn(),
 }));
 
-vi.mock("@/lib/event-posters", () => ({
-  getPosterStatus: vi.fn(),
-}));
-
 vi.mock("@/lib/event-sources", () => ({
   readEventSources: vi.fn(),
 }));
@@ -80,7 +76,6 @@ describe("catalog events create route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "admin-user",
-      accessLevel: "OWNER",
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: catalogId });
     prisma.location.findFirst.mockResolvedValue({ id: 7, name: "Praha" });

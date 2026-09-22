@@ -3,7 +3,6 @@ import prisma from "@/lib/db";
 import { UserIdParamSchema } from "@/lib/validation/schemas";
 import { validateParams, notFound, handlePrismaError } from "@/lib/api";
 import { requireAdminCapability } from "@/lib/access/require-admin";
-import { roleForLevel } from "@/lib/policy/catalog-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +37,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       where: { userId: id, status: "ACTIVE" },
       select: {
         catalogId: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         catalog: {
@@ -52,8 +50,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const result = catalogAccess.map((access) => ({
       catalogId: access.catalogId,
       catalogLabel: access.catalog.label,
-      accessLevel: access.accessLevel,
-      role: access.role ?? roleForLevel(access.accessLevel).role,
+      role: access.role,
       extraPermissions: access.extraPermissions ?? [],
     }));
 

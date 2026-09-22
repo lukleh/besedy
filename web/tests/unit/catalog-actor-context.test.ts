@@ -26,7 +26,6 @@ describe("catalog actor context", () => {
   it("recognizes a stored catalog_admin role as catalog administration", async () => {
     const prisma = (await import("@/lib/db")).default;
     vi.mocked(prisma.catalogAccess.findUnique).mockResolvedValue({
-      accessLevel: "OWNER",
       role: "catalog_admin",
       extraPermissions: [],
       status: "ACTIVE",

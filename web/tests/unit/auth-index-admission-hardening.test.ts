@@ -235,7 +235,7 @@ describe("auth admission hardening", () => {
       grants: [
         {
           catalogId: "20260101_000000",
-          accessLevel: "EDITOR",
+          role: "curator",
           grantedById: "owner-1",
           notes: "catalog grant",
         },
@@ -267,7 +267,7 @@ describe("auth admission hardening", () => {
         portalAdmissionId: "portal-1",
         pendingGrantCount: 1,
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
       }),
     });
   });

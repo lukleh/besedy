@@ -242,8 +242,10 @@ test.describe("Pending Admission Management", () => {
       await expect(grantButton).toBeVisible({ timeout: 10000 });
       await grantButton.click();
 
-      // Dialog opens
-      const dialog = page.locator('[role="dialog"]');
+      // Dialog opens. Scope by accessible title: a raw `[role="dialog"]`
+      // match can collide with the success toast (also role=dialog on
+      // mobile's Vaul drawer) once the invite completes.
+      const dialog = page.getByRole("dialog", { name: /grant catalog access/i });
       await expect(dialog).toBeVisible({ timeout: 5000 });
 
       // User search combobox is visible
@@ -254,10 +256,90 @@ test.describe("Pending Admission Management", () => {
       await userSearch.fill(email);
       await page.getByRole("button", { name: `Invite ${email}` }).click();
 
+      // Wait for the invite form to actually mount before asserting the
+      // extras fieldset is absent, otherwise the assertion below is
+      // satisfied just as well by "not rendered yet".
+      await expect(dialog.getByLabel("Notes")).toBeVisible();
       await expect(
         dialog.getByRole("group", { name: "Additional permissions" })
       ).toHaveCount(0);
+
+      // A catalog admin's role select carries the full role vocabulary,
+      // unlike the narrower host list asserted in the owner test below.
+      await expect(
+        dialog.getByText(
+          "You can grant: Listener, Reader, Corrector, Host, Curator, Catalog admin."
+        )
+      ).toBeVisible();
+
       const inviteButton = dialog.getByRole("button", { name: "Invite User" });
+      // Explicitly scroll first: the footer sits inside a scrollable dialog
+      // body on narrow viewports (see #143), so scrollIntoViewIfNeeded()
+      // exercises the same path a real user's scroll would, and
+      // toBeInViewport() still catches a regression where the button
+      // can't be reached at all.
+      await inviteButton.scrollIntoViewIfNeeded();
+      await expect(inviteButton).toBeInViewport();
+      await inviteButton.click();
+
+      await expect(dialog).toBeHidden();
+      await expect(
+        page.getByTestId("pending-users-table").getByText(email)
+      ).toBeVisible({ timeout: 10000 });
+    });
+
+    test("owner can invite a user with a role-only grant", async ({
+      page,
+    }) => {
+      await loginAs(page, "owner");
+
+      // Navigate to catalog settings
+      await page.goto(URLS.catalogSettings);
+      await waitForPageReady(page);
+
+      // Click grant access button
+      const grantButton = page.getByRole("button", { name: /grant access/i });
+      await expect(grantButton).toBeVisible({ timeout: 10000 });
+      await grantButton.click();
+
+      // Dialog opens. Scope by accessible title: a raw `[role="dialog"]`
+      // match can collide with the success toast (also role=dialog on
+      // mobile's Vaul drawer) once the invite completes.
+      const dialog = page.getByRole("dialog", { name: /grant catalog access/i });
+      await expect(dialog).toBeVisible({ timeout: 5000 });
+
+      // User search combobox is visible
+      const userSearch = dialog.getByRole("combobox").first();
+      await expect(userSearch).toBeVisible({ timeout: 5000 });
+
+      const email = uniqueEmail("owner-role-only-dialog");
+      await userSearch.fill(email);
+      await page.getByRole("button", { name: `Invite ${email}` }).click();
+
+      // Wait for the invite form to mount before asserting on it.
+      await expect(dialog.getByLabel("Notes")).toBeVisible();
+
+      // The extras fieldset is absent here for the same reason as the
+      // admin test above, not because of host policy: GrantAccessDialog
+      // never wires canManageExtras into AccessFormFields for any actor
+      // (removed in #136), so this assertion isn't host-specific. The
+      // host-vs-admin difference is the role list asserted below.
+      await expect(
+        dialog.getByRole("group", { name: "Additional permissions" })
+      ).toHaveCount(0);
+
+      // A host's role select is narrower than a catalog admin's: only the
+      // roles that carry no protected permission (manage_access,
+      // see_unreleased) are offered, so Host/Curator/Catalog admin are
+      // absent.
+      await expect(
+        dialog.getByText("You can grant: Listener, Reader, Corrector.")
+      ).toBeVisible();
+
+      const inviteButton = dialog.getByRole("button", { name: "Invite User" });
+      // See the admin test above for why this scrolls explicitly instead
+      // of just checking visibility.
+      await inviteButton.scrollIntoViewIfNeeded();
       await expect(inviteButton).toBeInViewport();
       await inviteButton.click();
 

@@ -5,6 +5,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { requireCatalogManagementAccess } from "@/lib/access/catalog-management-route-access";
 import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
+import { canManageEventSources } from "@/lib/policy/event";
 import { IntIdSchema, validateParams } from "@/lib/api/validation";
 import { validatePathAsync } from "@/lib/security/path-validation";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
@@ -17,6 +18,9 @@ import type { RecordingSourceFile } from "@/types/recording-sources";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const SOURCES_DENIED_MESSAGE =
+  "Event-sources permission required to manage event sources";
 
 const SourceIdSchema = z.string().min(1).max(200);
 const UrlPayloadSchema = z.object({
@@ -90,8 +94,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       userId,
       auditResource: "event_sources",
       auditResourceId: String(eventId),
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      deniedMessage: SOURCES_DENIED_MESSAGE,
+      deniedReason: SOURCES_DENIED_MESSAGE,
+      authorize: canManageEventSources,
     });
     if (!access.ok) {
       return access.response;
@@ -173,8 +178,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       userId,
       auditResource: "event_sources",
       auditResourceId: String(eventId),
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      deniedMessage: SOURCES_DENIED_MESSAGE,
+      deniedReason: SOURCES_DENIED_MESSAGE,
+      authorize: canManageEventSources,
     });
     if (!access.ok) {
       return access.response;
@@ -263,8 +269,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       userId,
       auditResource: "event_sources",
       auditResourceId: String(eventId),
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      deniedMessage: SOURCES_DENIED_MESSAGE,
+      deniedReason: SOURCES_DENIED_MESSAGE,
+      authorize: canManageEventSources,
     });
     if (!access.ok) {
       return access.response;

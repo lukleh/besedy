@@ -9,13 +9,13 @@
   }
 }
 
-.event-poster-frame {
+.event-artwork-frame {
   aspect-ratio: 1 / 1;
 }
 
 @media (min-width: 1024px),
   (min-width: 768px) and (min-height: 500px) and (orientation: landscape) {
-  .event-poster-frame {
+  .event-artwork-frame {
     aspect-ratio: 16 / 9;
   }
 }

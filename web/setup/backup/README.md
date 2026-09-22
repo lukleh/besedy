@@ -4,7 +4,7 @@ Besedy uses two host-side rsnapshot roots.
 
 - `rsnapshot_projects` at `/mnt/data/<user>/Backups/rsnapshot`
   - generic backup of `/home/<user>/projects`
-  - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_posters`, and `projects/besedy_sources`
+  - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_artwork`, and `projects/besedy_sources`
 - `rsnapshot_besedy_extra` at `/mnt/data/<user>/Backups/rsnapshot_besedy_extra`
   - Besedy-specific non-project paths that are not covered by the generic project backup
 

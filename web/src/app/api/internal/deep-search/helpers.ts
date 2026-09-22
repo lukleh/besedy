@@ -3,7 +3,7 @@ import prisma from "@/lib/db";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
-  canViewRecordingForAccessLevel,
+  canViewRecordingForGrant,
   requiresReadyRecordingScope,
 } from "@/lib/policy/recording";
 import { authorizeJobServiceRequest } from "@/lib/security/job-service-auth";
@@ -60,7 +60,7 @@ export async function deepSearchJobCanSeeRecording(
     select: { isActionable: true, isPublished: true },
   });
 
-  return !!entry && canViewRecordingForAccessLevel(grant, entry);
+  return !!entry && canViewRecordingForGrant(grant, entry);
 }
 
 export async function catalogExists(catalogId: string): Promise<boolean> {

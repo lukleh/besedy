@@ -1,4 +1,3 @@
-import type { AccessLevel } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import {
   hasSystemCatalogAuthority,
@@ -7,7 +6,6 @@ import {
 
 type CatalogAccessEntry = {
   catalogId: string;
-  accessLevel: AccessLevel;
 };
 
 export async function listUserCatalogAccessEntries(
@@ -25,7 +23,6 @@ export async function listUserCatalogAccessEntries(
 
     return allCatalogs.map((catalog) => ({
       catalogId: catalog.id,
-      accessLevel: "OWNER" as AccessLevel,
     }));
   }
 
@@ -36,7 +33,6 @@ export async function listUserCatalogAccessEntries(
     },
     select: {
       catalogId: true,
-      accessLevel: true,
     },
   });
 }

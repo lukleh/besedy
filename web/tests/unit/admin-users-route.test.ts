@@ -61,10 +61,10 @@ describe("admin users route", () => {
         activatedAt: new Date(),
         catalogAccess: [
           {
-            accessLevel: "VIEWER",
+            role: "reader",
             catalog: { id: "cat-1", label: "Catalog A" },
           },
-          { accessLevel: "OWNER", catalog: { id: "cat-2", label: null } },
+          { role: "host", catalog: { id: "cat-2", label: null } },
         ],
       },
     ]);

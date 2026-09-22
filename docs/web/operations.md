@@ -81,8 +81,10 @@ catalogs, transcripts, and audio from mounted host paths.
 - [ ] `AUTH_SECRET`
 - [ ] `AUTH_URL` (must match domain and OAuth redirect URI)
 - [ ] `NEXT_PUBLIC_APP_URL` matches `AUTH_URL`
-- [ ] `TEXT_DATA_DIR`, `POSTERS_DIR`, `SOURCES_DIR`
+- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`
 - [ ] `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`
+      (production refuses to render the Compose configuration if any data
+      directory above is unset; there is no fixtures fallback outside dev/test)
 - [ ] `BACKUP_DIR` (outside container mounts)
 - [ ] `WEB_LOGS_DIR` (persisted web logs on host)
 - [ ] `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
@@ -182,30 +184,68 @@ continue; wait for it to finish or cancel it explicitly. If a run races the
 first check, the unchanged web and jobs API containers are restarted without
 migrating.
 
-### Event poster cutover
+### Event artwork cutover
 
 The production cutover completed on 2026-09-19. The fixed recording-scoped
-files were backed up, reviewed, and imported as three unpublished event poster
-candidates. Candidate/file hashes matched, the publication table remained
-empty, and the temporary legacy inventory/import commands were then retired.
-The obsolete `poster_status` table was already absent through migration
-`20260218100000_drop_poster_status`.
+files were backed up, reviewed, and imported as three unpublished event
+artwork candidates. Candidate/file hashes matched, the publication table
+remained empty, and the temporary legacy inventory/import commands were then
+retired. The obsolete `poster_status` table was already absent through
+migration `20260218100000_drop_poster_status`. The concept was later renamed
+from "poster" to "artwork"; see [ADR 0011](../adr/0011-poster-to-artwork-rename.md)
+for the schema, storage, and CLI rename and its own migration
+(`20260920160000_rename_event_poster_to_artwork`), which ran after this
+cutover.
 
-Use the retained poster CLI for normal event poster operations:
+#### ADR 0011 rename cutover
+
+The poster-to-artwork rename is a hard cut: nothing reads `POSTERS_DIR`,
+`posters_dir`, or the `posters_<catalogId>` directory layout after it. The
+storage rename, the config rename, and the database migration must all land in
+one downtime window, in this order. Filesystem first, because it has no
+transactional rollback: a failure there aborts before any schema change.
+
+1. Stop the web container and scheduled backup so nothing writes artwork while
+   paths move, leaving the database up for the migration:
+   `cd web && bash ../scripts/run_web_compose.sh production stop web backup`
+   (the same step `just prod-apply` performs; `just prod-down` would also stop
+   the database).
+2. Rename the host directory and update the operator files outside the checkout:
+   - `mv ~/projects/besedy_posters ~/projects/besedy_artwork`
+   - in the production env file (`CONFIG_FILE`'s sibling `web.env.prod`):
+     replace `POSTERS_DIR=...` with `ARTWORK_DIR=/home/<user>/projects/besedy_artwork`
+   - in the container TOML that `CONFIG_FILE` points at: replace
+     `posters_dir = "/data/posters"` with `artwork_dir = "/data/artwork"`
+3. Rename the per-catalog directories inside the storage root:
+   `just artwork-storage --prod --dry-run`, review, then
+   `just artwork-storage --prod --yes`. The script refuses to touch a root
+   where a prefixed entry is not a plain directory or where both names exist.
+4. `just prod-build`, then `just prod-apply`, which takes the pre-migration
+   backup, runs migration `20260920160000_rename_event_poster_to_artwork`, and
+   restarts web with the renamed mount.
+5. `just artwork-storage --prod --verify` to confirm every
+   `catalog_event_artwork` row's files exist at the renamed paths.
+
+Rolling back before step 4 is `just artwork-storage --prod --reverse --yes`
+plus restoring the two operator files and the host directory name. After step
+4 the database rename has committed; use the pre-migration backup that
+`just prod-apply` takes.
+
+Use the retained artwork CLI for normal event artwork operations:
 
 ```bash
-just posters list --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod
-just posters create --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+just artwork list --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod
+just artwork create --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
   --square <file> --landscape <file> --label <text> --prod --yes
-just posters publish --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
-  --poster <poster-id> --prod --yes
-just posters unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
-just posters delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
-  --poster <poster-id> --prod --yes
+just artwork publish --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --artwork <artwork-id> --prod --yes
+just artwork unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
+just artwork delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --artwork <artwork-id> --prod --yes
 ```
 
-`POSTERS_DIR` must belong to the shared `UPLOADS_GID` group and have mode
-`2770`. Poster writes preserve that shared group on descendant directories and
+`ARTWORK_DIR` must belong to the shared `UPLOADS_GID` group and have mode
+`2770`. Artwork writes preserve that shared group on descendant directories and
 use group-readable files so host-run CLI imports and the web container can read
 each other's candidates.
 
@@ -213,14 +253,14 @@ For host-run commands, the CLI rewrites the container database hostname to the
 published `DB_PORT` binding from the selected environment file. Production
 mutations require the explicit `--yes` confirmation.
 
-To verify that no poster is currently published:
+To verify that no artwork is currently published:
 
 ```sql
-SELECT count(*) AS published_posters
-  FROM catalog_event_poster_publication;
+SELECT count(*) AS published_artwork
+  FROM catalog_event_artwork_publication;
 ```
 
-The result must be zero when the deployment policy requires every poster to
+The result must be zero when the deployment policy requires every artwork to
 remain unpublished.
 
 ### Permissions rework rollout
@@ -274,7 +314,18 @@ Deploy the lookup ownership change separately from the role cutover:
 
    The first two counts must be zero. Compare the grouped mapping with the
    preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
-   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`.
+   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`. This
+   check must run before step 5: once `access_level` is dropped, only the two
+   `role IS NULL` counts remain meaningful.
+5. Once the role-native web release (#151) is live and nothing reads
+   `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
+   plain `just prod-deploy`. It refuses to run while any grant lacks a role,
+   then makes `role` NOT NULL and drops `access_level` and the `AccessLevel`
+   enum. There is no reverse migration, and the previous image alone cannot
+   run against the migrated schema: its claim path still selects
+   `access_level`, so first sign-in for invited users would fail. Roll back
+   with the guarded `prod-rollback` recipe (see Rollback below), which
+   restores the retained pre-migration backup together with the image.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating
@@ -732,7 +783,9 @@ Host-side rsnapshot coverage is intentionally split:
 
 - **Generic project root:** `/mnt/data/<user>/Backups/rsnapshot`
   - backs up `/home/<user>/projects`
-  - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_posters`, and `projects/besedy_sources`
+  - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_artwork`, and `projects/besedy_sources`
+    (`projects/besedy_artwork` is the renamed `projects/besedy_posters`; see the
+    ADR 0011 cutover steps above)
 - **Besedy extra root:** `/mnt/data/<user>/Backups/rsnapshot_besedy_extra`
   - backs up non-project Besedy paths via [web/setup/backup/besedy-extra.paths.example](../../web/setup/backup/besedy-extra.paths.example) (copy to the gitignored `besedy-extra.paths`)
   - includes `audio/besedy_audio`, `audio/original`, `state/db_dumps`, `config/lukleh_besedy`, and `state/web_logs`

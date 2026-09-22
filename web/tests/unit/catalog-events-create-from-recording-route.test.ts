@@ -64,7 +64,6 @@ describe("catalog events create-from-recording route", () => {
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "admin-user",
-      accessLevel: "OWNER",
     });
     prisma.$transaction.mockImplementation(
       async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma)

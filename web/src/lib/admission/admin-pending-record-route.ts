@@ -27,7 +27,6 @@ import {
   CatalogRoleSchema,
   GrantableExtraPermissionSchema,
 } from "@/lib/validation/schemas";
-import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 
 // Owns the admin item-route contract for pending portal admissions.
 // Shared lookup and response-shaping helpers live next door so this file stays
@@ -348,10 +347,7 @@ export async function patchAdminPendingRecord(
         resourceId: `${canonicalEmail}:${normalizedCatalogId}`,
         email: canonicalEmail,
         catalogId: normalizedCatalogId,
-        accessLevel: grantFieldsForRole(
-          normalizedRole!,
-          normalizedExtraPermissions
-        ).accessLevel,
+        role: normalizedRole,
         details: {
           email: canonicalEmail,
           previousCatalogId,
