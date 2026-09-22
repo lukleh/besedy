@@ -163,6 +163,92 @@ test.describe('Offline Mode', () => {
   });
 
   test.describe('Offline playback', () => {
+    test('playback that started online continues uninterrupted when connectivity drops', async ({
+      page,
+      context,
+    }) => {
+      await loginAs(page, 'listener');
+      await clearOfflineStorage(page);
+      const event = TEST_EVENTS[0];
+      const eventId = await getEventIdByTitle(page.request, event.title);
+
+      await page.goto(URLS.event(eventId));
+      await waitForPageReady(page);
+      await waitForServiceWorker(page);
+      const eventDownload = page
+        .getByTestId('download-button')
+        .filter({ visible: true })
+        .filter({ has: page.locator('svg') })
+        .first();
+      await eventDownload.click();
+      await expect(eventDownload).toHaveAttribute('data-status', 'complete', {
+        timeout: 120_000,
+      });
+
+      // The completed package must be the media source before playing: the
+      // local marker on the worker-served URL, or the inline copy.
+      const audio = page.locator('audio');
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentSrc),
+          { timeout: 15_000 },
+        )
+        .toMatch(/[?&]local=1(&|$)|^data:audio\//);
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentTime),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(2);
+
+      // 1. Uninterrupted continuation: pull the plug mid-stream and touch
+      // nothing. The position must keep advancing with no error, pause or end.
+      const atDisconnect = await audio.evaluate((element: HTMLAudioElement) => ({
+        currentTime: element.currentTime,
+        bufferedEnd:
+          element.buffered.length > 0
+            ? element.buffered.end(element.buffered.length - 1)
+            : 0,
+        duration: element.duration,
+      }));
+      await setOffline(context, true);
+      await waitForOfflineIndicator(page);
+      await page.waitForTimeout(4000);
+      const playbackState = () =>
+        audio.evaluate((element: HTMLAudioElement) => ({
+          currentTime: element.currentTime,
+          error: element.error?.code ?? null,
+          paused: element.paused,
+          ended: element.ended,
+        }));
+      const continued = await playbackState();
+      expect(continued).toMatchObject({ error: null, paused: false, ended: false });
+      expect(continued.currentTime).toBeGreaterThan(atDisconnect.currentTime + 3);
+
+      // 2. Cache read offline: seek beyond what had been buffered when the
+      // connection dropped, or near the end when the small fixture was already
+      // buffered whole. In that second case the source assertion above is
+      // what proves the bytes came from the package rather than the network.
+      const seekTarget = Math.min(
+        Math.max(atDisconnect.bufferedEnd + 1, atDisconnect.duration - 8),
+        atDisconnect.duration - 4,
+      );
+      await audio.evaluate((element: HTMLAudioElement, target: number) => {
+        element.currentTime = target;
+      }, seekTarget);
+      await page.waitForTimeout(3000);
+      const afterSeek = await playbackState();
+      expect(afterSeek).toMatchObject({ error: null, paused: false, ended: false });
+      expect(afterSeek.currentTime).toBeGreaterThan(seekTarget + 2);
+      await expect(page.getByTestId('audio-play-button')).toHaveAttribute(
+        'aria-label',
+        /pause|buffering/i,
+      );
+
+      await setOffline(context, false);
+    });
+
     test('an already-open downloaded event keeps playing after connectivity drops', async ({
       page,
       context,
