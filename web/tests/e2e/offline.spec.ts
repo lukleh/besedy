@@ -636,7 +636,20 @@ test.describe('Offline Mode', () => {
         timeout: 15_000,
       });
 
+      // Back online in the same session-free document: the header must show
+      // the signed-in account again, not a sign-in button.
       await setOffline(context, false);
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await waitForOfflineIndicatorGone(page);
+      // The menu renders a trigger per layout; one of them is visible.
+      await expect(
+        page.getByTestId('user-menu-trigger').filter({ visible: true }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByRole('link', { name: /sign in|přihlásit/i }),
+      ).toHaveCount(0);
     });
   });
 });
