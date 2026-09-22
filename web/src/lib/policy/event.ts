@@ -78,8 +78,21 @@ export function canEditCatalogEvents(context: EventFeaturePolicyContext): boolea
   return canEditEvent(context);
 }
 
+/**
+ * Whether the actor may change an event's release state.
+ *
+ * `release_events` is its own permission in ADR 0005, separate from
+ * `manage_events`: preparing an event and putting it in front of its audience
+ * are different acts, even though today the same role does both. The gate used
+ * to be `canEditEvent`, which asked `manage_events` and left the release
+ * permission defined but never consulted. The PATCH route still requires
+ * `manage_events` to reach the edit at all, so release is a second check on
+ * top of edit rather than a way around it.
+ */
 export function canReleaseEvent(context: EventFeaturePolicyContext): boolean {
-  return canEditEvent(context);
+  return (
+    canBrowseEvents(context) && hasCatalogPermission(context, "release_events")
+  );
 }
 
 export function canAttachRecordingToEvent(context: EventFeaturePolicyContext): boolean {

@@ -14,7 +14,11 @@ import {
   canSeeSpeakers,
   canSeeTranscriptVariants,
 } from "@/lib/policy/recording";
-import { canManageEventSources } from "@/lib/policy/event";
+import {
+  canEditEvent,
+  canManageEventSources,
+  canReleaseEvent,
+} from "@/lib/policy/event";
 import {
   canBatchEditCatalogMetadata,
   canBulkExportTranscripts,
@@ -299,6 +303,58 @@ describe("event sources", () => {
     const curator = context("curator");
     expect(canManageEventSources({ ...curator, canEnterPortal: false })).toBe(false);
     expect(canManageEventSources({ ...curator, catalogExists: false })).toBe(false);
+  });
+});
+
+describe("event release", () => {
+  // Release is its own permission in ADR 0005, and `release_events` is the
+  // whole answer to who may do it. The gate used to be `canEditEvent`, which
+  // asked `manage_events`; the two were indistinguishable because the same
+  // roles carry both, so a green suite said nothing about which one was
+  // consulted. Asked of every role so that a role added later has to declare
+  // which side of the gate it falls on.
+  const eventContext = (role: CatalogRole | null, isCatalogAdmin = false) => ({
+    ...context(role, isCatalogAdmin),
+    featureEnabled: true,
+  });
+
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from release_events alone",
+    (role) => {
+      expect(canReleaseEvent(eventContext(role))).toBe(
+        permissionsForRole(role).has("release_events")
+      );
+    }
+  );
+
+  // Neither permission is grantable through the access UI, so the grants that
+  // hold one without the other are constructed directly. This is what proves
+  // the two gates are now distinct rather than two names for one check.
+  it("separates release from event management in both directions", () => {
+    const managesOnly = {
+      ...eventContext("listener"),
+      catalogGrant: { role: "listener" as const, extras: ["manage_events"] },
+    };
+    expect(canEditEvent(managesOnly)).toBe(true);
+    expect(canReleaseEvent(managesOnly)).toBe(false);
+
+    const releasesOnly = {
+      ...eventContext("listener"),
+      catalogGrant: { role: "listener" as const, extras: ["release_events"] },
+    };
+    expect(canEditEvent(releasesOnly)).toBe(false);
+    expect(canReleaseEvent(releasesOnly)).toBe(true);
+  });
+
+  it("gives release to an administrator holding no grant", () => {
+    expect(canReleaseEvent(eventContext(null, true))).toBe(true);
+  });
+
+  it("refuses release when the events feature is off or the catalog is closed", () => {
+    const curator = eventContext("curator");
+    expect(canReleaseEvent({ ...curator, featureEnabled: false })).toBe(false);
+    expect(canReleaseEvent({ ...curator, canEnterPortal: false })).toBe(false);
+    expect(canReleaseEvent({ ...curator, catalogExists: false })).toBe(false);
   });
 });
 

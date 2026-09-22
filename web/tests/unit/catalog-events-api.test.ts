@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import { PATCH as patchEvent } from "@/app/api/catalogs/[id]/events/[eventId]/route";
 import { POST as attachRecordings } from "@/app/api/catalogs/[id]/events/[eventId]/recordings/route";
 import { DELETE as detachRecording } from "@/app/api/catalogs/[id]/events/[eventId]/recordings/[audioHash]/route";
@@ -105,6 +106,14 @@ describe("catalog events API", () => {
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "admin-user",
+      catalogGrant: grantForRole("curator"),
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: grantForRole("curator"),
+        isCatalogAdmin: false,
+      },
     });
     createEventNotifications.mockResolvedValue({
       created: 0,
@@ -115,6 +124,39 @@ describe("catalog events API", () => {
       async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma)
     );
     prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
+  });
+
+  it("refuses a release from a grant that manages events without release_events", async () => {
+    // Passes the "edit" gate the route asks first, so the only thing standing
+    // between this grant and the released flag is the release check itself.
+    const managesOnly = { role: "listener" as const, extras: ["manage_events"] };
+    requireCatalogEventsAccess.mockResolvedValue({
+      userId: "manager-1",
+      catalogGrant: managesOnly,
+      policyContext: {
+        featureEnabled: true,
+        catalogExists: true,
+        canEnterPortal: true,
+        catalogGrant: managesOnly,
+        isCatalogAdmin: false,
+      },
+    });
+
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/12`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ released: true }),
+    });
+    const response = await patchEvent(request, {
+      params: Promise.resolve({ id: catalogId, eventId: "12" }),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Release-events permission required to change event release state",
+    });
+    expect(prisma.catalogEvent.findFirst).not.toHaveBeenCalled();
+    expect(prisma.catalogEvent.update).not.toHaveBeenCalled();
   });
 
   it("blocks releasing an event without exactly one primary recording", async () => {
