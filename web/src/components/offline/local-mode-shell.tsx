@@ -60,35 +60,45 @@ export function resolveLocalRoute(pathname: string): LocalRoute {
 
 /**
  * A worker from before the URL-preserving shell answers a failed navigation
- * with a redirect to `/downloads?from=<original>`. Until that worker is
- * replaced, honour the original URL so the person still reaches the page they
- * asked for.
+ * with a redirect to `/downloads?from=<pathname + search>`. Until that worker
+ * is replaced, the shell honours that URL. Only a same-origin URL is
+ * accepted; the parser also normalises forms such as a backslash path that a
+ * prefix check would let through and `replaceState` would then reject.
  */
-function redirectedFromPath(from: string | null): string | null {
-  if (!from || !from.startsWith('/') || from.startsWith('//')) return null;
-  return from.split('?')[0];
+export function legacyRedirectTarget(from: string | null): string | null {
+  if (!from || typeof window === 'undefined') return null;
+  let url: URL;
+  try {
+    url = new URL(from, window.location.origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== window.location.origin) return null;
+  return `${url.pathname}${url.search}`;
 }
 
 export function LocalModeShell() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const hydrated = useIsHydrated();
-  const redirectedFrom =
-    pathname === DOWNLOADS_PATH
-      ? redirectedFromPath(searchParams.get('from'))
+  const redirectTarget =
+    hydrated && pathname === DOWNLOADS_PATH
+      ? legacyRedirectTarget(searchParams.get('from'))
       : null;
-  const effectivePath = redirectedFrom ?? pathname ?? DOWNLOADS_PATH;
 
   useEffect(() => {
-    if (!hydrated || !redirectedFrom) return;
-    // Show the URL the person asked for; no navigation is involved.
-    window.history.replaceState(window.history.state, '', redirectedFrom);
-  }, [hydrated, redirectedFrom]);
+    if (!redirectTarget) return;
+    // Restore the requested URL, search included. A plain state object lets
+    // the Next.js router pick the change up, so usePathname and
+    // useSearchParams then describe the requested page and routing below
+    // proceeds normally with its query parameters (seek, end, fromRadio).
+    window.history.replaceState(null, '', redirectTarget);
+  }, [redirectTarget]);
 
   // The server renders this document for /downloads. The URL it is replayed
   // at is only known on the client, so route after hydration to keep the
-  // server and client trees identical.
-  if (!hydrated) {
+  // server and client trees identical. A legacy redirect is resolved first.
+  if (!hydrated || redirectTarget) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -96,7 +106,7 @@ export function LocalModeShell() {
     );
   }
 
-  const route = resolveLocalRoute(effectivePath);
+  const route = resolveLocalRoute(pathname ?? DOWNLOADS_PATH);
   switch (route.kind) {
     case 'downloads':
       return <DownloadsContent />;

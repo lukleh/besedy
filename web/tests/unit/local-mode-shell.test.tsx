@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LocalModeShell,
+  legacyRedirectTarget,
   resolveLocalRoute,
 } from '@/components/offline/local-mode-shell';
 
@@ -92,21 +93,47 @@ describe('LocalModeShell', () => {
     mocks.recordingContent.mockClear();
   });
 
-  it("honours a legacy worker's ?from= redirect and restores the requested URL", () => {
+  it("honours a legacy worker's ?from= redirect, restoring path and search before routing", () => {
     mocks.pathname = '/downloads';
-    mocks.search = `from=${encodeURIComponent('/catalog/cat-1/event/7?x=1')}`;
+    mocks.search = `from=${encodeURIComponent(`/catalog/cat-1/recording/${HASH}?seek=10&fromRadio=true`)}`;
     const replaceState = vi.spyOn(window.history, 'replaceState');
-    render(<LocalModeShell />);
-    expect(screen.getByTestId('event-detail')).toBeInTheDocument();
-    expect(replaceState.mock.calls.at(-1)?.[2]).toBe('/catalog/cat-1/event/7');
+    const { rerender } = render(<LocalModeShell />);
+
+    // Nothing is routed until the router reflects the restored URL, so the
+    // recording page sees its query parameters at first render.
+    expect(screen.queryByTestId('recording-content')).not.toBeInTheDocument();
+    expect(replaceState).toHaveBeenCalledWith(
+      null,
+      '',
+      `/catalog/cat-1/recording/${HASH}?seek=10&fromRadio=true`,
+    );
+
+    mocks.pathname = `/catalog/cat-1/recording/${HASH}`;
+    mocks.search = 'seek=10&fromRadio=true';
+    rerender(<LocalModeShell />);
+    expect(screen.getByTestId('recording-content')).toBeInTheDocument();
     replaceState.mockRestore();
   });
 
-  it('ignores a ?from= that is not a same-origin path', () => {
-    mocks.pathname = '/downloads';
-    mocks.search = 'from=//evil.example/x';
-    render(<LocalModeShell />);
-    expect(screen.getByTestId('downloads-content')).toBeInTheDocument();
+  it('ignores a ?from= that does not stay on this origin', () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    for (const from of ['//evil.example/x', '/\\evil.example/x', 'https://evil.example/x']) {
+      mocks.pathname = '/downloads';
+      mocks.search = `from=${encodeURIComponent(from)}`;
+      const { unmount } = render(<LocalModeShell />);
+      expect(screen.getByTestId('downloads-content')).toBeInTheDocument();
+      unmount();
+    }
+    expect(replaceState).not.toHaveBeenCalled();
+    replaceState.mockRestore();
+  });
+
+  it('resolves legacy redirect targets as same-origin URLs with their search', () => {
+    expect(legacyRedirectTarget('/catalog/c/event/7?seek=3')).toBe('/catalog/c/event/7?seek=3');
+    expect(legacyRedirectTarget('/\\evil.example/x')).toBeNull();
+    expect(legacyRedirectTarget('//evil.example/x')).toBeNull();
+    expect(legacyRedirectTarget('http://evil.example/x')).toBeNull();
+    expect(legacyRedirectTarget(null)).toBeNull();
   });
 
   it('renders the Downloads library at its own URL', () => {
