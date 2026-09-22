@@ -39,7 +39,7 @@ not a generic Claude Code manual.
 ## Working Rules
 
 - Keep shared repo workflow in `AGENTS.md`, not here.
-- Keep Claude-specific pointers in `CLAUDE.md` and this file.
+- Keep Claude-specific pointers in this file.
 - Prefer live source files over prose for fast-changing facts such as CLI
   command names, seeded users, auth flows, and page routes.
 
