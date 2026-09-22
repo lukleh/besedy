@@ -38,7 +38,7 @@ describe("policy access helpers", () => {
     ["host", true],
     ["curator", true],
   ] as const)(
-    "gates transcript reading and search on read_transcripts for %s",
+    "gates transcript reading on read_transcripts and search on both permissions for %s",
     (role, canReadTranscriptContent) => {
       const context = {
         catalogExists: true,
@@ -48,6 +48,8 @@ describe("policy access helpers", () => {
       };
 
       expect(canViewCatalogTranscripts(context)).toBe(canReadTranscriptContent);
+      // Every role that reads also searches, so on role-native grants the two
+      // agree; the conjunction itself is pinned in catalog-permissions.test.ts.
       expect(canUseCatalogRag(context)).toBe(canReadTranscriptContent);
     }
   );

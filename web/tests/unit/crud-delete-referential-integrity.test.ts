@@ -61,15 +61,15 @@ describe("CRUD delete referential-integrity guards", () => {
     const { getCatalogCapability } = await import("@/lib/access/capabilities");
     const { loadCatalogHashes } = await import("@/lib/catalog");
     const { resolveActiveGroupWithAccess } = await import("@/lib/catalog/resolve-group");
-    // An editor of the one catalog the row lives in; the guards under test are
-    // referential, not authorizational.
+    // Holds manage_lookups on the one catalog the row lives in; the guards
+    // under test are referential, not authorizational.
     asMock(requireAuth).mockResolvedValue("user-1");
     asMock(resolveActiveGroupWithAccess).mockResolvedValue({
       group: { id: "20251222_144441" },
       hasAccess: true,
     });
     asMock(loadCatalogHashes).mockResolvedValue(new Set<string>());
-    asMock(getCatalogCapability).mockResolvedValue({ canEditMetadata: true });
+    asMock(getCatalogCapability).mockResolvedValue({ canManageLookups: true });
     for (const model of [db.recorder, db.location, db.album]) {
       model.findFirst.mockResolvedValue({ id: 5 });
     }

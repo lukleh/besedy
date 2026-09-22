@@ -116,9 +116,11 @@ describe("access capabilities", () => {
       canBulkExportTranscripts: false,
       canEditMetadata: false,
       canBatchEditMetadata: false,
+      canManageLookups: false,
       canManageAccess: false,
       canAccessSettings: false,
       canManageCatalogConfiguration: false,
+      // read_transcripts and search_transcripts both come with the reader bundle.
       canUseRagSearch: true,
       // Artwork candidates need see_unreleased or a artwork permission; a
       // reader carries none of them.
@@ -158,6 +160,7 @@ describe("access capabilities", () => {
       // to the curator instead.
       canEditMetadata: false,
       canBatchEditMetadata: false,
+      canManageLookups: false,
       canViewArtworkCandidates: false,
       canManageArtwork: false,
       canPublishArtwork: false,
@@ -191,6 +194,7 @@ describe("access capabilities", () => {
       isCatalogAdmin: false,
       canEditMetadata: true,
       canBatchEditMetadata: true,
+      canManageLookups: true,
       canManageCatalogConfiguration: false,
       canViewArtworkCandidates: true,
       canManageArtwork: true,
