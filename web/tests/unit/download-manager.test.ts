@@ -24,11 +24,13 @@ const AUDIO_SIZE = CHUNK * 2 + 1234;
 
 /** Store a complete one-chunk recording so a seeded complete record verifies. */
 async function seedCompleteAudioCache(
-  storage: { open(name: string): Promise<Cache> },
+  storage: MemoryCacheStorage,
   baseKey: string,
   size = 5,
 ) {
-  const cache = await storage.open(OFFLINE_CACHE_NAMES.audio);
+  const cache = (await storage.open(
+    OFFLINE_CACHE_NAMES.audio,
+  )) as unknown as Cache;
   await cache.put(
     getAudioChunkKey(baseKey, 0),
     new Response(new Uint8Array(size), {
