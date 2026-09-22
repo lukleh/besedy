@@ -39,11 +39,13 @@ import type {
 import type { EventDetailResponse, EventRecording } from '@/types/event-detail';
 import {
   AUDIO_CHUNK_SIZE,
+  audioCacheMetaBytes,
   deleteAudioCacheEntries,
   getAudioCacheKey,
   getAudioChunkKey,
   readCompleteAudioBlob,
   readAudioCacheMeta,
+  isConsistentAudioCacheMeta,
   requiresInlineOfflineAudio,
   verifyAudioCache,
   writeAudioCacheMeta,
@@ -75,9 +77,11 @@ const DOWNLOAD_LOCK_PREFIX = 'besedy-download:';
 const CHANNEL_NAME = 'besedy-downloads';
 const PERSIST_REQUESTED_KEY = 'besedy-storage-persist-requested';
 const SERVICE_WORKER_CONTROL_TIMEOUT_MS = 10_000;
-/** Shown in Downloads when a completed record's audio is no longer in the cache. */
-export const INCOMPLETE_PACKAGE_ERROR =
-  'Downloaded audio is incomplete on this device. Download it again.';
+/**
+ * Stable error code for a completed record whose audio could not be verified
+ * in the cache. Downloads translates it; other errors are raw messages.
+ */
+export const INCOMPLETE_PACKAGE_ERROR = 'incomplete-package';
 let downloadsShellWarmPromise: Promise<void> | null = null;
 
 /**
@@ -336,16 +340,16 @@ async function fetchRangeChunk(
   throw new DownloadHttpError(url, response.status);
 }
 
-async function hasAllChunks(
+/** Number of leading chunks that are present, i.e. the resumable prefix. */
+async function countContiguousChunks(
   cache: Cache,
   cacheKey: string,
   meta: AudioCacheMeta,
-): Promise<boolean> {
+): Promise<number> {
   for (let index = 0; index < meta.chunkSizes.length; index += 1) {
-    const chunk = await cache.match(getAudioChunkKey(cacheKey, index));
-    if (!chunk) return false;
+    if (!(await cache.match(getAudioChunkKey(cacheKey, index)))) return index;
   }
-  return true;
+  return meta.chunkSizes.length;
 }
 
 export interface AudioDownloadProgress {
@@ -367,12 +371,35 @@ export async function downloadAudioChunks(options: {
   const { cache, url, cacheKey, signal, onProgress } = options;
 
   let meta = await readAudioCacheMeta(cache, cacheKey);
-  if (
-    meta &&
-    (meta.chunkSizes.length === 0 ||
-      !(await hasAllChunks(cache, cacheKey, meta)))
-  ) {
-    meta = null;
+  if (meta) {
+    // Resume from the longest contiguous prefix of stored chunks. A missing
+    // chunk in the middle does not throw away what precedes it.
+    const prefix = await countContiguousChunks(cache, cacheKey, meta);
+    if (prefix === 0) {
+      meta = null;
+    } else {
+      // Metadata that verification would reject must not pass the fast path
+      // below: normalise the completion flag to the bytes actually recorded
+      // and start over when the sizes cannot be trusted.
+      const chunkSizes = meta.chunkSizes.slice(0, prefix);
+      const candidate: AudioCacheMeta = {
+        ...meta,
+        chunkCount: prefix,
+        chunkSizes,
+        complete: audioCacheMetaBytes({ chunkSizes }) === meta.totalSize,
+      };
+      if (!isConsistentAudioCacheMeta(candidate)) {
+        meta = null;
+      } else if (
+        candidate.chunkCount !== meta.chunkCount ||
+        candidate.complete !== meta.complete
+      ) {
+        meta = candidate;
+        await writeAudioCacheMeta(cache, cacheKey, meta);
+      } else {
+        meta = candidate;
+      }
+    }
   }
   if (!meta) {
     await deleteAudioCacheEntries(cache, cacheKey);
@@ -634,13 +661,22 @@ class DownloadManager {
       if (next !== record) recovered.push(next);
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
-    await this.verifyCompletePackages();
+    // One cache handle for hydration. When it cannot be opened, verification
+    // marks every completed package retryable and inline preparation is
+    // skipped; hydration still finishes so the queue and Retry keep working.
+    let audioCache: Cache | null = null;
+    try {
+      audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+    } catch (error) {
+      logger.warn('Could not open the audio cache during hydration', { error });
+    }
+    await this.verifyCompletePackages(audioCache);
     if (
+      audioCache !== null &&
       this.online &&
       typeof navigator !== 'undefined' &&
       requiresInlineOfflineAudio(navigator.userAgent)
     ) {
-      const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
       for (const record of this.records.values()) {
         if (record.status !== 'complete' || !record.audioCacheKey) continue;
         try {
@@ -922,14 +958,9 @@ class DownloadManager {
    * error instead of a download that fails when played; Retry resumes from
    * the chunks that exist.
    */
-  private async verifyCompletePackages(): Promise<void> {
-    let audioCache: Cache;
-    try {
-      audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
-    } catch (error) {
-      logger.warn('Could not open the audio cache to verify downloads', { error });
-      return;
-    }
+  private async verifyCompletePackages(audioCache: Cache | null): Promise<void> {
+    // Fail closed: with no readable cache every completed package below
+    // becomes retryable, because bytes that cannot be read cannot be offered.
     for (const key of Array.from(this.records.keys())) {
       if (this.records.get(key)?.status !== 'complete') continue;
       // Another tab may remove or change this download while hydration runs.
@@ -948,11 +979,12 @@ class DownloadManager {
         let verified = false;
         try {
           verified =
+            audioCache !== null &&
             persisted.audioCacheKey !== null &&
             (await verifyAudioCache(audioCache, persisted.audioCacheKey));
         } catch (error) {
+          // Unverifiable is not verified.
           logger.warn('Could not verify a downloaded package', { key, error });
-          return;
         }
         if (verified) return;
         logger.warn(

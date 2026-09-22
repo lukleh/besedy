@@ -31,6 +31,7 @@ import { formatPartialDate } from '@/lib/date-format';
 import { formatBytes } from '@/lib/format-bytes';
 import {
   downloadManager,
+  INCOMPLETE_PACKAGE_ERROR,
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
 import { cn } from '@/lib/utils';
@@ -321,7 +322,11 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
             {recording?.durationHms && <span>{recording.durationHms}</span>}
             {sizeLabel && <span>{sizeLabel}</span>}
             {record.error && (
-              <span className="text-destructive">{record.error}</span>
+              <span className="text-destructive">
+                {record.error === INCOMPLETE_PACKAGE_ERROR
+                  ? t('errorIncompletePackage')
+                  : record.error}
+              </span>
             )}
           </div>
           {(record.status === 'downloading' ||

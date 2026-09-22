@@ -104,10 +104,11 @@ complete.
 
 On hydration the manager verifies every completed package against Cache
 Storage: the metadata entry must be complete and every chunk present. A record
-that fails this check is not shown as downloaded; it becomes a retryable
-error with the message that the audio is incomplete on this device, and Retry
-resumes the download from the chunks that exist. Registry state alone never
-proves playability.
+that fails this check, or cannot be checked because the cache is unreadable,
+is not shown as downloaded; it becomes a retryable error with the message that
+the audio is incomplete on this device, and Retry resumes the download from
+the longest contiguous prefix of chunks that survived. Registry state alone
+never proves playability.
 
 One queued download runs at a time. A global Web Lock prevents queue ownership
 in two tabs, a per-download lock prevents concurrent mutation of one record,
