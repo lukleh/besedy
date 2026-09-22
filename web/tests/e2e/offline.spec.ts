@@ -643,9 +643,10 @@ test.describe('Offline Mode', () => {
         window.dispatchEvent(new Event('online'));
       });
       await waitForOfflineIndicatorGone(page);
-      await expect(page.getByTestId('user-menu-trigger')).toBeVisible({
-        timeout: 15_000,
-      });
+      // The menu renders a trigger per layout; one of them is visible.
+      await expect(
+        page.getByTestId('user-menu-trigger').filter({ visible: true }).first(),
+      ).toBeVisible({ timeout: 15_000 });
       await expect(
         page.getByRole('link', { name: /sign in|přihlásit/i }),
       ).toHaveCount(0);
