@@ -66,6 +66,13 @@ reader, and promoting it puts it behind the gate at once, so its readers see
 "correction has not started" instead of the machine text they had. That loss
 is a consequence of the gate and is accepted, not an oversight.
 
+A recording is therefore **in correction scope** when it has a non-archived
+workspace, or when it is currently the primary recording of an event. Every
+resolver below, every gate in [ADR 0005](0005-catalog-permission-model.md) and
+access to the correction UI use exactly this predicate. "Correction-eligible"
+in either record means in correction scope by this definition; only the start
+action asks the narrower question of whether the recording is primary now.
+
 ### Four consumers deliberately resolve different text
 
 There is no single permissive "best transcript" resolver. Each surface follows
@@ -73,9 +80,9 @@ an explicit rule:
 
 | Consumer | Resolution |
 | --- | --- |
-| Reader and ordinary download | For a correction-eligible primary recording, the active reader publication; with none, return no transcript text. For a recording outside correction scope, the search backend's machine transcript. |
+| Reader and ordinary download | For a recording in correction scope, the active reader publication; with none, return no transcript text. For a recording outside correction scope, the search backend's machine transcript. |
 | Search and MCP | The active search publication, otherwise the search backend's machine transcript. |
-| Correction UI | The live database workspace for an eligible primary recording. |
+| Correction UI | The live database workspace for a recording in correction scope; starting one additionally requires that the recording is primary now. |
 | Privileged original access | Before a workspace exists, the search backend's current machine transcript. Once correction starts, the frozen machine source. `see_transcript_variants` may additionally expose other machine variants. |
 
 This separation is a safety property. The machine fallback required by MCP must
@@ -134,12 +141,21 @@ window from reverting the new text before its database pointer is committed.
 This resolver and its integration into every sync entry point are new work. The
 resolved source then reuses the existing content-derived
 `transcript_fingerprint`, per-`audio_hash` delta, staged bundle validation and
-atomic bundle switch. The corrected transcript is substituted in **every**
-backend scope that is indexed, replacing that scope's machine chunks for the
-same audio hash. It is not confined to the scope of the backend it was frozen
-from, and it is never indexed beside machine chunks of the same recording. A
-recording whose machine transcript is absent from a scope is still indexed
-there once it has a search publication.
+atomic bundle switch. The resolver is scope-agnostic: whenever any backend
+scope is built, the corrected transcript replaces that scope's machine chunks
+for the same audio hash, and a recording whose machine transcript is absent
+from the scope is still indexed there once it has a search publication.
+Corrected and machine chunks of one recording never coexist in a bundle.
+
+Publication itself, however, proves replacement in exactly one scope: the
+active search scope, `(workflow_group_id, RAG_BACKEND_KEY, colbert_model)`.
+That is the only bundle search queries, so it is the only one whose state the
+publication protocol below tracks, reconciles and rolls back. Every other scope
+acquires the corrected text when it is next built, and a scope can become the
+active search backend only through a build that went through this resolver.
+Switching `RAG_BACKEND_KEY` is therefore a deployment change that includes a
+full build of the new scope before it is queried; there is no per-publication
+fan-out across scopes to track.
 
 MCP receives the resolved canonical transcript and treats it like any other
 transcript. It has no correction-specific branch, response field or presentation
@@ -462,7 +478,7 @@ revision manifest and locks workspace writes. One job then:
    staging directory.
 2. Renders `txt`, `srt` and `vtt` from that JSON.
 3. Builds and validates an incremental search update that replaces the same
-   audio hash in the same logical backend scope.
+   audio hash in the active search scope.
 4. Records the publication as `activating`, including the expected transcript
    fingerprint and the previous effective source needed for rollback.
 5. Switches the staged index bundle.
@@ -627,7 +643,10 @@ that gate.
   picker and supplies a fallback.
 - A workspace eagerly imports and freezes the search backend's transcript at
   the moment of starting. A published correction replaces machine text in every
-  consumer and every index scope.
+  consumer; publication guarantees the active search scope, and the resolver
+  carries it into any other scope when that scope is built.
+- A recording is in correction scope when it has a live workspace or is
+  currently primary; every resolver and gate uses that one predicate.
 - At most one non-archived workspace exists per recording; archiving requires
   `manage_catalog_config` and a workspace that backs no publication; archived
   attempts remain available for audit.

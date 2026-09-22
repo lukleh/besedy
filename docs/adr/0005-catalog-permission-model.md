@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-15
-- **Revised:** 2026-09-20
+- **Revised:** 2026-09-22
 - **Canonical references:** [Web security](../web/security.md#access-control), [MCP server](../web/mcp-server.md#access-matrix)
 
 ## Context
@@ -47,6 +47,16 @@ explicit permissions widen what an actor can see for a particular purpose:
 source—or the frozen source once correction has started. These are
 purpose-specific exceptions, not consequences of being able to see unreleased
 events and recordings.
+
+Two terms in this record are defined by [ADR 0006](0006-transcript-correction.md)
+and mean exactly what it says. A recording is **in correction scope**
+("correction-eligible") when it has a non-archived correction workspace or is
+currently the primary recording of an event; a workspace latches the gate, so
+demoting the recording later does not return it to machine text. The
+**configured default machine transcript** is the search backend named by
+`RAG_BACKEND_KEY`, the one default every consumer reads; the administrative
+`TranscriptBackendPriority` table only orders the variant picker and supplies a
+fallback when a recording lacks that backend's transcript.
 
 Permissions are the semantics: every gate asks whether a permission is present,
 never whether a level is high enough.
@@ -540,7 +550,8 @@ start empty.
   `catalogAdmin` alone for the same reason: they expose raw model output that
   has not been evaluated and that tells an ordinary user nothing useful yet.
   `see_transcript_variants` covers the backend picker and the stream view, so
-  every other role reads the one default from `TranscriptBackendPriority`.
+  every other role reads the one default, the search backend named by
+  `RAG_BACKEND_KEY`; `TranscriptBackendPriority` only orders that picker.
   `see_speakers` covers the diarization overlay, which distinguishes turns
   without naming anyone. Both are candidates to open later — diarization once
   speaker attribution becomes a phase of correction — but neither earns a place
