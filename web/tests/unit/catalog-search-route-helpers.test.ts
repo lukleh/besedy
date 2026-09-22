@@ -13,6 +13,7 @@ import {
   resolveColbertFetchLimit,
   resolveColbertIndexDir,
   resolveRerankCandidateLimit,
+  searchesPrimaryRecordingsOnly,
   shouldOverfetchColbertResults,
 } from "@/app/api/catalogs/[id]/search/search-route-helpers";
 
@@ -228,8 +229,53 @@ describe("catalog search route helpers", () => {
   it("overfetches ColBERT when results will be post-filtered", () => {
     expect(shouldOverfetchColbertResults(grantForRole("listener"), null)).toBe(true);
     expect(shouldOverfetchColbertResults(null, { verified: true })).toBe(true);
-    expect(shouldOverfetchColbertResults(grantForRole("curator"), null)).toBe(false);
+    // Secondary recordings are dropped after retrieval even for wide grants.
+    expect(shouldOverfetchColbertResults(grantForRole("curator"), null)).toBe(true);
     expect(resolveColbertFetchLimit(200)).toBe(800);
+  });
+
+  it("searches primary recordings only unless the caller opts out or names recordings", () => {
+    expect(searchesPrimaryRecordingsOnly(null)).toBe(true);
+    expect(searchesPrimaryRecordingsOnly(undefined)).toBe(true);
+    expect(searchesPrimaryRecordingsOnly({ eventIds: [42] })).toBe(true);
+    expect(searchesPrimaryRecordingsOnly({ includeSecondaryRecordings: false })).toBe(true);
+    expect(searchesPrimaryRecordingsOnly({ includeSecondaryRecordings: true })).toBe(false);
+    expect(searchesPrimaryRecordingsOnly({ audioHashes: ["a".repeat(64)] })).toBe(false);
+  });
+
+  it("accepts includeSecondaryRecordings as the only metadata filter", () => {
+    expect(
+      SearchRequestSchema.safeParse({
+        query: "topic",
+        metadataFilters: { includeSecondaryRecordings: true },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("keeps primary and unlinked recordings when restricted to primaries", () => {
+    const eligible = buildEligibleAudioHashesQuery("catalog-a", grantForRole("curator"), null, {
+      primaryRecordingsOnly: true,
+    });
+    const eligibleSql = eligible.strings.join(" ? ");
+    expect(eligibleSql).toContain("primary_link.is_primary = true");
+    expect(eligibleSql).toContain("OR NOT EXISTS");
+    expect(eligibleSql).toContain("any_link.audio_hash = ce.audio_hash");
+
+    const allowed = buildAllowedAudioHashesQuery(
+      "catalog-a",
+      ["audio-a"],
+      grantForRole("listener"),
+      { eventIds: [42] },
+      { primaryRecordingsOnly: true },
+    );
+    expect(allowed?.strings.join(" ? ")).toContain("primary_link.is_primary = true");
+  });
+
+  it("does not restrict to primary recordings unless asked", () => {
+    const eligible = buildEligibleAudioHashesQuery("catalog-a", grantForRole("curator"), null);
+    expect(eligible.strings.join(" ? ")).not.toContain("primary_link");
+    const allowed = buildAllowedAudioHashesQuery("catalog-a", ["audio-a"], grantForRole("curator"), null);
+    expect(allowed?.strings.join(" ? ")).not.toContain("primary_link");
   });
 
   it("resolves the active ColBERT bundle via the sidecar service", async () => {

@@ -29,7 +29,7 @@ function renderSearchContent(
   const lines = [
     `Meaning-based transcript search for ${JSON.stringify(result.query)} returned ${result.results.length} ranked, non-exhaustive candidate(s).`,
     `A zero result does not establish conceptual absence. ${TRANSCRIPT_VERIFICATION_GUIDANCE}`,
-    'Each candidate includes its authoritative event date, location, and ID. Group candidates by event ID because recordings from the same event are variants, not independent evidence.',
+    "Each candidate includes its authoritative event date, location, and ID. Only each event's primary recording is searched unless filters.includeSecondaryRecordings is true; other recordings of the same event are parallel captures of the same session, not independent evidence.",
   ];
   for (const searchResult of result.results) {
     lines.push(...renderTranscriptSearchResult(searchResult));
@@ -48,7 +48,7 @@ export function registerSearchTranscriptsTool(
     'search_transcripts',
     {
       title: 'Search transcripts by meaning',
-      description: `Find candidate passages by meaning across transcripts from visible released Besedy events. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every candidate directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group candidates by event ID because recordings from the same event are variants, not independent evidence. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation. Rank is relevance within this query, not confidence.`,
+      description: `Find candidate passages by meaning across transcripts from visible released Besedy events. Use this for questions, themes, related concepts, paraphrases, and different wording; use find_transcript_mentions instead for actual words, names, quotations, fixed phrases, prefixes, or literal absence checks. Results are ranked and non-exhaustive, so a zero result does not establish conceptual absence. For ordinary meaning-based or exploratory questions, use a small first pass for orientation, then run precise broad searches before synthesizing; exact literal lookups do not need semantic orientation. Stop when the evidence adequately covers the user request. Adjacent chunks are only for triage. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every candidate directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Only each event's primary recording is searched; the other recordings of an event are parallel captures of the same session, not independent evidence. Set filters.includeSecondaryRecordings to true to search them as well. Use filters.eventIds or filters.audioHashes for focused follow-ups. Each match webUrl is a bounded citation. Rank is relevance within this query, not confidence.`,
       inputSchema: z.object({
         catalogId: z
           .string()
@@ -93,7 +93,7 @@ export function registerSearchTranscriptsTool(
             'Maximum matches per recording/audio hash. A low value such as 1 favors diversity during initial orientation; for precise broad searches, keep the default or raise it when distinct passages from one recording may matter.',
           ),
         filters: SearchMetadataFiltersSchema.optional().describe(
-          'Optional constraints. eventIds, locationIds, and dateYears apply to linked events; resolve event and location IDs with list_events and list_locations. audioHashes identify recordings. recorderIds and verified remain optional curated-recording constraints.',
+          "Optional constraints. eventIds, locationIds, and dateYears apply to linked events; resolve event and location IDs with list_events and list_locations. audioHashes identify recordings and search exactly those recordings. recorderIds and verified remain optional curated-recording constraints. includeSecondaryRecordings widens the search beyond each event's primary recording.",
         ),
       }),
       outputSchema: SearchTranscriptsOutputSchema,

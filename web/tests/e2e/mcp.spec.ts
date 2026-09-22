@@ -18,6 +18,15 @@ const MCP_REQUESTED_SCOPES = MCP_AUTH_SCOPES.join(' ');
 const MCP_PROTOCOL_VERSION = '2026-07-28';
 const LEGACY_MCP_PROTOCOL_VERSION = '2025-06-18';
 const MCP_FIXTURE_RECORDING = TEST_AUDIO_FILES[4];
+const MCP_FIXTURE_EVENT = TEST_EVENTS.find(
+  (event) => event.primaryRecording === MCP_FIXTURE_RECORDING.shortHash,
+)!;
+// The RAG mock also answers for this parallel capture of the same event.
+const MCP_FIXTURE_SECONDARY_RECORDING = TEST_AUDIO_FILES.find(
+  (file) =>
+    MCP_FIXTURE_EVENT.recordings.includes(file.shortHash) &&
+    file.shortHash !== MCP_FIXTURE_EVENT.primaryRecording,
+)!;
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 interface TokenResponse {
@@ -1383,6 +1392,71 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       event: { id: releasedEventId },
       recording: { audioHash: MCP_FIXTURE_RECORDING.hash },
     });
+    // The RAG mock returns a chunk from the event's secondary recording too;
+    // by default only the primary recording is searched.
+    expect(
+      search.result?.structuredContent.results.map(
+        (item) => item.recording.audioHash,
+      ),
+    ).toEqual([MCP_FIXTURE_RECORDING.hash]);
+
+    const withSecondary = await callMcpTool<{
+      results: Array<{ recording: { audioHash: string } }>;
+    }>(request, listener, 'search_transcripts', {
+      query: 'Besedy MCP deterministic search',
+      filters: {
+        eventIds: [releasedEventId],
+        includeSecondaryRecordings: true,
+      },
+    });
+    expect(
+      withSecondary.result?.isError,
+      JSON.stringify(withSecondary),
+    ).not.toBe(true);
+    expect(
+      withSecondary.result?.structuredContent.results.map(
+        (item) => item.recording.audioHash,
+      ),
+    ).toEqual([
+      MCP_FIXTURE_RECORDING.hash,
+      MCP_FIXTURE_SECONDARY_RECORDING.hash,
+    ]);
+
+    const primaryMentions = await callMcpTool<{
+      retrieval: { totalMatches: number };
+      results: Array<{ recording: { audioHash: string } }>;
+    }>(request, listener, 'find_transcript_mentions', {
+      query: 'deterministic evidence',
+    });
+    expect(
+      primaryMentions.result?.isError,
+      JSON.stringify(primaryMentions),
+    ).not.toBe(true);
+    expect(
+      primaryMentions.result?.structuredContent.retrieval.totalMatches,
+    ).toBe(1);
+
+    const allMentions = await callMcpTool<{
+      retrieval: { totalMatches: number };
+      results: Array<{ recording: { audioHash: string } }>;
+    }>(request, listener, 'find_transcript_mentions', {
+      query: 'deterministic evidence',
+      filters: { includeSecondaryRecordings: true },
+    });
+    expect(allMentions.result?.isError, JSON.stringify(allMentions)).not.toBe(
+      true,
+    );
+    expect(allMentions.result?.structuredContent.retrieval.totalMatches).toBe(
+      2,
+    );
+    expect(
+      allMentions.result?.structuredContent.results.map(
+        (item) => item.recording.audioHash,
+      ),
+    ).toEqual([
+      MCP_FIXTURE_RECORDING.hash,
+      MCP_FIXTURE_SECONDARY_RECORDING.hash,
+    ]);
 
     // An active account with no catalog grant: every tool is discoverable, no
     // catalog-scoped tool returns data, with or without an explicit catalog.

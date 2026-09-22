@@ -35,9 +35,9 @@ that ignore `structuredContent` can still make a correct verification decision.
 The initialization response adds only cross-tool and corpus-wide rules: ground
 Besedy claims in returned evidence, distinguish meaning from literal wording,
 verify important candidates with `get_transcript` by widening the returned time
-window, do not count recording variants
-of one event as independent evidence, group search results directly by their
-returned event IDs, support recurring themes with distinct events, and cite
+window, treat the other recordings of one event as parallel captures of the
+same session rather than independent evidence, group search results directly by
+their returned event IDs, support recurring themes with distinct events, and cite
 bounded segment links. Tool descriptions and schemas remain authoritative for
 individual calls and their current limits.
 
@@ -511,8 +511,17 @@ internal numeric retrieval scores are not exposed.
 - `eventIds`: 1 to 50 positive event IDs returned by `list_events`;
 - `audioHashes`: 1 to 50 stable 64-character audio hashes;
 - `locationIds` or `recorderIds`: 1 to 50 positive integer IDs;
-- `dateYears`: 1 to 50 years from 1900 through 2100; or
-- `verified`: a boolean.
+- `dateYears`: 1 to 50 years from 1900 through 2100;
+- `verified`: a boolean; or
+- `includeSecondaryRecordings`: a boolean.
+
+Searches cover only each event's primary recording. The other recordings of an
+event are parallel captures of the same session from another device, so they
+would only return the same passages a second time. `includeSecondaryRecordings:
+true` searches every eligible recording of every event. Naming recordings in
+`audioHashes` already searches exactly those recordings, whether or not they are
+primary. Recordings without an event stay searchable for grants that can see
+them.
 
 `eventIds` restricts matches to recordings linked to any selected event. This
 supports a direct `list_events` to either search tool workflow without making
@@ -573,8 +582,8 @@ The recommended evidence workflow is:
    several materially different reformulations, and multiple matches per
    recording when useful. Do not wait for the user to request more precision.
 3. Shortlist results from their exact match, adjacent context, and event. Group
-   them directly by the returned event ID; recordings sharing an event are
-   variants, not independent evidence.
+   them directly by the returned event ID; the other recordings of the same
+   event are parallel captures, not independent evidence.
 4. If needed, run a smaller follow-up restricted with `filters.eventIds` or
    `filters.audioHashes`.
 5. When the chosen result has a non-null `transcriptRequest`, copy it, widen its

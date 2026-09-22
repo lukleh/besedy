@@ -573,7 +573,9 @@ describe('MCP personalized tool surface', () => {
     expect(BESEDY_MCP_INSTRUCTIONS).toContain(
       'authoritative event IDs, dates, and locations',
     );
-    expect(BESEDY_MCP_INSTRUCTIONS).toContain('same event are variants');
+    expect(BESEDY_MCP_INSTRUCTIONS).toContain(
+      "cover each event's primary recording",
+    );
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('distinct events');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('bounded segment webUrl');
     expect(BESEDY_MCP_INSTRUCTIONS).toContain('find_transcript_mentions');
