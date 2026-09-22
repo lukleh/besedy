@@ -94,9 +94,10 @@ export function useLocalAudioSrc(
 }
 
 /**
- * Object URL for the artwork stored with a downloaded event, used while the
- * browser is offline so the shared event page keeps its artwork. Online, the
- * responsive published variants come from the server as usual.
+ * Object URL for the artwork stored with a downloaded event. The shared event
+ * page offers it to the artwork picture as the fallback for a failed image
+ * request, so artwork follows the same request-driven rule as the page data
+ * instead of trusting `navigator.onLine`.
  */
 export function useLocalArtworkUrl(
   catalogId: string,
@@ -104,9 +105,7 @@ export function useLocalArtworkUrl(
   artworkId: string | null
 ): string | null {
   const record = useEventDownload(catalogId, eventId);
-  const { isOnline } = useOnlineStatus();
-  const key =
-    !isOnline && record?.status === "complete" && record.hasArtwork ? record.key : null;
+  const key = record?.status === "complete" && record.hasArtwork ? record.key : null;
 
   const { data: blob } = useQuery({
     queryKey: ["local-artwork", key, artworkId],

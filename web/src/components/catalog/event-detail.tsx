@@ -153,7 +153,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
       eventId={eventId}
       artworkId={publishedArtwork.id}
       alt={artworkAlt}
-      srcOverride={localArtworkUrl}
+      fallbackSrc={localArtworkUrl}
     />
   ) : canViewArtworkCandidates && latestDraftCandidate ? (
     <div className="relative">

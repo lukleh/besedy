@@ -434,6 +434,76 @@ describe('download manager', () => {
     expect(bundle?.eventDetail?.recordings).toHaveLength(2);
   });
 
+  it('drops the stored speaker overlay once that permission is revoked', async () => {
+    // The fake server's entry carries no canSeeSpeakers, i.e. revoked.
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const db = await import('@/lib/offline/downloads-db');
+    const now = Date.now();
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    await db.putDownload({
+      key,
+      catalogId: CATALOG,
+      catalogLabel: null,
+      hash: HASH,
+      userId: 'user-1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      audioCacheKey: 'cached-audio',
+      status: 'complete',
+      progress: 100,
+      bytesLoaded: AUDIO_SIZE,
+      totalBytes: AUDIO_SIZE,
+      error: null,
+      resumeOnReconnect: false,
+      transcriptBackend: 'whisperx/large',
+      hasArtwork: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+    await db.putDownloadBundle({
+      key,
+      transcriptBackend: 'whisperx/large',
+      transcript: { backend: 'whisperx/large', segments: [] },
+      diarization: { hash: HASH, model: 'pyannote', numSpeakers: 0, segments: [] },
+      artwork: null,
+      entry: {
+        entry: {
+          hash: HASH,
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: false,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownloadAudio: true,
+        canDownloadTranscripts: true,
+        canSeeSpeakers: true,
+      },
+      updatedAt: now,
+    });
+
+    const { downloadManager } = await loadManager();
+    downloadManager.setUserId('user-1');
+    await downloadManager.hydrate();
+    await waitFor(async () => {
+      const bundle = await db.getDownloadBundle(key);
+      return bundle?.diarization === null;
+    });
+
+    const bundle = await db.getDownloadBundle(key);
+    expect(bundle?.entry?.canSeeSpeakers).not.toBe(true);
+    // The transcript itself is still permitted and stays.
+    expect(bundle?.transcript).not.toBeNull();
+    expect(downloadManager.getSnapshot().records[0]?.transcriptBackend).toBe('whisperx/large');
+  });
+
   it('removes a previously cached transcript after permission is narrowed', async () => {
     const server = createFakeServer({ canDownloadTranscripts: false });
     vi.stubGlobal('fetch', server.fetchMock);

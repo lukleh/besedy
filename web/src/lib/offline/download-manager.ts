@@ -933,9 +933,11 @@ class DownloadManager {
 
   /**
    * Re-check completed packages against the server while online: drop a
-   * transcript the account may no longer retain, and store the event detail
-   * and entry payloads on packages written before they were part of the
-   * bundle, so the shared pages can render them offline.
+   * transcript the account may no longer retain, keep the stored entry's
+   * permissions current (the local reader derives the speaker overlay from
+   * them), and store the event detail and entry payloads on packages written
+   * before they were part of the bundle, so the shared pages can render them
+   * offline.
    */
   private async reconcileTranscriptPermissions(userId: string): Promise<void> {
     const signal = new AbortController().signal;
@@ -995,7 +997,13 @@ class DownloadManager {
         }
       }
 
-      if (entry && needsPackageRefresh) {
+      const speakersPermitted = entry?.canSeeSpeakers === true;
+      const entitlementChanged =
+        entry !== null &&
+        (bundle?.entry?.canSeeSpeakers === true) !== speakersPermitted;
+      const dropDiarization =
+        entry !== null && !speakersPermitted && !!bundle?.diarization;
+      if (entry && (needsPackageRefresh || entitlementChanged || dropDiarization)) {
         let eventDetail = bundle?.eventDetail ?? null;
         const eventId = eventIdFromKey(record.eventKey, record.catalogId);
         if (missingEventDetail && eventId !== null) {
@@ -1023,6 +1031,8 @@ class DownloadManager {
             ...current,
             entry,
             eventDetail: eventDetail ?? current.eventDetail ?? null,
+            // The overlay is administrative; a revoked permission removes it.
+            diarization: speakersPermitted ? current.diarization : null,
             updatedAt: Date.now(),
           });
         } catch (error) {
