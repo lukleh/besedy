@@ -4,12 +4,14 @@ import {
   LexicalMatchModeSchema,
   MAX_PER_AUDIO_LIMIT,
   SearchMetadataFiltersSchema,
+  type SearchMetadataFilters,
 } from '@/app/api/catalogs/[id]/search/search-route-helpers';
 import { findMcpTranscriptMentions } from '@/lib/mcp/read-service';
 import { FindTranscriptMentionsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 import {
   READ_ONLY_TOOL_ANNOTATIONS,
   TRANSCRIPT_VERIFICATION_GUIDANCE,
+  describeSearchedRecordings,
   registerBesedyTool,
   renderTranscriptSearchResult,
   resolveToolCatalog,
@@ -32,11 +34,12 @@ function lexicalQueryTokens(query: string): string[] {
 
 function renderSearchContent(
   result: Awaited<ReturnType<typeof findMcpTranscriptMentions>>,
+  filters: SearchMetadataFilters | undefined,
 ): string {
   const lines = [
     `Lexical transcript search for ${JSON.stringify(result.query)} found ${result.retrieval.totalMatches} matching indexed chunk(s) across the complete authorized indexed transcript corpus and returned ${result.results.length}.`,
     'The complete count is a chunk-match count, not a distinct-event count. It covers all authorized indexed chunks under the selected filters and match mode before limit and maxPerRecording cap returned passages. A zero count establishes only indexed literal-pattern absence, not conceptual absence.',
-    'Each match includes its authoritative event date, location, and ID. Group matches by event ID because recordings from the same event are variants, not independent evidence.',
+    describeSearchedRecordings(filters, 'match'),
   ];
   for (const searchResult of result.results) {
     lines.push(...renderTranscriptSearchResult(searchResult));
@@ -55,7 +58,7 @@ export function registerFindTranscriptMentionsTool(
     'find_transcript_mentions',
     {
       title: 'Find exact transcript mentions',
-      description: `Search actual wording in the authorized indexed transcript corpus for visible released Besedy events. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches counts matching authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it is not a distinct-event count. A zero count establishes only indexed literal-pattern absence, not conceptual absence. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every match directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Group matches by event ID because recordings from the same event are variants, not independent evidence. Each match webUrl is a bounded citation. Rank is text-match relevance, not confidence.`,
+      description: `Search actual wording in the authorized indexed transcript corpus for visible released Besedy events. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches counts matching authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it is not a distinct-event count. A zero count establishes only indexed literal-pattern absence, not conceptual absence. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every match directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Only each event's primary recording is searched; the other recordings of an event are parallel captures of the same session, not independent evidence. Set filters.includeSecondaryRecordings to true to search them as well; filters.audioHashes always searches exactly the named recordings. Each match webUrl is a bounded citation. Rank is text-match relevance, not confidence.`,
       inputSchema: z
         .object({
           catalogId: z
@@ -108,7 +111,7 @@ export function registerFindTranscriptMentionsTool(
               'Maximum matches returned per recording/audio hash. This does not limit the complete totalMatches count.',
             ),
           filters: SearchMetadataFiltersSchema.optional().describe(
-            'Optional constraints. eventIds, locationIds, and dateYears apply to linked events; resolve event and location IDs with list_events and list_locations. audioHashes identify recordings. recorderIds and verified remain optional curated-recording constraints.',
+            "Optional constraints. eventIds, locationIds, and dateYears apply to linked events; resolve event and location IDs with list_events and list_locations. audioHashes identify recordings and search exactly those recordings. recorderIds and verified remain optional curated-recording constraints. includeSecondaryRecordings widens the search beyond each event's primary recording.",
           ),
         })
         .superRefine((input, context) => {
@@ -159,7 +162,7 @@ export function registerFindTranscriptMentionsTool(
           }),
         (result) =>
           `Found ${result.retrieval.totalMatches} literal Besedy transcript match(es).`,
-        renderSearchContent,
+        (result) => renderSearchContent(result, filters),
       );
     },
   );
