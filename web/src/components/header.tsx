@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Download, Music2, Wrench, Mail } from "lucide-react";
+import { Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
 import { openSupportEmail } from "@/lib/support-email";
 import { useSession } from "@/contexts/session-context";
 import { useCatalogs } from "@/hooks/use-catalogs";
@@ -11,6 +11,7 @@ import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { useDownloadManager } from "@/hooks/use-downloads";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TextSizeToggle } from "@/components/text-size-toggle";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -26,6 +27,7 @@ export function Header() {
   const t = useTranslations();
   const { session } = useSession();
   const { hydrated: downloadsHydrated, records: downloads } = useDownloadManager();
+  const { isOnline } = useOnlineStatus();
   const route = useCatalogRouteState();
 
   // Don't show app navigation on auth pages
@@ -94,7 +96,24 @@ export function Header() {
             {!isAuthPage && effectiveCatalogId && <RadioButton catalogId={effectiveCatalogId} />}
             {!isAuthPage && <NotificationBell />}
             {!isAuthPage && <UpdateIndicator />}
-            {!isAuthPage && isSignedIn && (
+            {/* The single app-level connectivity indicator. It never blocks
+                the page; it explains why network-only actions are missing and
+                leads to the local library. */}
+            {!isOnline && (
+              <Button variant="ghost" size="icon" asChild>
+                <Link
+                  href="/downloads"
+                  title={t("offline.offlineMode")}
+                  aria-label={t("offline.offlineMode")}
+                  data-testid="offline-indicator"
+                >
+                  <WifiOff className="h-5 w-5" aria-hidden="true" />
+                </Link>
+              </Button>
+            )}
+            {/* Downloads is reachable while signed in, and while the session-free
+                local shell holds downloads for this device. */}
+            {!isAuthPage && (isSignedIn || downloadCount > 0) && (
               <Button variant="ghost" size="icon" asChild>
                 <Link
                   href="/downloads"

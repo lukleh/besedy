@@ -1892,8 +1892,7 @@
     "inviteUsers": "Invite users"
   },
   "offline": {
-    "offlineMode": "You're offline. Only downloaded content is available.",
-    "viewDownloads": "Downloads"
+    "offlineMode": "You're offline. Only downloaded content is available."
   },
   "downloads": {
     "title": "Downloads",
@@ -1931,20 +1930,11 @@
     "storageUsed": "{used} used of {quota} available",
     "storageUnknown": "Storage usage unavailable",
     "installHint": "Install the app to your home screen so the browser keeps downloads when it cleans up storage.",
-    "offlineRedirect": "You're offline and that page hasn't been downloaded. Here is what is available.",
     "unknownCatalog": "Catalog {id}",
     "unknownTitle": "Untitled recording",
     "eventLabel": "Event",
     "recordingLabel": "Recording",
-    "availableOffline": "Available offline",
-    "offlinePlayer": "Offline player",
-    "audioUnavailable": "The downloaded audio is unavailable. Remove this download and save it again while online.",
-    "transcript": "Transcript",
-    "noOfflineTranscript": "No transcript was stored with this download.",
-    "backToDownloads": "Back to downloads",
     "backToCatalog": "Back to catalog",
-    "detailUnavailable": "Download unavailable",
-    "detailUnavailableDescription": "This item is no longer stored on this device. Return to Downloads or save it again while online.",
     "downloadedEvents": "Downloaded events",
     "unavailableOffline": "Not available offline",
     "unavailableOfflineDescription": "This page needs a connection. Downloaded events open without one."

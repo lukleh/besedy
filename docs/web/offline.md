@@ -2,16 +2,17 @@
 
 ## Status and intent
 
-This document defines the target offline experience and the boundary that will
-support it. It is deliberately broader than the current implementation. The
-current implementation has a device-local `/downloads` shell, a fixed offline
-banner, and a separate reduced download-detail page. Those are transition
-mechanisms, not the intended product model.
+This document defines the target offline experience and the boundary that
+supports it. The product model below is implemented on the page side: normal
+pages render downloaded events from local packages, the session-free shell
+serves them at their normal URLs, and the header carries the single
+connectivity indicator. The audio transport underneath is the legacy chunk
+store described under Current implementation; its replacement is specified by
+#163.
 
-The [current implementation](#current-implementation) remains in production
-through this migration and is documented here as an operational fact. The
-remaining sections specify its replacement product model; they do not claim
-that the target behavior is shipped.
+The [current implementation](#current-implementation) section records what
+is in production today as an operational fact. The remaining sections are the
+specification the implementation is held to.
 
 Offline is a first-class operating mode of Besedy, not an add-on, a separate
 mini-app, or a feature that requires entering a special Downloads area. The
@@ -129,8 +130,10 @@ download, the manager warms the document's HTML and asset graph through a
 hidden `?warm=1` frame; a normal online visit refreshes it. Navigation between
 local pages is ordinary Next.js navigation: when the data fetch fails, Next
 falls back to a full navigation, which the worker answers with this document
-again. The `?item=<download-key>` selection and the `OfflineDownloadDetail`
-renderer still exist but are no longer reached from Downloads.
+again. The former `?item=<download-key>` selection, the separate
+`OfflineDownloadDetail` renderer, and the fixed offline banner have been
+removed; the header's crossed-Wi-Fi indicator links to Downloads and is the
+only connectivity cue.
 
 `web/public/sw.js` serves complete downloaded audio first, serves `/downloads`
 network-first with a cached-shell fallback, and answers other failed app
