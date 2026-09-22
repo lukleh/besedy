@@ -139,22 +139,31 @@ test.describe('Mobile event listening flow', () => {
     await page.reload();
     await waitForPageReady(page);
 
-    // Derive expectations from the events this listener can actually see.
-    // Other specs (events.spec.ts) release the seeded unreleased event, so the
-    // visible count is 2 or 3 depending on ordering under fullyParallel.
+    // Pin the list to Location X. events.spec.ts toggles the release state of
+    // the Location Y event on Desktop Chrome, so under fullyParallel a listener
+    // sees two or three events depending on ordering, and the detail page
+    // fetches its sequence separately from the list. Both Location X events
+    // are always released, and the sequence navigation follows the persisted
+    // list filter, so the list and the detail page share one stable event set.
+    await page.getByRole('button', { name: 'Filters' }).click();
+    // The desktop table header renders a second, CSS-hidden location select.
+    const locationSelect = page
+      .getByLabel('Location filter')
+      .filter({ visible: true });
+    await locationSelect.selectOption({ label: TEST_EVENTS[0].location });
+    const locationId = await locationSelect.inputValue();
+    expect(locationId).not.toBe('all');
+
     const eventsResponse = await page.request.get(
-      `/api/catalog-events?group=${TEST_CATALOG_ID}&limit=200&sort=date&dir=desc`,
+      `/api/catalog-events?group=${TEST_CATALOG_ID}&limit=200&sort=date&dir=desc&location=${locationId}`,
     );
     expect(eventsResponse.ok()).toBeTruthy();
     const eventList = (await eventsResponse.json()) as {
       events: EventItem[];
     };
-    const visibleEvents = eventList.events;
-    expect(visibleEvents.length).toBeGreaterThanOrEqual(2);
-    const total = visibleEvents.length;
-    const newest = visibleEvents[0];
-    const oldest = visibleEvents[total - 1];
-    const secondOldest = visibleEvents[total - 2];
+    expect(eventList.events).toHaveLength(2);
+    const [newest, oldest] = eventList.events;
+    await expect(page.locator('[data-testid^="event-card-"]')).toHaveCount(2);
 
     const sortButton = page.getByTestId('mobile-event-date-sort');
     await expect(sortButton).toBeVisible();
@@ -182,7 +191,7 @@ test.describe('Mobile event listening flow', () => {
     await expect(page).toHaveURL(URLS.event(oldest.id));
     const eventNavigation = page.getByTestId('event-sequence-navigation');
     await expect(eventNavigation).toBeVisible();
-    await expect(eventNavigation.getByText(`1 of ${total}`)).toBeVisible();
+    await expect(eventNavigation.getByText('1 of 2')).toBeVisible();
     await expect(
       eventNavigation.getByRole('button', { name: 'Previous' }),
     ).toBeDisabled();
@@ -198,9 +207,9 @@ test.describe('Mobile event listening flow', () => {
     });
 
     await eventNavigation.getByRole('button', { name: 'Next' }).click();
-    await expect(page).toHaveURL(URLS.event(secondOldest.id));
+    await expect(page).toHaveURL(URLS.event(newest.id));
     await expect(
-      page.getByTestId('event-sequence-navigation').getByText(`2 of ${total}`),
+      page.getByTestId('event-sequence-navigation').getByText('2 of 2'),
     ).toBeVisible();
     await expect(
       page

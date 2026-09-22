@@ -185,6 +185,29 @@ class TestSingleFileDispatch:
         assert data["report"]["summary"]["status"] == "failed"
         assert data["report"]["summary"]["issue_count"] == 1
 
+    def test_missing_segments_speakers_json_reports_failure(self, tmp_path):
+        speakers = write_transcript_json(tmp_path / "speakers.json", {"segments": []})
+
+        _, data, _ = _run_validate(self._args(speakers), "json")
+
+        assert data["kind"] == "diarization"
+        assert data["passed"] is False
+        assert data["diarization"]["status"] == "failed"
+        assert data["report"]["summary"]["status"] == "failed"
+        assert data["report"]["summary"]["diarization_passed"] is False
+
+    def test_malformed_speakers_json_reports_failure(self, tmp_path):
+        speakers = tmp_path / "speakers.json"
+        speakers.write_text("{not json")
+
+        _, data, _ = _run_validate(self._args(speakers), "json")
+
+        assert data["kind"] == "diarization"
+        assert data["passed"] is False
+        assert data["diarization"]["status"] == "failed"
+        assert data["report"]["summary"]["status"] == "failed"
+        assert {"name": "load", "status": "failed"} in data["report"]["steps"]
+
     def test_transcript_json_still_uses_transcript_validator(self, tmp_path):
         transcript = write_transcript_json(
             tmp_path / "transcript.json", create_minimal_transcript()
