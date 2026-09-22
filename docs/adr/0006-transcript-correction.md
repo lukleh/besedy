@@ -44,11 +44,11 @@ revision and no current disapproval applies. Eligibility does not publish
 anything automatically: a curator or catalog administrator must deliberately
 publish the transcript.
 
-Only primary recordings of events are in scope for the first version. Every
-other recording, including a secondary recording, has its own audio hash and
-timing and does not inherit corrections from a primary recording. Because these
-recordings cannot enter the correction workflow, they also do not enter its
-publication gate: their reader and ordinary-download behavior remains the
+Only primary recordings of events can enter correction in the first version.
+Every other recording, including a secondary recording, has its own audio hash
+and timing and does not inherit corrections from a primary recording. Because
+these recordings cannot enter the correction workflow, they also do not enter
+its publication gate: their reader and ordinary-download behavior remains the
 search backend's machine transcript.
 
 Being primary is a condition on **starting**, not a continuing one. Once a
@@ -96,7 +96,7 @@ fallback only when a recording lacks the search backend's transcript, in which
 case that recording is also absent from the search index. Changing the default
 is a deployment change, because it also changes the search index scope.
 
-Before a correction-eligible primary transcript has ever been published, a
+Before a transcript in correction scope has ever been published, a
 reader sees correction progress but not transcript text. Ordinary transcript
 downloads and bulk export do not include it. Search and MCP continue to use the
 machine transcript; users already understand that an agent uses transcription
@@ -122,7 +122,7 @@ and administrators can also enter that UI because their roles carry
 `correct_transcripts`.
 
 After publication, the published corrected transcript is the reader transcript
-for that primary recording. A catalog administrator may still compare it with
+for that recording. A catalog administrator may still compare it with
 machine variants, and a curator or administrator may download its frozen machine
 source. A live post-publication draft remains visible only in the correction UI.
 
@@ -164,9 +164,10 @@ rule.
 ### Correction works against one frozen machine source
 
 Any person holding `correct_transcripts` may deliberately start correction for
-an eligible primary recording. Merely opening a page creates nothing. The start
-action shows which machine transcript will be frozen: the search backend's
-transcript at that moment, or the fallback when it is missing. The server
+a recording that is currently the primary recording of an event. Merely opening
+a page creates nothing. The start action shows which machine transcript will be
+frozen: the search backend's transcript at that moment, or the fallback when it
+is missing. The server
 refuses the start if that choice has changed since it was shown.
 
 Starting creates one active workspace for that recording. A partial database
@@ -384,7 +385,7 @@ multi-hour recording.
 
 ### Readers see two progress measures before first publication
 
-For a correction-eligible primary recording with no reader publication, the
+For a recording in correction scope with no reader publication, the
 reader page shows no transcript text and no corrector identities or
 disputed-span detail. It shows:
 
@@ -596,7 +597,7 @@ actually missing, and whether indexing replaces rather than duplicates the
 recording. Stored action counts and timestamps support that review; direct
 conversation supplies the interpretation.
 
-No existing correction-eligible primary machine transcript is grandfathered
+No existing machine transcript in correction scope is grandfathered
 into reader publication. Recordings outside correction scope remain outside
 that gate.
 
@@ -616,8 +617,8 @@ that gate.
 - The first version corrects text only. Segment timing remains useful for audio
   following, citations and subtitle cues; word timing and segmentation quality
   remain machine output limitations.
-- Reader access and search/MCP resolution intentionally diverge for eligible
-  primary recordings before first publication and after unpublish. That is the
+- Reader access and search/MCP resolution intentionally diverge for recordings
+  in correction scope before first publication and after unpublish. That is the
   product decision, not propagation lag. Recordings outside correction scope
   remain on the search backend's machine transcript in v1.
 - Explicit original/variant permissions remain useful before publication and do
