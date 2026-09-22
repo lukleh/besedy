@@ -133,7 +133,17 @@ falls back to a full navigation, which the worker answers with this document
 again. The former `?item=<download-key>` selection, the separate
 `OfflineDownloadDetail` renderer, and the fixed offline banner have been
 removed; the header's crossed-Wi-Fi indicator links to Downloads and is the
-only connectivity cue.
+only connectivity cue. In the shell the Header renders after hydration, and
+while offline without a session it shows neither sign-in nor the signed-out
+appearance toggles, because the shell cannot learn who is signed in.
+
+A worker from before this shell answers a failed navigation with a redirect to
+`/downloads?from=<original URL>`. Until the new worker is applied through the
+update banner, the shell honours that `from` URL when it is same-origin: it
+restores path and search with `history.replaceState`, lets the router re-read
+the URL, and then renders the requested page from local packages with its
+query parameters intact. This is what makes downloads made before a deploy
+usable offline during the update window.
 
 `web/public/sw.js` serves complete downloaded audio first, serves `/downloads`
 network-first with a cached-shell fallback, and answers other failed app

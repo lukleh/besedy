@@ -6,8 +6,8 @@ import { Toaster } from 'sonner';
 import '../globals.css';
 import { AppProviders } from '@/components/app-providers';
 import { GoogleTranslateWarning } from '@/components/google-translate-warning';
-import { Header } from '@/components/header';
 import { MobileToastOverlay } from '@/components/mobile-toast-overlay';
+import { LocalModeHeader } from '@/components/offline/local-mode-header';
 import { UpdateBanner } from '@/components/update-banner';
 
 const geistSans = Geist({
@@ -82,7 +82,7 @@ export default async function OfflineRootLayout({
         >
           <GoogleTranslateWarning />
           <div className="relative flex min-h-screen flex-col">
-            <Header />
+            <LocalModeHeader />
             {/* Spacer for fixed header */}
             <div className="h-14 safe-top" aria-hidden="true" />
             <main className="flex-1 pb-16">{children}</main>
