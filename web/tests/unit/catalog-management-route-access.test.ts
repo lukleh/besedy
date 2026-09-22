@@ -5,6 +5,7 @@ import {
 } from "@/lib/access/catalog-management-route-access";
 import { canAttemptCatalogManagement } from "@/lib/policy/catalog";
 import { canPublishRecording } from "@/lib/policy/recording";
+import { canManageEventSources } from "@/lib/policy/event";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/auth/permissions", () => ({
@@ -77,10 +78,10 @@ describe("catalog management route access", () => {
     });
 
     const result = await requireCatalogManagementAccess("catalog-1", {
-      auditResource: "event_sources",
-      auditResourceId: "12",
-      deniedMessage: "Access denied to sources",
-      deniedReason: "Not owner/admin",
+      auditResource: "catalog_settings",
+      auditResourceId: "catalog-1",
+      deniedMessage: "Admin access required to view catalog settings",
+      deniedReason: "Admin access required to view catalog settings",
     });
 
     expect(result.ok).toBe(false);
@@ -89,16 +90,16 @@ describe("catalog management route access", () => {
     }
     expect(result.response.status).toBe(403);
     await expect(result.response.json()).resolves.toEqual({
-      error: "Access denied to sources",
+      error: "Admin access required to view catalog settings",
       code: "FORBIDDEN",
     });
     expect(logAccessDenied).toHaveBeenCalledWith(
       "user-1",
-      "event_sources",
-      "12",
+      "catalog_settings",
+      "catalog-1",
       {
         catalogId: "catalog-1",
-        reason: "Not owner/admin",
+        reason: "Admin access required to view catalog settings",
       }
     );
   });
@@ -164,6 +165,67 @@ describe("catalog management route access", () => {
         reason: "Publish-recording permission required to change recording publication state",
       }
     );
+  });
+
+  // Sources went the other way round: the default predicate let the host
+  // through and refused the curator. Both directions against the helper, so
+  // neither role can drift back onto the default.
+  it("refuses a host at the sources gate despite manage_access", async () => {
+    requireAuth.mockResolvedValue("host-1");
+    resolveCatalogActorContext.mockResolvedValue({
+      catalogExists: true,
+      canEnterPortal: true,
+      catalogGrant: grantForRole("host"),
+      isCatalogAdmin: false,
+    });
+
+    const result = await requireCatalogManagementAccess("catalog-1", {
+      auditResource: "event_sources",
+      auditResourceId: "12",
+      deniedMessage: "Event-sources permission required to manage event sources",
+      deniedReason: "Event-sources permission required to manage event sources",
+      authorize: canManageEventSources,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected access failure");
+    }
+    expect(result.response.status).toBe(403);
+    expect(logAccessDenied).toHaveBeenCalledWith(
+      "host-1",
+      "event_sources",
+      "12",
+      {
+        catalogId: "catalog-1",
+        reason: "Event-sources permission required to manage event sources",
+      }
+    );
+  });
+
+  it("admits a curator at the sources gate without manage_access", async () => {
+    requireAuth.mockResolvedValue("curator-1");
+    resolveCatalogActorContext.mockResolvedValue({
+      catalogExists: true,
+      canEnterPortal: true,
+      catalogGrant: grantForRole("curator"),
+      isCatalogAdmin: false,
+    });
+
+    const result = await requireCatalogManagementAccess("catalog-1", {
+      auditResource: "event_sources",
+      auditResourceId: "12",
+      deniedMessage: "Event-sources permission required to manage event sources",
+      deniedReason: "Event-sources permission required to manage event sources",
+      authorize: canManageEventSources,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected access success");
+    }
+    expect(result.userId).toBe("curator-1");
+    expect(logAccessDenied).not.toHaveBeenCalled();
   });
 
   it("preserves admin management authority when inactive-catalog checks are disabled", async () => {

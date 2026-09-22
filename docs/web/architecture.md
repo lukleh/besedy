@@ -129,8 +129,11 @@ Per-catalog authorization no longer uses an ordered access-level scale. An actor
 | POST | `/api/catalogs/:id/events/:eventId/recordings/:audioHash/set-primary` | `manage_events` | Set primary recording |
 | GET | `/api/catalog-events/unassigned?group=:id` | `manage_events` | Unassigned actionable entries |
 | GET | `/api/catalogs/:id/events/health` | `manage_events` | Event health counters |
+| GET/POST | `/api/catalogs/:id/events/:eventId/sources` | `manage_event_sources` | List or add event source records |
+| GET/PATCH/DELETE | `/api/catalogs/:id/events/:eventId/sources/:sourceId` | `manage_event_sources` | Open, edit or remove an event source |
 
 - Event visibility is enforced server-side via shared access guards (`requireCatalogEventsAccess` in `web/src/lib/catalog-events/access.ts`).
+- Event sources are editorial material, so every source route, reads included, asks `manage_event_sources` (carried by `curator` and `catalog_admin`); `manage_access` does not reach them. The event detail response's `canManageSources` flag follows the same permission.
 - For a grant without `see_unreleased`, an event is visible only once released, with a published, actionable primary recording; a grant holding `see_unreleased` (`curator`, `catalog_admin`) sees every event regardless of release state.
 - ADR 0005 names a separate `release_events` permission, but no route currently gates on it: `canReleaseEvent` in `web/src/lib/policy/event.ts` is presently the same check as `canEditEvent` (`manage_events`), so changing an event's `released` flag requires only `manage_events` today.
 

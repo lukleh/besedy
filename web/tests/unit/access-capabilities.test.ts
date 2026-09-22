@@ -125,6 +125,7 @@ describe("access capabilities", () => {
       canViewArtworkCandidates: false,
       canManageArtwork: false,
       canPublishArtwork: false,
+      canManageEventSources: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -160,6 +161,9 @@ describe("access capabilities", () => {
       canViewArtworkCandidates: false,
       canManageArtwork: false,
       canPublishArtwork: false,
+      // Sources are editorial too; the host does not get them with
+      // manage_access any more.
+      canManageEventSources: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
@@ -191,6 +195,7 @@ describe("access capabilities", () => {
       canViewArtworkCandidates: true,
       canManageArtwork: true,
       canPublishArtwork: true,
+      canManageEventSources: true,
       // The editorial role does not manage who else has access.
       canManageAccess: false,
       canAccessSettings: false,

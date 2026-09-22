@@ -27,7 +27,7 @@ import {
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
-import { canViewUnreleasedEvents } from "@/lib/policy/event";
+import { canManageEventSources, canViewUnreleasedEvents } from "@/lib/policy/event";
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
@@ -88,6 +88,7 @@ export interface CatalogCapability extends PortalCapability {
   canViewArtworkCandidates: boolean;
   canManageArtwork: boolean;
   canPublishArtwork: boolean;
+  canManageEventSources: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -145,6 +146,7 @@ export function buildCatalogCapability(
     canViewArtworkCandidates: canViewEventArtworkCandidates(policyContext),
     canManageArtwork: canManageEventArtworkCandidates(policyContext),
     canPublishArtwork: canPublishEventArtwork(policyContext),
+    canManageEventSources: canManageEventSources(policyContext),
   };
 }
 
