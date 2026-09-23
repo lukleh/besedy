@@ -46,6 +46,16 @@ test.describe("Smoke Tests @smoke", () => {
     const openedRoute = await openFirstPlayableCatalogItem(page);
     await waitForPageReady(page);
     await expect(page).toHaveURL(/\/catalog\/[^/]+\/(recording|event)\//);
+    if (openedRoute === "recording") {
+      // The recording page resumes from the listener's saved playback
+      // position, and a previous run of this test leaves it at the end of the
+      // track. Reopen with ?seek=0, which skips that restore, so every run
+      // starts from the beginning without a database reset between runs.
+      const startUrl = new URL(page.url());
+      startUrl.searchParams.set("seek", "0");
+      await page.goto(startUrl.toString());
+      await waitForPageReady(page);
+    }
 
     // Listener should reach a playable recording surface from the catalog UI.
     const playButton = page.getByTestId("audio-play-button").first();
@@ -81,20 +91,20 @@ test.describe("Smoke Tests @smoke", () => {
     const progressSlider = page.getByRole("slider", { name: /playback progress/i }).first();
     await expect(progressSlider).toBeVisible({ timeout: 5000 });
     const audioElement = page.locator("audio").first();
-    const currentTime = () =>
-      audioElement.evaluate((audio: HTMLAudioElement) => audio.currentTime);
+    const priorTime = await audioElement.evaluate(
+      (audio: HTMLAudioElement) => audio.currentTime
+    );
     await progressSlider.focus();
-    // The player resumes from the saved playback position, and a previous run
-    // of this test leaves it at the end of the track. Seek to the start first
-    // (Home) so the End seek below always has room to move, whatever position
-    // was restored, without depending on a database reset between runs.
+    await page.keyboard.press("End");
     // currentTime settles asynchronously after the slider value change
     // propagates through onValueChange → audio.currentTime.
-    await page.keyboard.press("Home");
-    await expect.poll(currentTime, { timeout: 5000 }).toBeLessThan(1);
-    const priorTime = await currentTime();
-    await page.keyboard.press("End");
-    await expect.poll(currentTime, { timeout: 5000 }).toBeGreaterThan(priorTime + 1);
+    await expect
+      .poll(
+        async () =>
+          await audioElement.evaluate((audio: HTMLAudioElement) => audio.currentTime),
+        { timeout: 5000 }
+      )
+      .toBeGreaterThan(priorTime + 1);
 
     // Toggle mute and verify the click flips the button's accessible name
     // between "Mute" and "Unmute". We don't assert on `audio.volume` here
