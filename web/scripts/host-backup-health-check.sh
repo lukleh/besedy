@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Daily health check for host-side Besedy snapshot coverage.
+#
+# Exit codes: 0 = healthy, 1 = coverage failure, 3 = trend warning only
+# (remote sync getting slow or the synced file count growing quickly).
 
 set -euo pipefail
 
-COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
 ALERT_EMAIL="${ALERT_EMAIL:-${REPORT_EMAIL:-}}"
 TAG="besedy-host-backup"
@@ -25,8 +29,21 @@ MAX_AGE_HOURS="${MAX_AGE_HOURS:-30}"
 REMOTE_SYNC_MAX_AGE_HOURS="${REMOTE_SYNC_MAX_AGE_HOURS:-$MAX_AGE_HOURS}"
 PROJECT_REQUIRED_PATHS="${PROJECT_REQUIRED_PATHS:-projects/besedy,projects/besedy_data,projects/besedy_artwork,projects/besedy_sources}"
 DB_DUMP_PATTERN="${DB_DUMP_PATTERN:-besedy_[0-9]*_[0-9]*.sql.gz}"
+# Early-warning thresholds for the remote sync trend (see check_remote_sync_trend).
+REMOTE_SYNC_MAX_DURATION_MINUTES="${REMOTE_SYNC_MAX_DURATION_MINUTES:-120}"
+REMOTE_SYNC_GROWTH_WINDOW_DAYS="${REMOTE_SYNC_GROWTH_WINDOW_DAYS:-7}"
+REMOTE_SYNC_MAX_GROWTH_PERCENT="${REMOTE_SYNC_MAX_GROWTH_PERCENT:-25}"
+# A trend warning persists for days, so its email is repeated only when the set
+# of warning kinds changes or this many hours have passed since the last one
+# (0 = email every run). The exit code and syslog line are not affected.
+REMOTE_SYNC_WARNING_REPEAT_HOURS="${REMOTE_SYNC_WARNING_REPEAT_HOURS:-168}"
+HOST_BACKUP_STATE_FILE="${HOST_BACKUP_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/lukleh/besedy/host-backup-trend.state}"
 
 declare -a failures=()
+declare -a warnings=()
+# One stable key per warning ("<name>:duration", "<name>:growth"); the
+# warning text itself changes with every run.
+declare -a warning_keys=()
 declare -a info=()
 declare -a EXTRA_REQUIRED_PATHS=()
 
@@ -34,6 +51,8 @@ PROJECT_LATEST_SNAPSHOT=""
 EXTRA_LATEST_SNAPSHOT=""
 LATEST_EXTRA_DB_DUMP=""
 
+# Logs the alert and emails it when ALERT_EMAIL is set. Returns 0 only when
+# an email went out.
 send_alert() {
     local subject="$1"
     local body="$2"
@@ -41,7 +60,7 @@ send_alert() {
     logger -t "$TAG" "$subject"
     if [ -z "$ALERT_EMAIL" ]; then
         logger -t "$TAG" "No ALERT_EMAIL configured; alert content: $body"
-        return 0
+        return 1
     fi
 
     if {
@@ -51,8 +70,38 @@ send_alert() {
         echo "$body"
     } | sendmail "$ALERT_EMAIL"; then
         logger -t "$TAG" "Alert email sent to $ALERT_EMAIL"
-    else
-        logger -t "$TAG" "Failed to send alert email to $ALERT_EMAIL"
+        return 0
+    fi
+    logger -t "$TAG" "Failed to send alert email to $ALERT_EMAIL"
+    return 1
+}
+
+current_warning_keys() {
+    printf '%s\n' "${warning_keys[@]}" | sort -u | paste -sd' '
+}
+
+# True unless the state file shows the same warning kinds were emailed less
+# than REMOTE_SYNC_WARNING_REPEAT_HOURS ago.
+trend_alert_due() {
+    local line="" sent_epoch="" sent_keys=""
+
+    [ -f "$HOST_BACKUP_STATE_FILE" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            sent_epoch=*) sent_epoch="${line#sent_epoch=}" ;;
+            keys=*) sent_keys="${line#keys=}" ;;
+        esac
+    done < "$HOST_BACKUP_STATE_FILE"
+    is_positive_int "$sent_epoch" || return 0
+    [ "$sent_keys" = "$(current_warning_keys)" ] || return 0
+    [ $(( $(date +%s) - sent_epoch )) -lt $(( REMOTE_SYNC_WARNING_REPEAT_HOURS * 3600 )) ] || return 0
+    return 1
+}
+
+record_trend_alert() {
+    if ! mkdir -p "$(dirname "$HOST_BACKUP_STATE_FILE")" 2>/dev/null ||
+        ! printf 'sent_epoch=%s\nkeys=%s\n' "$(date +%s)" "$(current_warning_keys)" > "$HOST_BACKUP_STATE_FILE" 2>/dev/null; then
+        logger -t "$TAG" "Could not record the trend alert in $HOST_BACKUP_STATE_FILE; it will be re-sent next run"
     fi
 }
 
@@ -199,13 +248,15 @@ check_remote_sync() {
         return 0
     fi
 
-    last_success="$(grep 'Remote snapshot sync completed successfully\.' "$log_file" | tail -n1 || true)"
+    # Same parser as the trend check, so an RSYNC_DRY_RUN run (which also logs
+    # "completed successfully" without copying anything) never counts as coverage.
+    last_success="$(successful_sync_records "$log_file" | tail -n1)"
     if [ -z "$last_success" ]; then
         failures+=("No successful $name remote sync found in $log_file")
         return 0
     fi
 
-    timestamp="$(printf '%s\n' "$last_success" | sed -n 's/^\[\(.*\)\] Remote snapshot sync completed successfully\.$/\1/p')"
+    IFS='|' read -r _ timestamp _ <<< "$last_success"
     if [ -z "$timestamp" ]; then
         failures+=("Failed to parse last successful $name remote sync timestamp from $log_file")
         return 0
@@ -224,6 +275,106 @@ check_remote_sync() {
 
     if [ "$age_hours" -gt "$REMOTE_SYNC_MAX_AGE_HOURS" ]; then
         failures+=("Latest $name remote sync is too old: ${age_hours}h (threshold ${REMOTE_SYNC_MAX_AGE_HOURS}h)")
+    fi
+}
+
+# Emit one "start|end|file_count" line per successful remote sync in the log.
+# The file count comes from the rsync --stats "Number of files:" line.
+# back_up.sh rotates the log to <log>.<timestamp>.gz, so the newest rotated
+# file is read first to keep a baseline available right after a rotation.
+# A back_up.sh retry is timed from the first attempt (that is how long the run
+# held the backup lock), and RSYNC_DRY_RUN runs are skipped.
+successful_sync_records() {
+    local log_file="$1"
+    local rotated=""
+
+    rotated="$(find "$(dirname "$log_file")" -maxdepth 1 -type f -name "$(basename "$log_file").*.gz" 2>/dev/null | sort | tail -n1)"
+    {
+        if [ -n "$rotated" ]; then
+            gzip -dc "$rotated" 2>/dev/null || true
+        fi
+        cat "$log_file"
+    } | awk '
+        function reset() { start = ""; count = ""; dry = 0 }
+        /\] Running remote snapshot sync in dry-run mode/ { dry = 1; next }
+        /\] Starting remote snapshot sync .*\(retry\)$/ { count = ""; next }
+        /\] Starting remote snapshot sync/ {
+            is_dry = dry
+            reset()
+            dry = is_dry
+            start = substr($0, 2, index($0, "]") - 2)
+            next
+        }
+        /^Number of files: / {
+            count = $4
+            gsub(",", "", count)
+            next
+        }
+        /\] Remote snapshot sync completed successfully\./ {
+            if (start != "" && !dry) {
+                print start "|" substr($0, 2, index($0, "]") - 2) "|" count
+            }
+            reset()
+            next
+        }
+        /\] Remote snapshot sync failed.*retrying once/ { next }
+        /\] Remote snapshot sync failed/ { reset() }
+    '
+}
+
+# Warn before the remote sync starts failing: a sync that keeps getting slower,
+# or a file count that jumps, is what preceded the Sep 2026 sync overruns.
+check_remote_sync_trend() {
+    local name="$1"
+    local log_file="$2"
+    local -a records=()
+    local start="" end="" count=""
+    local start_epoch=0 end_epoch=0 duration_minutes=0
+    local baseline_end="" baseline_count="" baseline_epoch=0 cutoff_epoch=0
+    local growth_percent=0 i=0
+
+    [ -f "$log_file" ] || return 0
+    mapfile -t records < <(successful_sync_records "$log_file")
+    [ "${#records[@]}" -gt 0 ] || return 0
+
+    IFS='|' read -r start end count <<< "${records[-1]}"
+    start_epoch="$(date -d "$start" +%s 2>/dev/null || echo 0)"
+    end_epoch="$(date -d "$end" +%s 2>/dev/null || echo 0)"
+    if [ "$start_epoch" -gt 0 ] && [ "$end_epoch" -ge "$start_epoch" ]; then
+        duration_minutes=$(( (end_epoch - start_epoch) / 60 ))
+        info+=("${name}_remote_sync_duration_minutes=$duration_minutes")
+        if [ "$duration_minutes" -gt "$REMOTE_SYNC_MAX_DURATION_MINUTES" ]; then
+            warnings+=("Latest $name remote sync took ${duration_minutes} min (threshold ${REMOTE_SYNC_MAX_DURATION_MINUTES} min)")
+            warning_keys+=("${name}:duration")
+        fi
+    fi
+
+    if ! is_positive_int "$count" || [ "$end_epoch" -eq 0 ]; then
+        return 0
+    fi
+    info+=("${name}_remote_sync_files=$count")
+
+    # Newest sync that is at least a window old and has a usable file count;
+    # an old record without one (garbled rsync stats) is skipped, not fatal.
+    cutoff_epoch=$(( end_epoch - REMOTE_SYNC_GROWTH_WINDOW_DAYS * 86400 ))
+    for (( i = ${#records[@]} - 2; i >= 0; i-- )); do
+        IFS='|' read -r _ baseline_end baseline_count <<< "${records[i]}"
+        baseline_epoch="$(date -d "$baseline_end" +%s 2>/dev/null || echo 0)"
+        if [ "$baseline_epoch" -gt 0 ] && [ "$baseline_epoch" -le "$cutoff_epoch" ] && is_positive_int "$baseline_count"; then
+            break
+        fi
+        baseline_count=""
+    done
+
+    if ! is_positive_int "$baseline_count"; then
+        info+=("${name}_remote_sync_files_growth_percent=unknown (no successful sync ${REMOTE_SYNC_GROWTH_WINDOW_DAYS}+ days older in the log)")
+        return 0
+    fi
+    growth_percent=$(( (count - baseline_count) * 100 / baseline_count ))
+    info+=("${name}_remote_sync_files_growth_percent=$growth_percent (vs $baseline_count at $baseline_end)")
+    if [ "$growth_percent" -gt "$REMOTE_SYNC_MAX_GROWTH_PERCENT" ]; then
+        warnings+=("$name remote sync file count grew ${growth_percent}% in ${REMOTE_SYNC_GROWTH_WINDOW_DAYS}+ days: $baseline_count -> $count (threshold ${REMOTE_SYNC_MAX_GROWTH_PERCENT}%)")
+        warning_keys+=("${name}:growth")
     fi
 }
 
@@ -255,37 +406,84 @@ if ! is_positive_int "$MAX_AGE_HOURS"; then
     exit 1
 fi
 
-if ! is_positive_int "$REMOTE_SYNC_MAX_AGE_HOURS"; then
-    echo "REMOTE_SYNC_MAX_AGE_HOURS must be a positive integer, got: $REMOTE_SYNC_MAX_AGE_HOURS" >&2
-    exit 1
-fi
+for threshold_var in REMOTE_SYNC_MAX_AGE_HOURS REMOTE_SYNC_MAX_DURATION_MINUTES \
+    REMOTE_SYNC_GROWTH_WINDOW_DAYS REMOTE_SYNC_MAX_GROWTH_PERCENT; do
+    if ! is_positive_int "${!threshold_var}"; then
+        echo "$threshold_var must be a positive integer, got: ${!threshold_var}" >&2
+        exit 1
+    fi
+done
+case "$REMOTE_SYNC_WARNING_REPEAT_HOURS" in
+    ''|*[!0-9]*)
+        echo "REMOTE_SYNC_WARNING_REPEAT_HOURS must be a non-negative integer, got: $REMOTE_SYNC_WARNING_REPEAT_HOURS" >&2
+        exit 1
+        ;;
+esac
 
 load_extra_required_paths
 check_snapshot_root "project" "$PROJECT_SNAPSHOT_ROOT" "$PROJECT_REQUIRED_PATHS"
 check_snapshot_root "extra" "$EXTRA_SNAPSHOT_ROOT" "$(IFS=,; echo "${EXTRA_REQUIRED_PATHS[*]}")"
 check_remote_sync "project" "$PROJECT_LOG_FILE"
 check_remote_sync "extra" "$EXTRA_LOG_FILE"
+check_remote_sync_trend "project" "$PROJECT_LOG_FILE"
+check_remote_sync_trend "extra" "$EXTRA_LOG_FILE"
 check_extra_db_dump
+
+suggested_checks=" - ls -lah $PROJECT_SNAPSHOT_ROOT
+ - ls -lah $EXTRA_SNAPSHOT_ROOT
+ - tail -n 100 $PROJECT_LOG_FILE
+ - tail -n 100 $EXTRA_LOG_FILE"
+warnings_block=""
+if [ "${#warnings[@]}" -gt 0 ]; then
+    warnings_block="
+Warnings:
+$(printf ' - %s\n' "${warnings[@]}")
+"
+fi
 
 if [ "${#failures[@]}" -gt 0 ]; then
     body="Besedy host backup coverage check failed on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S %Z').
 
 Failures:
 $(printf ' - %s\n' "${failures[@]}")
-
+$warnings_block
 Context:
 $(printf ' - %s\n' "${info[@]}")
 
 Suggested checks:
- - ls -lah $PROJECT_SNAPSHOT_ROOT
- - ls -lah $EXTRA_SNAPSHOT_ROOT
- - tail -n 100 $PROJECT_LOG_FILE
- - tail -n 100 $EXTRA_LOG_FILE"
+$suggested_checks"
 
-    send_alert "[Besedy] Host backup coverage check FAILED" "$body"
+    send_alert "[Besedy] Host backup coverage check FAILED" "$body" || true
     printf '%s\n' "$body"
     exit 1
 fi
+
+if [ "${#warnings[@]}" -gt 0 ]; then
+    body="Besedy host backup trend warning on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S %Z').
+
+Coverage is still OK, but the remote sync is trending toward failure.
+$warnings_block
+Context:
+$(printf ' - %s\n' "${info[@]}")
+
+Suggested checks:
+ - $SCRIPT_DIR/backup-growth-report.sh (which top-level directories grew)
+ - $SCRIPT_DIR/worktree-report.sh (stale git worktrees)
+$suggested_checks"
+
+    if trend_alert_due; then
+        if send_alert "[Besedy] Host backup trend WARNING" "$body"; then
+            record_trend_alert
+        fi
+    else
+        logger -t "$TAG" "Host backup trend WARNING unchanged ($(current_warning_keys)); email not repeated within ${REMOTE_SYNC_WARNING_REPEAT_HOURS}h"
+    fi
+    printf '%s\n' "$body"
+    exit 3
+fi
+
+# Healthy again: the next warning is news and should be emailed at once.
+rm -f "$HOST_BACKUP_STATE_FILE" 2>/dev/null || true
 
 summary="Host backup coverage OK on $(hostname): $(printf '%s; ' "${info[@]}")"
 logger -t "$TAG" "$summary"

@@ -209,6 +209,17 @@ manages workflow-group records themselves.
 
 ## Agent-Specific Notes
 
+- Create git worktrees under `~/worktrees/<repo>/<name>`, for example
+  `git worktree add ~/worktrees/besedy/<name> -b <area>/<name> origin/main`,
+  never inside `~/projects` (not as a sibling like `~/projects/besedy-<name>`
+  and not in the repo's `worktrees/`). Everything under `~/projects` is
+  snapshotted nightly and synced off-host; per-worktree `node_modules` and
+  `.venv` trees overran that sync in September 2026. Commits stay backed up
+  because worktrees share the main repo's object store. Remove a worktree once
+  its branch is merged; `web/scripts/worktree-report.sh` lists the removable ones.
+  The one exception is the optional regression reference checkout at
+  `worktrees/besedy-reference`, which `tests/conftest.py` looks up by that path
+  (the backup excludes `worktrees/`, so it adds no sync load).
 - Production web revision is exposed at `GET /api/version`.
 - Fast check command:
   `curl -s https://besedy.org/api/version | jq -r '.commit, .commitShort, .buildTime, .environment'`

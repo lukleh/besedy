@@ -11,6 +11,7 @@
 #   REPORT_WINDOW_DAYS - Number of days to aggregate (default: 7)
 #   PER_USER_BREAKDOWN_LIMIT - Max users in the audio breakdown (default: 20)
 #   HOST_BACKUP_MAX_AGE_HOURS - Freshness threshold for host snapshot checks (default: 30)
+#   HELPER_REPORT_TIMEOUT_SECONDS - Time limit for each embedded helper report (default: 600)
 #   THRESHOLD_FAILED_LOGIN - Alert threshold for failed logins (default: 5 * REPORT_WINDOW_DAYS)
 #   THRESHOLD_ACCESS_DENIED - Alert threshold for access denied (default: 10 * REPORT_WINDOW_DAYS)
 
@@ -61,6 +62,7 @@ EXTRA_BACKUP_LOG_FILE="${EXTRA_BACKUP_LOG_FILE:-${EXTRA_LOG_FILE:-}}"
 : "${EXTRA_BACKUP_LOG_FILE:?is not set — add EXTRA_LOG_FILE to ops.env (see web/setup/backup/ops.env.example)}"
 EXTRA_MAP_FILE="${EXTRA_MAP_FILE:-$COMPOSE_DIR/setup/backup/besedy-extra.paths}"
 HOST_BACKUP_MAX_AGE_HOURS="${HOST_BACKUP_MAX_AGE_HOURS:-30}"
+HELPER_REPORT_TIMEOUT_SECONDS="${HELPER_REPORT_TIMEOUT_SECONDS:-600}"
 
 is_positive_int() {
     case "$1" in
@@ -75,6 +77,10 @@ is_positive_int() {
 
 if ! is_positive_int "$REPORT_WINDOW_DAYS"; then
     echo "REPORT_WINDOW_DAYS must be a positive integer, got: $REPORT_WINDOW_DAYS" >&2
+    exit 1
+fi
+if ! is_positive_int "$HELPER_REPORT_TIMEOUT_SECONDS"; then
+    echo "HELPER_REPORT_TIMEOUT_SECONDS must be a positive integer, got: $HELPER_REPORT_TIMEOUT_SECONDS" >&2
     exit 1
 fi
 
@@ -180,7 +186,8 @@ host_backup_health_summary() {
         return 0
     fi
 
-    if output="$(
+    local rc=0
+    output="$(
         ALERT_EMAIL="" \
         REPORT_EMAIL="" \
         BESEDY_COMPOSE_DIR="$COMPOSE_DIR" \
@@ -192,12 +199,34 @@ host_backup_health_summary() {
         MAX_AGE_HOURS="$HOST_BACKUP_MAX_AGE_HOURS" \
         REMOTE_SYNC_MAX_AGE_HOURS="$HOST_BACKUP_MAX_AGE_HOURS" \
         "$host_backup_script" 2>&1
-    )"; then
-        echo "OK|$output"
+    )" || rc=$?
+
+    case "$rc" in
+        0) echo "OK|$output" ;;
+        3) echo "WARNING|$output" ;;
+        *) echo "FAILED|$output" ;;
+    esac
+}
+
+# Output of a read-only helper report, or a note when it is unavailable, fails
+# or overruns HELPER_REPORT_TIMEOUT_SECONDS. The helpers walk millions of
+# snapshot inodes; with a cold page cache (right after the nightly backup) or a
+# stalled snapshot filesystem they must not hold up the rest of the report.
+helper_report() {
+    local script="$SCRIPT_DIR/$1"
+    local output="" rc=0
+
+    if [ ! -x "$script" ]; then
+        echo "unavailable: $script not found or not executable"
         return 0
     fi
-
-    echo "FAILED|$output"
+    output="$(timeout "$HELPER_REPORT_TIMEOUT_SECONDS" "$script" 2>&1)" || rc=$?
+    if [ "$rc" -eq 124 ]; then
+        output="timed out after ${HELPER_REPORT_TIMEOUT_SECONDS}s${output:+; partial output:$'\n'}$output"
+    elif [ "$rc" -ne 0 ]; then
+        output="failed: ${output:-no output}"
+    fi
+    printf '%s\n' "$output"
 }
 
 # Collect metrics for the configured report window.
@@ -556,6 +585,12 @@ HOST_BACKUP_DETAILS="${HOST_BACKUP_RESULT#*|}"
 DB_BACKUP_DETAILS_FORMATTED="    ${BACKUP_HEALTH_DETAILS//$'\n'/$'\n    '}"
 HOST_BACKUP_DETAILS_FORMATTED="    ${HOST_BACKUP_DETAILS//$'\n'/$'\n    '}"
 
+# What is making the backup bigger, and which worktrees can go.
+BACKUP_GROWTH_REPORT="$(helper_report backup-growth-report.sh)"
+WORKTREE_REPORT="$(helper_report worktree-report.sh)"
+BACKUP_GROWTH_FORMATTED="    ${BACKUP_GROWTH_REPORT//$'\n'/$'\n    '}"
+WORKTREE_REPORT_FORMATTED="    ${WORKTREE_REPORT//$'\n'/$'\n    '}"
+
 # Check for alerts
 ALERTS=""
 if [ "$FAILED_LOGINS" -gt "$THRESHOLD_FAILED_LOGIN" ]; then
@@ -642,6 +677,12 @@ Host snapshot coverage:
   Status:           $HOST_BACKUP_STATUS
   Details:
 $HOST_BACKUP_DETAILS_FORMATTED
+
+Project snapshot growth:
+$BACKUP_GROWTH_FORMATTED
+
+Git worktrees (report only, nothing is removed):
+$WORKTREE_REPORT_FORMATTED
 "
 
 if [ -n "$ALERTS" ]; then
