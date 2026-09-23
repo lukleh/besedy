@@ -862,8 +862,9 @@ are not a reason to keep the worktree), and is not used by a Docker container
 checks fail closed: if git or `docker ps` cannot answer, the worktree is kept.
 The process check can only see processes of the invoking user unless run as
 root; run from a terminal, it says how many it skipped. A removable branch
-worktree whose branch has commits on no remote is annotated with that count,
-since after removal the local branch is their only copy. It prints
+worktree whose branch has commits on no remote branch (typically squash-merged
+with the remote branch deleted) is annotated with that count, since after
+removal the local branch is their only copy. It prints
 `git worktree remove` commands but never runs them.
 
 **`security-update-check.sh`** -- Runs `npm audit` and Trivy CVE scan against

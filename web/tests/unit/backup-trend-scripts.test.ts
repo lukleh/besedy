@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -608,7 +609,9 @@ describe('worktree-report.sh', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(new RegExp(`REMOVABLE  ${merged}  \\[branch pr-branch`));
     expect(result.stdout).toMatch(
-      new RegExp(`REMOVABLE  ${merged} .*\\(branch has 1 unpushed commit\\(s\\); the branch stays after removal\\)`),
+      new RegExp(
+        `REMOVABLE  ${merged} .*\\(branch has 1 commit\\(s\\) on no remote branch; the branch stays after removal\\)`,
+      ),
     );
     expect(result.stdout).toContain(`git -C ${repo} worktree remove ${merged}`);
   });
@@ -621,18 +624,48 @@ describe('worktree-report.sh', () => {
     const result = runWorktreeReport(repo);
 
     expect(result.stdout).toContain(`REMOVABLE  ${pushed}`);
-    expect(result.stdout).not.toContain('unpushed commit');
+    expect(result.stdout).not.toContain('on no remote branch');
   });
 
-  it('leaves the unreadable-process note out of non-terminal output', () => {
-    const repo = setUpRepo();
+  // The note about uninspectable processes needs a process whose cwd this user
+  // cannot read (PID 1 as non-root) and util-linux `script` to lend a pty.
+  function cannotReadInit(): boolean {
+    try {
+      readlinkSync('/proc/1/cwd');
+      return false;
+    } catch {
+      return true;
+    }
+  }
+  const hasScriptUtility = spawnSync('script', ['--version'], { encoding: 'utf8' }).status === 0;
 
-    // spawnSync pipes stdout, as the weekly report's command substitution does.
-    const result = runWorktreeReport(repo);
+  it.skipIf(!cannotReadInit() || !hasScriptUtility)(
+    'prints the unreadable-process note only on a terminal',
+    () => {
+      const repo = setUpRepo();
+      const env = {
+        ...process.env,
+        ...gitEnv,
+        WORKTREE_REPORT_REPOS: repo,
+        WORKTREE_BACKUP_TREE: join(root, 'wt'),
+        WORKTREE_REPORT_DOCKER: join(fakeBin, 'no-docker'),
+      };
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).not.toContain('could not be inspected');
-  });
+      // Piped stdout, as the weekly report's command substitution sees it.
+      const piped = spawnSync('bash', [worktreeReport], { encoding: 'utf8', env });
+      expect(piped.status).toBe(0);
+      expect(piped.stdout).not.toContain('could not be inspected');
+
+      // Under a pseudo-terminal the note is present.
+      const onTerminal = spawnSync(
+        'script',
+        ['-qec', `bash ${JSON.stringify(worktreeReport)}`, '/dev/null'],
+        { encoding: 'utf8', env },
+      );
+      expect(onTerminal.status).toBe(0);
+      expect(onTerminal.stdout).toMatch(/Note: \d+ process\(es\) of other users could not be inspected/);
+    },
+  );
 
   it('matches regenerable ignored trees under paths git would quote', () => {
     const repo = setUpRepo();

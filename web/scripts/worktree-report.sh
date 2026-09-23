@@ -17,8 +17,8 @@
 # worktree is KEEP. The process check sees only processes whose working
 # directory this user may read (all of them when run as root); run from a
 # terminal, the report says how many it could not inspect. A removable branch
-# worktree with commits on no remote is annotated: the branch survives removal
-# but is then their only copy.
+# worktree with commits on no remote branch (e.g. squash-merged, remote branch
+# deleted) is annotated: the branch survives removal but is then their only copy.
 # Anything else is KEEP with the reasons listed; an unlocked registered worktree
 # whose directory is gone is PRUNE (`git worktree prune` cleans it up).
 #
@@ -232,9 +232,9 @@ report_worktree() {
         # Not a reason to keep the worktree, but after removal the local branch
         # is the only copy of these commits, so say so.
         if ! unpushed_count="$(git -C "$path" rev-list --count HEAD --not --remotes 2>/dev/null)"; then
-            note="  (unpushed commits unknown; the branch stays after removal)"
+            note="  (could not compare with remote branches; the branch stays after removal)"
         elif [ "$unpushed_count" -gt 0 ]; then
-            note="  (branch has $unpushed_count unpushed commit(s); the branch stays after removal)"
+            note="  (branch has $unpushed_count commit(s) on no remote branch; the branch stays after removal)"
         fi
     fi
 
