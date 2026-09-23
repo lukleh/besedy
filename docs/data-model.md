@@ -424,6 +424,28 @@ publication has written its artifacts but has not yet committed its database
 pointers, a routine sync must already resolve the new text — otherwise it would
 classify the hash as changed and revert the corrected chunks to machine text.
 
+### Publication waits for the index
+
+The pointer is written in `activating` state, and the database pointers do not
+move until the search side has confirmed what it holds. The web application
+submits a `sync_correction_index_flow` job through the jobs API; the host
+ingest worker runs `catalog rag-colbert-index --group <catalog> --hash
+<audio_hash>` for the active search scope, reads the recording's row from the
+new bundle's `source_state.sqlite`, and reports it to
+`POST /api/internal/correction/index-sync/complete`. The web application
+accepts the report only if the reported `transcript_path` ends with this
+publication's `corrections_<catalog_id>/<workspace_id>/publications/<publication_id>/transcript.json`
+— paths are compared by their tail under the corrections root because the
+worker and the web container mount the tree at different places — and only
+then moves both database pointers and flips the pointer to `active`. A report
+naming a different source, or a failed sync, leaves the publication
+`ACTIVATING` with the error recorded; reconciling submits the job again.
+
+Withdrawal from search and rollback run the same job with `operation` set to
+`withdraw` or `rollback`. Their intents (`search_withdrawal_id`,
+`ROLLING_BACK`) clear only when the report shows the machine text, or the
+previous publication, is what the bundle holds again.
+
 ---
 
 ## Directory Structure and Discovery

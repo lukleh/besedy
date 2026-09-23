@@ -167,7 +167,7 @@ authoritative for work in progress; the rendered artifacts are immutable files.
 | `transcript_span_revision`    | Immutable normalized text, chained to its predecessor              |
 | `transcript_span_decision`    | Immutable approve / disapprove / withdraw by one person            |
 | `transcript_span_comment`     | Optional discussion, recording the revision its author saw         |
-| `transcript_publication`      | One immutable snapshot and the job that activates it               |
+| `transcript_publication`      | One immutable snapshot, the index job that activates it, and what search reported |
 | `transcript_publication_span` | The exact revision used for every span in a publication            |
 | `transcript_guide_revision`   | Immutable versions of the catalog correction guide                 |
 
@@ -194,6 +194,14 @@ The two workspace pointers are deliberately separate. `reader_publication_id`
 is what the reader, the ordinary download and the bulk export resolve;
 `search_publication_id` is what search indexing and MCP resolve. An ordinary
 unpublish clears only the first.
+
+Neither pointer moves until the search index has caught up. A publication in
+`ACTIVATING` carries `index_job_id`, the Prefect flow run asked to sync the
+recording, and receives `search_source_fingerprint` and `search_source_path`
+from that run's completion report; the pointers move only when the reported
+path is this publication's own artifact. `search_withdrawal_job_id` plays the
+same role for a withdrawal from search. The wiring is described with the
+pointer file in [Data model](../data-model.md#publication-waits-for-the-index).
 
 ---
 
