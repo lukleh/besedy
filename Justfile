@@ -138,7 +138,22 @@ prefect-db:
 prefect-deploy:
     just jobs-dev-deploy
 
-jobs-dev-up:
+# A jobs runtime with an empty BESEDY_JOB_SERVICE_SECRET stays healthy but
+# answers 401 to every web request, so refuse to start one.
+_jobs-secret-check mode:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    jobs_env="$(bash scripts/resolve_jobs_env_file.sh {{ mode }})"
+    secret="$(
+        . "$jobs_env"
+        printf '%s' "${BESEDY_JOB_SERVICE_SECRET:-}"
+    )"
+    if [ -z "${secret//[[:space:]]/}" ]; then
+        echo "BESEDY_JOB_SERVICE_SECRET is empty in $jobs_env; set it to the value in the web env file of the same environment." >&2
+        exit 1
+    fi
+
+jobs-dev-up: (_jobs-secret-check "development")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
@@ -165,7 +180,7 @@ jobs-dev-deploy:
     {{ ensure_prefect_network }}
     {{ jobs_dev_compose }} run --rm jobs-api python -m besedy.lib.prefect_jobs.deploy
 
-jobs-test-up:
+jobs-test-up: (_jobs-secret-check "test")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
@@ -192,7 +207,7 @@ jobs-test-deploy:
     {{ ensure_prefect_network }}
     {{ jobs_test_compose }} run --rm jobs-api python -m besedy.lib.prefect_jobs.deploy
 
-jobs-prod-up:
+jobs-prod-up: (_jobs-secret-check "production")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
@@ -201,7 +216,7 @@ jobs-prod-up:
 
 # Start production with the narrowly scoped Codex auth overlay for
 # model-chatgpt-* profiles.
-jobs-prod-up-codex:
+jobs-prod-up-codex: (_jobs-secret-check "production")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
@@ -327,6 +342,10 @@ web-check:
     #!/usr/bin/env bash
     set -e
     cd web
+    if [ ! -x node_modules/.bin/next ]; then
+        echo "Web dependencies are not installed; run: (cd web && npm ci)" >&2
+        exit 1
+    fi
     echo "Running TypeScript type check..."
     npm run type-check
     echo "Running ESLint..."
@@ -594,6 +613,10 @@ prod-apply:
     # versions.
     echo "Stopping web and scheduled backup for database maintenance..."
     {{ prod_compose }} stop web backup
+    # On a fresh host nothing has started the database yet. --no-recreate
+    # leaves an existing database container untouched.
+    echo "Ensuring the database is running..."
+    {{ prod_compose }} up -d --no-deps --no-recreate --wait db
     echo "Creating a pre-migration backup..."
     just prod-backup
     echo "Running migrations..."
@@ -882,7 +905,7 @@ test-up:
     # Wait for DB to be ready
     echo "Waiting for database..."
     for i in {1..30}; do
-      if {{ test_compose }} exec -T db pg_isready -U besedy_test > /dev/null 2>&1; then
+      if {{ test_compose }} exec -T db pg_isready -h 127.0.0.1 -U besedy_test > /dev/null 2>&1; then
         break
       fi
       sleep 1
@@ -995,7 +1018,7 @@ test-ready:
     fi
 
     # Check DB ready
-    if ! {{ test_compose }} exec -T db pg_isready -U besedy_test > /dev/null 2>&1; then
+    if ! {{ test_compose }} exec -T db pg_isready -h 127.0.0.1 -U besedy_test > /dev/null 2>&1; then
       echo "Database not ready"
       exit 1
     fi

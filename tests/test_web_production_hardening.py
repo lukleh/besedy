@@ -1,7 +1,12 @@
 """Guardrails for production web deployment hardening."""
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 JUSTFILE = PROJECT_ROOT / "Justfile"
@@ -142,6 +147,93 @@ def test_fresh_host_can_build_web_before_the_coordinated_jobs_build() -> None:
     assert coordinated_recipe.index("just jobs-prod-build") < coordinated_recipe.index(
         "just _prod-apply-with-jobs"
     )
+
+
+def test_first_deploy_starts_the_database_before_the_pre_migration_backup() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+    # Slice at the next recipe header rather than at a comment that may be reworded.
+    apply_recipe = justfile.split("\nprod-apply:", maxsplit=1)[1].split(
+        "\nprod-deploy:", maxsplit=1
+    )[0]
+    start_db = "{{ prod_compose }} up -d --no-deps --no-recreate --wait db"
+
+    assert start_db in apply_recipe
+    assert apply_recipe.index(start_db) < apply_recipe.index("just prod-backup")
+
+
+def _run_jobs_secret_check(tmp_path: Path, secret_line: str) -> subprocess.CompletedProcess[str]:
+    jobs_env = tmp_path / "jobs.env.dev"
+    jobs_env.write_text(f"JOBS_SERVICE_PORT=8390\n{secret_line}\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["BESEDY_JOBS_ENV_DEV"] = str(jobs_env)
+    return subprocess.run(
+        ["just", "_jobs-secret-check", "development"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.skipif(shutil.which("just") is None, reason="requires just")
+def test_jobs_runtime_refuses_to_start_with_an_empty_service_secret(tmp_path: Path) -> None:
+    result = _run_jobs_secret_check(tmp_path, "BESEDY_JOB_SERVICE_SECRET=")
+
+    assert result.returncode == 1
+    assert "BESEDY_JOB_SERVICE_SECRET is empty" in result.stderr
+    assert str(tmp_path / "jobs.env.dev") in result.stderr
+
+
+@pytest.mark.skipif(shutil.which("just") is None, reason="requires just")
+def test_jobs_runtime_starts_with_a_configured_service_secret(tmp_path: Path) -> None:
+    result = _run_jobs_secret_check(
+        tmp_path, "BESEDY_JOB_SERVICE_SECRET=dev-jobs-service-secret-12345"
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_every_jobs_runtime_start_checks_the_service_secret_first() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+    expected = {
+        "jobs-dev-up": "development",
+        "jobs-test-up": "test",
+        "jobs-prod-up": "production",
+        "jobs-prod-up-codex": "production",
+    }
+
+    for recipe, mode in expected.items():
+        assert f'\n{recipe}: (_jobs-secret-check "{mode}")\n' in justfile, recipe
+
+
+def test_jobs_env_template_leaves_per_environment_values_to_compose_defaults() -> None:
+    jobs_env_template = PROJECT_ROOT / "jobs-service" / ".env.example"
+    per_environment = {
+        "PREFECT_DEEP_SEARCH_WORK_POOL",
+        "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME",
+        "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
+        "BESEDY_INTERNAL_BASE_URL",
+        "DEEP_SEARCH_OUTPUT_ENV",
+        "DEEP_SEARCH_OUTPUT_DIR",
+        "BESEDY_OUTPUT_CHOWN_UID",
+        "BESEDY_OUTPUT_CHOWN_GID",
+    }
+    assigned = dict(
+        line.split("=", 1)
+        for line in jobs_env_template.read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    )
+
+    assert assigned.keys().isdisjoint(per_environment)
+    # No shared secret ships in the template; each environment sets its own.
+    assert assigned["BESEDY_JOB_SERVICE_SECRET"] == ""
+
+
+def test_database_healthcheck_waits_for_the_tcp_listener() -> None:
+    compose = WEB_COMPOSE.read_text(encoding="utf-8")
+
+    assert "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-besedy}" in compose
 
 
 def test_database_maintenance_quiesces_scheduled_backups() -> None:
