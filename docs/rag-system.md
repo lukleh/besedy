@@ -258,7 +258,7 @@ corrected `transcript.json` for the machine transcript of the same audio hash,
 in whichever backend scope is being built. The recording then classifies as
 `changed` and its chunks are replaced; corrected and machine chunks never
 coexist. The pointer contract is in
-[Data model](data-model.md#index-sourcesaudio_hashjson).
+[Data model](data-model.md#index-sourcesltaudio_hashgtjson).
 
 Publication does not wait for a routine sync. The web application submits a
 `sync_correction_index_flow` job (deployment
