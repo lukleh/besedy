@@ -81,7 +81,8 @@ catalogs, transcripts, and audio from mounted host paths.
 - [ ] `AUTH_SECRET`
 - [ ] `AUTH_URL` (must match domain and OAuth redirect URI)
 - [ ] `NEXT_PUBLIC_APP_URL` matches `AUTH_URL`
-- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`
+- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`,
+      `CORRECTIONS_DIR`
 - [ ] `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`
       (production refuses to render the Compose configuration if any data
       directory above is unset; there is no fixtures fallback outside dev/test)
@@ -623,6 +624,22 @@ Deploy additions on top of the Deep Search steps above:
 4. Verify: `systemctl --user status besedy-ingest-worker`, the pool shows a
    healthy worker in the Prefect UI, then upload a short recording and watch it
    reach `SUCCEEDED` with a hash link.
+
+Transcript correction ([ADR 0006](../adr/0006-transcript-correction.md)) adds
+one more shared directory and one more deployment on the same worker:
+
+1. Web env file: set `CORRECTIONS_DIR` to a host directory prepared like
+   `UPLOADS_DIR` (group `UPLOADS_GID`, mode `2770`); it must not sit inside
+   `TEXT_DATA_DIR`, which the container mounts read-only. Host `besedy.toml`:
+   set `[paths].corrections_dir` to the same directory, because the worker's
+   index sync reads published transcripts from it. Container toml:
+   `corrections_dir = "/data/corrections"`.
+2. `just prod-deploy` (includes the correction migrations) and
+   `just jobs-prod-rebuild && just jobs-prod-deploy` (registers
+   `sync_correction_index_flow/correction-index-prod` on the ingest pool), then
+   restart the host worker unit so it picks up the new flow.
+3. Verify: publish a corrected transcript and watch its publication go from
+   `ACTIVATING` to `SUCCEEDED` once the flow run in the Prefect UI completes.
 
 Cloudflare limits proxied request bodies to 100 MB; uploads are chunked at
 `INGEST_CHUNK_BYTES` (default 50 MB) so do not raise that above the limit.

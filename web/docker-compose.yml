@@ -131,6 +131,8 @@ services:
       - ${SOURCES_DIR:-./tests/e2e/fixtures/sources}:/data/sources:rw
       # Admin-uploaded recordings awaiting ingest (writable, shared with the host ingest worker)
       - ${UPLOADS_DIR:-./tests/e2e/fixtures/uploads}:/data/uploads:rw
+      # Transcript correction workspaces and publications (writable, read by the host worker's index sync)
+      - ${CORRECTIONS_DIR:-./tests/e2e/fixtures/corrections}:/data/corrections:rw
       # Audio files
       - ${AUDIO_DIR:-./tests/e2e/fixtures/audio}:/data/audio:ro
       # Original audio files for download

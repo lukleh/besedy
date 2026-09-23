@@ -11,6 +11,9 @@ artwork_dir = "/data/artwork"
 sources_dir = "/data/sources"
 # Admin-uploaded recordings awaiting ingest (writable volume)
 uploads_dir = "/data/uploads"
+# Transcript correction workspaces and published corrected transcripts
+# (writable volume, outside the immutable transcripts tree)
+corrections_dir = "/data/corrections"
 # Audio artifacts mounted at /data/audio
 audio_artifacts_dir = "/data/audio"
 # Subdirectories (relative to text_data_dir)

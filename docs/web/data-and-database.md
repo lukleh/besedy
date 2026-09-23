@@ -217,11 +217,14 @@ pointer file in [Data model](../data-model.md#publication-waits-for-the-index).
 | `ORIGINAL_AUDIO_DIR` | Downloadable original audio                  |
 | `ARTWORK_DIR`        | Writable artwork storage                      |
 | `SOURCES_DIR`        | Writable recording sources storage           |
+| `CORRECTIONS_DIR`    | Writable transcript-correction storage, shared with the host worker |
 
-Transcript correction artifacts are configured in `besedy.toml` rather than by
-environment variable: `[paths].corrections_dir`, defaulting to
-`<text_data_dir>/corrections`. Host-run Python tooling can override it with
-`BESEDY_CORRECTIONS_ROOT`.
+Inside the container the correction tree is `[paths].corrections_dir` of the
+container toml, `/data/corrections`, which Compose binds to `CORRECTIONS_DIR`.
+The default of `<text_data_dir>/corrections` only suits a host-run web app,
+because the container mounts `TEXT_DATA_DIR` read-only. The host worker reads
+the same tree through the host `besedy.toml`; host-run Python tooling can
+override it with `BESEDY_CORRECTIONS_ROOT`.
 
 ### Path Mappings
 
