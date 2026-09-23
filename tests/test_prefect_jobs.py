@@ -2318,3 +2318,36 @@ def test_deep_search_flow_persists_rlm_partial_trace_on_failure(monkeypatch) -> 
         assert result["trace"]["rlm"] == {"iterations": 2}
         assert result["report"]["title"] == "Deep Search (RLM Partial Failure)"
         assert result["markdown"].startswith("# Deep Search (RLM Partial Failure)")
+
+
+@pytest.mark.parametrize("secret", ["", "   "])
+def test_jobs_server_refuses_to_start_with_an_empty_service_secret(
+    monkeypatch, capsys, secret: str
+) -> None:
+    from besedy.lib.prefect_jobs import server as server_module
+
+    monkeypatch.setenv("BESEDY_JOB_SERVICE_SECRET", secret)
+    served: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        server_module, "serve_threading_http_server", lambda **kwargs: served.append(kwargs)
+    )
+
+    assert server_module.main(["--port", "0"]) == 1
+    assert served == []
+    assert "BESEDY_JOB_SERVICE_SECRET is empty" in capsys.readouterr().err
+
+
+def test_jobs_server_starts_with_a_configured_service_secret(monkeypatch) -> None:
+    from besedy.lib.prefect_jobs import server as server_module
+
+    monkeypatch.setenv("BESEDY_JOB_SERVICE_SECRET", "jobs-secret")
+    served: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        server_module, "serve_threading_http_server", lambda **kwargs: served.append(kwargs)
+    )
+    monkeypatch.setattr(server_module, "PrefectJobsApiService", lambda: FakePrefectClient())
+
+    assert server_module.main(["--host", "127.0.0.1", "--port", "0"]) == 0
+    assert len(served) == 1
+    assert served[0]["host"] == "127.0.0.1"
+    assert served[0]["port"] == 0

@@ -130,6 +130,9 @@ services:
       - colbert_torch_cache:/data/torch
     environment:
       BESEDY_CONFIG: /data/config/besedy.toml
+      # The checkout is bind-mounted and the container runs as root; do not
+      # leave root-owned __pycache__ directories in it.
+      PYTHONDONTWRITEBYTECODE: "1"
       HF_HOME: /data/hf
       HF_HUB_CACHE: /data/hf/hub
       TRANSFORMERS_CACHE: /data/hf/transformers
@@ -164,6 +167,7 @@ services:
       - colbert_torch_cache:/data/torch
     environment:
       BESEDY_CONFIG: /data/config/besedy.toml
+      PYTHONDONTWRITEBYTECODE: "1"
       HF_HOME: /data/hf
       HF_HUB_CACHE: /data/hf/hub
       TRANSFORMERS_CACHE: /data/hf/transformers

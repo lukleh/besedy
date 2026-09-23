@@ -452,6 +452,8 @@
     "metadataPath": "Metadata Catalog Path",
     "transcriptsPath": "Transcripts Path",
     "addGroup": "Add Group",
+    "initialSyncFailedTitle": "Catalog added, but its initial sync failed",
+    "initialSyncFailedDescription": "Its recordings will appear after a successful sync. Fix the catalog paths, then use Sync Catalog in its Catalog Settings. Error: {error}",
     "add": "Add",
     "noGroups": "No workflow groups configured yet.",
     "noGroupsDescription": "Use the discovery feature below to find and add groups.",

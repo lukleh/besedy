@@ -149,6 +149,9 @@ clean_env=(
   "COMPOSE_PROJECT_NAME=besedy-$instance"
   "HOME=${HOME:-}"
   "PATH=$PATH"
+  # The development overlay runs the web container as the invoking user.
+  "BESEDY_HOST_UID=$(id -u)"
+  "BESEDY_HOST_GID=$(id -g)"
 )
 
 # Keep only client/build settings that Docker legitimately needs. Application
@@ -192,6 +195,36 @@ compose_command=(
 rendered_config="$("${compose_command[@]}" config --format json)"
 printf '%s\n' "$rendered_config" \
   | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network"
+
+# The Docker daemon creates a missing bind-mount source, and a mountpoint
+# inside the bind-mounted checkout, as root. Later host commands (npm ci,
+# fixture generation, Playwright output) then fail on those directories, so
+# development and test create them as the invoking user first. Only known
+# directory targets qualify: a missing file mount such as CONFIG_FILE must stay
+# an error rather than become a directory. Production directories need
+# explicit ownership and are prepared as documented in docs/web/operations.md.
+if [[ "$changes_resources" == true && "$dry_run" == false && "$mode" != "production" ]]; then
+  host_dirs="$(
+    printf '%s\n' "$rendered_config" | jq -r '
+      ["/data/text", "/data/artwork", "/data/sources", "/data/uploads",
+       "/data/audio", "/data/original", "/var/log/besedy", "/backups",
+       "/app/.cache-next"] as $dir_targets
+      | ["/app/node_modules", "/app/.cache-next"] as $checkout_mountpoints
+      | .services[]?.volumes // []
+      | ([.[] | select(.type == "bind" and .target == "/app") | .source][0]) as $app
+      | (.[] | select(.type == "bind" and (.target | IN($dir_targets[]))) | .source),
+        (if $app then
+           .[] | select(.target | IN($checkout_mountpoints[]))
+           | "\($app)/\(.target | ltrimstr("/app/"))"
+         else empty end)
+    '
+  )"
+  while IFS= read -r host_dir; do
+    if [[ -n "$host_dir" && ! -e "$host_dir" ]] && ! mkdir -p "$host_dir" 2>/dev/null; then
+      echo "Warning: could not create $host_dir as $(id -un); Docker will create it as root" >&2
+    fi
+  done <<<"$host_dirs"
+fi
 
 if [[ "$changes_resources" == true ]]; then
   if [[ "$dry_run" == false ]] && ! "${clean_env[@]}" docker network inspect "$internal_network" >/dev/null 2>&1; then

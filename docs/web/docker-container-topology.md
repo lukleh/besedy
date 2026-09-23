@@ -474,7 +474,11 @@ Before production Deep Search rollout:
    somehow still running on a host, back up Prefect and stop it manually before
    proceeding.
 3. Start shared Prefect and the explicit development runtime with
-   `just prefect-up`, `just jobs-dev-up`, and `just jobs-dev-deploy`.
+   `just prefect-up`, `just jobs-dev-up`, and `just jobs-dev-deploy`. Both
+   read env files copied from `jobs-service/.env.example`
+   (`~/.config/lukleh/besedy/jobs.env.prefect` and `jobs.env.dev`); set
+   `BESEDY_JOB_SERVICE_SECRET` in `jobs.env.dev` to the value in
+   `web.env.dev`, or `jobs-dev-up` refuses to start.
 4. Add a new production runtime with production container names, production env
    from `~/.config/lukleh/besedy/jobs.env.prod`, production work pool, and
    production deployment.

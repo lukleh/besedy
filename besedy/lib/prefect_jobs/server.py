@@ -23,6 +23,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=int(os.getenv("JOBS_SERVICE_PORT", "8390")))
     args = parser.parse_args(argv)
 
+    # An empty secret makes every non-health request answer 401 while the
+    # container still reports healthy, so refuse to start instead.
+    if not os.getenv("BESEDY_JOB_SERVICE_SECRET", "").strip():
+        print(
+            "BESEDY_JOB_SERVICE_SECRET is empty; set it in the jobs env file to the "
+            "value in the web env file of the same environment.",
+            file=sys.stderr,
+        )
+        return 1
+
     service = PrefectJobsApiService()
     serve_threading_http_server(
         host=args.host,

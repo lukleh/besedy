@@ -38,7 +38,10 @@ audio_enhanced_*
 audio_listen_*
 audio_asr_*
 audio_archived
+audio_archived_*/
 audio_staged
+audio_staged_*/
+joined_audio/
 mlx_models
 node_modules/
 worksheet*.md
