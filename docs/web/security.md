@@ -318,14 +318,16 @@ retrieval.
 
 ### The Transcript Publication Gate Is Not an Authorization Decision
 
-For a **correction-eligible primary recording** — the primary recording of an
-event, the only recordings v1 corrects — `read_transcripts` no longer means
-"read the machine transcript". It means read the published corrected one, and
+For a recording **in correction scope** — one with a live correction
+workspace, or the current primary recording of an event; a workspace latches
+the gate, so demoting the recording later does not lift it (ADR 0006) —
+`read_transcripts` no longer means "read the machine transcript". It means read the published corrected one, and
 before the first publication the reader sees correction progress instead of
 text. `see_unreleased` does not bypass this: it widens which events and
 recordings exist for an actor, not which transcripts are fit to be read.
-Recordings outside correction scope keep their configured machine transcript
-for reading and download.
+Recordings outside correction scope keep the search backend's machine
+transcript (`RAG_BACKEND_KEY`, the one default every consumer reads) for
+reading and download.
 
 Four consumers resolve text deliberately differently, and the machine fallback
 that search and MCP require must never become a fallback for the reading page:
@@ -333,9 +335,9 @@ that search and MCP require must never become a fallback for the reading page:
 | Consumer                     | Resolves                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------ |
 | Reader and ordinary download | The active reader publication; with none, no transcript text                   |
-| Search and MCP               | The active search publication, otherwise the configured machine transcript     |
-| Correction surface           | The live database workspace, which `correct_transcripts` opens                 |
-| Privileged original access   | The configured machine transcript, or the frozen source once correction started |
+| Search and MCP               | The active search publication, otherwise the search backend's machine transcript |
+| Correction surface           | The live workspace of a recording in correction scope, which `correct_transcripts` opens; starting one requires a primary recording |
+| Privileged original access   | The search backend's machine transcript, or the frozen source once correction started |
 
 Two explicit permissions are exceptions to the reading gate, and neither is a
 consequence of seeing unreleased material. `see_transcript_variants` inspects

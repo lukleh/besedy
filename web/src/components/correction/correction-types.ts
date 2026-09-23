@@ -70,7 +70,8 @@ export type PublicationEligibility = z.infer<typeof publicationEligibilitySchema
 export const correctionStateSchema = z.object({
   catalogId: z.string(),
   audioHash: z.string(),
-  eligible: z.boolean(),
+  /** The recording is primary now, so a workspace may be started */
+  canStart: z.boolean(),
   canPublish: z.boolean(),
   guide: z.object({
     revisionId: z.string().nullable(),

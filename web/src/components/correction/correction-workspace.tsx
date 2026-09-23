@@ -175,7 +175,7 @@ export function CorrectionWorkspace({
         </div>
       )}
 
-      {state?.eligible && !state.workspace && (
+      {state?.canStart && !state.workspace && (
         <div className="rounded-lg border p-6">
           <h2 className="font-medium">{t("startTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -266,7 +266,7 @@ export function CorrectionWorkspace({
           </details>
 
           <p className="text-xs text-muted-foreground">
-            {state.workspace.sourceBackend} ·{" "}
+            {t("frozenSource", { backend: state.workspace.sourceBackend })} ·{" "}
             {formatDuration(state.workspace.spanDurationSeconds)}
           </p>
 

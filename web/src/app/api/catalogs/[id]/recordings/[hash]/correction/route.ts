@@ -53,14 +53,17 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       hash,
       "correct"
     );
-    const eligible = await isCorrectionEligibleRecording(catalogId, hash);
+    // Whether correction can be *started*: the recording is primary now. A
+    // live workspace stays in scope whatever its assignment becomes (ADR 0006),
+    // which is why this is not called eligibility.
+    const canStart = await isCorrectionEligibleRecording(catalogId, hash);
     const workspace = await findActiveWorkspace(catalogId, hash);
     const transcriptsPath = resolveTranscriptsPath(catalogId);
 
     return NextResponse.json({
       catalogId,
       audioHash: hash,
-      eligible,
+      canStart,
       canPublish: capability.canPublishTranscript,
       guide: await getActiveGuide(catalogId),
       /** What would be frozen if correction started now */
