@@ -61,11 +61,13 @@ def pick_json_value(value: object, *keys: str) -> object | None:
 class JobKind(StrEnum):
     DEEP_SEARCH = "DEEP_SEARCH"
     INGEST = "INGEST"
+    CORRECTION_INDEX = "CORRECTION_INDEX"
 
 
 JOB_KIND_TAGS: dict[JobKind, str] = {
     JobKind.DEEP_SEARCH: "job-kind:deep-search",
     JobKind.INGEST: "job-kind:ingest",
+    JobKind.CORRECTION_INDEX: "job-kind:correction-index",
 }
 
 
@@ -230,6 +232,27 @@ def validate_idempotency_key(value: object) -> str:
     return rendered
 
 
+CORRECTION_INDEX_OPERATIONS = frozenset({"publish", "withdraw", "rollback"})
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def validate_correction_index_operation(value: object) -> str:
+    rendered = str(value or "").strip().lower()
+    if rendered not in CORRECTION_INDEX_OPERATIONS:
+        raise ValueError("operation must be publish, withdraw or rollback.")
+    return rendered
+
+
+def validate_operation_token(value: object) -> str:
+    """The publication or withdrawal id the sync is for; a UUID either way."""
+    rendered = str(value or "").strip().lower()
+    if not _UUID_RE.fullmatch(rendered):
+        raise ValueError("operationToken must be a UUID.")
+    return rendered
+
+
 def validate_original_filename(value: object) -> str:
     if not isinstance(value, str):
         raise ValueError("originalFilename must be a string.")
@@ -297,6 +320,54 @@ class IngestRemovalRequest:
         }
 
 
+@dataclass(slots=True, frozen=True)
+class CorrectionIndexSyncRequest:
+    """Ask the host worker to carry one recording's correction into search.
+
+    ``operation_token`` names the publication (publish, rollback) or the
+    withdrawal generation (withdraw) the sync belongs to. ``attempt`` is part
+    of the idempotency key so a retry after a failed run is a new flow run
+    rather than the failed one handed back.
+    """
+
+    audio_hash: str
+    operation: str
+    operation_token: str
+    requested_by_id: str | None
+    attempt: int = 0
+
+    @classmethod
+    def from_payload(cls, payload: JsonDict) -> CorrectionIndexSyncRequest:
+        requested_by_id = payload.get("requestedById")
+        attempt_raw = payload.get("attempt", 0)
+        if not isinstance(attempt_raw, int) or isinstance(attempt_raw, bool) or attempt_raw < 0:
+            raise ValueError("attempt must be a non-negative integer.")
+        return cls(
+            audio_hash=validate_audio_hash(payload.get("audioHash")),
+            operation=validate_correction_index_operation(payload.get("operation")),
+            operation_token=validate_operation_token(payload.get("operationToken")),
+            requested_by_id=(
+                requested_by_id.strip()
+                if isinstance(requested_by_id, str) and requested_by_id.strip()
+                else None
+            ),
+            attempt=attempt_raw,
+        )
+
+    def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
+        return {
+            "catalog_id": validate_catalog_id(catalog_id),
+            "audio_hash": self.audio_hash,
+            "operation": self.operation,
+            "operation_token": self.operation_token,
+            "requested_by_id": self.requested_by_id,
+        }
+
+    @property
+    def idempotency_key(self) -> str:
+        return f"correction-index:{self.operation}:{self.operation_token}:{self.attempt}"
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -361,6 +432,33 @@ def build_ingest_flow_run_tags(
         f"catalog:{sanitize_tag_value(catalog_id, fallback='catalog')}",
         f"intake:{sanitize_tag_value(intake_id, fallback='intake')}",
         f"operation:{sanitize_tag_value(operation, fallback='ingest')}",
+    ]
+    if requested_by_id:
+        tags.append(f"requested-by:{sanitize_tag_value(requested_by_id)}")
+    return tags
+
+
+def build_correction_index_flow_run_name(
+    *, catalog_id: str, audio_hash: str, operation: str
+) -> str:
+    stamp = utcnow().strftime("%Y%m%d-%H%M%S")
+    catalog = sanitize_tag_value(catalog_id, fallback="catalog")
+    recording = sanitize_tag_value(audio_hash[:12], fallback="recording")
+    return f"correction-{sanitize_tag_value(operation)}-{catalog}-{recording}-{stamp}"
+
+
+def build_correction_index_flow_run_tags(
+    *,
+    catalog_id: str,
+    audio_hash: str,
+    operation: str,
+    requested_by_id: str | None,
+) -> list[str]:
+    tags = [
+        job_kind_tag(JobKind.CORRECTION_INDEX),
+        f"catalog:{sanitize_tag_value(catalog_id, fallback='catalog')}",
+        f"recording:{sanitize_tag_value(audio_hash, fallback='recording')}",
+        f"operation:{sanitize_tag_value(operation, fallback='publish')}",
     ]
     if requested_by_id:
         tags.append(f"requested-by:{sanitize_tag_value(requested_by_id)}")
@@ -442,8 +540,11 @@ def normalize_flow_run(
     output_root_dir: Path,
 ) -> JsonDict:
     envelope = _flow_run_envelope(flow_run)
-    if job_kind_from_tags(_value(flow_run, "tags")) == JobKind.INGEST:
+    kind = job_kind_from_tags(_value(flow_run, "tags"))
+    if kind == JobKind.INGEST:
         return {**envelope, **_ingest_flow_run_fields(flow_run)}
+    if kind == JobKind.CORRECTION_INDEX:
+        return {**envelope, **_correction_index_flow_run_fields(flow_run)}
     return {
         **envelope,
         **_deep_search_flow_run_fields(flow_run, output_root_dir=output_root_dir),
@@ -519,6 +620,21 @@ def _ingest_flow_run_fields(flow_run: Any) -> JsonDict:
             "originalFilename": _string_or_none(parameters.get("original_filename")),
             "audioHash": _string_or_none(parameters.get("audio_hash")),
             "operation": "remove" if parameters.get("audio_hash") else "ingest",
+        },
+        "result": None,
+        "result_preview": None,
+        "artifacts": [],
+    }
+
+
+def _correction_index_flow_run_fields(flow_run: Any) -> JsonDict:
+    parameters = _flow_run_parameters(flow_run)
+    return {
+        "kind": JobKind.CORRECTION_INDEX.value,
+        "payload": {
+            "audioHash": _string_or_none(parameters.get("audio_hash")),
+            "operation": _string_or_none(parameters.get("operation")),
+            "operationToken": _string_or_none(parameters.get("operation_token")),
         },
         "result": None,
         "result_preview": None,
