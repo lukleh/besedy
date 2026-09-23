@@ -1002,21 +1002,21 @@ enum TranscriptDecisionKind {
 
 /// One correction workspace over a frozen machine transcript.
 model TranscriptWorkspace {
-  id                  String                    @id @default(uuid()) @db.Uuid
-  workflowGroupId     String                    @map("workflow_group_id") @db.VarChar(15)
-  audioHash           String                    @map("audio_hash") @db.VarChar(64)
+  id                    String                    @id @default(uuid()) @db.Uuid
+  workflowGroupId       String                    @map("workflow_group_id") @db.VarChar(15)
+  audioHash             String                    @map("audio_hash") @db.VarChar(64)
   /// Backend key ({workflow}/{model}) frozen when correction started
-  sourceBackend       String                    @map("source_backend") @db.VarChar(255)
+  sourceBackend         String                    @map("source_backend") @db.VarChar(255)
   /// SHA-256 of the frozen source transcript.json bytes
-  sourceFingerprint   String                    @map("source_fingerprint") @db.VarChar(64)
+  sourceFingerprint     String                    @map("source_fingerprint") @db.VarChar(64)
   /// Total duration covered by source spans, in seconds
-  spanDurationSeconds Float                     @default(0) @map("span_duration_seconds")
-  spanCount           Int                       @default(0) @map("span_count")
-  status              TranscriptWorkspaceStatus @default(ACTIVE)
+  spanDurationSeconds   Float                     @default(0) @map("span_duration_seconds")
+  spanCount             Int                       @default(0) @map("span_count")
+  status                TranscriptWorkspaceStatus @default(ACTIVE)
   /// Snapshot the reader, ordinary download and bulk export serve
-  readerPublicationId String?                   @unique @map("reader_publication_id") @db.Uuid
+  readerPublicationId   String?                   @unique @map("reader_publication_id") @db.Uuid
   /// Snapshot search indexing and MCP resolve; an ordinary unpublish keeps it
-  searchPublicationId String?                   @unique @map("search_publication_id") @db.Uuid
+  searchPublicationId   String?                   @unique @map("search_publication_id") @db.Uuid
   /// Unique operation token while corrected text is being taken back out of
   /// search.
   ///
@@ -1027,13 +1027,16 @@ model TranscriptWorkspace {
   /// already let go of it — newer search, older reader, which is the direction
   /// this design allows. It also blocks publication, which would otherwise
   /// write a pointer that the resumed withdrawal would delete.
-  searchWithdrawalId  String?                   @map("search_withdrawal_id") @db.Uuid
-  startedById         String?                   @map("started_by")
-  archivedById        String?                   @map("archived_by")
-  archiveReason       String?                   @map("archive_reason")
-  createdAt           DateTime                  @default(now()) @map("created_at")
-  updatedAt           DateTime                  @updatedAt @map("updated_at")
-  archivedAt          DateTime?                 @map("archived_at")
+  searchWithdrawalId    String?                   @map("search_withdrawal_id") @db.Uuid
+  /// Prefect flow run carrying the withdrawal's index sync; the intent clears
+  /// only when that run reports the machine text is what search holds again.
+  searchWithdrawalJobId String?                   @map("search_withdrawal_job_id") @db.Uuid
+  startedById           String?                   @map("started_by")
+  archivedById          String?                   @map("archived_by")
+  archiveReason         String?                   @map("archive_reason")
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  updatedAt             DateTime                  @updatedAt @map("updated_at")
+  archivedAt            DateTime?                 @map("archived_at")
 
   workflowGroup     WorkflowGroup            @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   startedBy         User?                    @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
@@ -1191,8 +1194,15 @@ model TranscriptPublication {
   /// The identity recorded in and verified against the active search bundle.
   /// Derived from normalized segment timing and text by the indexer, not from
   /// the artifact bytes, and therefore written by whoever activates the index.
-  /// Null until real index activation exists.
+  /// Null until the index sync has reported it.
   searchSourceFingerprint String?                     @map("search_source_fingerprint") @db.VarChar(64)
+  /// The transcript path the active bundle recorded for the recording, as the
+  /// index sync reported it. Checked against this publication's artifact
+  /// before the reader pointer moves.
+  searchSourcePath        String?                     @map("search_source_path")
+  /// Prefect flow run carrying the index sync for this publication (or its rollback)
+  indexJobId              String?                     @map("index_job_id") @db.Uuid
+  indexRequestedAt        DateTime?                   @map("index_requested_at")
   /// Effective search source before this publication, for rollback
   previousSourceKind      String?                     @map("previous_source_kind") @db.VarChar(16)
   previousSourceRef       String?                     @map("previous_source_ref")

@@ -446,6 +446,7 @@
     "published": "Published for readers",
     "unpublishedKeepsSearch": "Unpublishing takes the transcript off the reading page. Search and agents keep the last published version.",
     "publishing": "Publishing…",
+    "publishInFlight": "Publishing: the search index is being updated with the new text. The transcript becomes readable once that has finished; this page refreshes on its own.",
     "publishFailed": "Publication failed"
   },
   "metadata": {

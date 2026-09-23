@@ -446,6 +446,7 @@
     "published": "Zveřejněno pro čtenáře",
     "unpublishedKeepsSearch": "Zrušením zveřejnění zmizí přepis ze stránky ke čtení. Vyhledávání a agenti si ponechají poslední zveřejněnou verzi.",
     "publishing": "Zveřejňuje se…",
+    "publishInFlight": "Zveřejňuje se: vyhledávací index se aktualizuje novým textem. Přepis bude čitelný, až to skončí; stránka se obnovuje sama.",
     "publishFailed": "Zveřejnění selhalo"
   },
   "metadata": {

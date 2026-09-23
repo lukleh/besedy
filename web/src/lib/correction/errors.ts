@@ -15,7 +15,8 @@ export type CorrectionErrorCode =
   | "PUBLICATION_IN_FLIGHT"
   | "PUBLICATION_ACTIVE"
   | "NOT_PUBLISHED"
-  | "GUIDE_MISSING";
+  | "GUIDE_MISSING"
+  | "INDEX_SYNC_UNAVAILABLE";
 
 const STATUS_BY_CODE: Record<CorrectionErrorCode, number> = {
   NOT_ELIGIBLE: 404,
@@ -35,6 +36,7 @@ const STATUS_BY_CODE: Record<CorrectionErrorCode, number> = {
   PUBLICATION_ACTIVE: 409,
   NOT_PUBLISHED: 409,
   GUIDE_MISSING: 404,
+  INDEX_SYNC_UNAVAILABLE: 503,
 };
 
 export class CorrectionError extends Error {

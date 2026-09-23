@@ -57,6 +57,11 @@ export function CorrectionWorkspace({
         schema: correctionStateSchema,
       }),
     enabled: supported === true,
+    // Publication waits for the search index, which runs on the host worker
+    // and takes minutes. While a publication is in flight the page polls, so
+    // the curator sees it finish without reloading.
+    refetchInterval: (query) =>
+      query.state.data?.workspace?.lockedByPublicationId ? 5_000 : false,
   });
 
   // The surface always says which recording it is working on (ADR 0006): a
@@ -245,6 +250,12 @@ export function CorrectionWorkspace({
                   {state.workspace.readerPublicationId && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t("unpublishedKeepsSearch")}
+                    </p>
+                  )}
+                  {state.workspace.lockedByPublicationId && (
+                    <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      {t("publishInFlight")}
                     </p>
                   )}
                 </div>
