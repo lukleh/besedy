@@ -40,7 +40,10 @@ services:
       # different bind explicitly (for example DB_PORT=0.0.0.0:5433 in dev).
       - '${DB_PORT:-127.0.0.1:5433}:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-besedy}']
+      # Check over TCP: on a new volume the entrypoint's temporary init server
+      # (which runs initdb and init-db-users.sh) listens only on the Unix
+      # socket, so a socket check reports ready before initialization finishes.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-besedy}']
       interval: ${DB_HEALTHCHECK_INTERVAL:-5s}
       timeout: 5s
       retries: ${DB_HEALTHCHECK_RETRIES:-5}
