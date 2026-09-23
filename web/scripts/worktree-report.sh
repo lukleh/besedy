@@ -3,13 +3,16 @@
 # Read-only: prints suggested `git worktree remove` commands, never runs them.
 #
 # A worktree is REMOVABLE when its directory exists and it has
-#   - no tracked changes and no untracked (non-ignored) files,
+#   - no tracked changes and no untracked files,
+#   - no gitignored files other than regenerable trees (`git worktree remove`
+#     deletes ignored files without --force, e.g. .env.local or local outputs),
 #   - no commits missing from every remote-tracking branch,
 #   - no lock, no Docker container started from it (compose working_dir),
 #   - no process with its current directory inside it,
 #   - no git activity (checkout, commit, index change) for WORKTREE_MIN_IDLE_DAYS.
-# Anything else is KEEP with the reasons listed; a registered worktree whose
-# directory is gone is PRUNE (`git worktree prune` cleans it up).
+# Every check fails closed: if git or docker cannot answer, the worktree is KEEP.
+# Anything else is KEEP with the reasons listed; an unlocked registered worktree
+# whose directory is gone is PRUNE (`git worktree prune` cleans it up).
 #
 # Configuration (environment):
 #   WORKTREE_REPORT_REPOS  - colon-separated repo paths to scan
@@ -17,7 +20,7 @@
 #   WORKTREE_BACKUP_TREE   - directory backed up nightly; worktrees inside it are
 #                            flagged (default: ~/projects)
 #   WORKTREE_REPORT_DOCKER - docker command used to find compose working dirs
-#                            (default: docker; skipped when not available)
+#                            (default: docker; skipped when not installed)
 #   WORKTREE_MIN_IDLE_DAYS - days without git activity before a clean, pushed
 #                            worktree counts as removable (default: 3)
 
@@ -52,11 +55,25 @@ else
 fi
 
 declare -a busy_dirs=()
+# "none" = docker not installed (no containers possible), "failed" = installed
+# but could not be queried (daemon down, no socket access): fail closed.
+docker_state="none"
 if command -v "$WORKTREE_REPORT_DOCKER" >/dev/null 2>&1; then
-    while IFS= read -r dir; do
-        [ -n "$dir" ] && busy_dirs+=("container|$dir")
-    done < <("$WORKTREE_REPORT_DOCKER" ps -a --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u || true)
+    if docker_dirs="$("$WORKTREE_REPORT_DOCKER" ps -a --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null)"; then
+        docker_state="ok"
+        while IFS= read -r dir; do
+            [ -n "$dir" ] && busy_dirs+=("container|$dir")
+        done <<< "$docker_dirs"
+    else
+        docker_state="failed"
+    fi
 fi
+
+# Gitignored trees that are safe to lose with the worktree (they are rebuilt,
+# and the backup excludes them too). Any other ignored path keeps the worktree.
+REGENERABLE_IGNORED='node_modules .venv .next __pycache__ .pytest_cache .ruff_cache .mypy_cache .tox next-env.d.ts'
+# Repo-relative generated outputs of this repo's own builds (Prisma client, e2e fixtures).
+REGENERABLE_IGNORED_PATHS='web/src/generated web/tests/e2e/fixtures'
 for proc in /proc/[0-9]*; do
     dir="$(readlink "$proc/cwd" 2>/dev/null || true)"
     [ -n "$dir" ] && busy_dirs+=("process|$dir")
@@ -78,10 +95,28 @@ busy_reasons() {
 }
 
 # Epoch of the newest git activity in a worktree: its HEAD, index, and reflog.
+# Any of those may be missing (--no-checkout has no index, reflogs can be off);
+# prints nothing when none of them can be read.
 last_git_activity() {
     local git_dir
-    git_dir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || { echo 0; return 0; }
-    stat -c %Y "$git_dir/HEAD" "$git_dir/index" "$git_dir/logs/HEAD" 2>/dev/null | sort -n | tail -n1
+    git_dir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 0
+    { stat -c %Y "$git_dir/HEAD" "$git_dir/index" "$git_dir/logs/HEAD" 2>/dev/null || true; } |
+        sort -n | tail -n1
+}
+
+# Print ignored paths from `git status --porcelain --ignored` that are not
+# regenerable trees, one per line.
+precious_ignored_paths() {
+    local line entry name
+    while IFS= read -r line; do
+        [[ "$line" == '!! '* ]] || continue
+        entry="${line#!! }"
+        entry="${entry%/}"
+        name="${entry##*/}"
+        [[ " $REGENERABLE_IGNORED " == *" $name "* || "$name" == *.pyc || "$name" == *.tsbuildinfo ]] && continue
+        [[ " $REGENERABLE_IGNORED_PATHS " == *" $entry "* ]] && continue
+        printf '%s\n' "$entry"
+    done
 }
 
 now_epoch="$(date +%s)"
@@ -95,7 +130,8 @@ prunable=0
 
 report_worktree() {
     local repo="$1" path="$2" head="$3" ref="$4" locked="$5" missing="$6"
-    local label reasons="" files="" active="" active_epoch=0 idle_days=0 where=""
+    local label reasons="" files="" active="unknown" active_epoch="" idle_days=0 where=""
+    local status_output="" unpushed="" precious="" precious_count=0
     local -a why=()
 
     if [ -n "$ref" ]; then
@@ -105,29 +141,52 @@ report_worktree() {
     fi
 
     if [ "$missing" = "1" ] || [ ! -d "$path" ]; then
-        prune_rows+="  PRUNE      $path  [$label]  directory missing"$'\n'
-        prunable=$((prunable + 1))
+        if [ "$locked" = "1" ]; then
+            # `git worktree prune` skips locked entries, so PRUNE advice would be a no-op.
+            keep_rows+="  KEEP       $path  [$label]  -- directory missing but locked (git worktree unlock, then prune, if it is gone for good)"$'\n'
+            kept=$((kept + 1))
+        else
+            prune_rows+="  PRUNE      $path  [$label]  directory missing"$'\n'
+            prunable=$((prunable + 1))
+        fi
         return 0
     fi
 
     [ "$locked" = "1" ] && why+=("locked")
+    [ "$docker_state" = "failed" ] && why+=("Docker state unknown (docker ps failed)")
     while IFS= read -r reason; do
         [ -n "$reason" ] && why+=("$reason")
     done < <(busy_reasons "$path")
-    if [ -n "$(git -C "$path" status --porcelain 2>/dev/null | head -n1)" ]; then
-        why+=("uncommitted changes")
+
+    if ! status_output="$(git -C "$path" status --porcelain --ignored 2>/dev/null)"; then
+        why+=("git status failed")
+    else
+        if grep -q -v -e '^!! ' -e '^$' <<< "$status_output"; then
+            why+=("uncommitted changes")
+        fi
+        precious="$(precious_ignored_paths <<< "$status_output")"
+        if [ -n "$precious" ]; then
+            precious_count="$(wc -l <<< "$precious")"
+            why+=("$precious_count ignored path(s) that removal would delete, e.g. $(head -n1 <<< "$precious")")
+        fi
     fi
-    if [ -n "$(git -C "$path" rev-list -n1 HEAD --not --remotes 2>/dev/null)" ]; then
+
+    if ! unpushed="$(git -C "$path" rev-list -n1 HEAD --not --remotes 2>/dev/null)"; then
+        why+=("could not compare HEAD with remote branches")
+    elif [ -n "$unpushed" ]; then
         why+=("commits not on any remote branch")
     fi
 
     active_epoch="$(last_git_activity "$path")"
-    active_epoch="${active_epoch:-0}"
-    idle_days=$(( (now_epoch - active_epoch) / 86400 ))
-    if [ "$idle_days" -lt "$WORKTREE_MIN_IDLE_DAYS" ]; then
-        why+=("active in the last $WORKTREE_MIN_IDLE_DAYS days")
+    if [ -z "$active_epoch" ]; then
+        why+=("git activity unknown")
+    else
+        idle_days=$(( (now_epoch - active_epoch) / 86400 ))
+        if [ "$idle_days" -lt "$WORKTREE_MIN_IDLE_DAYS" ]; then
+            why+=("active in the last $WORKTREE_MIN_IDLE_DAYS days")
+        fi
+        active="$(date -d "@$active_epoch" +%F)"
     fi
-    active="$(date -d "@$active_epoch" +%F)"
 
     files="$(du --inodes -s -- "$path" 2>/dev/null | cut -f1)"
     if [ "$path" = "$WORKTREE_BACKUP_TREE" ] || [[ "$path" == "$WORKTREE_BACKUP_TREE"/* ]]; then
@@ -136,7 +195,7 @@ report_worktree() {
 
     if [ "${#why[@]}" -eq 0 ]; then
         removable_rows+="  REMOVABLE  $path  [$label, last active $active]  ${files:-?} files$where"$'\n'
-        remove_commands+=("git -C $repo worktree remove $path")
+        remove_commands+=("$(printf 'git -C %q worktree remove %q' "$repo" "$path")")
         removable=$((removable + 1))
     else
         reasons="$(IFS=';'; echo "${why[*]}")"
@@ -174,6 +233,9 @@ done
 
 total=$((removable + kept + prunable))
 echo "Linked git worktrees: $total ($removable removable, $kept kept, $prunable with missing directories)"
+if [ "$docker_state" = "failed" ]; then
+    echo "Note: '$WORKTREE_REPORT_DOCKER ps' failed, so no worktree is marked removable."
+fi
 [ "$total" -gt 0 ] || exit 0
 printf '%s%s%s' "$removable_rows" "$keep_rows" "$prune_rows"
 

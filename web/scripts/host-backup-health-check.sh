@@ -238,11 +238,29 @@ check_remote_sync() {
 
 # Emit one "start|end|file_count" line per successful remote sync in the log.
 # The file count comes from the rsync --stats "Number of files:" line.
+# back_up.sh rotates the log to <log>.<timestamp>.gz, so the newest rotated
+# file is read first to keep a baseline available right after a rotation.
+# A back_up.sh retry is timed from the first attempt (that is how long the run
+# held the backup lock), and RSYNC_DRY_RUN runs are skipped.
 successful_sync_records() {
-    awk '
+    local log_file="$1"
+    local rotated=""
+
+    rotated="$(find "$(dirname "$log_file")" -maxdepth 1 -type f -name "$(basename "$log_file").*.gz" 2>/dev/null | sort | tail -n1)"
+    {
+        if [ -n "$rotated" ]; then
+            gzip -dc "$rotated" 2>/dev/null || true
+        fi
+        cat "$log_file"
+    } | awk '
+        function reset() { start = ""; count = ""; dry = 0 }
+        /\] Running remote snapshot sync in dry-run mode/ { dry = 1; next }
+        /\] Starting remote snapshot sync .*\(retry\)$/ { count = ""; next }
         /\] Starting remote snapshot sync/ {
+            is_dry = dry
+            reset()
+            dry = is_dry
             start = substr($0, 2, index($0, "]") - 2)
-            count = ""
             next
         }
         /^Number of files: / {
@@ -251,18 +269,15 @@ successful_sync_records() {
             next
         }
         /\] Remote snapshot sync completed successfully\./ {
-            if (start != "") {
+            if (start != "" && !dry) {
                 print start "|" substr($0, 2, index($0, "]") - 2) "|" count
             }
-            start = ""
-            count = ""
+            reset()
             next
         }
-        /\] Remote snapshot sync failed/ {
-            start = ""
-            count = ""
-        }
-    ' "$1"
+        /\] Remote snapshot sync failed.*retrying once/ { next }
+        /\] Remote snapshot sync failed/ { reset() }
+    '
 }
 
 # Warn before the remote sync starts failing: a sync that keeps getting slower,
@@ -307,6 +322,7 @@ check_remote_sync_trend() {
     done
 
     if ! is_positive_int "$baseline_count"; then
+        info+=("${name}_remote_sync_files_growth_percent=unknown (no successful sync ${REMOTE_SYNC_GROWTH_WINDOW_DAYS}+ days older in the log)")
         return 0
     fi
     growth_percent=$(( (count - baseline_count) * 100 / baseline_count ))

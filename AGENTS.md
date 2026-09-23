@@ -217,6 +217,9 @@ manages workflow-group records themselves.
   `.venv` trees overran that sync in September 2026. Commits stay backed up
   because worktrees share the main repo's object store. Remove a worktree once
   its branch is merged; `web/scripts/worktree-report.sh` lists the removable ones.
+  The one exception is the optional regression reference checkout at
+  `worktrees/besedy-reference`, which `tests/conftest.py` looks up by that path
+  (the backup excludes `worktrees/`, so it adds no sync load).
 - Production web revision is exposed at `GET /api/version`.
 - Fast check command:
   `curl -s https://besedy.org/api/version | jq -r '.commit, .commitShort, .buildTime, .environment'`

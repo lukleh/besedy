@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -9,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const scriptsDir = resolve(process.cwd(), 'scripts');
@@ -222,6 +224,62 @@ describe('host-backup-health-check.sh remote sync trend', () => {
     expect(result.stdout).toContain('took 150 min');
   });
 
+  it('times a retried sync from its first attempt', () => {
+    const result = runHealthCheck([], {
+      projectTrailer: [
+        `[${stamp(100)}] Starting remote snapshot sync to host::module/`,
+        'rsync error: error in socket IO (code 10)',
+        `[${stamp(95)}] Remote snapshot sync failed with exit code 10 after 5 min; retrying once in 120s.`,
+        `[${stamp(93)}] Starting remote snapshot sync to host::module/ (retry)`,
+        'Number of files: 1,000 (reg: 1000)',
+        `[${stamp(10)}] Remote snapshot sync completed successfully.`,
+        '',
+      ].join('\n'),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('project_remote_sync_duration_minutes=90');
+    expect(result.stdout).toContain('project_remote_sync_files=1000');
+  });
+
+  it('does not treat a dry-run sync as the latest sync', () => {
+    const result = runHealthCheck(
+      [{ endMinutesAgo: 120, durationMinutes: 30, files: 1000 }],
+      {
+        projectTrailer: [
+          `[${stamp(60)}] Running remote snapshot sync in dry-run mode (RSYNC_DRY_RUN=1)`,
+          `[${stamp(60)}] Starting remote snapshot sync to host::module/`,
+          'Number of files: 5 (reg: 5)',
+          `[${stamp(50)}] Remote snapshot sync completed successfully.`,
+          '',
+        ].join('\n'),
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('project_remote_sync_duration_minutes=30');
+    expect(result.stdout).toContain('project_remote_sync_files=1000');
+  });
+
+  it('keeps a growth baseline from the newest rotated log', () => {
+    writeFileSync(
+      join(root, 'project.log.20260101_000000.gz'),
+      gzipSync(syncLog([{ endMinutesAgo: 8 * DAY, durationMinutes: 30, files: 1000 }])),
+    );
+
+    const result = runHealthCheck([{ endMinutesAgo: 60, durationMinutes: 30, files: 1400 }]);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain('project remote sync file count grew 40%');
+  });
+
+  it('says so when no baseline is old enough', () => {
+    const result = runHealthCheck([{ endMinutesAgo: 60, durationMinutes: 30, files: 1000 }]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('project_remote_sync_files_growth_percent=unknown');
+  });
+
   it('rejects a non-positive trend threshold', () => {
     const result = runHealthCheck([], {
       env: { REMOTE_SYNC_MAX_GROWTH_PERCENT: '0' },
@@ -313,7 +371,8 @@ describe('worktree-report.sh', () => {
     git(root, 'init', '--bare', '-b', 'main', origin);
     git(root, 'init', '-b', 'main', repo);
     writeFileSync(join(repo, 'README.md'), 'hello\n');
-    git(repo, 'add', 'README.md');
+    writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.env.local\n');
+    git(repo, 'add', 'README.md', '.gitignore');
     git(repo, 'commit', '-m', 'init');
     git(repo, 'remote', 'add', 'origin', origin);
     git(repo, 'push', '-u', 'origin', 'main');
@@ -330,7 +389,8 @@ describe('worktree-report.sh', () => {
     const gitDir = git(worktree, 'rev-parse', '--absolute-git-dir');
     const old = new Date(Date.now() - 10 * DAY * 60_000);
     for (const file of ['HEAD', 'index', 'logs/HEAD']) {
-      utimesSync(join(gitDir, file), old, old);
+      const path = join(gitDir, file);
+      if (existsSync(path)) utimesSync(path, old, old);
     }
   }
 
@@ -418,6 +478,87 @@ describe('worktree-report.sh', () => {
     } finally {
       sleeper.kill();
     }
+  });
+
+  it('keeps worktrees with ignored files that removal would delete', () => {
+    const repo = setUpRepo();
+    const deps = addWorktree(repo, 'deps-only');
+    writeFiles(join(deps, 'node_modules', 'pkg'), 2);
+    const secrets = addWorktree(repo, 'local-env');
+    writeFileSync(join(secrets, '.env.local'), 'TOKEN=x\n');
+    for (const wt of [deps, secrets]) backdateGitActivity(wt);
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.stdout).toContain(`REMOVABLE  ${deps}`);
+    expect(result.stdout).toMatch(
+      new RegExp(`KEEP       ${secrets} .*1 ignored path\\(s\\) that removal would delete, e.g. .env.local`),
+    );
+  });
+
+  it('fails closed when docker is installed but cannot be queried', () => {
+    const repo = setUpRepo();
+    const clean = addWorktree(repo, 'clean');
+    backdateGitActivity(clean);
+    writeExecutable(join(fakeBin, 'broken-docker'), '#!/bin/sh\necho "no daemon" >&2\nexit 1\n');
+
+    const result = runWorktreeReport(repo, {
+      WORKTREE_REPORT_DOCKER: join(fakeBin, 'broken-docker'),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('0 removable');
+    expect(result.stdout).toContain("ps' failed, so no worktree is marked removable");
+    expect(result.stdout).toMatch(new RegExp(`KEEP       ${clean} .*Docker state unknown`));
+  });
+
+  it('fails closed when git cannot inspect a worktree', () => {
+    const repo = setUpRepo();
+    const broken = addWorktree(repo, 'broken');
+    writeFileSync(join(broken, '.git'), 'gitdir: /nonexistent/worktree\n');
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(new RegExp(`KEEP       ${broken} .*git status failed`));
+    expect(result.stdout).not.toContain(`REMOVABLE  ${broken}`);
+  });
+
+  it('reports worktrees without an index instead of exiting', () => {
+    const repo = setUpRepo();
+    const bare = join(root, 'wt', 'no-checkout');
+    git(repo, 'worktree', 'add', '--no-checkout', '--detach', bare, 'main');
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Linked git worktrees: 1');
+    expect(result.stdout).toContain(`KEEP       ${bare}`);
+  });
+
+  it('does not suggest pruning a locked worktree whose directory is gone', () => {
+    const repo = setUpRepo();
+    const offline = addWorktree(repo, 'offline');
+    git(repo, 'worktree', 'lock', offline);
+    rmSync(offline, { recursive: true, force: true });
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.stdout).toContain('0 with missing directories');
+    expect(result.stdout).toMatch(new RegExp(`KEEP       ${offline} .*missing but locked`));
+    expect(result.stdout).not.toContain('worktree prune');
+  });
+
+  it('shell-quotes the suggested remove command', () => {
+    const repo = setUpRepo();
+    const spaced = addWorktree(repo, 'with space');
+    backdateGitActivity(spaced);
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.stdout).toContain(
+      `worktree remove ${join(root, 'wt', 'with\\ space')}`,
+    );
   });
 
   it('rejects an invalid idle threshold', () => {

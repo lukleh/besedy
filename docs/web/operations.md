@@ -836,15 +836,20 @@ than `REMOTE_SYNC_MAX_DURATION_MINUTES` (default 120) or its synced file count
 grew more than `REMOTE_SYNC_MAX_GROWTH_PERCENT` (default 25) against the last
 successful sync at least `REMOTE_SYNC_GROWTH_WINDOW_DAYS` (default 7) earlier.
 Those are the signs that preceded the September 2026 remote sync overruns.
+The trend check also reads the newest rotated `back_up.sh` log, times a retried
+sync from its first attempt, and ignores `RSYNC_DRY_RUN` runs.
 
 **`backup-growth-report.sh`** and **`worktree-report.sh`** -- On-demand,
 read-only helpers (also embedded in the weekly report). The growth report
 compares per-directory file counts between the oldest and newest daily project
 snapshot. The worktree report lists every linked worktree of the git repos
 under `~/projects` and marks it `REMOVABLE` only when it is clean, fully pushed,
-unlocked, idle for `WORKTREE_MIN_IDLE_DAYS` (default 3), and not used by a
-Docker container or a running process; it prints `git worktree remove` commands
-but never runs them.
+unlocked, idle for `WORKTREE_MIN_IDLE_DAYS` (default 3), holds no gitignored
+files beyond regenerable build/dependency trees (`git worktree remove` deletes
+ignored files without `--force`), and is not used by a Docker container or a
+running process. Every check fails closed: if git or `docker ps` cannot answer,
+the worktree is kept. It prints `git worktree remove` commands but never runs
+them.
 
 **`security-update-check.sh`** -- Runs `npm audit` and Trivy CVE scan against
 the production image, checks base-image freshness (default
