@@ -13,9 +13,12 @@ FROM base AS deps-prod
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci --omit=dev --omit=optional
 
-# Development target
+# Development target. The dev container runs as the host user
+# (docker-compose.dev.yml), so node_modules belongs to that UID/GID.
 FROM base AS development
-COPY --from=deps /app/node_modules ./node_modules
+ARG DEV_UID=1000
+ARG DEV_GID=1000
+COPY --from=deps --chown=${DEV_UID}:${DEV_GID} /app/node_modules ./node_modules
 COPY . .
 EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]

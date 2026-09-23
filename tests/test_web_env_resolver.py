@@ -351,3 +351,190 @@ def test_compose_validator_rejects_cross_environment_networks(
 
     assert result.returncode == 1
     assert message in result.stderr
+
+
+def _fake_docker_with_binds(bin_dir: Path, config: dict[str, object]) -> None:
+    bin_dir.mkdir()
+    config_file = bin_dir / "rendered.json"
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+    docker = bin_dir / "docker"
+    docker.write_text(
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" config --format json "* ]]; then
+  cat {config_file}
+  exit 0
+fi
+printf 'BESEDY_HOST_UID=%s\\n' "${{BESEDY_HOST_UID-unset}}"
+printf 'BESEDY_HOST_GID=%s\\n' "${{BESEDY_HOST_GID-unset}}"
+""",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+
+
+def _bind_config(mode: str, root: Path) -> dict[str, object]:
+    instance = {"development": "development", "test": "test", "production": "production"}[mode]
+    project = f"besedy-{instance}"
+    volume_name = (
+        "besedy_production_postgres" if mode == "production" else f"besedy_{instance}_postgres"
+    )
+    return {
+        "name": project,
+        "services": {
+            "db": {
+                "container_name": f"{project}-db",
+                "image": "pgvector/pgvector:pg18",
+                "networks": {"default": None},
+                "volumes": [
+                    {"type": "volume", "source": "postgres_data", "target": "/var/lib/postgresql"}
+                ],
+            },
+            "web": {
+                "container_name": f"{project}-web",
+                "environment": {"APP_ENV": mode},
+                "networks": {"besedy_internal": None, "default": None},
+                "volumes": [
+                    {"type": "bind", "source": str(root / "checkout"), "target": "/app"},
+                    {"type": "volume", "target": "/app/node_modules"},
+                    {
+                        "type": "bind",
+                        "source": str(root / "checkout/missing-file.toml"),
+                        "target": "/app/missing-file.toml",
+                    },
+                    {"type": "bind", "source": str(root / "cache/.next"), "target": "/app/.cache-next"},
+                    {"type": "bind", "source": str(root / "state/logs"), "target": "/var/log/besedy"},
+                    {"type": "bind", "source": str(root / "fixtures"), "target": "/data/text"},
+                    {"type": "bind", "source": str(root / "uploads"), "target": "/data/uploads"},
+                    {
+                        "type": "bind",
+                        "source": str(root / "missing.toml"),
+                        "target": "/data/config/besedy.docker.toml",
+                    },
+                ],
+            },
+        },
+        "volumes": {"postgres_data": {"name": volume_name, "external": mode == "production"}},
+        "networks": {
+            "default": {"name": f"{project}_default"},
+            "besedy_internal": {"name": "besedy-internal", "external": True},
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("mode", "override_var"),
+    [("development", "BESEDY_WEB_ENV_DEV"), ("test", "BESEDY_WEB_ENV_TEST")],
+)
+def test_web_compose_wrapper_creates_missing_directory_mounts_as_the_invoking_user(
+    tmp_path: Path, mode: str, override_var: str
+) -> None:
+    root = tmp_path / "host"
+    (root / "checkout").mkdir(parents=True)
+    env_file = tmp_path / f"{mode}.env"
+    env_file.write_text(f"APP_ENV={mode}\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    _fake_docker_with_binds(bin_dir, _bind_config(mode, root))
+
+    env = os.environ.copy()
+    env[override_var] = str(env_file)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), mode, "up", "-d"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    created = [
+        root / "cache/.next",
+        root / "state/logs",
+        root / "fixtures",
+        root / "uploads",
+        root / "checkout/node_modules",
+        root / "checkout/.cache-next",
+    ]
+    for path in created:
+        assert path.is_dir(), path
+        assert path.stat().st_uid == os.getuid(), path
+    assert not (root / "missing.toml").exists()
+    assert not (root / "checkout/missing-file.toml").exists()
+    assert f"BESEDY_HOST_UID={os.getuid()}" in result.stdout
+    assert f"BESEDY_HOST_GID={os.getgid()}" in result.stdout
+
+
+def test_web_compose_wrapper_leaves_production_directory_mounts_to_the_operator(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "host"
+    (root / "checkout").mkdir(parents=True)
+    config = tmp_path / "besedy.container.toml"
+    config.write_text("[paths]\n", encoding="utf-8")
+    config.chmod(0o644)
+    env_file = tmp_path / "production.env"
+    env_file.write_text(
+        "APP_ENV=production\n"
+        f"CONFIG_FILE={config}\n"
+        "CONFIG_MOUNT=/data/config/besedy.toml\n"
+        "BESEDY_CONFIG=/data/config/besedy.toml\n",
+        encoding="utf-8",
+    )
+    bin_dir = tmp_path / "bin"
+    _fake_docker_with_binds(bin_dir, _bind_config("production", root))
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_PROD"] = str(env_file)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "production", "up", "-d"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not (root / "state/logs").exists()
+    assert not (root / "checkout/node_modules").exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_web_compose_wrapper_warns_instead_of_failing_when_a_mount_cannot_be_created(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "host"
+    (root / "checkout").mkdir(parents=True)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    config = _bind_config("development", root)
+    config["services"]["web"]["volumes"].append(  # type: ignore[index]
+        {"type": "bind", "source": str(locked / "nas/original"), "target": "/data/original"}
+    )
+    env_file = tmp_path / "development.env"
+    env_file.write_text("APP_ENV=development\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    _fake_docker_with_binds(bin_dir, config)
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_DEV"] = str(env_file)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    locked.chmod(0o555)
+    try:
+        result = subprocess.run(
+            ["bash", str(COMPOSE_WRAPPER), "development", "up", "-d"],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        locked.chmod(0o755)
+
+    assert result.returncode == 0, result.stderr
+    assert f"Warning: could not create {locked / 'nas/original'}" in result.stderr
+    assert (root / "state/logs").is_dir()

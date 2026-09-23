@@ -71,7 +71,11 @@ jobs_prod_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_en
 
 jobs_prod_codex_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh production)\" -f jobs-service/docker-compose.jobs-prod.yml -f jobs-service/docker-compose.jobs-codex-auth.yml"
 
-rag-services-up:
+# The ColBERT state bind source, created as the invoking user; Docker would create it as root.
+_colbert-state-dir:
+    @mkdir -p "${RAG_COLBERT_HOST_DIR:-${BESEDY_STATE_HOME:-$HOME/.local/state/lukleh/besedy}/tmp/rag_colbert}"
+
+rag-services-up: _colbert-state-dir
     {{ rag_services_compose }} up -d
 
 rag-services-down:
@@ -80,7 +84,7 @@ rag-services-down:
 rag-services-logs:
     {{ rag_services_compose }} logs -f
 
-embeddings-up:
+embeddings-up: _colbert-state-dir
     {{ rag_services_compose }} up -d
 
 embeddings-down:
@@ -98,7 +102,7 @@ tei-down:
 tei-logs:
     {{ rag_services_compose }} logs -f embeddings reranker
 
-colbert-up:
+colbert-up: _colbert-state-dir
     {{ rag_services_compose }} up -d --build colbert
 
 colbert-down:
@@ -409,7 +413,7 @@ dev-restart:
 
 # Rebuild and restart web container
 dev-rebuild:
-    cd web && {{ dev_compose }} up -d --build web
+    cd web && {{ dev_compose }} up -d --build --renew-anon-volumes web
 
 # Follow web logs
 dev-logs:
