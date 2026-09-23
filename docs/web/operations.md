@@ -775,7 +775,7 @@ All monitoring scripts live in `web/scripts/`. Host backup setup assets live in
 | `audit-check.sh`              | Daily 06:00       | Failed logins or access denials exceed thresholds; admin role changes | `besedy-audit`         |
 | `weekly-report.sh`            | Weekly Sun 06:30  | Every run (full 7-day activity summary)                               | `besedy-weekly`        |
 | `backup-health-check.sh`      | Daily 06:45       | Any backup health check fails                                         | `besedy-backup`        |
-| `host-backup-health-check.sh` | Daily 07:05       | Any required project/extra snapshot coverage check fails              | `besedy-host-backup`   |
+| `host-backup-health-check.sh` | Daily 07:05       | Snapshot coverage fails; separate warning when remote sync trends slow | `besedy-host-backup`   |
 | `security-update-check.sh`    | Monthly 1st 07:00 | Every run (subject varies by findings)                                | `besedy-security`      |
 
 All scripts require Docker access, `jq`, production compose files, and the
@@ -791,7 +791,8 @@ instead of reporting zero values when the container or a query is unavailable.
   `[Besedy]`.
 - **Syslog/journald:** All scripts pipe output through `logger -t <tag>`.
 - **Exit codes:** `backup-health-check.sh` and `weekly-report.sh` exit non-zero
-  on failure, suitable for cron failure alerting.
+  on failure, suitable for cron failure alerting. `host-backup-health-check.sh`
+  exits 1 on a coverage failure and 3 when only a trend warning fired.
 
 ### Script Details
 
@@ -813,8 +814,11 @@ admin actions, security events, local DB dump health, and combined host snapshot
 coverage across the generic project snapshot root plus the Besedy-specific extra
 snapshot root. Calls
 `backup-health-check.sh` and `host-backup-health-check.sh` internally
-(suppressed email) to embed backup status. Sends every run when `REPORT_EMAIL`
-is set.
+(suppressed email) to embed backup status, plus the read-only
+`backup-growth-report.sh` (top-level directories of the project snapshot that
+grew most by file count over the retained dailies) and `worktree-report.sh`
+(linked git worktrees and which ones look safe to remove). Sends every run when
+`REPORT_EMAIL` is set.
 
 **`backup-health-check.sh`** -- Verifies: backup dir exists, latest
 `besedy_YYYYMMDD_HHMMSS.sql.gz` exists and is fresh (default `MAX_AGE_HOURS=30`),
@@ -826,6 +830,21 @@ generic `rsnapshot` root and the Besedy-specific `rsnapshot_besedy_extra` root
 are fresh, contain the required paths, and have recent successful remote syncs.
 Also verifies that the extra snapshot includes the DB dump directory with at
 least one `besedy_YYYYMMDD_HHMMSS.sql.gz` file. Emails only on failure.
+It also watches the remote sync trend in the same logs and sends a separate
+`Host backup trend WARNING` email when the latest successful sync took longer
+than `REMOTE_SYNC_MAX_DURATION_MINUTES` (default 120) or its synced file count
+grew more than `REMOTE_SYNC_MAX_GROWTH_PERCENT` (default 25) against the last
+successful sync at least `REMOTE_SYNC_GROWTH_WINDOW_DAYS` (default 7) earlier.
+Those are the signs that preceded the September 2026 remote sync overruns.
+
+**`backup-growth-report.sh`** and **`worktree-report.sh`** -- On-demand,
+read-only helpers (also embedded in the weekly report). The growth report
+compares per-directory file counts between the oldest and newest daily project
+snapshot. The worktree report lists every linked worktree of the git repos
+under `~/projects` and marks it `REMOVABLE` only when it is clean, fully pushed,
+unlocked, idle for `WORKTREE_MIN_IDLE_DAYS` (default 3), and not used by a
+Docker container or a running process; it prints `git worktree remove` commands
+but never runs them.
 
 **`security-update-check.sh`** -- Runs `npm audit` and Trivy CVE scan against
 the production image, checks base-image freshness (default
@@ -899,7 +918,8 @@ an alert email.
 
 `host-backup-health-check.sh` (daily at 07:05) validates Besedy coverage across
 both rsnapshot roots, including the extra non-project paths and recent remote
-sync success.
+sync success, and warns early when the remote sync gets slow or the synced file
+count jumps.
 
 ### Restore Procedure
 

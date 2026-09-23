@@ -26,6 +26,12 @@ Recommended host schedule:
 - `host-backup-health-check.sh` at `07:05` daily
 - `security-update-check.sh` at `07:00` on day `1` of each month
 
+On-demand read-only helpers, also embedded in the weekly report:
+
+- `backup-growth-report.sh`: which top-level directories of the project
+  snapshot grew most by file count
+- `worktree-report.sh`: linked git worktrees and which ones look safe to remove
+
 What belongs here:
 
 - scripts intended to run from cron or a user crontab

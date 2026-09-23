@@ -41,6 +41,13 @@ from an ops env file: copy [ops.env.example](./ops.env.example) to
 `~/.config/lukleh/besedy/ops.env` (or set `BESEDY_OPS_ENV`); they exit with an
 error if a path is unset.
 
+The remote sync copies every retained snapshot and preserves hard links, so its
+run time grows with the file count per snapshot times the number of snapshots.
+`host-backup-health-check.sh` warns when that sync gets slow or the synced file
+count jumps; `web/scripts/backup-growth-report.sh` shows which top-level
+directories caused it. Keep regenerable trees (dependency folders, caches,
+throwaway git worktrees) out of `~/projects` or in the backup exclude file.
+
 Recommended host crontab for the extra root:
 
 ```cron

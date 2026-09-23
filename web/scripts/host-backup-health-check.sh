@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Daily health check for host-side Besedy snapshot coverage.
+#
+# Exit codes: 0 = healthy, 1 = coverage failure, 3 = trend warning only
+# (remote sync getting slow or the synced file count growing quickly).
 
 set -euo pipefail
 
-COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
 ALERT_EMAIL="${ALERT_EMAIL:-${REPORT_EMAIL:-}}"
 TAG="besedy-host-backup"
@@ -25,8 +29,13 @@ MAX_AGE_HOURS="${MAX_AGE_HOURS:-30}"
 REMOTE_SYNC_MAX_AGE_HOURS="${REMOTE_SYNC_MAX_AGE_HOURS:-$MAX_AGE_HOURS}"
 PROJECT_REQUIRED_PATHS="${PROJECT_REQUIRED_PATHS:-projects/besedy,projects/besedy_data,projects/besedy_artwork,projects/besedy_sources}"
 DB_DUMP_PATTERN="${DB_DUMP_PATTERN:-besedy_[0-9]*_[0-9]*.sql.gz}"
+# Early-warning thresholds for the remote sync trend (see check_remote_sync_trend).
+REMOTE_SYNC_MAX_DURATION_MINUTES="${REMOTE_SYNC_MAX_DURATION_MINUTES:-120}"
+REMOTE_SYNC_GROWTH_WINDOW_DAYS="${REMOTE_SYNC_GROWTH_WINDOW_DAYS:-7}"
+REMOTE_SYNC_MAX_GROWTH_PERCENT="${REMOTE_SYNC_MAX_GROWTH_PERCENT:-25}"
 
 declare -a failures=()
+declare -a warnings=()
 declare -a info=()
 declare -a EXTRA_REQUIRED_PATHS=()
 
@@ -227,6 +236,86 @@ check_remote_sync() {
     fi
 }
 
+# Emit one "start|end|file_count" line per successful remote sync in the log.
+# The file count comes from the rsync --stats "Number of files:" line.
+successful_sync_records() {
+    awk '
+        /\] Starting remote snapshot sync/ {
+            start = substr($0, 2, index($0, "]") - 2)
+            count = ""
+            next
+        }
+        /^Number of files: / {
+            count = $4
+            gsub(",", "", count)
+            next
+        }
+        /\] Remote snapshot sync completed successfully\./ {
+            if (start != "") {
+                print start "|" substr($0, 2, index($0, "]") - 2) "|" count
+            }
+            start = ""
+            count = ""
+            next
+        }
+        /\] Remote snapshot sync failed/ {
+            start = ""
+            count = ""
+        }
+    ' "$1"
+}
+
+# Warn before the remote sync starts failing: a sync that keeps getting slower,
+# or a file count that jumps, is what preceded the Sep 2026 sync overruns.
+check_remote_sync_trend() {
+    local name="$1"
+    local log_file="$2"
+    local -a records=()
+    local start="" end="" count=""
+    local start_epoch=0 end_epoch=0 duration_minutes=0
+    local baseline_end="" baseline_count="" baseline_epoch=0 cutoff_epoch=0
+    local growth_percent=0 i=0
+
+    [ -f "$log_file" ] || return 0
+    mapfile -t records < <(successful_sync_records "$log_file")
+    [ "${#records[@]}" -gt 0 ] || return 0
+
+    IFS='|' read -r start end count <<< "${records[-1]}"
+    start_epoch="$(date -d "$start" +%s 2>/dev/null || echo 0)"
+    end_epoch="$(date -d "$end" +%s 2>/dev/null || echo 0)"
+    if [ "$start_epoch" -gt 0 ] && [ "$end_epoch" -ge "$start_epoch" ]; then
+        duration_minutes=$(( (end_epoch - start_epoch) / 60 ))
+        info+=("${name}_remote_sync_duration_minutes=$duration_minutes")
+        if [ "$duration_minutes" -gt "$REMOTE_SYNC_MAX_DURATION_MINUTES" ]; then
+            warnings+=("Latest $name remote sync took ${duration_minutes} min (threshold ${REMOTE_SYNC_MAX_DURATION_MINUTES} min)")
+        fi
+    fi
+
+    if ! is_positive_int "$count" || [ "$end_epoch" -eq 0 ]; then
+        return 0
+    fi
+    info+=("${name}_remote_sync_files=$count")
+
+    cutoff_epoch=$(( end_epoch - REMOTE_SYNC_GROWTH_WINDOW_DAYS * 86400 ))
+    for (( i = ${#records[@]} - 2; i >= 0; i-- )); do
+        IFS='|' read -r _ baseline_end baseline_count <<< "${records[i]}"
+        baseline_epoch="$(date -d "$baseline_end" +%s 2>/dev/null || echo 0)"
+        if [ "$baseline_epoch" -gt 0 ] && [ "$baseline_epoch" -le "$cutoff_epoch" ]; then
+            break
+        fi
+        baseline_count=""
+    done
+
+    if ! is_positive_int "$baseline_count"; then
+        return 0
+    fi
+    growth_percent=$(( (count - baseline_count) * 100 / baseline_count ))
+    info+=("${name}_remote_sync_files_growth_percent=$growth_percent (vs $baseline_count at $baseline_end)")
+    if [ "$growth_percent" -gt "$REMOTE_SYNC_MAX_GROWTH_PERCENT" ]; then
+        warnings+=("$name remote sync file count grew ${growth_percent}% in ${REMOTE_SYNC_GROWTH_WINDOW_DAYS}+ days: $baseline_count -> $count (threshold ${REMOTE_SYNC_MAX_GROWTH_PERCENT}%)")
+    fi
+}
+
 check_extra_db_dump() {
     if [ -z "$EXTRA_LATEST_SNAPSHOT" ]; then
         return 0
@@ -255,36 +344,68 @@ if ! is_positive_int "$MAX_AGE_HOURS"; then
     exit 1
 fi
 
-if ! is_positive_int "$REMOTE_SYNC_MAX_AGE_HOURS"; then
-    echo "REMOTE_SYNC_MAX_AGE_HOURS must be a positive integer, got: $REMOTE_SYNC_MAX_AGE_HOURS" >&2
-    exit 1
-fi
+for threshold_var in REMOTE_SYNC_MAX_AGE_HOURS REMOTE_SYNC_MAX_DURATION_MINUTES \
+    REMOTE_SYNC_GROWTH_WINDOW_DAYS REMOTE_SYNC_MAX_GROWTH_PERCENT; do
+    if ! is_positive_int "${!threshold_var}"; then
+        echo "$threshold_var must be a positive integer, got: ${!threshold_var}" >&2
+        exit 1
+    fi
+done
 
 load_extra_required_paths
 check_snapshot_root "project" "$PROJECT_SNAPSHOT_ROOT" "$PROJECT_REQUIRED_PATHS"
 check_snapshot_root "extra" "$EXTRA_SNAPSHOT_ROOT" "$(IFS=,; echo "${EXTRA_REQUIRED_PATHS[*]}")"
 check_remote_sync "project" "$PROJECT_LOG_FILE"
 check_remote_sync "extra" "$EXTRA_LOG_FILE"
+check_remote_sync_trend "project" "$PROJECT_LOG_FILE"
+check_remote_sync_trend "extra" "$EXTRA_LOG_FILE"
 check_extra_db_dump
+
+suggested_checks=" - ls -lah $PROJECT_SNAPSHOT_ROOT
+ - ls -lah $EXTRA_SNAPSHOT_ROOT
+ - tail -n 100 $PROJECT_LOG_FILE
+ - tail -n 100 $EXTRA_LOG_FILE"
+warnings_block=""
+if [ "${#warnings[@]}" -gt 0 ]; then
+    warnings_block="
+Warnings:
+$(printf ' - %s\n' "${warnings[@]}")
+"
+fi
 
 if [ "${#failures[@]}" -gt 0 ]; then
     body="Besedy host backup coverage check failed on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S %Z').
 
 Failures:
 $(printf ' - %s\n' "${failures[@]}")
-
+$warnings_block
 Context:
 $(printf ' - %s\n' "${info[@]}")
 
 Suggested checks:
- - ls -lah $PROJECT_SNAPSHOT_ROOT
- - ls -lah $EXTRA_SNAPSHOT_ROOT
- - tail -n 100 $PROJECT_LOG_FILE
- - tail -n 100 $EXTRA_LOG_FILE"
+$suggested_checks"
 
     send_alert "[Besedy] Host backup coverage check FAILED" "$body"
     printf '%s\n' "$body"
     exit 1
+fi
+
+if [ "${#warnings[@]}" -gt 0 ]; then
+    body="Besedy host backup trend warning on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S %Z').
+
+Coverage is still OK, but the remote sync is trending toward failure.
+$warnings_block
+Context:
+$(printf ' - %s\n' "${info[@]}")
+
+Suggested checks:
+ - $SCRIPT_DIR/backup-growth-report.sh (which top-level directories grew)
+ - $SCRIPT_DIR/worktree-report.sh (stale git worktrees)
+$suggested_checks"
+
+    send_alert "[Besedy] Host backup trend WARNING" "$body"
+    printf '%s\n' "$body"
+    exit 3
 fi
 
 summary="Host backup coverage OK on $(hostname): $(printf '%s; ' "${info[@]}")"
