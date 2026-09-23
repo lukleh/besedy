@@ -1,5 +1,6 @@
 """Guardrails for production web deployment hardening."""
 
+import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -8,6 +9,11 @@ WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
 WEB_PROD_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.production.yml"
 WEB_COMPOSE_WRAPPER = PROJECT_ROOT / "scripts" / "run_web_compose.sh"
 WEB_DOCKERFILE = PROJECT_ROOT / "web" / "Dockerfile"
+WEB_DB_INIT_SCRIPT = PROJECT_ROOT / "web" / "init-db-users.sh"
+WEB_MIGRATIONS = PROJECT_ROOT / "web" / "prisma" / "migrations"
+# Extensions PostgreSQL marks trusted, which the non-superuser migrator may create.
+TRUSTED_POSTGRES_EXTENSIONS = {"pgcrypto"}
+CREATE_EXTENSION = re.compile(r"CREATE EXTENSION (?:IF NOT EXISTS )?\"?(\w+)", re.IGNORECASE)
 
 
 def test_prod_migrate_restores_audit_log_delete_revoke_after_blanket_grant() -> None:
@@ -42,6 +48,21 @@ def test_postgres_18_uses_its_parent_data_volume_in_every_environment() -> None:
     assert "- postgres_data:/var/lib/postgresql\n" in compose
     assert "/var/lib/postgresql/data" not in compose
     assert "POSTGRES_VERSION" not in compose
+
+
+def _sql_extensions(text: str) -> set[str]:
+    code = "\n".join(line.split("--", 1)[0] for line in text.splitlines())
+    return {name.lower() for name in CREATE_EXTENSION.findall(code)}
+
+
+def test_fresh_database_init_creates_extensions_the_migrator_cannot() -> None:
+    migration_extensions: set[str] = set()
+    for migration in sorted(WEB_MIGRATIONS.glob("*/migration.sql")):
+        migration_extensions |= _sql_extensions(migration.read_text(encoding="utf-8"))
+    init_extensions = _sql_extensions(WEB_DB_INIT_SCRIPT.read_text(encoding="utf-8"))
+
+    assert "vector" in migration_extensions
+    assert migration_extensions - TRUSTED_POSTGRES_EXTENSIONS <= init_extensions
 
 
 def test_manual_backup_uses_container_shell_variables_and_retained_directory() -> None:
