@@ -42,12 +42,13 @@ const discovered = {
 };
 
 function mockApi(catalogSync: { status: string; error?: string }) {
-  vi.mocked(fetchJson).mockImplementation(async (url: string, init?: RequestInit) => {
+  vi.mocked(fetchJson).mockImplementation(async (input, init) => {
+    const url = String(input);
     if (url === "/api/catalogs/discover") {
-      return { baseDir: "/data/text", discovered: 1, new: 1, groups: [discovered] };
+      return { baseDir: "/data/text", discovered: 1, new: 1, groups: [discovered] } as never;
     }
     if (url === "/api/catalogs" && init?.method === "POST") {
-      return { id: discovered.id, catalogSync };
+      return { id: discovered.id, catalogSync } as never;
     }
     throw new Error(`unexpected request ${url}`);
   });
