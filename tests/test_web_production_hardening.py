@@ -211,7 +211,25 @@ JOBS_SERVICE = PROJECT_ROOT / "jobs-service"
 JOBS_ENV_RESOLVER = PROJECT_ROOT / "scripts" / "resolve_jobs_env_file.sh"
 # Template suffix -> resolver mode, for the three jobs runtimes.
 JOBS_RUNTIMES = {"dev": "development", "test": "test", "prod": "production"}
-COMPOSE_DEFAULT = re.compile(r"\$\{([A-Z_]+):-([^}$]*)\}")
+COMPOSE_VARIABLE = re.compile(r"\$\{([A-Z0-9_]+)")
+# Each jobs compose file defaults these to the runtime it belongs to. A template
+# that assigned them would be a second source of truth for the same selection.
+RUNTIME_SELECTORS = {
+    "PREFECT_DEEP_SEARCH_WORK_POOL",
+    "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME",
+    "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
+    "PREFECT_INGEST_WORK_POOL",
+    "PREFECT_INGEST_DEPLOYMENT_NAME",
+    "PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
+    "PREFECT_INGEST_REMOVE_DEPLOYMENT_NAME",
+    "PREFECT_INGEST_REMOVE_FULL_DEPLOYMENT_NAME",
+    "BESEDY_INTERNAL_BASE_URL",
+    "DEEP_SEARCH_OUTPUT_ENV",
+    "DEEP_SEARCH_OUTPUT_DIR",
+    "JOBS_SERVICE_HOST_PORT",
+}
+# Settings only the hardened production runtime reads.
+PRODUCTION_ONLY_SETTINGS = {"JOBS_CONTAINER_UID", "JOBS_CONTAINER_GID", "CODEX_HOST_AUTH_FILE"}
 
 
 def _env_assignments(path: Path) -> dict[str, str]:
@@ -222,31 +240,52 @@ def _env_assignments(path: Path) -> dict[str, str]:
     )
 
 
-def _compose_defaults(path: Path) -> dict[str, str]:
-    defaults: dict[str, str] = {}
-    for name, value in COMPOSE_DEFAULT.findall(path.read_text(encoding="utf-8")):
-        defaults.setdefault(name, value)
-    return defaults
+def _compose_variables(*paths: Path) -> set[str]:
+    return {
+        name
+        for path in paths
+        for name in COMPOSE_VARIABLE.findall(path.read_text(encoding="utf-8"))
+    }
+
+
+def _runtime_compose_files(env: str) -> list[Path]:
+    files = [JOBS_SERVICE / f"docker-compose.jobs-{env}.yml"]
+    if env == "prod":
+        files.append(JOBS_SERVICE / "docker-compose.jobs-codex-auth.yml")
+    return files
 
 
 @pytest.mark.parametrize("env", sorted(JOBS_RUNTIMES))
-def test_each_jobs_runtime_template_matches_its_compose_defaults(env: str) -> None:
+def test_each_jobs_runtime_template_leaves_runtime_selection_to_compose(env: str) -> None:
     template = _env_assignments(JOBS_SERVICE / f".env.{env}.example")
-    compose = _compose_defaults(JOBS_SERVICE / f"docker-compose.jobs-{env}.yml")
+    compose_files = _runtime_compose_files(env)
+    compose = compose_files[0].read_text(encoding="utf-8")
 
-    # A template copied verbatim must select the runtime it is named after.
-    for name in (
-        "PREFECT_DEEP_SEARCH_WORK_POOL",
-        "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME",
-        "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
-        "BESEDY_INTERNAL_BASE_URL",
-        "DEEP_SEARCH_OUTPUT_ENV",
-        "JOBS_SERVICE_HOST_PORT",
-    ):
-        assert template[name] == compose[name], name
-    assert template["DEEP_SEARCH_OUTPUT_DIR"] == f"/state/lukleh/besedy/deep-search/{env}"
+    # Everything a template assigns is something its runtime reads.
+    unread = template.keys() - _compose_variables(*compose_files)
+    assert not unread, unread
+    # The compose file alone selects the runtime, so renaming
+    # DEEP_SEARCH_OUTPUT_ENV keeps steering the output directory.
+    shadowed = template.keys() & RUNTIME_SELECTORS
+    assert not shadowed, shadowed
+    assert f":-besedy-deep-search-{env}}}" in compose
+    assert (
+        "${DEEP_SEARCH_OUTPUT_DIR:-/state/lukleh/besedy/deep-search/"
+        f"${{DEEP_SEARCH_OUTPUT_ENV:-{env}}}}}"
+    ) in compose
     # Output ownership stays a per-host choice, so no template assigns it.
     assert template.keys().isdisjoint({"BESEDY_OUTPUT_CHOWN_UID", "BESEDY_OUTPUT_CHOWN_GID"})
+
+
+def test_jobs_runtime_templates_share_one_set_of_operator_settings() -> None:
+    settings = {
+        env: _env_assignments(JOBS_SERVICE / f".env.{env}.example").keys() for env in JOBS_RUNTIMES
+    }
+
+    # A setting added to one runtime template must reach the other two.
+    assert settings["dev"] == settings["test"]
+    assert settings["prod"] - settings["dev"] == PRODUCTION_ONLY_SETTINGS
+    assert settings["dev"] <= settings["prod"]
 
 
 def test_jobs_runtime_templates_carry_the_secret_of_their_web_template() -> None:
@@ -263,13 +302,18 @@ def test_jobs_runtime_templates_carry_the_secret_of_their_web_template() -> None
 
 def test_prefect_template_configures_only_the_control_plane() -> None:
     template = _env_assignments(JOBS_SERVICE / ".env.prefect.example")
-    compose_vars = set(
-        re.findall(r"\$\{([A-Z_]+)", (JOBS_SERVICE / "docker-compose.prefect.yml").read_text())
-    )
+    prefect_compose = JOBS_SERVICE / "docker-compose.prefect.yml"
 
     assert "PREFECT_IMAGE" in template
-    assert template.keys() <= compose_vars
+    assert template.keys() <= _compose_variables(prefect_compose)
     assert "BESEDY_JOB_SERVICE_SECRET" not in template
+    # The server URL is derived from the credentials prefect-postgres starts
+    # with, so the template cannot ship a password that disagrees with it.
+    assert "PREFECT_SERVER_DATABASE_CONNECTION_URL" not in template
+    assert (
+        "postgresql+asyncpg://${PREFECT_POSTGRES_USER:-prefect}:${PREFECT_POSTGRES_PASSWORD:-prefect}"
+        "@prefect-postgres:5432/${PREFECT_POSTGRES_DB:-prefect}"
+    ) in prefect_compose.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
