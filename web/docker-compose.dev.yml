@@ -6,7 +6,14 @@ services:
     # Force webpack in the Docker dev container. Turbopack currently externalizes
     # the Prisma 7 runtime into a hashed package name that does not resolve here.
     command: ["npm", "run", "dev", "--", "--webpack", "--hostname", "0.0.0.0"]
+    # Run as the invoking host user (supplied by scripts/run_web_compose.sh) so
+    # files the dev server writes into the bind-mounted checkout, such as the
+    # generated Prisma client, next-env.d.ts, and new migrations, stay owned by
+    # that user instead of root.
+    user: "${BESEDY_HOST_UID:-1000}:${BESEDY_HOST_GID:-1000}"
     environment:
+      # An arbitrary UID has no home directory; npm needs a writable one.
+      HOME: /tmp
       NEXT_DIST_DIR: .cache-next
       DEV_EXTRA_ORIGINS: ${DEV_EXTRA_ORIGINS:-}
     volumes:

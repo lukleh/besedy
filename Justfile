@@ -98,7 +98,9 @@ tei-down:
 tei-logs:
     {{ rag_services_compose }} logs -f embeddings reranker
 
+# Build and start the ColBERT query server; its state directory is created as the invoking user, not by Docker as root.
 colbert-up:
+    mkdir -p "${RAG_COLBERT_HOST_DIR:-${BESEDY_STATE_HOME:-$HOME/.local/state/lukleh/besedy}/tmp/rag_colbert}"
     {{ rag_services_compose }} up -d --build colbert
 
 colbert-down:
