@@ -50,7 +50,6 @@ import {
   canEditCorrectionGuide,
   canPublishTranscript,
 } from "@/lib/policy/correction";
-import { resolveReaderTranscriptSource } from "@/lib/correction/resolve";
 
 export interface PortalCapability {
   userId: string | null;
@@ -113,18 +112,6 @@ export interface RecordingCapability extends CatalogCapability {
   canEditRecording: boolean;
   canSeeTranscriptVariants: boolean;
   canSeeSpeakers: boolean;
-  /// Primary recording of an event, so correction and its publication gate apply
-  correctionEligible: boolean;
-  correctionWorkspaceId: string | null;
-  /**
-   * Whether an active reader publication exists for an eligible recording.
-   *
-   * The publication gate itself is not answered here. Each transcript surface
-   * resolves it through `resolveReaderTranscriptSource`, because the answer
-   * differs per consumer, and a single capability field would be one more
-   * thing that can disagree with them.
-   */
-  hasReaderPublication: boolean;
 }
 
 interface CatalogCapabilityOptions {
@@ -291,9 +278,6 @@ export async function getRecordingCapability(
     // rather than after the entry is loaded.
     canSeeTranscriptVariants: canSeeTranscriptVariants(policyContext),
     canSeeSpeakers: canSeeSpeakers(policyContext),
-    correctionEligible: false,
-    correctionWorkspaceId: null,
-    hasReaderPublication: false,
   };
 
   if (!catalogCapability.catalogExists || !catalogCapability.hasAccess) {
@@ -327,10 +311,6 @@ export async function getRecordingCapability(
     recordingState
   );
 
-  // Resolved once here rather than in every transcript surface, so the reader,
-  // its download and the page that explains the gate cannot disagree.
-  const readerSource = await resolveReaderTranscriptSource(catalogId, hash);
-
   return {
     ...baseCapability,
     canAccessRecording: canViewRecording(policyContext, recordingState),
@@ -338,13 +318,5 @@ export async function getRecordingCapability(
     canViewRecordingTranscripts,
     canDownloadRecording: canDownloadRecording(policyContext),
     canEditRecording: canEditRecordingMetadata(policyContext),
-    correctionEligible: readerSource.kind !== "machine",
-    correctionWorkspaceId:
-      readerSource.kind === "publication"
-        ? readerSource.workspaceId
-        : readerSource.kind === "withheld"
-          ? readerSource.workspaceId
-          : null,
-    hasReaderPublication: readerSource.kind === "publication",
   };
 }

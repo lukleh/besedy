@@ -19,6 +19,10 @@ vi.mock("@/lib/access/capabilities", () => ({
   getRecordingCapability: vi.fn(),
 }));
 
+vi.mock("@/lib/correction/resolve", () => ({
+  resolveReaderTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+}));
+
 vi.mock("@/lib/audit/logger", () => ({
   logAccessDenied: vi.fn(),
 }));
