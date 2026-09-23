@@ -502,6 +502,7 @@ def test_web_compose_wrapper_leaves_production_directory_mounts_to_the_operator(
     assert not (root / "checkout/node_modules").exists()
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
 def test_web_compose_wrapper_warns_instead_of_failing_when_a_mount_cannot_be_created(
     tmp_path: Path,
 ) -> None:

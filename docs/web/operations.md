@@ -46,11 +46,14 @@ creates missing dev/test mount directories as that user, so nothing in the
 checkout or the XDG state and cache homes becomes root-owned. A checkout used
 with an older dev container, which ran as root, may still hold root-owned files
 that the dev server can no longer replace. Reclaim only the root-owned entries
-once (not the whole state home: production logs there belong to UID 1001):
+once (not the whole state home: production logs there belong to UID 1001), then
+rebuild rather than restart: a plain `dev-up` recreates the container but carries
+over its old, root-owned `node_modules` volume, while `dev-rebuild` renews it.
 
 ```bash
 sudo find web ~/.cache/lukleh/besedy/web ~/.local/state/lukleh/besedy/web/logs/dev \
   -user root -exec chown "$(id -u):$(id -g)" {} +
+just dev-rebuild
 ```
 
 ### Test / E2E Stack
