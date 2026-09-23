@@ -5,6 +5,10 @@ set -e
 # Env vars MIGRATE_PASSWORD and APP_PASSWORD from docker-compose
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    -- pgvector is not a trusted extension, so the migrator cannot create it.
+    -- Create it here as superuser; the migration's IF NOT EXISTS is then a no-op.
+    CREATE EXTENSION IF NOT EXISTS vector;
+
     -- Migrator: full DDL for schema changes (used from host only)
     CREATE USER besedy_migrator WITH PASSWORD '$MIGRATE_PASSWORD';
     GRANT ALL PRIVILEGES ON DATABASE $POSTGRES_DB TO besedy_migrator;

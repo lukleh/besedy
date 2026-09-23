@@ -87,6 +87,64 @@ User -> Cloudflare Tunnel (TLS) -> localhost:3000 -> besedy-production-web -> Po
 Cloudflare terminates TLS and enforces access policies. The web container reads
 catalogs, transcripts, and audio from mounted host paths.
 
+### First Deployment on a New Host
+
+`just prod-deploy` also performs the first deployment; these are the one-time
+steps before it. Paths below use the default config home
+(`~/.config/lukleh/besedy`).
+
+1. **Host tools:** Docker Engine with Compose v2 and BuildKit, `just`, `uv`,
+   `jq`, `git`, and Node.js 24 with npm. The deploy runs Prisma migrations and
+   the web checks on the host, so install the web dependencies once per
+   checkout:
+
+   ```bash
+   (cd web && npm ci)
+   ```
+
+2. **Config files** (all outside the checkout):
+
+   ```bash
+   mkdir -p ~/.config/lukleh/besedy
+   cp web/.env.prod.example ~/.config/lukleh/besedy/web.env.prod
+   cp web/besedy.container.toml.example ~/.config/lukleh/besedy/besedy.container.toml
+   chmod 644 ~/.config/lukleh/besedy/besedy.container.toml
+   cp jobs-service/.env.example ~/.config/lukleh/besedy/jobs.env.prod
+   ```
+
+   Fill in `web.env.prod` per the preflight checklist below, set
+   `superadmin_email` in `besedy.container.toml`, and set
+   `BESEDY_JOB_SERVICE_SECRET` in `jobs.env.prod` to the web value.
+   `prod-build` reads `jobs.env.prod` even for a web-only deploy so a custom
+   `BESEDY_JOBS_IMAGE` is honored.
+
+3. **Host directories:** create every data directory named in `web.env.prod`.
+   `WEB_LOGS_DIR` must be writable by container UID 1001. Prepare `ARTWORK_DIR`
+   and `UPLOADS_DIR` with group `UPLOADS_GID` and mode `2770`, and make
+   `BACKUP_DIR` owned by `BACKUP_UID:BACKUP_GID`. Keep the host CLI's
+   `[paths].audio_artifacts_dir` outside the checkout: the production build
+   refuses a dirty worktree.
+
+4. **Database volume:** `docker volume create besedy_production_postgres`
+   (see below).
+
+5. **Deploy and verify:**
+
+   ```bash
+   just prod-deploy
+   curl -s http://localhost:3000/api/health
+   curl -s http://localhost:3000/api/version | jq
+   ```
+
+   On a fresh host `prod-apply` starts the database, backs up the empty
+   database, applies every migration, and then starts web and the scheduled
+   backup.
+
+Deep Search, recording ingest, and the Cloudflare Tunnel are set up separately
+(see [Deep Search Production Runtime](#deep-search-production-runtime),
+[recording-ingest.md](recording-ingest.md), and
+[Cloudflare Tunnel](#cloudflare-tunnel)).
+
 ### Deploy Preflight Checklist
 
 **Resolved production env file** (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`):
@@ -114,6 +172,7 @@ catalogs, transcripts, and audio from mounted host paths.
 - [ ] Cloudflare Tunnel pointing to `localhost:3000`
 - [ ] Google OAuth redirect URI matches `AUTH_URL`
 - [ ] External DB volume exists: `docker volume inspect besedy_production_postgres`
+- [ ] Production jobs env file exists (`BESEDY_JOBS_ENV_PROD` or `~/.config/lukleh/besedy/jobs.env.prod`); `prod-build` reads it
 
 On a new host, create the production DB volume once before the first deployment:
 
@@ -372,16 +431,18 @@ Both identifiers are visible at `GET /api/version`; the admin sidebar continues
 to display the source commit. Update lifecycle telemetry is available under
 **Admin → Web Updates** and is retained for 30 days.
 
-**Fresh database caveat:** On a brand-new DB from the full migration chain,
-install the `vector` extension before the first migration:
+**Fresh database caveat:** Older migrations create `vector` columns before later
+migrations remove them, and the migrator role cannot create the non-trusted
+`vector` extension. `web/init-db-users.sh` therefore creates it as superuser when a
+new production volume is initialized, so a brand-new DB migrates without manual
+steps. A volume initialized before that script created the extension needs it
+installed once before its first migration:
 
 ```bash
 docker exec besedy-production-db psql -U besedy -d besedy -c 'CREATE EXTENSION IF NOT EXISTS vector;'
 ```
 
-This is only needed because older migrations create `vector` columns before later
-migrations remove them. Existing databases that already passed that point need
-nothing.
+Existing databases that already passed that point need nothing.
 
 **Required one-time cleanup for hosts with the retired LAN egress control:**
 
@@ -850,7 +911,8 @@ Check `MIGRATE_PASSWORD` matches between env file and DB. Ensure DB container is
 healthy via `just prod-status`.
 
 **Migration fails with "permission denied to create extension":**
-The `besedy_migrator` role cannot create extensions. Create the extension as
+The `besedy_migrator` role cannot create non-trusted extensions. New volumes get
+`vector` from `web/init-db-users.sh`; on an older volume, create the extension as
 superuser (`docker exec besedy-production-db psql -U besedy -d besedy -c 'CREATE EXTENSION IF NOT EXISTS vector;'`),
 then resolve the failed migration with `npx prisma migrate resolve --rolled-back <name>`,
 and rerun `just prod-migrate`.
