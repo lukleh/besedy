@@ -23,6 +23,13 @@ describe("unit test env isolation", () => {
       )) {
         read.add(dot ?? bracket);
       }
+      // Destructured reads: const { FOO, BAR: alias } = process.env
+      for (const [, names] of text.matchAll(/\{([^}]*)\}\s*=\s*process\.env\b/g)) {
+        for (const entry of names.split(",")) {
+          const name = entry.split(":")[0].split("=")[0].trim();
+          if (/^[A-Z][A-Z0-9_]*$/.test(name)) read.add(name);
+        }
+      }
     }
     const covered = webEnvVarNames(webDir);
     const uncovered = [...read].filter(
