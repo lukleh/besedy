@@ -29,15 +29,28 @@ create, replace, stop, or remove resources.
 
 ## Development Setup
 
-Start the dev stack:
+First run from a fresh clone:
 
 ```bash
+mkdir -p ~/.config/lukleh/besedy
+cp web/.env.dev.example ~/.config/lukleh/besedy/web.env.dev
+# edit: AUTH_SECRET, VAPID keys (npx web-push generate-vapid-keys), and the data
+# directories (TEXT_DATA_DIR etc. -- the text directory holds catalogs/ and
+# transcripts/ written by the catalog CLI)
 just dev-up
+just dev-migrate   # the dev entrypoint does not migrate
+just dev-seed      # superadmin/admin plus pending admissions for mock OAuth users
 ```
+
+Later runs only need `just dev-up`; run `just dev-migrate` again after pulling
+new migrations.
 
 - Web: `http://localhost:3001`, DB: `localhost:5433`
 - Uses mock OAuth -- no real Google credentials needed.
 - pgAdmin available via `just dev-up-tools` at `http://localhost:5050`.
+- The dev server skips the startup catalog sync. After adding a catalog under
+  **Admin -> Catalogs**, open its **Catalog Settings** and press **Sync Catalog**
+  before recordings appear.
 
 Useful follow-ups: `just web-check`, `just dev-logs`, `just dev-down`.
 
