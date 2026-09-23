@@ -327,6 +327,10 @@ web-check:
     #!/usr/bin/env bash
     set -e
     cd web
+    if [ ! -x node_modules/.bin/next ]; then
+        echo "Web dependencies are not installed; run: (cd web && npm ci)" >&2
+        exit 1
+    fi
     echo "Running TypeScript type check..."
     npm run type-check
     echo "Running ESLint..."
@@ -594,6 +598,10 @@ prod-apply:
     # versions.
     echo "Stopping web and scheduled backup for database maintenance..."
     {{ prod_compose }} stop web backup
+    # On a fresh host nothing has started the database yet. --no-recreate
+    # leaves an existing database container untouched.
+    echo "Ensuring the database is running..."
+    {{ prod_compose }} up -d --no-deps --no-recreate --wait db
     echo "Creating a pre-migration backup..."
     just prod-backup
     echo "Running migrations..."

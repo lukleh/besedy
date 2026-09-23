@@ -8,6 +8,7 @@ WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
 WEB_PROD_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.production.yml"
 WEB_COMPOSE_WRAPPER = PROJECT_ROOT / "scripts" / "run_web_compose.sh"
 WEB_DOCKERFILE = PROJECT_ROOT / "web" / "Dockerfile"
+JOBS_ENV_TEMPLATE = PROJECT_ROOT / "jobs-service" / ".env.example"
 
 
 def test_prod_migrate_restores_audit_log_delete_revoke_after_blanket_grant() -> None:
@@ -121,6 +122,35 @@ def test_fresh_host_can_build_web_before_the_coordinated_jobs_build() -> None:
     assert coordinated_recipe.index("just jobs-prod-build") < coordinated_recipe.index(
         "just _prod-apply-with-jobs"
     )
+
+
+def test_first_deploy_starts_the_database_before_the_pre_migration_backup() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+    apply_recipe = justfile.split("\nprod-apply:", maxsplit=1)[1].split(
+        "\n# Full production web deployment.", maxsplit=1
+    )[0]
+    start_db = "{{ prod_compose }} up -d --no-deps --no-recreate --wait db"
+
+    assert start_db in apply_recipe
+    assert apply_recipe.index(start_db) < apply_recipe.index("just prod-backup")
+
+
+def test_jobs_env_template_leaves_per_environment_values_to_compose_defaults() -> None:
+    per_environment = {
+        "PREFECT_DEEP_SEARCH_WORK_POOL",
+        "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME",
+        "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
+        "BESEDY_INTERNAL_BASE_URL",
+        "DEEP_SEARCH_OUTPUT_ENV",
+        "DEEP_SEARCH_OUTPUT_DIR",
+    }
+    assigned = {
+        line.split("=", 1)[0]
+        for line in JOBS_ENV_TEMPLATE.read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
+
+    assert assigned.isdisjoint(per_environment)
 
 
 def test_database_maintenance_quiesces_scheduled_backups() -> None:
