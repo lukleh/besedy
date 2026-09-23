@@ -59,7 +59,9 @@ web_networks="$(jq -c '.services.web.networks | keys | sort' <<<"$config")"
 
 # Every jobs runtime on the shared internal network answers to the Compose
 # service name jobs-api, so that name picks one of them at random. Web must
-# name one runtime's container; besedy-jobs-api is a development-only alias.
+# name its own runtime's container: another runtime's container is the same
+# cross-environment leak on purpose, and besedy-jobs-api is a development-only
+# alias. Hosts outside the runtime naming pattern stay allowed.
 case "$mode" in
   development) expected_jobs_api_host="besedy-dev-jobs-api" ;;
   production) expected_jobs_api_host="besedy-prod-jobs-api" ;;
@@ -70,11 +72,15 @@ jobs_api_host="${jobs_api_url#*://}"
 jobs_api_host="${jobs_api_host%%[:/]*}"
 case "$jobs_api_host" in
   jobs-api)
-    fail "web JOBS_API_BASE_URL '$jobs_api_url' names the service alias shared by every jobs runtime on $expected_internal_network; unset it in the env file to use http://$expected_jobs_api_host:8390, or name one runtime's container"
+    fail "web JOBS_API_BASE_URL '$jobs_api_url' names the service alias shared by every jobs runtime on $expected_internal_network; unset it in the env file to use http://$expected_jobs_api_host:8390, or name this mode's runtime container"
     ;;
   besedy-jobs-api)
     [[ "$mode" == "development" ]] \
       || fail "web JOBS_API_BASE_URL '$jobs_api_url' names the development jobs runtime; use http://$expected_jobs_api_host:8390"
+    ;;
+  besedy-*-jobs-api)
+    [[ "$jobs_api_host" == "$expected_jobs_api_host" ]] \
+      || fail "web JOBS_API_BASE_URL '$jobs_api_url' names another environment's jobs runtime; use http://$expected_jobs_api_host:8390"
     ;;
 esac
 

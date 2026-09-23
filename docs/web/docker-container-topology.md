@@ -159,7 +159,8 @@ JOBS_API_BASE_URL=http://besedy-prod-jobs-api:8390
 Never use the Compose service name `jobs-api`: every jobs runtime on
 `besedy-internal` answers to it, so it picks one of them at random. Do not
 point production web at `besedy-jobs-api` either; that alias belongs to the
-development runtime. The wrapper refuses both.
+development runtime. The wrapper refuses both, and any other environment's
+`besedy-<env>-jobs-api` container.
 
 ## Deep Search Runtime And Prefect
 

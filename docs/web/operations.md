@@ -584,7 +584,8 @@ through the development runtime.
    `http://jobs-api:8390`: every jobs runtime on `besedy-internal` answers to the
    Compose service name `jobs-api`, so it picks one of them at random. The
    compose wrapper defaults each mode to its own runtime's container and refuses
-   both shared names. Web joins `besedy-internal` on container
+   both shared names as well as another environment's `besedy-<env>-jobs-api`.
+   Web joins `besedy-internal` on container
    (re)creation via the compose `networks:` block -- under either `prod-up` or
    `prod-deploy`; use `prod-deploy` for a release because it also rebuilds the
    image and runs migrations, not because it is the only recipe that joins the

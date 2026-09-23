@@ -612,9 +612,19 @@ printf 'BESEDY_JOBS_API_HOST=%s\\n' "${{BESEDY_JOBS_API_HOST-unset}}"
             "http://besedy-jobs-api:8390",
             "names the development jobs runtime; use http://besedy-test-jobs-api:8390",
         ),
+        (
+            "development",
+            "http://besedy-prod-jobs-api:8390",
+            "names another environment's jobs runtime; use http://besedy-dev-jobs-api:8390",
+        ),
+        (
+            "production",
+            "http://besedy-test-jobs-api:8390/",
+            "names another environment's jobs runtime; use http://besedy-prod-jobs-api:8390",
+        ),
     ],
 )
-def test_compose_validator_rejects_jobs_api_names_shared_between_runtimes(
+def test_compose_validator_rejects_jobs_api_names_of_other_runtimes(
     mode: str, jobs_api_base_url: str, message: str
 ) -> None:
     result = validate_compose_config(
@@ -629,12 +639,14 @@ def test_compose_validator_rejects_jobs_api_names_shared_between_runtimes(
     ("mode", "jobs_api_base_url"),
     [
         ("production", "http://besedy-prod-jobs-api:8390"),
+        ("test", "http://besedy-test-jobs-api:8390"),
         ("development", "http://besedy-jobs-api:8390"),
         ("development", "http://host.docker.internal:8390"),
+        ("production", "https://jobs.example.internal/"),
         ("test", None),
     ],
 )
-def test_compose_validator_accepts_a_jobs_api_that_names_one_runtime(
+def test_compose_validator_accepts_a_jobs_api_that_names_its_own_runtime(
     mode: str, jobs_api_base_url: str | None
 ) -> None:
     result = validate_compose_config(
