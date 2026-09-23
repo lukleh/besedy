@@ -4,8 +4,10 @@ Web interface for browsing and managing audio catalogs and transcripts.
 
 ## Prerequisites
 
-- Docker and Docker Compose
-- Node.js 20+ (for local development without Docker)
+- Docker Engine with Compose v2 (BuildKit)
+- Node.js 24 with npm. The `just` recipes run Prisma, the fixture generator,
+  and the checks on the host, so this is needed even when the app runs in Docker.
+- `jq` (used by `scripts/run_web_compose.sh` to validate the rendered Compose project)
 
 ## Environment Configuration
 
@@ -29,6 +31,14 @@ npm run test
 The normal development, build, type-check, and test commands generate the
 ignored Prisma client automatically from `prisma/schema.prisma`, so a fresh
 checkout does not need to carry generated files.
+
+First run: copy `.env.dev.example` to `~/.config/lukleh/besedy/web.env.dev`
+and fill it in, then start the stack, apply migrations, and seed the mock OAuth
+users (see [docs/web/operations.md](../docs/web/operations.md#development-setup)):
+
+```bash
+just dev-up && just dev-migrate && just dev-seed
+```
 
 ```bash
 # Start development environment

@@ -161,7 +161,10 @@ Codex CLI, and the Codex IDE extension.
 
 The above covers the core CLI. Transcription and diarization have extra
 requirements (GPU, Docker, a Hugging Face token) — see
-[Backends](#backends).
+[Backends](#backends). The web app additionally needs Docker Engine with
+Compose v2, Node.js 24 with npm, and `jq` — see [web/README.md](web/README.md)
+and, for a new production host,
+[docs/web/operations.md](docs/web/operations.md#production-deploy).
 
 ### Setup
 
@@ -190,7 +193,9 @@ cp besedy.toml.example ~/.config/lukleh/besedy/besedy.toml
 ```
 
 Then set `[paths].text_data_dir` (required — it is where catalogs and transcripts
-are written); the other paths have working defaults. To keep the config
+are written); the other paths have working defaults. Consider setting
+`[paths].audio_artifacts_dir` as well: left empty, staged and archived audio is
+written inside the checkout. To keep the config
 elsewhere, point `BESEDY_CONFIG` at it instead:
 
 ```bash
