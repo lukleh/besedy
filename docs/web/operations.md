@@ -416,16 +416,18 @@ Both identifiers are visible at `GET /api/version`; the admin sidebar continues
 to display the source commit. Update lifecycle telemetry is available under
 **Admin → Web Updates** and is retained for 30 days.
 
-**Fresh database caveat:** On a brand-new DB from the full migration chain,
-install the `vector` extension before the first migration:
+**Fresh database caveat:** Older migrations create `vector` columns before later
+migrations remove them, and the migrator role cannot create the non-trusted
+`vector` extension. `web/init-db-users.sh` therefore creates it as superuser when a
+new production volume is initialized, so a brand-new DB migrates without manual
+steps. A volume initialized before that script created the extension needs it
+installed once before its first migration:
 
 ```bash
 docker exec besedy-production-db psql -U besedy -d besedy -c 'CREATE EXTENSION IF NOT EXISTS vector;'
 ```
 
-This is only needed because older migrations create `vector` columns before later
-migrations remove them. Existing databases that already passed that point need
-nothing.
+Existing databases that already passed that point need nothing.
 
 **Required one-time cleanup for hosts with the retired LAN egress control:**
 
@@ -894,7 +896,8 @@ Check `MIGRATE_PASSWORD` matches between env file and DB. Ensure DB container is
 healthy via `just prod-status`.
 
 **Migration fails with "permission denied to create extension":**
-The `besedy_migrator` role cannot create extensions. Create the extension as
+The `besedy_migrator` role cannot create non-trusted extensions. New volumes get
+`vector` from `web/init-db-users.sh`; on an older volume, create the extension as
 superuser (`docker exec besedy-production-db psql -U besedy -d besedy -c 'CREATE EXTENSION IF NOT EXISTS vector;'`),
 then resolve the failed migration with `npx prisma migrate resolve --rolled-back <name>`,
 and rerun `just prod-migrate`.
