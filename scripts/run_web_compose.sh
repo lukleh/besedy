@@ -204,23 +204,26 @@ printf '%s\n' "$rendered_config" \
 # an error rather than become a directory. Production directories need
 # explicit ownership and are prepared as documented in docs/web/operations.md.
 if [[ "$changes_resources" == true && "$dry_run" == false && "$mode" != "production" ]]; then
-  while IFS= read -r host_dir; do
-    if [[ -n "$host_dir" && ! -e "$host_dir" ]]; then
-      mkdir -p "$host_dir"
-    fi
-  done < <(
+  host_dirs="$(
     printf '%s\n' "$rendered_config" | jq -r '
       ["/data/text", "/data/artwork", "/data/sources", "/data/uploads",
        "/data/audio", "/data/original", "/var/log/besedy", "/backups",
        "/app/.cache-next"] as $dir_targets
+      | ["/app/node_modules", "/app/.cache-next"] as $checkout_mountpoints
       | .services[]?.volumes // []
       | ([.[] | select(.type == "bind" and .target == "/app") | .source][0]) as $app
       | (.[] | select(.type == "bind" and (.target | IN($dir_targets[]))) | .source),
         (if $app then
-           .[] | select(.target | startswith("/app/")) | "\($app)/\(.target | ltrimstr("/app/"))"
+           .[] | select(.target | IN($checkout_mountpoints[]))
+           | "\($app)/\(.target | ltrimstr("/app/"))"
          else empty end)
     '
-  )
+  )"
+  while IFS= read -r host_dir; do
+    if [[ -n "$host_dir" && ! -e "$host_dir" ]] && ! mkdir -p "$host_dir" 2>/dev/null; then
+      echo "Warning: could not create $host_dir as $(id -un); Docker will create it as root" >&2
+    fi
+  done <<<"$host_dirs"
 fi
 
 if [[ "$changes_resources" == true ]]; then

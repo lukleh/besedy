@@ -11,6 +11,10 @@ services:
     # generated Prisma client, next-env.d.ts, and new migrations, stay owned by
     # that user instead of root.
     user: "${BESEDY_HOST_UID:-1000}:${BESEDY_HOST_GID:-1000}"
+    build:
+      args:
+        DEV_UID: ${BESEDY_HOST_UID:-1000}
+        DEV_GID: ${BESEDY_HOST_GID:-1000}
     environment:
       # An arbitrary UID has no home directory; npm needs a writable one.
       HOME: /tmp
