@@ -17,8 +17,10 @@ import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildCorrectionPublicationUrl,
   buildCorrectionUrl,
+  buildRecordingEntryUrl,
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
+import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionSurface } from "./correction-surface";
 import { useLandscapeWorkspace } from "./use-landscape-workspace";
 import { correctionStateSchema, type CorrectionState } from "./correction-types";
@@ -56,6 +58,23 @@ export function CorrectionWorkspace({
       }),
     enabled: supported === true,
   });
+
+  // The surface always says which recording it is working on (ADR 0006): a
+  // corrector with several in progress, or a curator about to publish, must
+  // never have to trust the URL.
+  const entryQuery = useQuery<CatalogEntryWithPermissions>({
+    queryKey: ["recording-entry", catalogId, hash],
+    queryFn: async () =>
+      fetchJson<CatalogEntryWithPermissions>(buildRecordingEntryUrl(catalogId, hash)),
+    enabled: supported === true,
+  });
+  const recording = entryQuery.data?.entry;
+  const recordingTitle =
+    recording?.curatedTitle || recording?.title || recording?.filename || hash.slice(0, 16);
+  const recordingDate = recording?.curatedDate || recording?.date || null;
+  const recordingSubtitle = [recordingDate, recording?.album?.name]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
 
   const refreshState = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -137,7 +156,15 @@ export function CorrectionWorkspace({
               {t("backToRecording")}
             </Link>
           </Button>
-          <h1 className="text-lg font-medium">{t("pageTitle")}</h1>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t("pageTitle")}
+            </p>
+            <h1 className="text-lg font-medium">{recordingTitle}</h1>
+            {recordingSubtitle && (
+              <p className="text-sm text-muted-foreground">{recordingSubtitle}</p>
+            )}
+          </div>
         </div>
 
         {state?.workspace && state.progress && (
@@ -166,7 +193,7 @@ export function CorrectionWorkspace({
 
       {stateQuery.isLoading && <Skeleton className="h-64 w-full" />}
 
-      {state && !state.eligible && (
+      {state && !state.workspace && !state.canStart && (
         <div className="rounded-lg border bg-muted/50 p-6">
           <h2 className="font-medium">{t("notEligible")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -412,6 +412,7 @@
     "spanOf": "Segment {index} of {total}",
     "approveAndContinue": "Approve and continue",
     "saveApproveAndContinue": "Save, approve and continue",
+    "clearApproveAndContinue": "Mark as no speech and continue",
     "disapprove": "Disapprove",
     "withdraw": "Withdraw my decision",
     "comment": "Comment",

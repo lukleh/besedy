@@ -412,6 +412,7 @@
     "spanOf": "Segment {index} z {total}",
     "approveAndContinue": "Schválit a pokračovat",
     "saveApproveAndContinue": "Uložit, schválit a pokračovat",
+    "clearApproveAndContinue": "Označit jako bez řeči a pokračovat",
     "disapprove": "Neschválit",
     "withdraw": "Vzít rozhodnutí zpět",
     "comment": "Komentář",
