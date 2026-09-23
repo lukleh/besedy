@@ -12,18 +12,22 @@ case "$mode" in
   prefect)
     override_var="BESEDY_JOBS_ENV_PREFECT"
     config_name="jobs.env.prefect"
+    example_name=".env.prefect.example"
     ;;
   development | dev)
     override_var="BESEDY_JOBS_ENV_DEV"
     config_name="jobs.env.dev"
+    example_name=".env.dev.example"
     ;;
   production | prod)
     override_var="BESEDY_JOBS_ENV_PROD"
     config_name="jobs.env.prod"
+    example_name=".env.prod.example"
     ;;
   test)
     override_var="BESEDY_JOBS_ENV_TEST"
     config_name="jobs.env.test"
+    example_name=".env.test.example"
     ;;
   *)
     echo "Unsupported mode: $mode" >&2
@@ -68,7 +72,7 @@ if [[ -f "$canonical_path" ]]; then
   exit 0
 fi
 
-example_path="$repo_root/jobs-service/.env.example"
+example_path="$repo_root/jobs-service/$example_name"
 cat >&2 <<EOF
 Jobs env file not found.
 

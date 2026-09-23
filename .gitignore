@@ -24,6 +24,7 @@ mlflow.db
 .uv-cache
 .env
 jobs-service/.env.*
+!jobs-service/.env.*.example
 transcripts
 transcripts_*/
 transcripts_parquet

@@ -1,5 +1,10 @@
 name: besedy-prefect
 
+# Derived from the same PREFECT_POSTGRES_* values prefect-postgres starts with,
+# so one password change cannot leave the server authenticating with another.
+x-prefect-database-url: &prefect-database-url
+  ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://${PREFECT_POSTGRES_USER:-prefect}:${PREFECT_POSTGRES_PASSWORD:-prefect}@prefect-postgres:5432/${PREFECT_POSTGRES_DB:-prefect}}
+
 services:
   prefect-postgres:
     image: postgres:${POSTGRES_VERSION:-17}-alpine
@@ -36,7 +41,7 @@ services:
       - upgrade
       - --yes
     environment:
-      PREFECT_SERVER_DATABASE_CONNECTION_URL: ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect}
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: *prefect-database-url
     networks:
       - prefect
 
@@ -56,7 +61,7 @@ services:
       - "4200"
       - --no-services
     environment:
-      PREFECT_SERVER_DATABASE_CONNECTION_URL: ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect}
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: *prefect-database-url
       PREFECT_SERVER_API_HOST: 0.0.0.0
       PREFECT_SERVER_API_PORT: 4200
       PREFECT_UI_API_URL: ${PREFECT_UI_API_URL:-http://localhost:4200/api}
@@ -90,7 +95,7 @@ services:
       - start
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
-      PREFECT_SERVER_DATABASE_CONNECTION_URL: ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect}
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: *prefect-database-url
     networks:
       - prefect
     restart: unless-stopped
