@@ -123,12 +123,13 @@ steps before it. Paths below use the default config home
    cp web/.env.prod.example ~/.config/lukleh/besedy/web.env.prod
    cp web/besedy.container.toml.example ~/.config/lukleh/besedy/besedy.container.toml
    chmod 644 ~/.config/lukleh/besedy/besedy.container.toml
-   cp jobs-service/.env.example ~/.config/lukleh/besedy/jobs.env.prod
+   cp jobs-service/.env.prod.example ~/.config/lukleh/besedy/jobs.env.prod
    ```
 
    Fill in `web.env.prod` per the preflight checklist below, set
    `superadmin_email` in `besedy.container.toml`, and set
-   `BESEDY_JOB_SERVICE_SECRET` in `jobs.env.prod` to the web value.
+   `BESEDY_JOB_SERVICE_SECRET` in `jobs.env.prod` to the web value (the
+   production template ships it empty on purpose).
    `prod-build` reads `jobs.env.prod` even for a web-only deploy so a custom
    `BESEDY_JOBS_IMAGE` is honored.
 

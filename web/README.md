@@ -127,7 +127,7 @@ cp .env.prod.example ~/.config/lukleh/besedy/web.env.prod
 cp besedy.container.toml.example ~/.config/lukleh/besedy/besedy.container.toml
 chmod 644 ~/.config/lukleh/besedy/besedy.container.toml
 # Read by prod-build even for web-only deploys; set BESEDY_JOB_SERVICE_SECRET
-cp ../jobs-service/.env.example ~/.config/lukleh/besedy/jobs.env.prod
+cp ../jobs-service/.env.prod.example ~/.config/lukleh/besedy/jobs.env.prod
 
 # Edit with actual values:
 # - CONFIG_FILE: the absolute path to the external besedy.container.toml above
