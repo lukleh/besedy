@@ -265,6 +265,7 @@ def compose_config(
     internal_network: str = "besedy-internal",
     db_networks: dict[str, None] | None = None,
     config_file: str = "/safe/config.toml",
+    jobs_api_base_url: str | None = None,
 ) -> dict[str, object]:
     instance = mode
     volume_name = (
@@ -272,6 +273,9 @@ def compose_config(
         if mode == "production"
         else f"besedy_{instance}_postgres"
     )
+    web_environment: dict[str, str] = {"APP_ENV": mode, "CONFIG_FILE": config_file}
+    if jobs_api_base_url is not None:
+        web_environment["JOBS_API_BASE_URL"] = jobs_api_base_url
     return {
         "name": f"besedy-{instance}",
         "services": {
@@ -289,7 +293,7 @@ def compose_config(
             },
             "web": {
                 "container_name": f"besedy-{instance}-web",
-                "environment": {"APP_ENV": mode, "CONFIG_FILE": config_file},
+                "environment": web_environment,
                 "networks": {"besedy_internal": None, "default": None},
             },
         },
@@ -538,3 +542,115 @@ def test_web_compose_wrapper_warns_instead_of_failing_when_a_mount_cannot_be_cre
     assert result.returncode == 0, result.stderr
     assert f"Warning: could not create {locked / 'nas/original'}" in result.stderr
     assert (root / "state/logs").is_dir()
+
+
+@pytest.mark.parametrize(
+    ("mode", "override_var", "jobs_api_host"),
+    [
+        ("development", "BESEDY_WEB_ENV_DEV", "besedy-dev-jobs-api"),
+        ("test", "BESEDY_WEB_ENV_TEST", "besedy-test-jobs-api"),
+        ("production", "BESEDY_WEB_ENV_PROD", "besedy-prod-jobs-api"),
+    ],
+)
+def test_web_compose_wrapper_points_web_at_its_own_jobs_runtime(
+    tmp_path: Path, mode: str, override_var: str, jobs_api_host: str
+) -> None:
+    env_file = tmp_path / f"{mode}.env"
+    env_file.write_text(f"APP_ENV={mode}\nCONFIG_FILE=/safe/config.toml\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    config_file = bin_dir / "rendered.json"
+    config_file.write_text(json.dumps(compose_config(mode)), encoding="utf-8")
+    docker = bin_dir / "docker"
+    docker.write_text(
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" config --format json "* ]]; then
+  cat {config_file}
+  exit 0
+fi
+printf 'BESEDY_JOBS_API_HOST=%s\\n' "${{BESEDY_JOBS_API_HOST-unset}}"
+""",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+
+    env = os.environ.copy()
+    env[override_var] = str(env_file)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    # An inherited value must not leak into the clean Compose environment.
+    env["BESEDY_JOBS_API_HOST"] = "besedy-prod-jobs-api"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), mode, "ps"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"BESEDY_JOBS_API_HOST={jobs_api_host}"
+
+
+@pytest.mark.parametrize(
+    ("mode", "jobs_api_base_url", "message"),
+    [
+        (
+            "production",
+            "http://jobs-api:8390",
+            "shared by every jobs runtime on besedy-internal; unset it in the env file to use "
+            "http://besedy-prod-jobs-api:8390",
+        ),
+        (
+            "development",
+            "http://jobs-api:8390/",
+            "unset it in the env file to use http://besedy-dev-jobs-api:8390",
+        ),
+        (
+            "test",
+            "http://besedy-jobs-api:8390",
+            "names the development jobs runtime; use http://besedy-test-jobs-api:8390",
+        ),
+        (
+            "development",
+            "http://besedy-prod-jobs-api:8390",
+            "names another environment's jobs runtime; use http://besedy-dev-jobs-api:8390",
+        ),
+        (
+            "production",
+            "http://besedy-test-jobs-api:8390/",
+            "names another environment's jobs runtime; use http://besedy-prod-jobs-api:8390",
+        ),
+    ],
+)
+def test_compose_validator_rejects_jobs_api_names_of_other_runtimes(
+    mode: str, jobs_api_base_url: str, message: str
+) -> None:
+    result = validate_compose_config(
+        compose_config(mode, jobs_api_base_url=jobs_api_base_url), mode
+    )
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("mode", "jobs_api_base_url"),
+    [
+        ("production", "http://besedy-prod-jobs-api:8390"),
+        ("test", "http://besedy-test-jobs-api:8390"),
+        ("development", "http://besedy-jobs-api:8390"),
+        ("development", "http://host.docker.internal:8390"),
+        ("production", "https://jobs.example.internal/"),
+        ("test", None),
+    ],
+)
+def test_compose_validator_accepts_a_jobs_api_that_names_its_own_runtime(
+    mode: str, jobs_api_base_url: str | None
+) -> None:
+    result = validate_compose_config(
+        compose_config(mode, jobs_api_base_url=jobs_api_base_url), mode
+    )
+
+    assert result.returncode == 0, result.stderr
