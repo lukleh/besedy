@@ -28,9 +28,12 @@ function formatTimestamp(seconds: number, separator: string): string {
   return `${pad(hours, 2)}:${pad(minutes, 2)}:${pad(secs, 2)}${separator}${pad(millis, 3)}`;
 }
 
-/** Plain text, one segment per line. */
+/** Plain text, one non-empty segment per line, as the machine sidecar does. */
 export function renderTxt(segments: readonly RenderableSegment[]): string {
-  return segments.map((segment) => segment.text).join("\n").trim();
+  return segments
+    .map((segment) => segment.text.trim())
+    .filter((text) => text.length > 0)
+    .join("\n");
 }
 
 export function renderSrt(segments: readonly RenderableSegment[]): string {

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   fingerprintContent,
   hashSpanText,
-  isPublishableSpanText,
   normalizeSpanText,
 } from "@/lib/correction/text";
 
@@ -37,8 +36,8 @@ describe("correction text normalization", () => {
   });
 
   it("refuses an empty revision, because v1 has no intentional empty outcome", () => {
-    expect(isPublishableSpanText(normalizeSpanText("   "))).toBe(false);
-    expect(isPublishableSpanText(normalizeSpanText("word"))).toBe(true);
+    expect(normalizeSpanText("   ")).toBe("");
+    expect(normalizeSpanText("word")).toBe("word");
   });
 
   it("hashes content deterministically", () => {

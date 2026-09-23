@@ -398,6 +398,7 @@
     "fullyApproved": "Plně schváleno",
     "openSurface": "Otevřít korekturu",
     "pageTitle": "Korektura přepisu",
+    "frozenSource": "Zmrazený zdroj {backend}",
     "backToRecording": "Zpět na nahrávku",
     "landscapeOnly": "Korektura potřebuje větší obrazovku",
     "landscapeOnlyDescription": "Korektura je dostupná na počítači nebo na tabletu na šířku.",

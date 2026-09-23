@@ -386,7 +386,11 @@ export function CorrectionSurface({
             <div className="flex flex-wrap items-center gap-2">
               <Button onClick={runPrimary} disabled={command.isPending} className="gap-2">
                 <Check className="h-4 w-4" />
-                {isEdited ? t("saveApproveAndContinue") : t("approveAndContinue")}
+                {isEdited
+                  ? draft.trim() === ""
+                    ? t("clearApproveAndContinue")
+                    : t("saveApproveAndContinue")
+                  : t("approveAndContinue")}
               </Button>
               <Button
                 variant="outline"

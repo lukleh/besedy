@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type TranscriptDecisionKind } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
-import { hashSpanText, isPublishableSpanText, normalizeSpanText } from "@/lib/correction/text";
+import { hashSpanText, normalizeSpanText } from "@/lib/correction/text";
 import { summarizeSpanDecisions, type SpanState } from "@/lib/correction/span-state";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
@@ -267,12 +267,14 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
  * There is no persistent save without a decision: an unfinished edit stays a
  * local draft, so nothing half-considered ever sits in the database waiting to
  * be mistaken for reviewed text.
+ *
+ * Empty text is a legitimate edit (ADR 0006): it says nobody spoke here and
+ * the machine text was noise. The span keeps its timing; publication emits
+ * nothing for it. Speech the corrector cannot make out is disapproved, never
+ * emptied, and the guide is where that distinction is explained.
  */
 export async function saveAndApprove(command: EditCommand): Promise<SpanCommandResult> {
   const normalized = normalizeSpanText(command.text);
-  if (!isPublishableSpanText(normalized)) {
-    throw new CorrectionError("EMPTY_TEXT", "A span cannot be emptied; disapprove it instead if the words are unclear");
-  }
 
   return prisma.$transaction(async (tx) => {
     // An edit is stored with the editor's approval, so its recorded kind is

@@ -398,6 +398,7 @@
     "fullyApproved": "Fully approved",
     "openSurface": "Open the correction surface",
     "pageTitle": "Correct transcript",
+    "frozenSource": "Frozen source {backend}",
     "backToRecording": "Back to recording",
     "landscapeOnly": "Correction needs a larger screen",
     "landscapeOnlyDescription": "The correction surface is available on a desktop or on a tablet held in landscape.",

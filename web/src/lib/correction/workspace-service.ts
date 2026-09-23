@@ -275,8 +275,9 @@ function buildSpanRows(segments: readonly CanonicalSegment[]): ImportedSpan[] {
   const rows: ImportedSpan[] = [];
 
   for (const segment of segments) {
+    // An empty machine segment is imported like any other: the span keeps its
+    // timing, and two approvals confirm that nothing was said there.
     const text = normalizeSpanText(String(segment.text ?? ""));
-    if (!text) continue;
 
     const start = Number(segment.start ?? 0);
     const end = Number(segment.end ?? start);

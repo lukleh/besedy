@@ -24,15 +24,6 @@ export function hashSpanText(normalized: string): string {
   return createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
-/**
- * A publishable revision is non-empty. v1 has no unintelligible marker and no
- * intentional empty outcome: someone who cannot make out the words disapproves
- * instead of guessing.
- */
-export function isPublishableSpanText(normalized: string): boolean {
-  return normalized.length > 0;
-}
-
 /** Content-derived fingerprint of a rendered artifact. */
 export function fingerprintContent(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");

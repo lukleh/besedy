@@ -69,10 +69,12 @@ export function materializeCorrectedTranscript(
     return published;
   });
 
+  // Emptied segments stay in `segments` with their timing but contribute no
+  // words, so they are skipped here rather than leaving doubled spaces.
   const transcriptText = input.segments
-    .map((segment) => segment.text)
-    .join(" ")
-    .trim();
+    .map((segment) => segment.text.trim())
+    .filter((text) => text.length > 0)
+    .join(" ");
 
   const result: Record<string, unknown> = {
     ...input.source,
