@@ -630,10 +630,14 @@ one more shared directory and one more deployment on the same worker:
 
 1. Web env file: set `CORRECTIONS_DIR` to a host directory prepared like
    `UPLOADS_DIR` (group `UPLOADS_GID`, mode `2770`); it must not sit inside
-   `TEXT_DATA_DIR`, which the container mounts read-only. Host `besedy.toml`:
-   set `[paths].corrections_dir` to the same directory, because the worker's
-   index sync reads published transcripts from it. Container toml:
-   `corrections_dir = "/data/corrections"`.
+   `TEXT_DATA_DIR`, which the container mounts read-only. Container toml:
+   `corrections_dir = "/data/corrections"`. Host `besedy.toml`: set
+   `[paths].corrections_dir` to the same host directory, because the worker's
+   index sync reads published transcripts from it — but only **after** the
+   host checkout the worker runs from contains this code. `PathsConfig`
+   rejects unknown keys, so adding the key to a host toml read by an older
+   checkout stops every CLI command and flow run there from loading the
+   configuration.
 2. `just prod-deploy` (includes the correction migrations) and
    `just jobs-prod-rebuild && just jobs-prod-deploy` (registers
    `sync_correction_index_flow/correction-index-prod` on the ingest pool), then
