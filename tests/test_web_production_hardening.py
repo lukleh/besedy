@@ -8,7 +8,6 @@ WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
 WEB_PROD_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.production.yml"
 WEB_COMPOSE_WRAPPER = PROJECT_ROOT / "scripts" / "run_web_compose.sh"
 WEB_DOCKERFILE = PROJECT_ROOT / "web" / "Dockerfile"
-JOBS_ENV_TEMPLATE = PROJECT_ROOT / "jobs-service" / ".env.example"
 
 
 def test_prod_migrate_restores_audit_log_delete_revoke_after_blanket_grant() -> None:
@@ -136,6 +135,7 @@ def test_first_deploy_starts_the_database_before_the_pre_migration_backup() -> N
 
 
 def test_jobs_env_template_leaves_per_environment_values_to_compose_defaults() -> None:
+    jobs_env_template = PROJECT_ROOT / "jobs-service" / ".env.example"
     per_environment = {
         "PREFECT_DEEP_SEARCH_WORK_POOL",
         "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME",
@@ -146,7 +146,7 @@ def test_jobs_env_template_leaves_per_environment_values_to_compose_defaults() -
     }
     assigned = {
         line.split("=", 1)[0]
-        for line in JOBS_ENV_TEMPLATE.read_text(encoding="utf-8").splitlines()
+        for line in jobs_env_template.read_text(encoding="utf-8").splitlines()
         if "=" in line and not line.lstrip().startswith("#")
     }
 
