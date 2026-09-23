@@ -106,7 +106,9 @@ services:
       NEXT_PUBLIC_SUPPORT_EMAIL_B64: ${NEXT_PUBLIC_SUPPORT_EMAIL_B64:-}
       # Internal jobs-service authentication
       BESEDY_JOB_SERVICE_SECRET: ${BESEDY_JOB_SERVICE_SECRET:-}
-      JOBS_API_BASE_URL: ${JOBS_API_BASE_URL:-http://jobs-api:8390}
+      # scripts/run_web_compose.sh sets BESEDY_JOBS_API_HOST to this mode's jobs
+      # container; the bare service name jobs-api resolves to every runtime.
+      JOBS_API_BASE_URL: ${JOBS_API_BASE_URL:-http://${BESEDY_JOBS_API_HOST:-jobs-api}:8390}
       # RAG search (ColBERT sidecar + optional reranker)
       RAG_BACKEND_KEY: ${RAG_BACKEND_KEY:-faster-whisper/large-v3@silero_vad_v6@lang-auto}
       RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}

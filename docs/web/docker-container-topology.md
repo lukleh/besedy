@@ -147,15 +147,19 @@ rollout, production web must be recreated after the merge so it joins
 - `DATABASE_URL` is environment-specific.
 - `WEB_PORT` is environment-specific.
 - `BESEDY_JOB_SERVICE_SECRET` must match the Deep Search runtime that web calls.
-- `JOBS_API_BASE_URL` should use a Docker-network URL in production:
+- `JOBS_API_BASE_URL` must name one runtime's jobs container. The compose
+  wrapper defaults each mode to its own (`besedy-dev-jobs-api`,
+  `besedy-test-jobs-api`, `besedy-prod-jobs-api`); production keeps it
+  explicit:
 
 ```bash
 JOBS_API_BASE_URL=http://besedy-prod-jobs-api:8390
 ```
 
-Do not point production web at the current `besedy-jobs-api` container. That
-container is the current development runtime until it is explicitly renamed or
-replaced by `besedy-dev-jobs-api`.
+Never use the Compose service name `jobs-api`: every jobs runtime on
+`besedy-internal` answers to it, so it picks one of them at random. Do not
+point production web at `besedy-jobs-api` either; that alias belongs to the
+development runtime. The wrapper refuses both.
 
 ## Deep Search Runtime And Prefect
 

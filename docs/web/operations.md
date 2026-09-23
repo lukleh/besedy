@@ -580,9 +580,11 @@ through the development runtime.
    can still issue writes or internal requests.
    Set `JOBS_API_BASE_URL=http://besedy-prod-jobs-api:8390` in the production web
    env file so web calls the production jobs API by container name. Do **not**
-   use `besedy-jobs-api` (that DNS alias belongs to the dev runtime), and note the
-   compose default (`http://jobs-api:8390`) resolves to nothing in production, so
-   this value must be set explicitly. Web joins `besedy-internal` on container
+   use `besedy-jobs-api` (that DNS alias belongs to the dev runtime) or
+   `http://jobs-api:8390`: every jobs runtime on `besedy-internal` answers to the
+   Compose service name `jobs-api`, so it picks one of them at random. The
+   compose wrapper defaults each mode to its own runtime's container and refuses
+   both shared names. Web joins `besedy-internal` on container
    (re)creation via the compose `networks:` block -- under either `prod-up` or
    `prod-deploy`; use `prod-deploy` for a release because it also rebuilds the
    image and runs migrations, not because it is the only recipe that joins the

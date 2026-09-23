@@ -16,16 +16,19 @@ case "$mode" in
   development)
     expected_app_env="development"
     instance="development"
+    jobs_runtime="dev"
     compose_args=(-f docker-compose.yml -f docker-compose.dev.yml --profile mock-oauth)
     ;;
   production)
     expected_app_env="production"
     instance="production"
+    jobs_runtime="prod"
     compose_args=(-f docker-compose.yml -f docker-compose.secure.yml -f docker-compose.production.yml --profile backup)
     ;;
   test)
     expected_app_env="test"
     instance="${BESEDY_WEB_COMPOSE_INSTANCE:-test}"
+    jobs_runtime="test"
     compose_args=(-f docker-compose.yml -f docker-compose.secure.yml --profile mock-oauth)
     ;;
   *)
@@ -147,6 +150,9 @@ clean_env=(
   "BESEDY_COMPOSE_INSTANCE=$instance"
   "BESEDY_INTERNAL_NETWORK=$internal_network"
   "COMPOSE_PROJECT_NAME=besedy-$instance"
+  # Every jobs runtime's API answers to the shared service name jobs-api on the
+  # internal network, so web defaults to the container of its own runtime.
+  "BESEDY_JOBS_API_HOST=besedy-$jobs_runtime-jobs-api"
   "HOME=${HOME:-}"
   "PATH=$PATH"
   # The development overlay runs the web container as the invoking user.
