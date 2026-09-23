@@ -14,6 +14,7 @@ import {
   isCorrectedTranscriptBackend,
 } from "@/lib/correction/backend-key";
 import { resolveReaderTranscriptSource } from "@/lib/correction/resolve";
+import { selectDefaultTranscriptBackend } from "@/lib/transcript-default";
 import {
   getReaderCorrectionState,
   loadPublishedTranscript,
@@ -74,7 +75,7 @@ export async function GET(
     }
     const { userId, group, transcriptsPath, capability } = access;
 
-    // For a correction-eligible primary recording the machine text is not the
+    // For a recording in correction scope the machine text is not the
     // reader's transcript. The published correction is, and until one exists
     // this surface has no text to serve — only progress.
     const readerSource = await resolveReaderTranscriptSource(group.id, hash);
@@ -84,7 +85,7 @@ export async function GET(
     const available = await getAvailableTranscripts(transcriptsPath, hash, {
       priorities,
     });
-    const defaultMachineBackend = available.backends[0] ?? null;
+    const defaultMachineBackend = selectDefaultTranscriptBackend(available.backends);
 
     const defaultBackend = correctionPublished
       ? CORRECTED_TRANSCRIPT_BACKEND

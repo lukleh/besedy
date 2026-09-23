@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getAvailableTranscripts } from "@/lib/transcript";
 import { listTranscriptBackendPriorities } from "@/lib/transcript-priority";
+import { selectDefaultTranscriptBackend } from "@/lib/transcript-default";
 import { validatePath } from "@/lib/security/path-validation";
 import { CorrectionError } from "@/lib/correction/errors";
 
@@ -27,12 +28,12 @@ export interface MachineSource {
 }
 
 /**
- * The backend the reader currently calls the default one.
+ * The machine transcript the reader shows for this recording, which is what a
+ * corrector is looking at when they decide to start.
  *
- * Three mechanisms in this codebase could claim the name: this priority
- * table, the `RAG_BACKEND_KEY` used by export and search, and the MCP
- * canonical list. Correction freezes what the reader would show, because that
- * is the text a corrector is looking at when they decide to start.
+ * ADR 0006 names one default for every consumer: the search backend in
+ * `RAG_BACKEND_KEY`. The priority table only orders the variants and supplies
+ * the fallback when this recording lacks that backend's transcript.
  */
 export async function resolveConfiguredDefaultBackend(
   transcriptsPath: string,
@@ -42,7 +43,7 @@ export async function resolveConfiguredDefaultBackend(
   const available = await getAvailableTranscripts(transcriptsPath, audioHash, {
     priorities,
   });
-  return available.backends[0] ?? null;
+  return selectDefaultTranscriptBackend(available.backends);
 }
 
 function parseBackendKey(backend: string): { workflow: string; model: string } {
