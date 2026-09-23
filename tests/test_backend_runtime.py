@@ -6,6 +6,7 @@ import pytest
 
 from besedy.core.paths import PROJECT_ROOT
 from besedy.lib.runtime.backend_runtime import (
+    BackendRuntimeUnavailableError,
     backend_runtime_env_var_name,
     build_command_backend_process,
     build_python_backend_process,
@@ -322,3 +323,58 @@ def test_build_command_backend_process_docker_rejects_cpu_mode_for_gpu_backend(
             output_paths=[output_dir],
             docker_gpus=None,
         )
+
+
+def test_build_python_backend_process_reports_missing_docker_with_backend_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "docker")
+    monkeypatch.setattr("besedy.lib.runtime.backend_runtime.shutil.which", lambda _: None)
+    compose_file = tmp_path / "docker-compose.yml"
+    compose_file.write_text("services:\n  nemo:\n    image: test\n")
+
+    with pytest.raises(BackendRuntimeUnavailableError, match=r"NeMo runs in Docker.*`docker`"):
+        build_python_backend_process(
+            backend_id="nemo",
+            display_name="NeMo",
+            script_path=PROJECT_ROOT / "besedy" / "workflows" / "transcribe_nemo.py",
+            script_args=[],
+            docker_service="nemo",
+            docker_gpus="all",
+            compose_file=compose_file,
+        )
+
+
+def test_build_command_backend_process_reports_missing_docker_with_backend_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("besedy.lib.runtime.backend_runtime.shutil.which", lambda _: None)
+    compose_file = tmp_path / "docker-compose.yml"
+    compose_file.write_text("services:\n  legacy-test:\n    image: test\n")
+
+    with pytest.raises(BackendRuntimeUnavailableError, match="Legacy Test runs in Docker"):
+        build_command_backend_process(
+            backend_id="legacy-test",
+            display_name="Legacy Test",
+            host_argv=["/usr/bin/legacy-test"],
+            docker_argv=["legacy-test"],
+            docker_service="legacy-test",
+            runtime_override="docker",
+            compose_file=compose_file,
+        )
+
+
+def test_backend_runtime_unavailable_error_stays_a_runtime_error() -> None:
+    # Commands that already catch RuntimeError keep handling it.
+    assert issubclass(BackendRuntimeUnavailableError, RuntimeError)
+
+
+def test_resolve_backend_runtime_reports_an_invalid_selector_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "bogus")
+
+    with pytest.raises(BackendRuntimeUnavailableError, match="BESEDY_NEMO_RUNTIME.*'bogus'"):
+        resolve_backend_runtime("nemo")
