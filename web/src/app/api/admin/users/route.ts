@@ -4,7 +4,6 @@ import { UserStatus } from "@/generated/prisma/client";
 import { UserListQuerySchema } from "@/lib/validation/schemas";
 import { validateSearchParams, handlePrismaError } from "@/lib/api";
 import { requireAdminCapability } from "@/lib/access/require-admin";
-import { roleForLevel } from "@/lib/policy/catalog-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +59,6 @@ export async function GET(request: NextRequest) {
             status: "ACTIVE",
           },
           select: {
-            accessLevel: true,
             role: true,
             catalog: {
               select: { id: true, label: true },
@@ -78,7 +76,7 @@ export async function GET(request: NextRequest) {
       const catalogRoles = new Set<string>();
 
       for (const access of user.catalogAccess) {
-        catalogRoles.add(access.role ?? roleForLevel(access.accessLevel).role);
+        catalogRoles.add(access.role);
         catalogNames.push(access.catalog.label || access.catalog.id);
       }
 

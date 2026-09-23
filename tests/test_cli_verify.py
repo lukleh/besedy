@@ -11,7 +11,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from besedy.commands.catalog.validate import _parse_validation_log
+from besedy.commands.catalog.validate import _parse_validation_log, _run_validate
+from tests.helpers.transcript import (
+    create_diarization_json,
+    create_minimal_transcript,
+    write_transcript_json,
+)
 
 
 class TestParseValidationLog:
@@ -101,6 +106,119 @@ Schema validation passed
         # Should parse correctly despite separators
         assert result["summary"]["target"] == "/path/file.json"
         assert result["summary"]["schema_passed"] is True
+
+
+class TestParseDiarizationLog:
+    """Diarization output must be recognised by the log parser."""
+
+    def test_parse_passed_diarization(self):
+        log = """
+Validating: speakers.json
+✓ Diarization file is valid
+"""
+        result = _parse_validation_log(log)
+        assert result["summary"]["target"] == "speakers.json"
+        assert result["summary"]["diarization_passed"] is True
+        assert result["summary"]["status"] == "passed"
+        assert {"name": "diarization", "status": "passed"} in result["steps"]
+
+    def test_parse_failed_diarization(self):
+        log = """
+Validating: speakers.json
+✗ Diarization validation failed (2 issue(s))
+  - Segment 0 'speaker' must be a non-empty string
+  - Segment 1 end must be greater than start
+"""
+        result = _parse_validation_log(log)
+        assert result["summary"]["diarization_passed"] is False
+        assert result["summary"]["status"] == "failed"
+        assert result["summary"]["issue_count"] == 2
+        assert {"name": "diarization", "status": "failed", "issues": 2} in result["steps"]
+
+
+class TestSingleFileDispatch:
+    """The single-file path must pick the validator that matches the file."""
+
+    @staticmethod
+    def _args(path: Path) -> argparse.Namespace:
+        return argparse.Namespace(input_path=str(path), verbose=False, limit=None)
+
+    def test_speakers_json_uses_diarization_validator(self, tmp_path, capsys):
+        speakers = write_transcript_json(
+            tmp_path / "speakers.json",
+            create_diarization_json(["SPEAKER_00", "SPEAKER_01", "SPEAKER_00"]),
+        )
+
+        exit_code, data, _ = _run_validate(self._args(speakers), "text")
+        output = capsys.readouterr().out
+
+        assert exit_code == 0
+        assert data["kind"] == "diarization"
+        assert data["passed"] is True
+        assert "Diarization file is valid" in output
+        assert "missing 'text'" not in output
+
+    def test_speakers_json_json_report(self, tmp_path):
+        speakers = write_transcript_json(
+            tmp_path / "speakers.json",
+            create_diarization_json(["SPEAKER_00", "SPEAKER_01"]),
+        )
+
+        exit_code, data, _ = _run_validate(self._args(speakers), "json")
+
+        assert exit_code == 0
+        assert data["kind"] == "diarization"
+        assert data["passed"] is True
+        assert data["report"]["summary"]["status"] == "passed"
+        assert data["report"]["summary"]["diarization_passed"] is True
+
+    def test_invalid_speakers_json_reports_diarization_issues(self, tmp_path):
+        speakers = write_transcript_json(
+            tmp_path / "speakers.json",
+            {"segments": [{"start": 1.0, "end": 0.5, "speaker": "SPEAKER_00"}]},
+        )
+
+        _, data, _ = _run_validate(self._args(speakers), "json")
+
+        assert data["kind"] == "diarization"
+        assert data["passed"] is False
+        assert data["report"]["summary"]["status"] == "failed"
+        assert data["report"]["summary"]["issue_count"] == 1
+
+    def test_missing_segments_speakers_json_reports_failure(self, tmp_path):
+        speakers = write_transcript_json(tmp_path / "speakers.json", {"segments": []})
+
+        _, data, _ = _run_validate(self._args(speakers), "json")
+
+        assert data["kind"] == "diarization"
+        assert data["passed"] is False
+        assert data["diarization"]["status"] == "failed"
+        assert data["report"]["summary"]["status"] == "failed"
+        assert data["report"]["summary"]["diarization_passed"] is False
+
+    def test_malformed_speakers_json_reports_failure(self, tmp_path):
+        speakers = tmp_path / "speakers.json"
+        speakers.write_text("{not json")
+
+        _, data, _ = _run_validate(self._args(speakers), "json")
+
+        assert data["kind"] == "diarization"
+        assert data["passed"] is False
+        assert data["diarization"]["status"] == "failed"
+        assert data["report"]["summary"]["status"] == "failed"
+        assert {"name": "load", "status": "failed"} in data["report"]["steps"]
+
+    def test_transcript_json_still_uses_transcript_validator(self, tmp_path):
+        transcript = write_transcript_json(
+            tmp_path / "transcript.json", create_minimal_transcript()
+        )
+
+        exit_code, data, _ = _run_validate(self._args(transcript), "json")
+
+        assert exit_code == 0
+        assert data["kind"] == "transcript"
+        assert data["passed"] is True
+        assert data["report"]["summary"]["schema_passed"] is True
 
 
 class TestArgumentParsing:

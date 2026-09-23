@@ -362,7 +362,7 @@ describe('offline shell routing', () => {
     expect(replay.headers.get(OFFLINE_RESPONSE_HEADER)).toBe('1');
   });
 
-  it('redirects a failed normal navigation to Downloads without caching the page', async () => {
+  it('answers a failed normal navigation with the shell at the requested URL without caching the page', async () => {
     const { fetchHandler, fetchMock, cacheStorage } = loadScript();
     const shell = await cacheStorage.open(OFFLINE_CACHE_NAMES.shell);
     await shell.put(DOWNLOADS_PATH, new Response('<html>downloads</html>'));
@@ -372,8 +372,10 @@ describe('offline shell routing', () => {
     fetchHandler(event);
     const response = await respondedWith(event);
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toContain('/downloads?from=');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(await response.text()).toContain('downloads');
+    expect(response.headers.get(OFFLINE_RESPONSE_HEADER)).toBe('1');
     expect(await shell.match('/catalog/cat/event/7')).toBeUndefined();
   });
 

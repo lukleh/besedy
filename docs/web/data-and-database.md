@@ -207,7 +207,7 @@ unpublish clears only the first.
 | `TEXT_DATA_DIR`      | Catalogs and transcripts                     |
 | `AUDIO_DIR`          | Streamable (compressed) audio                |
 | `ORIGINAL_AUDIO_DIR` | Downloadable original audio                  |
-| `POSTERS_DIR`        | Writable poster storage                      |
+| `ARTWORK_DIR`        | Writable artwork storage                      |
 | `SOURCES_DIR`        | Writable recording sources storage           |
 
 Transcript correction artifacts are configured in `besedy.toml` rather than by

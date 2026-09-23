@@ -22,6 +22,24 @@ test.describe('Service worker updates', () => {
     );
     let servedOldWorker = false;
 
+    // The local test image is built with WEB_VERSION=unknown, so the real
+    // /api/version answers with no usable version and the runtime treats the
+    // deployment as unreachable, which defers the reload indefinitely. Answer
+    // the probe with a versioned payload for build B instead.
+    await context.route('**/api/version', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          commit: 'build-b',
+          commitShort: 'build-b',
+          webVersion: 'build-b',
+          buildTime: null,
+          environment: 'test',
+        }),
+      });
+    });
+
     await context.route('**/sw.js', async (route) => {
       if (servedOldWorker) {
         await route.continue();

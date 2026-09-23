@@ -7,7 +7,7 @@ import '../globals.css';
 import { AppProviders } from '@/components/app-providers';
 import { GoogleTranslateWarning } from '@/components/google-translate-warning';
 import { MobileToastOverlay } from '@/components/mobile-toast-overlay';
-import { OfflineBanner } from '@/components/offline-banner';
+import { LocalModeHeader } from '@/components/offline/local-mode-header';
 import { UpdateBanner } from '@/components/update-banner';
 
 const geistSans = Geist({
@@ -45,11 +45,13 @@ export const viewport: Viewport = {
 };
 
 /**
- * Session-free root for the device-local Downloads experience.
+ * Session-free root for the local-mode document.
  *
  * The proxy still requires an authenticated request while online. Once this
  * shell is cached, it can start without consulting the server and reads only
- * the device-local download registry and payload store.
+ * the device-local download registry and payload store. It renders the same
+ * Header as the application root so the offline experience keeps the normal
+ * navigation and connectivity indicator.
  */
 export default async function OfflineRootLayout({
   children,
@@ -79,10 +81,14 @@ export default async function OfflineRootLayout({
           nonce={nonce}
         >
           <GoogleTranslateWarning />
-          <main className="min-h-screen pb-16">{children}</main>
+          <div className="relative flex min-h-screen flex-col">
+            <LocalModeHeader />
+            {/* Spacer for fixed header */}
+            <div className="h-14 safe-top" aria-hidden="true" />
+            <main className="flex-1 pb-16">{children}</main>
+          </div>
           <Toaster richColors position="top-right" />
           <MobileToastOverlay />
-          <OfflineBanner />
           <UpdateBanner />
         </AppProviders>
       </body>

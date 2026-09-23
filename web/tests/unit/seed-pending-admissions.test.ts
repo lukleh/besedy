@@ -19,7 +19,7 @@ describe("seed pending admissions", () => {
       createdById: "admin-1",
       createdAt: invitedAt,
       catalogId: "20260101_000000",
-      accessLevel: "EDITOR",
+      role: "curator",
       notes: "seeded catalog invite",
     });
 
@@ -59,14 +59,14 @@ describe("seed pending admissions", () => {
       create: expect.objectContaining({
         email: "username@gmail.com",
         catalogId: "20260101_000000",
-        accessLevel: "EDITOR",
+        role: "curator",
         status: "PENDING",
         grantedById: "admin-1",
         grantedAt: invitedAt,
         notes: "seeded catalog invite",
       }),
       update: expect.objectContaining({
-        accessLevel: "EDITOR",
+        role: "curator",
         status: "PENDING",
         consumedById: null,
         consumedAt: null,
@@ -94,7 +94,7 @@ describe("seed pending admissions", () => {
       createdById: null,
       createdAt: invitedAt,
       catalogId: null,
-      accessLevel: null,
+      role: null,
       notes: "standalone allowlist",
     });
 

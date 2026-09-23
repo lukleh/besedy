@@ -67,7 +67,7 @@ async function fetchRelatedEntity(
               select: {
                 id: true,
                 catalogId: true,
-                accessLevel: true,
+                role: true,
                 catalog: {
                   select: { id: true, label: true },
                 },
@@ -242,7 +242,7 @@ async function fetchRelatedEntity(
           where: { id: resourceId },
           select: {
             id: true,
-            accessLevel: true,
+            role: true,
             status: true,
             createdAt: true,
             revokedAt: true,
@@ -266,7 +266,7 @@ async function fetchRelatedEntity(
               where: { userId, catalogId },
               select: {
                 id: true,
-                accessLevel: true,
+                role: true,
                 status: true,
                 createdAt: true,
                 revokedAt: true,
@@ -337,7 +337,7 @@ async function fetchRelatedEntity(
           id: true,
           email: true,
           catalogId: true,
-          accessLevel: true,
+          role: true,
           status: true,
           grantedAt: true,
           consumedAt: true,

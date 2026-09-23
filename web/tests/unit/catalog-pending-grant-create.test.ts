@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createPendingCatalogGrant } from "@/lib/admission/catalog-pending-grant-create";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 const CATALOG_ID = "20260101_000000";
 
@@ -76,7 +76,7 @@ describe("catalog pending grant create", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: false,
       },
     });
@@ -143,7 +143,8 @@ describe("catalog pending grant create", () => {
 
   it("blocks owners from reopening revoked pending OWNER grants through create", async () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
-      accessLevel: "OWNER",
+      role: "host",
+      extraPermissions: [],
       status: "REVOKED",
     });
 

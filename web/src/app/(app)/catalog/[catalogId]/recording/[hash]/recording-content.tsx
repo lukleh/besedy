@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
+import { useLocalAudioSrc } from "@/hooks/use-local-package";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
@@ -164,12 +165,17 @@ export default function RecordingContent({
   });
 
   // Determine current audio source (saved preference or default)
-  const availableSourceIds = sourcesData?.sources.map((s) => s.id) ?? [];
+  const availableSources = sourcesData?.sources ?? [];
+  const availableSourceIds = availableSources.map((source) => source.id);
   const preferredSource =
     savedPreference?.sourceId && availableSourceIds.includes(savedPreference.sourceId)
       ? savedPreference.sourceId
       : null;
   const audioSource = preferredSource || sourcesData?.defaultSource || "archived";
+  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
+  // A complete local package plays in preference to the network; the page
+  // never learns how it is stored.
+  const localAudio = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
 
   const handleSourceChange = (sourceId: string) => {
     savePreference.mutate(sourceId);
@@ -188,7 +194,7 @@ export default function RecordingContent({
   // soon as that response resolves.
   const recording = data?.entry ?? (isValidatingAccess ? cachedData?.entry : undefined);
 
-  if (catalogValidationLoading || (isLoading && !recording)) {
+  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending) {
     return (
       <div className="space-y-3">
         <RecordingPageSkeleton />
@@ -234,7 +240,7 @@ export default function RecordingContent({
   const handleAudioDownload = (source: "original" | "archived") => {
     window.open(buildAudioDownloadUrl(catalogId, hash, source), "_blank");
   };
-  const audioUrl = buildAudioUrl(catalogId, hash, audioSource, sourcesData?.sources ?? []);
+  const audioUrl = localAudio.src ?? selectedAudioUrl;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">
@@ -265,7 +271,7 @@ export default function RecordingContent({
         recording={recording}
         savedSourceId={savedPreference?.sourceId ?? null}
         seekRequest={seekRequest}
-        sources={sourcesData?.sources ?? []}
+        sources={availableSources}
       />
       {data?.canViewTranscripts && (
         <RecordingTranscriptSection

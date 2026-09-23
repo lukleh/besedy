@@ -1,5 +1,4 @@
 import type { CatalogRole, PrismaClient } from "@/generated/prisma/client";
-import { roleForLevel } from "@/lib/policy/catalog-permissions";
 import prisma from "@/lib/db";
 
 type AdmissionReadClient = Pick<
@@ -25,7 +24,6 @@ export interface PendingAdminAdmissionItem {
 export interface PendingAdminAdmissionGrant {
   catalogId: string;
   catalogLabel: string;
-  accessLevel: "LISTENER" | "VIEWER" | "MEMBER" | "EDITOR" | "OWNER";
   role: CatalogRole;
   extraPermissions: string[];
   grantedAt: string;
@@ -82,7 +80,6 @@ export async function listPendingAdminAdmissions(
           select: {
             email: true,
             catalogId: true,
-            accessLevel: true,
             role: true,
             extraPermissions: true,
             notes: true,
@@ -160,8 +157,7 @@ export async function listPendingAdminAdmissions(
       return {
         catalogId: grant.catalogId,
         catalogLabel: catalog?.label || grant.catalogId,
-        accessLevel: grant.accessLevel,
-        role: grant.role ?? roleForLevel(grant.accessLevel).role,
+        role: grant.role,
         extraPermissions: grant.extraPermissions ?? [],
         grantedAt: grant.grantedAt.toISOString(),
         grantedBy: grant.grantedById

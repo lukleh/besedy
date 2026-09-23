@@ -176,10 +176,10 @@ Catalog roles are independent, named permission sets on one catalog:
 System admins resolve as catalog administrators for every catalog. A stored
 `catalog_admin` role grants the same authority only on its own catalog.
 
-Grants and grant APIs are role-native. The non-null `access_level` column is
-retained only as a compatibility projection while old data and tooling are
-retired; authorization never derives from it when a role is present. Existing
-levels were migrated as follows:
+Grants and grant APIs are role-native, and `role` is a required column on
+both `catalog_access` and `pending_catalog_grant`; the legacy `access_level`
+column was dropped once every grant carried a role. Existing levels were
+migrated as follows:
 
 | Legacy level       | Stored role | Migration extra        |
 | ------------------ | ----------- | ---------------------- |

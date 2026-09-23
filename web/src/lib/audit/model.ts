@@ -26,7 +26,7 @@ export type AuditSubjectType =
   | "audio"
   | "transcript"
   | "metadata"
-  | "event_poster"
+  | "event_artwork"
   | "unknown";
 
 export interface AuditActorSnapshot {
@@ -160,11 +160,20 @@ function getCatalogId(
   return subjectSnapshot?.catalogId ?? getString(payload?.catalogId) ?? getString(payload?.groupId);
 }
 
+/**
+ * The level or role a grant event should headline, oldest record shape first.
+ *
+ * `accessLevel`/`newAccessLevel`/`previousAccessLevel` are the retired
+ * scale, present only in payloads written before the role-based rework; new
+ * records carry `role` instead. Both are read so old and new audit rows
+ * render the same way.
+ */
 function getAccessLevel(payload: Record<string, unknown> | null, action: string): string | null {
   return (
     getString(payload?.accessLevel) ??
     getString(payload?.newAccessLevel) ??
-    (action === "CATALOG_ACCESS_REVOKED" ? getString(payload?.previousAccessLevel) : null)
+    (action === "CATALOG_ACCESS_REVOKED" ? getString(payload?.previousAccessLevel) : null) ??
+    getString(payload?.role)
   );
 }
 
@@ -236,7 +245,7 @@ export function inferAuditDomain(action: string, resource: string): AuditDomain 
     action === "METADATA_UPDATED" ||
     action === "METADATA_VERIFIED" ||
     action === "METADATA_DELETED" ||
-    action.startsWith("EVENT_POSTER_")
+    action.startsWith("EVENT_ARTWORK_")
   ) {
     return "content";
   }
@@ -252,7 +261,7 @@ export function inferAuditDomain(action: string, resource: string): AuditDomain 
   if (resource === "audio" || resource === "transcript") {
     return "data_access";
   }
-  if (resource === "metadata" || resource === "event_poster") {
+  if (resource === "metadata" || resource === "event_artwork") {
     return "content";
   }
   return "unknown";
@@ -272,7 +281,7 @@ export function inferAuditOutcome(action: string): AuditOutcome {
     action === "CATALOG_UPDATED" ||
     action === "METADATA_UPDATED" ||
     action === "METADATA_VERIFIED" ||
-    action.startsWith("EVENT_POSTER_") ||
+    action.startsWith("EVENT_ARTWORK_") ||
     action === "USER_BLOCKED" ||
     action === "USER_UNBLOCKED" ||
     action === "USER_DELETED" ||
@@ -317,8 +326,8 @@ export function inferSubjectType(action: string, resource: string): AuditSubject
   if (resource === "metadata" || resource === "metadata-read") {
     return "metadata";
   }
-  if (resource === "event_poster" || action.startsWith("EVENT_POSTER_")) {
-    return "event_poster";
+  if (resource === "event_artwork" || action.startsWith("EVENT_ARTWORK_")) {
+    return "event_artwork";
   }
   if (resource === "auth") {
     return "auth";
@@ -414,14 +423,14 @@ export function buildAuditSummary({
       return `Metadata verification updated for ${subjectLabel}`;
     case "METADATA_DELETED":
       return `Metadata deleted for ${subjectLabel}`;
-    case "EVENT_POSTER_CREATED":
-      return `Poster candidate created for ${subjectLabel}`;
-    case "EVENT_POSTER_DELETED":
-      return `Poster candidate deleted for ${subjectLabel}`;
-    case "EVENT_POSTER_PUBLISHED":
-      return `Poster published for ${subjectLabel}`;
-    case "EVENT_POSTER_UNPUBLISHED":
-      return `Poster unpublished for ${subjectLabel}`;
+    case "EVENT_ARTWORK_CREATED":
+      return `Artwork candidate created for ${subjectLabel}`;
+    case "EVENT_ARTWORK_DELETED":
+      return `Artwork candidate deleted for ${subjectLabel}`;
+    case "EVENT_ARTWORK_PUBLISHED":
+      return `Artwork published for ${subjectLabel}`;
+    case "EVENT_ARTWORK_UNPUBLISHED":
+      return `Artwork unpublished for ${subjectLabel}`;
     case "ACCESS_DENIED":
       return `Access denied to ${subjectLabel}`;
     case "SUPERADMIN_ACCESS":

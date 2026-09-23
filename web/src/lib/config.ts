@@ -8,7 +8,7 @@ interface BesedyPathsConfig {
   text_data_dir: string;
   transcripts_dir: string;
   audio_artifacts_dir?: string;
-  posters_dir?: string;
+  artwork_dir?: string;
   sources_dir?: string;
   uploads_dir?: string;
   corrections_dir?: string;
@@ -62,17 +62,27 @@ export function getTextDataDir(): string {
 }
 
 /**
- * Get the posters directory. The application config is authoritative when it
- * is available. Host-run operator tools fall back to POSTERS_DIR because the
+ * Get the artwork directory. The application config is authoritative when it
+ * is available. Host-run operator tools fall back to ARTWORK_DIR because the
  * selected production environment points BESEDY_CONFIG at a container-only
  * path.
+ *
+ * The pre-ADR-0011 names (`posters_dir` / `POSTERS_DIR`) are deliberately not
+ * read: the rename is a hard cut, and a stale key must fail loudly here rather
+ * than resolve to a path the container no longer mounts.
  */
-export function getPostersDir(): string {
+export function getArtworkDir(): string {
   try {
     const config = getBesedyConfig();
-    return config.paths.posters_dir || config.paths.text_data_dir;
+    const dir = config.paths.artwork_dir;
+    if (!dir) {
+      throw new Error(
+        "artwork_dir is required in besedy.toml (the legacy posters_dir key is no longer read; see ADR 0011)."
+      );
+    }
+    return dir;
   } catch (configError) {
-    const environmentPath = process.env.POSTERS_DIR?.trim();
+    const environmentPath = process.env.ARTWORK_DIR?.trim();
     if (environmentPath) return environmentPath;
 
     throw configError;

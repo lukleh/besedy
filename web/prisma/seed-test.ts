@@ -19,10 +19,10 @@
 import {
   PrismaClient,
   UserStatus,
-  AccessLevel,
+  CatalogRole,
 } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { roleFieldsForLevel } from "../src/lib/policy/catalog-permissions";
+import { grantFieldsForRole } from "../src/lib/policy/catalog-permissions";
 import {
   TEST_AUDIO_FILES,
   TEST_CATALOG_ID,
@@ -40,7 +40,8 @@ const DIRECT_USERS: Array<{
   isSuperadmin: boolean;
   isAdmin: boolean;
   status: UserStatus;
-  catalogAccess?: AccessLevel;
+  role?: CatalogRole;
+  extraPermissions?: string[];
 }> = [
   // Superadmin - needed as inviter for other users
   {
@@ -89,7 +90,8 @@ const DIRECT_USERS: Array<{
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    catalogAccess: "OWNER",
+    role: "host",
+    extraPermissions: ["download_transcripts"],
   },
   {
     email: TEST_USERS.editor.email,
@@ -97,7 +99,7 @@ const DIRECT_USERS: Array<{
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    catalogAccess: "EDITOR",
+    role: "curator",
   },
   {
     email: TEST_USERS.member.email,
@@ -105,7 +107,11 @@ const DIRECT_USERS: Array<{
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    catalogAccess: "MEMBER",
+    // The member account exists to prove that downloading works, and
+    // downloading is no longer something a role reaches by being high enough
+    // on a scale. It is an extra, granted per account.
+    role: "reader",
+    extraPermissions: ["download_audio"],
   },
   {
     email: TEST_USERS.viewer.email,
@@ -113,7 +119,7 @@ const DIRECT_USERS: Array<{
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    catalogAccess: "VIEWER",
+    role: "reader",
   },
   {
     email: TEST_USERS.listener.email,
@@ -121,7 +127,7 @@ const DIRECT_USERS: Array<{
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    catalogAccess: "LISTENER",
+    role: "listener",
   },
   {
     email: TEST_USERS.noaccess.email,
@@ -132,51 +138,34 @@ const DIRECT_USERS: Array<{
   },
 ];
 
-/**
- * The role each seeded account carries.
- *
- * Mostly the same mapping the assignment migration uses, with one exception:
- * the member account exists to prove that downloading works, and downloading is
- * no longer something a role reaches by being high enough on a scale. It is an
- * extra, granted per account, so the seed grants it as one.
- */
-function roleFieldsForSeededLevel(level: AccessLevel) {
-  const fields = roleFieldsForLevel(level);
-  if (level === "MEMBER") {
-    return {
-      ...fields,
-      extraPermissions: [...fields.extraPermissions, "download_audio"],
-    };
-  }
-  return fields;
-}
-
 // Pending admissions to keep allowlist workflows testable
 const INVITED_USERS = [
   {
     email: TEST_USERS.owner.email,
     name: TEST_USERS.owner.name,
-    catalogAccess: "OWNER" as AccessLevel,
+    role: "host" as CatalogRole,
+    extraPermissions: ["download_transcripts"],
   },
   {
     email: TEST_USERS.editor.email,
     name: TEST_USERS.editor.name,
-    catalogAccess: "EDITOR" as AccessLevel,
+    role: "curator" as CatalogRole,
   },
   {
     email: TEST_USERS.member.email,
     name: TEST_USERS.member.name,
-    catalogAccess: "MEMBER" as AccessLevel,
+    role: "reader" as CatalogRole,
+    extraPermissions: ["download_audio"],
   },
   {
     email: TEST_USERS.viewer.email,
     name: TEST_USERS.viewer.name,
-    catalogAccess: "VIEWER" as AccessLevel,
+    role: "reader" as CatalogRole,
   },
   {
     email: TEST_USERS.listener.email,
     name: TEST_USERS.listener.name,
-    catalogAccess: "LISTENER" as AccessLevel,
+    role: "listener" as CatalogRole,
   },
   { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name },
 ];
@@ -254,8 +243,8 @@ async function main() {
       });
       createdUsers[userData.email] = user.id;
 
-      // Create catalog access for users with catalogAccess defined
-      if (userData.catalogAccess) {
+      // Create catalog access for users with a role defined
+      if (userData.role) {
         await prisma.catalogAccess.upsert({
           where: {
             userId_catalogId: {
@@ -264,14 +253,12 @@ async function main() {
             },
           },
           update: {
-            accessLevel: userData.catalogAccess,
-            ...roleFieldsForSeededLevel(userData.catalogAccess),
+            ...grantFieldsForRole(userData.role, userData.extraPermissions ?? []),
           },
           create: {
             userId: user.id,
             catalogId: workflowGroup.id,
-            accessLevel: userData.catalogAccess,
-            ...roleFieldsForSeededLevel(userData.catalogAccess),
+            ...grantFieldsForRole(userData.role, userData.extraPermissions ?? []),
             grantedById: user.id, // Self-granted for test setup
           },
         });
@@ -281,7 +268,7 @@ async function main() {
         userData.isSuperadmin && "superadmin",
         userData.isAdmin && "admin",
         userData.status !== "ACTIVE" && userData.status,
-        userData.catalogAccess,
+        userData.role,
       ]
         .filter(Boolean)
         .join(", ");
@@ -307,12 +294,13 @@ async function main() {
         email: userData.email,
         createdById: superadminId,
         createdAt: new Date(),
-        catalogId: userData.catalogAccess ? workflowGroup.id : null,
-        accessLevel: userData.catalogAccess || null,
+        catalogId: userData.role ? workflowGroup.id : null,
+        role: userData.role ?? null,
+        extraPermissions: userData.extraPermissions,
         notes: `E2E test user: ${userData.name}`,
       });
       console.log(
-        `  ✓ ${userData.email}${userData.catalogAccess ? ` (${userData.catalogAccess})` : ""}`
+        `  ✓ ${userData.email}${userData.role ? ` (${userData.role})` : ""}`
       );
     }
 

@@ -1,4 +1,4 @@
-import { AccessLevel, UserStatus } from "@/generated/prisma/client";
+import { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import {
   listUserCatalogAccessEntries,
@@ -19,6 +19,7 @@ import {
   canDownloadTranscripts,
   canEditCatalogMetadata,
   canManageCatalogConfiguration,
+  canManageCatalogLookups,
   canUseCatalogRag,
   canViewCatalog,
   canViewCatalogTranscripts,
@@ -27,7 +28,7 @@ import {
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
-import { canViewUnreleasedEvents } from "@/lib/policy/event";
+import { canManageEventSources, canViewUnreleasedEvents } from "@/lib/policy/event";
 import {
   canDownloadRecording,
   canEditRecordingMetadata,
@@ -39,10 +40,10 @@ import {
   canViewRecordingTranscript,
 } from "@/lib/policy/recording";
 import {
-  canManageEventPosterCandidates,
-  canPublishEventPosters,
-  canViewEventPosterCandidates,
-} from "@/lib/policy/event-poster";
+  canManageEventArtworkCandidates,
+  canPublishEventArtwork,
+  canViewEventArtworkCandidates,
+} from "@/lib/policy/event-artwork";
 import {
   canAdministerCorrection,
   canCorrectTranscripts,
@@ -73,7 +74,6 @@ export interface CatalogCapability extends PortalCapability {
   catalogId: string;
   catalogExists: boolean;
   catalogGrant: CatalogGrant | null;
-  accessLevel: AccessLevel | null;
   isCatalogAdmin: boolean;
   hasAccess: boolean;
   canViewCatalog: boolean;
@@ -87,15 +87,17 @@ export interface CatalogCapability extends PortalCapability {
   canBulkExportTranscripts: boolean;
   canEditMetadata: boolean;
   canBatchEditMetadata: boolean;
+  canManageLookups: boolean;
   canManageAccess: boolean;
   canPublishRecording: boolean;
   canSeeUnreleased: boolean;
   canAccessSettings: boolean;
   canManageCatalogConfiguration: boolean;
   canUseRagSearch: boolean;
-  canViewPosterCandidates: boolean;
-  canManagePosters: boolean;
-  canPublishPosters: boolean;
+  canViewArtworkCandidates: boolean;
+  canManageArtwork: boolean;
+  canPublishArtwork: boolean;
+  canManageEventSources: boolean;
   canCorrectTranscripts: boolean;
   canPublishTranscript: boolean;
   canEditCorrectionGuide: boolean;
@@ -134,7 +136,6 @@ export function buildCatalogCapability(
   catalogId: string,
   catalogExists: boolean,
   catalogGrant: CatalogGrant | null,
-  accessLevel: AccessLevel | null,
   isCatalogAdmin: boolean
 ): CatalogCapability {
   const policyContext: CatalogPolicyContext = {
@@ -149,7 +150,6 @@ export function buildCatalogCapability(
     catalogId,
     catalogExists,
     catalogGrant,
-    accessLevel,
     isCatalogAdmin,
     hasAccess: hasCatalogAccess(policyContext),
     canViewCatalog: canViewCatalog(policyContext),
@@ -162,15 +162,17 @@ export function buildCatalogCapability(
     canBulkExportTranscripts: canBulkExportTranscripts(policyContext),
     canEditMetadata: canEditCatalogMetadata(policyContext),
     canBatchEditMetadata: canBatchEditCatalogMetadata(policyContext),
+    canManageLookups: canManageCatalogLookups(policyContext),
     canManageAccess: hasCatalogManagementAuthority(policyContext),
     canPublishRecording: canPublishRecording(policyContext),
     canSeeUnreleased: canViewUnreleasedEvents(policyContext),
     canAccessSettings: canAccessCatalogSettings(policyContext),
     canManageCatalogConfiguration: canManageCatalogConfiguration(policyContext),
     canUseRagSearch: canUseCatalogRag(policyContext),
-    canViewPosterCandidates: canViewEventPosterCandidates(policyContext),
-    canManagePosters: canManageEventPosterCandidates(policyContext),
-    canPublishPosters: canPublishEventPosters(policyContext),
+    canViewArtworkCandidates: canViewEventArtworkCandidates(policyContext),
+    canManageArtwork: canManageEventArtworkCandidates(policyContext),
+    canPublishArtwork: canPublishEventArtwork(policyContext),
+    canManageEventSources: canManageEventSources(policyContext),
     canCorrectTranscripts: canCorrectTranscripts(policyContext),
     canPublishTranscript: canPublishTranscript(policyContext),
     canEditCorrectionGuide: canEditCorrectionGuide(policyContext),
@@ -254,17 +256,11 @@ export async function getCatalogCapability(
     canEnterPortal: actor.canEnterPortal,
   };
 
-  // The level still names the grant for payloads and badges; permissions no
-  // longer come from it.
-  const accessLevel =
-    actor.catalogGrant?.level ?? (actor.isCatalogAdmin ? "OWNER" : null);
-
   return buildCatalogCapability(
     portal,
     catalogId,
     actor.catalogExists,
     actor.catalogGrant,
-    accessLevel,
     actor.isCatalogAdmin
   );
 }

@@ -31,6 +31,29 @@ export const chartConfig = {
   },
 };
 
+// Validated categorical palette (dataviz skill default): fixed hue order,
+// worst adjacent CVD Delta E 9.1 (>=8 target). The dataviz guideline is to
+// key a color to a stable per-entity identity rather than by rank, so a
+// series keeps its color as the set of series changes; version-trend-chart's
+// assignSeriesColors does not currently do this (it assigns by position in a
+// popularity-sorted list, which can reassign a version's color between
+// renders) -- see the comment there before assuming this guarantee holds.
+export const categoricalSeriesColors = [
+  '#2a78d6', // blue
+  '#eb6834', // orange
+  '#1baf7a', // aqua
+  '#eda100', // yellow
+  '#e87ba4', // magenta
+  '#008300', // green
+  '#4a3aa7', // violet
+  '#e34948', // red
+];
+
+// Neutral, non-hued tones for aggregate "everything else" series, kept
+// visually distinct from the categorical identities above.
+export const neutralSeriesColor = '#898781'; // muted axis/label gray
+export const unknownSeriesDash = '4 3';
+
 export const tooltipStyle = {
   contentStyle: {
     backgroundColor: "hsl(var(--card))",

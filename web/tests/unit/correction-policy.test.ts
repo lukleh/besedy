@@ -8,8 +8,7 @@ import {
   canPublishTranscript,
 } from "@/lib/policy/correction";
 
-const grant = (role: CatalogRole | null, extras: string[] = []): CatalogGrant => ({
-  level: null,
+const grant = (role: CatalogRole, extras: string[] = []): CatalogGrant => ({
   role,
   extras,
 });
@@ -17,7 +16,7 @@ const grant = (role: CatalogRole | null, extras: string[] = []): CatalogGrant =>
 const context = (role: CatalogRole | null, isCatalogAdmin = false) => ({
   catalogExists: true,
   canEnterPortal: true,
-  catalogGrant: role === null && !isCatalogAdmin ? null : grant(role),
+  catalogGrant: role === null ? null : grant(role),
   isCatalogAdmin,
 });
 

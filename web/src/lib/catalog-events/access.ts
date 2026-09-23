@@ -11,16 +11,13 @@ import {
   canCreateEventFromRecording,
   canDetachRecordingFromEvent,
   canEditEvent,
-  canReleaseEvent,
   canSetPrimaryRecording,
-  EVENTS_VIEW_ACCESS_LEVEL,
   type EventFeaturePolicyContext,
 } from "@/lib/policy/event";
 
 export type CatalogEventsAccessMode =
   | "view"
   | "edit"
-  | "release_event"
   | "attach_recording"
   | "detach_recording"
   | "set_primary_recording"
@@ -45,8 +42,6 @@ function isAllowedForCatalogEventsMode(
       return canBrowseEvents(context);
     case "edit":
       return canEditEvent(context);
-    case "release_event":
-      return canReleaseEvent(context);
     case "attach_recording":
       return canAttachRecordingToEvent(context);
     case "detach_recording":
@@ -61,19 +56,17 @@ function isAllowedForCatalogEventsMode(
 function deniedMessageForCatalogEventsMode(mode: CatalogEventsAccessMode): string {
   switch (mode) {
     case "view":
-      return `Catalog access required: ${EVENTS_VIEW_ACCESS_LEVEL} or higher`;
+      return "Catalog access required";
     case "edit":
-      return "Owner or admin access required for event edit operations";
-    case "release_event":
-      return "Owner or admin access required to change event release state";
+      return "Event-management permission required for event edit operations";
     case "attach_recording":
-      return "Owner or admin access required to attach recordings to events";
+      return "Event-management permission required to attach recordings to events";
     case "detach_recording":
-      return "Owner or admin access required to detach recordings from events";
+      return "Event-management permission required to detach recordings from events";
     case "set_primary_recording":
-      return "Owner or admin access required to set the primary recording";
+      return "Event-management permission required to set the primary recording";
     case "create_from_recording":
-      return "Owner or admin access required to create events from recordings";
+      return "Event-management permission required to create events from recordings";
   }
 }
 

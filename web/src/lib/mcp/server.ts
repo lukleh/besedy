@@ -24,7 +24,7 @@ export const BESEDY_MCP_INSTRUCTIONS = [
   'Transcripts may be in a different language than the user question. Semantic search tolerates that; literal search does not. Write literal queries in the language of the transcript wording; when unsure, run a semantic search first and reuse the wording it returns.',
   'Meaning-based search is ranked and non-exhaustive. Literal totalMatches counts matching authorized indexed chunks under the selected filters and match mode before result caps; it is not a distinct-event count.',
   TRANSCRIPT_VERIFICATION_GUIDANCE,
-  'Search results include authoritative event IDs, dates, and locations; dates may be partial. Group results by event ID because recordings from the same event are variants, not independent evidence; support recurring themes with distinct events.',
+  "Search results include authoritative event IDs, dates, and locations; dates may be partial. Searches cover each event's primary recording; its other recordings are parallel captures, not independent evidence. Support recurring themes with distinct events.",
   "Recordings are discussions without speaker labels, so a passage may be an audience question or one participant's view rather than a settled claim. Attribute accordingly.",
   'Cite bounded segment webUrl values. Use who_am_i or list_catalogs only when identity, catalog selection, or permissions are unclear.',
   'Begin the first reply that uses Besedy evidence with a short caution in the same language as that reply: the answer is an AI interpretation of AI-generated transcripts of Besedy recordings, so read it carefully.',

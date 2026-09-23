@@ -8,9 +8,9 @@ catalog → loudness/normalization → transcription/diarization → analysis/ve
 The primary identifier is the SHA-256 **audio hash** computed from decoded 16kHz mono PCM
 audio under the explicit `pcm-s16le-16000hz-mono-sha256-v1` contract.
 
-This file is the canonical shared guide for coding agents working in this repo.
-Keep shared operational facts here and have provider-specific files such as
-`CLAUDE.md` link back here instead of copying command tables or test-user matrices.
+This file is the canonical guide for coding agents working in this repo, and the
+only one they load by default. Keep shared operational facts here rather than
+copying command tables or test-user matrices into provider-specific files.
 
 ## Project Structure & Module Organization
 
@@ -214,6 +214,12 @@ manages workflow-group records themselves.
   `curl -s https://besedy.org/api/version | jq -r '.commit, .commitShort, .buildTime, .environment'`
 - Local container check:
   `curl -s http://localhost:3000/api/version | jq`
+- Prefer live source files over prose when checking fast-changing facts. The current
+  CLI surface is `besedy/cli/catalog.py`, command-name coverage is
+  `tests/test_cli_parser.py`, seeded web auth users are `web/prisma/test-data.ts`,
+  and web E2E auth helpers are `web/tests/e2e/helpers/auth.ts`.
+- Claude Code hooks, commands, skills, and subagents live in `.claude/` and are
+  documented in `.claude/README.md`.
 
 ## Important Constraints
 

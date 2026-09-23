@@ -10,13 +10,16 @@ import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/r
 import { formatPartialDate } from "@/lib/date-format";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildEventDetailUrl } from "@/lib/api/recording-urls";
+import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
+import { useLocalArtworkUrl } from "@/hooks/use-local-package";
+import type { EventDetailResponse } from "@/types/event-detail";
 import { DownloadButton } from "@/components/offline/download-button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
-import { EventPosterPicture } from "@/components/catalog/event-poster-picture";
+import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -34,45 +37,6 @@ interface EventDetailProps {
   showReleaseState: boolean;
 }
 
-interface EventRecording {
-  audioHash: string;
-  isPrimary: boolean;
-  sortOrder: number;
-  title: string;
-  artist: string | null;
-  durationHms: string | null;
-  verified: boolean;
-  recorder: { id: number; name: string } | null;
-}
-
-interface EventDetailResponse {
-  id: number;
-  workflowGroupId: string;
-  title: string | null;
-  location: { id: number; name: string } | null;
-  dateYear: number;
-  dateMonth: number | null;
-  dateDay: number | null;
-  sessionIndex: number;
-  sessionOrdinal: number;
-  sessionCount: number;
-  description: string | null;
-  released: boolean;
-  recordings: EventRecording[];
-  canViewPosterCandidates?: boolean;
-  canManagePosters?: boolean;
-  canPublishPosters?: boolean;
-  canManageSources?: boolean;
-  publishedPoster?: {
-    id: string;
-    publishedAt: string;
-    assets: {
-      square: { bytes: number; sha256: string };
-      landscape: { bytes: number; sha256: string };
-    };
-  } | null;
-}
-
 export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showReleaseState }: EventDetailProps) {
   const locale = useLocale();
   const t = useTranslations("events.detail");
@@ -87,8 +51,15 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
 
   const { data, isLoading, error } = useQuery<EventDetailResponse>({
     queryKey: ["catalog-event-detail", eventId],
-    queryFn: () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
+    // Network first; a complete local package answers when the request itself
+    // cannot be made, so the same page renders online and offline.
+    queryFn: () =>
+      withLocalFallback(
+        () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
+        () => readLocalEventDetail(catalogId, eventId)
+      ),
   });
+  const localArtworkUrl = useLocalArtworkUrl(catalogId, eventId, data?.publishedArtwork?.id ?? null);
 
   const defaultSelectedHash = useMemo(
     () => data?.recordings.find((recording) => recording.isPrimary)?.audioHash ?? data?.recordings[0]?.audioHash ?? "",
@@ -155,17 +126,48 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   });
   const showRecorderMenu = data.recordings.length > 1;
   const selectedRecorderName = selectedRecording?.recorder?.name ?? t("unknownRecorder");
-  const canViewPosterCandidates = data.canViewPosterCandidates ?? false;
+  const canViewArtworkCandidates = data.canViewArtworkCandidates ?? false;
   const canManageSources = data.canManageSources ?? false;
-  const publishedPoster = data.publishedPoster ?? null;
+  const publishedArtwork = data.publishedArtwork ?? null;
+  const artworkStatus = data.artworkStatus ?? "none";
+  const latestDraftCandidate = data.latestDraftCandidate ?? null;
 
-  const posterPicture = publishedPoster ? (
-    <EventPosterPicture
+  // The draft preview below already labels itself, so the badge only needs to
+  // cover the cases where there is nothing to show as an image.
+  const artworkStatusBadge = !canViewArtworkCandidates ? null : publishedArtwork ? (
+    artworkStatus === "published-with-newer-drafts" ? (
+      <Badge variant="secondary" className="self-start">
+        {t("newerDraftAvailable")}
+      </Badge>
+    ) : null
+  ) : latestDraftCandidate ? null : (
+    <Badge variant="outline" className="self-start">
+      {tRoot("recording.noArtwork")}
+    </Badge>
+  );
+
+  const artworkAlt = data.title ?? t("eventFallbackTitle", { id: data.id });
+  const artworkPicture = publishedArtwork ? (
+    <EventArtworkPicture
       catalogId={catalogId}
       eventId={eventId}
-      posterId={publishedPoster.id}
-      alt={data.title ?? t("eventFallbackTitle", { id: data.id })}
+      artworkId={publishedArtwork.id}
+      alt={artworkAlt}
+      fallbackSrc={localArtworkUrl}
     />
+  ) : canViewArtworkCandidates && latestDraftCandidate ? (
+    <div className="relative">
+      <EventArtworkPicture
+        catalogId={catalogId}
+        eventId={eventId}
+        artworkId={latestDraftCandidate.id}
+        alt={artworkAlt}
+        source="candidate"
+      />
+      <Badge variant="secondary" className="absolute left-3 top-3 shadow-sm">
+        {t("draftArtworkAvailable")}
+      </Badge>
+    </div>
   ) : null;
 
   const eventHeaderActions = (
@@ -227,20 +229,16 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   ) : null;
 
   const detailExtras =
-    canViewPosterCandidates || canManageSources || data.title || data.description ? (
+    canViewArtworkCandidates || canManageSources || data.title || data.description ? (
       <div className="space-y-3">
-        {!publishedPoster && canViewPosterCandidates && (
-          <Badge variant="outline" className="self-start">
-            {tRoot("recording.noPoster")}
-          </Badge>
-        )}
-        {(canViewPosterCandidates || canManageSources) && (
+        {artworkStatusBadge}
+        {(canViewArtworkCandidates || canManageSources) && (
           <div className="flex flex-wrap items-center gap-2">
-            {canViewPosterCandidates && (
+            {canViewArtworkCandidates && (
               <Button variant="outline" size="sm" asChild>
-                <Link href={`/catalog/${catalogId}/event/${eventId}/poster`}>
+                <Link href={`/catalog/${catalogId}/event/${eventId}/artwork`}>
                   <ImageIcon className="h-4 w-4 mr-2" />
-                  {tRoot("recording.editPoster")}
+                  {tRoot("recording.editArtwork")}
                 </Link>
               </Button>
             )}
@@ -281,7 +279,9 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
-        beforeAudioPlayer={posterPicture}
+        // The event route already validated catalog access on the server.
+        skipCatalogValidation
+        beforeAudioPlayer={artworkPicture}
         afterAudioPlayer={
           <div className="space-y-4">
             {eventNavigation}
@@ -324,13 +324,13 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
 
         {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
 
-        {(canViewPosterCandidates || canManageSources) && (
+        {(canViewArtworkCandidates || canManageSources) && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {canViewPosterCandidates && (
+            {canViewArtworkCandidates && (
               <Button variant="outline" size="sm" asChild>
-                <Link href={`/catalog/${catalogId}/event/${eventId}/poster`}>
+                <Link href={`/catalog/${catalogId}/event/${eventId}/artwork`}>
                   <ImageIcon className="h-4 w-4 mr-2" />
-                  {tRoot("recording.editPoster")}
+                  {tRoot("recording.editArtwork")}
                 </Link>
               </Button>
             )}
@@ -346,7 +346,8 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         )}
       </div>
 
-      {posterPicture}
+      {artworkStatusBadge}
+      {artworkPicture}
       <div className="rounded-md border p-6 text-sm text-muted-foreground">{t("noRecordings")}</div>
       {eventNavigation}
     </div>

@@ -76,7 +76,6 @@ describe("useCatalogData", () => {
         hasNextPage: false,
         hasPrevPage: false,
       },
-      accessLevel: "EDITOR",
     };
 
     const queryKey = [
@@ -158,13 +157,12 @@ describe("useCatalogData", () => {
             hasOriginalAudio: true,
           },
         ],
-        accessLevel: "LISTENER",
       });
     });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
-      expect(result.current.data?.accessLevel).toBe("LISTENER");
+      expect(result.current.data?.total).toBe(1);
       expect(result.current.data?.entries).toHaveLength(1);
       expect(result.current.data?.entries[0]?.isPublished).toBe(true);
     });
@@ -198,7 +196,6 @@ describe("useCatalogData", () => {
         hasNextPage: false,
         hasPrevPage: false,
       },
-      accessLevel: "EDITOR",
     };
 
     queryClient.setQueryData(
@@ -288,7 +285,6 @@ describe("useCatalogData", () => {
         hasNextPage: false,
         hasPrevPage: false,
       },
-      accessLevel: "LISTENER",
     };
 
     let resolveRefetch: ((value: CatalogResponse) => void) | undefined;
@@ -328,7 +324,7 @@ describe("useCatalogData", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.data?.accessLevel).toBe("LISTENER");
+      expect(result.current.data?.total).toBe(1);
     });
 
     act(() => {
@@ -339,7 +335,7 @@ describe("useCatalogData", () => {
       expect(fetchJsonMock).toHaveBeenCalledTimes(2);
     });
 
-    expect(result.current.data?.accessLevel).toBe("LISTENER");
+    expect(result.current.data?.total).toBe(1);
     expect(result.current.isLoading).toBe(false);
     expect(result.current.isFetching).toBe(true);
 

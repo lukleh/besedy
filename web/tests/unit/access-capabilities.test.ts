@@ -6,7 +6,7 @@ import {
   getRecordingCapability,
 } from "@/lib/access/capabilities";
 import * as session from "@/lib/auth/session";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 // Correction resolution is exercised in its own tests; these route tests cover
 // recordings outside correction scope, where the machine transcript is served.
@@ -102,7 +102,7 @@ describe("access capabilities", () => {
     expect(session.getCurrentUserId).not.toHaveBeenCalled();
   });
 
-  it("derives catalog permissions from a typed capability object", async () => {
+  it("derives catalog permissions from a reader grant", async () => {
     prisma.user.findUnique.mockResolvedValue({
       status: "ACTIVE",
       isAdmin: false,
@@ -110,7 +110,8 @@ describe("access capabilities", () => {
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "VIEWER",
+      role: "reader",
+      extraPermissions: [],
       status: "ACTIVE",
     });
 
@@ -120,8 +121,7 @@ describe("access capabilities", () => {
       catalogId: "catalog-1",
       catalogExists: true,
       hasAccess: true,
-      catalogGrant: grantFromLevel("VIEWER"),
-      accessLevel: "VIEWER",
+      catalogGrant: grantForRole("reader"),
       isCatalogAdmin: false,
       canViewCatalog: true,
       canViewTranscripts: true,
@@ -131,18 +131,23 @@ describe("access capabilities", () => {
       canBulkExportTranscripts: false,
       canEditMetadata: false,
       canBatchEditMetadata: false,
+      canManageLookups: false,
       canManageAccess: false,
       canAccessSettings: false,
       canManageCatalogConfiguration: false,
+      // read_transcripts and search_transcripts both come with the reader bundle.
       canUseRagSearch: true,
-      canViewPosterCandidates: true,
-      canManagePosters: false,
-      canPublishPosters: false,
+      // Artwork candidates need see_unreleased or a artwork permission; a
+      // reader carries none of them.
+      canViewArtworkCandidates: false,
+      canManageArtwork: false,
+      canPublishArtwork: false,
+      canManageEventSources: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
 
-  it("grants owner management flags from access level alone", async () => {
+  it("grants host access-management flags without the editorial permissions", async () => {
     prisma.user.findUnique.mockResolvedValue({
       status: "ACTIVE",
       isAdmin: false,
@@ -150,32 +155,74 @@ describe("access capabilities", () => {
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "OWNER",
+      role: "host",
+      extraPermissions: [],
       status: "ACTIVE",
     });
 
-    const result = await getCatalogCapability("catalog-1", "owner-1");
+    const result = await getCatalogCapability("catalog-1", "host-1");
 
     expect(result).toMatchObject({
       catalogId: "catalog-1",
       catalogExists: true,
       hasAccess: true,
-      catalogGrant: grantFromLevel("OWNER"),
-      accessLevel: "OWNER",
+      catalogGrant: grantForRole("host"),
       isCatalogAdmin: false,
-      canEditMetadata: true,
-      canBatchEditMetadata: true,
       canManageAccess: true,
       canAccessSettings: true,
       canManageCatalogConfiguration: false,
-      canViewPosterCandidates: true,
-      canManagePosters: true,
-      canPublishPosters: true,
+      // Host is reader-plus-manage_access; the editorial permissions belong
+      // to the curator instead.
+      canEditMetadata: false,
+      canBatchEditMetadata: false,
+      canManageLookups: false,
+      canViewArtworkCandidates: false,
+      canManageArtwork: false,
+      canPublishArtwork: false,
+      // Sources are editorial too; the host does not get them with
+      // manage_access any more.
+      canManageEventSources: false,
     });
     expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
   });
 
-  it("preserves catalog-admin authority separately from owner grants", async () => {
+  it("grants curator editorial flags without access-management authority", async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      status: "ACTIVE",
+      isAdmin: false,
+      isSuperadmin: false,
+    });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.catalogAccess.findUnique.mockResolvedValue({
+      role: "curator",
+      extraPermissions: [],
+      status: "ACTIVE",
+    });
+
+    const result = await getCatalogCapability("catalog-1", "curator-1");
+
+    expect(result).toMatchObject({
+      catalogId: "catalog-1",
+      catalogExists: true,
+      hasAccess: true,
+      catalogGrant: grantForRole("curator"),
+      isCatalogAdmin: false,
+      canEditMetadata: true,
+      canBatchEditMetadata: true,
+      canManageLookups: true,
+      canManageCatalogConfiguration: false,
+      canViewArtworkCandidates: true,
+      canManageArtwork: true,
+      canPublishArtwork: true,
+      canManageEventSources: true,
+      // The editorial role does not manage who else has access.
+      canManageAccess: false,
+      canAccessSettings: false,
+    });
+    expect(prisma.catalogAccess.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("preserves catalog-admin authority separately from an explicit grant", async () => {
     prisma.user.findUnique.mockResolvedValue({
       status: "ACTIVE",
       isAdmin: true,
@@ -190,7 +237,6 @@ describe("access capabilities", () => {
       catalogExists: true,
       hasAccess: true,
       catalogGrant: null,
-      accessLevel: "OWNER",
       isCatalogAdmin: true,
       canManageAccess: true,
       canAccessSettings: true,
@@ -206,14 +252,13 @@ describe("access capabilities", () => {
     });
     prisma.workflowGroup.findFirst.mockResolvedValue(null);
 
-    const result = await getCatalogCapability("missing-catalog", "owner-1");
+    const result = await getCatalogCapability("missing-catalog", "host-1");
 
     expect(result).toMatchObject({
       catalogId: "missing-catalog",
       catalogExists: false,
       hasAccess: false,
       catalogGrant: null,
-      accessLevel: null,
       isCatalogAdmin: false,
       canViewCatalog: false,
       canEditMetadata: false,
@@ -237,7 +282,8 @@ describe("access capabilities", () => {
       isPublished: false,
     });
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "LISTENER",
+      role: "listener",
+      extraPermissions: [],
       status: "ACTIVE",
     });
 
@@ -246,7 +292,6 @@ describe("access capabilities", () => {
     expect(result).toMatchObject({
       catalogId: "catalog-1",
       hash: "hash-1",
-      accessLevel: "LISTENER",
       hasAccess: true,
       canAccessRecording: false,
       canStreamAudio: false,
@@ -257,7 +302,7 @@ describe("access capabilities", () => {
     });
   });
 
-  it("allows owners to resolve inactive catalog settings when explicitly requested", async () => {
+  it("allows hosts to resolve inactive catalog settings when explicitly requested", async () => {
     prisma.user.findUnique.mockResolvedValue({
       status: "ACTIVE",
       isAdmin: false,
@@ -267,11 +312,12 @@ describe("access capabilities", () => {
       Promise.resolve(where.isActive === undefined ? { id: "catalog-1" } : null)
     );
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "OWNER",
+      role: "host",
+      extraPermissions: [],
       status: "ACTIVE",
     });
 
-    const result = await getCatalogCapability("catalog-1", "owner-1", {
+    const result = await getCatalogCapability("catalog-1", "host-1", {
       activeCatalogOnly: false,
     });
 
@@ -287,7 +333,7 @@ describe("access capabilities", () => {
     });
   });
 
-  it("denies VIEWER recording capabilities when the catalog entry is missing", async () => {
+  it("denies reader recording capabilities when the catalog entry is missing", async () => {
     prisma.user.findUnique.mockResolvedValue({
       status: "ACTIVE",
       isAdmin: false,
@@ -295,27 +341,26 @@ describe("access capabilities", () => {
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "VIEWER",
+      role: "reader",
+      extraPermissions: [],
       status: "ACTIVE",
     });
     prisma.catalogEntry.findUnique.mockResolvedValue(null);
 
-    const result = await getRecordingCapability("catalog-1", "hash-1", "viewer-1");
+    const result = await getRecordingCapability("catalog-1", "hash-1", "reader-1");
 
     expect(result).toMatchObject({
       catalogId: "catalog-1",
       hash: "hash-1",
-      accessLevel: "VIEWER",
       hasAccess: true,
       canAccessRecording: false,
-      canStreamAudio: false,
       canViewRecordingTranscripts: false,
       canDownloadRecording: false,
       canEditRecording: false,
     });
   });
 
-  it("preserves edit capability for editors when the recording entry is missing", async () => {
+  it("preserves edit capability for curators when the recording entry is missing", async () => {
     prisma.user.findUnique.mockResolvedValue({
       status: "ACTIVE",
       isAdmin: false,
@@ -323,17 +368,17 @@ describe("access capabilities", () => {
     });
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
-      accessLevel: "EDITOR",
+      role: "curator",
+      extraPermissions: [],
       status: "ACTIVE",
     });
     prisma.catalogEntry.findUnique.mockResolvedValue(null);
 
-    const result = await getRecordingCapability("catalog-1", "hash-1", "editor-1");
+    const result = await getRecordingCapability("catalog-1", "hash-1", "curator-1");
 
     expect(result).toMatchObject({
       catalogId: "catalog-1",
       hash: "hash-1",
-      accessLevel: "EDITOR",
       hasAccess: true,
       canAccessRecording: false,
       canViewRecordingTranscripts: false,

@@ -7,7 +7,6 @@ import "../globals.css";
 import { AppProviders } from "@/components/app-providers";
 import { Header } from "@/components/header";
 import { GoogleTranslateWarning } from "@/components/google-translate-warning";
-import { OfflineBanner } from "@/components/offline-banner";
 import { InstallBanner } from "@/components/pwa/install-banner";
 import { RadioBanner } from "@/components/radio/radio-banner";
 import { RadioSpacer } from "@/components/radio/radio-spacer";
@@ -89,7 +88,6 @@ export default async function RootLayout({
           <MobileToastOverlay />
           <RadioBanner />
           <InstallBanner />
-          <OfflineBanner />
           <UpdateBanner />
         </AppProviders>
       </body>

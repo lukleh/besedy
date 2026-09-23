@@ -33,7 +33,7 @@ type PatchRecordingPublicationResult =
 
 /**
  * PATCH /api/catalogs/:id/recordings/:hash/ready
- * Owner/Admin-only manual publication toggle for LISTENER visibility.
+ * Manual publication toggle for LISTENER visibility; requires the publish_recording permission.
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
@@ -51,8 +51,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const access = await requireCatalogManagementAccess(catalogId, {
       auditResource: "catalog_publication",
       auditResourceId: hash,
-      deniedMessage: "Only owner/admin can update publication state",
-      deniedReason: "Only owner/admin can update publication state",
+      deniedMessage: "Publish-recording permission required to change recording publication state",
+      deniedReason: "Publish-recording permission required to change recording publication state",
       authorize: canPublishRecording,
     });
     if (!access.ok) {

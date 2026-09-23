@@ -47,13 +47,9 @@ vi.mock("@/lib/access/capabilities", () => ({
     canViewTranscripts: true,
     isCatalogAdmin: false,
     catalogGrant: {
-      level: "VIEWER",
       role: "reader",
       extras: [],
     },
-    accessLevel: "VIEWER",
-    catalogRole: "reader",
-    catalogExtraPermissions: [],
   }),
 }));
 
@@ -178,13 +174,9 @@ describe("internal deep-search search route", () => {
       canViewTranscripts: false,
       isCatalogAdmin: false,
       catalogGrant: {
-        level: "LISTENER",
         role: "listener",
         extras: ["use_deep_search"],
       },
-      accessLevel: "LISTENER",
-      catalogRole: "listener",
-      catalogExtraPermissions: ["use_deep_search"],
     } as never);
 
     const { POST } =

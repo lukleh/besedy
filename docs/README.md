@@ -13,7 +13,7 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [rag-oblique-eval.md](rag-oblique-eval.md) -- time-grounded evaluation for implicit retrieval queries
 - [backends.md](backends.md) -- ML backend infrastructure: serving, config tuning, verification
 - [web/architecture.md](web/architecture.md) -- web app stack, dev patterns, API surface
-- [web/offline.md](web/offline.md) -- downloads, service worker caching, offline behavior
+- [web/offline.md](web/offline.md) -- current Downloads/service-worker implementation and the target first-class offline Besedy mode
 - [web/jobs-prefect.md](web/jobs-prefect.md) -- preferred Prefect-based jobs orchestration plan with a thin Besedy-owned API facade
 - [web/recording-ingest.md](web/recording-ingest.md) -- admin recording upload processed by a host Prefect worker, with auto catalog sync
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
@@ -22,6 +22,5 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [web/mcp-server.md](web/mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing
 - [web/mcp-tools.md](web/mcp-tools.md) -- per-tool MCP contract: arguments, result shapes, errors
 - [web/mcp-follow-ups.md](web/mcp-follow-ups.md) -- deferred MCP work with the reasons it was deferred
-- [web/permission-rework.md](web/permission-rework.md) -- order and state of the permission rework; delete when it is finished
 - [web/operations.md](web/operations.md) -- deploy runbook, monitoring, environments
 - [schemas/transcript.schema.json](schemas/transcript.schema.json) -- canonical transcript JSON schema

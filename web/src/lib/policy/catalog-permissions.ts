@@ -1,12 +1,10 @@
-import type { AccessLevel, CatalogRole } from "@/generated/prisma/client";
+import type { CatalogRole } from "@/generated/prisma/client";
 
 /**
  * What an actor may do in one catalog.
  *
  * Every catalog gate asks whether a permission is present. Stored roles and
- * additive extras are authoritative. The legacy access-level derivation stays
- * isolated in this module only for rows and callers crossing the migration
- * boundary.
+ * additive extras are authoritative.
  *
  * Some of these are not asked about anywhere yet. They exist because the roles
  * below are defined over the whole vocabulary rather than over the part that
@@ -28,8 +26,8 @@ export type CatalogPermission =
   | "publish_recording"
   | "manage_events"
   | "release_events"
-  | "manage_event_posters"
-  | "publish_event_posters"
+  | "manage_event_artwork"
+  | "publish_event_artwork"
   | "manage_event_sources"
   | "use_deep_search"
   | "manage_access"
@@ -70,51 +68,12 @@ export const GRANTABLE_EXTRA_PERMISSIONS = [
   "download_original_audio",
   "download_transcripts",
   "bulk_export_transcripts",
-  "manage_event_posters",
-  "publish_event_posters",
+  "manage_event_artwork",
+  "publish_event_artwork",
 ] as const satisfies readonly CatalogPermission[];
 
 export type GrantableExtraPermission =
   (typeof GRANTABLE_EXTRA_PERMISSIONS)[number];
-
-/** What each level adds to everything the levels below it already carry. */
-const PERMISSIONS_BY_LEVEL: Record<AccessLevel, CatalogPermission[]> = {
-  LISTENER: ["stream_audio", "browse_recordings"],
-  VIEWER: ["see_unreleased", "read_transcripts", "search_transcripts"],
-  MEMBER: ["download_audio", "download_transcripts", "bulk_export_transcripts"],
-  EDITOR: ["edit_metadata", "manage_lookups"],
-  OWNER: [
-    "batch_edit_metadata",
-    "publish_recording",
-    "manage_events",
-    "release_events",
-    "manage_event_posters",
-    "publish_event_posters",
-    "manage_event_sources",
-    "use_deep_search",
-    "manage_access",
-  ],
-};
-
-const LEVEL_ORDER: AccessLevel[] = [
-  "LISTENER",
-  "VIEWER",
-  "MEMBER",
-  "EDITOR",
-  "OWNER",
-];
-
-const CUMULATIVE_BY_LEVEL = new Map<
-  AccessLevel,
-  ReadonlySet<CatalogPermission>
->(
-  LEVEL_ORDER.map((level, index) => [
-    level,
-    new Set(
-      LEVEL_ORDER.slice(0, index + 1).flatMap((l) => PERMISSIONS_BY_LEVEL[l])
-    ),
-  ])
-);
 
 const NO_PERMISSIONS: ReadonlySet<CatalogPermission> = new Set();
 
@@ -139,8 +98,8 @@ const EVERY_PERMISSION: Record<CatalogPermission, true> = {
   publish_recording: true,
   manage_events: true,
   release_events: true,
-  manage_event_posters: true,
-  publish_event_posters: true,
+  manage_event_artwork: true,
+  publish_event_artwork: true,
   manage_event_sources: true,
   use_deep_search: true,
   manage_access: true,
@@ -216,8 +175,8 @@ export const ROLE_PERMISSIONS: Record<
     "publish_recording",
     "manage_events",
     "release_events",
-    "manage_event_posters",
-    "publish_event_posters",
+    "manage_event_artwork",
+    "publish_event_artwork",
     "manage_event_sources",
     "use_deep_search",
     "download_audio",
@@ -247,99 +206,22 @@ export function permissionsForRole(
 }
 
 /**
- * Everything a level carries, including what the levels below it carry.
- *
- * `manage_catalog_config` appears in no level on purpose: it belongs to catalog
- * administrators alone, and they hold every permission by being administrators.
- */
-export function permissionsForLevel(
-  catalogGrant: AccessLevel | null | undefined
-): ReadonlySet<CatalogPermission> {
-  if (catalogGrant == null) return NO_PERMISSIONS;
-  return CUMULATIVE_BY_LEVEL.get(catalogGrant) ?? NO_PERMISSIONS;
-}
-
-/**
- * What one grant carries.
- *
- * `role` is authoritative once set. `level` is the legacy scale, kept as the
- * answer for grants the assignment has not reached yet; when every grant
- * carries a role it stops being read at all.
+ * What one grant carries. `role` is authoritative; extras are additive.
  */
 export interface CatalogGrant {
-  level: AccessLevel | null;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extras: string[];
 }
 
-/**
- * The role a legacy access level becomes, and what it carries on top.
- *
- * This mirrors the mapping in
- * `prisma/migrations/20260916170000_assign_catalog_roles`, and the two must
- * stay the same: that one moved the grants that existed, while this helper
- * supports compatibility reads and old tests during the transition.
- */
-export function roleForLevel(level: AccessLevel): {
-  role: CatalogRole;
-  extras: CatalogPermission[];
-} {
-  switch (level) {
-    case "LISTENER":
-      return { role: "listener", extras: [] };
-    case "VIEWER":
-    case "MEMBER":
-      return { role: "reader", extras: [] };
-    case "EDITOR":
-      return { role: "curator", extras: [] };
-    case "OWNER":
-      return { role: "host", extras: ["download_transcripts"] };
-  }
-}
-
-/**
- * The role fields to store beside a level, ready to spread into a write.
- */
-export function roleFieldsForLevel(level: AccessLevel): {
-  role: CatalogRole;
-  extraPermissions: string[];
-} {
-  const { role, extras } = roleForLevel(level);
-  return { role, extraPermissions: extras };
-}
-
-/**
- * Compatibility value for the legacy non-null column.
- *
- * New APIs and UI speak in roles only. The level is derived on write and is
- * never used as the source of permissions once a role is present.
- */
-export function legacyLevelForRole(role: CatalogRole): AccessLevel {
-  switch (role) {
-    case "listener":
-      return "LISTENER";
-    case "reader":
-    case "corrector":
-      return "VIEWER";
-    case "curator":
-      return "EDITOR";
-    case "host":
-    case "catalog_admin":
-      return "OWNER";
-  }
-}
-
-/** Fields stored for a role-native grant while the legacy column still exists. */
+/** The stored fields of a grant, with duplicate extras collapsed, ready to spread into a write. */
 export function grantFieldsForRole(
   role: CatalogRole,
   extras: readonly string[] = []
 ): {
-  accessLevel: AccessLevel;
   role: CatalogRole;
   extraPermissions: string[];
 } {
   return {
-    accessLevel: legacyLevelForRole(role),
     role,
     extraPermissions: [...new Set(extras)],
   };
@@ -368,17 +250,7 @@ export function mergeGrantableExtraPermissions(
  * the archive is on show rather than about anyone's grant.
  */
 export function grantForRole(role: CatalogRole): CatalogGrant {
-  return { level: null, role, extras: [] };
-}
-
-/**
- * A grant that carries nothing but a legacy level.
- *
- * Kept for compatibility callers and tests that describe a grant that way.
- * Nothing role-native resolves through it.
- */
-export function grantFromLevel(level: AccessLevel | null): CatalogGrant {
-  return { level, role: null, extras: [] };
+  return { role, extras: [] };
 }
 
 /**
@@ -394,10 +266,7 @@ export function permissionsForGrant(
 ): ReadonlySet<CatalogPermission> {
   if (grant == null) return NO_PERMISSIONS;
 
-  const base =
-    grant.role != null
-      ? permissionsForRole(grant.role)
-      : permissionsForLevel(grant.level);
+  const base = permissionsForRole(grant.role);
 
   // A permission check must never throw: a grant that arrives without its
   // extras carries none, which fails closed.

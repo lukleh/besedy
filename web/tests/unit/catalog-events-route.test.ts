@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogEvents } from "@/app/api/catalog-events/route";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -11,12 +11,12 @@ vi.mock("@/lib/catalog-events/visibility", () => ({
   getPublishedVisibleEventIds: vi.fn(),
 }));
 
-vi.mock("@/lib/event-poster-service", () => ({
-  getEventPosterWorkflowStatuses: vi.fn(),
+vi.mock("@/lib/event-artwork-service", () => ({
+  getEventArtworkWorkflowStatuses: vi.fn(),
 }));
 
-vi.mock("@/lib/policy/event-poster", () => ({
-  canViewEventPosterCandidates: vi.fn(),
+vi.mock("@/lib/policy/event-artwork", () => ({
+  canViewEventArtworkCandidates: vi.fn(),
 }));
 
 vi.mock("@/lib/event-sources", () => ({
@@ -53,8 +53,8 @@ describe("catalog events route", () => {
 
   let requireCatalogEventsAccess: ReturnType<typeof vi.fn>;
   let getPublishedVisibleEventIds: ReturnType<typeof vi.fn>;
-  let getEventPosterWorkflowStatuses: ReturnType<typeof vi.fn>;
-  let canViewEventPosterCandidates: ReturnType<typeof vi.fn>;
+  let getEventArtworkWorkflowStatuses: ReturnType<typeof vi.fn>;
+  let canViewEventArtworkCandidates: ReturnType<typeof vi.fn>;
   let readEventSources: ReturnType<typeof vi.fn>;
   let prisma: {
     workflowGroup: { findFirst: ReturnType<typeof vi.fn> };
@@ -76,21 +76,20 @@ describe("catalog events route", () => {
     >;
     getPublishedVisibleEventIds = (await import("@/lib/catalog-events/visibility"))
       .getPublishedVisibleEventIds as ReturnType<typeof vi.fn>;
-    getEventPosterWorkflowStatuses = (await import("@/lib/event-poster-service"))
-      .getEventPosterWorkflowStatuses as ReturnType<typeof vi.fn>;
-    canViewEventPosterCandidates = (await import("@/lib/policy/event-poster"))
-      .canViewEventPosterCandidates as ReturnType<typeof vi.fn>;
+    getEventArtworkWorkflowStatuses = (await import("@/lib/event-artwork-service"))
+      .getEventArtworkWorkflowStatuses as ReturnType<typeof vi.fn>;
+    canViewEventArtworkCandidates = (await import("@/lib/policy/event-artwork"))
+      .canViewEventArtworkCandidates as ReturnType<typeof vi.fn>;
     readEventSources = (await import("@/lib/event-sources")).readEventSources as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
-      accessLevel: "OWNER",
-      catalogGrant: grantFromLevel("OWNER"),
+      catalogGrant: grantForRole("curator"),
     });
     getPublishedVisibleEventIds.mockResolvedValue([7]);
-    getEventPosterWorkflowStatuses.mockResolvedValue(new Map([[7, "draft-only"]]));
-    canViewEventPosterCandidates.mockReturnValue(true);
+    getEventArtworkWorkflowStatuses.mockResolvedValue(new Map([[7, "draft-only"]]));
+    canViewEventArtworkCandidates.mockReturnValue(true);
     readEventSources.mockResolvedValue([]);
 
     prisma.workflowGroup.findFirst.mockResolvedValue({ id: catalogId });
@@ -139,7 +138,7 @@ describe("catalog events route", () => {
     prisma.recordingPlaybackProgress.findMany.mockResolvedValue([]);
   });
 
-  it("keeps draft events visible for owner listings", async () => {
+  it("keeps draft events visible for curator listings", async () => {
     const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
 
     expect(response.status).toBe(200);
@@ -168,7 +167,7 @@ describe("catalog events route", () => {
     expect(body.events).toHaveLength(1);
     expect(body.events[0].id).toBe(7);
     expect(body.events[0].released).toBe(false);
-    expect(body.events[0].posterStatus).toBe("draft-only");
+    expect(body.events[0].artworkStatus).toBe("draft-only");
     expect(body.events[0].sessionOrdinal).toBe(1);
     expect(body.events[0].sessionCount).toBe(1);
   });
@@ -176,10 +175,9 @@ describe("catalog events route", () => {
   it("limits listener listings to published-visible event ids", async () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "listener-1",
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
-    canViewEventPosterCandidates.mockReturnValue(false);
+    canViewEventArtworkCandidates.mockReturnValue(false);
 
     const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
 
@@ -191,7 +189,7 @@ describe("catalog events route", () => {
         id: { in: [7] },
       },
     });
-    expect((await response.json()).events[0].posterStatus).toBe("none");
+    expect((await response.json()).events[0].artworkStatus).toBe("none");
   });
 
   it("applies the text search filter to event title and location name", async () => {

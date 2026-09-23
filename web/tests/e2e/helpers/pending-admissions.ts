@@ -28,7 +28,6 @@ export interface PendingAdmissionDetails {
   status: "PENDING" | "CONSUMED";
   invitedAt: string;
   catalogId: string | null;
-  accessLevel: string | null;
   role: string | null;
   extraPermissions: string[];
   consumedAt: string | null;

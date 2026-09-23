@@ -1,12 +1,7 @@
 import { z } from "zod";
-import {
-  AccessLevel,
-  AccessStatus,
-  CatalogRole,
-} from "@/generated/prisma/enums";
+import { AccessStatus, CatalogRole } from "@/generated/prisma/enums";
 import {
   GRANTABLE_EXTRA_PERMISSIONS,
-  roleForLevel,
   type GrantableExtraPermission,
 } from "@/lib/policy/catalog-permissions";
 
@@ -21,8 +16,7 @@ export interface UserInfo {
 export interface AccessGrant {
   id: string;
   userId: string;
-  accessLevel: AccessLevel;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   canManage: boolean;
   canRevoke: boolean;
@@ -86,8 +80,7 @@ export interface PendingCatalogGrant {
   id: string;
   type: "pending_catalog_grant";
   email: string;
-  accessLevel: AccessLevel;
-  role: CatalogRole | null;
+  role: CatalogRole;
   extraPermissions: string[];
   canManage: boolean;
   notes: string | null;
@@ -145,8 +138,7 @@ const actorInfoSchema = z.object({
 export const accessGrantSchema = z.object({
   id: z.string(),
   userId: z.string(),
-  accessLevel: z.nativeEnum(AccessLevel),
-  role: z.nativeEnum(CatalogRole).nullable(),
+  role: z.nativeEnum(CatalogRole),
   extraPermissions: z.array(z.string()),
   canManage: z.boolean(),
   canRevoke: z.boolean(),
@@ -201,8 +193,7 @@ export const pendingCatalogGrantSchema = z.object({
   id: z.string(),
   type: z.literal("pending_catalog_grant"),
   email: z.string(),
-  accessLevel: z.nativeEnum(AccessLevel),
-  role: z.nativeEnum(CatalogRole).nullable(),
+  role: z.nativeEnum(CatalogRole),
   extraPermissions: z.array(z.string()),
   canManage: z.boolean(),
   notes: z.string().nullable(),
@@ -246,13 +237,6 @@ export const CATALOG_ROLE_COLORS: Record<CatalogRole, string> = {
 };
 
 export const CATALOG_ROLE_VALUES = Object.values(CatalogRole);
-
-export function resolvedCatalogRole(
-  role: CatalogRole | null,
-  accessLevel: AccessLevel
-): CatalogRole {
-  return role ?? roleForLevel(accessLevel).role;
-}
 
 /**
  * Which cards of the settings page the actor may see.

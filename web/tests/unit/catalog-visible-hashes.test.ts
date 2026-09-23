@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { grantForRole, grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -56,13 +56,5 @@ describe("loadVisibleCatalogHashes", () => {
     const hashes = await loadVisibleCatalogHashes("catalog-1", null);
 
     expect(hashes.size).toBe(3);
-  });
-
-  it("scopes a legacy level grant the same way its role would", async () => {
-    expect([...(await loadVisibleCatalogHashes("c", grantFromLevel("LISTENER")))])
-      .toEqual(["published"]);
-    expect(
-      (await loadVisibleCatalogHashes("c", grantFromLevel("EDITOR"))).size
-    ).toBe(3);
   });
 });

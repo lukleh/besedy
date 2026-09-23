@@ -30,6 +30,8 @@ interface EventListResultsProps {
   onSort: (key: EventSortKey) => void;
   releasedFilter: "all" | "true" | "false";
   showAllColumns: boolean;
+  /** Hide the filter row, e.g. for a list that is already a fixed selection. */
+  showFilters?: boolean;
   showReleaseState: boolean;
   sortDir: SortDirection;
   sortKey: EventSortKey;
@@ -49,6 +51,7 @@ export function EventListResults({
   onSort,
   releasedFilter,
   showAllColumns,
+  showFilters = true,
   showReleaseState,
   sortDir,
   sortKey,
@@ -58,7 +61,7 @@ export function EventListResults({
   const router = useRouter();
   const t = useTranslations("events.list");
   const tDownloads = useTranslations("downloads");
-  const downloadedEvents = useDownloadedEvents(catalogId);
+  const downloadedEvents = useDownloadedEvents(catalogId, events);
 
   const renderDownloadMarker = (eventId: number) => {
     const status = downloadedEvents.get(eventId);
@@ -111,14 +114,14 @@ export function EventListResults({
     return sortDir === "asc" ? "ascending" : "descending";
   };
 
-  const getPosterStatusLabel = (status: CatalogEventRow["posterStatus"]) => {
-    if (status === "published-with-newer-drafts") return t("postersPublishedWithDrafts");
-    if (status === "published") return t("postersPublished");
-    if (status === "draft-only") return t("postersDraftOnly");
-    return t("postersMissing");
+  const getArtworkStatusLabel = (status: CatalogEventRow["artworkStatus"]) => {
+    if (status === "published-with-newer-drafts") return t("artworkPublishedWithDrafts");
+    if (status === "published") return t("artworkPublished");
+    if (status === "draft-only") return t("artworkDraftOnly");
+    return t("artworkMissing");
   };
 
-  const getPosterStatusVariant = (status: CatalogEventRow["posterStatus"]): "default" | "secondary" | "outline" => {
+  const getArtworkStatusVariant = (status: CatalogEventRow["artworkStatus"]): "default" | "secondary" | "outline" => {
     if (status === "published") return "default";
     if (status === "published-with-newer-drafts") return "secondary";
     if (status === "draft-only") return "secondary";
@@ -160,7 +163,7 @@ export function EventListResults({
                     </button>
                   </TableHead>
                   <TableHead className="text-right">{t("columnSources")}</TableHead>
-                  <TableHead>{t("columnPosters")}</TableHead>
+                  <TableHead>{t("columnArtwork")}</TableHead>
                   <TableHead>{t("columnPrimaryRecording")}</TableHead>
                   <TableHead aria-sort={getSortAria("released")}>
                     <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort("released")}>
@@ -172,85 +175,87 @@ export function EventListResults({
               ) : null}
               <TableHead className="w-36 text-right">{t("columnProgress")}</TableHead>
             </TableRow>
-            <TableRow className="bg-muted/30 hover:bg-muted/30">
-              <TableHead className="py-1.5 font-normal">
-                <select
-                  value={dateYearFilter}
-                  onChange={(event) => onDateYearFilterChange(event.target.value)}
-                  className={cn(
-                    "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
-                    dateYearFilter !== "all" && "border-primary"
-                  )}
-                  aria-label={t("dateYearFilterAria")}
-                >
-                  <option value="all">{t("allYears")}</option>
-                  {yearOptions.map((year) => (
-                    <option key={year} value={year.toString()}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              </TableHead>
-              <TableHead className="py-1.5 font-normal">
-                <div className={cn("space-y-1", showReleaseState && !showAllColumns && "min-w-[12rem]")}>
+            {showFilters && (
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="py-1.5 font-normal">
                   <select
-                    value={locationFilter}
-                    onChange={(event) => onLocationFilterChange(event.target.value)}
+                    value={dateYearFilter}
+                    onChange={(event) => onDateYearFilterChange(event.target.value)}
                     className={cn(
                       "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
-                      locationFilter !== "all" && "border-primary"
+                      dateYearFilter !== "all" && "border-primary"
                     )}
-                    aria-label={t("locationFilterAria")}
+                    aria-label={t("dateYearFilterAria")}
                   >
-                    <option value="all">{t("allLocations")}</option>
-                    {locationOptions.map((location) => (
-                      <option key={location.id} value={location.id.toString()}>
-                        {location.name}
+                    <option value="all">{t("allYears")}</option>
+                    {yearOptions.map((year) => (
+                      <option key={year} value={year.toString()}>
+                        {year}
                       </option>
                     ))}
                   </select>
-                  {showReleaseState && !showAllColumns ? (
+                </TableHead>
+                <TableHead className="py-1.5 font-normal">
+                  <div className={cn("space-y-1", showReleaseState && !showAllColumns && "min-w-[12rem]")}>
                     <select
-                      value={releasedFilter}
-                      onChange={(event) => onReleasedFilterChange(event.target.value as "all" | "true" | "false")}
+                      value={locationFilter}
+                      onChange={(event) => onLocationFilterChange(event.target.value)}
                       className={cn(
                         "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
-                        releasedFilter !== "all" && "border-primary"
+                        locationFilter !== "all" && "border-primary"
                       )}
-                      aria-label={t("statusFilterAria")}
+                      aria-label={t("locationFilterAria")}
                     >
-                      <option value="all">{t("all")}</option>
-                      <option value="true">{t("released")}</option>
-                      <option value="false">{t("unreleased")}</option>
+                      <option value="all">{t("allLocations")}</option>
+                      {locationOptions.map((location) => (
+                        <option key={location.id} value={location.id.toString()}>
+                          {location.name}
+                        </option>
+                      ))}
                     </select>
-                  ) : null}
-                </div>
-              </TableHead>
-              {showAllColumns ? (
-                <>
-                  <TableHead className="py-1.5 font-normal text-right" />
-                  <TableHead className="py-1.5 font-normal text-right" />
-                  <TableHead className="py-1.5 font-normal" />
-                  <TableHead className="py-1.5 font-normal" />
-                  <TableHead className="py-1.5 font-normal">
-                    <select
-                      value={releasedFilter}
-                      onChange={(event) => onReleasedFilterChange(event.target.value as "all" | "true" | "false")}
-                      className={cn(
-                        "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
-                        releasedFilter !== "all" && "border-primary"
-                      )}
-                      aria-label={t("statusFilterAria")}
-                    >
-                      <option value="all">{t("all")}</option>
-                      <option value="true">{t("released")}</option>
-                      <option value="false">{t("unreleased")}</option>
-                    </select>
-                  </TableHead>
-                </>
-              ) : null}
-              <TableHead className="w-36 py-1.5 font-normal" />
-            </TableRow>
+                    {showReleaseState && !showAllColumns ? (
+                      <select
+                        value={releasedFilter}
+                        onChange={(event) => onReleasedFilterChange(event.target.value as "all" | "true" | "false")}
+                        className={cn(
+                          "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
+                          releasedFilter !== "all" && "border-primary"
+                        )}
+                        aria-label={t("statusFilterAria")}
+                      >
+                        <option value="all">{t("all")}</option>
+                        <option value="true">{t("released")}</option>
+                        <option value="false">{t("unreleased")}</option>
+                      </select>
+                    ) : null}
+                  </div>
+                </TableHead>
+                {showAllColumns ? (
+                  <>
+                    <TableHead className="py-1.5 font-normal text-right" />
+                    <TableHead className="py-1.5 font-normal text-right" />
+                    <TableHead className="py-1.5 font-normal" />
+                    <TableHead className="py-1.5 font-normal" />
+                    <TableHead className="py-1.5 font-normal">
+                      <select
+                        value={releasedFilter}
+                        onChange={(event) => onReleasedFilterChange(event.target.value as "all" | "true" | "false")}
+                        className={cn(
+                          "h-7 w-full rounded-md border border-input bg-background px-2 text-xs",
+                          releasedFilter !== "all" && "border-primary"
+                        )}
+                        aria-label={t("statusFilterAria")}
+                      >
+                        <option value="all">{t("all")}</option>
+                        <option value="true">{t("released")}</option>
+                        <option value="false">{t("unreleased")}</option>
+                      </select>
+                    </TableHead>
+                  </>
+                ) : null}
+                <TableHead className="w-36 py-1.5 font-normal" />
+              </TableRow>
+            )}
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
@@ -299,8 +304,8 @@ export function EventListResults({
                         <TableCell className="text-right">{catalogEvent.recordingCount}</TableCell>
                         <TableCell className="text-right">{catalogEvent.sourceCount}</TableCell>
                         <TableCell>
-                          <Badge variant={getPosterStatusVariant(catalogEvent.posterStatus)}>
-                            {getPosterStatusLabel(catalogEvent.posterStatus)}
+                          <Badge variant={getArtworkStatusVariant(catalogEvent.artworkStatus)}>
+                            {getArtworkStatusLabel(catalogEvent.artworkStatus)}
                           </Badge>
                         </TableCell>
                         <TableCell className="max-w-[320px] truncate">

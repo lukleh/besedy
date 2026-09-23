@@ -23,7 +23,8 @@ describe("admission admin read models", () => {
           {
             email: "pending@example.com",
             catalogId: "20260101_000000",
-            accessLevel: "EDITOR",
+            role: "curator",
+            extraPermissions: [],
             notes: "catalog note",
             grantedAt: new Date("2026-03-10T11:00:00.000Z"),
             grantedById: "owner-1",
@@ -76,7 +77,6 @@ describe("admission admin read models", () => {
       select: {
         email: true,
         catalogId: true,
-        accessLevel: true,
         role: true,
         extraPermissions: true,
         notes: true,
@@ -95,7 +95,6 @@ describe("admission admin read models", () => {
           {
             catalogId: "20260101_000000",
             catalogLabel: "Catalog One",
-            accessLevel: "EDITOR",
             role: "curator",
             extraPermissions: [],
             grantedAt: "2026-03-10T11:00:00.000Z",
@@ -140,7 +139,6 @@ describe("admission admin read models", () => {
           {
             email: "pending@example.com",
             catalogId: "20260101_000000",
-            accessLevel: "VIEWER",
             notes: null,
             grantedAt: new Date("2026-03-10T11:00:00.000Z"),
             grantedById: null,
@@ -275,7 +273,6 @@ describe("admission admin read models", () => {
           {
             email: "johndoe@gmail.com",
             catalogId: "20260101_000000",
-            accessLevel: "VIEWER",
             notes: null,
             grantedAt: new Date("2026-03-10T11:00:00.000Z"),
             grantedById: null,
@@ -333,7 +330,6 @@ describe("admission admin read models", () => {
           {
             email: "pending@example.com",
             catalogId: "20260102_000000",
-            accessLevel: "MEMBER",
             role: "reader",
             extraPermissions: [],
             notes: "second grant",
@@ -343,7 +339,6 @@ describe("admission admin read models", () => {
           {
             email: "pending@example.com",
             catalogId: "20260101_000000",
-            accessLevel: "VIEWER",
             role: "reader",
             extraPermissions: [],
             notes: "first grant",
@@ -387,7 +382,6 @@ describe("admission admin read models", () => {
           {
             catalogId: "20260102_000000",
             catalogLabel: "Catalog Two",
-            accessLevel: "MEMBER",
             role: "reader",
             extraPermissions: [],
             grantedAt: "2026-03-10T12:00:00.000Z",
@@ -401,7 +395,6 @@ describe("admission admin read models", () => {
           {
             catalogId: "20260101_000000",
             catalogLabel: "Catalog One",
-            accessLevel: "VIEWER",
             role: "reader",
             extraPermissions: [],
             grantedAt: "2026-03-10T11:00:00.000Z",

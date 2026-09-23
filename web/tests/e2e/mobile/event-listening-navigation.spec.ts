@@ -115,16 +115,6 @@ test.describe('Mobile event listening flow', () => {
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
-    const eventsResponse = await page.request.get(
-      `/api/catalog-events?group=${TEST_CATALOG_ID}&limit=2&sort=date&dir=desc`,
-    );
-    expect(eventsResponse.ok()).toBeTruthy();
-    const eventList = (await eventsResponse.json()) as {
-      events: EventItem[];
-    };
-    expect(eventList.events).toHaveLength(2);
-
-    const [newest, oldest] = eventList.events;
     const archivePrimaryHash = TEST_AUDIO_FILES.find(
       (file) => file.shortHash === TEST_EVENTS[2].primaryRecording,
     )?.hash;
@@ -148,6 +138,32 @@ test.describe('Mobile event listening flow', () => {
 
     await page.reload();
     await waitForPageReady(page);
+
+    // Pin the list to Location X. events.spec.ts toggles the release state of
+    // the Location Y event on Desktop Chrome, so under fullyParallel a listener
+    // sees two or three events depending on ordering, and the detail page
+    // fetches its sequence separately from the list. Both Location X events
+    // are always released, and the sequence navigation follows the persisted
+    // list filter, so the list and the detail page share one stable event set.
+    await page.getByRole('button', { name: 'Filters' }).click();
+    // The desktop table header renders a second, CSS-hidden location select.
+    const locationSelect = page
+      .getByLabel('Location filter')
+      .filter({ visible: true });
+    await locationSelect.selectOption({ label: TEST_EVENTS[0].location });
+    const locationId = await locationSelect.inputValue();
+    expect(locationId).not.toBe('all');
+
+    const eventsResponse = await page.request.get(
+      `/api/catalog-events?group=${TEST_CATALOG_ID}&limit=200&sort=date&dir=desc&location=${locationId}`,
+    );
+    expect(eventsResponse.ok()).toBeTruthy();
+    const eventList = (await eventsResponse.json()) as {
+      events: EventItem[];
+    };
+    expect(eventList.events).toHaveLength(2);
+    const [newest, oldest] = eventList.events;
+    await expect(page.locator('[data-testid^="event-card-"]')).toHaveCount(2);
 
     const sortButton = page.getByTestId('mobile-event-date-sort');
     await expect(sortButton).toBeVisible();

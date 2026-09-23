@@ -20,18 +20,8 @@ enum UserStatus {
   BLOCKED // Cannot access (replaces SUSPENDED + DEACTIVATED)
 }
 
-/// Access level for catalog access (hierarchical: LISTENER < VIEWER < MEMBER < EDITOR < OWNER)
-enum AccessLevel {
-  LISTENER // Browse catalog, stream audio, view metadata (no transcripts)
-  VIEWER // + view transcripts
-  MEMBER // + download
-  EDITOR // + edit metadata
-  OWNER // + manage access, manage pending access (can grant up to EDITOR; Admin required for OWNER)
-}
-
-/// Role a catalog grant carries once roles replace the ordered access levels.
-/// Null until the accounts are migrated; `accessLevel` stays authoritative
-/// meanwhile, so both representations are valid at the same time.
+/// Role a catalog grant carries. Permissions come from the role plus the
+/// grant's extra permissions (docs/adr/0005-catalog-permission-model.md).
 enum CatalogRole {
   listener
   reader
@@ -125,23 +115,23 @@ model User {
   oauthRefreshTokens           OauthRefreshToken[]
   oauthAccessTokens            OauthAccessToken[]
   oauthConsents                OauthConsent[]
-  invitedBy                    User?                           @relation("UserInvitations", fields: [invitedById], references: [id])
-  invitedUsers                 User[]                          @relation("UserInvitations")
+  invitedBy                    User?                            @relation("UserInvitations", fields: [invitedById], references: [id])
+  invitedUsers                 User[]                           @relation("UserInvitations")
   catalogAccess                CatalogAccess[]
-  accessGranted                CatalogAccess[]                 @relation("AccessGrantedBy")
-  accessRevoked                CatalogAccess[]                 @relation("AccessRevokedBy")
+  accessGranted                CatalogAccess[]                  @relation("AccessGrantedBy")
+  accessRevoked                CatalogAccess[]                  @relation("AccessRevokedBy")
   auditLogs                    AuditLog[]
   mcpToolInvocations           McpToolInvocation[]
   clientErrorReports           ClientErrorReport[]
   webUpdateEvents              WebUpdateEvent[]
   /// Portal admissions this user created or explicitly reviewed
-  portalAdmissionsAdmitted     PortalAdmission[]               @relation("PortalAdmissionAdmittedBy")
-  portalAdmissionsClaimed      PortalAdmission[]               @relation("PortalAdmissionClaimedBy")
-  portalAdmissionsRevoked      PortalAdmission[]               @relation("PortalAdmissionRevokedBy")
+  portalAdmissionsAdmitted     PortalAdmission[]                @relation("PortalAdmissionAdmittedBy")
+  portalAdmissionsClaimed      PortalAdmission[]                @relation("PortalAdmissionClaimedBy")
+  portalAdmissionsRevoked      PortalAdmission[]                @relation("PortalAdmissionRevokedBy")
   /// Pending catalog grants this user created or lifecycle-touched
-  pendingCatalogGrantsGranted  PendingCatalogGrant[]           @relation("PendingCatalogGrantGrantedBy")
-  pendingCatalogGrantsConsumed PendingCatalogGrant[]           @relation("PendingCatalogGrantConsumedBy")
-  pendingCatalogGrantsRevoked  PendingCatalogGrant[]           @relation("PendingCatalogGrantRevokedBy")
+  pendingCatalogGrantsGranted  PendingCatalogGrant[]            @relation("PendingCatalogGrantGrantedBy")
+  pendingCatalogGrantsConsumed PendingCatalogGrant[]            @relation("PendingCatalogGrantConsumedBy")
+  pendingCatalogGrantsRevoked  PendingCatalogGrant[]            @relation("PendingCatalogGrantRevokedBy")
   /// Push notification subscriptions for this user's browsers
   pushSubscriptions            PushSubscription[]
   /// Recording notifications for this user
@@ -149,36 +139,36 @@ model User {
   /// Event publish notifications for this user
   eventNotifications           EventNotification[]
   /// Events created by this user
-  catalogEventsCreated         CatalogEvent[]                  @relation("CatalogEventCreatedBy")
+  catalogEventsCreated         CatalogEvent[]                   @relation("CatalogEventCreatedBy")
   /// Events last updated by this user
-  catalogEventsUpdated         CatalogEvent[]                  @relation("CatalogEventUpdatedBy")
-  /// Event poster candidates created by this user
-  catalogEventPostersCreated   CatalogEventPoster[]            @relation("CatalogEventPosterCreatedBy")
-  /// Event poster publications performed by this user
-  eventPosterPublications      CatalogEventPosterPublication[] @relation("CatalogEventPosterPublishedBy")
+  catalogEventsUpdated         CatalogEvent[]                   @relation("CatalogEventUpdatedBy")
+  /// Event artwork candidates created by this user
+  catalogEventArtworkCreated   CatalogEventArtwork[]            @relation("CatalogEventArtworkCreatedBy")
+  /// Event artwork publications performed by this user
+  eventArtworkPublications     CatalogEventArtworkPublication[] @relation("CatalogEventArtworkPublishedBy")
   /// Deep-search jobs owned by this user and shared with others
-  deepSearchSharesOwned        DeepSearchJobShare[]            @relation("DeepSearchJobShareOwner")
+  deepSearchSharesOwned        DeepSearchJobShare[]             @relation("DeepSearchJobShareOwner")
   /// Deep-search jobs shared with this user
-  deepSearchSharesReceived     DeepSearchJobShare[]            @relation("DeepSearchJobShareRecipient")
+  deepSearchSharesReceived     DeepSearchJobShare[]             @relation("DeepSearchJobShareRecipient")
   /// Deep-search shares created by this user
-  deepSearchSharesCreated      DeepSearchJobShare[]            @relation("DeepSearchJobShareCreator")
+  deepSearchSharesCreated      DeepSearchJobShare[]             @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
   /// Recording uploads this user submitted for ingest
-  recordingIntakes             RecordingIntake[]               @relation("RecordingIntakeRequestedBy")
+  recordingIntakes             RecordingIntake[]                @relation("RecordingIntakeRequestedBy")
   /// Correction workspaces this user started or archived
-  transcriptWorkspacesStarted  TranscriptWorkspace[]           @relation("TranscriptWorkspaceStartedBy")
-  transcriptWorkspacesArchived TranscriptWorkspace[]           @relation("TranscriptWorkspaceArchivedBy")
+  transcriptWorkspacesStarted  TranscriptWorkspace[]            @relation("TranscriptWorkspaceStartedBy")
+  transcriptWorkspacesArchived TranscriptWorkspace[]            @relation("TranscriptWorkspaceArchivedBy")
   /// Span text revisions written by this user
-  transcriptSpanRevisions      TranscriptSpanRevision[]        @relation("TranscriptSpanRevisionAuthor")
+  transcriptSpanRevisions      TranscriptSpanRevision[]         @relation("TranscriptSpanRevisionAuthor")
   /// Approvals, disapprovals and withdrawals by this user
-  transcriptSpanDecisions      TranscriptSpanDecision[]        @relation("TranscriptSpanDecisionUser")
+  transcriptSpanDecisions      TranscriptSpanDecision[]         @relation("TranscriptSpanDecisionUser")
   /// Span comments written by this user
-  transcriptSpanComments       TranscriptSpanComment[]         @relation("TranscriptSpanCommentAuthor")
+  transcriptSpanComments       TranscriptSpanComment[]          @relation("TranscriptSpanCommentAuthor")
   /// Transcript publications performed by this user
-  transcriptPublications       TranscriptPublication[]         @relation("TranscriptPublicationPublishedBy")
+  transcriptPublications       TranscriptPublication[]          @relation("TranscriptPublicationPublishedBy")
   /// Correction guide revisions written by this user
-  transcriptGuideRevisions     TranscriptGuideRevision[]       @relation("TranscriptGuideRevisionAuthor")
+  transcriptGuideRevisions     TranscriptGuideRevision[]        @relation("TranscriptGuideRevisionAuthor")
 
   @@map("users")
 }
@@ -438,13 +428,8 @@ model CatalogAccess {
   userId           String       @map("user_id")
   /// Workflow group (catalog) being accessed
   catalogId        String       @map("catalog_id") @db.VarChar(15)
-  /// Access level: LISTENER < VIEWER < MEMBER < EDITOR < OWNER.
-  /// Retired as a source of permissions; every grant carries a role. Kept
-  /// until the column is dropped, and still what the interface names.
-  accessLevel      AccessLevel  @default(LISTENER) @map("access_level")
-  /// Role this grant carries. Authoritative: it is where permissions come
-  /// from, and `accessLevel` answers only for a row that predates it.
-  role             CatalogRole? @map("role")
+  /// Role this grant carries. Authoritative: it is where permissions come from.
+  role             CatalogRole  @map("role")
   /// Permissions granted to this account on top of its role, never subtracted.
   /// Stored as names so the set can grow without a migration; unknown names are
   /// ignored when the set is resolved.
@@ -521,12 +506,9 @@ model PendingCatalogGrant {
   email            String
   /// Target catalog for the future grant
   catalogId        String                    @map("catalog_id") @db.VarChar(15)
-  /// Access level to grant when consumed. Retired: the role below is what a
-  /// claim now copies. Kept until the column is dropped.
-  accessLevel      AccessLevel               @map("access_level")
   /// Role to grant when consumed, and any permissions on top of it. A claim
   /// copies both onto the CatalogAccess row it creates.
-  role             CatalogRole?              @map("role")
+  role             CatalogRole               @map("role")
   extraPermissions String[]                  @default([]) @map("extra_permissions")
   /// Pending-grant lifecycle
   status           PendingCatalogGrantStatus
@@ -814,22 +796,22 @@ model CatalogEvent {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  workflowGroup      WorkflowGroup                  @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  location           Location                       @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  createdBy          User                           @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
-  updatedBy          User                           @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
+  workflowGroup      WorkflowGroup                   @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+  location           Location                        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy          User                            @relation("CatalogEventCreatedBy", fields: [createdById], references: [id])
+  updatedBy          User                            @relation("CatalogEventUpdatedBy", fields: [updatedById], references: [id])
   recordings         CatalogEventRecording[]
   eventNotifications EventNotification[]
-  posterCandidates   CatalogEventPoster[]
-  posterPublication  CatalogEventPosterPublication?
+  artworkCandidates  CatalogEventArtwork[]
+  artworkPublication CatalogEventArtworkPublication?
 
   @@unique([id, workflowGroupId])
   @@index([workflowGroupId, released])
   @@map("catalog_event")
 }
 
-/// Immutable square + landscape poster proposal for one event.
-model CatalogEventPoster {
+/// Immutable square + landscape artwork proposal for one event.
+model CatalogEventArtwork {
   id                    String   @id @default(uuid()) @db.Uuid
   eventId               Int      @map("event_id")
   workflowGroupId       String   @map("workflow_group_id") @db.VarChar(15)
@@ -845,31 +827,31 @@ model CatalogEventPoster {
   createdById           String?  @map("created_by")
   createdAt             DateTime @default(now()) @map("created_at")
 
-  event       CatalogEvent                   @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
-  createdBy   User?                          @relation("CatalogEventPosterCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  publication CatalogEventPosterPublication?
+  event       CatalogEvent                    @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
+  createdBy   User?                           @relation("CatalogEventArtworkCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  publication CatalogEventArtworkPublication?
 
   @@unique([id, eventId, workflowGroupId])
   @@index([workflowGroupId, eventId, createdAt])
-  @@map("catalog_event_poster")
+  @@map("catalog_event_artwork")
 }
 
-/// Current audience poster selection for one event.
-model CatalogEventPosterPublication {
+/// Current audience artwork selection for one event.
+model CatalogEventArtworkPublication {
   eventId         Int      @map("event_id")
   workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
-  posterId        String   @unique @map("poster_id") @db.Uuid
+  artworkId       String   @unique @map("artwork_id") @db.Uuid
   publishedById   String?  @map("published_by")
   publishedAt     DateTime @default(now()) @map("published_at")
 
-  event       CatalogEvent       @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade)
-  poster      CatalogEventPoster @relation(fields: [posterId, eventId, workflowGroupId], references: [id, eventId, workflowGroupId], onDelete: NoAction)
-  publishedBy User?              @relation("CatalogEventPosterPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  event       CatalogEvent        @relation(fields: [eventId, workflowGroupId], references: [id, workflowGroupId], onDelete: Cascade, map: "catalog_event_artwork_publication_event_fkey")
+  artwork     CatalogEventArtwork @relation(fields: [artworkId, eventId, workflowGroupId], references: [id, eventId, workflowGroupId], onDelete: NoAction, map: "catalog_event_artwork_publication_artwork_fkey")
+  publishedBy User?               @relation("CatalogEventArtworkPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
 
   @@id([workflowGroupId, eventId])
-  @@unique([eventId, workflowGroupId])
-  @@unique([posterId, eventId, workflowGroupId])
-  @@map("catalog_event_poster_publication")
+  @@unique([eventId, workflowGroupId], map: "catalog_event_artwork_publication_event_catalog_key")
+  @@unique([artworkId, eventId, workflowGroupId], map: "catalog_event_artwork_publication_artwork_event_catalog_key")
+  @@map("catalog_event_artwork_publication")
 }
 
 /// Recording-to-event assignments; each recording belongs to at most one event per catalog.
@@ -1313,10 +1295,10 @@ enum AuditAction {
   METADATA_UPDATED
   METADATA_VERIFIED
   METADATA_DELETED
-  EVENT_POSTER_CREATED
-  EVENT_POSTER_DELETED
-  EVENT_POSTER_PUBLISHED
-  EVENT_POSTER_UNPUBLISHED
+  EVENT_ARTWORK_CREATED
+  EVENT_ARTWORK_DELETED
+  EVENT_ARTWORK_PUBLISHED
+  EVENT_ARTWORK_UNPUBLISHED
   // Transcript correction
   TRANSCRIPT_CORRECTION_STARTED
   TRANSCRIPT_CORRECTION_ARCHIVED
@@ -1493,6 +1475,36 @@ model WebUpdateEvent {
   @@index([targetVersion, createdAt])
   @@index([attemptId])
   @@map("web_update_event")
+}
+
+/// Authoritative record of when a web client version actually went live.
+/// Written directly by the production deploy recipe (`just prod-apply`), not
+/// by the app -- this is the definitive answer to "what was deployed when,"
+/// as opposed to a commit's timestamp, which only says when the code
+/// changed. Rows are never updated; each deploy (including a redeploy of an
+/// unchanged version) appends one.
+model WebDeployLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gitCommit  String   @map("git_commit") @db.VarChar(40)
+  webVersion String   @map("web_version") @db.VarChar(64)
+  /// timestamptz, not the schema's usual bare timestamp: this row's default
+  /// is filled by the database (CURRENT_TIMESTAMP), not by Prisma, and a
+  /// timestamp-without-time-zone column would silently store the db
+  /// session's local wall clock with no indication that it isn't UTC if
+  /// that session's TimeZone were ever changed from the current Etc/UTC
+  /// default. timestamptz stores the actual instant, so it stays correct
+  /// regardless.
+  deployedAt DateTime @default(now()) @map("deployed_at") @db.Timestamptz(3)
+  deployedBy String?  @map("deployed_by") @db.VarChar(120)
+  /// Not written by `prod-apply` and not read by any current query. Reserved
+  /// for manually backfilling a row for a deploy that didn't go through the
+  /// standard recipe (a manual `docker compose up`, an emergency hotfix), so
+  /// that path isn't permanently invisible to this log.
+  note       String?  @db.VarChar(500)
+
+  @@index([webVersion])
+  @@index([deployedAt])
+  @@map("web_deploy_log")
 }
 
 // ============================================================================

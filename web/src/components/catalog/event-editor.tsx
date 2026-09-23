@@ -66,8 +66,9 @@ interface EventDetailResponse {
   sessionCount: number;
   description: string | null;
   released: boolean;
-  canManagePosters?: boolean;
+  canManageArtwork?: boolean;
   canManageSources?: boolean;
+  canRelease?: boolean;
   recordings: EventRecording[];
 }
 
@@ -377,8 +378,9 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
   }
 
   const primaryRecording = data.recordings.find((recording) => recording.isPrimary) ?? null;
-  const canManagePosters = data.canManagePosters ?? false;
+  const canManageArtwork = data.canManageArtwork ?? false;
   const canManageSources = data.canManageSources ?? false;
+  const canRelease = data.canRelease ?? false;
 
   return (
     <div className="space-y-6">
@@ -405,10 +407,10 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
             sessionOrdinal={data.sessionOrdinal}
             sessionCount={data.sessionCount}
           />
-          {canManagePosters && (
+          {canManageArtwork && (
             <Button asChild variant="outline">
-              <Link href={`/catalog/${catalogId}/event/${eventId}/poster`}>
-                {tRoot("recording.editPoster")}
+              <Link href={`/catalog/${catalogId}/event/${eventId}/artwork`}>
+                {tRoot("recording.editArtwork")}
               </Link>
             </Button>
           )}
@@ -423,13 +425,15 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
             <Pencil className="h-4 w-4 mr-1" />
             {t("edit")}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => toggleReleaseMutation.mutate(!data.released)}
-            disabled={isBusy}
-          >
-            {data.released ? t("unrelease") : t("release")}
-          </Button>
+          {canRelease && (
+            <Button
+              variant="outline"
+              onClick={() => toggleReleaseMutation.mutate(!data.released)}
+              disabled={isBusy}
+            >
+              {data.released ? t("unrelease") : t("release")}
+            </Button>
+          )}
           <Button
             variant="destructive"
             onClick={() => deleteMutation.mutate()}

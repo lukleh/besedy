@@ -86,35 +86,35 @@ export function buildEventDetailUrl(catalogId: string, eventId: number): string 
   return `/api/catalogs/${catalogId}/events/${eventId}`;
 }
 
-export function buildEventPosterUrl(
+export function buildEventArtworkUrl(
   catalogId: string,
   eventId: number,
   variant: "square" | "landscape",
   version?: string | null
 ): string {
   const versionSuffix = version ? `&v=${encodeURIComponent(version)}` : "";
-  return `/api/catalogs/${catalogId}/events/${eventId}/poster?variant=${variant}${versionSuffix}`;
+  return `/api/catalogs/${catalogId}/events/${eventId}/artwork?variant=${variant}${versionSuffix}`;
 }
 
-export function buildEventPosterCandidatesUrl(catalogId: string, eventId: number): string {
-  return `/api/catalogs/${catalogId}/events/${eventId}/posters`;
+export function buildEventArtworkCandidatesUrl(catalogId: string, eventId: number): string {
+  return `/api/catalogs/${catalogId}/events/${eventId}/artworks`;
 }
 
-export function buildEventPosterCandidateUrl(catalogId: string, eventId: number, posterId: string): string {
-  return `${buildEventPosterCandidatesUrl(catalogId, eventId)}/${posterId}`;
+export function buildEventArtworkCandidateUrl(catalogId: string, eventId: number, artworkId: string): string {
+  return `${buildEventArtworkCandidatesUrl(catalogId, eventId)}/${artworkId}`;
 }
 
-export function buildEventPosterCandidateImageUrl(
+export function buildEventArtworkCandidateImageUrl(
   catalogId: string,
   eventId: number,
-  posterId: string,
+  artworkId: string,
   variant: "square" | "landscape"
 ): string {
-  return `${buildEventPosterCandidateUrl(catalogId, eventId, posterId)}/image?variant=${variant}`;
+  return `${buildEventArtworkCandidateUrl(catalogId, eventId, artworkId)}/image?variant=${variant}`;
 }
 
-export function buildEventPosterPublicationUrl(catalogId: string, eventId: number): string {
-  return `/api/catalogs/${catalogId}/events/${eventId}/poster-publication`;
+export function buildEventArtworkPublicationUrl(catalogId: string, eventId: number): string {
+  return `/api/catalogs/${catalogId}/events/${eventId}/artwork-publication`;
 }
 
 export function buildEventPagePath(catalogId: string, eventId: number): string {

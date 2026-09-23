@@ -19,6 +19,7 @@ import {
   resolveColbertIndexDir,
   resolveRerankCandidateLimit,
   rerankCandidates,
+  searchesPrimaryRecordingsOnly,
   shouldOverfetchColbertResults,
   type AllowedAudioHashRow,
   type Candidate,
@@ -165,6 +166,9 @@ export async function executeCatalogSearch(
   );
   const neighborCount = input.includeNeighbors ? (input.neighborCount ?? 1) : 0;
   const metadataFilters = input.metadataFilters ?? null;
+  const audioHashesQueryOptions = {
+    primaryRecordingsOnly: searchesPrimaryRecordingsOnly(metadataFilters),
+  };
 
   let rerankMs: number | undefined;
   let fusedCandidates = 0;
@@ -211,6 +215,7 @@ export async function executeCatalogSearch(
     Array.from(new Set(lookedUpChunks.map((chunk) => chunk.audioHash))),
     input.catalogGrant,
     metadataFilters,
+    audioHashesQueryOptions,
   );
   let allowedAudioRows = allowedAudioQuery
     ? await prisma.$queryRaw<AllowedAudioHashRow[]>(allowedAudioQuery)
@@ -245,6 +250,7 @@ export async function executeCatalogSearch(
       Array.from(new Set(lookedUpChunks.map((chunk) => chunk.audioHash))),
       input.catalogGrant,
       metadataFilters,
+      audioHashesQueryOptions,
     );
     allowedAudioRows = allowedAudioQuery
       ? await prisma.$queryRaw<AllowedAudioHashRow[]>(allowedAudioQuery)
@@ -350,12 +356,11 @@ export async function executeCatalogLexicalSearch(
     };
   }
 
+  const metadataFilters = input.metadataFilters ?? null;
   const allowedRows = await prisma.$queryRaw<AllowedAudioHashRow[]>(
-    buildEligibleAudioHashesQuery(
-      input.catalogId,
-      input.catalogGrant,
-      input.metadataFilters ?? null,
-    ),
+    buildEligibleAudioHashesQuery(input.catalogId, input.catalogGrant, metadataFilters, {
+      primaryRecordingsOnly: searchesPrimaryRecordingsOnly(metadataFilters),
+    }),
   );
   const lexical = await queryLexicalService(
     input.query,

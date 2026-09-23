@@ -1,6 +1,6 @@
-import type { AccessLevel, PrismaClient } from "../src/generated/prisma/client";
+import type { CatalogRole, PrismaClient } from "../src/generated/prisma/client";
 import { canonicalizeEmail } from "../src/lib/email";
-import { roleFieldsForLevel } from "../src/lib/policy/catalog-permissions";
+import { grantFieldsForRole } from "../src/lib/policy/catalog-permissions";
 
 type SeedPendingAdmissionClient = Pick<PrismaClient, "portalAdmission" | "pendingCatalogGrant">;
 
@@ -9,7 +9,8 @@ export interface SeedPendingAdmissionInput {
   createdById: string | null;
   createdAt: Date;
   catalogId: string | null;
-  accessLevel: AccessLevel | null;
+  role: CatalogRole | null;
+  extraPermissions?: string[];
   notes: string | null;
 }
 
@@ -20,9 +21,9 @@ function hasCatalogGrant(
   input: SeedPendingAdmissionInput
 ): input is SeedPendingAdmissionInput & {
   catalogId: string;
-  accessLevel: AccessLevel;
+  role: CatalogRole;
 } {
-  return input.catalogId !== null && input.accessLevel !== null;
+  return input.catalogId !== null && input.role !== null;
 }
 
 export async function syncSeedPendingAdmissions(
@@ -79,8 +80,7 @@ export async function syncSeedPendingAdmissions(
       create: {
         email,
         catalogId: input.catalogId,
-        accessLevel: input.accessLevel,
-        ...roleFieldsForLevel(input.accessLevel),
+        ...grantFieldsForRole(input.role, input.extraPermissions ?? []),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,
@@ -91,8 +91,7 @@ export async function syncSeedPendingAdmissions(
         notes: input.notes,
       },
       update: {
-        accessLevel: input.accessLevel,
-        ...roleFieldsForLevel(input.accessLevel),
+        ...grantFieldsForRole(input.role, input.extraPermissions ?? []),
         status: "PENDING",
         grantedById: input.createdById,
         grantedAt: input.createdAt,

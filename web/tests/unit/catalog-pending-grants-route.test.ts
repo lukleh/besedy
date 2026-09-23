@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   GET as getPendingCatalogGrants,
   POST as postPendingCatalogGrant,
@@ -41,7 +41,7 @@ describe("catalog pending grants route", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("OWNER"),
+        catalogGrant: grantForRole("host"),
         isCatalogAdmin: false,
       },
     });
@@ -79,7 +79,7 @@ describe("catalog pending grants route", () => {
       policyContext: {
         catalogExists: true,
         canEnterPortal: true,
-        catalogGrant: grantFromLevel("VIEWER"),
+        catalogGrant: grantForRole("reader"),
         isCatalogAdmin: false,
       },
     });
@@ -136,7 +136,7 @@ describe("catalog pending grants route", () => {
       "http://localhost/api/catalogs/20260101_000000/pending-catalog-grants",
       {
         method: "POST",
-        body: JSON.stringify({ email: "pending@example.com", accessLevel: "EDITOR" }),
+        body: JSON.stringify({ email: "pending@example.com", role: "curator" }),
       }
     );
 

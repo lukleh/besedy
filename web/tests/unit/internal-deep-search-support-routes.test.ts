@@ -46,13 +46,9 @@ vi.mock("@/lib/access/capabilities", () => ({
     canViewTranscripts: true,
     isCatalogAdmin: false,
     catalogGrant: {
-      level: "VIEWER",
       role: "reader",
       extras: [],
     },
-    accessLevel: "VIEWER",
-    catalogRole: "reader",
-    catalogExtraPermissions: [],
   }),
 }));
 

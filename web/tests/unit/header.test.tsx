@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     hydrated: true,
     records: [] as Array<{ key: string }>,
   },
+  isOnline: true,
+  sessionPending: false,
 }));
 
 vi.mock("next-intl", () => ({
@@ -17,7 +19,11 @@ vi.mock("next-intl", () => ({
 }));
 
 vi.mock("@/contexts/session-context", () => ({
-  useSession: () => ({ session: mocks.session }),
+  useSession: () => ({
+    session: mocks.session,
+    isPending: mocks.sessionPending,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock("@/hooks/use-catalog-route-state", () => ({
@@ -50,10 +56,18 @@ vi.mock("@/hooks/use-downloads", () => ({
   useDownloadManager: () => mocks.downloadSnapshot,
 }));
 
+vi.mock("@/hooks/use-online-status", () => ({
+  useOnlineStatus: () => ({ isOnline: mocks.isOnline }),
+}));
+
 vi.mock("@/components/theme-toggle", () => ({ ThemeToggle: () => null }));
 vi.mock("@/components/text-size-toggle", () => ({ TextSizeToggle: () => null }));
-vi.mock("@/components/language-switcher", () => ({ LanguageSwitcher: () => null }));
-vi.mock("@/components/auth/user-menu", () => ({ UserMenu: () => null }));
+vi.mock("@/components/language-switcher", () => ({
+  LanguageSwitcher: () => <div data-testid="language-switcher" />,
+}));
+vi.mock("@/components/auth/user-menu", () => ({
+  UserMenu: () => <div data-testid="user-menu" />,
+}));
 vi.mock("@/components/radio/radio-button", () => ({ RadioButton: () => null }));
 vi.mock("@/components/notifications/notification-bell", () => ({
   NotificationBell: () => null,
@@ -65,6 +79,59 @@ describe("Header", () => {
   beforeEach(() => {
     mocks.session = { user: { id: "user-1", name: "Listener" } };
     mocks.downloadSnapshot = { hydrated: true, records: [] };
+    mocks.isOnline = true;
+    mocks.sessionPending = false;
+  });
+
+  it("hides sign-in and the signed-out toggles while the session request is still pending", () => {
+    mocks.session = null;
+    mocks.sessionPending = true;
+
+    render(<Header />);
+
+    expect(screen.queryByTestId("user-menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("language-switcher")).not.toBeInTheDocument();
+  });
+
+  it("shows the crossed-Wi-Fi indicator only while offline, leading to Downloads", () => {
+    const { rerender } = render(<Header />);
+    expect(screen.queryByTestId("offline-indicator")).not.toBeInTheDocument();
+
+    mocks.isOnline = false;
+    rerender(<Header />);
+    const indicator = screen.getByTestId("offline-indicator");
+    expect(indicator).toHaveAttribute("href", "/downloads");
+    expect(indicator).toHaveAccessibleName("offline.offlineMode");
+    expect(indicator.querySelector(".lucide-wifi-off")).toBeInTheDocument();
+  });
+
+  it("hides sign-in and the signed-out toggles while offline without a session", () => {
+    mocks.session = null;
+    mocks.isOnline = false;
+
+    render(<Header />);
+
+    expect(screen.queryByTestId("user-menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("language-switcher")).not.toBeInTheDocument();
+    expect(screen.getByTestId("offline-indicator")).toBeInTheDocument();
+  });
+
+  it("keeps the account area empty while the session is being recovered after a reconnect", () => {
+    mocks.session = null;
+
+    render(<Header sessionRecovering />);
+
+    expect(screen.queryByTestId("user-menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("language-switcher")).not.toBeInTheDocument();
+  });
+
+  it("keeps the Downloads shortcut in the session-free shell when downloads exist", () => {
+    mocks.session = null;
+    mocks.downloadSnapshot = { hydrated: true, records: [{ key: "one" }] };
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
   });
 
   it("provides signed-in users a direct Downloads shortcut", () => {

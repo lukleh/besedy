@@ -1,4 +1,3 @@
-import type { AccessLevel } from "@/generated/prisma/client";
 import { lacksUnreleasedVisibility } from "@/lib/policy/access-level";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
@@ -6,8 +5,6 @@ import {
   hasCatalogPermission,
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
-
-export const EVENTS_VIEW_ACCESS_LEVEL: AccessLevel = "LISTENER";
 
 export interface EventFeaturePolicyContext extends CatalogPolicyContext {
   featureEnabled: boolean;
@@ -81,8 +78,21 @@ export function canEditCatalogEvents(context: EventFeaturePolicyContext): boolea
   return canEditEvent(context);
 }
 
+/**
+ * Whether the actor may change an event's release state.
+ *
+ * `release_events` is its own permission in ADR 0005, separate from
+ * `manage_events`: preparing an event and putting it in front of its audience
+ * are different acts, even though today the same role does both. The gate used
+ * to be `canEditEvent`, which asked `manage_events` and left the release
+ * permission defined but never consulted. The PATCH route still requires
+ * `manage_events` to reach the edit at all, so release is a second check on
+ * top of edit rather than a way around it.
+ */
 export function canReleaseEvent(context: EventFeaturePolicyContext): boolean {
-  return canEditEvent(context);
+  return (
+    canBrowseEvents(context) && hasCatalogPermission(context, "release_events")
+  );
 }
 
 export function canAttachRecordingToEvent(context: EventFeaturePolicyContext): boolean {
@@ -99,6 +109,23 @@ export function canSetPrimaryRecording(context: EventFeaturePolicyContext): bool
 
 export function canCreateEventFromRecording(context: EventFeaturePolicyContext): boolean {
   return canEditEvent(context);
+}
+
+/**
+ * Whether the actor may read and write an event's source records.
+ *
+ * Asked of the catalog context rather than the events feature context because
+ * the capability projection answers it before any feature flag is known; the
+ * source routes still pass the events "view" gate first. The permission is
+ * `manage_event_sources`, which sits with the curator. Under the level scale the
+ * routes fell through to `manage_access`, which handed sources to the host and
+ * withheld them from the curator, the opposite of what ADR 0005 assigns.
+ */
+export function canManageEventSources(context: CatalogPolicyContext): boolean {
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "manage_event_sources")
+  );
 }
 
 export function isReleasedVisibleEventState(

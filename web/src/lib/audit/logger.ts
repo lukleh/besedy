@@ -652,7 +652,7 @@ export async function logPendingCatalogGrantEvent(params: {
   email: string;
   catalogId?: string | null;
   catalogLabel?: string | null;
-  accessLevel?: string | null;
+  role?: string | null;
   details?: Record<string, unknown> | null;
 }): Promise<void> {
   return logAuditEvent({
@@ -662,7 +662,7 @@ export async function logPendingCatalogGrantEvent(params: {
     resourceId: params.resourceId,
     payload: mergePayload(
       params.details ?? null,
-      params.accessLevel ? { accessLevel: params.accessLevel } : null
+      params.role ? { role: params.role } : null
     ),
     domain: "admission",
     subjectType: "pending_catalog_grant",
@@ -672,7 +672,7 @@ export async function logPendingCatalogGrantEvent(params: {
       type: "pending_catalog_grant",
       id: params.resourceId,
       label: params.email,
-      secondaryLabel: params.accessLevel ?? null,
+      secondaryLabel: params.role ?? null,
       catalogId: params.catalogId ?? null,
       catalogLabel: params.catalogLabel ?? null,
     },
@@ -690,7 +690,7 @@ export async function logCatalogAccessEvent(params: {
   targetEmail?: string | null;
   catalogId: string;
   catalogLabel?: string | null;
-  accessLevel?: string | null;
+  role?: string | null;
   details?: Record<string, unknown> | null;
 }): Promise<void> {
   return logAuditEvent({
@@ -700,7 +700,7 @@ export async function logCatalogAccessEvent(params: {
     resourceId: params.accessResourceId,
     payload: mergePayload(
       params.details ?? null,
-      params.accessLevel ? { accessLevel: params.accessLevel } : null
+      params.role ? { role: params.role } : null
     ),
     domain: "catalog_access",
     subjectType: "catalog_access",
@@ -710,7 +710,7 @@ export async function logCatalogAccessEvent(params: {
       type: "catalog_access",
       id: params.accessResourceId,
       label: params.targetEmail ?? params.targetUserId ?? params.accessResourceId,
-      secondaryLabel: params.accessLevel ?? null,
+      secondaryLabel: params.role ?? null,
       catalogId: params.catalogId,
       catalogLabel: params.catalogLabel ?? null,
     },

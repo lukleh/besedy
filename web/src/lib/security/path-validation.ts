@@ -1,8 +1,8 @@
 import path from "path";
 import fs from "fs";
 import {
+  getArtworkDir,
   getCorrectionsDir,
-  getPostersDir,
   getSourcesDir,
   getTextDataDir,
   getUploadsDir,
@@ -100,10 +100,10 @@ export function getAllowedBaseDirs(): string[] {
     // Config not available - continue with env-based paths
   }
 
-  // Posters directory (if configured separately)
+  // Artworks directory (if configured separately)
   try {
-    const postersDir = getPostersDir();
-    const resolved = resolvePath(postersDir);
+    const artworkDir = getArtworkDir();
+    const resolved = resolvePath(artworkDir);
     if (!dirs.includes(resolved)) {
       dirs.push(resolved);
     }
@@ -180,8 +180,8 @@ export async function getAllowedBaseDirsAsync(): Promise<string[]> {
   }
 
   try {
-    const postersDir = getPostersDir();
-    const resolved = await resolvePathAsync(postersDir);
+    const artworkDir = getArtworkDir();
+    const resolved = await resolvePathAsync(artworkDir);
     if (!dirs.includes(resolved)) {
       dirs.push(resolved);
     }

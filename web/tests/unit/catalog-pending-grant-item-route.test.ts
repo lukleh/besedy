@@ -47,7 +47,7 @@ describe("catalog pending grant item route", () => {
       "http://localhost/api/catalogs/20260101_000000/pending-catalog-grants/pending@example.com",
       {
         method: "PUT",
-        body: JSON.stringify({ accessLevel: "EDITOR" }),
+        body: JSON.stringify({ role: "curator" }),
       }
     );
 

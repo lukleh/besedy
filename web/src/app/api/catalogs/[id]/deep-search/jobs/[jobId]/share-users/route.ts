@@ -119,7 +119,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               status: "ACTIVE",
             },
             select: {
-              accessLevel: true,
               role: true,
               extraPermissions: true,
             },
@@ -137,7 +136,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const catalogGrant =
           !isSystemAdmin && access
             ? {
-                level: access.accessLevel,
                 role: access.role,
                 extras: access.extraPermissions,
               }

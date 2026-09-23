@@ -2,9 +2,45 @@ import http from 'node:http';
 
 const port = Number.parseInt(process.env.MCP_RAG_MOCK_PORT || '18192', 10);
 const host = '0.0.0.0';
+// Primary recording of the seeded "Spring Gathering" event.
 const audioHash =
   'ab00005eaf000000000000000000000000000000000000000000000000000000';
 const chunkId = 'mcp-smoke-chunk-1';
+// Secondary recording of the same event: a parallel capture that only the
+// includeSecondaryRecordings filter lets through.
+const secondaryAudioHash =
+  'ab00001abc000000000000000000000000000000000000000000000000000000';
+const secondaryChunkId = 'mcp-smoke-chunk-secondary-1';
+const secondaryText =
+  'Deterministic Besedy MCP search evidence, second device.';
+
+function lexicalMatches(allowedAudioHashes) {
+  const matches = [
+    {
+      chunk_id: chunkId,
+      audio_hash: audioHash,
+      start_sec: 5,
+      end_sec: 10,
+      text: 'Deterministic Besedy MCP search evidence.',
+      run_id: 'mcp-smoke-run',
+      chunk_version: 'mcp-smoke-v1',
+      score: -1.25,
+    },
+    {
+      chunk_id: secondaryChunkId,
+      audio_hash: secondaryAudioHash,
+      start_sec: 5,
+      end_sec: 10,
+      text: secondaryText,
+      run_id: 'mcp-smoke-run',
+      chunk_version: 'mcp-smoke-v1',
+      score: -1.5,
+    },
+  ];
+  return matches.filter((match) =>
+    allowedAudioHashes.includes(match.audio_hash),
+  );
+}
 
 function json(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json' });
@@ -37,7 +73,10 @@ const server = http.createServer(async (request, response) => {
         return json(response, 400, { error: 'unexpected_query' });
       }
       return json(response, 200, {
-        hits: [{ chunk_id: chunkId, score: 0.97 }],
+        hits: [
+          { chunk_id: chunkId, score: 0.97 },
+          { chunk_id: secondaryChunkId, score: 0.9 },
+        ],
       });
     }
     if (request.url === '/lookup') {
@@ -52,6 +91,15 @@ const server = http.createServer(async (request, response) => {
             run_id: 'mcp-smoke-run',
             chunk_version: 'mcp-smoke-v1',
           },
+          {
+            chunk_id: secondaryChunkId,
+            audio_hash: secondaryAudioHash,
+            start_sec: 5,
+            end_sec: 10,
+            text: secondaryText,
+            run_id: 'mcp-smoke-run',
+            chunk_version: 'mcp-smoke-v1',
+          },
         ],
       });
     }
@@ -62,20 +110,10 @@ const server = http.createServer(async (request, response) => {
       if (!body.allowed_audio_hashes?.includes(audioHash)) {
         return json(response, 403, { error: 'missing_authorized_recording' });
       }
+      const matches = lexicalMatches(body.allowed_audio_hashes);
       return json(response, 200, {
-        total_matches: 1,
-        matches: [
-          {
-            chunk_id: chunkId,
-            audio_hash: audioHash,
-            start_sec: 5,
-            end_sec: 10,
-            text: 'Deterministic Besedy MCP search evidence.',
-            run_id: 'mcp-smoke-run',
-            chunk_version: 'mcp-smoke-v1',
-            score: -1.25,
-          },
-        ],
+        total_matches: matches.length,
+        matches,
       });
     }
     if (request.url === '/neighbors') {

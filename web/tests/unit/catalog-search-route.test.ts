@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { POST as searchCatalog } from "@/app/api/catalogs/[id]/search/route";
 import prisma from "@/lib/db";
-import { grantFromLevel } from "@/lib/policy/catalog-permissions";
+import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 const originalEnv = process.env;
 
@@ -164,8 +164,7 @@ describe("catalog search route", () => {
       catalogExists: true,
       hasAccess: true,
       canUseRagSearch: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
 
     fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
@@ -441,8 +440,7 @@ describe("catalog search route", () => {
       catalogExists: true,
       hasAccess: true,
       canUseRagSearch: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
 
     const firstBatchHits = Array.from({ length: 200 }, (_, index) => ({
@@ -580,8 +578,7 @@ describe("catalog search route", () => {
       catalogExists: true,
       hasAccess: true,
       canUseRagSearch: true,
-      accessLevel: "VIEWER",
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
     });
 
     fetchMock.mockImplementation(async (url: string | URL) => {
@@ -690,8 +687,7 @@ describe("catalog search route", () => {
       catalogExists: true,
       hasAccess: true,
       canUseRagSearch: true,
-      accessLevel: "LISTENER",
-      catalogGrant: grantFromLevel("LISTENER"),
+      catalogGrant: grantForRole("listener"),
     });
 
     const firstBatchHits = Array.from({ length: 200 }, (_, index) => ({
@@ -841,8 +837,7 @@ describe("catalog search route", () => {
       catalogExists: true,
       hasAccess: true,
       canUseRagSearch: true,
-      accessLevel: "VIEWER",
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
     });
     process.env.RAG_COLBERT_RERANK_ENABLED = "true";
 
@@ -928,8 +923,7 @@ describe("catalog search route", () => {
       catalogExists: true,
       hasAccess: true,
       canUseRagSearch: true,
-      accessLevel: "VIEWER",
-      catalogGrant: grantFromLevel("VIEWER"),
+      catalogGrant: grantForRole("reader"),
     });
     process.env.RAG_COLBERT_RERANK_ENABLED = "true";
 

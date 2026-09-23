@@ -501,7 +501,6 @@ describe("deep-search proxy routes", () => {
         isSuperadmin: false,
         catalogAccess: [
           {
-            accessLevel: "LISTENER",
             role: "listener",
             extraPermissions: [],
           },
@@ -516,7 +515,6 @@ describe("deep-search proxy routes", () => {
         isSuperadmin: false,
         catalogAccess: [
           {
-            accessLevel: "VIEWER",
             role: "reader",
             extraPermissions: [],
           },

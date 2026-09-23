@@ -4,8 +4,8 @@ import {
   canDownloadAudio,
   canEditCatalogMetadata,
   canViewCatalogTranscripts,
+  hasCatalogAccess,
   hasCatalogPermission,
-  hasCatalogManagementAuthority,
   canViewCatalog,
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
@@ -62,7 +62,7 @@ export function canViewRecordingTranscript(
   return canViewRecording(context, state) && canViewTranscript(context);
 }
 
-export function canViewRecordingForAccessLevel(
+export function canViewRecordingForGrant(
   catalogGrant: CatalogGrant | null | undefined,
   state?: RecordingVisibilityState
 ): boolean {
@@ -107,7 +107,7 @@ export function scopeRecordingsForAccess<
     return entries;
   }
 
-  return entries.filter((entry) => canViewRecordingForAccessLevel(catalogGrant, entry));
+  return entries.filter((entry) => canViewRecordingForGrant(catalogGrant, entry));
 }
 
 /** The playable file. The master is a separate permission. */
@@ -120,5 +120,8 @@ export function canEditRecordingMetadata(context: CatalogPolicyContext): boolean
 }
 
 export function canPublishRecording(context: CatalogPolicyContext): boolean {
-  return hasCatalogManagementAuthority(context);
+  return (
+    hasCatalogAccess(context) &&
+    hasCatalogPermission(context, "publish_recording")
+  );
 }

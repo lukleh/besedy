@@ -16,16 +16,23 @@ import {
 } from "@/lib/catalog-events/read-service";
 import { loadCatalogRecordingReadModels } from "@/lib/catalog-recordings/read-service";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { getPublishedEventPoster } from "@/lib/event-poster-service";
 import {
-  finalizeStagedEventPosterAssetsRemoval,
-  restoreStagedEventPosterAssets,
-  stageEventPosterAssetsRemoval,
-} from "@/lib/event-poster-storage";
+  getEventArtworkWorkflowStatuses,
+  getLatestEventArtworkCandidate,
+  getPublishedEventArtwork,
+} from "@/lib/event-artwork-service";
+import {
+  finalizeStagedEventArtworkAssetsRemoval,
+  restoreStagedEventArtworkAssets,
+  stageEventArtworkAssetsRemoval,
+} from "@/lib/event-artwork-storage";
 import { canReleaseEvent } from "@/lib/policy/event";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
+
+const RELEASE_DENIED_MESSAGE =
+  "Release-events permission required to change event release state";
 
 interface RouteParams {
   params: Promise<{ id: string; eventId: string }>;
@@ -61,7 +68,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!paramsResult.success) return paramsResult.response;
     const { id: catalogId, eventId } = paramsResult.data;
 
-    const { userId, catalogGrant } = await requireCatalogEventsAccess(catalogId, "view");
+    const { userId, catalogGrant, policyContext } = await requireCatalogEventsAccess(catalogId, "view");
 
     const readable = await loadReadableCatalogEvent(
       catalogId,
@@ -104,19 +111,30 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       });
 
     const readableEventIds = await resolveReadableEventIds(catalogId, catalogGrant);
-    const [catalogCapability, publishedPoster, sessionOrdinals] = await Promise.all([
+    const [catalogCapability, publishedArtwork, sessionOrdinals, artworkStatuses] = await Promise.all([
       getCatalogCapability(catalogId, userId),
-      getPublishedEventPoster(catalogId, eventId),
+      getPublishedEventArtwork(catalogId, eventId),
       loadSessionOrdinals(catalogId, readableEventIds, [event]),
+      getEventArtworkWorkflowStatuses(catalogId, [eventId]),
     ]);
     const sessionOrdinal = sessionOrdinals.get(event.id) ?? {
       ordinal: 1,
       count: 1,
     };
-    const canViewPosterCandidates = catalogCapability.canViewPosterCandidates;
-    const canManagePosters = catalogCapability.canManagePosters;
-    const canPublishPosters = catalogCapability.canPublishPosters;
-    const canManageSources = catalogCapability.canManageAccess;
+    const canViewArtworkCandidates = catalogCapability.canViewArtworkCandidates;
+    const canManageArtwork = catalogCapability.canManageArtwork;
+    const canPublishArtwork = catalogCapability.canPublishArtwork;
+    const canManageSources = catalogCapability.canManageEventSources;
+    const canRelease = canReleaseEvent(policyContext);
+    // ADR 0009: draft counts/labels are only for actors with draft visibility;
+    // ordinary readers keep seeing only the published artwork.
+    const artworkStatus = canViewArtworkCandidates ? (artworkStatuses.get(eventId) ?? "none") : undefined;
+    // Admins with draft visibility get a labeled preview of the latest draft
+    // when nothing is published yet, instead of an empty artwork area.
+    const latestDraftCandidate =
+      canViewArtworkCandidates && artworkStatus === "draft-only"
+        ? await getLatestEventArtworkCandidate(catalogId, eventId)
+        : null;
 
     return NextResponse.json({
       id: event.id,
@@ -138,11 +156,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
       recordings,
-      canViewPosterCandidates,
-      canManagePosters,
-      canPublishPosters,
+      canViewArtworkCandidates,
+      canManageArtwork,
+      canPublishArtwork,
       canManageSources,
-      publishedPoster,
+      canRelease,
+      publishedArtwork,
+      artworkStatus,
+      latestDraftCandidate,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog event", "fetch");
@@ -166,8 +187,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!bodyResult.success) return bodyResult.response;
     const body = bodyResult.data;
 
-    if (body.released !== undefined && access.policyContext !== undefined && !canReleaseEvent(access.policyContext)) {
-      return forbidden("Owner or admin access required to change event release state");
+    // A second gate on top of "edit": manage_events reaches the event,
+    // release_events changes whether its audience sees it.
+    if (body.released !== undefined && !canReleaseEvent(access.policyContext)) {
+      return forbidden(RELEASE_DENIED_MESSAGE);
     }
 
     const existingEvent = await prisma.catalogEvent.findFirst({
@@ -355,28 +378,28 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     await requireCatalogEventsAccess(catalogId, "edit");
 
-    const stagedPosterAssets = await stageEventPosterAssetsRemoval(catalogId, eventId);
+    const stagedArtworkAssets = await stageEventArtworkAssetsRemoval(catalogId, eventId);
     let deleted: { count: number };
     try {
       deleted = await prisma.catalogEvent.deleteMany({
         where: { id: eventId, workflowGroupId: catalogId },
       });
     } catch (error) {
-      if (stagedPosterAssets) {
-        await restoreStagedEventPosterAssets(stagedPosterAssets);
+      if (stagedArtworkAssets) {
+        await restoreStagedEventArtworkAssets(stagedArtworkAssets);
       }
       throw error;
     }
     if (deleted.count === 0) {
-      if (stagedPosterAssets) {
-        await restoreStagedEventPosterAssets(stagedPosterAssets);
+      if (stagedArtworkAssets) {
+        await restoreStagedEventArtworkAssets(stagedArtworkAssets);
       }
       return notFound("catalog event");
     }
 
-    if (stagedPosterAssets) {
-      await finalizeStagedEventPosterAssetsRemoval(stagedPosterAssets).catch((error) => {
-        console.error("Failed to finalize event poster cleanup:", error);
+    if (stagedArtworkAssets) {
+      await finalizeStagedEventArtworkAssetsRemoval(stagedArtworkAssets).catch((error) => {
+        console.error("Failed to finalize event artwork cleanup:", error);
       });
     }
 

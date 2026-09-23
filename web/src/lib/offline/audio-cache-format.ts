@@ -122,6 +122,80 @@ export async function writeAudioCacheMeta(
   );
 }
 
+/**
+ * Some mobile media stacks cannot play service-worker or blob-backed audio
+ * once the browser is offline. Downloads retain bytes for an inline source on
+ * Android browsers and Safari/iOS.
+ */
+export function requiresInlineOfflineAudio(userAgent: string): boolean {
+  if (!/AppleWebKit\//.test(userAgent)) return false;
+  if (/Android/.test(userAgent)) return true;
+  if (/(?:iPhone|iPad|iPod)/.test(userAgent)) return true;
+  return /Macintosh/.test(userAgent) && /Version\/[^ ]+.*Safari\//.test(userAgent);
+}
+
+/** Sum of the recorded chunk sizes. */
+export function audioCacheMetaBytes(meta: Pick<AudioCacheMeta, 'chunkSizes'>): number {
+  return meta.chunkSizes.reduce((sum, size) => sum + size, 0);
+}
+
+/**
+ * Invariants shared by verification and resume: a positive total, at least
+ * one chunk, every chunk non-empty, and the chunks never exceeding the total.
+ * The completion flag must agree with the bytes recorded.
+ */
+export function isConsistentAudioCacheMeta(meta: AudioCacheMeta): boolean {
+  if (meta.totalSize <= 0 || meta.chunkSizes.length === 0) return false;
+  if (meta.chunkSizes.some((size) => !Number.isInteger(size) || size <= 0)) {
+    return false;
+  }
+  const bytes = audioCacheMetaBytes(meta);
+  if (bytes > meta.totalSize) return false;
+  return meta.complete === (bytes === meta.totalSize);
+}
+
+/**
+ * Whether the cache holds a complete recording for `baseKey`: consistent,
+ * complete metadata and every chunk present. Presence is enough here; the
+ * worker validates chunk lengths when it serves them.
+ */
+export async function verifyAudioCache(
+  cache: Cache,
+  baseKey: string,
+): Promise<boolean> {
+  const meta = await readAudioCacheMeta(cache, baseKey);
+  if (!meta || !meta.complete || !isConsistentAudioCacheMeta(meta)) return false;
+  for (let index = 0; index < meta.chunkSizes.length; index += 1) {
+    if (!(await cache.match(getAudioChunkKey(baseKey, index)))) return false;
+  }
+  return true;
+}
+
+/** Assemble a complete cached recording without copying all chunks into one ArrayBuffer. */
+export async function readCompleteAudioBlob(
+  cache: Cache,
+  baseKey: string,
+): Promise<Blob | null> {
+  const meta = await readAudioCacheMeta(cache, baseKey);
+  if (!meta?.complete || meta.totalSize <= 0) return null;
+  if (
+    meta.chunkSizes.length === 0 ||
+    meta.chunkSizes.reduce((sum, size) => sum + size, 0) !== meta.totalSize
+  ) {
+    return null;
+  }
+
+  const chunks: Blob[] = [];
+  for (let index = 0; index < meta.chunkSizes.length; index += 1) {
+    const response = await cache.match(getAudioChunkKey(baseKey, index));
+    if (!response) return null;
+    const chunk = await response.blob();
+    if (chunk.size !== meta.chunkSizes[index]) return null;
+    chunks.push(chunk);
+  }
+  return new Blob(chunks, { type: meta.contentType || 'audio/webm' });
+}
+
 export interface AudioCacheProgress {
   bytesLoaded: number;
   totalBytes: number;

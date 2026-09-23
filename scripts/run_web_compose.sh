@@ -133,7 +133,8 @@ if [[ "$internal_network" == *_default ]]; then
 fi
 
 dry_run=false
-for compose_arg in "${command_args[@]}"; do
+# ${arr[@]+"${arr[@]}"} keeps empty arrays valid under set -u on bash 3.2.
+for compose_arg in ${command_args[@]+"${command_args[@]}"}; do
   if [[ "$compose_arg" == "--dry-run" ]]; then
     dry_run=true
     break
@@ -173,7 +174,8 @@ if [[ -n "${BESEDY_WEB_ALLOW_TEST_OVERRIDES:-}" ]]; then
   )
 fi
 for env_name in "${passthrough_vars[@]}"; do
-  if [[ -v "$env_name" ]]; then
+  # ${!name+x} also works on macOS /bin/bash 3.2; [[ -v ]] needs bash 4.2+.
+  if [[ -n "${!env_name+x}" ]]; then
     clean_env+=("$env_name=${!env_name}")
   fi
 done
@@ -183,7 +185,7 @@ compose_command=(
   "${clean_env[@]}"
   docker compose
   "${compose_args[@]}"
-  "${user_compose_args[@]}"
+  ${user_compose_args[@]+"${user_compose_args[@]}"}
   --env-file "$env_file"
 )
 
@@ -198,4 +200,4 @@ if [[ "$changes_resources" == true ]]; then
   fi
 fi
 
-exec "${compose_command[@]}" "${command_args[@]}"
+exec "${compose_command[@]}" ${command_args[@]+"${command_args[@]}"}

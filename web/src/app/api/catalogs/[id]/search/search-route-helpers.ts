@@ -61,6 +61,12 @@ export const SearchMetadataFiltersSchema = z
       .optional()
       .describe("Years from linked event metadata."),
     verified: z.boolean().optional().describe("Whether curated recording metadata is verified."),
+    includeSecondaryRecordings: z
+      .boolean()
+      .optional()
+      .describe(
+        "Also search recordings that are not the primary recording of their event. By default only primary recordings are searched.",
+      ),
   })
   .strict()
   .refine(
@@ -70,13 +76,37 @@ export const SearchMetadataFiltersSchema = z
       value.locationIds !== undefined ||
       value.recorderIds !== undefined ||
       value.dateYears !== undefined ||
-      value.verified !== undefined,
+      value.verified !== undefined ||
+      value.includeSecondaryRecordings !== undefined,
     {
       message: "metadataFilters must contain at least one filter",
     },
   );
 
 export type SearchMetadataFilters = z.infer<typeof SearchMetadataFiltersSchema>;
+
+export interface AudioHashesQueryOptions {
+  /**
+   * Keep only each event's primary recording. Recordings without any event
+   * link stay eligible so admin-scoped searches still reach unlinked material.
+   */
+  primaryRecordingsOnly?: boolean;
+}
+
+/**
+ * Searches cover each event's primary recording unless the caller opts out.
+ * The other recordings of an event are parallel captures of the same session
+ * from another device, so they only repeat the same passages. Naming
+ * recordings through audioHashes is an explicit choice of those recordings and
+ * therefore also disables the restriction.
+ */
+export function searchesPrimaryRecordingsOnly(
+  metadataFilters: SearchMetadataFilters | null | undefined,
+): boolean {
+  if (metadataFilters?.includeSecondaryRecordings) return false;
+  if (metadataFilters?.audioHashes && metadataFilters.audioHashes.length > 0) return false;
+  return true;
+}
 
 export const SearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(2000),
@@ -231,18 +261,20 @@ export function buildAllowedAudioHashesQuery(
   audioHashes: string[],
   catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
+  options: AudioHashesQueryOptions = {},
 ): Prisma.Sql | null {
   if (audioHashes.length === 0) return null;
 
-  return buildAudioHashesQuery(catalogId, catalogGrant, metadataFilters, audioHashes);
+  return buildAudioHashesQuery(catalogId, catalogGrant, metadataFilters, audioHashes, options);
 }
 
 export function buildEligibleAudioHashesQuery(
   catalogId: string,
   catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
+  options: AudioHashesQueryOptions = {},
 ): Prisma.Sql {
-  return buildAudioHashesQuery(catalogId, catalogGrant, metadataFilters, null);
+  return buildAudioHashesQuery(catalogId, catalogGrant, metadataFilters, null, options);
 }
 
 function buildAudioHashesQuery(
@@ -250,6 +282,7 @@ function buildAudioHashesQuery(
   catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
   candidateAudioHashes: string[] | null,
+  options: AudioHashesQueryOptions,
 ): Prisma.Sql {
   const joins: Prisma.Sql[] = [];
   const filters: Prisma.Sql[] = [];
@@ -338,6 +371,26 @@ function buildAudioHashesQuery(
   if (metadataFilters?.verified !== undefined) {
     filters.push(Prisma.sql`
       AND am.verified = ${metadataFilters.verified}
+    `);
+  }
+
+  if (options.primaryRecordingsOnly) {
+    filters.push(Prisma.sql`
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM catalog_event_recording primary_link
+          WHERE primary_link.workflow_group_id = ce.workflow_group_id
+            AND primary_link.audio_hash = ce.audio_hash
+            AND primary_link.is_primary = true
+        )
+        OR NOT EXISTS (
+          SELECT 1
+          FROM catalog_event_recording any_link
+          WHERE any_link.workflow_group_id = ce.workflow_group_id
+            AND any_link.audio_hash = ce.audio_hash
+        )
+      )
     `);
   }
 
@@ -489,7 +542,11 @@ export function shouldOverfetchColbertResults(
   catalogGrant: CatalogGrant | null | undefined,
   metadataFilters: SearchMetadataFilters | null,
 ): boolean {
-  return requiresReadyRecordingScope(catalogGrant) || metadataFilters !== null;
+  return (
+    requiresReadyRecordingScope(catalogGrant) ||
+    metadataFilters !== null ||
+    searchesPrimaryRecordingsOnly(metadataFilters)
+  );
 }
 
 export function resolveColbertFetchLimit(baseLimit: number): number {

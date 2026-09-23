@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Download, Music2, Wrench, Mail } from "lucide-react";
+import { Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
 import { openSupportEmail } from "@/lib/support-email";
 import { useSession } from "@/contexts/session-context";
 import { useCatalogs } from "@/hooks/use-catalogs";
@@ -11,6 +11,7 @@ import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { useDownloadManager } from "@/hooks/use-downloads";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TextSizeToggle } from "@/components/text-size-toggle";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -22,15 +23,31 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CircularBackLink } from "@/components/navigation/circular-back-control";
 
-export function Header() {
+interface HeaderProps {
+  /**
+   * The session is being requested again after a reconnect; keep the account
+   * area empty until it settles.
+   */
+  sessionRecovering?: boolean;
+}
+
+export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const t = useTranslations();
-  const { session } = useSession();
+  const { session, isPending: sessionPending } = useSession();
   const { hydrated: downloadsHydrated, records: downloads } = useDownloadManager();
+  const { isOnline } = useOnlineStatus();
   const route = useCatalogRouteState();
 
   // Don't show app navigation on auth pages
   const isAuthPage = route.isAuthPage;
   const isSignedIn = !!session?.user;
+  // The session-free local shell cannot learn who is signed in while offline,
+  // and no page knows it while the client session request is still pending.
+  // Offering sign-in and the signed-out appearance toggles in either state
+  // would be misleading, so the account area is left empty until the answer
+  // is known.
+  const sessionUnknown =
+    !isSignedIn && (!isOnline || sessionPending || sessionRecovering);
   const downloadCount = downloadsHydrated ? downloads.length : 0;
   const downloadCountLabel = downloadCount > 99 ? "99+" : String(downloadCount);
   const downloadsLabel =
@@ -94,7 +111,24 @@ export function Header() {
             {!isAuthPage && effectiveCatalogId && <RadioButton catalogId={effectiveCatalogId} />}
             {!isAuthPage && <NotificationBell />}
             {!isAuthPage && <UpdateIndicator />}
-            {!isAuthPage && isSignedIn && (
+            {/* The single app-level connectivity indicator. It never blocks
+                the page; it explains why network-only actions are missing and
+                leads to the local library. */}
+            {!isOnline && (
+              <Button variant="ghost" size="icon" asChild>
+                <Link
+                  href="/downloads"
+                  title={t("offline.offlineMode")}
+                  aria-label={t("offline.offlineMode")}
+                  data-testid="offline-indicator"
+                >
+                  <WifiOff className="h-5 w-5" aria-hidden="true" />
+                </Link>
+              </Button>
+            )}
+            {/* Downloads is reachable while signed in, and while the session-free
+                local shell holds downloads for this device. */}
+            {!isAuthPage && (isSignedIn || downloadCount > 0) && (
               <Button variant="ghost" size="icon" asChild>
                 <Link
                   href="/downloads"
@@ -126,14 +160,14 @@ export function Header() {
               <span className="sr-only">{t("nav.contactSupport")}</span>
             </Button>
             {/* Show appearance toggles when not signed in (otherwise they're in user menu) */}
-            {!isSignedIn && (
+            {!isSignedIn && !sessionUnknown && (
               <>
                 <LanguageSwitcher />
                 <TextSizeToggle />
                 <ThemeToggle />
               </>
             )}
-            <UserMenu />
+            {!sessionUnknown && <UserMenu />}
           </div>
         </div>
       </header>

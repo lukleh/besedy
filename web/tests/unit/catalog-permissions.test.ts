@@ -1,16 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { AccessLevel } from "@/generated/prisma/client";
+import type { CatalogRole } from "@/generated/prisma/client";
 import {
-  grantFromLevel,
+  CATALOG_ROLES,
+  grantForRole,
   grantHasPermission,
   permissionsForGrant,
   mergeGrantableExtraPermissions,
-  roleForLevel,
-  permissionsForLevel,
   permissionsForRole,
   type CatalogPermission,
 } from "@/lib/policy/catalog-permissions";
-import { canSeeSpeakers, canSeeTranscriptVariants } from "@/lib/policy/recording";
+import {
+  canPublishRecording,
+  canSeeSpeakers,
+  canSeeTranscriptVariants,
+} from "@/lib/policy/recording";
+import {
+  canEditEvent,
+  canManageEventSources,
+  canReleaseEvent,
+} from "@/lib/policy/event";
 import {
   canBatchEditCatalogMetadata,
   canBulkExportTranscripts,
@@ -19,8 +27,10 @@ import {
   canEditCatalogMetadata,
   canGrantCatalogGrant,
   canManageCatalogConfiguration,
+  canManageCatalogLookups,
   canManageExistingCatalogGrant,
   canRevokeExistingCatalogGrant,
+  canUseCatalogRag,
   canViewCatalogTranscripts,
   hasCatalogManagementAuthority,
   isSelfCatalogAccessChange,
@@ -32,70 +42,16 @@ const READER_PERMISSIONS: CatalogPermission[] = [
   "search_transcripts",
 ];
 
-const LEVELS: AccessLevel[] = ["LISTENER", "VIEWER", "MEMBER", "EDITOR", "OWNER"];
-
-const context = (level: AccessLevel | null, isCatalogAdmin = false) => ({
+const context = (role: CatalogRole | null, isCatalogAdmin = false) => ({
   catalogExists: true,
   canEnterPortal: true,
-  catalogGrant: level == null ? null : grantFromLevel(level),
+  catalogGrant: role == null ? null : grantForRole(role),
   isCatalogAdmin,
 });
 
-describe("catalog permissions", () => {
-  // Pinned rather than derived, so that moving a permission between levels has
-  // to be stated here before it can pass.
-  const EXPECTED: Record<AccessLevel, CatalogPermission[]> = {
-    LISTENER: ["stream_audio", "browse_recordings"],
-    VIEWER: ["see_unreleased", "read_transcripts", "search_transcripts"],
-    MEMBER: ["download_audio", "download_transcripts", "bulk_export_transcripts"],
-    EDITOR: ["edit_metadata", "manage_lookups"],
-    OWNER: [
-      "batch_edit_metadata",
-      "publish_recording",
-      "manage_events",
-      "release_events",
-      "manage_event_posters",
-      "publish_event_posters",
-      "manage_event_sources",
-      "use_deep_search",
-      "manage_access",
-    ],
-  };
-
-  it.each(LEVELS)("gives %s everything the levels below it carry", (level) => {
-    const held = permissionsForLevel(level);
-    const expected = LEVELS.slice(0, LEVELS.indexOf(level) + 1).flatMap(
-      (l) => EXPECTED[l]
-    );
-
-    expect([...held].sort()).toEqual([...expected].sort());
-  });
-
-  it("gives an absent grant nothing", () => {
-    expect(permissionsForLevel(null).size).toBe(0);
-    expect(permissionsForLevel(undefined).size).toBe(0);
-  });
-
-  it("gives a catalog administrator every permission without a grant", () => {
-    const everything = [...Object.values(EXPECTED).flat(), "manage_catalog_config"];
-    for (const permission of everything as CatalogPermission[]) {
-      expect(grantHasPermission(null, true, permission)).toBe(true);
-    }
-  });
-
-  it("gives manage_catalog_config to no level, only to administrators", () => {
-    for (const level of LEVELS) {
-      expect(permissionsForLevel(level).has("manage_catalog_config")).toBe(false);
-      expect(grantHasPermission(grantFromLevel(level), false, "manage_catalog_config")).toBe(false);
-    }
-    expect(grantHasPermission(grantFromLevel("OWNER"), true, "manage_catalog_config")).toBe(true);
-  });
-});
-
 describe("roles", () => {
-  // Nobody holds a role yet; these pin the definitions against
-  // docs/adr/0005-catalog-permission-model.md so the assignment step moves
-  // people onto a shape that was agreed rather than one that drifted.
+  // Pins the definitions against docs/adr/0005-catalog-permission-model.md so
+  // a change here has to be stated deliberately rather than drift in.
   it("builds every role on the reader's three permissions except the listener", () => {
     for (const role of ["reader", "corrector", "host", "curator"] as const) {
       for (const permission of READER_PERMISSIONS) {
@@ -140,25 +96,16 @@ describe("roles", () => {
 });
 
 describe("a grant resolves through its role", () => {
-  // Nobody holds a role yet, so every one of these describes what the
-  // assignment step switches on rather than what production does today.
-  it("answers from the level while no role is set", () => {
-    for (const level of LEVELS) {
-      expect([...permissionsForGrant(grantFromLevel(level))].sort()).toEqual(
-        [...permissionsForLevel(level)].sort()
+  it("answers from the role", () => {
+    for (const role of CATALOG_ROLES) {
+      expect([...permissionsForGrant(grantForRole(role))].sort()).toEqual(
+        [...permissionsForRole(role)].sort()
       );
     }
   });
 
-  it("answers from the role once one is set, ignoring the level beneath it", () => {
-    // An OWNER row carrying the listener role carries what a listener carries.
-    const demoted = { level: "OWNER" as const, role: "listener" as const, extras: [] };
-    expect([...permissionsForGrant(demoted)]).toEqual(["stream_audio"]);
-    expect(permissionsForGrant(demoted).has("manage_access")).toBe(false);
-  });
-
   it("adds extras to the role and never subtracts", () => {
-    const host = { level: null, role: "host" as const, extras: ["download_transcripts"] };
+    const host = { role: "host" as const, extras: ["download_transcripts"] };
     const resolved = permissionsForGrant(host);
 
     for (const permission of permissionsForRole("host")) {
@@ -168,7 +115,7 @@ describe("a grant resolves through its role", () => {
   });
 
   it("ignores an extra this build does not know", () => {
-    const grant = { level: null, role: "reader" as const, extras: ["not_a_permission"] };
+    const grant = { role: "reader" as const, extras: ["not_a_permission"] };
     expect([...permissionsForGrant(grant)].sort()).toEqual(
       [...permissionsForRole("reader")].sort()
     );
@@ -187,17 +134,19 @@ describe("administrative views of machine output", () => {
     { name: "transcript variants", gate: canSeeTranscriptVariants },
     { name: "speakers", gate: canSeeSpeakers },
   ];
+  const ORDINARY_ROLES = ["listener", "reader", "corrector", "host", "curator"] as const;
 
-  it.each(ADMIN_ONLY)("keeps $name from every level", ({ gate }) => {
-    for (const level of LEVELS) {
-      expect(gate(context(level))).toBe(false);
+  it.each(ADMIN_ONLY)("keeps $name from every role but the wildcard", ({ gate }) => {
+    for (const role of ORDINARY_ROLES) {
+      expect(gate(context(role))).toBe(false);
     }
+    expect(gate(context("catalog_admin"))).toBe(true);
     expect(gate(context(null, true))).toBe(true);
   });
 
-  it.each(ADMIN_ONLY)("keeps $name from every role but the wildcard", ({ name }) => {
+  it.each(ADMIN_ONLY)("keeps $name from every role but the wildcard by permission", ({ name }) => {
     const permission = name === "speakers" ? "see_speakers" : "see_transcript_variants";
-    for (const role of ["listener", "reader", "corrector", "host", "curator"] as const) {
+    for (const role of ORDINARY_ROLES) {
       expect(permissionsForRole(role).has(permission as CatalogPermission)).toBe(false);
     }
     expect(permissionsForRole("catalog_admin").has(permission as CatalogPermission)).toBe(true);
@@ -210,7 +159,6 @@ describe("administrative views of machine output", () => {
       catalogExists: true,
       canEnterPortal: true,
       catalogGrant: {
-        level: null,
         role: "listener" as const,
         extras: ["see_transcript_variants", "see_speakers"],
       },
@@ -228,13 +176,13 @@ describe("file delivery", () => {
   const readerWith = (...extras: string[]) => ({
     catalogExists: true,
     canEnterPortal: true,
-    catalogGrant: { level: null, role: "reader" as const, extras },
+    catalogGrant: { role: "reader" as const, extras },
     isCatalogAdmin: false,
   });
   const listenerWith = (...extras: string[]) => ({
     catalogExists: true,
     canEnterPortal: true,
-    catalogGrant: { level: null, role: "listener" as const, extras },
+    catalogGrant: { role: "listener" as const, extras },
     isCatalogAdmin: false,
   });
 
@@ -282,8 +230,212 @@ describe("file delivery", () => {
   });
 });
 
+describe("recording publication", () => {
+  // Publication is editorial, and `publish_recording` is the whole answer to
+  // who may do it. The gate used to ask `manage_access` instead, which the
+  // level scale hid because OWNER carried both permissions at once. Role-native
+  // grants separate them: a host manages access without publishing anything,
+  // and a curator publishes without managing anyone.
+  // Asked of every role rather than of the two that differ, so that a role
+  // added later has to declare which side of the gate it falls on.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from publish_recording alone",
+    (role) => {
+      expect(canPublishRecording(context(role))).toBe(
+        permissionsForRole(role).has("publish_recording")
+      );
+    }
+  );
+
+  // The regression this pins: both directions at once, so neither half can be
+  // collapsed back into the other.
+  it("separates publication from access management in both directions", () => {
+    const host = context("host");
+    expect(hasCatalogManagementAuthority(host)).toBe(true);
+    expect(canPublishRecording(host)).toBe(false);
+
+    const curator = context("curator");
+    expect(hasCatalogManagementAuthority(curator)).toBe(false);
+    expect(canPublishRecording(curator)).toBe(true);
+  });
+
+  it("gives publication to an administrator holding no grant", () => {
+    expect(canPublishRecording(context(null, true))).toBe(true);
+  });
+
+  it("refuses an actor who cannot open the catalog", () => {
+    // The permission on its own would answer for someone who may not be here
+    // at all, so the gate asks about access first.
+    const curator = context("curator");
+    expect(canPublishRecording({ ...curator, canEnterPortal: false })).toBe(false);
+    expect(canPublishRecording({ ...curator, catalogExists: false })).toBe(false);
+  });
+});
+
+describe("event sources", () => {
+  // Sources are editorial material, and `manage_event_sources` is the whole
+  // answer to who may handle them. The routes used to fall through to the
+  // default management check, `manage_access`, which under the level scale was
+  // indistinguishable because OWNER carried both. Under roles it was backwards:
+  // the host could read and write sources and the curator could not.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from manage_event_sources alone",
+    (role) => {
+      expect(canManageEventSources(context(role))).toBe(
+        permissionsForRole(role).has("manage_event_sources")
+      );
+    }
+  );
+
+  it("separates sources from access management in both directions", () => {
+    const host = context("host");
+    expect(hasCatalogManagementAuthority(host)).toBe(true);
+    expect(canManageEventSources(host)).toBe(false);
+
+    const curator = context("curator");
+    expect(hasCatalogManagementAuthority(curator)).toBe(false);
+    expect(canManageEventSources(curator)).toBe(true);
+  });
+
+  it("gives sources to an administrator holding no grant", () => {
+    expect(canManageEventSources(context(null, true))).toBe(true);
+  });
+
+  it("refuses an actor who cannot open the catalog", () => {
+    const curator = context("curator");
+    expect(canManageEventSources({ ...curator, canEnterPortal: false })).toBe(false);
+    expect(canManageEventSources({ ...curator, catalogExists: false })).toBe(false);
+  });
+});
+
+describe("event release", () => {
+  // Release is its own permission in ADR 0005, and `release_events` is the
+  // whole answer to who may do it. The gate used to be `canEditEvent`, which
+  // asked `manage_events`; the two were indistinguishable because the same
+  // roles carry both, so a green suite said nothing about which one was
+  // consulted. Asked of every role so that a role added later has to declare
+  // which side of the gate it falls on.
+  const eventContext = (role: CatalogRole | null, isCatalogAdmin = false) => ({
+    ...context(role, isCatalogAdmin),
+    featureEnabled: true,
+  });
+
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from release_events alone",
+    (role) => {
+      expect(canReleaseEvent(eventContext(role))).toBe(
+        permissionsForRole(role).has("release_events")
+      );
+    }
+  );
+
+  // Neither permission is grantable through the access UI, so the grants that
+  // hold one without the other are constructed directly. This is what proves
+  // the two gates are now distinct rather than two names for one check.
+  it("separates release from event management in both directions", () => {
+    const managesOnly = {
+      ...eventContext("listener"),
+      catalogGrant: { role: "listener" as const, extras: ["manage_events"] },
+    };
+    expect(canEditEvent(managesOnly)).toBe(true);
+    expect(canReleaseEvent(managesOnly)).toBe(false);
+
+    const releasesOnly = {
+      ...eventContext("listener"),
+      catalogGrant: { role: "listener" as const, extras: ["release_events"] },
+    };
+    expect(canEditEvent(releasesOnly)).toBe(false);
+    expect(canReleaseEvent(releasesOnly)).toBe(true);
+  });
+
+  it("gives release to an administrator holding no grant", () => {
+    expect(canReleaseEvent(eventContext(null, true))).toBe(true);
+  });
+
+  it("refuses release when the events feature is off or the catalog is closed", () => {
+    const curator = eventContext("curator");
+    expect(canReleaseEvent({ ...curator, featureEnabled: false })).toBe(false);
+    expect(canReleaseEvent({ ...curator, canEnterPortal: false })).toBe(false);
+    expect(canReleaseEvent({ ...curator, catalogExists: false })).toBe(false);
+  });
+});
+
+describe("catalog lookups", () => {
+  // The recorder, location and album rows have their own permission per
+  // ADR 0007. The CRUD factory used to ask `edit_metadata`, the per-recording
+  // permission, which the same role carries, so nothing could tell them apart.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from manage_lookups alone",
+    (role) => {
+      expect(canManageCatalogLookups(context(role))).toBe(
+        permissionsForRole(role).has("manage_lookups")
+      );
+    }
+  );
+
+  // Neither permission is grantable, so the grants that separate them are
+  // constructed directly.
+  it("separates lookups from recording metadata in both directions", () => {
+    const editsMetadata = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["edit_metadata"] },
+    };
+    expect(canEditCatalogMetadata(editsMetadata)).toBe(true);
+    expect(canManageCatalogLookups(editsMetadata)).toBe(false);
+
+    const managesLookups = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["manage_lookups"] },
+    };
+    expect(canEditCatalogMetadata(managesLookups)).toBe(false);
+    expect(canManageCatalogLookups(managesLookups)).toBe(true);
+  });
+
+  it("gives lookups to an administrator holding no grant", () => {
+    expect(canManageCatalogLookups(context(null, true))).toBe(true);
+  });
+});
+
+describe("transcript search", () => {
+  // Search returns transcript-derived content, so it is a conjunction: never
+  // broader than reading, and gated by its own permission on top. Both come
+  // with the reader bundle, so on role-native grants the answer is whether
+  // the role reads at all.
+  it.each([...CATALOG_ROLES])(
+    "answers for %s from read_transcripts and search_transcripts together",
+    (role) => {
+      const permissions = permissionsForRole(role);
+      expect(canUseCatalogRag(context(role))).toBe(
+        permissions.has("read_transcripts") && permissions.has("search_transcripts")
+      );
+    }
+  );
+
+  it("requires both permissions, so neither half suffices alone", () => {
+    const readsOnly = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["read_transcripts"] },
+    };
+    expect(canViewCatalogTranscripts(readsOnly)).toBe(true);
+    expect(canUseCatalogRag(readsOnly)).toBe(false);
+
+    // The invariant the conjunction protects: search is never broader than
+    // reading, so the search permission without the reading one grants nothing.
+    const searchesOnly = {
+      ...context(null),
+      catalogGrant: { role: "listener" as const, extras: ["search_transcripts"] },
+    };
+    expect(canViewCatalogTranscripts(searchesOnly)).toBe(false);
+    expect(canUseCatalogRag(searchesOnly)).toBe(false);
+  });
+
+  it("gives search to an administrator holding no grant", () => {
+    expect(canUseCatalogRag(context(null, true))).toBe(true);
+  });
+});
+
 describe("granting rule", () => {
-  const host = context("OWNER");
+  const host = context("host");
   const admin = context(null, true);
 
   it("lets a host grant ordinary roles but not extras or protected roles", () => {
@@ -298,7 +450,6 @@ describe("granting rule", () => {
 
   it("requires an administrator to edit or restore a grant carrying extras", () => {
     const grant = {
-      level: null,
       role: "reader" as const,
       extras: ["download_audio"],
     };
@@ -309,14 +460,12 @@ describe("granting rule", () => {
   it("lets a host revoke an ordinary role even when an administrator added extras", () => {
     expect(
       canRevokeExistingCatalogGrant(host, {
-        level: null,
         role: "reader",
         extras: ["download_audio", "future_permission"],
       })
     ).toBe(true);
     expect(
       canRevokeExistingCatalogGrant(host, {
-        level: null,
         role: "catalog_admin",
         extras: [],
       })
@@ -325,12 +474,12 @@ describe("granting rule", () => {
 
   it("stops manage_access propagating itself", () => {
     // The point of protecting it: an account that grants cannot mint another.
-    const grantingLevels = LEVELS.filter((level) =>
-      permissionsForRole(roleForLevel(level).role).has("manage_access")
+    const grantingRoles = CATALOG_ROLES.filter((role) =>
+      permissionsForRole(role).has("manage_access")
     );
-    expect(grantingLevels.length).toBeGreaterThan(0);
-    for (const level of grantingLevels) {
-      expect(canGrantCatalogGrant(host, roleForLevel(level).role)).toBe(false);
+    expect(grantingRoles.length).toBeGreaterThan(0);
+    for (const role of grantingRoles) {
+      expect(canGrantCatalogGrant(host, role)).toBe(false);
     }
   });
 
@@ -346,7 +495,6 @@ describe("granting rule", () => {
       expect(canGrantCatalogGrant(admin, role)).toBe(true);
       expect(
         canManageExistingCatalogGrant(admin, {
-          level: null,
           role,
           extras: ["future_permission"],
         })
@@ -355,11 +503,10 @@ describe("granting rule", () => {
   });
 
   it("gives nothing to an actor without manage_access", () => {
-    const reader = context("VIEWER");
+    const reader = context("reader");
     expect(canGrantCatalogGrant(reader, "listener")).toBe(false);
     expect(
       canManageExistingCatalogGrant(reader, {
-        level: null,
         role: "listener",
         extras: [],
       })
@@ -411,15 +558,15 @@ describe("catalog gates answer from the permission set", () => {
     },
   ];
 
-  it.each(GATES)("$name agrees with its permission at every level", ({ gate, permission }) => {
-    for (const level of LEVELS) {
-      expect(gate(context(level))).toBe(grantHasPermission(grantFromLevel(level), false, permission));
+  it.each(GATES)("$name agrees with its permission for every role", ({ gate, permission }) => {
+    for (const role of CATALOG_ROLES) {
+      expect(gate(context(role))).toBe(grantHasPermission(grantForRole(role), false, permission));
     }
     expect(gate(context(null, true))).toBe(grantHasPermission(null, true, permission));
   });
 
   it("refuses everything to an actor who cannot open the catalog", () => {
-    const outsider = { ...context("OWNER"), catalogExists: false };
+    const outsider = { ...context("host"), catalogExists: false };
     for (const { gate } of GATES) {
       expect(gate(outsider)).toBe(false);
     }

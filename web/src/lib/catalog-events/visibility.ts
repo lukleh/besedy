@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import {
-  canViewRecordingForAccessLevel,
+  canViewRecordingForGrant,
   type RecordingVisibilityState,
 } from "@/lib/policy/recording";
 import { canViewEvent, type ReleasedVisibleEventState } from "@/lib/policy/event";
@@ -17,7 +17,7 @@ type EventVisibilityRow = {
 function isListenerVisibleRecordingState(
   state: RecordingVisibilityState | undefined
 ): boolean {
-  return canViewRecordingForAccessLevel(grantForRole("listener"), state);
+  return canViewRecordingForGrant(grantForRole("listener"), state);
 }
 
 function isListenerVisibleEventRow(row: EventVisibilityRow): boolean {
