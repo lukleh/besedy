@@ -6,7 +6,9 @@ import { requireAdminCapability } from "@/lib/access/require-admin";
 import { CreateFullCatalogSchema } from "@/lib/validation/schemas";
 import { validateMutationSource, validateRequestBody, handlePrismaError } from "@/lib/api";
 import { logCatalogLifecycleEvent } from "@/lib/audit/logger";
+import { syncCatalogGroup, type CatalogSyncResult } from "@/lib/catalog-sync";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
@@ -52,6 +54,11 @@ export async function GET() {
 /**
  * POST /api/catalogs - Create a new workflow group (catalog)
  * Requires: superadmin or canManageCatalogs capability
+ *
+ * The new group's CSVs are projected into the database right away, the same
+ * sync the "Sync Catalog" action runs, so its recordings appear without waiting
+ * for a restart. The group is created even when that sync fails; the result is
+ * returned as `catalogSync` and the action can be retried from the settings.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -106,8 +113,29 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(group, { status: 201 });
+    const catalogSync = await syncNewCatalog(group.id);
+
+    return NextResponse.json({ ...group, catalogSync }, { status: 201 });
   } catch (error) {
     return handlePrismaError(error, "catalog", "create");
   }
+}
+
+async function syncNewCatalog(groupId: string): Promise<CatalogSyncResult> {
+  let result: CatalogSyncResult;
+  try {
+    result = await syncCatalogGroup(groupId);
+  } catch (error) {
+    result = {
+      groupId,
+      status: "error",
+      changedSources: [],
+      rowCounts: {},
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  if (result.status === "error") {
+    console.error(`[catalog-sync] Initial sync failed for new catalog ${groupId}: ${result.error}`);
+  }
+  return result;
 }
