@@ -452,6 +452,8 @@
     "metadataPath": "Cesta ke katalogu metadat",
     "transcriptsPath": "Cesta k přepisům",
     "addGroup": "Přidat skupinu",
+    "initialSyncFailedTitle": "Katalog byl přidán, ale jeho první synchronizace selhala",
+    "initialSyncFailedDescription": "Nahrávky se zobrazí po úspěšné synchronizaci. Opravte cesty ke katalogu a pak použijte Synchronizovat katalog v Nastavení katalogu. Chyba: {error}",
     "add": "Přidat",
     "noGroups": "Zatím nejsou nakonfigurovány žádné pracovní skupiny.",
     "noGroupsDescription": "Použijte funkci objevování níže k nalezení a přidání skupin.",
