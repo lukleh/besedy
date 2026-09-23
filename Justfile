@@ -890,7 +890,7 @@ test-up:
     # Wait for DB to be ready
     echo "Waiting for database..."
     for i in {1..30}; do
-      if {{ test_compose }} exec -T db pg_isready -U besedy_test > /dev/null 2>&1; then
+      if {{ test_compose }} exec -T db pg_isready -h 127.0.0.1 -U besedy_test > /dev/null 2>&1; then
         break
       fi
       sleep 1
@@ -1003,7 +1003,7 @@ test-ready:
     fi
 
     # Check DB ready
-    if ! {{ test_compose }} exec -T db pg_isready -U besedy_test > /dev/null 2>&1; then
+    if ! {{ test_compose }} exec -T db pg_isready -h 127.0.0.1 -U besedy_test > /dev/null 2>&1; then
       echo "Database not ready"
       exit 1
     fi

@@ -143,14 +143,24 @@ def test_jobs_env_template_leaves_per_environment_values_to_compose_defaults() -
         "BESEDY_INTERNAL_BASE_URL",
         "DEEP_SEARCH_OUTPUT_ENV",
         "DEEP_SEARCH_OUTPUT_DIR",
+        "BESEDY_OUTPUT_CHOWN_UID",
+        "BESEDY_OUTPUT_CHOWN_GID",
     }
-    assigned = {
-        line.split("=", 1)[0]
+    assigned = dict(
+        line.split("=", 1)
         for line in jobs_env_template.read_text(encoding="utf-8").splitlines()
         if "=" in line and not line.lstrip().startswith("#")
-    }
+    )
 
-    assert assigned.isdisjoint(per_environment)
+    assert assigned.keys().isdisjoint(per_environment)
+    # No shared secret ships in the template; each environment sets its own.
+    assert assigned["BESEDY_JOB_SERVICE_SECRET"] == ""
+
+
+def test_database_healthcheck_waits_for_the_tcp_listener() -> None:
+    compose = WEB_COMPOSE.read_text(encoding="utf-8")
+
+    assert "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-besedy}" in compose
 
 
 def test_database_maintenance_quiesces_scheduled_backups() -> None:
