@@ -369,3 +369,12 @@ def test_build_command_backend_process_reports_missing_docker_with_backend_name(
 def test_backend_runtime_unavailable_error_stays_a_runtime_error() -> None:
     # Commands that already catch RuntimeError keep handling it.
     assert issubclass(BackendRuntimeUnavailableError, RuntimeError)
+
+
+def test_resolve_backend_runtime_reports_an_invalid_selector_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "bogus")
+
+    with pytest.raises(BackendRuntimeUnavailableError, match="BESEDY_NEMO_RUNTIME.*'bogus'"):
+        resolve_backend_runtime("nemo")

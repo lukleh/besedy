@@ -45,7 +45,7 @@ DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
 
 
 class BackendRuntimeUnavailableError(RuntimeError):
-    """Raised when the runtime selected for a backend cannot run on this host."""
+    """Raised when the runtime selected for a backend is invalid or cannot run here."""
 
 
 @dataclass(frozen=True)
@@ -104,11 +104,11 @@ def normalize_backend_runtime(
         return normalized
     choices_label = ", ".join(repr(choice) for choice in choices)
     if backend_id in DOCKER_ONLY_BACKENDS:
-        raise RuntimeError(
+        raise BackendRuntimeUnavailableError(
             f"Unsupported {source} value: {raw_value!r}. "
             f"The {backend_id} backend is Docker-only. Expected one of {choices_label}."
         )
-    raise RuntimeError(
+    raise BackendRuntimeUnavailableError(
         f"Unsupported {source} value: {raw_value!r}. Expected one of {choices_label}."
     )
 
