@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useCatalogs } from "@/hooks/use-catalogs";
+import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 interface DiscoveredGroup {
@@ -26,6 +27,11 @@ interface DiscoveredGroup {
   archivedCatalogPath: string;
   metadataCatalogPath: string;
   transcriptsPath?: string;
+}
+
+interface CreatedCatalogResponse {
+  id: string;
+  catalogSync?: { status: "success" | "skipped" | "error"; error?: string };
 }
 
 interface DiscoverResponse {
@@ -39,6 +45,7 @@ export function SettingsContent() {
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { toast } = useToast();
 
   // Fetch existing catalogs
   const { data: groups, isLoading: loadingGroups } = useCatalogs();
@@ -56,13 +63,24 @@ export function SettingsContent() {
   // Add catalog mutation
   const addGroup = useMutation({
     mutationFn: async (group: DiscoveredGroup) => {
-      return fetchJson("/api/catalogs", {
+      return fetchJson<CreatedCatalogResponse>("/api/catalogs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(group),
       });
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // The catalog is created even when its initial sync fails; say so, or
+      // it silently shows zero recordings.
+      if (created?.catalogSync?.status === "error") {
+        toast({
+          title: t("initialSyncFailedTitle"),
+          description: t("initialSyncFailedDescription", {
+            error: created.catalogSync.error ?? "unknown error",
+          }),
+          variant: "destructive",
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["catalogs"] });
       queryClient.invalidateQueries({ queryKey: ["catalogs-discover"] });
       queryClient.invalidateQueries({ queryKey: ["preferences"] });
