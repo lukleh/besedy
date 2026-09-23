@@ -121,6 +121,32 @@ function runHealthCheck(
   });
 }
 
+describe('scheduled monitoring scripts', () => {
+  // The repo runs with core.fileMode=false, so a plain chmod never reaches git;
+  // cron runs these by path and the weekly report skips non-executable helpers.
+  it('are tracked as executable', () => {
+    const result = spawnSync('git', ['ls-files', '-s', '--', 'scripts/*.sh'], {
+      encoding: 'utf8',
+    });
+    const modes = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const [mode, , , path] = line.split(/\s+/);
+        return { mode, path };
+      });
+
+    expect(modes.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        'scripts/backup-growth-report.sh',
+        'scripts/host-backup-health-check.sh',
+        'scripts/worktree-report.sh',
+      ]),
+    );
+    expect(modes.filter(({ mode }) => mode !== '100755')).toEqual([]);
+  });
+});
+
 describe('host-backup-health-check.sh remote sync trend', () => {
   it('stays healthy when the sync is quick and the file count is stable', () => {
     const result = runHealthCheck([
