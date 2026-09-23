@@ -44,6 +44,10 @@ DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
 )
 
 
+class BackendRuntimeUnavailableError(RuntimeError):
+    """Raised when the runtime selected for a backend cannot run on this host."""
+
+
 @dataclass(frozen=True)
 class BackendProcessSpec:
     """Subprocess launch data for a backend worker."""
@@ -259,7 +263,11 @@ def _docker_runtime_ready(
     if docker_service is None:
         return False, f"{display_name} Docker runtime is not configured yet."
     if shutil.which("docker") is None:
-        return False, "Docker runtime selected but `docker` is not installed or not in PATH."
+        return False, (
+            f"{display_name} runs in Docker, but `docker` is not installed or not in PATH. "
+            "Install Docker Engine with Compose v2 (GPU backends also need the NVIDIA "
+            "Container Toolkit)."
+        )
     if not compose_file.exists():
         return False, f"{display_name} Docker compose file not found: {compose_file}"
     return True, None
@@ -405,7 +413,7 @@ def build_python_backend_process(
                 f"{display_name} isolated runtime is not configured for this caller."
             )
         if not _check_isolated_python_available(isolated_python):
-            raise RuntimeError(
+            raise BackendRuntimeUnavailableError(
                 f"{display_name} environment not set up. Run: ./besedy/scripts/{setup_script}"
             )
         env_updates = {
@@ -425,7 +433,9 @@ def build_python_backend_process(
         compose_file=compose_file,
     )
     if not ok:
-        raise RuntimeError(message or f"{display_name} Docker runtime is unavailable.")
+        raise BackendRuntimeUnavailableError(
+            message or f"{display_name} Docker runtime is unavailable."
+        )
     _validate_docker_gpu_request(
         backend_id=backend_id,
         display_name=display_name,
@@ -515,7 +525,9 @@ def build_command_backend_process(
         compose_file=compose_file,
     )
     if not ok:
-        raise RuntimeError(message or f"{display_name} Docker runtime is unavailable.")
+        raise BackendRuntimeUnavailableError(
+            message or f"{display_name} Docker runtime is unavailable."
+        )
     _validate_docker_gpu_request(
         backend_id=backend_id,
         display_name=display_name,
