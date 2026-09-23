@@ -41,6 +41,18 @@ just dev-up
 
 Useful follow-ups: `just web-check`, `just dev-logs`, `just dev-down`.
 
+The dev web container runs as the invoking user, and the compose wrapper
+creates missing dev/test mount directories as that user, so nothing in the
+checkout or the XDG state and cache homes becomes root-owned. A checkout used
+with an older dev container, which ran as root, may still hold root-owned files
+that the dev server can no longer replace. Reclaim only the root-owned entries
+once (not the whole state home: production logs there belong to UID 1001):
+
+```bash
+sudo find web ~/.cache/lukleh/besedy/web ~/.local/state/lukleh/besedy/web/logs/dev \
+  -user root -exec chown "$(id -u):$(id -g)" {} +
+```
+
 ### Test / E2E Stack
 
 ```bash
