@@ -56,22 +56,30 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  webpack(config, { webpack }) {
+  webpack(config, { webpack, nextRuntime }) {
     if (process.env.NODE_ENV === "development") {
       config.resolve = config.resolve ?? {};
-      // Next 16.3 hands webpack the tsconfig-resolved absolute path for
-      // "@/lib/..." imports, so the "@/" keys alone no longer match and the
-      // real module (and its pg dependency) leaks into the instrumentation
-      // compile. Keep both spellings so the stub applies either way.
-      const catalogSyncStartupSource = `${process.cwd()}/src/lib/catalog-sync-startup`;
       config.resolve.alias = {
         ...(config.resolve.alias ?? {}),
-        "@/lib/catalog-sync-startup$": catalogSyncStartupStub,
-        "@/lib/catalog-sync-startup.ts$": catalogSyncStartupStub,
-        [`${catalogSyncStartupSource}$`]: catalogSyncStartupStub,
-        [`${catalogSyncStartupSource}.ts$`]: catalogSyncStartupStub,
         "pg-native": false,
       };
+      if (nextRuntime === "edge") {
+        // The edge compile of instrumentation.ts follows the node-only import
+        // into catalog-sync-startup and its pg dependency, which cannot
+        // resolve node builtins such as util/types. Swap in the stub there
+        // only: the Node.js server compile must keep the real module because
+        // /api/health reads its startup sync state.
+        // Next 16.3 hands webpack the tsconfig-resolved absolute path for
+        // "@/lib/..." imports, so keep both spellings.
+        const catalogSyncStartupSource = `${process.cwd()}/src/lib/catalog-sync-startup`;
+        config.resolve.alias = {
+          ...config.resolve.alias,
+          "@/lib/catalog-sync-startup$": catalogSyncStartupStub,
+          "@/lib/catalog-sync-startup.ts$": catalogSyncStartupStub,
+          [`${catalogSyncStartupSource}$`]: catalogSyncStartupStub,
+          [`${catalogSyncStartupSource}.ts$`]: catalogSyncStartupStub,
+        };
+      }
       config.resolve.fallback = {
         ...(config.resolve.fallback ?? {}),
         crypto: false,

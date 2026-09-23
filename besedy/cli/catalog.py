@@ -8,6 +8,7 @@ Supports creating, validating, and processing audio file catalogs.
 from __future__ import annotations
 
 import argparse
+import sys
 
 from besedy.cli.parser_utils import BesedyDefaultsHelpFormatter
 from besedy.commands.catalog import (
@@ -34,6 +35,7 @@ from besedy.commands.catalog import (
 from besedy.commands.catalog import (
     hash as hash_cmd,
 )
+from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 from besedy.lib.subprocess_utils import install_signal_handlers
 
 
@@ -82,7 +84,13 @@ def main(argv: list[str] | None = None) -> int:
     if handler is None:
         parser.print_help()
         return 1
-    return handler(args)
+    try:
+        return handler(args)
+    except BackendRuntimeUnavailableError as exc:
+        # A missing backend runtime (for example no Docker) is a setup problem,
+        # not a crash; report it without a traceback.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

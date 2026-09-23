@@ -1,6 +1,17 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
+import path from "node:path";
 import { afterEach, vi, beforeAll } from "vitest";
+import { webEnvVarNames } from "./env-isolation";
+
+// Unit tests must not depend on the operator's shell. Clear every variable the
+// web app reads (the env templates, including commented-out optional keys, plus
+// the extras in env-isolation.ts) before any test module loads, so a sourced env
+// file such as web.env.prod cannot change results. Tests that need a value set
+// it with vi.stubEnv.
+for (const name of webEnvVarNames(path.join(__dirname, ".."))) {
+  delete process.env[name];
+}
 
 // Set up environment variables before any imports
 beforeAll(() => {

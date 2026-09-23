@@ -56,7 +56,6 @@ dev = [
 
 # Stable PyTorch with CUDA 13.0 on Linux x86_64
 [tool.uv]
-prerelease = "if-necessary-or-explicit"
 index-strategy = "unsafe-best-match"
 constraint-dependencies = [
     # 2.11.2 was yanked for accidentally merged unreleased features.

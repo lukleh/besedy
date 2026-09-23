@@ -3,6 +3,7 @@
 from besedy.lib.runtime.backend_runtime import (
     BACKEND_RUNTIME_CHOICES,
     BackendProcessSpec,
+    BackendRuntimeUnavailableError,
     backend_runtime_env_var_name,
     build_command_backend_process,
     build_python_backend_process,
@@ -16,6 +17,7 @@ from besedy.lib.runtime.docker_mounts import MountSpec, build_path_map, collapse
 __all__ = [
     "BACKEND_RUNTIME_CHOICES",
     "BackendProcessSpec",
+    "BackendRuntimeUnavailableError",
     "MountSpec",
     "backend_runtime_env_var_name",
     "build_command_backend_process",

@@ -46,6 +46,16 @@ test.describe("Smoke Tests @smoke", () => {
     const openedRoute = await openFirstPlayableCatalogItem(page);
     await waitForPageReady(page);
     await expect(page).toHaveURL(/\/catalog\/[^/]+\/(recording|event)\//);
+    if (openedRoute === "recording") {
+      // The recording page resumes from the listener's saved playback
+      // position, and a previous run of this test leaves it at the end of the
+      // track. Reopen with ?seek=0, which skips that restore, so every run
+      // starts from the beginning without a database reset between runs.
+      const startUrl = new URL(page.url());
+      startUrl.searchParams.set("seek", "0");
+      await page.goto(startUrl.toString());
+      await waitForPageReady(page);
+    }
 
     // Listener should reach a playable recording surface from the catalog UI.
     const playButton = page.getByTestId("audio-play-button").first();
