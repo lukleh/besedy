@@ -607,7 +607,31 @@ describe('worktree-report.sh', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(new RegExp(`REMOVABLE  ${merged}  \\[branch pr-branch`));
+    expect(result.stdout).toMatch(
+      new RegExp(`REMOVABLE  ${merged} .*\\(branch has 1 unpushed commit\\(s\\); the branch stays after removal\\)`),
+    );
     expect(result.stdout).toContain(`git -C ${repo} worktree remove ${merged}`);
+  });
+
+  it('does not annotate a removable branch whose commits are all pushed', () => {
+    const repo = setUpRepo();
+    const pushed = addBranchWorktree(repo, 'pushed-branch');
+    backdateGitActivity(pushed);
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.stdout).toContain(`REMOVABLE  ${pushed}`);
+    expect(result.stdout).not.toContain('unpushed commit');
+  });
+
+  it('leaves the unreadable-process note out of non-terminal output', () => {
+    const repo = setUpRepo();
+
+    // spawnSync pipes stdout, as the weekly report's command substitution does.
+    const result = runWorktreeReport(repo);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('could not be inspected');
   });
 
   it('matches regenerable ignored trees under paths git would quote', () => {

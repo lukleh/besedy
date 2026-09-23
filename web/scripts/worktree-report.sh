@@ -15,8 +15,10 @@
 #   - no git activity (checkout, commit, index change) for WORKTREE_MIN_IDLE_DAYS.
 # The git and docker checks fail closed: if git or docker cannot answer, the
 # worktree is KEEP. The process check sees only processes whose working
-# directory this user may read (all of them when run as root); the report says
-# how many it could not inspect.
+# directory this user may read (all of them when run as root); run from a
+# terminal, the report says how many it could not inspect. A removable branch
+# worktree with commits on no remote is annotated: the branch survives removal
+# but is then their only copy.
 # Anything else is KEEP with the reasons listed; an unlocked registered worktree
 # whose directory is gone is PRUNE (`git worktree prune` cleans it up).
 #
@@ -178,7 +180,7 @@ prunable=0
 report_worktree() {
     local repo="$1" path="$2" head="$3" ref="$4" locked="$5" missing="$6"
     local label reasons="" files="" active="unknown" active_epoch="" idle_days=0 where=""
-    local unpushed="" precious_count=0
+    local unpushed="" unpushed_count="" precious_count=0 note=""
     local -a why=()
 
     if [ -n "$ref" ]; then
@@ -226,6 +228,14 @@ report_worktree() {
         elif [ -n "$unpushed" ]; then
             why+=("detached HEAD with commits not on any branch")
         fi
+    else
+        # Not a reason to keep the worktree, but after removal the local branch
+        # is the only copy of these commits, so say so.
+        if ! unpushed_count="$(git -C "$path" rev-list --count HEAD --not --remotes 2>/dev/null)"; then
+            note="  (unpushed commits unknown; the branch stays after removal)"
+        elif [ "$unpushed_count" -gt 0 ]; then
+            note="  (branch has $unpushed_count unpushed commit(s); the branch stays after removal)"
+        fi
     fi
 
     active_epoch="$(last_git_activity "$path")"
@@ -245,7 +255,7 @@ report_worktree() {
     fi
 
     if [ "${#why[@]}" -eq 0 ]; then
-        removable_rows+="  REMOVABLE  $path  [$label, last active $active]  ${files:-?} files$where"$'\n'
+        removable_rows+="  REMOVABLE  $path  [$label, last active $active]  ${files:-?} files$where$note"$'\n'
         remove_commands+=("$(printf 'git -C %q worktree remove %q' "$repo" "$path")")
         removable=$((removable + 1))
     else
@@ -287,7 +297,9 @@ echo "Linked git worktrees: $total ($removable removable, $kept kept, $prunable 
 if [ "$docker_state" = "failed" ]; then
     echo "Note: '$WORKTREE_REPORT_DOCKER ps' failed, so no worktree is marked removable."
 fi
-if [ "$unreadable_processes" -gt 0 ]; then
+# Only on a terminal: in the weekly email this would be the same line every
+# week (root and system daemons), and the header documents the limitation.
+if [ "$unreadable_processes" -gt 0 ] && [ -t 1 ]; then
     echo "Note: $unreadable_processes process(es) of other users could not be inspected; a worktree only they use is not detected (run as root for a complete check)."
 fi
 [ "$total" -gt 0 ] || exit 0

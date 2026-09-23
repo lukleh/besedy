@@ -861,8 +861,10 @@ are not a reason to keep the worktree), and is not used by a Docker container
 (compose working dir or bind mount) or a running process. The git and docker
 checks fail closed: if git or `docker ps` cannot answer, the worktree is kept.
 The process check can only see processes of the invoking user unless run as
-root, and says how many it skipped. It prints `git worktree remove` commands
-but never runs them.
+root; run from a terminal, it says how many it skipped. A removable branch
+worktree whose branch has commits on no remote is annotated with that count,
+since after removal the local branch is their only copy. It prints
+`git worktree remove` commands but never runs them.
 
 **`security-update-check.sh`** -- Runs `npm audit` and Trivy CVE scan against
 the production image, checks base-image freshness (default
