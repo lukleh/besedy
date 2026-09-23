@@ -1,18 +1,16 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, vi, beforeAll } from "vitest";
+import { webEnvVarNames } from "./env-isolation";
 
 // Unit tests must not depend on the operator's shell. Clear every variable the
-// web env templates define (including commented-out optional ones) before any
-// test module loads, so a sourced env file such as web.env.prod cannot change
-// results. Tests that need a value set it with vi.stubEnv.
-for (const template of [".env.dev.example", ".env.test.example", ".env.prod.example"]) {
-  const text = readFileSync(path.join(__dirname, "..", template), "utf8");
-  for (const [, name] of text.matchAll(/^#?[ \t]*([A-Z][A-Z0-9_]*)=/gm)) {
-    delete process.env[name];
-  }
+// web app reads (the env templates, including commented-out optional keys, plus
+// the extras in env-isolation.ts) before any test module loads, so a sourced env
+// file such as web.env.prod cannot change results. Tests that need a value set
+// it with vi.stubEnv.
+for (const name of webEnvVarNames(path.join(__dirname, ".."))) {
+  delete process.env[name];
 }
 
 // Set up environment variables before any imports
