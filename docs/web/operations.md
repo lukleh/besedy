@@ -48,9 +48,10 @@ new migrations.
 - Web: `http://localhost:3001`, DB: `localhost:5433`
 - Uses mock OAuth -- no real Google credentials needed.
 - pgAdmin available via `just dev-up-tools` at `http://localhost:5050`.
-- The dev server skips the startup catalog sync. After adding a catalog under
-  **Admin -> Catalogs**, open its **Catalog Settings** and press **Sync Catalog**
-  before recordings appear.
+- Adding a catalog under **Admin -> Catalogs** syncs its CSVs into the
+  database. The dev server skips the startup catalog sync, so after a catalog's
+  CSVs change (for example after `just catalog add`), open its
+  **Catalog Settings** and press **Sync Catalog**.
 
 Useful follow-ups: `just web-check`, `just dev-logs`, `just dev-down`.
 
