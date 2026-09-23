@@ -2,8 +2,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -25,9 +27,10 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'besedy-backup-trend-'));
   fakeBin = join(root, 'bin');
   mkdirSync(fakeBin);
-  // Keep tests out of syslog and away from real mail.
+  // Keep tests out of syslog and away from real mail; sent mail is appended
+  // to mail.log so tests can count it.
   writeExecutable(join(fakeBin, 'logger'), '#!/bin/sh\nexit 0\n');
-  writeExecutable(join(fakeBin, 'sendmail'), '#!/bin/sh\ncat >/dev/null\n');
+  writeExecutable(join(fakeBin, 'sendmail'), `#!/bin/sh\ncat >> "${join(root, 'mail.log')}"\n`);
 });
 
 afterEach(() => {
@@ -44,6 +47,15 @@ function writeFiles(dir: string, count: number) {
   for (let i = 0; i < count; i++) writeFileSync(join(dir, `f${i}`), '');
 }
 
+function sentMailSubjects(): string[] {
+  const mailLog = join(root, 'mail.log');
+  if (!existsSync(mailLog)) return [];
+  return readFileSync(mailLog, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('Subject: '))
+    .map((line) => line.slice('Subject: '.length));
+}
+
 function stamp(minutesAgo: number): string {
   const d = new Date(Date.now() - minutesAgo * 60_000);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -53,7 +65,8 @@ function stamp(minutesAgo: number): string {
   );
 }
 
-type SyncRecord = { endMinutesAgo: number; durationMinutes: number; files: number };
+// `files` undefined = the rsync stats line is missing from that run's output.
+type SyncRecord = { endMinutesAgo: number; durationMinutes: number; files?: number };
 
 function syncLog(records: SyncRecord[], trailer = ''): string {
   return (
@@ -62,7 +75,9 @@ function syncLog(records: SyncRecord[], trailer = ''): string {
         [
           `[${stamp(endMinutesAgo + durationMinutes)}] Starting remote snapshot sync to host::module/`,
           '',
-          `Number of files: ${files.toLocaleString('en-US')} (reg: ${files})`,
+          ...(files === undefined
+            ? []
+            : [`Number of files: ${files.toLocaleString('en-US')} (reg: ${files})`]),
           'Total file size: 1.00G bytes',
           `[${stamp(endMinutesAgo)}] Remote snapshot sync completed successfully.`,
         ].join('\n'),
@@ -116,6 +131,7 @@ function runHealthCheck(
       BESEDY_OPS_ENV: opsEnv,
       EXTRA_MAP_FILE: mapFile,
       PROJECT_REQUIRED_PATHS: options.requiredPath ?? 'projects/besedy',
+      HOST_BACKUP_STATE_FILE: join(root, 'trend.state'),
       ALERT_EMAIL: '',
       REPORT_EMAIL: '',
       ...options.env,
@@ -261,6 +277,91 @@ describe('host-backup-health-check.sh remote sync trend', () => {
     expect(result.stdout).toContain('project_remote_sync_files=1000');
   });
 
+  it('does not count a dry-run sync as remote coverage either', () => {
+    // A real sync 40h ago, then a connectivity test: coverage must be stale.
+    const result = runHealthCheck(
+      [{ endMinutesAgo: 40 * 60, durationMinutes: 30, files: 1000 }],
+      {
+        projectTrailer: [
+          `[${stamp(60)}] Running remote snapshot sync in dry-run mode (RSYNC_DRY_RUN=1)`,
+          `[${stamp(60)}] Starting remote snapshot sync to host::module/`,
+          'Number of files: 5 (reg: 5)',
+          `[${stamp(50)}] Remote snapshot sync completed successfully.`,
+          '',
+        ].join('\n'),
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('Latest project remote sync is too old: 40h');
+    expect(result.stdout).toContain('project_remote_sync_age_hours=40');
+  });
+
+  it('skips an old-enough baseline without a file count and uses the next older one', () => {
+    const result = runHealthCheck([
+      { endMinutesAgo: 10 * DAY, durationMinutes: 30, files: 1000 },
+      { endMinutesAgo: 8 * DAY, durationMinutes: 30 },
+      { endMinutesAgo: 60, durationMinutes: 30, files: 1300 },
+    ]);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain('project remote sync file count grew 30%');
+    expect(result.stdout).toContain('(vs 1000 at');
+  });
+
+  it('emails an unchanged trend warning once per repeat window', () => {
+    const env = { ALERT_EMAIL: 'ops@example.com' };
+    const slow: SyncRecord[] = [{ endMinutesAgo: 60, durationMinutes: 150, files: 1000 }];
+
+    expect(runHealthCheck(slow, { env }).status).toBe(3);
+    // Same warning kind, different minutes: still the same condition.
+    expect(
+      runHealthCheck([{ endMinutesAgo: 60, durationMinutes: 160, files: 1000 }], { env })
+        .status,
+    ).toBe(3);
+    expect(sentMailSubjects()).toEqual(['[Besedy] Host backup trend WARNING']);
+
+    // A new warning kind is news and is emailed at once.
+    const slowAndGrown: SyncRecord[] = [
+      { endMinutesAgo: 8 * DAY, durationMinutes: 30, files: 1000 },
+      { endMinutesAgo: 60, durationMinutes: 150, files: 1400 },
+    ];
+    expect(runHealthCheck(slowAndGrown, { env }).status).toBe(3);
+    expect(sentMailSubjects()).toHaveLength(2);
+
+    // A repeat window of 0 emails the unchanged warning on every run.
+    runHealthCheck(slowAndGrown, { env: { ...env, REMOTE_SYNC_WARNING_REPEAT_HOURS: '0' } });
+    expect(sentMailSubjects()).toHaveLength(3);
+
+    // A healthy run clears the state, so the next warning is emailed again.
+    expect(runHealthCheck([{ endMinutesAgo: 60, durationMinutes: 30, files: 1000 }], { env }).status).toBe(0);
+    expect(existsSync(join(root, 'trend.state'))).toBe(false);
+    runHealthCheck(slow, { env });
+    expect(sentMailSubjects()).toHaveLength(4);
+  });
+
+  it('does not record a trend alert when no email was sent', () => {
+    // The weekly report runs the check with ALERT_EMAIL unset; that must not
+    // suppress the cron run's email afterwards.
+    const slow: SyncRecord[] = [{ endMinutesAgo: 60, durationMinutes: 150, files: 1000 }];
+    expect(runHealthCheck(slow).status).toBe(3);
+    expect(existsSync(join(root, 'trend.state'))).toBe(false);
+
+    runHealthCheck(slow, { env: { ALERT_EMAIL: 'ops@example.com' } });
+    expect(sentMailSubjects()).toEqual(['[Besedy] Host backup trend WARNING']);
+  });
+
+  it('rejects a non-integer repeat window', () => {
+    const result = runHealthCheck([], {
+      env: { REMOTE_SYNC_WARNING_REPEAT_HOURS: 'weekly' },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'REMOTE_SYNC_WARNING_REPEAT_HOURS must be a non-negative integer',
+    );
+  });
+
   it('keeps a growth baseline from the newest rotated log', () => {
     writeFileSync(
       join(root, 'project.log.20260101_000000.gz'),
@@ -322,6 +423,26 @@ describe('backup-growth-report.sh', () => {
     expect(result.stdout).not.toContain('steady');
   });
 
+  it('charges a hard-linked file to every directory that holds it', () => {
+    // uv hard-links .venv files to its cache, so sibling trees share inodes.
+    // rsync -H syncs each top-level path in full, and the report must not make
+    // the count depend on which sibling du happened to visit first.
+    const snapshots = join(root, 'rsnapshot');
+    writeFiles(join(snapshots, 'daily.0', 'projects', 'aaa'), 1);
+    mkdirSync(join(snapshots, 'daily.0', 'projects', 'zzz'));
+    linkSync(
+      join(snapshots, 'daily.0', 'projects', 'aaa', 'f0'),
+      join(snapshots, 'daily.0', 'projects', 'zzz', 'f0'),
+    );
+    writeFiles(join(snapshots, 'daily.2', 'projects', 'steady'), 1);
+
+    const result = runGrowthReport();
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/\+2\s+0 -> 2\s+aaa \(new\)/);
+    expect(result.stdout).toMatch(/\+2\s+0 -> 2\s+zzz \(new\)/);
+  });
+
   it('honors the listing limit', () => {
     const snapshots = join(root, 'rsnapshot');
     writeFiles(join(snapshots, 'daily.0', 'projects', 'big'), 9);
@@ -372,7 +493,11 @@ describe('worktree-report.sh', () => {
     git(root, 'init', '-b', 'main', repo);
     writeFileSync(join(repo, 'README.md'), 'hello\n');
     writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.env.local\n');
-    git(repo, 'add', 'README.md', '.gitignore');
+    // A tracked file under a name git quotes in porcelain output, so an ignored
+    // tree inside it is listed on its own instead of collapsed into the parent.
+    mkdirSync(join(repo, 'pře pis'));
+    writeFileSync(join(repo, 'pře pis', 'keep.txt'), 'tracked\n');
+    git(repo, 'add', 'README.md', '.gitignore', 'pře pis/keep.txt');
     git(repo, 'commit', '-m', 'init');
     git(repo, 'remote', 'add', 'origin', origin);
     git(repo, 'push', '-u', 'origin', 'main');
@@ -382,6 +507,12 @@ describe('worktree-report.sh', () => {
   function addWorktree(repo: string, name: string, ...extra: string[]) {
     const path = join(root, 'wt', name);
     git(repo, 'worktree', 'add', '--detach', path, 'main', ...extra);
+    return path;
+  }
+
+  function addBranchWorktree(repo: string, name: string) {
+    const path = join(root, 'wt', name);
+    git(repo, 'worktree', 'add', '-b', name, path, 'main');
     return path;
   }
 
@@ -418,13 +549,25 @@ describe('worktree-report.sh', () => {
     git(unpushed, 'add', 'change.txt');
     git(unpushed, 'commit', '-m', 'local only');
     const container = addWorktree(repo, 'container');
+    const mounted = addWorktree(repo, 'mounted');
+    // `docker ps -a --format` lists compose working dirs, `docker ps -aq` ids,
+    // `docker inspect` the bind-mount sources of those ids.
     writeExecutable(
       join(fakeBin, 'fake-docker'),
-      `#!/bin/sh\necho "${container}/web"\n`,
+      [
+        '#!/bin/sh',
+        'case "$1 $2" in',
+        `  "ps -aq") echo c1 ;;`,
+        `  "ps -a") echo "${container}/web" ;;`,
+        `  "inspect --format") echo "${mounted}/data" ;;`,
+        '  *) exit 1 ;;',
+        'esac',
+        '',
+      ].join('\n'),
     );
     const missing = addWorktree(repo, 'missing');
     rmSync(missing, { recursive: true, force: true });
-    for (const wt of [clean, dirty, unpushed, container]) backdateGitActivity(wt);
+    for (const wt of [clean, dirty, unpushed, container, mounted]) backdateGitActivity(wt);
 
     const result = runWorktreeReport(repo, {
       WORKTREE_REPORT_DOCKER: join(fakeBin, 'fake-docker'),
@@ -432,19 +575,52 @@ describe('worktree-report.sh', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      'Linked git worktrees: 5 (1 removable, 3 kept, 1 with missing directories)',
+      'Linked git worktrees: 6 (1 removable, 4 kept, 1 with missing directories)',
     );
     expect(result.stdout).toMatch(new RegExp(`REMOVABLE  ${clean} .*\\(inside backup tree\\)`));
     expect(result.stdout).toMatch(new RegExp(`KEEP       ${dirty} .*uncommitted changes`));
     expect(result.stdout).toMatch(
-      new RegExp(`KEEP       ${unpushed} .*commits not on any remote branch`),
+      new RegExp(`KEEP       ${unpushed} .*detached HEAD with commits not on any branch`),
     );
     expect(result.stdout).toMatch(
       new RegExp(`KEEP       ${container} .*used by a Docker container`),
     );
+    expect(result.stdout).toMatch(
+      new RegExp(`KEEP       ${mounted} .*used by a Docker container`),
+    );
     expect(result.stdout).toContain(`PRUNE      ${missing}`);
     expect(result.stdout).toContain(`git -C ${repo} worktree remove ${clean}`);
     expect(result.stdout).not.toContain(`worktree remove ${dirty}`);
+  });
+
+  it('treats a checked-out branch with unpushed commits as removable', () => {
+    // `git worktree remove` keeps the branch, so nothing is lost: this is the
+    // squash-merged PR worktree the report exists to find.
+    const repo = setUpRepo();
+    const merged = addBranchWorktree(repo, 'pr-branch');
+    writeFileSync(join(merged, 'change.txt'), 'x\n');
+    git(merged, 'add', 'change.txt');
+    git(merged, 'commit', '-m', 'squash-merged upstream, never pushed as-is');
+    backdateGitActivity(merged);
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(new RegExp(`REMOVABLE  ${merged}  \\[branch pr-branch`));
+    expect(result.stdout).toContain(`git -C ${repo} worktree remove ${merged}`);
+  });
+
+  it('matches regenerable ignored trees under paths git would quote', () => {
+    const repo = setUpRepo();
+    const quoted = addWorktree(repo, 'quoted');
+    // core.quotePath (the default) prints this as "p\305\231e pis/node_modules/".
+    writeFiles(join(quoted, 'pře pis', 'node_modules', 'pkg'), 2);
+    backdateGitActivity(quoted);
+
+    const result = runWorktreeReport(repo);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`REMOVABLE  ${quoted}`);
   });
 
   it('keeps a recently active worktree and does not refresh its index', () => {

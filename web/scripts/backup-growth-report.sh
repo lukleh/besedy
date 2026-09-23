@@ -3,7 +3,11 @@
 # most, by file count, between the oldest and newest daily snapshot.
 #
 # File count (not bytes) is what drives the hard-link-preserving remote sync
-# time, so this is the list to look at when the sync gets slow.
+# time, so this is the list to look at when the sync gets slow. Hard links are
+# counted under every directory that holds one (du -l): rsync -H walks each
+# top-level path in full, and without -l a shared inode (uv links .venv files
+# to its cache) would be charged to whichever sibling du visited first, making
+# the per-directory numbers depend on directory order.
 #
 # Configuration (ops.env or environment):
 #   PROJECT_SNAPSHOT_ROOT  - rsnapshot root of the generic project backup (required)
@@ -44,7 +48,7 @@ count_top_level() {
     shopt -u nullglob dotglob
     [ "${#entries[@]}" -gt 0 ] || return 0
 
-    du --inodes -s -- "${entries[@]}" 2>/dev/null | while IFS=$'\t' read -r count path; do
+    du --inodes -s -l -- "${entries[@]}" 2>/dev/null | while IFS=$'\t' read -r count path; do
         printf '%s\t%s\n' "$count" "${path##*/}"
     done
 }

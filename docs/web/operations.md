@@ -817,8 +817,9 @@ snapshot root. Calls
 (suppressed email) to embed backup status, plus the read-only
 `backup-growth-report.sh` (top-level directories of the project snapshot that
 grew most by file count over the retained dailies) and `worktree-report.sh`
-(linked git worktrees and which ones look safe to remove). Sends every run when
-`REPORT_EMAIL` is set.
+(linked git worktrees and which ones look safe to remove); each helper is cut
+off after `HELPER_REPORT_TIMEOUT_SECONDS` (default 600) so a cold snapshot
+filesystem cannot stall the report. Sends every run when `REPORT_EMAIL` is set.
 
 **`backup-health-check.sh`** -- Verifies: backup dir exists, latest
 `besedy_YYYYMMDD_HHMMSS.sql.gz` exists and is fresh (default `MAX_AGE_HOURS=30`),
@@ -836,20 +837,32 @@ than `REMOTE_SYNC_MAX_DURATION_MINUTES` (default 120) or its synced file count
 grew more than `REMOTE_SYNC_MAX_GROWTH_PERCENT` (default 25) against the last
 successful sync at least `REMOTE_SYNC_GROWTH_WINDOW_DAYS` (default 7) earlier.
 Those are the signs that preceded the September 2026 remote sync overruns.
-The trend check also reads the newest rotated `back_up.sh` log, times a retried
-sync from its first attempt, and ignores `RSYNC_DRY_RUN` runs.
+Both checks read the newest rotated `back_up.sh` log, time a retried sync from
+its first attempt, and ignore `RSYNC_DRY_RUN` runs (which also log a success
+line without copying anything). A slow sync stays slow for days, so the
+warning email is repeated only when the set of warning kinds changes or
+`REMOTE_SYNC_WARNING_REPEAT_HOURS` (default 168) have passed since the last
+one; the exit code and syslog line fire every run. The last email is recorded
+in `HOST_BACKUP_STATE_FILE` (default
+`~/.local/state/lukleh/besedy/host-backup-trend.state`) and forgotten once the
+check is healthy again.
 
 **`backup-growth-report.sh`** and **`worktree-report.sh`** -- On-demand,
 read-only helpers (also embedded in the weekly report). The growth report
 compares per-directory file counts between the oldest and newest daily project
-snapshot. The worktree report lists every linked worktree of the git repos
-under `~/projects` and marks it `REMOVABLE` only when it is clean, fully pushed,
+snapshot; hard-linked files count under every directory that holds one, as
+`rsync -H` syncs them. The worktree report lists every linked worktree of the
+git repos under `~/projects` and marks it `REMOVABLE` only when it is clean,
 unlocked, idle for `WORKTREE_MIN_IDLE_DAYS` (default 3), holds no gitignored
 files beyond regenerable build/dependency trees (`git worktree remove` deletes
-ignored files without `--force`), and is not used by a Docker container or a
-running process. Every check fails closed: if git or `docker ps` cannot answer,
-the worktree is kept. It prints `git worktree remove` commands but never runs
-them.
+ignored files without `--force`), has no detached-HEAD commits missing from
+every branch (a checked-out branch survives removal, so its unpushed commits
+are not a reason to keep the worktree), and is not used by a Docker container
+(compose working dir or bind mount) or a running process. The git and docker
+checks fail closed: if git or `docker ps` cannot answer, the worktree is kept.
+The process check can only see processes of the invoking user unless run as
+root, and says how many it skipped. It prints `git worktree remove` commands
+but never runs them.
 
 **`security-update-check.sh`** -- Runs `npm audit` and Trivy CVE scan against
 the production image, checks base-image freshness (default

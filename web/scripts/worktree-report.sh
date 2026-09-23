@@ -6,11 +6,17 @@
 #   - no tracked changes and no untracked files,
 #   - no gitignored files other than regenerable trees (`git worktree remove`
 #     deletes ignored files without --force, e.g. .env.local or local outputs),
-#   - no commits missing from every remote-tracking branch,
-#   - no lock, no Docker container started from it (compose working_dir),
+#   - when its HEAD is detached, no commits missing from every branch (a
+#     checked-out branch survives `git worktree remove`, so its commits are
+#     never lost with the worktree, pushed or not),
+#   - no lock, no Docker container started from it (compose working_dir) or
+#     bind-mounting a path inside it,
 #   - no process with its current directory inside it,
 #   - no git activity (checkout, commit, index change) for WORKTREE_MIN_IDLE_DAYS.
-# Every check fails closed: if git or docker cannot answer, the worktree is KEEP.
+# The git and docker checks fail closed: if git or docker cannot answer, the
+# worktree is KEEP. The process check sees only processes whose working
+# directory this user may read (all of them when run as root); the report says
+# how many it could not inspect.
 # Anything else is KEEP with the reasons listed; an unlocked registered worktree
 # whose directory is gone is PRUNE (`git worktree prune` cleans it up).
 #
@@ -55,15 +61,28 @@ else
 fi
 
 declare -a busy_dirs=()
+
+# Host paths bind-mounted into any container: `docker run -v <worktree>:/x`
+# sets no compose label, so the working_dir label alone would miss it.
+docker_bind_mount_sources() {
+    local ids=""
+    ids="$("$WORKTREE_REPORT_DOCKER" ps -aq 2>/dev/null)" || return 1
+    [ -n "$ids" ] || return 0
+    # shellcheck disable=SC2086
+    "$WORKTREE_REPORT_DOCKER" inspect --format \
+        '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{"\n"}}{{end}}{{end}}' $ids 2>/dev/null
+}
+
 # "none" = docker not installed (no containers possible), "failed" = installed
 # but could not be queried (daemon down, no socket access): fail closed.
 docker_state="none"
 if command -v "$WORKTREE_REPORT_DOCKER" >/dev/null 2>&1; then
-    if docker_dirs="$("$WORKTREE_REPORT_DOCKER" ps -a --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null)"; then
+    if docker_dirs="$("$WORKTREE_REPORT_DOCKER" ps -a --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null)" &&
+        docker_mounts="$(docker_bind_mount_sources)"; then
         docker_state="ok"
         while IFS= read -r dir; do
             [ -n "$dir" ] && busy_dirs+=("container|$dir")
-        done <<< "$docker_dirs"
+        done <<< "$docker_dirs"$'\n'"$docker_mounts"
     else
         docker_state="failed"
     fi
@@ -74,9 +93,14 @@ fi
 REGENERABLE_IGNORED='node_modules .venv .next __pycache__ .pytest_cache .ruff_cache .mypy_cache .tox next-env.d.ts'
 # Repo-relative generated outputs of this repo's own builds (Prisma client, e2e fixtures).
 REGENERABLE_IGNORED_PATHS='web/src/generated web/tests/e2e/fixtures'
+# Only root can read every process's cwd; count the ones this user cannot.
+unreadable_processes=0
 for proc in /proc/[0-9]*; do
-    dir="$(readlink "$proc/cwd" 2>/dev/null || true)"
-    [ -n "$dir" ] && busy_dirs+=("process|$dir")
+    if dir="$(readlink "$proc/cwd" 2>/dev/null)"; then
+        [ -n "$dir" ] && busy_dirs+=("process|$dir")
+    elif [ -d "$proc" ]; then
+        unreadable_processes=$((unreadable_processes + 1))
+    fi
 done
 
 # Print the kinds of users (container, process) whose directory is inside $1.
@@ -104,20 +128,43 @@ last_git_activity() {
         sort -n | tail -n1
 }
 
-# Print ignored paths from `git status --porcelain --ignored` that are not
-# regenerable trees, one per line.
-precious_ignored_paths() {
-    local line entry name
-    while IFS= read -r line; do
-        [[ "$line" == '!! '* ]] || continue
-        entry="${line#!! }"
-        entry="${entry%/}"
-        name="${entry##*/}"
+# Read `git status --porcelain -z --ignored` from stdin. Sets status_dirty=1
+# when anything but ignored entries is listed and status_precious to the
+# ignored paths (one per line) that are not regenerable trees. NUL-separated
+# output keeps paths raw; the default output quotes non-ASCII and special
+# characters, which would break the basename match.
+status_dirty=0
+status_precious=""
+read_status() {
+    local entry xy path name skip_source=0
+    status_dirty=0
+    status_precious=""
+    while IFS= read -r -d '' entry; do
+        if [ "$skip_source" = "1" ]; then
+            # The record after a rename/copy is its source path.
+            skip_source=0
+            continue
+        fi
+        xy="${entry:0:2}"
+        path="${entry:3}"
+        case "$xy" in
+            *R*|*C*) skip_source=1 ;;
+        esac
+        if [ "$xy" != '!!' ]; then
+            status_dirty=1
+            continue
+        fi
+        path="${path%/}"
+        name="${path##*/}"
         [[ " $REGENERABLE_IGNORED " == *" $name "* || "$name" == *.pyc || "$name" == *.tsbuildinfo ]] && continue
-        [[ " $REGENERABLE_IGNORED_PATHS " == *" $entry "* ]] && continue
-        printf '%s\n' "$entry"
+        [[ " $REGENERABLE_IGNORED_PATHS " == *" $path "* ]] && continue
+        status_precious+="$path"$'\n'
     done
+    status_precious="${status_precious%$'\n'}"
 }
+
+status_tmp="$(mktemp)"
+trap 'rm -f "$status_tmp"' EXIT
 
 now_epoch="$(date +%s)"
 removable_rows=""
@@ -131,7 +178,7 @@ prunable=0
 report_worktree() {
     local repo="$1" path="$2" head="$3" ref="$4" locked="$5" missing="$6"
     local label reasons="" files="" active="unknown" active_epoch="" idle_days=0 where=""
-    local status_output="" unpushed="" precious="" precious_count=0
+    local unpushed="" precious_count=0
     local -a why=()
 
     if [ -n "$ref" ]; then
@@ -158,23 +205,27 @@ report_worktree() {
         [ -n "$reason" ] && why+=("$reason")
     done < <(busy_reasons "$path")
 
-    if ! status_output="$(git -C "$path" status --porcelain --ignored 2>/dev/null)"; then
+    if ! git -C "$path" status --porcelain -z --ignored > "$status_tmp" 2>/dev/null; then
         why+=("git status failed")
     else
-        if grep -q -v -e '^!! ' -e '^$' <<< "$status_output"; then
-            why+=("uncommitted changes")
-        fi
-        precious="$(precious_ignored_paths <<< "$status_output")"
-        if [ -n "$precious" ]; then
-            precious_count="$(wc -l <<< "$precious")"
-            why+=("$precious_count ignored path(s) that removal would delete, e.g. $(head -n1 <<< "$precious")")
+        read_status < "$status_tmp"
+        [ "$status_dirty" = "0" ] || why+=("uncommitted changes")
+        if [ -n "$status_precious" ]; then
+            precious_count="$(wc -l <<< "$status_precious")"
+            why+=("$precious_count ignored path(s) that removal would delete, e.g. $(head -n1 <<< "$status_precious")")
         fi
     fi
 
-    if ! unpushed="$(git -C "$path" rev-list -n1 HEAD --not --remotes 2>/dev/null)"; then
-        why+=("could not compare HEAD with remote branches")
-    elif [ -n "$unpushed" ]; then
-        why+=("commits not on any remote branch")
+    # A checked-out branch keeps its commits after `git worktree remove` (the
+    # squash-merged PR worktrees this report exists for always have commits no
+    # remote branch contains). Only a detached HEAD can hold commits that no
+    # ref would point at any more.
+    if [ -z "$ref" ]; then
+        if ! unpushed="$(git -C "$path" rev-list -n1 HEAD --not --branches --remotes 2>/dev/null)"; then
+            why+=("could not compare detached HEAD with branches")
+        elif [ -n "$unpushed" ]; then
+            why+=("detached HEAD with commits not on any branch")
+        fi
     fi
 
     active_epoch="$(last_git_activity "$path")"
@@ -235,6 +286,9 @@ total=$((removable + kept + prunable))
 echo "Linked git worktrees: $total ($removable removable, $kept kept, $prunable with missing directories)"
 if [ "$docker_state" = "failed" ]; then
     echo "Note: '$WORKTREE_REPORT_DOCKER ps' failed, so no worktree is marked removable."
+fi
+if [ "$unreadable_processes" -gt 0 ]; then
+    echo "Note: $unreadable_processes process(es) of other users could not be inspected; a worktree only they use is not detected (run as root for a complete check)."
 fi
 [ "$total" -gt 0 ] || exit 0
 printf '%s%s%s' "$removable_rows" "$keep_rows" "$prune_rows"
