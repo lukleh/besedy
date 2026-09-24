@@ -127,22 +127,11 @@ export function AudioPlayer({
 
   // Background event log - always collects events even when debug is off.
   // It opens with the initial source's transport; the source-change effect
-  // below skips the mount, so that entry is created here. The page's launch
-  // note follows, so a relaunch after a kill can be read on the device.
-  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>(() => {
-    const events = [createSourceEvent(0, src)];
-    if (launchNote) {
-      events.push({
-        id: 1,
-        timestamp: new Date(),
-        type: 'lifecycle',
-        message: 'Launch',
-        details: launchNote,
-      });
-    }
-    return events;
-  });
-  const debugEventIdRef = useRef(launchNote ? 2 : 1);
+  // below skips the mount, so that entry is created here.
+  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>(() => [
+    createSourceEvent(0, src),
+  ]);
+  const debugEventIdRef = useRef(1);
 
   const logDebugEvent = useCallback(
     (type: DebugEventType, message: string, details?: string) => {
@@ -158,6 +147,16 @@ export function AudioPlayer({
     },
     [],
   );
+
+  // The page's launch note arrives whenever its effect runs, which may be
+  // after this player mounted from cached data; log it once either way, so a
+  // relaunch after a kill can be read on the device.
+  const launchNoteLoggedRef = useRef(false);
+  useEffect(() => {
+    if (!launchNote || launchNoteLoggedRef.current) return;
+    launchNoteLoggedRef.current = true;
+    logDebugEvent('lifecycle', 'Launch', launchNote);
+  }, [launchNote, logDebugEvent]);
 
   // Network error retry state — lives in a single reducer, see retryReducer
   // above. `isReconnecting` is derived.
@@ -268,10 +267,19 @@ export function AudioPlayer({
     );
   }, [hash, onTimeUpdate, logDebugEvent]);
 
+  // Read by the seek effect below without being one of its dependencies: the
+  // page clears the flag once playback starts, and that must not re-apply the
+  // seek to an element that is already playing.
+  const autoPlayOnSeekRef = useRef(!!autoPlayOnSeek);
+  useEffect(() => {
+    autoPlayOnSeekRef.current = !!autoPlayOnSeek;
+  }, [autoPlayOnSeek]);
+
   // Handle external seek requests - sync React state with audio element
   // Must wait for metadata to load before seeking, otherwise seek is silently ignored
   useEffect(() => {
     const audio = audioRef.current;
+    const autoPlay = autoPlayOnSeekRef.current;
     if (audio && seekTo !== undefined && seekTo >= 0) {
       // Check if audio has metadata loaded (readyState >= 1 = HAVE_METADATA)
       if (audio.readyState >= 1) {
@@ -287,14 +295,14 @@ export function AudioPlayer({
           `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
         );
 
-        // Auto-play after seek if requested (used for radio handoff)
-        if (autoPlayOnSeek) {
+        // Auto-play after seek if requested (radio handoff, interrupted session)
+        if (autoPlay) {
           userInitiatedRef.current = true;
           safePlay(audio, 'auto-play after external seek', logDebugEvent);
         }
       } else {
         // Metadata not loaded yet - queue the seek for when it loads
-        pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
+        pendingSeekRef.current = { time: seekTo, autoPlay };
         logDebugEvent(
           'seek',
           'External seek queued',
@@ -302,7 +310,7 @@ export function AudioPlayer({
         );
       }
     }
-  }, [seekTo, seekKey, onTimeUpdate, autoPlayOnSeek, logDebugEvent]);
+  }, [seekTo, seekKey, onTimeUpdate, logDebugEvent]);
 
   // Drive the retry machine. When phase transitions to "scheduled", schedule
   // the reload; when it transitions to "exhausted", log and clear transient

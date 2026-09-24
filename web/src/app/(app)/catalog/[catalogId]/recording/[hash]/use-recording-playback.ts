@@ -498,13 +498,19 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     };
   }, [hash, persistCurrentPlaybackPosition]);
 
+  // Unmount only. persistCurrentPlaybackPosition changes identity when the
+  // progress owner resolves, which must not look like leaving the page.
+  const persistOnLeaveRef = useRef(persistCurrentPlaybackPosition);
+  useEffect(() => {
+    persistOnLeaveRef.current = persistCurrentPlaybackPosition;
+  }, [persistCurrentPlaybackPosition]);
   useEffect(() => {
     return () => {
-      persistCurrentPlaybackPosition({ keepalive: true });
+      persistOnLeaveRef.current({ keepalive: true });
       // Leaving the page in the app stops the recording; it is not interrupted.
       stopNowPlaying(hash);
     };
-  }, [hash, persistCurrentPlaybackPosition]);
+  }, [hash]);
 
   const handleAudioEnded = useCallback((duration: number) => {
     const resolvedDuration = duration > 0 ? duration : durationRef.current;

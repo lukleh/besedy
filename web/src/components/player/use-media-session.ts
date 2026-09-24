@@ -10,12 +10,7 @@
  */
 
 import { useEffect, useRef, type RefObject } from 'react';
-
-export interface MediaSessionMetadata {
-  title: string;
-  artist?: string;
-  album?: string;
-}
+import type { MediaSessionMetadata } from './audio-player-types';
 
 interface MediaSessionHandlers {
   onPlay: () => void;
