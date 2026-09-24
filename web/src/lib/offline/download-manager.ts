@@ -881,6 +881,14 @@ class DownloadManager {
       record.status === 'downloading'
     )
       return;
+    if (
+      !this.online &&
+      record.status === 'error' &&
+      record.error === INLINE_AUDIO_ERROR
+    ) {
+      await this.retryInlineAudioOffline(key);
+      return;
+    }
     await this.write({
       ...record,
       status: 'queued',
@@ -888,6 +896,46 @@ class DownloadManager {
       resumeOnReconnect: false,
     });
     void this.processQueue();
+  }
+
+  private async retryInlineAudioOffline(key: string): Promise<void> {
+    await this.withDownloadLock(key, async () => {
+      const persisted = await getDownload(key);
+      if (!persisted) {
+        this.records.delete(key);
+        this.publish();
+        return;
+      }
+      if (persisted.status !== 'error' || persisted.error !== INLINE_AUDIO_ERROR) {
+        this.records.set(key, persisted);
+        this.publish();
+        return;
+      }
+
+      try {
+        const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+        const cacheKey = persisted.audioCacheKey;
+        if (!cacheKey || !(await verifyAudioCache(audioCache, cacheKey))) {
+          await this.write({ ...persisted, error: INCOMPLETE_PACKAGE_ERROR });
+          return;
+        }
+        if (
+          needsInlineOfflineAudio() &&
+          !(await this.prepareInlineAudio(audioCache, key, cacheKey))
+        ) {
+          return;
+        }
+        await this.write({
+          ...persisted,
+          status: 'complete',
+          progress: 100,
+          error: null,
+          completedAt: Date.now(),
+        });
+      } catch (error) {
+        logger.warn('Could not retry inline offline audio', { key, error });
+      }
+    });
   }
 
   async remove(key: string): Promise<void> {

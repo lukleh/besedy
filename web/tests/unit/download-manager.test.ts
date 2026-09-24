@@ -889,8 +889,10 @@ describe('download manager', () => {
       expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(5);
     });
 
-    it('marks a package whose inline copy cannot be prepared retryable, and Retry prepares it', async () => {
-      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+    it('repairs an inline copy on Retry while offline without fetching', async () => {
+      const fetchMock = createFakeServer().fetchMock;
+      vi.stubGlobal('fetch', fetchMock);
+      goOffline();
       // Assembling the copy fails, as it would when memory or storage runs out.
       class FailingBlob extends NodeBlob {
         override arrayBuffer(): Promise<ArrayBuffer> {
@@ -910,10 +912,9 @@ describe('download manager', () => {
 
       vi.stubGlobal('Blob', NodeBlob);
       await downloadManager.resume(key);
-      await waitFor(
-        () => downloadManager.getSnapshot().records[0]?.status === 'complete',
-      );
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
       expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(5);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
