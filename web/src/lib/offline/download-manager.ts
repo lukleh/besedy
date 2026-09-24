@@ -46,11 +46,14 @@ import {
   readCompleteAudioBlob,
   readAudioCacheMeta,
   isConsistentAudioCacheMeta,
-  requiresInlineOfflineAudio,
   verifyAudioCache,
   writeAudioCacheMeta,
   type AudioCacheMeta,
 } from './audio-cache-format';
+import {
+  readOfflineAudioTransportOverride,
+  resolveOfflineAudioTransport,
+} from './audio-transport';
 import { DOWNLOADS_PATH, OFFLINE_CACHE_NAMES } from './cache-names';
 import { isDownloadsShellWarmup } from './downloads-shell';
 import {
@@ -82,6 +85,12 @@ const SERVICE_WORKER_CONTROL_TIMEOUT_MS = 10_000;
  * in the cache. Downloads translates it; other errors are raw messages.
  */
 export const INCOMPLETE_PACKAGE_ERROR = 'incomplete-package';
+/**
+ * Stable error code for a completed record whose cached audio verified but
+ * whose inline copy, required by this device's playback transport, could not
+ * be prepared.
+ */
+export const INLINE_AUDIO_ERROR = 'inline-audio-unavailable';
 let downloadsShellWarmPromise: Promise<void> | null = null;
 
 /**
@@ -118,6 +127,31 @@ async function ensureOfflinePlaybackWorker(): Promise<void> {
     // registration.
     onChange();
   });
+}
+
+/**
+ * Whether local playback on this device reads the inline copy, resolved the
+ * way the player resolves it: the browser default or the device override.
+ */
+function needsInlineOfflineAudio(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (
+    resolveOfflineAudioTransport(
+      navigator.userAgent,
+      readOfflineAudioTransportOverride(),
+    ) === 'inline'
+  );
+}
+
+function emptyDownloadBundle(key: string): DownloadBundlePayload {
+  return {
+    key,
+    transcriptBackend: null,
+    transcript: null,
+    diarization: null,
+    artwork: null,
+    updatedAt: 0,
+  };
 }
 
 /** Load the real session-free route so its HTML and build graph are cached. */
@@ -662,47 +696,15 @@ class DownloadManager {
     }
     await Promise.all(recovered.map((record) => putDownload(record)));
     // One cache handle for hydration. When it cannot be opened, verification
-    // marks every completed package retryable and inline preparation is
-    // skipped; hydration still finishes so the queue and Retry keep working.
+    // marks every completed package retryable; hydration still finishes so
+    // the queue and Retry keep working.
     let audioCache: Cache | null = null;
     try {
       audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
     } catch (error) {
       logger.warn('Could not open the audio cache during hydration', { error });
     }
-    const needsInlineAudio =
-      typeof navigator !== 'undefined' &&
-      requiresInlineOfflineAudio(navigator.userAgent);
-    // Prepare missing inline copies before verification, which requires them
-    // on these browsers; a package that cannot get one then becomes retryable.
-    if (audioCache !== null && this.online && needsInlineAudio) {
-      for (const record of this.records.values()) {
-        if (record.status !== 'complete' || !record.audioCacheKey) continue;
-        try {
-          const bundle = await getDownloadBundle(record.key);
-          if (!bundle || bundle.inlineAudio?.data) continue;
-          const blob = await readCompleteAudioBlob(
-            audioCache,
-            record.audioCacheKey,
-          );
-          if (!blob) continue;
-          await putDownloadBundle({
-            ...bundle,
-            inlineAudio: {
-              data: await blob.arrayBuffer(),
-              contentType: blob.type || 'audio/webm',
-            },
-            updatedAt: Date.now(),
-          });
-        } catch (error) {
-          logger.warn('Failed to prepare existing WebKit offline audio', {
-            key: record.key,
-            error,
-          });
-        }
-      }
-    }
-    await this.verifyCompletePackages(audioCache, needsInlineAudio);
+    await this.verifyCompletePackages(audioCache, needsInlineOfflineAudio());
     this.publish({ supported: true, hydrated: true });
     void this.refreshStorageEstimate();
     if (
@@ -956,8 +958,10 @@ class DownloadManager {
    * Registry state alone does not prove playability. A record marked complete
    * whose audio is missing or incomplete in Cache Storage becomes a retryable
    * error instead of a download that fails when played; Retry resumes from
-   * the chunks that exist. Browsers that play offline audio only from the
-   * inline copy also need that copy in the bundle; Retry rebuilds it.
+   * the chunks that exist. When local playback uses the inline transport, the
+   * bundle must also hold the inline copy: a missing one is built here from
+   * the verified chunks, online or offline, and only a package whose copy
+   * cannot be prepared becomes a retryable error of its own.
    */
   private async verifyCompletePackages(
     audioCache: Cache | null,
@@ -980,35 +984,79 @@ class DownloadManager {
           this.records.set(key, persisted);
           return;
         }
-        let verified = false;
+        let audioVerified = false;
         try {
-          verified =
+          audioVerified =
             audioCache !== null &&
             persisted.audioCacheKey !== null &&
             (await verifyAudioCache(audioCache, persisted.audioCacheKey));
-          if (verified && needsInlineAudio) {
-            const bundle = await getDownloadBundle(key);
-            verified = !!bundle?.inlineAudio?.data;
-          }
         } catch (error) {
           // Unverifiable is not verified.
           logger.warn('Could not verify a downloaded package', { key, error });
         }
-        if (verified) return;
+        let inlineReady = true;
+        if (
+          audioVerified &&
+          needsInlineAudio &&
+          audioCache !== null &&
+          persisted.audioCacheKey !== null
+        ) {
+          try {
+            inlineReady = await this.prepareInlineAudio(
+              audioCache,
+              key,
+              persisted.audioCacheKey,
+            );
+          } catch (error) {
+            logger.warn('Could not prepare inline offline audio', {
+              key,
+              error,
+            });
+            inlineReady = false;
+          }
+        }
+        if (audioVerified && inlineReady) return;
         logger.warn(
-          'Downloaded audio is missing or incomplete; marking for retry',
+          audioVerified
+            ? 'Inline offline audio is unavailable; marking for retry'
+            : 'Downloaded audio is missing or incomplete; marking for retry',
           { key },
         );
         await this.write({
           ...persisted,
           status: 'error',
-          error: INCOMPLETE_PACKAGE_ERROR,
+          error: audioVerified ? INLINE_AUDIO_ERROR : INCOMPLETE_PACKAGE_ERROR,
           progress: 0,
           resumeOnReconnect: false,
           completedAt: null,
         });
       });
     }
+  }
+
+  /**
+   * Ensure the bundle holds the inline copy of verified cached audio, reading
+   * the bundle once. A complete record without a bundle row gets an empty
+   * one. Resolves false when the chunks cannot be assembled.
+   */
+  private async prepareInlineAudio(
+    audioCache: Cache,
+    key: string,
+    audioCacheKey: string,
+  ): Promise<boolean> {
+    const bundle = await getDownloadBundle(key);
+    if (bundle?.inlineAudio?.data) return true;
+    const blob = await readCompleteAudioBlob(audioCache, audioCacheKey);
+    if (!blob) return false;
+    await putDownloadBundle({
+      ...(bundle ?? emptyDownloadBundle(key)),
+      inlineAudio: {
+        data: await blob.arrayBuffer(),
+        contentType: blob.type || 'audio/webm',
+      },
+      updatedAt: Date.now(),
+    });
+    return true;
   }
 
   private scheduleTranscriptPermissionReconciliation(): void {
@@ -1119,14 +1167,9 @@ class DownloadManager {
         }
         if (!this.online || this.userId !== userId) return;
         try {
-          const current = (await getDownloadBundle(record.key)) ?? {
-            key: record.key,
-            transcriptBackend: null,
-            transcript: null,
-            diarization: null,
-            artwork: null,
-            updatedAt: 0,
-          };
+          const current =
+            (await getDownloadBundle(record.key)) ??
+            emptyDownloadBundle(record.key);
           await putDownloadBundle({
             ...current,
             entry,
@@ -1431,9 +1474,7 @@ class DownloadManager {
           });
         },
       });
-      const needsInlineAudio =
-        typeof navigator !== 'undefined' &&
-        requiresInlineOfflineAudio(navigator.userAgent);
+      const needsInlineAudio = needsInlineOfflineAudio();
       const offlineAudioBlob = needsInlineAudio
         ? await readCompleteAudioBlob(audioCache, audioCacheKey)
         : null;

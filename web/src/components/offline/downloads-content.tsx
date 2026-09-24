@@ -32,6 +32,7 @@ import { formatBytes } from '@/lib/format-bytes';
 import {
   downloadManager,
   INCOMPLETE_PACKAGE_ERROR,
+  INLINE_AUDIO_ERROR,
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
 import { cn } from '@/lib/utils';
@@ -325,7 +326,9 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
               <span className="text-destructive">
                 {record.error === INCOMPLETE_PACKAGE_ERROR
                   ? t('errorIncompletePackage')
-                  : record.error}
+                  : record.error === INLINE_AUDIO_ERROR
+                    ? t('errorInlineAudio')
+                    : record.error}
               </span>
             )}
           </div>

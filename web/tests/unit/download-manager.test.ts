@@ -731,23 +731,48 @@ describe('download manager', () => {
     expect((await db.getDownload(key))?.status).toBe('error');
   });
 
-  describe('on a browser that plays offline audio only inline', () => {
+  describe('inline offline audio', () => {
     const IPHONE_UA =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1';
     const audioUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`;
+    let NodeBlob: typeof Blob;
 
     beforeEach(async () => {
       // jsdom's Blob has no arrayBuffer() and cannot wrap the cached chunks,
       // which are Node Blobs; the inline copy is built from them.
-      vi.stubGlobal('Blob', (await import('node:buffer')).Blob);
+      NodeBlob = (await import('node:buffer')).Blob as unknown as typeof Blob;
+      vi.stubGlobal('Blob', NodeBlob);
     });
 
-    async function seedCompletePackage(
-      inlineAudio: { data: ArrayBuffer; contentType: string } | null,
-    ) {
+    afterEach(() => {
+      // getItem is the shared mock from tests/setup.ts, which restoreAllMocks
+      // leaves as is; drop any override so later tests use the default.
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    function goOffline() {
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+    }
+
+    async function useTransportOverride(override: string) {
+      const { OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY } = await import(
+        '@/lib/offline/audio-transport'
+      );
+      vi.spyOn(window.localStorage, 'getItem').mockImplementation((name) =>
+        name === OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY ? override : null,
+      );
+    }
+
+    async function seedCompletePackage(options: {
+      userAgent?: string;
+      bundle?: 'none' | 'without-inline' | 'with-inline';
+    } = {}) {
       Object.defineProperty(navigator, 'userAgent', {
         configurable: true,
-        value: IPHONE_UA,
+        value: options.userAgent ?? IPHONE_UA,
       });
       const db = await import('@/lib/offline/downloads-db');
       const now = Date.now();
@@ -771,91 +796,124 @@ describe('download manager', () => {
         totalBytes: 5,
         error: null,
         resumeOnReconnect: false,
-        transcriptBackend: null,
+        transcriptBackend: 'whisperx/large',
         hasArtwork: false,
         createdAt: now,
         updatedAt: now,
         completedAt: now,
       });
-      await db.putDownloadBundle({
-        key,
-        transcriptBackend: null,
-        transcript: null,
-        diarization: null,
-        artwork: null,
-        inlineAudio,
-        updatedAt: now,
-      });
+      const bundle = options.bundle ?? 'without-inline';
+      if (bundle !== 'none') {
+        await db.putDownloadBundle({
+          key,
+          transcriptBackend: 'whisperx/large',
+          transcript: { segments: [] } as never,
+          diarization: null,
+          artwork: null,
+          inlineAudio:
+            bundle === 'with-inline'
+              ? { data: new Uint8Array(7).buffer, contentType: 'audio/webm' }
+              : null,
+          updatedAt: now,
+        });
+      }
       return { db, key };
     }
 
-    it('keeps a package with its inline copy complete', async () => {
+    it('keeps a package with its inline copy complete without rewriting it', async () => {
       vi.stubGlobal('fetch', createFakeServer().fetchMock);
-      Object.defineProperty(navigator, 'onLine', {
-        configurable: true,
-        value: false,
-      });
-      await seedCompletePackage({
-        data: new Uint8Array(5).buffer,
-        contentType: 'audio/webm',
+      goOffline();
+      const { db, key } = await seedCompletePackage({ bundle: 'with-inline' });
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(7);
+    });
+
+    it('builds a missing inline copy from the cached chunks while offline', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      goOffline();
+      const { db, key } = await seedCompletePackage();
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
+      // The rest of the bundle is kept.
+      expect(bundle?.transcriptBackend).toBe('whisperx/large');
+    });
+
+    it('creates a bundle for a complete record that has none', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      goOffline();
+      const { db, key } = await seedCompletePackage({ bundle: 'none' });
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
+      expect(bundle?.transcript).toBeNull();
+    });
+
+    it('does not require an inline copy when the device override selects the worker', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      goOffline();
+      await useTransportOverride('worker');
+      const { db, key } = await seedCompletePackage();
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      expect((await db.getDownloadBundle(key))?.inlineAudio).toBeNull();
+    });
+
+    it('builds an inline copy when the device override selects it on another browser', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      await useTransportOverride('inline');
+      const { db, key } = await seedCompletePackage({
+        userAgent:
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
       });
 
       const { downloadManager } = await loadManager();
       await downloadManager.hydrate();
 
       expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(5);
     });
 
-    it('marks a package without its inline copy retryable while offline', async () => {
+    it('marks a package whose inline copy cannot be prepared retryable, and Retry prepares it', async () => {
       vi.stubGlobal('fetch', createFakeServer().fetchMock);
-      Object.defineProperty(navigator, 'onLine', {
-        configurable: true,
-        value: false,
-      });
-      const { db, key } = await seedCompletePackage(null);
+      // Assembling the copy fails, as it would when memory or storage runs out.
+      class FailingBlob extends NodeBlob {
+        override arrayBuffer(): Promise<ArrayBuffer> {
+          return Promise.reject(new DOMException('Quota exceeded', 'QuotaExceededError'));
+        }
+      }
+      vi.stubGlobal('Blob', FailingBlob);
+      const { db, key } = await seedCompletePackage();
 
-      const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
+      const { downloadManager, INLINE_AUDIO_ERROR } = await loadManager();
       await downloadManager.hydrate();
 
       const record = downloadManager.getSnapshot().records[0];
       expect(record.status).toBe('error');
-      expect(record.error).toBe(INCOMPLETE_PACKAGE_ERROR);
-      expect((await db.getDownload(key))?.status).toBe('error');
-    });
+      expect(record.error).toBe(INLINE_AUDIO_ERROR);
+      expect((await db.getDownload(key))?.error).toBe(INLINE_AUDIO_ERROR);
 
-    it('prepares a missing inline copy before verification while online', async () => {
-      vi.stubGlobal('fetch', createFakeServer().fetchMock);
-      const { db, key } = await seedCompletePackage(null);
-
-      const { downloadManager } = await loadManager();
-      await downloadManager.hydrate();
-
-      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
-      const bundle = await db.getDownloadBundle(key);
-      expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
-    });
-
-    it('rebuilds the inline copy on Retry', async () => {
-      vi.stubGlobal('fetch', createFakeServer().fetchMock);
-      Object.defineProperty(navigator, 'onLine', {
-        configurable: true,
-        value: false,
-      });
-      const { db, key } = await seedCompletePackage(null);
-
-      const { downloadManager } = await loadManager();
-      await downloadManager.hydrate();
-      expect(downloadManager.getSnapshot().records[0].status).toBe('error');
-
-      Reflect.deleteProperty(navigator, 'onLine');
-      downloadManager.setOnline(true);
+      vi.stubGlobal('Blob', NodeBlob);
       await downloadManager.resume(key);
       await waitFor(
         () => downloadManager.getSnapshot().records[0]?.status === 'complete',
       );
-
-      const bundle = await db.getDownloadBundle(key);
-      expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
+      expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(5);
     });
   });
 
