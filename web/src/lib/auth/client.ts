@@ -10,6 +10,7 @@ import {
 } from "./oauth-routing";
 import { PROTECTED_OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
 import { destroyDownloadsDatabase, isIndexedDBAvailable } from "@/lib/offline/downloads-db";
+import { clearLastRoute } from "@/lib/pwa/last-route";
 
 // Cross-tab auth synchronization using BroadcastChannel
 // This allows sign-out in one tab to redirect all other tabs
@@ -233,6 +234,7 @@ export async function validateMcpAuthorizationRequest(
 export async function signOutAndRedirect() {
   await authClient.signOut();
   await clearOfflineCaches();
+  clearLastRoute();
   // Notify other tabs to redirect to sign-in page
   broadcastAuthEvent({ type: "signout" });
   window.location.assign("/auth/signin");

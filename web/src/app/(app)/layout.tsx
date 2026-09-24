@@ -8,6 +8,7 @@ import { AppProviders } from "@/components/app-providers";
 import { Header } from "@/components/header";
 import { GoogleTranslateWarning } from "@/components/google-translate-warning";
 import { InstallBanner } from "@/components/pwa/install-banner";
+import { LastRouteTracker } from "@/components/pwa/last-route-tracker";
 import { RadioBanner } from "@/components/radio/radio-banner";
 import { RadioSpacer } from "@/components/radio/radio-spacer";
 import { UpdateBanner } from "@/components/update-banner";
@@ -77,6 +78,7 @@ export default async function RootLayout({
           nonce={nonce}
         >
           <GoogleTranslateWarning />
+          <LastRouteTracker />
           <div className="relative flex min-h-screen flex-col">
             <Header />
             {/* Spacer for fixed header */}
