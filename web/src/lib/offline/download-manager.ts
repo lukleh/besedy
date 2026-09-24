@@ -92,7 +92,7 @@ export const INCOMPLETE_PACKAGE_ERROR = 'incomplete-package';
  */
 export const INLINE_AUDIO_ERROR = 'inline-audio-unavailable';
 /** How a Retry of an INLINE_AUDIO_ERROR package ended; see repairInlineAudio. */
-type InlineAudioRepair = 'repaired' | 'incomplete' | 'unavailable' | 'stale';
+type InlineAudioRepair = 'repaired' | 'incomplete' | 'queued' | 'unavailable' | 'stale';
 let downloadsShellWarmPromise: Promise<void> | null = null;
 
 /**
@@ -376,14 +376,17 @@ async function fetchRangeChunk(
   throw new DownloadHttpError(url, response.status);
 }
 
-/** Number of leading chunks that are present, i.e. the resumable prefix. */
+/** Number of leading chunks that are present with their recorded sizes. */
 async function countContiguousChunks(
   cache: Cache,
   cacheKey: string,
   meta: AudioCacheMeta,
 ): Promise<number> {
   for (let index = 0; index < meta.chunkSizes.length; index += 1) {
-    if (!(await cache.match(getAudioChunkKey(cacheKey, index)))) return index;
+    const response = await cache.match(getAudioChunkKey(cacheKey, index));
+    if (!response || (await response.blob()).size !== meta.chunkSizes[index]) {
+      return index;
+    }
   }
   return meta.chunkSizes.length;
 }
@@ -408,8 +411,8 @@ export async function downloadAudioChunks(options: {
 
   let meta = await readAudioCacheMeta(cache, cacheKey);
   if (meta) {
-    // Resume from the longest contiguous prefix of stored chunks. A missing
-    // chunk in the middle does not throw away what precedes it.
+    // Resume from the longest contiguous prefix of complete chunks. A missing
+    // or damaged chunk does not throw away what precedes it.
     const prefix = await countContiguousChunks(cache, cacheKey, meta);
     if (prefix === 0) {
       meta = null;
@@ -889,7 +892,8 @@ class DownloadManager {
     // need the network, and then only while it is available.
     if (record.status === 'error' && record.error === INLINE_AUDIO_ERROR) {
       const outcome = await this.repairInlineAudio(key);
-      if (outcome !== 'incomplete' || !this.online) return;
+      if (outcome === 'queued') void this.processQueue();
+      return;
     }
     const current = this.records.get(key);
     if (!current) return;
@@ -905,7 +909,8 @@ class DownloadManager {
   /**
    * Rebuild the inline copy of a package whose cached chunks verified but
    * whose copy could not be prepared. `incomplete` means the chunks no longer
-   * assemble and the record now carries INCOMPLETE_PACKAGE_ERROR; `unavailable`
+   * assemble and the record now carries INCOMPLETE_PACKAGE_ERROR; `queued`
+   * means an online re-download was queued under the same lock; `unavailable`
    * means the copy still cannot be prepared and the record is unchanged;
    * `stale` means another tab changed or removed the download meanwhile.
    */
@@ -937,12 +942,19 @@ class DownloadManager {
           (!needsInlineOfflineAudio() ||
             (await this.prepareInlineAudio(audioCache, key, cacheKey)));
         if (!ready) {
-          logger.warn(
-            'Downloaded audio is missing or incomplete; marking for retry',
-            { key },
-          );
-          await this.write({ ...persisted, error: INCOMPLETE_PACKAGE_ERROR });
-          outcome = 'incomplete';
+          logger.warn('Downloaded audio is missing or incomplete', { key });
+          if (this.online) {
+            await this.write({
+              ...persisted,
+              status: 'queued',
+              error: null,
+              resumeOnReconnect: false,
+            });
+            outcome = 'queued';
+          } else {
+            await this.write({ ...persisted, error: INCOMPLETE_PACKAGE_ERROR });
+            outcome = 'incomplete';
+          }
           return;
         }
         await this.write({
@@ -1067,7 +1079,10 @@ class DownloadManager {
           // Unverifiable is not verified.
           logger.warn('Could not verify a downloaded package', { key, error });
         }
-        let inlineReady = true;
+        let inlineError:
+          | typeof INCOMPLETE_PACKAGE_ERROR
+          | typeof INLINE_AUDIO_ERROR
+          | null = null;
         if (
           audioVerified &&
           needsInlineAudio &&
@@ -1075,22 +1090,24 @@ class DownloadManager {
           persisted.audioCacheKey !== null
         ) {
           try {
-            inlineReady = await this.prepareInlineAudio(
+            const inlineReady = await this.prepareInlineAudio(
               audioCache,
               key,
               persisted.audioCacheKey,
             );
+            if (!inlineReady) inlineError = INCOMPLETE_PACKAGE_ERROR;
           } catch (error) {
             logger.warn('Could not prepare inline offline audio', {
               key,
               error,
             });
-            inlineReady = false;
+            inlineError = INLINE_AUDIO_ERROR;
           }
         }
-        if (audioVerified && inlineReady) return;
+        if (audioVerified && inlineError === null) return;
+        const errorCode = inlineError ?? INCOMPLETE_PACKAGE_ERROR;
         logger.warn(
-          audioVerified
+          errorCode === INLINE_AUDIO_ERROR
             ? 'Inline offline audio is unavailable; marking for retry'
             : 'Downloaded audio is missing or incomplete; marking for retry',
           { key },
@@ -1098,7 +1115,7 @@ class DownloadManager {
         await this.write({
           ...persisted,
           status: 'error',
-          error: audioVerified ? INLINE_AUDIO_ERROR : INCOMPLETE_PACKAGE_ERROR,
+          error: errorCode,
           progress: 0,
           resumeOnReconnect: false,
           completedAt: null,
@@ -1552,7 +1569,7 @@ class DownloadManager {
         ? await readCompleteAudioBlob(audioCache, audioCacheKey)
         : null;
       if (needsInlineAudio && !offlineAudioBlob) {
-        throw new Error('Downloaded audio cache is incomplete');
+        throw new Error(INCOMPLETE_PACKAGE_ERROR);
       }
 
       let transcriptBackend: string | null = null;

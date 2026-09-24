@@ -573,6 +573,46 @@ describe('download manager', () => {
     expect(meta?.chunkSizes).toEqual([CHUNK, CHUNK, AUDIO_SIZE - 2 * CHUNK]);
   });
 
+  it('re-fetches a short chunk while keeping the valid prefix', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const cache = (await cacheStorage.open(OFFLINE_CACHE_NAMES.audio)) as unknown as Cache;
+    const cacheKey = 'short-audio';
+    await cache.put(
+      getAudioChunkKey(cacheKey, 0),
+      new Response(server.audio.slice(0, CHUNK)),
+    );
+    await cache.put(getAudioChunkKey(cacheKey, 1), new Response(new Uint8Array(3)));
+    await cache.put(
+      getAudioChunkKey(cacheKey, 2),
+      new Response(server.audio.slice(2 * CHUNK)),
+    );
+    await writeAudioCacheMeta(cache, cacheKey, {
+      totalSize: AUDIO_SIZE,
+      chunkCount: 3,
+      chunkSizes: [CHUNK, CHUNK, AUDIO_SIZE - 2 * CHUNK],
+      contentType: 'audio/webm',
+      complete: true,
+    });
+
+    const { downloadAudioChunks } = await loadManager();
+    await downloadAudioChunks({
+      cache,
+      url: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      cacheKey,
+      signal: new AbortController().signal,
+      onProgress: async () => {},
+    });
+
+    expect(server.rangeRequests).toEqual([
+      `bytes=${CHUNK}-${2 * CHUNK - 1}`,
+      `bytes=${2 * CHUNK}-${AUDIO_SIZE - 1}`,
+    ]);
+    const repairedChunk = await cache.match(getAudioChunkKey(cacheKey, 1));
+    expect((await repairedChunk?.blob())?.size).toBe(CHUNK);
+    expect((await readAudioCacheMeta(cache, cacheKey))?.complete).toBe(true);
+  });
+
   it('resets metadata that verification would reject instead of resuming through the fast path', async () => {
     const server = createFakeServer();
     vi.stubGlobal('fetch', server.fetchMock);
@@ -893,6 +933,31 @@ describe('download manager', () => {
       const bundle = await db.getDownloadBundle(key);
       expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
       expect(bundle?.transcript).toBeNull();
+    });
+
+    it('marks a short cached chunk incomplete at hydration and downloads it on Retry', async () => {
+      const server = createFakeServer();
+      vi.stubGlobal('fetch', server.fetchMock);
+      const { db, key, audioCacheKey } = await seedCompletePackage();
+      const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+      await cache.put(
+        getAudioChunkKey(audioCacheKey, 0),
+        new Response(new Uint8Array(3)),
+      );
+
+      const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
+      await downloadManager.hydrate();
+      expect(downloadManager.getSnapshot().records[0]).toMatchObject({
+        status: 'error',
+        error: INCOMPLETE_PACKAGE_ERROR,
+      });
+
+      await downloadManager.resume(key);
+      await waitFor(
+        () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+      );
+      expect(server.rangeRequests[0]).toBe(`bytes=0-${CHUNK - 1}`);
+      expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(AUDIO_SIZE);
     });
 
     it('does not require an inline copy when the device override selects the worker', async () => {
