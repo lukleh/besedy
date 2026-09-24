@@ -748,6 +748,7 @@ describe('download manager', () => {
       // getItem is the shared mock from tests/setup.ts, which restoreAllMocks
       // leaves as is; drop any override so later tests use the default.
       vi.mocked(window.localStorage.getItem).mockReset();
+      Reflect.deleteProperty(navigator, 'storage');
     });
 
     function goOffline() {
@@ -817,7 +818,40 @@ describe('download manager', () => {
           updatedAt: now,
         });
       }
-      return { db, key };
+      return { db, key, audioCacheKey };
+    }
+
+    /**
+     * Hydrate a package whose copy cannot be assembled, leaving the record in
+     * INLINE_AUDIO_ERROR, then let copies assemble again for the Retry.
+     */
+    async function seedUnpreparedPackage() {
+      // Assembling the copy fails, as it would when memory or storage runs out.
+      class FailingBlob extends NodeBlob {
+        override arrayBuffer(): Promise<ArrayBuffer> {
+          return Promise.reject(new DOMException('Quota exceeded', 'QuotaExceededError'));
+        }
+      }
+      vi.stubGlobal('Blob', FailingBlob);
+      const seeded = await seedCompletePackage();
+
+      const manager = await loadManager();
+      await manager.downloadManager.hydrate();
+
+      const record = manager.downloadManager.getSnapshot().records[0];
+      expect(record.status).toBe('error');
+      expect(record.error).toBe(manager.INLINE_AUDIO_ERROR);
+      expect((await seeded.db.getDownload(seeded.key))?.error).toBe(
+        manager.INLINE_AUDIO_ERROR,
+      );
+
+      vi.stubGlobal('Blob', NodeBlob);
+      return { ...seeded, ...manager };
+    }
+
+    async function dropFirstChunk(audioCacheKey: string) {
+      const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+      await cache.delete(getAudioChunkKey(audioCacheKey, 0));
     }
 
     it('keeps a package with its inline copy complete without rewriting it', async () => {
@@ -893,28 +927,65 @@ describe('download manager', () => {
       const fetchMock = createFakeServer().fetchMock;
       vi.stubGlobal('fetch', fetchMock);
       goOffline();
-      // Assembling the copy fails, as it would when memory or storage runs out.
-      class FailingBlob extends NodeBlob {
-        override arrayBuffer(): Promise<ArrayBuffer> {
-          return Promise.reject(new DOMException('Quota exceeded', 'QuotaExceededError'));
-        }
-      }
-      vi.stubGlobal('Blob', FailingBlob);
-      const { db, key } = await seedCompletePackage();
+      const { db, key, downloadManager } = await seedUnpreparedPackage();
+      // The copy grows the saved data; the figure on the Downloads page follows.
+      Object.defineProperty(navigator, 'storage', {
+        configurable: true,
+        value: { estimate: vi.fn().mockResolvedValue({ usage: 321, quota: 1000 }) },
+      });
 
-      const { downloadManager, INLINE_AUDIO_ERROR } = await loadManager();
-      await downloadManager.hydrate();
-
-      const record = downloadManager.getSnapshot().records[0];
-      expect(record.status).toBe('error');
-      expect(record.error).toBe(INLINE_AUDIO_ERROR);
-      expect((await db.getDownload(key))?.error).toBe(INLINE_AUDIO_ERROR);
-
-      vi.stubGlobal('Blob', NodeBlob);
       await downloadManager.resume(key);
+
       expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
       expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(5);
       expect(fetchMock).not.toHaveBeenCalled();
+      await waitFor(() => downloadManager.getSnapshot().storage?.usage === 321);
+    });
+
+    it('repairs an inline copy on Retry while online without downloading again', async () => {
+      const fetchMock = createFakeServer().fetchMock;
+      vi.stubGlobal('fetch', fetchMock);
+      const { db, key, downloadManager } = await seedUnpreparedPackage();
+
+      await downloadManager.resume(key);
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(5);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('reports incomplete audio when the chunks are gone on Retry while offline', async () => {
+      const fetchMock = createFakeServer().fetchMock;
+      vi.stubGlobal('fetch', fetchMock);
+      goOffline();
+      const { db, key, audioCacheKey, downloadManager, INCOMPLETE_PACKAGE_ERROR } =
+        await seedUnpreparedPackage();
+      await dropFirstChunk(audioCacheKey);
+
+      await downloadManager.resume(key);
+
+      const record = downloadManager.getSnapshot().records[0];
+      expect(record.status).toBe('error');
+      expect(record.error).toBe(INCOMPLETE_PACKAGE_ERROR);
+      expect((await db.getDownload(key))?.error).toBe(INCOMPLETE_PACKAGE_ERROR);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('downloads again when the chunks are gone on Retry while online', async () => {
+      const fetchMock = createFakeServer().fetchMock;
+      vi.stubGlobal('fetch', fetchMock);
+      const { db, key, audioCacheKey, downloadManager } = await seedUnpreparedPackage();
+      await dropFirstChunk(audioCacheKey);
+
+      await downloadManager.resume(key);
+      await waitFor(
+        () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+      );
+
+      expect(fetchMock).toHaveBeenCalled();
+      expect((await db.getDownloadBundle(key))?.inlineAudio?.data.byteLength).toBe(
+        AUDIO_SIZE,
+      );
     });
   });
 

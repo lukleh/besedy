@@ -133,7 +133,10 @@ must also hold the inline copy. Verification builds a missing copy from the
 verified chunks under the download's lock, online or offline, creating an empty
 bundle when a legacy record has none; only a package whose copy cannot be
 prepared (for example, storage is full) becomes a retryable error that says
-so, and Retry prepares it again. Downloads use the same resolved transport to
+so. Retry then repairs the package on the device, online or offline, from the
+chunks it already holds, without downloading again; only when those chunks no
+longer assemble does the record become the incomplete-audio error above, and
+Retry downloads while online. Downloads use the same resolved transport to
 decide whether to store the copy. Registry state alone never proves
 playability. The header's Downloads badge counts only completed packages, i.e.
 what verified as playable when the page loaded; the check is not repeated while

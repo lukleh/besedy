@@ -91,6 +91,8 @@ export const INCOMPLETE_PACKAGE_ERROR = 'incomplete-package';
  * be prepared.
  */
 export const INLINE_AUDIO_ERROR = 'inline-audio-unavailable';
+/** How a Retry of an INLINE_AUDIO_ERROR package ended; see repairInlineAudio. */
+type InlineAudioRepair = 'repaired' | 'incomplete' | 'unavailable' | 'stale';
 let downloadsShellWarmPromise: Promise<void> | null = null;
 
 /**
@@ -881,16 +883,18 @@ class DownloadManager {
       record.status === 'downloading'
     )
       return;
-    if (
-      !this.online &&
-      record.status === 'error' &&
-      record.error === INLINE_AUDIO_ERROR
-    ) {
-      await this.retryInlineAudioOffline(key);
-      return;
+    // A package whose inline copy could not be prepared still holds its
+    // verified chunks, so Retry repairs it on the device, online or offline,
+    // instead of downloading again. Only chunks that turn out to be incomplete
+    // need the network, and then only while it is available.
+    if (record.status === 'error' && record.error === INLINE_AUDIO_ERROR) {
+      const outcome = await this.repairInlineAudio(key);
+      if (outcome !== 'incomplete' || !this.online) return;
     }
+    const current = this.records.get(key);
+    if (!current) return;
     await this.write({
-      ...record,
+      ...current,
       status: 'queued',
       error: null,
       resumeOnReconnect: false,
@@ -898,7 +902,16 @@ class DownloadManager {
     void this.processQueue();
   }
 
-  private async retryInlineAudioOffline(key: string): Promise<void> {
+  /**
+   * Rebuild the inline copy of a package whose cached chunks verified but
+   * whose copy could not be prepared. `incomplete` means the chunks no longer
+   * assemble and the record now carries INCOMPLETE_PACKAGE_ERROR; `unavailable`
+   * means the copy still cannot be prepared and the record is unchanged;
+   * `stale` means another tab changed or removed the download meanwhile.
+   */
+  private async repairInlineAudio(key: string): Promise<InlineAudioRepair> {
+    // Assigned inside the lock callback, which narrowing cannot follow.
+    let outcome = 'stale' as InlineAudioRepair;
     await this.withDownloadLock(key, async () => {
       const persisted = await getDownload(key);
       if (!persisted) {
@@ -915,14 +928,21 @@ class DownloadManager {
       try {
         const audioCache = await caches.open(OFFLINE_CACHE_NAMES.audio);
         const cacheKey = persisted.audioCacheKey;
-        if (!cacheKey || !(await verifyAudioCache(audioCache, cacheKey))) {
+        // readCompleteAudioBlob also rejects a chunk whose size disagrees with
+        // the metadata, which verifyAudioCache does not check; either way the
+        // audio is incomplete rather than the copy unavailable.
+        const ready =
+          cacheKey !== null &&
+          (await verifyAudioCache(audioCache, cacheKey)) &&
+          (!needsInlineOfflineAudio() ||
+            (await this.prepareInlineAudio(audioCache, key, cacheKey)));
+        if (!ready) {
+          logger.warn(
+            'Downloaded audio is missing or incomplete; marking for retry',
+            { key },
+          );
           await this.write({ ...persisted, error: INCOMPLETE_PACKAGE_ERROR });
-          return;
-        }
-        if (
-          needsInlineOfflineAudio() &&
-          !(await this.prepareInlineAudio(audioCache, key, cacheKey))
-        ) {
+          outcome = 'incomplete';
           return;
         }
         await this.write({
@@ -932,10 +952,15 @@ class DownloadManager {
           error: null,
           completedAt: Date.now(),
         });
+        outcome = 'repaired';
       } catch (error) {
-        logger.warn('Could not retry inline offline audio', { key, error });
+        logger.warn('Could not prepare inline offline audio', { key, error });
+        outcome = 'unavailable';
       }
     });
+    // The copy adds the recording's size to the saved data.
+    if (outcome === 'repaired') void this.refreshStorageEstimate();
+    return outcome;
   }
 
   async remove(key: string): Promise<void> {
