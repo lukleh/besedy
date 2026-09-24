@@ -134,10 +134,11 @@ verified chunks under the download's lock, online or offline, creating an empty
 bundle when a legacy record has none; only a package whose copy cannot be
 prepared (for example, storage is full) becomes a retryable error that says
 so. Retry then repairs the package on the device, online or offline, from the
-chunks it already holds, without downloading again; only when those chunks no
-longer assemble does the record become the incomplete-audio error above, and
-Retry downloads while online. Downloads use the same resolved transport to
-decide whether to store the copy. Registry state alone never proves
+chunks it already holds, without downloading again. Only when those chunks no
+longer verify or assemble does Retry need the network: online it queues the
+download at once, offline the record shows the incomplete-audio error above
+until the next Retry. Downloads use the same resolved transport to decide
+whether to store the copy. Registry state alone never proves
 playability. The header's Downloads badge counts only completed packages, i.e.
 what verified as playable when the page loaded; the check is not repeated while
 the page stays open.
