@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { PWA_LAUNCH_PARAM, PWA_LAUNCH_VALUE } from "@/lib/pwa/last-route";
 
 export default function manifest(): MetadataRoute.Manifest {
   let relatedAppId: string | undefined;
@@ -17,7 +18,11 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Besedy",
     description:
       "Browse audio catalogs, play recordings, and view synchronized transcripts",
-    start_url: "/catalog",
+    // Pin the identity browsers derived from the original start_url, so
+    // existing installs update in place rather than becoming a new app.
+    id: "/catalog",
+    // The launch marker lets /catalog resume on the last visited page.
+    start_url: `/catalog?${PWA_LAUNCH_PARAM}=${PWA_LAUNCH_VALUE}`,
     display: "standalone",
     background_color: "#0a0a0a",
     theme_color: "#0a0a0a",
