@@ -62,6 +62,13 @@ describe("manifest", () => {
     );
   });
 
+  it("launches with the resume marker under the original app identity", () => {
+    const result = manifest();
+
+    expect(result.id).toBe("/catalog");
+    expect(result.start_url).toBe("/catalog?launch=pwa");
+  });
+
   it("omits related_applications id when no base URL is set", () => {
     delete process.env.AUTH_URL;
     delete process.env.NEXT_PUBLIC_APP_URL;

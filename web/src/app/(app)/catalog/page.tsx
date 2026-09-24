@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import prisma from "@/lib/db";
 import { getSession } from "@/lib/auth/session";
@@ -5,6 +6,12 @@ import {
   getAdminCapability,
   getCatalogDiscoveryCapability,
 } from "@/lib/access/capabilities";
+import {
+  LAST_ROUTE_COOKIE,
+  PWA_LAUNCH_PARAM,
+  PWA_LAUNCH_VALUE,
+  resolveRestorableRoute,
+} from "@/lib/pwa/last-route";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -12,6 +19,8 @@ function buildQuerySuffix(searchParams?: SearchParams): string {
   if (!searchParams) return "";
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(searchParams)) {
+    // The launch marker is handled here and must not follow the redirect.
+    if (key === PWA_LAUNCH_PARAM) continue;
     if (Array.isArray(value)) {
       value.forEach((item) => {
         if (typeof item === "string" && item.length > 0) {
@@ -37,6 +46,15 @@ export default async function CatalogIndexPage({
 
   if (!session?.user) {
     redirect("/auth/signin");
+  }
+
+  // The installed app launches here; resume on the last visited page.
+  if (resolvedSearchParams?.[PWA_LAUNCH_PARAM] === PWA_LAUNCH_VALUE) {
+    const cookieStore = await cookies();
+    const lastRoute = resolveRestorableRoute(cookieStore.get(LAST_ROUTE_COOKIE)?.value);
+    if (lastRoute) {
+      redirect(lastRoute);
+    }
   }
 
   const userId = session.user.id ?? "local";

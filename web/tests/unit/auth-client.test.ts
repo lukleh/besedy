@@ -198,6 +198,7 @@ describe("auth client", () => {
       removeEventListener = vi.fn();
     }
     vi.stubGlobal("BroadcastChannel", BroadcastChannelMock);
+    document.cookie = "besedy_last_route=%2Fcatalog%2Fc1;path=/";
 
     const { signOutAndRedirect } = await import("@/lib/auth/client");
 
@@ -218,6 +219,7 @@ describe("auth client", () => {
     expect(del).not.toHaveBeenCalledWith("besedy-offline-static-v1");
     expect(del).not.toHaveBeenCalledWith("unrelated-cache");
     expect(postMessage).toHaveBeenCalledWith({ type: "signout" });
+    expect(document.cookie).not.toContain("besedy_last_route=");
   });
 
   it("clears offline caches on cross-tab signout events", async () => {

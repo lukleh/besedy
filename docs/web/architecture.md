@@ -375,6 +375,27 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   web version, and reports that identity before activation so a stale waiting
   worker cannot be mistaken for the current target.
 
+## PWA Launch
+
+The installed app resumes on the page the listener last had open (logic in
+`lib/pwa/last-route.ts`):
+
+- `components/pwa/last-route-tracker.tsx` records each page under
+  `/catalog/…` or `/settings` in the first-party `besedy_last_route` cookie
+  (90 days). Auth, API, admin, `/downloads` and the bare `/catalog` index are
+  never recorded. Sign-out clears the cookie.
+- The manifest's `start_url` is `/catalog?launch=pwa`. Only that marked launch
+  makes the `/catalog` index redirect, server-side, to the recorded page; the
+  Library link, notifications and sign-in still land on the catalog list. The
+  explicit `id: "/catalog"` keeps the identity browsers derived from the
+  earlier `start_url`, so existing installs update in place. iOS keeps the
+  `start_url` from when the app was added to the Home Screen, so older iOS
+  installs resume only after being re-added.
+- Offline launches still open the local-mode shell, which routes by pathname
+  and ignores the marker.
+- Playback position is restored separately, per recording, from
+  `localStorage` (`lib/playback-position.ts`).
+
 ## Offline
 
 Offline mode is documented in [offline.md](offline.md). Its **Current
