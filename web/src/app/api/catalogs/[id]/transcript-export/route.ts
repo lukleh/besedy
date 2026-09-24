@@ -9,6 +9,8 @@ import { loadVisibleCatalogHashes } from "@/lib/catalog";
 import { resolveTranscriptsPath } from "@/lib/paths";
 import { getRagBackendKey } from "@/lib/runtime-config";
 import { readTranscriptFile } from "@/lib/transcript";
+import { resolveReaderTranscriptSources } from "@/lib/correction/resolve";
+import { readPublishedTranscriptFile } from "@/lib/correction/reader-transcript";
 import { parseDateFromString } from "@/lib/date-utils";
 import { validateParams, notFound } from "@/lib/api";
 import {
@@ -150,16 +152,39 @@ async function buildTranscriptHeaderContext(
   return contextByHash;
 }
 
+/**
+ * The export carries what the account can read, resolved per recording the way
+ * the reader resolves it: the active publication for a correction-eligible
+ * primary recording, and the configured machine transcript for everything
+ * outside correction scope. An eligible recording that has never been
+ * published contributes nothing, so early on the export may contain no primary
+ * transcript at all.
+ */
 async function collectTxtTranscripts(
+  catalogId: string,
   transcriptsPath: string,
   backend: string,
   hashes: string[]
-): Promise<{ entries: TranscriptEntry[]; skipped: number }> {
+): Promise<{ entries: TranscriptEntry[]; skipped: number; withheld: number }> {
   const entries: TranscriptEntry[] = [];
   let skipped = 0;
+  let withheld = 0;
+
+  const sources = await resolveReaderTranscriptSources(catalogId, hashes);
 
   for (const hash of hashes) {
-    const transcript = await readTranscriptFile(transcriptsPath, hash, backend, "txt");
+    const source = sources.get(hash) ?? { kind: "machine" as const };
+
+    if (source.kind === "withheld") {
+      withheld += 1;
+      continue;
+    }
+
+    const transcript =
+      source.kind === "publication"
+        ? await readPublishedTranscriptFile(catalogId, source, "txt")
+        : await readTranscriptFile(transcriptsPath, hash, backend, "txt");
+
     if (!transcript) {
       skipped += 1;
       continue;
@@ -167,7 +192,7 @@ async function collectTxtTranscripts(
     entries.push({ hash, content: transcript.content });
   }
 
-  return { entries, skipped };
+  return { entries, skipped, withheld };
 }
 
 function buildZipFilename(catalogId: string, backend: string): string {
@@ -251,7 +276,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const transcriptsPath = resolveTranscriptsPath(catalogId);
-    const { entries, skipped } = await collectTxtTranscripts(
+    const { entries, skipped, withheld } = await collectTxtTranscripts(
+      catalogId,
       transcriptsPath,
       backend,
       hashes
@@ -259,7 +285,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (entries.length === 0) {
       return NextResponse.json(
-        { error: `No transcript.txt files found for backend '${backend}'` },
+        {
+          error:
+            withheld > 0
+              ? `No readable transcripts to export: ${withheld} primary recording(s) are being corrected and have not been published`
+              : `No transcript.txt files found for backend '${backend}'`,
+        },
         { status: 404 }
       );
     }
@@ -284,6 +315,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         totalHashes: hashes.length,
         exportedTranscripts: entries.length,
         skippedMissing: skipped,
+        withheldUnpublished: withheld,
       },
     });
 
@@ -316,6 +348,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       totalHashes: hashes.length,
       exportedTranscripts: entries.length,
       skippedMissing: skipped,
+      withheldUnpublished: withheld,
     };
     zip.addBuffer(Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf-8"), "manifest.json");
     zip.end();

@@ -9,6 +9,16 @@ import { AuthError } from "@/lib/auth/permissions";
 import { logTranscriptViewed } from "@/lib/audit/logger";
 import { resolveTranscriptRouteAccess } from "@/lib/access/transcript-route-access";
 import { HashSchema, TranscriptBackendSchema } from "@/lib/validation/schemas";
+import {
+  CORRECTED_TRANSCRIPT_BACKEND,
+  isCorrectedTranscriptBackend,
+} from "@/lib/correction/backend-key";
+import { resolveReaderTranscriptSource } from "@/lib/correction/resolve";
+import { selectDefaultTranscriptBackend } from "@/lib/transcript-default";
+import {
+  getReaderCorrectionState,
+  loadPublishedTranscript,
+} from "@/lib/correction/reader-transcript";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +27,8 @@ export const dynamic = "force-dynamic";
  *
  * Query params:
  * - group: Optional group ID override
- * - backend: Transcript backend key ({workflow}/{model_component})
+ * - backend: Transcript backend key ({workflow}/{model_component}), or
+ *   `corrected/published` for the published corrected transcript
  */
 export async function GET(
   request: NextRequest,
@@ -64,25 +75,83 @@ export async function GET(
     }
     const { userId, group, transcriptsPath, capability } = access;
 
+    // For a recording in correction scope the machine text is not the
+    // reader's transcript. The published correction is, and until one exists
+    // this surface has no text to serve — only progress.
+    const readerSource = await resolveReaderTranscriptSource(group.id, hash);
+    const correctionPublished = readerSource.kind === "publication";
+
     const priorities = await listTranscriptBackendPriorities();
     const available = await getAvailableTranscripts(transcriptsPath, hash, {
       priorities,
     });
-    // Ordered by configured priority, so the first is the default one.
-    const defaultBackend = available.backends[0] ?? null;
+    const defaultMachineBackend = selectDefaultTranscriptBackend(available.backends);
+
+    const defaultBackend = correctionPublished
+      ? CORRECTED_TRANSCRIPT_BACKEND
+      : readerSource.kind === "withheld"
+        ? null
+        : defaultMachineBackend;
 
     // Without the administrative view, there is one transcript: the default.
     // The alternatives are unevaluated machine output, so they are neither
     // listed nor servable, and hiding the picker alone would not achieve that.
     if (!backend) {
-      return NextResponse.json(
-        capability.canSeeTranscriptVariants || defaultBackend === null
-          ? available
-          : { ...available, backends: [defaultBackend] }
-      );
+      const machineBackends = capability.canSeeTranscriptVariants
+        ? available.backends
+        : readerSource.kind === "machine" && defaultMachineBackend
+          ? [defaultMachineBackend]
+          : [];
+
+      return NextResponse.json({
+        hash,
+        backends: correctionPublished
+          ? [CORRECTED_TRANSCRIPT_BACKEND, ...machineBackends]
+          : machineBackends,
+        ...(readerSource.kind === "withheld"
+          ? { correction: await getReaderCorrectionState(readerSource.workspaceId) }
+          : {}),
+      });
+    }
+
+    if (isCorrectedTranscriptBackend(backend)) {
+      if (!correctionPublished) {
+        return NextResponse.json(
+          {
+            error: "This transcript has not been published",
+            code: "TRANSCRIPT_NOT_PUBLISHED",
+            correction:
+              readerSource.kind === "withheld"
+                ? await getReaderCorrectionState(readerSource.workspaceId)
+                : null,
+          },
+          { status: 404 }
+        );
+      }
+
+      const published = await loadPublishedTranscript(group.id, hash, readerSource);
+      if (!published) {
+        return NextResponse.json(
+          { error: "Published transcript artifact is missing" },
+          { status: 404 }
+        );
+      }
+
+      await logTranscriptViewed(userId, hash, group.id, backend);
+      return NextResponse.json(published);
     }
 
     if (!capability.canSeeTranscriptVariants && backend !== defaultBackend) {
+      if (readerSource.kind === "withheld") {
+        return NextResponse.json(
+          {
+            error: "This transcript has not been published",
+            code: "TRANSCRIPT_NOT_PUBLISHED",
+            correction: await getReaderCorrectionState(readerSource.workspaceId),
+          },
+          { status: 404 }
+        );
+      }
       return NextResponse.json(
         { error: "Only the default transcript is available for this account" },
         { status: 403 }

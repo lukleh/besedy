@@ -149,16 +149,22 @@ def run_catalog_cli(
     stage: str,
     cwd: Path = PROJECT_ROOT,
     log: Callable[[str], None] = print,
-) -> None:
+    capture_output: bool = False,
+) -> str | None:
     """Run a catalog CLI subcommand in its own process group and stream its output.
 
     A fresh interpreter mirrors what the operator runs by hand and keeps the CLI's
     ``sys.exit``/signal handling out of the Prefect flow process. The process group
     lets a cancelled flow terminate the whole tree, including Docker backend runs.
+
+    With ``capture_output`` the complete output is returned as well, for commands
+    whose result the flow has to read back (``--json`` reports). The default keeps
+    only a tail for the error message, because a pipeline run logs for hours.
     """
     command = catalog_cli_command(args)
     log(f"[{stage}] $ {' '.join(command)}")
     tail: deque[str] = deque(maxlen=CLI_OUTPUT_TAIL_LINES)
+    captured: list[str] = []
     process = subprocess.Popen(
         command,
         cwd=str(cwd),
@@ -172,6 +178,8 @@ def run_catalog_cli(
         for line in process.stdout:
             rendered = line.rstrip()
             tail.append(rendered)
+            if capture_output:
+                captured.append(rendered)
             log(f"[{stage}] {rendered}")
         return_code = process.wait()
     finally:
@@ -183,6 +191,7 @@ def run_catalog_cli(
             f"{stage} exited with code {return_code}.\n{detail}".strip(),
             error_code=f"{stage}_failed",
         )
+    return "\n".join(captured) if capture_output else None
 
 
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:

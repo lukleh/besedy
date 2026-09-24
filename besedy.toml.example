@@ -16,6 +16,7 @@
 #   BESEDY_CACHE_HOME          Preferred cache root (default ~/.cache/lukleh/besedy).
 #   BESEDY_AUDIO_ARTIFACTS_ROOT  Derived-audio base dir (normally [paths].audio_artifacts_dir).
 #   BESEDY_TEXT_DATA_ROOT      Text-data base dir (normally [paths].text_data_dir).
+#   BESEDY_CORRECTIONS_ROOT    Correction artifacts dir (normally [paths].corrections_dir).
 #   BESEDY_WEB_ENV_DEV/PROD/TEST Selected web env file for Docker and E2E helpers.
 
 [paths]
@@ -47,6 +48,12 @@ uploads_dir = ""
 # Output directory name for transcript JSON files
 # (organized by workflow/output-component/full-audio-hash/)
 transcripts_dir = "transcripts"
+# Directory for human transcript correction workspaces and their published
+# artifacts. Absolute, or relative to text_data_dir. Leave empty for
+# <text_data_dir>/corrections. It is deliberately outside the transcripts tree,
+# which ADR 0002 keeps immutable. Host-run tooling can override it with
+# BESEDY_CORRECTIONS_ROOT.
+corrections_dir = ""
 # Directory name for speaker clustering results
 speaker_clusters_dir = "speaker_clusters"
 

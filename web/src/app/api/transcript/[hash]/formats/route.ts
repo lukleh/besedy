@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAvailableFormats, type TranscriptBackend } from "@/lib/transcript";
 import { resolveTranscriptRouteAccess } from "@/lib/access/transcript-route-access";
+import { isCorrectedTranscriptBackend } from "@/lib/correction/backend-key";
+import { resolveReaderTranscriptSource } from "@/lib/correction/resolve";
+import { PUBLISHED_TRANSCRIPT_FORMATS } from "@/lib/correction/reader-transcript";
 import { HashSchema, TranscriptBackendSchema } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
@@ -67,7 +70,39 @@ export async function GET(
     if (!access.ok) {
       return access.response;
     }
-    const { transcriptsPath, capability } = access;
+    const { group, transcriptsPath, capability } = access;
+
+    const readerSource = await resolveReaderTranscriptSource(group.id, hash);
+
+    if (isCorrectedTranscriptBackend(backend)) {
+      if (readerSource.kind !== "publication") {
+        return NextResponse.json(
+          {
+            error: "This transcript has not been published",
+            code: "TRANSCRIPT_NOT_PUBLISHED",
+          },
+          { status: 404 }
+        );
+      }
+      // A publication renders all four formats in one job, so there is nothing
+      // to probe on disk the way machine sidecars are probed.
+      return NextResponse.json({
+        hash,
+        backend,
+        formats: PUBLISHED_TRANSCRIPT_FORMATS,
+        canDownload: capability.canDownloadTranscripts,
+      });
+    }
+
+    if (readerSource.kind !== "machine" && !capability.canSeeTranscriptVariants) {
+      return NextResponse.json(
+        {
+          error: "This transcript has not been published",
+          code: "TRANSCRIPT_NOT_PUBLISHED",
+        },
+        { status: 404 }
+      );
+    }
 
     // Get available formats
     const result = await getAvailableFormats(transcriptsPath, hash, backend);

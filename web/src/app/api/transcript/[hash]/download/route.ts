@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readTranscriptFile, type TranscriptFormat } from "@/lib/transcript";
-import { logTranscriptDownloaded } from "@/lib/audit/logger";
+import {
+  logOriginalTranscriptDownloaded,
+  logTranscriptDownloaded,
+} from "@/lib/audit/logger";
 import { resolveTranscriptRouteAccess } from "@/lib/access/transcript-route-access";
+import { isCorrectedTranscriptBackend } from "@/lib/correction/backend-key";
+import {
+  frozenSourcePath,
+  resolveOriginalTranscriptSource,
+  resolveReaderTranscriptSource,
+} from "@/lib/correction/resolve";
+import { readPublishedTranscriptFile } from "@/lib/correction/reader-transcript";
+import { readTextFile } from "@/lib/correction/storage";
+import { resolveConfiguredDefaultBackend } from "@/lib/correction/source";
 import {
   HashSchema,
   TranscriptBackendSchema,
@@ -36,6 +48,8 @@ const CONTENT_TYPES: Record<TranscriptFormat, string> = {
  * - group: Optional group ID override
  * - backend: Transcript backend key ({workflow}/{model_component})
  * - format: Download format (json, txt, srt, vtt) - default: json
+ * - original: `1` to take the machine text underneath, for the roles that run
+ *   the archive. Taking it never starts or changes a correction workspace.
  *
  * Only returns formats that exist on disk (no on-the-fly conversion).
  * Use `just catalog export-transcripts` to generate sidecar files.
@@ -98,15 +112,74 @@ export async function GET(
     if (!access.ok) {
       return access.response;
     }
-    const { userId, group, transcriptsPath } = access;
+    const { userId, group, transcriptsPath, capability } = access;
 
-    // Read transcript file directly from disk
-    const result = await readTranscriptFile(
-      transcriptsPath,
-      hash,
-      backend,
-      format
-    );
+    const wantsOriginal = searchParams.get("original") === "1";
+    let result: { content: string; filename: string } | null = null;
+    let originalSource: "machine" | "frozen" = "machine";
+
+    if (wantsOriginal) {
+      if (!capability.canDownloadOriginalTranscript) {
+        return NextResponse.json(
+          { error: "Original transcript download not permitted for this account" },
+          { status: 403 }
+        );
+      }
+
+      const original = await resolveOriginalTranscriptSource(group.id, hash);
+      originalSource = original.kind === "frozen" ? "frozen" : "machine";
+      if (original.kind === "frozen") {
+        // Once correction has started this is always the frozen source, before
+        // or after publication, so the original is the text the corrections
+        // were actually made against.
+        if (format !== "json") {
+          return NextResponse.json(
+            {
+              error:
+                "Only the JSON original is kept once correction has started; sidecars are rendered per publication",
+            },
+            { status: 404 }
+          );
+        }
+        const content = await readTextFile(frozenSourcePath(group.id, original));
+        result = content === null ? null : { content, filename: "transcript.json" };
+      } else {
+        const defaultBackend = await resolveConfiguredDefaultBackend(
+          transcriptsPath,
+          hash
+        );
+        result = defaultBackend
+          ? await readTranscriptFile(transcriptsPath, hash, defaultBackend, format)
+          : null;
+      }
+    } else if (isCorrectedTranscriptBackend(backend)) {
+      const readerSource = await resolveReaderTranscriptSource(group.id, hash);
+      if (readerSource.kind !== "publication") {
+        return NextResponse.json(
+          {
+            error: "This transcript has not been published",
+            code: "TRANSCRIPT_NOT_PUBLISHED",
+          },
+          { status: 404 }
+        );
+      }
+      result = await readPublishedTranscriptFile(group.id, readerSource, format);
+    } else {
+      // An ordinary transcript download carries what the reader can read. For a
+      // correction-eligible recording that is the active publication, never the
+      // machine text underneath it.
+      const readerSource = await resolveReaderTranscriptSource(group.id, hash);
+      if (readerSource.kind !== "machine" && !capability.canSeeTranscriptVariants) {
+        return NextResponse.json(
+          {
+            error: "This transcript has not been published",
+            code: "TRANSCRIPT_NOT_PUBLISHED",
+          },
+          { status: 404 }
+        );
+      }
+      result = await readTranscriptFile(transcriptsPath, hash, backend, format);
+    }
 
     if (!result) {
       return NextResponse.json(
@@ -118,10 +191,21 @@ export async function GET(
     }
 
     // Log download
-    await logTranscriptDownloaded(userId, hash, group.id, backend, format);
+    if (wantsOriginal) {
+      await logOriginalTranscriptDownloaded(userId, hash, group.id, {
+        source: originalSource,
+        backend,
+        format,
+      });
+    } else {
+      await logTranscriptDownloaded(userId, hash, group.id, backend, format);
+    }
 
     // Return file content
-    const safeBackend = backend.replace(/[\\/]/g, "_");
+    const safeBackend = (wantsOriginal ? `${backend}_original` : backend).replace(
+      /[\\/]/g,
+      "_"
+    );
     const downloadFilename = `${hash.slice(0, 12)}_${safeBackend}.${format}`;
 
     return new NextResponse(result.content, {

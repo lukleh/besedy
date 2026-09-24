@@ -51,6 +51,47 @@ class IngestCompletionReport:
         }
 
 
+class CorrectionIndexSyncStatus(StrEnum):
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
+@dataclass(slots=True, frozen=True)
+class CorrectionIndexSyncReport:
+    """What the search-index sync found once it ran for one recording.
+
+    ``transcript_path`` and ``transcript_fingerprint`` come from the active
+    bundle's source state after the sync, so the web application can check
+    that the text search now holds is the publication it is about to make
+    readable, rather than trusting that a sync happened.
+    """
+
+    catalog_id: str
+    audio_hash: str
+    operation: str
+    operation_token: str
+    status: CorrectionIndexSyncStatus
+    transcript_fingerprint: str | None = None
+    transcript_path: str | None = None
+    index_dir: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+    def to_payload(self) -> JsonDict:
+        return {
+            "catalogId": self.catalog_id,
+            "audioHash": self.audio_hash,
+            "operation": self.operation,
+            "operationToken": self.operation_token,
+            "status": self.status.value,
+            "transcriptFingerprint": self.transcript_fingerprint,
+            "transcriptPath": self.transcript_path,
+            "indexDir": self.index_dir,
+            "errorCode": self.error_code,
+            "errorMessage": self.error_message,
+        }
+
+
 @dataclass(slots=True)
 class BesedyIngestClientConfig:
     base_url: str
@@ -74,6 +115,9 @@ class BesedyIngestClient:
     def report_completion(self, *, intake_id: str, report: IngestCompletionReport) -> JsonDict:
         path = f"/api/internal/ingest/{urllib_parse.quote(intake_id, safe='')}/complete"
         return self._post_json(path, report.to_payload())
+
+    def report_correction_index_sync(self, *, report: CorrectionIndexSyncReport) -> JsonDict:
+        return self._post_json("/api/internal/correction/index-sync/complete", report.to_payload())
 
     def _post_json(self, path: str, payload: JsonDict) -> JsonDict:
         url = urllib_parse.urljoin(f"{self._base_url}/", path.lstrip("/"))

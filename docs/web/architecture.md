@@ -219,6 +219,7 @@ Semantic search is catalog-wide rather than per recording:
 | DELETE | `/api/admin/ingest/uploads/:intakeId` | Admin | Abort an unsubmitted upload |
 | POST | `/api/admin/ingest/:intakeId/remove` | Admin | Remove an ingested recording and catalog-owned derived data (worker flow), or just the upload files |
 | POST | `/api/internal/ingest/:intakeId/complete` | Job service bearer | Worker completion callback; re-syncs the catalog on success |
+| POST | `/api/internal/correction/index-sync/complete` | Job service bearer | Worker report after a correction index sync; moves the publication pointers once search holds the text |
 
 See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 

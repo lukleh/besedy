@@ -20,9 +20,10 @@ web-specific docs for those).
 5. [Diarization Schema (speakers.json)](#diarization-schema)
 6. [Speaker Embeddings](#speaker-embeddings)
 7. [Speaker Clusters](#speaker-clusters)
-8. [Directory Structure and Discovery](#directory-structure-and-discovery)
-9. [Relationships and Join Keys](#relationships-and-join-keys)
-10. [Metrics Reference](#metrics-reference)
+8. [Corrected Transcripts](#corrected-transcripts)
+9. [Directory Structure and Discovery](#directory-structure-and-discovery)
+10. [Relationships and Join Keys](#relationships-and-join-keys)
+11. [Metrics Reference](#metrics-reference)
 
 ---
 
@@ -88,6 +89,7 @@ Source of truth: `besedy/lib/backend_ids.py`
 | `transcripts/speaker_diarization/<model>/<audio_hash>/speakers.json` | Pyannote diarization segments. |
 | `transcripts/speaker_embeddings/pyannote-embedding/file/<audio_hash>/embeddings.json` | Per-speaker embedding vectors (internal clustering cache). |
 | `speaker_clusters_<timestamp>/clusters_pyannote.json` | Cross-file speaker cluster assignments. Symlinked from `speaker_clusters/`. |
+| `corrections/corrections_<catalog_id>/…` | Human correction workspaces and published corrected transcripts. See [Corrected Transcripts](#corrected-transcripts). |
 
 `<audio_hash>` in persisted artifact paths is the complete 64-character value.
 Commands may accept or display an unambiguous prefix, but writers do not create
@@ -339,6 +341,110 @@ Pyannote embeddings.
 **Optional large arrays:** `distance_matrix` (pairwise distances) and
 `all_pairs` (detailed pair records with `cosine_distance` and
 `similarity_percent`). Both can be very large.
+
+---
+
+## Corrected Transcripts
+
+Human correction ([ADR 0006](adr/0006-transcript-correction.md)) writes while
+work is in progress, so its artifacts cannot live inside a transcript
+generation, which [ADR 0002](adr/0002-artifact-generations.md) keeps immutable.
+They sit under their own root, `[paths].corrections_dir` in `besedy.toml`,
+defaulting to `<text_data_dir>/corrections`.
+
+```text
+corrections/
+  corrections_<catalog_id>/
+    index-sources/
+      <audio_hash>.json            # effective search source for this recording
+    <workspace_id>/
+      source/
+        transcript.json            # frozen machine source, byte-for-byte
+      publications/
+        <publication_id>/
+          transcript.json          # published corrected transcript
+          transcript.txt
+          transcript.srt
+          transcript.vtt
+```
+
+The web application's database decides which publication each consumer
+resolves. **File existence alone never means a transcript is published.**
+
+### Published transcript.json
+
+A published corrected transcript is a valid canonical transcript. It keeps the
+source facts — the honest `meta.backend` and `meta.model` of the machine
+transcript underneath, the recording duration, the generation parameters — and
+recomputes or drops every summary the machine derived from words it no longer
+contains. `meta.num_words` is omitted, because v1 carries no timed word arrays
+and counting words is language-dependent.
+
+Each segment carries the fixed source `start` and `end`, the approved `text`,
+`confidence: null` and `words: []`. Correction changes text, not timing.
+
+It adds one provenance block; detailed audit history stays in PostgreSQL.
+
+```json
+{
+  "meta": {
+    "correction": {
+      "schema_version": 1,
+      "workspace_id": "…",
+      "publication_id": "…",
+      "source_fingerprint": "…",
+      "published_at": "…",
+      "required_approvals": 2
+    }
+  }
+}
+```
+
+### index-sources/&lt;audio_hash&gt;.json
+
+The contract between the web application, which owns the correction database,
+and the Python index build, which has none. The web application publishes the
+effective search source for a recording here; `besedy/lib/rag_correction_sources.py`
+reads it and substitutes that file for the machine transcript of the same audio
+hash in whatever backend scope is being indexed.
+
+| Field | Meaning |
+|-------|---------|
+| `schema_version` | `2`. A pointer with an unknown version is ignored, not guessed at. |
+| `workflow_group_id` | Catalog. A pointer naming another catalog is ignored. |
+| `audio_hash` | The recording whose transcript this is. |
+| `workspace_id`, `publication_id` | Provenance for operators reading the tree. |
+| `state` | `activating` or `active`; any other value is ignored. |
+| `backend` | The machine backend the corrections descend from. Provenance only. |
+| `transcript_path` | Path to the published `transcript.json`, relative to the corrections root, so a differently mounted reader still resolves it. |
+| `artifact_sha256` | SHA-256 of that file's bytes. The indexer hashes the file and ignores a pointer that does not match, so this is an integrity check at the boundary that consumes the artifact rather than metadata agreeing with metadata. Deliberately not the indexer's own source fingerprint, which is derived from segment timing and text: the two are different identities with different owners. |
+
+`activating` is honoured as readily as `active`. During the window where a
+publication has written its artifacts but has not yet committed its database
+pointers, a routine sync must already resolve the new text — otherwise it would
+classify the hash as changed and revert the corrected chunks to machine text.
+
+### Publication waits for the index
+
+The pointer is written in `activating` state, and the database pointers do not
+move until the search side has confirmed what it holds. The web application
+submits a `sync_correction_index_flow` job through the jobs API; the host
+ingest worker runs `catalog rag-colbert-index --group <catalog> --hash
+<audio_hash>` for the active search scope, reads the recording's row from the
+new bundle's `source_state.sqlite`, and reports it to
+`POST /api/internal/correction/index-sync/complete`. The web application
+accepts the report only if the reported `transcript_path` ends with this
+publication's `corrections_<catalog_id>/<workspace_id>/publications/<publication_id>/transcript.json`
+— paths are compared by their tail under the corrections root because the
+worker and the web container mount the tree at different places — and only
+then moves both database pointers and flips the pointer to `active`. A report
+naming a different source, or a failed sync, leaves the publication
+`ACTIVATING` with the error recorded; reconciling submits the job again.
+
+Withdrawal from search and rollback run the same job with `operation` set to
+`withdraw` or `rollback`. Their intents (`search_withdrawal_id`,
+`ROLLING_BACK`) clear only when the report shows the machine text, or the
+previous publication, is what the bundle holds again.
 
 ---
 

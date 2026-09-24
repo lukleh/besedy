@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, Download, FileAudio, Mic, Music, Pencil } from "lucide-react";
+import { ArrowLeft, Download, FileAudio, Mic, Music, Pencil, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -23,6 +23,7 @@ import {
   ResponsiveMenuItem,
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
+import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 import { cn } from "@/lib/utils";
 import { formatMediumDate } from "@/lib/date-format";
 import type { CatalogEntryResponse } from "@/types/catalog";
@@ -84,6 +85,8 @@ interface RecordingTranscriptSectionProps {
   canDownloadTranscripts?: boolean;
   canSeeSpeakers?: boolean;
   canSeeTranscriptVariants?: boolean;
+  canCorrectTranscripts?: boolean;
+  correctionEligible?: boolean;
   catalogId: string;
   currentTime: number;
   hash: string;
@@ -314,6 +317,8 @@ export function RecordingTranscriptSection({
   canDownloadTranscripts,
   canSeeSpeakers = false,
   canSeeTranscriptVariants = false,
+  canCorrectTranscripts = false,
+  correctionEligible = false,
   catalogId,
   currentTime,
   hash,
@@ -332,6 +337,20 @@ export function RecordingTranscriptSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{t("recording.transcript")}</h2>
+        {/*
+          The way back into correction, and for a curator the only way to reach
+          the publication controls. It has to survive publication: the reader's
+          progress panel carries the same link, but that panel disappears the
+          moment there is a transcript to read.
+        */}
+        {canCorrectTranscripts && correctionEligible && (
+          <Button asChild variant="outline" size="sm" className="gap-2">
+            <Link href={buildCorrectionPagePath(catalogId, hash)}>
+              <SquarePen className="h-4 w-4" />
+              {t("correction.openSurface")}
+            </Link>
+          </Button>
+        )}
         {canSeeTranscriptVariants && (
         <div className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1">
           <span
@@ -377,6 +396,7 @@ export function RecordingTranscriptSection({
           canDownload={canDownloadTranscripts}
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}
+          canCorrectTranscripts={canCorrectTranscripts}
         />
       )}
     </div>

@@ -211,6 +211,7 @@ wildcard; system admins resolve the same way.
 | Open catalog and stream audio                   |    Y     |   Y    |     Y     |  Y   |    Y    |       Y       |
 | Read and search transcripts                     |    -     |   Y    |     Y     |  Y   |    Y    |       Y       |
 | Correct transcripts                             |    -     |   -    |     Y     |  -   |    Y    |       Y       |
+| Publish, republish and unpublish transcripts    |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | See unreleased material                         |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Browse recordings list                          |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Edit metadata, lookups, events, and publication |    -     |   -    |     -     |  -   |    Y    |       Y       |
@@ -315,6 +316,51 @@ shared by the web-to-jobs client, the jobs API and the worker-to-web client, so
 one leaked value is worth treating as a full compromise of job submission and
 retrieval.
 
+### The Transcript Publication Gate Is Not an Authorization Decision
+
+For a recording **in correction scope** — one with a live correction
+workspace, or the current primary recording of an event; a workspace latches
+the gate, so demoting the recording later does not lift it (ADR 0006) —
+`read_transcripts` no longer means "read the machine transcript". It means read the published corrected one, and
+before the first publication the reader sees correction progress instead of
+text. `see_unreleased` does not bypass this: it widens which events and
+recordings exist for an actor, not which transcripts are fit to be read.
+Recordings outside correction scope keep the search backend's machine
+transcript (`RAG_BACKEND_KEY`, the one default every consumer reads) for
+reading and download.
+
+Four consumers resolve text deliberately differently, and the machine fallback
+that search and MCP require must never become a fallback for the reading page:
+
+| Consumer                     | Resolves                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| Reader and ordinary download | The active reader publication; with none, no transcript text                   |
+| Search and MCP               | The active search publication, otherwise the search backend's machine transcript |
+| Correction surface           | The live workspace of a recording in correction scope, which `correct_transcripts` opens; starting one requires a primary recording |
+| Privileged original access   | The search backend's machine transcript, or the frozen source once correction started |
+
+Two explicit permissions are exceptions to the reading gate, and neither is a
+consequence of seeing unreleased material. `see_transcript_variants` inspects
+machine variants, including before publication. `download_original_transcript`
+delivers the machine text underneath, and asking for it never starts or changes
+a correction workspace.
+
+Three exceptional operations sit with `manage_catalog_config` rather than with
+either of those: archiving a mis-started workspace so a new one can be started,
+reconciling or rolling back a publication that crashed mid-activation, and
+withdrawing corrected text from search. Each can change what every consumer
+resolves, which is why none of them is part of ordinary correction or
+publication. Archiving refuses a workspace that still backs a published
+transcript: unpublishing and withdrawing it from search are deliberate acts of
+their own, and archiving must not perform them silently.
+
+`publish_transcript` grants no adjudication. The server rechecks every span
+when publication starts: two distinct approvals on its current revision and no
+current disapproval. A publisher cannot carry a disputed or unfinished span
+past that gate, and being one of the two approvers is not a third review.
+
+See [ADR 0006](../adr/0006-transcript-correction.md).
+
 ### File Delivery Is One Permission Per Thing Delivered
 
 There is no general "may download". Which file is leaving decides which
@@ -326,7 +372,7 @@ neither of them gets the whole corpus in one request.
 | `download_audio`               | The playable file                             | `curator`, `catalog_admin`, or a named account |
 | `download_original_audio`      | The master                                    | `catalog_admin` only — no role carries it      |
 | `download_transcripts`         | One transcript the account can already read   | `curator`, `catalog_admin`, or a named account |
-| `download_original_transcript` | The machine text under a corrected transcript | `curator`, `catalog_admin`                     |
+| `download_original_transcript` | The machine text under a corrected transcript | `curator`, `catalog_admin` — role only, not a grantable extra |
 | `bulk_export_transcripts`      | The whole catalog as data                     | `curator`, `catalog_admin`                     |
 
 Each is never broader than reading: they decide whether an account may take out
