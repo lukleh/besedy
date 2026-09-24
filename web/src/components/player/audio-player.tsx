@@ -48,6 +48,7 @@ import {
   safePlay,
 } from './audio-player-utils';
 import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
+import { useMediaSession } from './use-media-session';
 import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
@@ -83,6 +84,8 @@ export function AudioPlayer({
   seekKey,
   playbackEnd,
   autoPlayOnSeek,
+  mediaMetadata,
+  launchNote,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -104,6 +107,8 @@ export function AudioPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  // Counts seeks so the media session republishes its position state.
+  const [seekVersion, setSeekVersion] = useState(0);
   const {
     bufferInfo,
     chunkFetches,
@@ -122,11 +127,22 @@ export function AudioPlayer({
 
   // Background event log - always collects events even when debug is off.
   // It opens with the initial source's transport; the source-change effect
-  // below skips the mount, so that entry is created here.
-  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>(() => [
-    createSourceEvent(0, src),
-  ]);
-  const debugEventIdRef = useRef(1);
+  // below skips the mount, so that entry is created here. The page's launch
+  // note follows, so a relaunch after a kill can be read on the device.
+  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>(() => {
+    const events = [createSourceEvent(0, src)];
+    if (launchNote) {
+      events.push({
+        id: 1,
+        timestamp: new Date(),
+        type: 'lifecycle',
+        message: 'Launch',
+        details: launchNote,
+      });
+    }
+    return events;
+  });
+  const debugEventIdRef = useRef(launchNote ? 2 : 1);
 
   const logDebugEvent = useCallback(
     (type: DebugEventType, message: string, details?: string) => {
@@ -365,6 +381,44 @@ export function AudioPlayer({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [restoreSavedPositionAfterResume]);
+
+  // Page lifecycle in the event log. Whether `pagehide` fires when the app is
+  // swiped away decides if a later launch counts as interrupted, so it has to
+  // be observable on a phone.
+  useEffect(() => {
+    const describeElement = () => {
+      const audio = audioRef.current;
+      if (!audio) return undefined;
+      return `At ${audio.currentTime.toFixed(1)}s, ${audio.paused ? 'paused' : 'playing'}`;
+    };
+    const handleVisibility = () => {
+      logDebugEvent(
+        'lifecycle',
+        document.visibilityState === 'hidden' ? 'Page hidden' : 'Page visible',
+        describeElement(),
+      );
+    };
+    const handlePageHide = (event: PageTransitionEvent) => {
+      logDebugEvent(
+        'lifecycle',
+        'Page hide',
+        event.persisted ? 'Kept for back-forward cache' : 'Unloading',
+      );
+    };
+    const handleFreeze = () => logDebugEvent('lifecycle', 'Page frozen', describeElement());
+    const handleResume = () => logDebugEvent('lifecycle', 'Page resumed', describeElement());
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('freeze', handleFreeze);
+    document.addEventListener('resume', handleResume);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('freeze', handleFreeze);
+      document.removeEventListener('resume', handleResume);
+    };
+  }, [logDebugEvent]);
 
   // Reset state when audio source changes (not on initial mount)
   useEffect(() => {
@@ -705,6 +759,7 @@ export function AudioPlayer({
 
     const handleSeeking = () => {
       const seekTime = audio.currentTime;
+      setSeekVersion((version) => version + 1);
       logDebugEvent('seek', 'Seeking', `To ${seekTime.toFixed(1)}s`);
 
       // Check if seek position is buffered
@@ -824,25 +879,46 @@ export function AudioPlayer({
     }
   };
 
-  const skipBackward = () => {
+  const seekBy = (offsetSec: number) => {
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    const time = Math.max(0, audio.currentTime - 10);
+    const time =
+      offsetSec < 0
+        ? Math.max(0, audio.currentTime + offsetSec)
+        : Math.min(duration, audio.currentTime + offsetSec);
     audio.currentTime = time;
     setCurrentTime(time);
     onSeek?.(time);
   };
 
-  const skipForward = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    playbackEndRef.current = null;
-    const time = Math.min(duration, audio.currentTime + 10);
-    audio.currentTime = time;
-    setCurrentTime(time);
-    onSeek?.(time);
-  };
+  const skipBackward = () => seekBy(-10);
+  const skipForward = () => seekBy(10);
+
+  // Lock-screen and notification controls drive the same paths as the
+  // on-screen buttons, so the page sees every play, pause and seek.
+  useMediaSession({
+    audioRef,
+    metadata: mediaMetadata,
+    isPlaying,
+    duration,
+    seekVersion,
+    onPlay: () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      userInitiatedRef.current = true;
+      safePlay(audio, 'media session play', logDebugEvent);
+    },
+    onPause: () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      playIntentRef.current = false;
+      audio.pause();
+    },
+    onSeekBy: seekBy,
+    onSeekTo: (time) => handleSeek([time]),
+    onLog: (message, details) => logDebugEvent('session', message, details),
+  });
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(

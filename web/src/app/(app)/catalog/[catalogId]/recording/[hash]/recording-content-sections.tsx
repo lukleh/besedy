@@ -67,6 +67,7 @@ interface RecordingAudioSectionProps {
   downloadEventId?: number;
   currentTimeSetter: (time: number) => void;
   hash: string;
+  launchNote?: string | null;
   onAudioDownload: (source: "archived" | "original") => void;
   onAudioEnded: (duration: number) => void;
   onDurationChange: (duration: number) => void;
@@ -208,6 +209,7 @@ export function RecordingAudioSection({
   downloadEventId,
   currentTimeSetter,
   hash,
+  launchNote,
   onAudioDownload,
   onAudioEnded,
   onDurationChange,
@@ -264,6 +266,13 @@ export function RecordingAudioSection({
         seekKey={seekRequest?.key}
         playbackEnd={seekRequest?.end}
         autoPlayOnSeek={autoPlayOnSeek}
+        mediaMetadata={{
+          title:
+            recording.curatedTitle || recording.title || recording.filename || hash.slice(0, 16),
+          artist: recording.artist ?? undefined,
+          album: recording.album?.name,
+        }}
+        launchNote={launchNote}
       />
 
       {(permissions.canEditMetadata ||

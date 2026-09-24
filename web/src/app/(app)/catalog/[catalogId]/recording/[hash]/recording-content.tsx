@@ -111,6 +111,7 @@ export default function RecordingContent({
     handlePlayingChange,
     handleSeek,
     isPlaying,
+    launchNote,
     seekRequest,
     setCurrentTime,
   } = useRecordingPlayback(catalogId, hash);
@@ -261,6 +262,7 @@ export default function RecordingContent({
         downloadEventId={downloadEventId}
         currentTimeSetter={setCurrentTime}
         hash={hash}
+        launchNote={launchNote}
         onAudioDownload={handleAudioDownload}
         onAudioEnded={handleAudioEnded}
         onDurationChange={handleDurationChange}

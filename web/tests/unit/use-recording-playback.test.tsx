@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRecordingPlayback } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback";
+import {
+  NOW_PLAYING_RESUME_WINDOW_MS,
+  readNowPlaying,
+  saveNowPlaying,
+} from "@/lib/now-playing";
 
 const mocks = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
@@ -65,6 +70,13 @@ function setVisibilityState(state: DocumentVisibilityState) {
     configurable: true,
     value: state,
   });
+}
+
+/** Writes of the saved position only; the now-playing heartbeat has its own key. */
+function positionWrites() {
+  return vi
+    .mocked(localStorage.setItem)
+    .mock.calls.filter(([key]) => key === STORAGE_KEY).length;
 }
 
 describe("useRecordingPlayback", () => {
@@ -480,25 +492,193 @@ describe("useRecordingPlayback", () => {
       result.current.handlePlayingChange(true);
       result.current.setCurrentTime(1);
     });
-    expect(localStorage.setItem).toHaveBeenCalledTimes(1);
+    expect(positionWrites()).toBe(1);
 
     act(() => {
       result.current.setCurrentTime(2);
       vi.advanceTimersByTime(4_999);
       result.current.setCurrentTime(3);
     });
-    expect(localStorage.setItem).toHaveBeenCalledTimes(1);
+    expect(positionWrites()).toBe(1);
 
     act(() => {
       vi.advanceTimersByTime(1);
       result.current.setCurrentTime(4);
     });
-    expect(localStorage.setItem).toHaveBeenCalledTimes(2);
+    expect(positionWrites()).toBe(2);
 
     act(() => {
       result.current.handlePlayingChange(false);
     });
-    expect(localStorage.setItem).toHaveBeenCalledTimes(3);
+    expect(positionWrites()).toBe(3);
+  });
+
+  describe("interrupted playback", () => {
+    const interrupted = (overrides: { hash?: string; playing?: boolean } = {}) => {
+      saveNowPlaying(
+        {
+          catalogId: CATALOG_ID,
+          hash: overrides.hash ?? HASH,
+          positionSec: 300,
+          playing: overrides.playing ?? true,
+        },
+        Date.now() - 60_000,
+      );
+    };
+
+    it("records the playing recording, refreshes it while playing and marks a pause", () => {
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      act(() => {
+        result.current.setCurrentTime(30);
+      });
+      act(() => {
+        result.current.handlePlayingChange(true);
+      });
+      expect(readNowPlaying()).toMatchObject({
+        catalogId: CATALOG_ID,
+        hash: HASH,
+        positionSec: 30,
+        playing: true,
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(20_000);
+        result.current.setCurrentTime(50);
+      });
+      expect(readNowPlaying()).toMatchObject({ positionSec: 50, playing: true });
+
+      act(() => {
+        result.current.handlePlayingChange(false);
+      });
+      expect(readNowPlaying()).toMatchObject({ positionSec: 50, playing: false });
+    });
+
+    it("marks the session stopped when the page unloads or the view unmounts", () => {
+      const { result, unmount } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      act(() => {
+        result.current.handlePlayingChange(true);
+      });
+      act(() => {
+        window.dispatchEvent(new Event("pagehide"));
+      });
+      expect(readNowPlaying()?.playing).toBe(false);
+
+      act(() => {
+        result.current.handlePlayingChange(true);
+      });
+      expect(readNowPlaying()?.playing).toBe(true);
+      unmount();
+      expect(readNowPlaying()?.playing).toBe(false);
+    });
+
+    it("keeps the session alive while the page is only hidden", () => {
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      act(() => {
+        result.current.handlePlayingChange(true);
+      });
+      act(() => {
+        setVisibilityState("hidden");
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(readNowPlaying()?.playing).toBe(true);
+    });
+
+    it("clears the record when the recording ends", () => {
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      act(() => {
+        result.current.handlePlayingChange(true);
+      });
+      act(() => {
+        result.current.handleAudioEnded(100);
+      });
+
+      expect(readNowPlaying()).toBeNull();
+    });
+
+    it("resumes where a killed app stopped", () => {
+      localStorage.setItem(STORAGE_KEY, "280");
+      interrupted();
+
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      // The heartbeat is at least as recent as the saved position.
+      expect(result.current.seekRequest?.time).toBe(300);
+      expect(result.current.autoPlayOnSeek).toBe(true);
+      expect(result.current.launchNote).toBe("Resuming interrupted playback from 300s");
+      // Consumed: reloading the page is a plain visit.
+      expect(readNowPlaying()?.playing).toBe(false);
+    });
+
+    it("keeps autoplay armed until playback starts", () => {
+      interrupted();
+
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(result.current.autoPlayOnSeek).toBe(true);
+
+      act(() => {
+        result.current.handlePlayingChange(true);
+      });
+      expect(result.current.autoPlayOnSeek).toBe(false);
+    });
+
+    it("disarms autoplay when the listener seeks first", () => {
+      interrupted();
+
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+      act(() => {
+        result.current.handleSeek(10);
+      });
+
+      expect(result.current.autoPlayOnSeek).toBe(false);
+    });
+
+    it("stays paused after a deliberate stop", () => {
+      localStorage.setItem(STORAGE_KEY, "280");
+      interrupted({ playing: false });
+
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      expect(result.current.seekRequest?.time).toBe(280);
+      expect(result.current.autoPlayOnSeek).toBe(false);
+      expect(result.current.launchNote).toBe("No interrupted playback (stopped)");
+    });
+
+    it("stays paused when the session is stale or another recording's", () => {
+      saveNowPlaying(
+        { catalogId: CATALOG_ID, hash: HASH, positionSec: 300, playing: true },
+        Date.now() - NOW_PLAYING_RESUME_WINDOW_MS - 1,
+      );
+      const stale = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+      expect(stale.result.current.autoPlayOnSeek).toBe(false);
+      expect(stale.result.current.launchNote).toBe("No interrupted playback (stale)");
+      stale.unmount();
+
+      interrupted({ hash: "b".repeat(64) });
+      const other = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+      expect(other.result.current.autoPlayOnSeek).toBe(false);
+      expect(other.result.current.launchNote).toBe(
+        "No interrupted playback (other-recording)",
+      );
+    });
+
+    it("lets a seek in the URL win over an interrupted session", () => {
+      mocks.searchParams = new URLSearchParams({ seek: "12.5" });
+      interrupted();
+
+      const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+      expect(result.current.seekRequest?.time).toBe(12.5);
+      expect(result.current.autoPlayOnSeek).toBe(false);
+      expect(readNowPlaying()?.playing).toBe(false);
+    });
   });
 
   it("does not run server restoration after a radio handoff", async () => {

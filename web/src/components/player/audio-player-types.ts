@@ -16,6 +16,19 @@ export interface AudioPlayerProps {
   seekKey?: number;
   playbackEnd?: number;
   autoPlayOnSeek?: boolean;
+  /** What the lock screen and media notification show for this recording. */
+  mediaMetadata?: MediaSessionMetadata;
+  /**
+   * The page's decision about interrupted playback when it loaded; opens the
+   * event log so it can be read on a device after a relaunch.
+   */
+  launchNote?: string | null;
+}
+
+export interface MediaSessionMetadata {
+  title: string;
+  artist?: string;
+  album?: string;
 }
 
 export interface DebugInfo {
@@ -46,7 +59,9 @@ export type DebugEventType =
   | "play"
   | "pause"
   | "loaded"
-  | "source";
+  | "source"
+  | "lifecycle"
+  | "session";
 
 export interface DebugEvent {
   id: number;

@@ -396,6 +396,41 @@ The installed app resumes on the page the listener last had open (logic in
 - Playback position is restored separately, per recording, from
   `localStorage` (`lib/playback-position.ts`).
 
+## Background Playback
+
+The installed app should behave like a native player when it leaves the
+screen: keep playing, and if the OS kills it anyway, come back playing. Two
+mechanisms, both in the recording page's player:
+
+- **Media Session** (`components/player/use-media-session.ts`). The player
+  publishes the recording's title, artist and album, its playback state and
+  position, and `play`/`pause`/`stop`/`seekbackward`/`seekforward`/`seekto`
+  handlers that drive the same code paths as the on-screen buttons. This gives
+  lock-screen and notification controls, and it is what makes Android treat
+  the process as a media session rather than a disposable background tab.
+- **Interrupted-session resume** (`lib/now-playing.ts`). While a recording
+  plays, `useRecordingPlayback` keeps a `besedy-now-playing` record in
+  `localStorage` (catalog, hash, position, `playing`, heartbeat), refreshed
+  with each routine position save. A pause, the end of the recording,
+  navigating away in the app and `pagehide` (close, reload, navigation) mark
+  it stopped. None of those run when the OS kills the process, so when the
+  recording page loads again and the record still says `playing` with a
+  heartbeat inside `NOW_PLAYING_RESUME_WINDOW_MS`, the page seeks to the
+  saved position and plays; installed PWAs may autoplay with sound. Any other
+  record (stopped, stale, another recording, none) leaves the page paused at
+  the saved position as before. The record is consumed on every load so a
+  second load never resumes again. Getting back to the page after a kill is
+  the last-route cookie's job (above).
+
+The rule rests on `pagehide` firing when the listener swipes the app away.
+Verify it on a device before trusting it: the player's debug panel logs page
+lifecycle events (`hidden`, `visible`, `pagehide`, `freeze`, `resume`) and
+media session actions, and its first entries after a load name the launch
+decision ("Resuming interrupted playback from …" or "No interrupted playback
+(stopped | stale | other-recording | none)"). Swipe the app away while playing,
+relaunch, and read that entry: `stopped` means the close was seen; `resumed`
+means it was not and a deliberate close would come back playing.
+
 ## Offline
 
 Offline mode is documented in [offline.md](offline.md). Its **Current
