@@ -105,7 +105,9 @@ That default was chosen on emulator evidence only, so the player's debug panel
 the requested transport, the browser default, whether a worker controls the
 page, and an `auto | worker | inline` override. The two can differ: `inline`
 requested without a stored inline copy is served from the worker cache, and
-the Source line is the one that tells the truth. The override is stored in
+the Source line is the one that tells the truth. Hydration builds the copy for
+the transport resolved at page load (see below), so this happens only when the
+override changed after the page loaded. The override is stored in
 `localStorage` under `besedy:offline-audio-transport` on that device alone; no
 other user or device is affected, and `auto` removes it. To test a phone: set
 `worker`, open a downloaded recording, switch to airplane mode, play and seek,
@@ -125,8 +127,21 @@ Storage: the metadata entry must be complete and every chunk present. A record
 that fails this check, or cannot be checked because the cache is unreadable,
 is not shown as downloaded; it becomes a retryable error with the message that
 the audio is incomplete on this device, and Retry resumes the download from
-the longest contiguous prefix of chunks that survived. Registry state alone
-never proves playability.
+the longest contiguous prefix of chunks that survived. When the transport the
+player resolves (browser default plus device override) is `inline`, the bundle
+must also hold the inline copy. Verification builds a missing copy from the
+verified chunks under the download's lock, online or offline, creating an empty
+bundle when a legacy record has none; only a package whose copy cannot be
+prepared (for example, storage is full) becomes a retryable error that says
+so. Retry then repairs the package on the device, online or offline, from the
+chunks it already holds, without downloading again. Only when those chunks no
+longer verify or assemble does Retry need the network: online it queues the
+download at once, offline the record shows the incomplete-audio error above
+until the next Retry. Downloads use the same resolved transport to decide
+whether to store the copy. Registry state alone never proves
+playability. The header's Downloads badge counts only completed packages, i.e.
+what verified as playable when the page loaded; the check is not repeated while
+the page stays open.
 
 One queued download runs at a time. A global Web Lock prevents queue ownership
 in two tabs, a per-download lock prevents concurrent mutation of one record,
