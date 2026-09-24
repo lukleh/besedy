@@ -418,9 +418,10 @@ mechanisms, both in the recording page's player:
   heartbeat inside `NOW_PLAYING_RESUME_WINDOW_MS`, the page seeks to the
   saved position and plays; installed PWAs may autoplay with sound. Any other
   record (stopped, stale, another recording, none) leaves the page paused at
-  the saved position as before. The record is consumed on every load so a
-  second load never resumes again. Getting back to the page after a kill is
-  the last-route cookie's job (above).
+  the saved position as before. Whichever recording page loads next consumes
+  the record, so a second load never resumes again and a listener who opened
+  another recording first has moved on. Getting back to the page after a kill
+  is the last-route cookie's job (above).
 
 The rule rests on `pagehide` firing when the listener swipes the app away.
 Verify it on a device before trusting it: the player's debug panel logs page

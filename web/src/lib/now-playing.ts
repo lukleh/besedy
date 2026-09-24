@@ -108,10 +108,11 @@ export function clearNowPlaying(hash: string) {
 }
 
 /**
- * Decides whether a recording page that just loaded should resume playback,
- * and consumes the record so a later load of the same page does not resume
- * again. Only a fresh record for this recording that still says `playing`
- * qualifies.
+ * Decides whether a recording page that just loaded should resume playback.
+ * Only a fresh record for this recording that still says `playing` qualifies.
+ * Opening any recording page consumes the record: a later load of the same
+ * page must not resume again, and a listener who went to another recording
+ * first has moved on from the interrupted one.
  */
 export function takeResumableNowPlaying(
   catalogId: string,
@@ -121,6 +122,9 @@ export function takeResumableNowPlaying(
   const current = readNowPlaying();
   if (!current) return { record: null, reason: "none" };
   if (current.catalogId !== catalogId || current.hash !== hash) {
+    if (current.playing) {
+      writeNowPlaying({ ...current, playing: false, updatedAt: now });
+    }
     return { record: null, reason: "other-recording" };
   }
   if (!current.playing) return { record: null, reason: "stopped" };

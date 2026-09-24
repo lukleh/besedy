@@ -91,16 +91,23 @@ describe("now playing record", () => {
     expect(readNowPlaying()?.playing).toBe(true);
   });
 
-  it("does not resume on another recording's page", () => {
+  it("does not resume on another recording's page, and consumes the record there", () => {
     saveNowPlaying({ catalogId: CATALOG_ID, hash: HASH, positionSec: 300, playing: true }, NOW);
 
     expect(takeResumableNowPlaying(CATALOG_ID, OTHER_HASH, NOW + 1_000)).toEqual({
       record: null,
       reason: "other-recording",
     });
+    // The listener moved on; the interrupted recording must not start on a
+    // later visit.
+    expect(readNowPlaying()?.playing).toBe(false);
+    expect(takeResumableNowPlaying(CATALOG_ID, HASH, NOW + 2_000).reason).toBe("stopped");
+
+    saveNowPlaying({ catalogId: CATALOG_ID, hash: HASH, positionSec: 300, playing: true }, NOW);
     expect(takeResumableNowPlaying("20261231_000000", HASH, NOW + 1_000).reason).toBe(
       "other-recording",
     );
+    expect(readNowPlaying()?.playing).toBe(false);
   });
 
   it("reports when nothing was playing", () => {

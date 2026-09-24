@@ -70,6 +70,17 @@ function createSourceEvent(id: number, src: string): DebugEvent {
   };
 }
 
+/** The log entry with the page's decision about interrupted playback. */
+function createLaunchEvent(id: number, note: string): DebugEvent {
+  return {
+    id,
+    timestamp: new Date(),
+    type: 'lifecycle',
+    message: 'Launch',
+    details: note,
+  };
+}
+
 export function AudioPlayer({
   src,
   recordingHash,
@@ -150,11 +161,12 @@ export function AudioPlayer({
 
   // The page's launch note arrives whenever its effect runs, which may be
   // after this player mounted from cached data; log it once either way, so a
-  // relaunch after a kill can be read on the device.
-  const launchNoteLoggedRef = useRef(false);
+  // relaunch after a kill can be read on the device. The ref keeps it for the
+  // source-change effect, which starts the log over.
+  const launchNoteRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!launchNote || launchNoteLoggedRef.current) return;
-    launchNoteLoggedRef.current = true;
+    if (!launchNote || launchNoteRef.current) return;
+    launchNoteRef.current = launchNote;
     logDebugEvent('lifecycle', 'Launch', launchNote);
   }, [launchNote, logDebugEvent]);
 
@@ -497,7 +509,14 @@ export function AudioPlayer({
       resetBufferDiagnostics();
       // The fresh log opens with this source's transport, so a later stall or
       // error is attributable to the network, the worker cache or inline data.
-      setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
+      // The launch decision stays readable across the switch.
+      const events = [createSourceEvent(debugEventIdRef.current++, src)];
+      if (launchNoteRef.current) {
+        events.push(
+          createLaunchEvent(debugEventIdRef.current++, launchNoteRef.current),
+        );
+      }
+      setDebugEvents(events);
       onPlayingChange?.(false);
     });
   }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);

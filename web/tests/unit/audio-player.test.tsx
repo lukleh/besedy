@@ -1253,3 +1253,34 @@ describe("AudioPlayer media session and lifecycle log", () => {
     expect(getByText("Unloading")).toBeInTheDocument();
   });
 });
+
+describe("AudioPlayer launch note across source changes", () => {
+  it("keeps the launch decision readable after the source switches", async () => {
+    const hash = "c".repeat(64);
+    const props = {
+      recordingHash: hash,
+      launchNote: "Resuming interrupted playback from 300s",
+    };
+    const view = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AudioPlayer src={`/api/catalogs/c/recordings/${hash}/audio`} {...props} />
+      </NextIntlClientProvider>,
+    );
+
+    // The saved source preference resolves after the player mounted.
+    view.rerender(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AudioPlayer
+          src={`/api/catalogs/c/recordings/${hash}/audio?source=listening`}
+          {...props}
+        />
+      </NextIntlClientProvider>,
+    );
+    await act(async () => {});
+
+    fireEvent.click(view.getAllByRole("button", { name: "Toggle debug info" })[0]);
+    expect(view.getByText("Resuming interrupted playback from 300s")).toBeInTheDocument();
+    // Logged once per source, not accumulated.
+    expect(view.getAllByText("Launch")).toHaveLength(1);
+  });
+});
