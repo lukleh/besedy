@@ -670,13 +670,12 @@ class DownloadManager {
     } catch (error) {
       logger.warn('Could not open the audio cache during hydration', { error });
     }
-    await this.verifyCompletePackages(audioCache);
-    if (
-      audioCache !== null &&
-      this.online &&
+    const needsInlineAudio =
       typeof navigator !== 'undefined' &&
-      requiresInlineOfflineAudio(navigator.userAgent)
-    ) {
+      requiresInlineOfflineAudio(navigator.userAgent);
+    // Prepare missing inline copies before verification, which requires them
+    // on these browsers; a package that cannot get one then becomes retryable.
+    if (audioCache !== null && this.online && needsInlineAudio) {
       for (const record of this.records.values()) {
         if (record.status !== 'complete' || !record.audioCacheKey) continue;
         try {
@@ -703,6 +702,7 @@ class DownloadManager {
         }
       }
     }
+    await this.verifyCompletePackages(audioCache, needsInlineAudio);
     this.publish({ supported: true, hydrated: true });
     void this.refreshStorageEstimate();
     if (
@@ -956,9 +956,13 @@ class DownloadManager {
    * Registry state alone does not prove playability. A record marked complete
    * whose audio is missing or incomplete in Cache Storage becomes a retryable
    * error instead of a download that fails when played; Retry resumes from
-   * the chunks that exist.
+   * the chunks that exist. Browsers that play offline audio only from the
+   * inline copy also need that copy in the bundle; Retry rebuilds it.
    */
-  private async verifyCompletePackages(audioCache: Cache | null): Promise<void> {
+  private async verifyCompletePackages(
+    audioCache: Cache | null,
+    needsInlineAudio: boolean,
+  ): Promise<void> {
     // Fail closed: with no readable cache every completed package below
     // becomes retryable, because bytes that cannot be read cannot be offered.
     for (const key of Array.from(this.records.keys())) {
@@ -982,6 +986,10 @@ class DownloadManager {
             audioCache !== null &&
             persisted.audioCacheKey !== null &&
             (await verifyAudioCache(audioCache, persisted.audioCacheKey));
+          if (verified && needsInlineAudio) {
+            const bundle = await getDownloadBundle(key);
+            verified = !!bundle?.inlineAudio?.data;
+          }
         } catch (error) {
           // Unverifiable is not verified.
           logger.warn('Could not verify a downloaded package', { key, error });

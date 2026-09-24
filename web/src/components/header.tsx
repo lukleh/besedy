@@ -48,7 +48,12 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   // is known.
   const sessionUnknown =
     !isSignedIn && (!isOnline || sessionPending || sessionRecovering);
-  const downloadCount = downloadsHydrated ? downloads.length : 0;
+  const hasDownloads = downloadsHydrated && downloads.length > 0;
+  // The badge counts only what plays offline. Hydration has already turned
+  // completed packages whose audio is gone into retryable errors.
+  const downloadCount = downloadsHydrated
+    ? downloads.filter((record) => record.status === "complete").length
+    : 0;
   const downloadCountLabel = downloadCount > 99 ? "99+" : String(downloadCount);
   const downloadsLabel =
     downloadCount > 0
@@ -128,7 +133,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
             )}
             {/* Downloads is reachable while signed in, and while the session-free
                 local shell holds downloads for this device. */}
-            {!isAuthPage && (isSignedIn || downloadCount > 0) && (
+            {!isAuthPage && (isSignedIn || hasDownloads) && (
               <Button variant="ghost" size="icon" asChild>
                 <Link
                   href="/downloads"

@@ -121,12 +121,17 @@ requires a controlling service worker before reporting a cache-backed download
 complete.
 
 On hydration the manager verifies every completed package against Cache
-Storage: the metadata entry must be complete and every chunk present. A record
+Storage: the metadata entry must be complete and every chunk present. Where
+`requiresInlineOfflineAudio` holds, the bundle must also hold the inline copy;
+while online, hydration first builds a missing copy from the cached chunks, so
+only packages that cannot get one are affected. A record
 that fails this check, or cannot be checked because the cache is unreadable,
 is not shown as downloaded; it becomes a retryable error with the message that
 the audio is incomplete on this device, and Retry resumes the download from
 the longest contiguous prefix of chunks that survived. Registry state alone
-never proves playability.
+never proves playability. The header's Downloads badge counts only completed
+packages, i.e. what verified as playable when the page loaded; the check is not
+repeated while the page stays open.
 
 One queued download runs at a time. A global Web Lock prevents queue ownership
 in two tabs, a per-download lock prevents concurrent mutation of one record,

@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   } as { user: { id: string; name: string } } | null,
   downloadSnapshot: {
     hydrated: true,
-    records: [] as Array<{ key: string }>,
+    records: [] as Array<{ key: string; status?: string }>,
   },
   isOnline: true,
   sessionPending: false,
@@ -151,10 +151,14 @@ describe("Header", () => {
     expect(screen.queryByTestId("header-downloads")).not.toBeInTheDocument();
   });
 
-  it("shows the number of device-local Downloads entries in grayscale", () => {
+  it("shows the number of playable Downloads entries in grayscale", () => {
     mocks.downloadSnapshot = {
       hydrated: true,
-      records: [{ key: "one" }, { key: "two" }, { key: "three" }],
+      records: [
+        { key: "one", status: "complete" },
+        { key: "two", status: "complete" },
+        { key: "three", status: "complete" },
+      ],
     };
 
     render(<Header />);
@@ -164,6 +168,37 @@ describe("Header", () => {
     expect(shortcut).toHaveAccessibleName("nav.downloads (3)");
     expect(badge).toHaveTextContent("3");
     expect(badge).toHaveClass("bg-foreground", "text-background");
+  });
+
+  it("leaves downloads that cannot play yet out of the badge", () => {
+    mocks.downloadSnapshot = {
+      hydrated: true,
+      records: [
+        { key: "one", status: "complete" },
+        { key: "two", status: "queued" },
+        { key: "three", status: "downloading" },
+        { key: "four", status: "paused" },
+        { key: "five", status: "error" },
+      ],
+    };
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAccessibleName("nav.downloads (1)");
+    expect(screen.getByTestId("downloads-badge")).toHaveTextContent("1");
+  });
+
+  it("keeps the shell shortcut without a badge when nothing is playable", () => {
+    mocks.session = null;
+    mocks.downloadSnapshot = {
+      hydrated: true,
+      records: [{ key: "one", status: "error" }],
+    };
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAccessibleName("nav.downloads");
+    expect(screen.queryByTestId("downloads-badge")).not.toBeInTheDocument();
   });
 
   it("waits for download state hydration before showing the badge", () => {

@@ -305,6 +305,7 @@ describe('download manager', () => {
     // A test may pin the user agent; drop the own property so the
     // prototype getter is visible again for the next test.
     Reflect.deleteProperty(navigator, 'userAgent');
+    Reflect.deleteProperty(navigator, 'onLine');
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -728,6 +729,134 @@ describe('download manager', () => {
     expect(record.error).toBe(INCOMPLETE_PACKAGE_ERROR);
     expect(record.completedAt).toBeNull();
     expect((await db.getDownload(key))?.status).toBe('error');
+  });
+
+  describe('on a browser that plays offline audio only inline', () => {
+    const IPHONE_UA =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1';
+    const audioUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`;
+
+    beforeEach(async () => {
+      // jsdom's Blob has no arrayBuffer() and cannot wrap the cached chunks,
+      // which are Node Blobs; the inline copy is built from them.
+      vi.stubGlobal('Blob', (await import('node:buffer')).Blob);
+    });
+
+    async function seedCompletePackage(
+      inlineAudio: { data: ArrayBuffer; contentType: string } | null,
+    ) {
+      Object.defineProperty(navigator, 'userAgent', {
+        configurable: true,
+        value: IPHONE_UA,
+      });
+      const db = await import('@/lib/offline/downloads-db');
+      const now = Date.now();
+      const key = db.makeDownloadKey(CATALOG, HASH);
+      const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
+      await seedCompleteAudioCache(cacheStorage, audioCacheKey);
+      await db.putDownload({
+        key,
+        catalogId: CATALOG,
+        catalogLabel: null,
+        hash: HASH,
+        userId: 'user-1',
+        eventKey: null,
+        event: null,
+        recording: null,
+        audioUrl,
+        audioCacheKey,
+        status: 'complete',
+        progress: 100,
+        bytesLoaded: 5,
+        totalBytes: 5,
+        error: null,
+        resumeOnReconnect: false,
+        transcriptBackend: null,
+        hasArtwork: false,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: now,
+      });
+      await db.putDownloadBundle({
+        key,
+        transcriptBackend: null,
+        transcript: null,
+        diarization: null,
+        artwork: null,
+        inlineAudio,
+        updatedAt: now,
+      });
+      return { db, key };
+    }
+
+    it('keeps a package with its inline copy complete', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+      await seedCompletePackage({
+        data: new Uint8Array(5).buffer,
+        contentType: 'audio/webm',
+      });
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+    });
+
+    it('marks a package without its inline copy retryable while offline', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+      const { db, key } = await seedCompletePackage(null);
+
+      const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
+      await downloadManager.hydrate();
+
+      const record = downloadManager.getSnapshot().records[0];
+      expect(record.status).toBe('error');
+      expect(record.error).toBe(INCOMPLETE_PACKAGE_ERROR);
+      expect((await db.getDownload(key))?.status).toBe('error');
+    });
+
+    it('prepares a missing inline copy before verification while online', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      const { db, key } = await seedCompletePackage(null);
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+
+      expect(downloadManager.getSnapshot().records[0].status).toBe('complete');
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
+    });
+
+    it('rebuilds the inline copy on Retry', async () => {
+      vi.stubGlobal('fetch', createFakeServer().fetchMock);
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+      const { db, key } = await seedCompletePackage(null);
+
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+      expect(downloadManager.getSnapshot().records[0].status).toBe('error');
+
+      Reflect.deleteProperty(navigator, 'onLine');
+      downloadManager.setOnline(true);
+      await downloadManager.resume(key);
+      await waitFor(
+        () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+      );
+
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle?.inlineAudio?.data.byteLength).toBe(5);
+    });
   });
 
   it('does not resurrect a download that another tab removed while hydration verified it', async () => {
