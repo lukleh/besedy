@@ -8,14 +8,12 @@ import { requireCorrectionAccess } from "@/lib/correction/access";
 import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
 import { isCorrectionEligibleRecording } from "@/lib/correction/eligibility";
 import { getActiveGuide } from "@/lib/correction/guide";
-import { getPublicationEligibility } from "@/lib/correction/publication-service";
 import { resolveConfiguredDefaultBackend } from "@/lib/correction/source";
 import {
   archiveWorkspace,
-  computeProgress,
   findActiveWorkspace,
-  findResumePosition,
   startWorkspace,
+  summarizeWorkspace,
 } from "@/lib/correction/workspace-service";
 
 export const runtime = "nodejs";
@@ -59,6 +57,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const canStart = await isCorrectionEligibleRecording(catalogId, hash);
     const workspace = await findActiveWorkspace(catalogId, hash);
     const transcriptsPath = resolveTranscriptsPath(catalogId);
+    const summary = workspace ? await summarizeWorkspace(workspace.id, userId) : null;
 
     return NextResponse.json({
       catalogId,
@@ -71,12 +70,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         ? null
         : await resolveConfiguredDefaultBackend(transcriptsPath, hash),
       workspace,
-      progress: workspace ? await computeProgress(workspace.id) : null,
+      progress: summary?.progress ?? null,
       /** Where this person should pick the work up */
-      resume: workspace ? await findResumePosition(workspace.id, userId) : null,
-      publication: workspace
-        ? await getPublicationEligibility(workspace.id)
-        : null,
+      resume: summary?.resume ?? null,
+      publication: summary?.publication ?? null,
     });
   } catch (error) {
     return handleCorrectionRouteError(error, "fetch");
