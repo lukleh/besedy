@@ -38,12 +38,39 @@ export interface CorrectionIndexPointer {
   updated_at: string;
 }
 
-function requireValidCorrectionsPath(candidate: string): string {
-  const result = validatePath(candidate);
+/**
+ * The real corrections root, created if it does not exist yet, and checked
+ * against the allowed directories.
+ *
+ * Everything this module reads or writes must resolve to a path *under this
+ * root*, not merely under some allowed directory: the uploads and sources
+ * trees are allowed too, and a symlink planted in the corrections tree must
+ * not let a write land in one of them.
+ */
+async function realCorrectionsRoot(): Promise<string> {
+  const root = getCorrectionsDir();
+  await fs.mkdir(root, { recursive: true, mode: SHARED_DIR_MODE });
+  const result = validatePath(root);
   if (!result.valid) {
-    throw new Error(`Invalid corrections path: ${result.reason}`);
+    throw new Error(
+      `Corrections directory is outside the allowed paths: ${root} (${result.reason}). ` +
+        "Set [paths].corrections_dir inside text_data_dir, or add it to BESEDY_ALLOWED_PATHS."
+    );
   }
   return result.resolvedPath;
+}
+
+function isUnder(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root + path.sep);
+}
+
+/** Resolve an existing path through its symlinks and require it under the corrections root. */
+async function requireInsideCorrectionsRoot(candidate: string, realRoot: string): Promise<string> {
+  const real = await fs.realpath(candidate);
+  if (!isUnder(real, realRoot)) {
+    throw new Error(`Invalid corrections path: ${candidate} resolves outside the corrections root`);
+  }
+  return real;
 }
 
 export function resolveCatalogCorrectionsRoot(catalogId: string): string {
@@ -122,29 +149,29 @@ export function relativeToCorrectionsRoot(absolutePath: string): string {
  */
 async function ensureWritableDir(dir: string): Promise<string> {
   // Nothing is created or chmod'ed until the deepest ancestor that already
-  // exists has been resolved through its symlinks and found inside the
-  // allowed roots. `mkdir` and `chmod` follow directory symlinks, so a link
-  // planted under the corrections root could otherwise have directories
-  // created, and their modes changed, outside it before the final check.
+  // exists has been resolved through its symlinks and found under the real
+  // corrections root. `mkdir` and `chmod` follow directory symlinks, so a
+  // link planted in the tree could otherwise have directories created, and
+  // their modes changed, in another allowed tree before the final check.
+  const realRoot = await realCorrectionsRoot();
   const existing = await deepestExistingAncestor(dir);
-  requireAllowed(existing);
+  await requireInsideCorrectionsRoot(existing, realRoot);
 
   await fs.mkdir(dir, { recursive: true, mode: SHARED_DIR_MODE });
 
-  const realRoot = await fs.realpath(getCorrectionsDir()).catch(() => null);
   const relative = path.relative(existing, dir);
-  if (realRoot && relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
     let current = existing;
     for (const segment of relative.split(path.sep)) {
       current = path.join(current, segment);
       const real = await fs.realpath(current).catch(() => null);
-      if (real && (real === realRoot || real.startsWith(realRoot + path.sep))) {
+      if (real && isUnder(real, realRoot)) {
         await fs.chmod(real, SHARED_DIR_MODE).catch(() => undefined);
       }
     }
   }
 
-  return requireAllowed(dir);
+  return requireInsideCorrectionsRoot(dir, realRoot);
 }
 
 async function deepestExistingAncestor(dir: string): Promise<string> {
@@ -159,17 +186,6 @@ async function deepestExistingAncestor(dir: string): Promise<string> {
       current = parent;
     }
   }
-}
-
-function requireAllowed(candidate: string): string {
-  const result = validatePath(candidate);
-  if (!result.valid) {
-    throw new Error(
-      `Corrections directory is outside the allowed paths: ${candidate} (${result.reason}). ` +
-        "Set [paths].corrections_dir inside text_data_dir, or add it to BESEDY_ALLOWED_PATHS."
-    );
-  }
-  return result.resolvedPath;
 }
 
 /**
@@ -214,17 +230,18 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
 }
 
 export async function readTextFile(filePath: string): Promise<string | null> {
-  // `validatePath` cannot tell a missing path from a forbidden one, so
-  // existence is checked first, with lstat so that a symlink counts as
-  // present; then the file itself is validated, which resolves that symlink
-  // and refuses one that leads outside the allowed roots.
+  // A missing file is null; existence is checked with lstat so that a symlink
+  // counts as present. The file itself is then resolved through its symlinks
+  // and must lie under the real corrections root, so a link planted in the
+  // tree cannot hand back a file from anywhere else.
   try {
     await fs.lstat(filePath);
   } catch (error) {
     if (isMissingFile(error)) return null;
     throw error;
   }
-  const validated = requireValidCorrectionsPath(filePath);
+  const realRoot = await realCorrectionsRoot();
+  const validated = await requireInsideCorrectionsRoot(filePath, realRoot);
   try {
     return await fs.readFile(validated, "utf-8");
   } catch (error) {

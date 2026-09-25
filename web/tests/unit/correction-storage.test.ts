@@ -70,10 +70,23 @@ describe("corrections storage", () => {
     await fs.symlink(outside, path.join(root, "corrections_x", "escape"));
     await expect(
       writeFileAtomic(path.join(root, "corrections_x", "escape", "deeper", "file.json"), "{}")
-    ).rejects.toThrow(/outside the allowed paths/);
+    ).rejects.toThrow(/outside the corrections root/);
     await expect(fs.stat(path.join(outside, "deeper"))).rejects.toThrow();
     expect((await fs.stat(outside)).mode & 0o7777).toBe(before);
     await fs.rm(outside, { recursive: true, force: true });
+  });
+
+  it("refuses a directory symlink into another allowed tree, such as uploads", async () => {
+    const { writeFileAtomic } = await import("@/lib/correction/storage");
+    const uploads = path.join(root, "..", "uploads");
+    await fs.mkdir(uploads, { recursive: true });
+    await fs.mkdir(path.join(root, "corrections_x"), { recursive: true });
+    await fs.symlink(uploads, path.join(root, "corrections_x", "to-uploads"));
+    await expect(
+      writeFileAtomic(path.join(root, "corrections_x", "to-uploads", "ws", "file.json"), "{}")
+    ).rejects.toThrow(/outside the corrections root/);
+    await expect(fs.stat(path.join(uploads, "ws"))).rejects.toThrow();
+    await fs.rm(uploads, { recursive: true, force: true });
   });
 
   it("creates every level below the root with the shared setgid mode and files group-writable", async () => {
