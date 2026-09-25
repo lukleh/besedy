@@ -69,13 +69,14 @@ def _publish_correction(
         schema_version=schema_version,
         workflow_group_id=workflow_group_id,
     )
-    _write_transcript(
-        target, segments or [{"start": 0.0, "end": 1.0, "text": "corrected"}]
-    )
+    _write_transcript(target, segments or [{"start": 0.0, "end": 1.0, "text": "corrected"}])
 
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     pointer_path = (
-        corrections_root / f"corrections_{workflow_group_id}" / "index-sources" / f"{audio_hash}.json"
+        corrections_root
+        / f"corrections_{workflow_group_id}"
+        / "index-sources"
+        / f"{audio_hash}.json"
     )
     payload = json.loads(pointer_path.read_text(encoding="utf-8"))
     payload["artifact_sha256"] = "0" * 64 if corrupt else digest

@@ -148,9 +148,7 @@ def _artifact_matches(pointer: CorrectionIndexPointer) -> bool:
             for block in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(block)
     except OSError as exc:
-        LOGGER.warning(
-            "Could not read correction transcript %s (%s)", pointer.transcript_path, exc
-        )
+        LOGGER.warning("Could not read correction transcript %s (%s)", pointer.transcript_path, exc)
         return False
 
     if digest.hexdigest() != pointer.artifact_sha256:
