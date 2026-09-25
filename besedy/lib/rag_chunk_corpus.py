@@ -197,8 +197,14 @@ def resolve_scope_transcripts(
         # A legacy short directory name may still carry the full hash in the
         # file's metadata. It has to be known here, before pointers are
         # matched: otherwise the machine file and its correction would both be
-        # indexed and the scope build would abort on the duplicate hash.
-        data = load_json_with_fallback(transcript_path)
+        # indexed and the scope build would abort on the duplicate hash. A file
+        # that cannot be read stays on the per-file path, where the builders
+        # count it as skipped instead of failing the whole scope.
+        try:
+            data = load_json_with_fallback(transcript_path)
+        except (OSError, ValueError):
+            unmatched.append(transcript_path)
+            continue
         inferred = _infer_audio_hash(hash_component, data) if isinstance(data, dict) else None
         if inferred is not None:
             machine_transcripts.append((inferred, transcript_path))

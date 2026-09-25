@@ -50,6 +50,32 @@ describe("corrections storage", () => {
     await expect(readJsonFile(target)).rejects.toThrow();
   });
 
+  it("refuses to read through a symlink that leaves the allowed directories", async () => {
+    const { readTextFile } = await import("@/lib/correction/storage");
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-outside-"));
+    await fs.writeFile(path.join(outside, "secret.json"), "{}");
+    await fs.mkdir(path.join(root, "corrections_x"), { recursive: true });
+    await fs.symlink(path.join(outside, "secret.json"), path.join(root, "corrections_x", "link.json"));
+    await expect(readTextFile(path.join(root, "corrections_x", "link.json"))).rejects.toThrow(
+      /Invalid corrections path/
+    );
+    await fs.rm(outside, { recursive: true, force: true });
+  });
+
+  it("neither creates nor chmods anything through a directory symlink that leaves the tree", async () => {
+    const { writeFileAtomic } = await import("@/lib/correction/storage");
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-outside-"));
+    const before = (await fs.stat(outside)).mode & 0o7777;
+    await fs.mkdir(path.join(root, "corrections_x"), { recursive: true });
+    await fs.symlink(outside, path.join(root, "corrections_x", "escape"));
+    await expect(
+      writeFileAtomic(path.join(root, "corrections_x", "escape", "deeper", "file.json"), "{}")
+    ).rejects.toThrow(/outside the allowed paths/);
+    await expect(fs.stat(path.join(outside, "deeper"))).rejects.toThrow();
+    expect((await fs.stat(outside)).mode & 0o7777).toBe(before);
+    await fs.rm(outside, { recursive: true, force: true });
+  });
+
   it("creates every level below the root with the shared setgid mode and files group-writable", async () => {
     const { writeFileAtomic } = await import("@/lib/correction/storage");
     const target = path.join(root, "corrections_x", "ws", "publications", "p", "transcript.json");

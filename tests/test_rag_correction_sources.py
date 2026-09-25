@@ -398,3 +398,40 @@ def test_legacy_short_directory_still_matches_its_pointer(
     )
     assert {chunk.audio_hash for chunk in corpus.chunks} == {HASH_A}
     assert all("human" in chunk.text for chunk in corpus.chunks)
+
+
+def test_malformed_legacy_transcript_is_skipped_not_fatal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
+) -> None:
+    """One unreadable file under a short directory must not abort the scope;
+    it stays on the per-file path, where the builders count it as skipped."""
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120000"
+    workflow, model = BACKEND.split("/")
+    _write_transcript(
+        transcripts_root / workflow / model / HASH_A / "transcript.json",
+        [{"start": 0.0, "end": 2.0, "text": "good machine words"}],
+    )
+    broken = transcripts_root / workflow / model / "short12" / "transcript.json"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_text("{ not json", encoding="utf-8")
+
+    sources = discover_transcript_sources(
+        workflow_group_id=CATALOG_ID,
+        backend_key=BACKEND,
+        transcripts_root=transcripts_root,
+        corrections_root=corrections_root,
+    )
+    assert [source.audio_hash for source in sources.sources] == [HASH_A]
+    assert sources.transcripts_skipped == 1
+
+    corpus = build_chunk_corpus(
+        workflow_group_id=CATALOG_ID,
+        backend_key=BACKEND,
+        transcripts_root=transcripts_root,
+        corrections_root=corrections_root,
+    )
+    assert {chunk.audio_hash for chunk in corpus.chunks} == {HASH_A}
+    assert corpus.transcripts_skipped == 1
