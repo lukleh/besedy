@@ -213,8 +213,8 @@ if [[ "$changes_resources" == true && "$dry_run" == false && "$mode" != "product
   host_dirs="$(
     printf '%s\n' "$rendered_config" | jq -r '
       ["/data/text", "/data/artwork", "/data/sources", "/data/uploads",
-       "/data/audio", "/data/original", "/var/log/besedy", "/backups",
-       "/app/.cache-next"] as $dir_targets
+       "/data/corrections", "/data/audio", "/data/original", "/var/log/besedy",
+       "/backups", "/app/.cache-next"] as $dir_targets
       | ["/app/node_modules", "/app/.cache-next"] as $checkout_mountpoints
       | .services[]?.volumes // []
       | ([.[] | select(.type == "bind" and .target == "/app") | .source][0]) as $app

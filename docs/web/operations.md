@@ -169,7 +169,8 @@ Deep Search, recording ingest, and the Cloudflare Tunnel are set up separately
 - [ ] `AUTH_SECRET`
 - [ ] `AUTH_URL` (must match domain and OAuth redirect URI)
 - [ ] `NEXT_PUBLIC_APP_URL` matches `AUTH_URL`
-- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`
+- [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`,
+      `CORRECTIONS_DIR`
 - [ ] `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`
       (production refuses to render the Compose configuration if any data
       directory above is unset; there is no fixtures fallback outside dev/test)

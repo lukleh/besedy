@@ -1,4 +1,6 @@
 import fs from "fs";
+import os from "os";
+import path from "path";
 import { parse as parseToml } from "@iarna/toml";
 import { getBesedyConfigSearchPaths } from "@/lib/runtime-paths";
 
@@ -9,6 +11,7 @@ interface BesedyPathsConfig {
   artwork_dir?: string;
   sources_dir?: string;
   uploads_dir?: string;
+  corrections_dir?: string;
 }
 
 interface BesedyWebConfig {
@@ -108,6 +111,34 @@ export function getUploadsDir(): string {
     throw new Error("uploads_dir is required in besedy.toml for recording ingest.");
   }
   return uploadsDir;
+}
+
+/**
+ * Get the correction workspace directory from config.
+ *
+ * Correction artifacts are written while work is in progress, so they cannot
+ * live inside a transcript generation, which ADR 0002 keeps immutable. The
+ * default is a sibling of the catalogs under `text_data_dir`, which keeps it
+ * inside the paths the application is already allowed to read.
+ */
+export function getCorrectionsDir(): string {
+  const config = getBesedyConfig();
+  const correctionsDir = config.paths.corrections_dir?.trim();
+  if (!correctionsDir) {
+    return path.join(config.paths.text_data_dir, "corrections");
+  }
+
+  // Resolved exactly as `besedy.core.paths_runtime.resolve_corrections_root`
+  // does, because both sides have to land in the same tree: a relative value
+  // is relative to text_data_dir, not to whatever directory the web process
+  // happens to have been started in.
+  const expanded = correctionsDir.startsWith("~/")
+    ? path.join(os.homedir(), correctionsDir.slice(2))
+    : correctionsDir;
+
+  return path.isAbsolute(expanded)
+    ? expanded
+    : path.join(config.paths.text_data_dir, expanded);
 }
 
 /**

@@ -410,6 +410,7 @@ def _bind_config(mode: str, root: Path) -> dict[str, object]:
                     {"type": "bind", "source": str(root / "state/logs"), "target": "/var/log/besedy"},
                     {"type": "bind", "source": str(root / "fixtures"), "target": "/data/text"},
                     {"type": "bind", "source": str(root / "uploads"), "target": "/data/uploads"},
+                    {"type": "bind", "source": str(root / "corrections"), "target": "/data/corrections"},
                     {
                         "type": "bind",
                         "source": str(root / "missing.toml"),
@@ -458,6 +459,7 @@ def test_web_compose_wrapper_creates_missing_directory_mounts_as_the_invoking_us
         root / "state/logs",
         root / "fixtures",
         root / "uploads",
+        root / "corrections",
         root / "checkout/node_modules",
         root / "checkout/.cache-next",
     ]
