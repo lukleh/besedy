@@ -110,6 +110,49 @@ jobs:
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           BETTER_AUTH_URL: http://localhost:3000
 
+  correction-integration:
+    name: Transcript correction integration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    services:
+      postgres:
+        # pgvector, because the migration history includes the RAG tables.
+        # Same image the compose stack uses, so CI and local agree.
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: besedy_correction_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
+      # The unit suite mocks the database and the filesystem away, which is
+      # exactly where correction's invariants live: the partial unique indexes,
+      # the workspace lock, the rendered artifacts and the pointer file the
+      # Python indexer reads. This is the job that exercises them.
+      - name: Correction smoke check
+        run: npm run test:correction-smoke
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
