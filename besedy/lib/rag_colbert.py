@@ -16,7 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from besedy.core.paths import PROJECT_ROOT
+from besedy.core.paths import PROJECT_ROOT, resolve_transcripts_root
 from besedy.core.symlinks import create_or_update_symlink
 from besedy.lib.rag_bundle import (
     colbert_bundle_metadata_error_message,
@@ -27,6 +27,7 @@ from besedy.lib.rag_bundle import (
 from besedy.lib.rag_chunk_corpus import (
     build_chunk_corpus,
     discover_transcript_sources,
+    resolve_scope_transcripts,
 )
 from besedy.lib.rag_chunk_store import (
     ChunkNeighbors,
@@ -118,6 +119,7 @@ from besedy.lib.rag_pylate import (
 )
 from besedy.lib.rag_retrieval_chunking import (
     CHUNK_VERSION,
+    normalize_backend_key,
     summarize_token_counts,
 )
 from besedy.lib.rag_retrieval_types import RagChunk
@@ -821,6 +823,16 @@ def build_colbert_index(
         label="building chunk corpus",
         total_started_at=total_started_at,
     )
+    # Resolved once: the corpus and the source discovery below would otherwise
+    # each re-read the pointer directory and re-hash every corrected artifact.
+    scope_root = resolve_transcripts_root(transcripts_root)
+    if scope_root.is_symlink():
+        scope_root = scope_root.resolve()
+    scope_transcripts = resolve_scope_transcripts(
+        workflow_group_id=workflow_group_id,
+        transcripts_root=scope_root,
+        backend_key=normalize_backend_key(backend_key),
+    )
     corpus = build_chunk_corpus(
         workflow_group_id=workflow_group_id,
         backend_key=backend_key,
@@ -829,6 +841,7 @@ def build_colbert_index(
         max_chunk_tokens=max_chunk_tokens,
         overlap_tokens=overlap_tokens,
         chunk_tokenizer_model=effective_chunk_tokenizer_model,
+        scope_transcripts=scope_transcripts,
     )
     _emit_phase_complete(
         progress_callback=progress_callback,
@@ -860,6 +873,7 @@ def build_colbert_index(
         backend_key=corpus.backend_key,
         transcripts_root=corpus.transcripts_root,
         chunk_tokenizer_model=effective_chunk_tokenizer_model,
+        scope_transcripts=scope_transcripts,
     )
 
     target_dir, exposed_index_dir, symlink_path = _index_target_paths(

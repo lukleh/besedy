@@ -49,6 +49,11 @@ class PathsConfig:
             recordings and the ingest worker keeps accepted/rejected files.
             Absolute, or relative to audio_artifacts_dir. Required for the
             web ingest feature.
+        corrections_dir: Directory for human transcript correction workspaces
+            and their published artifacts. Absolute, or relative to
+            text_data_dir. Defaults to <text_data_dir>/corrections. It is
+            deliberately outside the transcripts tree, which ADR 0002 keeps
+            immutable.
         transcripts_dir: Directory name for transcript JSON files, organized as
             {workflow}/{output_component}/{audio_hash}/transcript.json.
         speaker_clusters_dir: Directory name for speaker clustering results from
@@ -63,6 +68,7 @@ class PathsConfig:
     text_data_dir: str = ""
     sources_dir: str = ""
     uploads_dir: str = ""
+    corrections_dir: str = ""
 
 
 @dataclass

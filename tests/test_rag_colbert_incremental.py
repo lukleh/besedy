@@ -419,3 +419,77 @@ def test_sync_colbert_index_updates_symlink_and_active_pointer_for_default_bundl
     payload = json.loads(pointer_path.read_text(encoding="utf-8"))
     assert Path(second_result.index_dir).is_symlink()
     assert payload["index_dir"] == str(Path(second_result.index_dir) / "colbert_index")
+
+
+def test_sync_colbert_index_carries_a_published_correction_into_the_bundle(
+    tmp_path: Path,
+    fake_colbert_worker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The incremental path chunks a corrected transcript that lives outside the
+    transcripts root, which is how a publication reaches search."""
+    import hashlib
+
+    catalog_id = "20260206_120003"
+    transcripts_root = tmp_path / f"transcripts_{catalog_id}"
+    audio_hash = "d" * 64
+    backend = "faster-whisper/large-v3@silero_vad_v6"
+    workflow, model = backend.split("/")
+    _write_transcript(
+        transcripts_root / workflow / model / audio_hash / "transcript.json",
+        [{"start": 0.0, "end": 1.0, "text": "machine words"}],
+    )
+    corrections_root = tmp_path / "corrections"
+    monkeypatch.setenv("BESEDY_CORRECTIONS_ROOT", str(corrections_root))
+
+    bundle_dir = tmp_path / "bundle"
+    sync_colbert_index(
+        workflow_group_id=catalog_id,
+        backend_key=backend,
+        transcripts_root=transcripts_root,
+        index_dir=bundle_dir,
+    )
+    fake_colbert_worker.clear()
+
+    corrected = (
+        corrections_root
+        / f"corrections_{catalog_id}"
+        / "11111111-1111-1111-1111-111111111111"
+        / "publications"
+        / "22222222-2222-2222-2222-222222222222"
+        / "transcript.json"
+    )
+    _write_transcript(corrected, [{"start": 0.0, "end": 1.0, "text": "corrected human words"}])
+    pointer_dir = corrections_root / f"corrections_{catalog_id}" / "index-sources"
+    pointer_dir.mkdir(parents=True, exist_ok=True)
+    (pointer_dir / f"{audio_hash}.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "workflow_group_id": catalog_id,
+                "audio_hash": audio_hash,
+                "workspace_id": "11111111-1111-1111-1111-111111111111",
+                "publication_id": "22222222-2222-2222-2222-222222222222",
+                "state": "activating",
+                "backend": backend,
+                "transcript_path": str(corrected.relative_to(corrections_root)),
+                "artifact_sha256": hashlib.sha256(corrected.read_bytes()).hexdigest(),
+                "updated_at": "2026-09-20T00:00:00.000Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = sync_colbert_index(
+        workflow_group_id=catalog_id,
+        backend_key=backend,
+        transcripts_root=transcripts_root,
+        index_dir=bundle_dir,
+        target_audio_hash=audio_hash,
+    )
+
+    assert result.hashes_updated == 1
+    state = read_source_state(bundle_dir / "source_state.sqlite")[audio_hash]
+    assert state.transcript_path == str(corrected)
+    staged_chunks = list_chunks(path=bundle_dir / "chunk_store.sqlite")
+    assert [chunk.text for chunk in staged_chunks] == ["corrected human words"]

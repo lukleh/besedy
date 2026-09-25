@@ -20,6 +20,7 @@ services:
       - ${ARTWORK_DIR:?ARTWORK_DIR is required in production}:/data/artwork:rw
       - ${SOURCES_DIR:?SOURCES_DIR is required in production}:/data/sources:rw
       - ${UPLOADS_DIR:?UPLOADS_DIR is required in production}:/data/uploads:rw
+      - ${CORRECTIONS_DIR:?CORRECTIONS_DIR is required in production}:/data/corrections:rw
       - ${AUDIO_DIR:?AUDIO_DIR is required in production}:/data/audio:ro
       - ${ORIGINAL_AUDIO_DIR:?ORIGINAL_AUDIO_DIR is required in production}:/data/original:ro
 

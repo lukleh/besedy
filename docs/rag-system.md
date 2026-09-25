@@ -247,6 +247,19 @@ Sync output reports: hashes discovered, added, updated, removed, unchanged, fail
 - Mutating the currently active bundle in place.
 - Changing the search route contract.
 
+## Corrected Transcripts
+
+Human correction ([ADR 0006](adr/0006-transcript-correction.md)) changes what
+the index should hold for a recording without changing its backend scope.
+Every full and incremental sync goes through one resolver,
+`besedy/lib/rag_correction_sources.py`: it reads the pointer files under
+`corrections/corrections_<catalog>/index-sources/` and substitutes the published
+corrected `transcript.json` for the machine transcript of the same audio hash,
+in whichever backend scope is being built. The recording then classifies as
+`changed` and its chunks are replaced; corrected and machine chunks never
+coexist. The pointer contract is in
+[Data model](data-model.md#index-sourcesltaudio_hashgtjson).
+
 ## Status
 
 ### Completed

@@ -1,6 +1,12 @@
 import path from "path";
 import fs from "fs";
-import { getArtworkDir, getSourcesDir, getTextDataDir, getUploadsDir } from "../config";
+import {
+  getArtworkDir,
+  getCorrectionsDir,
+  getSourcesDir,
+  getTextDataDir,
+  getUploadsDir,
+} from "../config";
 
 /**
  * Path validation utilities to prevent directory traversal attacks.
@@ -8,6 +14,11 @@ import { getArtworkDir, getSourcesDir, getTextDataDir, getUploadsDir } from "../
  * These utilities ensure that file paths accessed by the application
  * are within allowed directories (config text_data_dir, BESEDY_BASE_DIR,
  * and any additional mounted audio directories).
+ *
+ * Every separately configurable writable root has to be listed here. A root
+ * the application writes to but cannot validate reads against fails in one
+ * direction only, which is worse than failing outright: the write succeeds and
+ * the file then reads back as missing.
  */
 
 /**
@@ -122,6 +133,17 @@ export function getAllowedBaseDirs(): string[] {
     // Ignore if config not available
   }
 
+  // Transcript correction artifacts (configurable outside text_data_dir)
+  try {
+    const correctionsDir = getCorrectionsDir();
+    const resolved = resolvePath(correctionsDir);
+    if (!dirs.includes(resolved)) {
+      dirs.push(resolved);
+    }
+  } catch {
+    // Ignore if config not available
+  }
+
   // BESEDY_BASE_DIR environment variable
   const baseDir = process.env.BESEDY_BASE_DIR;
   if (baseDir) {
@@ -175,6 +197,19 @@ export async function getAllowedBaseDirsAsync(): Promise<string[]> {
     }
   } catch {
     // Ignore if config not available
+  }
+
+  // Every writable root the synchronous list knows, so the two validators
+  // never disagree about the same file.
+  for (const getDir of [getUploadsDir, getCorrectionsDir]) {
+    try {
+      const resolved = await resolvePathAsync(getDir());
+      if (!dirs.includes(resolved)) {
+        dirs.push(resolved);
+      }
+    } catch {
+      // Ignore if config not available
+    }
   }
 
   const baseDir = process.env.BESEDY_BASE_DIR;
