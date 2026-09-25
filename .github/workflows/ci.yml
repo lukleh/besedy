@@ -146,8 +146,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
       # The unit suite mocks the database and the filesystem away, which is
       # exactly where correction's invariants live: the partial unique indexes,
-      # the workspace lock, the rendered artifacts and the pointer file the
-      # Python indexer reads. This is the job that exercises them.
+      # the workspace lock, the frozen source on disk. This is the job that
+      # exercises them.
       - name: Correction smoke check
         run: npm run test:correction-smoke
         env:

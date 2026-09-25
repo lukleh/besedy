@@ -3,9 +3,8 @@
  *
  * The unit tests cover each piece against mocks; this drives the whole path
  * against a real database and a real corrections tree, because the parts most
- * likely to be wrong are the seams — the partial unique indexes, the atomic
- * edit-and-approve, the frozen source on disk. Publication joins this check
- * with the piece that adds it.
+ * likely to be wrong are the seams — the partial unique indexes, the workspace
+ * lock, the atomic edit-and-approve, the frozen source on disk.
  *
  * It creates its own catalog, users, recording and data root, so point it at a
  * throwaway database rather than a real one:
@@ -17,9 +16,6 @@
  *     npx prisma migrate deploy
  *   DATABASE_URL=postgresql://postgres:test@localhost:55432/besedy_check \
  *     npm run test:correction-smoke
- *
- * It prints the corrections root it wrote, so the Python side can be checked
- * against the same tree with `discover_transcript_sources`.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -217,7 +213,7 @@ async function main() {
   // --- correcting ----------------------------------------------------------
   console.log("\ncorrecting");
   const page = await listSpans(workspace.id);
-  const [first, second] = page.spans;
+  const [first] = page.spans;
   check("spans start not reviewed", first.state === "not_reviewed", first.state);
 
   const edited = await saveAndApprove({
@@ -541,10 +537,10 @@ async function main() {
   console.log(`\ncorrections root: ${correctionsDir}`);
   console.log(failures.length === 0 ? "\nALL CHECKS PASSED" : `\n${failures.length} CHECK(S) FAILED`);
 
-  // Leave the database as the run found it; the corrections tree is printed
-  // above so the Python side can be checked against it. Events and locations
-  // restrict deletion of their catalog, so they go first. A cleanup failure
-  // must not change what the run reported.
+  // Leave the database as the run found it; the corrections tree stays for
+  // inspection and is printed above. Events and locations restrict deletion
+  // of their catalog, so they go first. A cleanup failure must not change
+  // what the run reported.
   try {
     await prisma.catalogEvent.deleteMany({
       where: { workflowGroupId: CATALOG_ID },

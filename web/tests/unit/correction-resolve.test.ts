@@ -61,7 +61,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: "pub-1",
         searchPublicationId: "pub-1",
-        publications: [],
       });
 
       await expect(
@@ -79,7 +78,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: null,
         searchPublicationId: null,
-        publications: [],
       });
 
       await expect(
@@ -102,7 +100,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: null,
         searchPublicationId: null,
-        publications: [{ id: "pub-1" }],
       });
 
       await expect(
@@ -116,7 +113,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: null,
         searchPublicationId: null,
-        publications: [],
       });
 
       await expect(
@@ -130,7 +126,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: "pub-1",
         searchPublicationId: "pub-1",
-        publications: [],
       });
 
       await expect(
@@ -148,7 +143,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: null,
         searchPublicationId: "pub-1",
-        publications: [],
       });
 
       await expect(
@@ -163,7 +157,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: null,
         searchPublicationId: null,
-        publications: [],
       });
 
       await expect(
@@ -176,7 +169,6 @@ describe("transcript source resolution", () => {
         id: "ws-1",
         readerPublicationId: null,
         searchPublicationId: "pub-1",
-        publications: [],
       });
 
       await expect(
@@ -186,40 +178,6 @@ describe("transcript source resolution", () => {
         workspaceId: "ws-1",
         publicationId: "pub-1",
       });
-    });
-
-    // A publication writes its artifacts and publishes the index pointer
-    // before it moves these pointers, so the index already serves the new text
-    // in that window. Resolving the activation keeps this side from
-    // contradicting it.
-    it("resolve an activating publication before the active one", async () => {
-      prisma.transcriptWorkspace.findFirst.mockResolvedValue({
-        id: "ws-1",
-        readerPublicationId: "pub-1",
-        searchPublicationId: "pub-1",
-        publications: [{ id: "pub-2" }],
-      });
-
-      await expect(
-        resolve.resolveSearchTranscriptSource(CATALOG_ID, PRIMARY)
-      ).resolves.toEqual({
-        kind: "publication",
-        workspaceId: "ws-1",
-        publicationId: "pub-2",
-      });
-    });
-
-    it("resolve an activation even before the first successful publication", async () => {
-      prisma.transcriptWorkspace.findFirst.mockResolvedValue({
-        id: "ws-1",
-        readerPublicationId: null,
-        searchPublicationId: null,
-        publications: [{ id: "pub-1" }],
-      });
-
-      await expect(
-        resolve.resolveSearchTranscriptSource(CATALOG_ID, PRIMARY)
-      ).resolves.toMatchObject({ kind: "publication", publicationId: "pub-1" });
     });
 
     it("do not ask whether the recording is correction-eligible", async () => {
