@@ -182,9 +182,10 @@ they have to hold against concurrent requests:
   `PENDING`, `ACTIVATING` and `ROLLING_BACK`, which is also what locks the
   workspace against writes while a snapshot is being materialized, activated
   or rolled back.
-- **One decision per idempotency key.** `UNIQUE (workspace_id, user_id,
-  idempotency_key)`, so a double-click or a retried request cannot record the
-  same decision twice.
+- **One decision per idempotency key.** `UNIQUE (workspace_id, actor_key,
+  idempotency_key)`, keyed on the immutable actor rather than the nullable
+  account reference, so a double-click or a retried request cannot record the
+  same decision twice even after the account is deleted.
 
 Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status

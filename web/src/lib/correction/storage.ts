@@ -113,9 +113,25 @@ export function relativeToCorrectionsRoot(absolutePath: string): string {
  * writes and reads would otherwise disagree: a corrections root outside the
  * allowed directories would accept every write and fail every read, and the
  * failure would surface much later as a missing artifact.
+ *
+ * The host worker reads this tree as a different user, through the shared
+ * group the corrections root carries with its setgid bit. `mkdir`'s mode is
+ * masked by the umask and never sets the setgid bit itself, so every level
+ * created below the root is chmod'ed explicitly, as the uploads tree does;
+ * levels owned by somebody else are left alone.
  */
 async function ensureWritableDir(dir: string): Promise<string> {
   await fs.mkdir(dir, { recursive: true, mode: SHARED_DIR_MODE });
+
+  const root = getCorrectionsDir();
+  const relative = path.relative(root, dir);
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    let current = root;
+    for (const segment of relative.split(path.sep)) {
+      current = path.join(current, segment);
+      await fs.chmod(current, SHARED_DIR_MODE).catch(() => undefined);
+    }
+  }
 
   const result = validatePath(dir);
   if (!result.valid) {
@@ -141,6 +157,8 @@ export async function writeFileAtomic(
   const temporaryPath = path.join(dir, `.${path.basename(filePath)}.${randomUUID()}.tmp`);
   try {
     await fs.writeFile(temporaryPath, content, { encoding: "utf-8", mode: SHARED_FILE_MODE });
+    // The mode passed to writeFile is masked by the umask too.
+    await fs.chmod(temporaryPath, SHARED_FILE_MODE).catch(() => undefined);
     await fs.rename(temporaryPath, target);
   } catch (error) {
     await fs.rm(temporaryPath, { force: true });
@@ -148,22 +166,41 @@ export async function writeFileAtomic(
   }
 }
 
+function isMissingFile(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+/**
+ * Read a file from the corrections tree, or null when it does not exist.
+ *
+ * Only a missing file is null. A path outside the allowed directories, an
+ * unreadable file or malformed JSON throws, because reporting those as
+ * "absent" would let a misconfigured corrections root look like an empty one
+ * and a corrupt pointer look like no pointer at all.
+ */
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
-  try {
-    const validated = requireValidCorrectionsPath(filePath);
-    const content = await fs.readFile(validated, "utf-8");
-    return JSON.parse(content) as T;
-  } catch {
-    return null;
-  }
+  const content = await readTextFile(filePath);
+  return content === null ? null : (JSON.parse(content) as T);
 }
 
 export async function readTextFile(filePath: string): Promise<string | null> {
+  // `validatePath` cannot tell a missing path from a forbidden one, so the
+  // directory is checked first: absent means nothing has been written there,
+  // present but outside the allowed roots means a misconfiguration to report.
+  const dir = path.dirname(filePath);
   try {
-    const validated = requireValidCorrectionsPath(filePath);
-    return await fs.readFile(validated, "utf-8");
-  } catch {
-    return null;
+    await fs.stat(dir);
+  } catch (error) {
+    if (isMissingFile(error)) return null;
+    throw error;
+  }
+  const validatedDir = requireValidCorrectionsPath(dir);
+  try {
+    return await fs.readFile(path.join(validatedDir, path.basename(filePath)), "utf-8");
+  } catch (error) {
+    if (isMissingFile(error)) return null;
+    throw error;
   }
 }
 

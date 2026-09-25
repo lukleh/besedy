@@ -199,6 +199,19 @@ export async function getAllowedBaseDirsAsync(): Promise<string[]> {
     // Ignore if config not available
   }
 
+  // Every writable root the synchronous list knows, so the two validators
+  // never disagree about the same file.
+  for (const getDir of [getUploadsDir, getCorrectionsDir]) {
+    try {
+      const resolved = await resolvePathAsync(getDir());
+      if (!dirs.includes(resolved)) {
+        dirs.push(resolved);
+      }
+    } catch {
+      // Ignore if config not available
+    }
+  }
+
   const baseDir = process.env.BESEDY_BASE_DIR;
   if (baseDir) {
     dirs.push(await resolvePathAsync(baseDir));
