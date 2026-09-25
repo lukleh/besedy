@@ -15,7 +15,9 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-const GuideSchema = z.object({ body: z.string().min(1).max(50_000) }).strict();
+// Trimmed before the length check: a body of whitespace would otherwise store
+// an empty revision that displaces the default guide.
+const GuideSchema = z.object({ body: z.string().trim().min(1).max(50_000) }).strict();
 
 /** Every corrector reads the guide; only a catalog administrator writes one. */
 export async function GET(_request: NextRequest, { params }: RouteParams) {

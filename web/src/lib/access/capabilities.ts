@@ -306,16 +306,11 @@ export async function getRecordingCapability(
     isPublished: entry.isPublished,
   };
 
-  const canViewRecordingTranscripts = canViewRecordingTranscript(
-    policyContext,
-    recordingState
-  );
-
   return {
     ...baseCapability,
     canAccessRecording: canViewRecording(policyContext, recordingState),
     canStreamAudio: canStreamRecording(policyContext, recordingState),
-    canViewRecordingTranscripts,
+    canViewRecordingTranscripts: canViewRecordingTranscript(policyContext, recordingState),
     canDownloadRecording: canDownloadRecording(policyContext),
     canEditRecording: canEditRecordingMetadata(policyContext),
   };

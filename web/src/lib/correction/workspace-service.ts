@@ -439,6 +439,11 @@ export async function archiveWorkspace(input: ArchiveWorkspaceInput): Promise<Wo
       select: WORKSPACE_SELECT,
     });
 
+    // Looked up before the transaction, so a second administrator archiving at
+    // the same moment must not overwrite the first one's reason and name.
+    if (workspace.status !== "ACTIVE") {
+      throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has already been archived");
+    }
     if (workspace.publications.length > 0) {
       throw new CorrectionError(
         "WORKSPACE_LOCKED",
