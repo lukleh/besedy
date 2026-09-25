@@ -167,7 +167,7 @@ def _resolve_source_audio_hash(
     return audio_hash
 
 
-def _resolve_scope_transcripts(
+def resolve_scope_transcripts(
     *,
     workflow_group_id: str,
     transcripts_root: Path,
@@ -178,7 +178,8 @@ def _resolve_scope_transcripts(
 
     This is the single indexing input resolver. Every full and incremental
     build goes through it, so a routine sync can never revert corrected chunks
-    to the machine text underneath them.
+    to the machine text underneath them. A full build resolves once and hands
+    the list to both the corpus and the source discovery.
     """
 
     machine_transcripts: list[tuple[str, Path]] = []
@@ -192,10 +193,16 @@ def _resolve_scope_transcripts(
         hash_component = components[2].lower()
         if _is_full_sha256(hash_component):
             machine_transcripts.append((hash_component, transcript_path))
+            continue
+        # A legacy short directory name may still carry the full hash in the
+        # file's metadata. It has to be known here, before pointers are
+        # matched: otherwise the machine file and its correction would both be
+        # indexed and the scope build would abort on the duplicate hash.
+        data = load_json_with_fallback(transcript_path)
+        inferred = _infer_audio_hash(hash_component, data) if isinstance(data, dict) else None
+        if inferred is not None:
+            machine_transcripts.append((inferred, transcript_path))
         else:
-            # A short directory name needs the file itself to name the
-            # recording; such a transcript simply cannot be matched to a
-            # correction pointer, which is always keyed by the full hash.
             unmatched.append(transcript_path)
 
     resolved = resolve_effective_transcript_sources(
@@ -275,11 +282,13 @@ def discover_transcript_sources(
     transcripts_root: Path | str | None = None,
     chunk_tokenizer_model: str | None = None,
     corrections_root: Path | str | None = None,
+    scope_transcripts: list[EffectiveTranscriptSource] | None = None,
 ) -> TranscriptSourceBuild:
     """Discover transcript sources and fingerprints for one transcript backend scope.
 
     A published corrected transcript is the source for its recording; every
-    other recording keeps its machine transcript.
+    other recording keeps its machine transcript. ``scope_transcripts`` lets a
+    caller that has already resolved the scope hand the list in.
     """
 
     normalized_backend = normalize_backend_key(backend_key)
@@ -287,12 +296,13 @@ def discover_transcript_sources(
     if resolved_transcripts_root.is_symlink():
         resolved_transcripts_root = resolved_transcripts_root.resolve()
     run_id = require_run_id_from_transcripts_root(resolved_transcripts_root)
-    scope_transcripts = _resolve_scope_transcripts(
-        workflow_group_id=workflow_group_id,
-        transcripts_root=resolved_transcripts_root,
-        backend_key=normalized_backend,
-        corrections_root=corrections_root,
-    )
+    if scope_transcripts is None:
+        scope_transcripts = resolve_scope_transcripts(
+            workflow_group_id=workflow_group_id,
+            transcripts_root=resolved_transcripts_root,
+            backend_key=normalized_backend,
+            corrections_root=corrections_root,
+        )
     token_counter = _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
@@ -425,6 +435,7 @@ def build_chunk_corpus(
     overlap_tokens: int = 50,
     chunk_tokenizer_model: str | None = None,
     corrections_root: Path | str | None = None,
+    scope_transcripts: list[EffectiveTranscriptSource] | None = None,
 ) -> ChunkCorpusBuild:
     """Build the canonical chunk corpus for one transcript backend scope."""
 
@@ -433,12 +444,13 @@ def build_chunk_corpus(
     if resolved_transcripts_root.is_symlink():
         resolved_transcripts_root = resolved_transcripts_root.resolve()
     run_id = require_run_id_from_transcripts_root(resolved_transcripts_root)
-    scope_transcripts = _resolve_scope_transcripts(
-        workflow_group_id=workflow_group_id,
-        transcripts_root=resolved_transcripts_root,
-        backend_key=normalized_backend,
-        corrections_root=corrections_root,
-    )
+    if scope_transcripts is None:
+        scope_transcripts = resolve_scope_transcripts(
+            workflow_group_id=workflow_group_id,
+            transcripts_root=resolved_transcripts_root,
+            backend_key=normalized_backend,
+            corrections_root=corrections_root,
+        )
 
     chunks_by_id: dict[str, RagChunk] = {}
     skipped = 0

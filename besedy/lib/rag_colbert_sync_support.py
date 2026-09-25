@@ -64,11 +64,17 @@ def _copy_bundle_to_staging(*, source_bundle_dir: Path, staging_bundle_dir: Path
     if staging_bundle_dir.exists():
         _remove_existing_path(staging_bundle_dir)
     staging_bundle_dir.mkdir(parents=True, exist_ok=False)
-    _copy_bundle_artifact(source_artifacts.colbert_index_dir, destination_artifacts.colbert_index_dir)
+    _copy_bundle_artifact(
+        source_artifacts.colbert_index_dir, destination_artifacts.colbert_index_dir
+    )
     _copy_bundle_artifact(source_artifacts.chunk_store_path, destination_artifacts.chunk_store_path)
-    _copy_bundle_artifact(source_artifacts.source_state_path, destination_artifacts.source_state_path)
+    _copy_bundle_artifact(
+        source_artifacts.source_state_path, destination_artifacts.source_state_path
+    )
     _copy_bundle_artifact(source_artifacts.index_meta_path, destination_artifacts.index_meta_path)
-    _copy_bundle_artifact(source_artifacts.chunk_manifest_path, destination_artifacts.chunk_manifest_path)
+    _copy_bundle_artifact(
+        source_artifacts.chunk_manifest_path, destination_artifacts.chunk_manifest_path
+    )
 
 
 def _rewrite_chunk_manifest_from_store(*, bundle_dir: Path) -> None:
@@ -158,7 +164,9 @@ def _classify_sources(
             updated.append(delta)
         else:
             unchanged.append(delta)
-        return _SyncClassification(added=added, updated=updated, removed=removed, unchanged=unchanged)
+        return _SyncClassification(
+            added=added, updated=updated, removed=removed, unchanged=unchanged
+        )
 
     for audio_hash, source in sorted(current_sources.items()):
         previous = previous_rows.get(audio_hash)
@@ -212,6 +220,9 @@ def _build_chunks_for_source(
     overlap_tokens: int,
     chunk_tokenizer_model: str,
 ) -> list[RagChunk]:
+    # The source already knows its recording. A corrected transcript lives
+    # outside the transcripts root, so the hash cannot be read back from the
+    # path, and without it every incremental update of a correction would fail.
     chunks, _windows = build_chunks_for_transcript(
         transcript_path=Path(source.transcript_path),
         transcripts_root=transcripts_root,
@@ -222,12 +233,16 @@ def _build_chunks_for_source(
         max_chunk_tokens=max_chunk_tokens,
         overlap_tokens=overlap_tokens,
         chunk_tokenizer_model=chunk_tokenizer_model,
+        resolved_audio_hash=source.audio_hash,
     )
     return chunks
 
 
 def _replace_explicit_bundle_dir(*, target_dir: Path, staging_dir: Path) -> None:
-    backup_dir = target_dir.parent / f"{target_dir.name}.backup.{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    backup_dir = (
+        target_dir.parent
+        / f"{target_dir.name}.backup.{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    )
     if target_dir.exists() or target_dir.is_symlink():
         if backup_dir.exists() or backup_dir.is_symlink():
             _remove_existing_path(backup_dir)
@@ -271,7 +286,11 @@ def _resolve_sync_bundle_context(
         require_compatible_engine=False,
     )
     staging_dir = _make_unique_bundle_dir(parent=exposed_index_dir.parent, stem="index")
-    return exposed_index_dir, (resolved_bundle.artifacts.bundle_dir if resolved_bundle is not None else None), staging_dir
+    return (
+        exposed_index_dir,
+        (resolved_bundle.artifacts.bundle_dir if resolved_bundle is not None else None),
+        staging_dir,
+    )
 
 
 def _cutover_staged_bundle(

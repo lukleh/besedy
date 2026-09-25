@@ -10,6 +10,7 @@ import besedy.lib.rag_chunk_corpus as rag_chunk_corpus
 from besedy.lib.rag_chunk_corpus import build_chunk_corpus, discover_transcript_sources
 from besedy.lib.rag_correction_sources import (
     POINTER_SCHEMA_VERSION,
+    CorrectionPointerError,
     load_correction_index_pointers,
     resolve_effective_transcript_sources,
 )
@@ -128,12 +129,20 @@ def corrections_root(tmp_path: Path) -> Path:
     return root
 
 
-def test_pointer_is_ignored_without_its_transcript(corrections_root: Path) -> None:
+# A pointer that exists but cannot be honoured stops the build. Skipping it
+# would fall back to the machine transcript and silently replace corrected
+# chunks while the reader still serves the publication.
+
+
+def test_pointer_without_its_transcript_stops_the_build(corrections_root: Path) -> None:
     _write_pointer(corrections_root, audio_hash=HASH_A)
 
-    pointers = load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
+    with pytest.raises(CorrectionPointerError, match="cannot be read"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
 
-    assert pointers == {}
+
+def test_no_pointer_directory_means_no_corrections(corrections_root: Path) -> None:
+    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
 
 
 def test_activating_and_active_pointers_both_resolve(corrections_root: Path) -> None:
@@ -145,30 +154,38 @@ def test_activating_and_active_pointers_both_resolve(corrections_root: Path) -> 
     assert set(pointers) == {HASH_A, HASH_B}
 
 
-def test_other_pointer_states_are_ignored(corrections_root: Path) -> None:
+def test_other_pointer_states_stop_the_build(corrections_root: Path) -> None:
     target = _write_pointer(corrections_root, audio_hash=HASH_A, state="failed")
     _write_transcript(target, [{"start": 0.0, "end": 1.0, "text": "corrected"}])
 
-    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
+    with pytest.raises(CorrectionPointerError, match="unknown state"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
 
 
-def test_unknown_schema_version_is_ignored(corrections_root: Path) -> None:
+def test_unknown_schema_version_stops_the_build(corrections_root: Path) -> None:
     target = _write_pointer(corrections_root, audio_hash=HASH_A, schema_version=99)
     _write_transcript(target, [{"start": 0.0, "end": 1.0, "text": "corrected"}])
 
-    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
+    with pytest.raises(CorrectionPointerError, match="schema_version"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
 
 
-def test_pointer_from_another_catalog_is_ignored(corrections_root: Path) -> None:
+def test_pointer_from_another_catalog_stops_the_build(corrections_root: Path) -> None:
     target = _write_pointer(
         corrections_root, audio_hash=HASH_A, workflow_group_id="20260202_000000"
     )
     _write_transcript(target, [{"start": 0.0, "end": 1.0, "text": "corrected"}])
+    # Filed under this catalog's directory, but claiming another one.
+    other = corrections_root / "corrections_20260202_000000" / "index-sources" / f"{HASH_A}.json"
+    mine = corrections_root / f"corrections_{CATALOG_ID}" / "index-sources" / f"{HASH_A}.json"
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text(other.read_text(encoding="utf-8"), encoding="utf-8")
 
-    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
+    with pytest.raises(CorrectionPointerError, match="belongs to catalog"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
 
 
-def test_pointer_escaping_the_corrections_root_is_ignored(
+def test_pointer_escaping_the_corrections_root_stops_the_build(
     corrections_root: Path, tmp_path: Path
 ) -> None:
     escape = tmp_path / "outside" / "transcript.json"
@@ -179,13 +196,42 @@ def test_pointer_escaping_the_corrections_root_is_ignored(
         relative_path="../outside/transcript.json",
     )
 
-    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
+    with pytest.raises(CorrectionPointerError, match="outside the corrections root"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
 
 
-def test_artifact_not_matching_its_hash_is_ignored(corrections_root: Path) -> None:
+def test_artifact_not_matching_its_hash_stops_the_build(corrections_root: Path) -> None:
     _publish_correction(corrections_root, audio_hash=HASH_A, corrupt=True)
 
-    assert load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root) == {}
+    with pytest.raises(CorrectionPointerError, match="does not match the hash"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
+
+
+def test_pointer_keyed_by_something_other_than_a_full_hash_stops_the_build(
+    corrections_root: Path,
+) -> None:
+    # Machine transcripts are keyed by the lowercased full digest; anything
+    # else would index the correction beside the machine text, not in its place.
+    short = "abc123"
+    _publish_correction(corrections_root, audio_hash=short)
+
+    with pytest.raises(CorrectionPointerError, match="not a full SHA-256"):
+        load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
+
+
+def test_pointer_hash_case_is_normalized(corrections_root: Path) -> None:
+    target = _publish_correction(corrections_root, audio_hash=HASH_A)
+    pointer_path = (
+        corrections_root / f"corrections_{CATALOG_ID}" / "index-sources" / f"{HASH_A}.json"
+    )
+    payload = json.loads(pointer_path.read_text(encoding="utf-8"))
+    payload["audio_hash"] = HASH_A.upper()
+    pointer_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    pointers = load_correction_index_pointers(CATALOG_ID, corrections_root=corrections_root)
+
+    assert set(pointers) == {HASH_A}
+    assert pointers[HASH_A].transcript_path == target
 
 
 def test_correction_replaces_the_machine_source_for_its_recording(
@@ -309,3 +355,46 @@ def test_fingerprint_changes_when_correction_replaces_machine_text(
 
     assert before.audio_hash == after.audio_hash == HASH_A
     assert before.transcript_fingerprint != after.transcript_fingerprint
+
+
+def test_legacy_short_directory_still_matches_its_pointer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
+) -> None:
+    """A machine transcript under a short directory name names its recording in
+    its metadata. It must be matched to its pointer there, or the machine file
+    and the correction would both be indexed and the scope build would abort on
+    the duplicate hash."""
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120000"
+    workflow, model = BACKEND.split("/")
+    legacy = transcripts_root / workflow / model / HASH_A[:12] / "transcript.json"
+    _write_transcript(legacy, [{"start": 0.0, "end": 2.0, "text": "legacy machine words"}])
+    payload = json.loads(legacy.read_text(encoding="utf-8"))
+    payload["meta"]["audio_hash"] = HASH_A
+    legacy.write_text(json.dumps(payload), encoding="utf-8")
+
+    corrected = _publish_correction(
+        corrections_root,
+        audio_hash=HASH_A,
+        segments=[{"start": 0.0, "end": 2.0, "text": "legacy human words"}],
+    )
+
+    sources = discover_transcript_sources(
+        workflow_group_id=CATALOG_ID,
+        backend_key=BACKEND,
+        transcripts_root=transcripts_root,
+        corrections_root=corrections_root,
+    )
+    assert [source.audio_hash for source in sources.sources] == [HASH_A]
+    assert sources.sources[0].transcript_path == str(corrected)
+
+    corpus = build_chunk_corpus(
+        workflow_group_id=CATALOG_ID,
+        backend_key=BACKEND,
+        transcripts_root=transcripts_root,
+        corrections_root=corrections_root,
+    )
+    assert {chunk.audio_hash for chunk in corpus.chunks} == {HASH_A}
+    assert all("human" in chunk.text for chunk in corpus.chunks)

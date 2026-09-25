@@ -16,6 +16,12 @@ would look like verification while being a coincidence. A pointer in
 window where a publication has written its artifacts but has not yet committed
 its database pointers, a routine sync must resolve the new text, or it would
 classify the hash as changed and revert the corrected chunks.
+
+A pointer that exists but cannot be honoured stops the build. Skipping it
+would make the sync fall back to the machine transcript and silently replace
+corrected chunks while the reader still serves the publication, which is the
+one ordering ADR 0006 never allows; the existing bundle stays in place until
+an operator fixes or removes the pointer.
 """
 
 from __future__ import annotations
@@ -28,12 +34,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from besedy.core.paths_runtime import resolve_corrections_root
+from besedy.lib.rag_retrieval_chunking import _is_full_sha256
 
 LOGGER = logging.getLogger(__name__)
 
 POINTER_SCHEMA_VERSION = 2
 POINTER_DIR_NAME = "index-sources"
 ACTIVE_POINTER_STATES = frozenset({"activating", "active"})
+
+
+class CorrectionPointerError(RuntimeError):
+    """A pointer file exists but cannot be honoured; the build must not proceed."""
 
 
 @dataclass(frozen=True)
@@ -74,53 +85,55 @@ def _parse_pointer(
     *,
     corrections_root: Path,
     workflow_group_id: str,
-) -> CorrectionIndexPointer | None:
+) -> CorrectionIndexPointer:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        LOGGER.warning("Skipping unreadable correction pointer %s (%s)", path, exc)
-        return None
+        raise CorrectionPointerError(f"Correction pointer {path} is unreadable: {exc}") from exc
 
     if not isinstance(payload, dict):
-        LOGGER.warning("Skipping malformed correction pointer %s", path)
-        return None
+        raise CorrectionPointerError(f"Correction pointer {path} is not a JSON object")
 
     if payload.get("schema_version") != POINTER_SCHEMA_VERSION:
-        LOGGER.warning(
-            "Skipping correction pointer %s with unsupported schema_version %r",
-            path,
-            payload.get("schema_version"),
+        raise CorrectionPointerError(
+            f"Correction pointer {path} has unsupported schema_version "
+            f"{payload.get('schema_version')!r}; this build understands {POINTER_SCHEMA_VERSION}"
         )
-        return None
 
     state = str(payload.get("state") or "")
     if state not in ACTIVE_POINTER_STATES:
-        return None
+        raise CorrectionPointerError(f"Correction pointer {path} has unknown state {state!r}")
 
     if payload.get("workflow_group_id") != workflow_group_id:
-        LOGGER.warning(
-            "Skipping correction pointer %s belonging to catalog %r",
-            path,
-            payload.get("workflow_group_id"),
+        raise CorrectionPointerError(
+            f"Correction pointer {path} belongs to catalog {payload.get('workflow_group_id')!r}, "
+            f"not {workflow_group_id!r}"
         )
-        return None
 
-    audio_hash = str(payload.get("audio_hash") or "")
+    audio_hash = str(payload.get("audio_hash") or "").strip().lower()
     relative_path = str(payload.get("transcript_path") or "")
-    artifact_sha256 = str(payload.get("artifact_sha256") or "")
+    artifact_sha256 = str(payload.get("artifact_sha256") or "").strip().lower()
     if not audio_hash or not relative_path or not artifact_sha256:
-        LOGGER.warning("Skipping incomplete correction pointer %s", path)
-        return None
+        raise CorrectionPointerError(f"Correction pointer {path} is incomplete")
+    # Machine transcripts are keyed by the lowercased full digest; a pointer
+    # under any other key would never match its recording and would index the
+    # correction beside the machine text instead of in its place.
+    if not _is_full_sha256(audio_hash):
+        raise CorrectionPointerError(
+            f"Correction pointer {path} names audio_hash {audio_hash!r}, not a full SHA-256"
+        )
+    if audio_hash != path.stem.lower():
+        raise CorrectionPointerError(
+            f"Correction pointer {path} names audio_hash {audio_hash!r} but is filed as {path.stem!r}"
+        )
 
     transcript_path = (corrections_root / relative_path).resolve()
     try:
         transcript_path.relative_to(corrections_root.resolve())
-    except ValueError:
-        LOGGER.warning(
-            "Skipping correction pointer %s whose transcript escapes the corrections root",
-            path,
-        )
-        return None
+    except ValueError as exc:
+        raise CorrectionPointerError(
+            f"Correction pointer {path} names a transcript outside the corrections root"
+        ) from exc
 
     return CorrectionIndexPointer(
         workflow_group_id=workflow_group_id,
@@ -134,7 +147,7 @@ def _parse_pointer(
     )
 
 
-def _artifact_matches(pointer: CorrectionIndexPointer) -> bool:
+def _verify_artifact(pointer: CorrectionIndexPointer, *, pointer_path: Path) -> None:
     """Check the transcript's bytes against the hash the pointer carries.
 
     This is the boundary that consumes the artifact, so it is where the hash is
@@ -148,17 +161,16 @@ def _artifact_matches(pointer: CorrectionIndexPointer) -> bool:
             for block in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(block)
     except OSError as exc:
-        LOGGER.warning("Could not read correction transcript %s (%s)", pointer.transcript_path, exc)
-        return False
+        raise CorrectionPointerError(
+            f"Correction pointer {pointer_path} names transcript {pointer.transcript_path}, "
+            f"which cannot be read: {exc}"
+        ) from exc
 
     if digest.hexdigest() != pointer.artifact_sha256:
-        LOGGER.warning(
-            "Correction transcript %s does not match its recorded hash; ignoring it",
-            pointer.transcript_path,
+        raise CorrectionPointerError(
+            f"Correction transcript {pointer.transcript_path} does not match the hash "
+            f"recorded in {pointer_path}"
         )
-        return False
-
-    return True
 
 
 def load_correction_index_pointers(
@@ -166,7 +178,12 @@ def load_correction_index_pointers(
     *,
     corrections_root: Path | str | None = None,
 ) -> dict[str, CorrectionIndexPointer]:
-    """Read every usable pointer for one catalog, keyed by audio hash."""
+    """Read every pointer for one catalog, keyed by audio hash.
+
+    Raises :class:`CorrectionPointerError` for a pointer that exists but cannot
+    be honoured. A missing corrections root or pointer directory simply means
+    no corrections.
+    """
 
     try:
         root = resolve_corrections_root(corrections_root)
@@ -185,17 +202,7 @@ def load_correction_index_pointers(
             corrections_root=root,
             workflow_group_id=workflow_group_id,
         )
-        if pointer is None:
-            continue
-        if not pointer.transcript_path.is_file():
-            LOGGER.warning(
-                "Correction pointer %s names a missing transcript %s",
-                path,
-                pointer.transcript_path,
-            )
-            continue
-        if not _artifact_matches(pointer):
-            continue
+        _verify_artifact(pointer, pointer_path=path)
         pointers[pointer.audio_hash] = pointer
 
     return pointers
