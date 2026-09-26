@@ -301,7 +301,8 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 | Event Edit | `/catalog/[catalogId]/event/[eventId]/edit` | `manage_events` |
 | Recording | `/catalog/[catalogId]/recording/[hash]` | Catalog access, release-scoped (transcripts: `read_transcripts`) |
 | Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | `edit_metadata` |
-| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts` |
+| Correction | `/catalog/[catalogId]/recording/[hash]/correction` | `correct_transcripts`; the working surface for a recording in correction scope (ADR 0006) |
+| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config` |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
 | Admin Ingest | `/admin/ingest` | Admin |
