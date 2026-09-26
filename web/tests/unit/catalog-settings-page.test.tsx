@@ -63,6 +63,7 @@ describe("CatalogSettingsPage", () => {
     canViewTranscripts: false,
     canManageCatalogConfiguration: false,
     canManageAccess: false,
+    canEditCorrectionGuide: false,
     ...overrides,
   });
 
@@ -91,6 +92,7 @@ describe("CatalogSettingsPage", () => {
       canViewTranscripts: true,
       canManageCatalogConfiguration: true,
       canManageAccess: true,
+      canEditCorrectionGuide: true,
     });
     withEventEditing(true);
   });
@@ -140,7 +142,7 @@ describe("CatalogSettingsPage", () => {
     });
     expect(content).toHaveAttribute(
       "data-cards",
-      "access,configuration,eventHealth,transcriptExports"
+      "access,configuration,correctionGuide,eventHealth,transcriptExports"
     );
   });
 
@@ -175,6 +177,12 @@ describe("CatalogSettingsPage", () => {
       capability: { canManageAccess: true },
       events: false,
       cards: "access",
+    },
+    {
+      name: "correction guide",
+      capability: { canEditCorrectionGuide: true },
+      events: false,
+      cards: "correctionGuide",
     },
   ];
 

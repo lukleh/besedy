@@ -153,6 +153,10 @@ export interface CatalogEntryWithPermissions {
   canSeeTranscriptVariants?: boolean;
   /** Administrative: the diarization overlay. */
   canSeeSpeakers?: boolean;
+  /** The correction surface, which is a working surface rather than a reading right. */
+  canCorrectTranscripts?: boolean;
+  /** In correction scope: a live workspace, or the primary recording of an event. */
+  correctionEligible?: boolean;
 }
 
 /**

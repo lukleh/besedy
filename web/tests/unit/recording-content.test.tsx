@@ -177,6 +177,73 @@ describe("RecordingContent transcript toggle", () => {
     });
   };
 
+  // The link into correction is the way back for a corrector and, later, the
+  // only way for a curator to reach publication. It depends on both the
+  // permission and the recording being in correction scope.
+  it("offers the correction surface to a corrector for a recording in scope", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useRecordingEntryMock.mockReturnValue({
+      data: {
+        entry: {
+          hash: HASH,
+          filename: "recording.wav",
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: true,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownload: false,
+        canCorrectTranscripts: true,
+        correctionEligible: true,
+      },
+      isLoading: false,
+      error: null,
+      isError: false,
+    });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(
+      screen.getByRole("link", { name: "correction.openSurface" })
+    ).toHaveAttribute("href", `/catalog/${CATALOG_ID}/recording/${HASH}/correction`);
+  });
+
+  it("does not offer the correction surface for a recording outside correction scope", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useRecordingEntryMock.mockReturnValue({
+      data: {
+        entry: {
+          hash: HASH,
+          filename: "recording.wav",
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: true,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownload: false,
+        canCorrectTranscripts: true,
+        correctionEligible: false,
+      },
+      isLoading: false,
+      error: null,
+      isError: false,
+    });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(
+      screen.queryByRole("link", { name: "correction.openSurface" })
+    ).not.toBeInTheDocument();
+  });
+
   it("shows transcript stream when the stream view is enabled", () => {
     useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
     grantVariantAccess(true);

@@ -19,6 +19,12 @@ vi.mock("@/lib/access/capabilities", () => ({
   getRecordingCapability: vi.fn(),
 }));
 
+// The entry route is the one place that reports whether a recording is in
+// correction scope; the resolver itself is covered by its own tests.
+vi.mock("@/lib/correction/resolve", () => ({
+  resolveReaderTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+}));
+
 vi.mock("@/lib/audit/logger", () => ({
   logAccessDenied: vi.fn(),
 }));
@@ -192,5 +198,44 @@ describe("catalog entry route", () => {
     expect(body.entry.originalPath).toBeUndefined();
     expect(body.entry.compressedPath).toBeUndefined();
     expect(body.entry.scanRoot).toBeUndefined();
+  });
+
+  it("reports correction scope and the correction permission", async () => {
+    const { resolveReaderTranscriptSource } = await import("@/lib/correction/resolve");
+    (resolveReaderTranscriptSource as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      kind: "withheld",
+      workspaceId: null,
+    });
+    requireAuth.mockResolvedValue("user-1");
+    getRecordingCapability.mockResolvedValue({
+      catalogExists: true,
+      hasAccess: true,
+      canAccessRecording: true,
+      canViewRecordingTranscripts: true,
+      canEditRecording: false,
+      canDownloadRecording: false,
+      canCorrectTranscripts: true,
+    });
+    getCatalogEntry.mockResolvedValue({
+      hash: HASH,
+      filename: "recording.wav",
+      hasArchived: true,
+      hasMetadata: true,
+      isActionable: true,
+      isPublished: true,
+    });
+    prisma.audioMetadata.findUnique.mockResolvedValue(null);
+    countDuplicatesByHash.mockResolvedValue(new Map());
+
+    const response = await getCatalogEntryRoute(
+      new NextRequest(`http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/entry`),
+      { params: Promise.resolve({ id: CATALOG_ID, hash: HASH }) }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      canCorrectTranscripts: true,
+      correctionEligible: true,
+    });
   });
 });

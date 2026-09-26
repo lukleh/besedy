@@ -46,6 +46,7 @@ import { AccessFormFields } from "@/components/catalog/access-form-fields";
 import type { GrantableExtraPermission } from "@/lib/policy/catalog-permissions";
 import { CatalogSettingsAccessSummary } from "./catalog-settings-access-summary";
 import { CatalogSettingsConfigCard } from "./catalog-settings-config-card";
+import { CatalogSettingsCorrectionGuideCard } from "./catalog-settings-correction-guide-card";
 import { CatalogSettingsEventHealthCard } from "./catalog-settings-event-health-card";
 import { CatalogSettingsPendingUsersCard } from "./catalog-settings-pending-users-card";
 import { CatalogSettingsTranscriptExportsCard } from "./catalog-settings-transcript-exports-card";
@@ -597,6 +598,10 @@ export default function CatalogSettingsContent({
         <CatalogSettingsTranscriptExportsCard
           onDownload={handleTranscriptExportDownload}
         />
+      )}
+
+      {cards.correctionGuide && (
+        <CatalogSettingsCorrectionGuideCard catalogId={catalogId} />
       )}
 
       {/* Catalog Configuration - Only visible to admins */}
