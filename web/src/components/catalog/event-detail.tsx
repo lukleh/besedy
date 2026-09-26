@@ -228,7 +228,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     )
   ) : null;
 
-  // The event title leads the recording heading, so only the description is repeated here.
+  // The event title is derived from its date and location, which the recording heading already shows.
   const detailExtras =
     canViewArtworkCandidates || canManageSources || data.description ? (
       <div className="space-y-3">
@@ -272,8 +272,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         key={selectedRecording.audioHash}
         params={{ catalogId, hash: selectedRecording.audioHash }}
         downloadEventId={eventId}
-        heading={{
-          title: data.title,
+        headingContext={{
           dateYear: data.dateYear,
           dateMonth: data.dateMonth,
           dateDay: data.dateDay,

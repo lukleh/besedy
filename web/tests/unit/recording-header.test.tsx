@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RecordingHeader,
-  type RecordingHeading,
+  type RecordingHeadingContext,
 } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content-sections";
 import type { CatalogEntryResponse } from "@/types/catalog";
 
@@ -26,13 +26,13 @@ vi.mock("@/components/transcript/transcript-viewer", () => ({
   TranscriptViewer: () => null,
 }));
 
-function renderHeading(overrides: Partial<CatalogEntryResponse>, heading?: RecordingHeading) {
+function renderHeading(overrides: Partial<CatalogEntryResponse>, headingContext?: RecordingHeadingContext) {
   const recording = {
     hash: HASH,
     filename: "recording.wav",
     ...overrides,
   } as CatalogEntryResponse;
-  render(<RecordingHeader hash={HASH} recording={recording} heading={heading} />);
+  render(<RecordingHeader hash={HASH} recording={recording} headingContext={headingContext} />);
   return screen.getByRole("heading", { level: 1 }).textContent;
 }
 
@@ -132,7 +132,7 @@ describe("RecordingHeader", () => {
     expect(heading).toBe("Library");
   });
 
-  it("uses a passed heading instead of the recording's own fields", () => {
+  it("keeps the recording title with a passed date and location", () => {
     const heading = renderHeading(
       {
         curatedTitle: "Recording title",
@@ -141,9 +141,9 @@ describe("RecordingHeader", () => {
         dateDay: 18,
         location: { id: 1, name: "Recording place" },
       },
-      { title: "Event title", dateYear: 2006, dateMonth: 6, dateDay: null, locationName: "Event place" }
+      { dateYear: 2006, dateMonth: 6, dateDay: null, locationName: "Event place" }
     );
 
-    expect(heading).toBe("Event title · June 2006 · Event place");
+    expect(heading).toBe("Recording title · June 2006 · Event place");
   });
 });

@@ -49,9 +49,8 @@ interface RecordingPageStateProps {
   variant: RecordingPageStateVariant;
 }
 
-/** What the heading names; a page with its own context (an event) passes it instead of the recording's. */
-export interface RecordingHeading {
-  title?: string | null;
+/** When and where, for a page whose own context (an event) replaces the recording's; the title stays the recording's. */
+export interface RecordingHeadingContext {
   dateYear?: number | null;
   dateMonth?: number | null;
   dateDay?: number | null;
@@ -60,7 +59,7 @@ export interface RecordingHeading {
 
 interface RecordingHeaderProps {
   hash: string;
-  heading?: RecordingHeading;
+  headingContext?: RecordingHeadingContext;
   headerActions?: ReactNode;
   headerIdentity?: ReactNode;
   hideDefaultRecorder?: boolean;
@@ -157,36 +156,34 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
   );
 }
 
-function recordingHeading(recording: CatalogEntryResponse, hash: string): RecordingHeading {
+function recordingTitle(recording: CatalogEntryResponse, hash: string): string | undefined {
   // Older offline snapshots fall back to the audio hash when there is no title.
-  const title = [recording.curatedTitle, recording.title]
+  return [recording.curatedTitle, recording.title]
     .map((candidate) => candidate?.trim())
     .find((candidate) => candidate && candidate !== hash);
-  return {
-    title,
-    dateYear: recording.dateYear,
-    dateMonth: recording.dateMonth,
-    dateDay: recording.dateDay,
-    locationName: recording.location?.name,
-  };
 }
 
 export function RecordingHeader({
   hash,
-  heading,
+  headingContext,
   headerActions,
   headerIdentity,
   hideDefaultRecorder = false,
   recording,
 }: RecordingHeaderProps) {
   const locale = useLocale();
-  const { title, dateYear, dateMonth, dateDay, locationName } = heading ?? recordingHeading(recording, hash);
+  const { dateYear, dateMonth, dateDay, locationName } = headingContext ?? {
+    dateYear: recording.dateYear,
+    dateMonth: recording.dateMonth,
+    dateDay: recording.dateDay,
+    locationName: recording.location?.name,
+  };
   const formattedDate = !dateYear
     ? null
     : dateMonth && dateDay
       ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
       : formatPartialDate(dateYear, dateMonth, null, locale);
-  const headingParts = [title, formattedDate, locationName]
+  const headingParts = [recordingTitle(recording, hash), formattedDate, locationName]
     .map((part) => part?.trim())
     .filter((part): part is string => !!part);
   const fallbackTitle = recording.filename || hash.slice(0, 16);

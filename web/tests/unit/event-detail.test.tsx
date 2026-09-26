@@ -55,7 +55,7 @@ function eventDetail(overrides: Partial<EventDetailResponse> = {}): EventDetailR
   return {
     id: EVENT_ID,
     workflowGroupId: CATALOG_ID,
-    title: "Event title",
+    title: "Library, Jun 2006",
     location: { id: 1, name: "Library" },
     dateYear: 2006,
     dateMonth: 6,
@@ -99,13 +99,12 @@ describe("EventDetail recording heading", () => {
     vi.clearAllMocks();
   });
 
-  it("heads the selected recording with the event's title, date and location", () => {
+  it("heads the selected recording with the event's date and location", () => {
     renderEventDetail(eventDetail());
 
     expect(recordingContentMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        heading: {
-          title: "Event title",
+        headingContext: {
           dateYear: 2006,
           dateMonth: 6,
           dateDay: null,
@@ -115,11 +114,11 @@ describe("EventDetail recording heading", () => {
     );
   });
 
-  it("does not repeat the event title below the player", () => {
+  it("does not repeat the derived event title below the player", () => {
     renderEventDetail(eventDetail());
 
     const content = screen.getByTestId("recording-content");
-    expect(content).not.toHaveTextContent("Event title");
+    expect(content).not.toHaveTextContent("Library, Jun 2006");
     expect(content).toHaveTextContent("Event description");
   });
 });
