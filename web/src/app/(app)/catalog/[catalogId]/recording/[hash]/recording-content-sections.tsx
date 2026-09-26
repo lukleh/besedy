@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, Download, FileAudio, Mic, Music, Pencil } from "lucide-react";
@@ -24,7 +24,7 @@ import {
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
 import { cn } from "@/lib/utils";
-import { formatMediumDate } from "@/lib/date-format";
+import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import type { CatalogEntryResponse } from "@/types/catalog";
 import type { RecordingSeekRequest } from "./use-recording-playback";
 
@@ -155,13 +155,16 @@ export function RecordingHeader({
   recording,
 }: RecordingHeaderProps) {
   const locale = useLocale();
-  const hasFullDate = recording.dateYear && recording.dateMonth && recording.dateDay;
-  const hasLocation = !!recording.location?.name;
-  const useContextTitle = hasFullDate && hasLocation;
-  const formattedDate = hasFullDate
-    ? formatMediumDate(recording.dateYear!, recording.dateMonth!, recording.dateDay!, locale)
-    : null;
-  const fallbackTitle = recording.curatedTitle || recording.title || recording.filename || hash.slice(0, 16);
+  const { dateYear, dateMonth, dateDay } = recording;
+  const formattedDate = !dateYear
+    ? null
+    : dateMonth && dateDay
+      ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
+      : formatPartialDate(dateYear, dateMonth, null, locale);
+  const headingParts = [formattedDate, recording.location?.name, recording.curatedTitle || recording.title].filter(
+    (part): part is string => !!part
+  );
+  const fallbackTitle = recording.filename || hash.slice(0, 16);
   const defaultRecorderIdentity =
     recording.recorder && !hideDefaultRecorder ? (
       <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">
@@ -176,15 +179,14 @@ export function RecordingHeader({
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="space-y-2 min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            {useContextTitle ? (
-              <>
-                <span className="block sm:inline">{formattedDate}</span>
-                <span className="hidden sm:inline"> · </span>
-                <span className="block sm:inline">{recording.location!.name}</span>
-              </>
-            ) : (
-              fallbackTitle
-            )}
+            {headingParts.length > 0
+              ? headingParts.map((part, index) => (
+                  <Fragment key={index}>
+                    {index > 0 && <span className="hidden sm:inline"> · </span>}
+                    <span className="block sm:inline">{part}</span>
+                  </Fragment>
+                ))
+              : fallbackTitle}
           </h1>
         </div>
         {(resolvedHeaderIdentity || headerActions) && (
