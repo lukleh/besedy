@@ -199,7 +199,7 @@ async function summarizeSpan(
     tx.transcriptSpanDecision.findMany({
       where: { revisionId },
       select: { actorKey: true, kind: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
+      orderBy: { sequence: "asc" },
     }),
   ]);
 
@@ -369,35 +369,48 @@ export async function addComment(command: CommentCommand): Promise<{
     throw new CorrectionError("EMPTY_TEXT", "A comment cannot be empty");
   }
 
-  const span = await prisma.transcriptSpan.findUnique({
-    where: { id: command.spanId },
-    select: { id: true, workspaceId: true },
-  });
-  if (!span || span.workspaceId !== command.workspaceId) {
-    throw new CorrectionError("SPAN_NOT_FOUND", "Span not found in this workspace");
-  }
+  return prisma.$transaction(async (tx) => {
+    // Under the workspace lock, so an archive cannot commit between the
+    // route's check and this write and leave a comment nobody can see. A
+    // publication in flight does not block it: comments change nothing that
+    // is being snapshotted.
+    await lockWorkspace(tx, command.workspaceId);
+    const workspace = await tx.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: command.workspaceId },
+      select: { status: true },
+    });
+    if (workspace.status === "ARCHIVED") {
+      throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
+    }
 
-  const revision = await prisma.transcriptSpanRevision.findUnique({
-    where: { id: command.revisionId },
-    select: { id: true, spanId: true },
-  });
-  if (!revision || revision.spanId !== command.spanId) {
-    throw new CorrectionError("REVISION_CONFLICT", "That revision does not belong to this span");
-  }
+    const span = await tx.transcriptSpan.findUnique({
+      where: { id: command.spanId },
+      select: { id: true, workspaceId: true },
+    });
+    if (!span || span.workspaceId !== command.workspaceId) {
+      throw new CorrectionError("SPAN_NOT_FOUND", "Span not found in this workspace");
+    }
 
-  const comment = await prisma.transcriptSpanComment.create({
-    data: {
-      workspaceId: command.workspaceId,
-      spanId: command.spanId,
-      revisionId: command.revisionId,
-      actorKey: command.userId,
-      authorId: command.userId,
-      body,
-    },
-    select: { id: true, createdAt: true },
-  });
+    const revision = await tx.transcriptSpanRevision.findUnique({
+      where: { id: command.revisionId },
+      select: { id: true, spanId: true },
+    });
+    if (!revision || revision.spanId !== command.spanId) {
+      throw new CorrectionError("REVISION_CONFLICT", "That revision does not belong to this span");
+    }
 
-  return comment;
+    return tx.transcriptSpanComment.create({
+      data: {
+        workspaceId: command.workspaceId,
+        spanId: command.spanId,
+        revisionId: command.revisionId,
+        actorKey: command.userId,
+        authorId: command.userId,
+        body,
+      },
+      select: { id: true, createdAt: true },
+    });
+  });
 }
 
 export interface SpanHistoryEntry {

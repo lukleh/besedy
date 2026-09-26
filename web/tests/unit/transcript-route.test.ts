@@ -140,6 +140,52 @@ describe("transcript route", () => {
       });
     });
 
+    // The default is the configured search backend, not the top of the
+    // priority table: correction freezes that one, and the reader has to show
+    // the transcript a corrector will be asked to start from.
+    it("serves the configured search backend as the default, listed first", async () => {
+      const previous = process.env.RAG_BACKEND_KEY;
+      process.env.RAG_BACKEND_KEY = "whisperx/large-v3@pyannote_v3";
+      try {
+        requireAuth.mockResolvedValue("user-1");
+        resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+        getRecordingCapability.mockResolvedValue({
+          canAccessRecording: true,
+          canViewRecordingTranscripts: true,
+          canSeeTranscriptVariants: true,
+        });
+        resolveTranscriptsPath.mockResolvedValue("/transcripts");
+        getAvailableTranscripts.mockResolvedValue({
+          hash: VALID_HASH,
+          backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+        });
+
+        const admin = await getTranscript(
+          new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
+          { params: Promise.resolve({ hash: VALID_HASH }) }
+        );
+        await expect(admin.json()).resolves.toMatchObject({
+          backends: ["whisperx/large-v3@pyannote_v3", "faster-whisper/large-v3@silero_vad_v6"],
+        });
+
+        getRecordingCapability.mockResolvedValue({
+          canAccessRecording: true,
+          canViewRecordingTranscripts: true,
+          canSeeTranscriptVariants: false,
+        });
+        const reader = await getTranscript(
+          new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
+          { params: Promise.resolve({ hash: VALID_HASH }) }
+        );
+        await expect(reader.json()).resolves.toMatchObject({
+          backends: ["whisperx/large-v3@pyannote_v3"],
+        });
+      } finally {
+        if (previous === undefined) delete process.env.RAG_BACKEND_KEY;
+        else process.env.RAG_BACKEND_KEY = previous;
+      }
+    });
+
     it("refuses a transcript other than the default without the administrative view", async () => {
       requireAuth.mockResolvedValue("user-1");
       resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });

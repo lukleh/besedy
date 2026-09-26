@@ -87,6 +87,16 @@ describe("span state", () => {
     expect(summary.disapproverIds).toEqual([]);
   });
 
+  it("takes the later row when two decisions share a timestamp", () => {
+    const summary = summarizeSpanDecisions([
+      decision("alice", "APPROVE", 1),
+      decision("bob", "APPROVE", 2),
+      decision("bob", "WITHDRAW", 2),
+    ]);
+    expect(summary.state).toBe("needs_second_approval");
+    expect(summary.approverIds).toEqual(["alice"]);
+  });
+
   it("evaluates attention before done", () => {
     expect(deriveSpanState(5, 1)).toBe("needs_attention");
     expect(deriveSpanState(2, 0)).toBe("done");
