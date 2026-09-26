@@ -13,6 +13,10 @@ import {
   VIRTUAL_SCROLL_THRESHOLD,
 } from "./transcript-viewer-types";
 
+function getViewport(container: Element | null) {
+  return container?.querySelector('[data-slot="scroll-area-viewport"]') ?? null;
+}
+
 // Scroll only the transcript viewport. Element.scrollIntoView() would also
 // scroll every scrollable ancestor, shifting the whole page during playback.
 function centerInViewport(viewport: Element, element: Element) {
@@ -42,7 +46,7 @@ export function TranscriptContent({
     if (autoScroll && activeElementRef.current && scrollContainerRef.current) {
       const container = scrollContainerRef.current;
       const element = activeElementRef.current;
-      const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+      const viewport = getViewport(container);
       if (!viewport) return;
 
       const containerRect = viewport.getBoundingClientRect();
@@ -64,7 +68,7 @@ export function TranscriptContent({
       if (targetIdx >= 0) {
         requestAnimationFrame(() => {
           const container = scrollContainerRef.current;
-          const viewport = container?.querySelector("[data-radix-scroll-area-viewport]");
+          const viewport = getViewport(container);
           const element = container?.querySelector(`[data-segment-index="${targetIdx}"]`);
           if (viewport && element) {
             centerInViewport(viewport, element);

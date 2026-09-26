@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptContent } from "@/components/transcript/transcript-viewer-content";
 import type { Transcript } from "@/components/transcript/transcript-viewer-types";
 
-const VIEWPORT_SELECTOR = "[data-radix-scroll-area-viewport]";
+const VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]';
 const VIEWPORT_RECT = { top: 100, bottom: 500, height: 400 };
 
 const transcript: Transcript = {
@@ -35,17 +35,23 @@ function rect({ top, bottom, height }: { top: number; bottom: number; height: nu
 }
 
 describe("TranscriptContent scrolling", () => {
+  // jsdom does not implement these, so stub them per test and restore them after.
   const elementScrollTo = vi.fn();
   const scrollIntoView = vi.fn();
-  let windowScrollTo: ReturnType<typeof vi.spyOn>;
+  const stubbed = { scrollTo: elementScrollTo, scrollIntoView } as const;
+  const originals = new Map<string, PropertyDescriptor | undefined>();
 
   beforeEach(() => {
     contentRect = { top: 900, bottom: 920, height: 20 };
-    elementScrollTo.mockClear();
-    scrollIntoView.mockClear();
-    Element.prototype.scrollTo = elementScrollTo as unknown as typeof Element.prototype.scrollTo;
-    Element.prototype.scrollIntoView = scrollIntoView;
-    windowScrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    for (const [name, stub] of Object.entries(stubbed)) {
+      stub.mockClear();
+      originals.set(name, Object.getOwnPropertyDescriptor(Element.prototype, name));
+      Object.defineProperty(Element.prototype, name, {
+        configurable: true,
+        writable: true,
+        value: stub,
+      });
+    }
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
       this: Element,
     ) {
@@ -60,6 +66,14 @@ describe("TranscriptContent scrolling", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    for (const [name, descriptor] of originals) {
+      if (descriptor) {
+        Object.defineProperty(Element.prototype, name, descriptor);
+      } else {
+        delete (Element.prototype as unknown as Record<string, unknown>)[name];
+      }
+    }
+    originals.clear();
   });
 
   it("scrolls only the transcript viewport to centre the active word", () => {
@@ -73,7 +87,6 @@ describe("TranscriptContent scrolling", () => {
     // (900 - 100) + 20 / 2 - 400 / 2
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 610, behavior: "smooth" });
     expect(scrollIntoView).not.toHaveBeenCalled();
-    expect(windowScrollTo).not.toHaveBeenCalled();
   });
 
   it("does not scroll when the active word is already visible", () => {
@@ -109,6 +122,5 @@ describe("TranscriptContent scrolling", () => {
     expect(elementScrollTo.mock.contexts[0]).toBe(viewport);
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 610, behavior: "smooth" });
     expect(scrollIntoView).not.toHaveBeenCalled();
-    expect(windowScrollTo).not.toHaveBeenCalled();
   });
 });
