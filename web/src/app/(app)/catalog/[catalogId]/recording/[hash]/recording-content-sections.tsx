@@ -156,13 +156,6 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
   );
 }
 
-function recordingTitle(recording: CatalogEntryResponse, hash: string): string | undefined {
-  // Older offline snapshots fall back to the audio hash when there is no title.
-  return [recording.curatedTitle, recording.title]
-    .map((candidate) => candidate?.trim())
-    .find((candidate) => candidate && candidate !== hash);
-}
-
 export function RecordingHeader({
   hash,
   headingContext,
@@ -183,10 +176,13 @@ export function RecordingHeader({
     : dateMonth && dateDay
       ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
       : formatPartialDate(dateYear, dateMonth, null, locale);
-  const headingParts = [recordingTitle(recording, hash), formattedDate, locationName]
+  // Only a curated title leads the heading; source-file titles are mostly the recorder's date labels.
+  const headingParts = [recording.curatedTitle, formattedDate, locationName]
     .map((part) => part?.trim())
     .filter((part): part is string => !!part);
-  const fallbackTitle = recording.filename || hash.slice(0, 16);
+  // Older offline snapshots fall back to the audio hash when there is no title.
+  const sourceTitle = recording.title?.trim();
+  const fallbackTitle = (sourceTitle !== hash && sourceTitle) || recording.filename || hash.slice(0, 16);
   const defaultRecorderIdentity =
     recording.recorder && !hideDefaultRecorder ? (
       <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">

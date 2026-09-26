@@ -96,22 +96,28 @@ describe("RecordingHeader", () => {
     expect(heading).toBe("Library");
   });
 
-  it("falls back to the source title when there is no curated title", () => {
-    const heading = renderHeading({ dateYear: 2006, title: "Source title" });
-
-    expect(heading).toBe("Source title · 2006");
-  });
-
-  it("ignores a title that is the audio hash", () => {
-    const heading = renderHeading({ dateYear: 2006, title: HASH });
+  it("leaves the source title out when there is a date or location", () => {
+    const heading = renderHeading({ dateYear: 2006, title: "10. Června 1" });
 
     expect(heading).toBe("2006");
   });
 
-  it("falls back to the source title when the curated title is blank or the hash", () => {
-    expect(renderHeading({ curatedTitle: "  ", title: "Source title" })).toBe("Source title");
-    cleanup();
-    expect(renderHeading({ curatedTitle: HASH, title: "Source title" })).toBe("Source title");
+  it("does not replace a blank curated title with the source title", () => {
+    const heading = renderHeading({ dateYear: 2006, curatedTitle: "  ", title: "10. Června 1" });
+
+    expect(heading).toBe("2006");
+  });
+
+  it("falls back to the source title when there is no date, location or curated title", () => {
+    const heading = renderHeading({ curatedTitle: " ", title: " Source title " });
+
+    expect(heading).toBe("Source title");
+  });
+
+  it("skips a source title that is the audio hash in the fallback", () => {
+    const heading = renderHeading({ title: HASH });
+
+    expect(heading).toBe("recording.wav");
   });
 
   it("trims parts and drops blank ones", () => {
