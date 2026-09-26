@@ -13,6 +13,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "resolve_web_env_file.sh"
 COMPOSE_WRAPPER = REPO_ROOT / "scripts" / "run_web_compose.sh"
 COMPOSE_VALIDATOR = REPO_ROOT / "scripts" / "validate_web_compose_config.sh"
+KEY_CHECK = REPO_ROOT / "scripts" / "check_web_env_keys.sh"
+
+# Every key the web Compose files require (${VAR:?...} or ${VAR?...}) apart from
+# CONFIG_FILE, so wrapper tests get past the env-key check to the fake docker.
+REQUIRED_COMPOSE_ENV = (
+    "AUTH_SECRET=test-secret\n"
+    "TEXT_DATA_DIR=/safe/text\n"
+    "ARTWORK_DIR=/safe/artwork\n"
+    "SOURCES_DIR=/safe/sources\n"
+    "UPLOADS_DIR=/safe/uploads\n"
+    "CORRECTIONS_DIR=/safe/corrections\n"
+    "AUDIO_DIR=/safe/audio\n"
+    "ORIGINAL_AUDIO_DIR=/safe/original\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -114,7 +128,10 @@ def test_web_compose_wrapper_isolates_mode_and_forwards_resolved_env_file(
     instance: str,
 ) -> None:
     env_file = tmp_path / f"{mode}.env"
-    env_file.write_text(f"APP_ENV={app_env}\nCONFIG_FILE=/safe/config.toml\n", encoding="utf-8")
+    env_file.write_text(
+        f"APP_ENV={app_env}\nCONFIG_FILE=/safe/config.toml\n{REQUIRED_COMPOSE_ENV}",
+        encoding="utf-8",
+    )
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -437,7 +454,10 @@ def test_web_compose_wrapper_creates_missing_directory_mounts_as_the_invoking_us
     root = tmp_path / "host"
     (root / "checkout").mkdir(parents=True)
     env_file = tmp_path / f"{mode}.env"
-    env_file.write_text(f"APP_ENV={mode}\n", encoding="utf-8")
+    env_file.write_text(
+        f"APP_ENV={mode}\nCONFIG_FILE=/safe/config.toml\n{REQUIRED_COMPOSE_ENV}",
+        encoding="utf-8",
+    )
     bin_dir = tmp_path / "bin"
     _fake_docker_with_binds(bin_dir, _bind_config(mode, root))
 
@@ -485,7 +505,8 @@ def test_web_compose_wrapper_leaves_production_directory_mounts_to_the_operator(
         "APP_ENV=production\n"
         f"CONFIG_FILE={config}\n"
         "CONFIG_MOUNT=/data/config/besedy.toml\n"
-        "BESEDY_CONFIG=/data/config/besedy.toml\n",
+        "BESEDY_CONFIG=/data/config/besedy.toml\n"
+        f"{REQUIRED_COMPOSE_ENV}",
         encoding="utf-8",
     )
     bin_dir = tmp_path / "bin"
@@ -521,7 +542,10 @@ def test_web_compose_wrapper_warns_instead_of_failing_when_a_mount_cannot_be_cre
         {"type": "bind", "source": str(locked / "nas/original"), "target": "/data/original"}
     )
     env_file = tmp_path / "development.env"
-    env_file.write_text("APP_ENV=development\n", encoding="utf-8")
+    env_file.write_text(
+        f"APP_ENV=development\nCONFIG_FILE=/safe/config.toml\n{REQUIRED_COMPOSE_ENV}",
+        encoding="utf-8",
+    )
     bin_dir = tmp_path / "bin"
     _fake_docker_with_binds(bin_dir, config)
 
@@ -558,7 +582,10 @@ def test_web_compose_wrapper_points_web_at_its_own_jobs_runtime(
     tmp_path: Path, mode: str, override_var: str, jobs_api_host: str
 ) -> None:
     env_file = tmp_path / f"{mode}.env"
-    env_file.write_text(f"APP_ENV={mode}\nCONFIG_FILE=/safe/config.toml\n", encoding="utf-8")
+    env_file.write_text(
+        f"APP_ENV={mode}\nCONFIG_FILE=/safe/config.toml\n{REQUIRED_COMPOSE_ENV}",
+        encoding="utf-8",
+    )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     config_file = bin_dir / "rendered.json"
@@ -656,3 +683,171 @@ def test_compose_validator_accepts_a_jobs_api_that_names_its_own_runtime(
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_web_compose_wrapper_lists_every_missing_required_key_before_compose(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "production.env"
+    env_file.write_text("APP_ENV=production\nSTALE_SECRET=do-not-print\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    marker = tmp_path / "compose-ran"
+    docker = bin_dir / "docker"
+    docker.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n", encoding="utf-8")
+    docker.chmod(0o755)
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_PROD"] = str(env_file)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "production", "ps"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert not marker.exists()
+    assert (
+        "missing keys its Compose files require: ARTWORK_DIR AUDIO_DIR AUTH_SECRET "
+        "CONFIG_FILE CORRECTIONS_DIR ORIGINAL_AUDIO_DIR SOURCES_DIR TEXT_DATA_DIR UPLOADS_DIR"
+    ) in result.stderr
+    assert str(REPO_ROOT / "web" / ".env.prod.example") in result.stderr
+    assert "do-not-print" not in result.stderr
+
+
+@pytest.mark.parametrize(("command", "warns"), [(["up", "-d"], True), (["ps"], False)])
+def test_web_compose_wrapper_warns_about_unused_keys_only_when_changing_resources(
+    tmp_path: Path,
+    command: list[str],
+    warns: bool,
+) -> None:
+    root = tmp_path / "host"
+    (root / "checkout").mkdir(parents=True)
+    env_file = tmp_path / "test.env"
+    env_file.write_text(
+        "APP_ENV=test\nCONFIG_FILE=/safe/config.toml\n"
+        f"{REQUIRED_COMPOSE_ENV}POSTERS_DIR=/old/posters\n",
+        encoding="utf-8",
+    )
+    bin_dir = tmp_path / "bin"
+    _fake_docker_with_binds(bin_dir, _bind_config("test", root))
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_TEST"] = str(env_file)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", *command],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert ("POSTERS_DIR" in result.stderr) is warns
+    if warns:
+        assert "renamed or removed?" in result.stderr
+        assert str(REPO_ROOT / "web" / ".env.test.example") in result.stderr
+    assert "/old/posters" not in result.stderr
+
+
+def _run_key_check(
+    tmp_path: Path,
+    env_text: str,
+    *,
+    template_text: str = "",
+    compose_text: str = "services: {}\n",
+    provided: str = "",
+    action: str = "check",
+) -> subprocess.CompletedProcess[str]:
+    env_file = tmp_path / "web.env"
+    env_file.write_text(env_text, encoding="utf-8")
+    template = tmp_path / ".env.example"
+    template.write_text(template_text, encoding="utf-8")
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text(compose_text, encoding="utf-8")
+    options = ["true"] if action == "check" else []
+    return subprocess.run(
+        [
+            "bash",
+            str(KEY_CHECK),
+            action,
+            "test",
+            str(env_file),
+            str(template),
+            provided,
+            *options,
+            str(compose),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_key_check_knows_commented_template_keys_and_compose_references(
+    tmp_path: Path,
+) -> None:
+    result = _run_key_check(
+        tmp_path,
+        "OPTIONAL_KEY=1\nexport  WEB_LOGS_DIR = /logs\nGONE_KEY=secret-value\n",
+        template_text="# OPTIONAL_KEY=value\n",
+        compose_text="x: ${WEB_LOGS_DIR:-/default}\n",
+    )
+
+    assert result.returncode == 0
+    assert "GONE_KEY" in result.stderr
+    assert "OPTIONAL_KEY" not in result.stderr
+    assert "WEB_LOGS_DIR" not in result.stderr
+    assert "secret-value" not in result.stderr
+
+
+def test_key_check_ignores_keys_the_caller_provides(tmp_path: Path) -> None:
+    result = _run_key_check(
+        tmp_path,
+        "",
+        compose_text="a: ${APP_ENV:?required}\nb: ${GIT_COMMIT?required}\n",
+        provided="APP_ENV GIT_COMMIT",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_key_check_applies_compose_required_semantics(tmp_path: Path) -> None:
+    compose_text = (
+        "a: ${NONEMPTY:?required}\n"
+        "b: ${SET_ONLY?required}\n"
+        "c: ${OUTER:-${NESTED:?only when OUTER is unset}}\n"
+        "# d: ${COMMENTED:?not interpolated}\n"
+        "e: $${ESCAPED:?literal}\n"
+    )
+
+    empty = _run_key_check(tmp_path, "NONEMPTY=''\nSET_ONLY=\n", compose_text=compose_text)
+    assert empty.returncode == 1
+    assert "require: NONEMPTY\n" in empty.stderr
+
+    filled = _run_key_check(
+        tmp_path, "NONEMPTY=value # comment\nSET_ONLY=\n", compose_text=compose_text
+    )
+    assert filled.returncode == 0, filled.stderr
+
+
+def test_key_check_report_prints_the_full_comparison(tmp_path: Path) -> None:
+    result = _run_key_check(
+        tmp_path,
+        "SET_KEY=1\nOLD_KEY=secret-value\n",
+        template_text="SET_KEY=\nUNSET_KEY=\n# COMMENTED_KEY=\n",
+        compose_text="a: ${REQUIRED_KEY:?required}\nb: ${SET_KEY}\n",
+        action="report",
+    )
+
+    assert result.returncode == 1
+    assert "Missing required keys: REQUIRED_KEY\n" in result.stdout
+    assert "Optional template keys not set: UNSET_KEY\n" in result.stdout
+    assert "Keys no Compose file or the template uses: OLD_KEY\n" in result.stdout
+    assert "secret-value" not in result.stdout

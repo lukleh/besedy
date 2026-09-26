@@ -246,4 +246,4 @@ Full variable listings are in the `.env.*.example` files under `web/`.
 
 ### Environment File Resolution
 
-Env files are resolved by `scripts/resolve_web_env_file.sh` with this policy: explicit `BESEDY_WEB_ENV_*` override, otherwise `~/.config/lukleh/besedy/web.env.<env>`. The `.env.*.example` templates in `web/` document every supported variable.
+Env files are resolved by `scripts/resolve_web_env_file.sh` with this policy: explicit `BESEDY_WEB_ENV_*` override, otherwise `~/.config/lukleh/besedy/web.env.<env>`. The `.env.*.example` templates in `web/` document every supported variable; `just env-check <mode>` compares a resolved env file's key names with them (see `docs/web/operations.md`).

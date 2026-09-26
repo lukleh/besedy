@@ -18,18 +18,21 @@ case "$mode" in
     instance="development"
     jobs_runtime="dev"
     compose_args=(-f docker-compose.yml -f docker-compose.dev.yml --profile mock-oauth)
+    env_template_name=".env.dev.example"
     ;;
   production)
     expected_app_env="production"
     instance="production"
     jobs_runtime="prod"
     compose_args=(-f docker-compose.yml -f docker-compose.secure.yml -f docker-compose.production.yml --profile backup)
+    env_template_name=".env.prod.example"
     ;;
   test)
     expected_app_env="test"
     instance="${BESEDY_WEB_COMPOSE_INSTANCE:-test}"
     jobs_runtime="test"
     compose_args=(-f docker-compose.yml -f docker-compose.secure.yml --profile mock-oauth)
+    env_template_name=".env.test.example"
     ;;
   *)
     echo "Unsupported mode: $mode" >&2
@@ -188,6 +191,30 @@ for env_name in "${passthrough_vars[@]}"; do
     clean_env+=("$env_name=${!env_name}")
   fi
 done
+
+# Env files are copied once from their template and drift as it changes. List
+# every key the Compose files require at once, before Compose stops at the
+# first; on up/create/run, also warn about keys nothing uses any more. Only
+# key names are compared. "env-check" prints the full comparison instead.
+compose_files=()
+for (( i = 0; i < ${#compose_args[@]}; i++ )); do
+  if [[ "${compose_args[$i]}" == "-f" ]]; then
+    compose_files+=("$repo_root/web/${compose_args[$((i + 1))]}")
+  fi
+done
+provided_names=""
+for entry in "${clean_env[@]}"; do
+  if [[ "$entry" == *=* ]]; then
+    provided_names+="${entry%%=*} "
+  fi
+done
+env_template="$repo_root/web/$env_template_name"
+if [[ "$compose_command_name" == "env-check" ]]; then
+  exec "$script_dir/check_web_env_keys.sh" report "$mode" "$env_file" "$env_template" \
+    "$provided_names" "${compose_files[@]}"
+fi
+"$script_dir/check_web_env_keys.sh" check "$mode" "$env_file" "$env_template" \
+  "$provided_names" "$changes_resources" "${compose_files[@]}"
 
 cd "$repo_root/web"
 compose_command=(
