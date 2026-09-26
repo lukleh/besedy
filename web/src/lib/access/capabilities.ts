@@ -44,6 +44,12 @@ import {
   canPublishEventArtwork,
   canViewEventArtworkCandidates,
 } from "@/lib/policy/event-artwork";
+import {
+  canAdministerCorrection,
+  canCorrectTranscripts,
+  canEditCorrectionGuide,
+  canPublishTranscript,
+} from "@/lib/policy/correction";
 
 export interface PortalCapability {
   userId: string | null;
@@ -91,6 +97,10 @@ export interface CatalogCapability extends PortalCapability {
   canManageArtwork: boolean;
   canPublishArtwork: boolean;
   canManageEventSources: boolean;
+  canCorrectTranscripts: boolean;
+  canPublishTranscript: boolean;
+  canEditCorrectionGuide: boolean;
+  canAdministerCorrection: boolean;
 }
 
 export interface RecordingCapability extends CatalogCapability {
@@ -150,6 +160,10 @@ export function buildCatalogCapability(
     canManageArtwork: canManageEventArtworkCandidates(policyContext),
     canPublishArtwork: canPublishEventArtwork(policyContext),
     canManageEventSources: canManageEventSources(policyContext),
+    canCorrectTranscripts: canCorrectTranscripts(policyContext),
+    canPublishTranscript: canPublishTranscript(policyContext),
+    canEditCorrectionGuide: canEditCorrectionGuide(policyContext),
+    canAdministerCorrection: canAdministerCorrection(policyContext),
   };
 }
 

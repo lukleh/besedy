@@ -1137,6 +1137,11 @@ model TranscriptSpanDecision {
   /// SHA-256 of that command's payload, so two edits carrying different text
   /// are not mistaken for a retry of each other.
   commandDigest  String?                @map("command_digest") @db.VarChar(64)
+  /// Write order. Timestamps have millisecond precision and two decisions can
+  /// share one, while the reducer needs to know which of a person's decisions
+  /// came last; every writer holds the workspace lock, so this sequence is
+  /// that order.
+  sequence       BigInt                 @default(autoincrement())
   createdAt      DateTime               @default(now()) @map("created_at")
 
   workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

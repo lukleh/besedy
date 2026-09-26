@@ -267,6 +267,21 @@ describe("validateEmail", () => {
 });
 ```
 
+## Transcript Correction Smoke Check
+
+`npm run test:correction-smoke` drives correction end to end against a real
+PostgreSQL: starting a workspace, editing and approving as two people,
+archiving and recreating, and what survives a deleted account. It exists
+because the parts of that feature most likely to break are the seams the unit
+tests mock away — the partial unique indexes, the atomic edit-and-approve, the
+frozen source on disk.
+
+It creates its own catalog, users and data root, so give it a throwaway
+database. The header of `scripts/correction-smoke.ts` has the exact commands.
+
+It is deliberately not in `npm test`: it needs a database and a writable data
+root, which unit tests do not.
+
 ## Checklist Before Committing Tests
 
 - [ ] Tests verify correctness, not just presence
