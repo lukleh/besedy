@@ -48,6 +48,7 @@ import {
   safePlay,
 } from './audio-player-utils';
 import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
+import { useMediaSession } from './use-media-session';
 import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
@@ -69,6 +70,17 @@ function createSourceEvent(id: number, src: string): DebugEvent {
   };
 }
 
+/** The log entry with the page's decision about interrupted playback. */
+function createLaunchEvent(id: number, note: string): DebugEvent {
+  return {
+    id,
+    timestamp: new Date(),
+    type: 'lifecycle',
+    message: 'Launch',
+    details: note,
+  };
+}
+
 export function AudioPlayer({
   src,
   recordingHash,
@@ -83,6 +95,8 @@ export function AudioPlayer({
   seekKey,
   playbackEnd,
   autoPlayOnSeek,
+  mediaMetadata,
+  launchNote,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -104,6 +118,8 @@ export function AudioPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  // Counts seeks so the media session republishes its position state.
+  const [seekVersion, setSeekVersion] = useState(0);
   const {
     bufferInfo,
     chunkFetches,
@@ -142,6 +158,17 @@ export function AudioPlayer({
     },
     [],
   );
+
+  // The page's launch note arrives whenever its effect runs, which may be
+  // after this player mounted from cached data; log it once either way, so a
+  // relaunch after a kill can be read on the device. The ref keeps it for the
+  // source-change effect, which starts the log over.
+  const launchNoteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!launchNote || launchNoteRef.current) return;
+    launchNoteRef.current = launchNote;
+    logDebugEvent('lifecycle', 'Launch', launchNote);
+  }, [launchNote, logDebugEvent]);
 
   // Network error retry state — lives in a single reducer, see retryReducer
   // above. `isReconnecting` is derived.
@@ -252,10 +279,19 @@ export function AudioPlayer({
     );
   }, [hash, onTimeUpdate, logDebugEvent]);
 
+  // Read by the seek effect below without being one of its dependencies: the
+  // page clears the flag once playback starts, and that must not re-apply the
+  // seek to an element that is already playing.
+  const autoPlayOnSeekRef = useRef(!!autoPlayOnSeek);
+  useEffect(() => {
+    autoPlayOnSeekRef.current = !!autoPlayOnSeek;
+  }, [autoPlayOnSeek]);
+
   // Handle external seek requests - sync React state with audio element
   // Must wait for metadata to load before seeking, otherwise seek is silently ignored
   useEffect(() => {
     const audio = audioRef.current;
+    const autoPlay = autoPlayOnSeekRef.current;
     if (audio && seekTo !== undefined && seekTo >= 0) {
       // Check if audio has metadata loaded (readyState >= 1 = HAVE_METADATA)
       if (audio.readyState >= 1) {
@@ -271,14 +307,14 @@ export function AudioPlayer({
           `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
         );
 
-        // Auto-play after seek if requested (used for radio handoff)
-        if (autoPlayOnSeek) {
+        // Auto-play after seek if requested (radio handoff, interrupted session)
+        if (autoPlay) {
           userInitiatedRef.current = true;
           safePlay(audio, 'auto-play after external seek', logDebugEvent);
         }
       } else {
         // Metadata not loaded yet - queue the seek for when it loads
-        pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
+        pendingSeekRef.current = { time: seekTo, autoPlay };
         logDebugEvent(
           'seek',
           'External seek queued',
@@ -286,7 +322,7 @@ export function AudioPlayer({
         );
       }
     }
-  }, [seekTo, seekKey, onTimeUpdate, autoPlayOnSeek, logDebugEvent]);
+  }, [seekTo, seekKey, onTimeUpdate, logDebugEvent]);
 
   // Drive the retry machine. When phase transitions to "scheduled", schedule
   // the reload; when it transitions to "exhausted", log and clear transient
@@ -366,6 +402,44 @@ export function AudioPlayer({
     };
   }, [restoreSavedPositionAfterResume]);
 
+  // Page lifecycle in the event log. Whether `pagehide` fires when the app is
+  // swiped away decides if a later launch counts as interrupted, so it has to
+  // be observable on a phone.
+  useEffect(() => {
+    const describeElement = () => {
+      const audio = audioRef.current;
+      if (!audio) return undefined;
+      return `At ${audio.currentTime.toFixed(1)}s, ${audio.paused ? 'paused' : 'playing'}`;
+    };
+    const handleVisibility = () => {
+      logDebugEvent(
+        'lifecycle',
+        document.visibilityState === 'hidden' ? 'Page hidden' : 'Page visible',
+        describeElement(),
+      );
+    };
+    const handlePageHide = (event: PageTransitionEvent) => {
+      logDebugEvent(
+        'lifecycle',
+        'Page hide',
+        event.persisted ? 'Kept for back-forward cache' : 'Unloading',
+      );
+    };
+    const handleFreeze = () => logDebugEvent('lifecycle', 'Page frozen', describeElement());
+    const handleResume = () => logDebugEvent('lifecycle', 'Page resumed', describeElement());
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('freeze', handleFreeze);
+    document.addEventListener('resume', handleResume);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('freeze', handleFreeze);
+      document.removeEventListener('resume', handleResume);
+    };
+  }, [logDebugEvent]);
+
   // Reset state when audio source changes (not on initial mount)
   useEffect(() => {
     // Skip on initial mount - only run when src actually changes
@@ -435,7 +509,14 @@ export function AudioPlayer({
       resetBufferDiagnostics();
       // The fresh log opens with this source's transport, so a later stall or
       // error is attributable to the network, the worker cache or inline data.
-      setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
+      // The launch decision stays readable across the switch.
+      const events = [createSourceEvent(debugEventIdRef.current++, src)];
+      if (launchNoteRef.current) {
+        events.push(
+          createLaunchEvent(debugEventIdRef.current++, launchNoteRef.current),
+        );
+      }
+      setDebugEvents(events);
       onPlayingChange?.(false);
     });
   }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
@@ -705,6 +786,7 @@ export function AudioPlayer({
 
     const handleSeeking = () => {
       const seekTime = audio.currentTime;
+      setSeekVersion((version) => version + 1);
       logDebugEvent('seek', 'Seeking', `To ${seekTime.toFixed(1)}s`);
 
       // Check if seek position is buffered
@@ -824,25 +906,46 @@ export function AudioPlayer({
     }
   };
 
-  const skipBackward = () => {
+  const seekBy = (offsetSec: number) => {
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    const time = Math.max(0, audio.currentTime - 10);
+    const time =
+      offsetSec < 0
+        ? Math.max(0, audio.currentTime + offsetSec)
+        : Math.min(duration, audio.currentTime + offsetSec);
     audio.currentTime = time;
     setCurrentTime(time);
     onSeek?.(time);
   };
 
-  const skipForward = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    playbackEndRef.current = null;
-    const time = Math.min(duration, audio.currentTime + 10);
-    audio.currentTime = time;
-    setCurrentTime(time);
-    onSeek?.(time);
-  };
+  const skipBackward = () => seekBy(-10);
+  const skipForward = () => seekBy(10);
+
+  // Lock-screen and notification controls drive the same paths as the
+  // on-screen buttons, so the page sees every play, pause and seek.
+  useMediaSession({
+    audioRef,
+    metadata: mediaMetadata,
+    isPlaying,
+    duration,
+    seekVersion,
+    onPlay: () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      userInitiatedRef.current = true;
+      safePlay(audio, 'media session play', logDebugEvent);
+    },
+    onPause: () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      playIntentRef.current = false;
+      audio.pause();
+    },
+    onSeekBy: seekBy,
+    onSeekTo: (time) => handleSeek([time]),
+    onLog: (message, details) => logDebugEvent('session', message, details),
+  });
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(

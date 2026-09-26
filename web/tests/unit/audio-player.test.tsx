@@ -1129,3 +1129,158 @@ describe("AudioPlayer lifecycle resume", () => {
     expect(onTimeUpdate).not.toHaveBeenCalled();
   });
 });
+
+describe("AudioPlayer media session and lifecycle log", () => {
+  type ActionHandler = (details: MediaSessionActionDetails) => void;
+
+  function installMediaSession() {
+    const handlers = new Map<MediaSessionAction, ActionHandler | null>();
+    const session = {
+      metadata: null as MediaMetadata | null,
+      playbackState: "none" as MediaSessionPlaybackState,
+      setActionHandler: vi.fn((action: MediaSessionAction, handler: ActionHandler | null) => {
+        handlers.set(action, handler);
+      }),
+      setPositionState: vi.fn(),
+    };
+    Object.defineProperty(navigator, "mediaSession", { configurable: true, value: session });
+    vi.stubGlobal(
+      "MediaMetadata",
+      class {
+        constructor(init: MediaMetadataInit = {}) {
+          Object.assign(this, init);
+        }
+      },
+    );
+    const fire = (action: MediaSessionAction, details: Partial<MediaSessionActionDetails> = {}) => {
+      const handler = handlers.get(action);
+      if (!handler) throw new Error(`no handler for ${action}`);
+      handler({ action, ...details });
+    };
+    return { session, fire };
+  }
+
+  function renderWithSession(props: { launchNote?: string | null; onSeek?: (time: number) => void }) {
+    const utils = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AudioPlayer
+          src="https://example.com/audio.mp3"
+          mediaMetadata={{ title: "Evening talk", artist: "Speaker", album: "Prague" }}
+          launchNote={props.launchNote}
+          onSeek={props.onSeek}
+        />
+      </NextIntlClientProvider>,
+    );
+    const audio = utils.container.querySelector("audio");
+    if (!audio) throw new Error("Audio element not found");
+    return { ...utils, audio };
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "mediaSession");
+    vi.unstubAllGlobals();
+  });
+
+  it("drives the player from the lock-screen controls", async () => {
+    const { session, fire } = installMediaSession();
+    const onSeek = vi.fn();
+    const { audio } = renderWithSession({ onSeek });
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    const pauseMock = vi.fn();
+    audio.play = playMock;
+    audio.pause = pauseMock;
+
+    expect(session.metadata).toMatchObject({
+      title: "Evening talk",
+      artist: "Speaker",
+      album: "Prague",
+    });
+
+    await act(async () => {
+      fire("play");
+    });
+    expect(playMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(audio, "duration", { value: 100, configurable: true });
+    mockReadyState(audio, 1);
+    await act(async () => {
+      audio.dispatchEvent(new Event("loadedmetadata"));
+      audio.dispatchEvent(new Event("play"));
+    });
+    expect(session.playbackState).toBe("playing");
+    expect(session.setPositionState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ duration: 100 }),
+    );
+
+    audio.currentTime = 30;
+    await act(async () => {
+      fire("seekforward");
+    });
+    expect(audio.currentTime).toBe(40);
+    expect(onSeek).toHaveBeenLastCalledWith(40);
+
+    await act(async () => {
+      fire("seekto", { seekTime: 12 });
+    });
+    expect(audio.currentTime).toBe(12);
+    expect(onSeek).toHaveBeenLastCalledWith(12);
+
+    await act(async () => {
+      fire("pause");
+    });
+    expect(pauseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs the launch decision and the page lifecycle for reading on a device", () => {
+    const { getAllByRole, getByText } = renderWithSession({
+      launchNote: "Resuming interrupted playback from 300s",
+    });
+
+    fireEvent.click(getAllByRole("button", { name: "Toggle debug info" })[0]);
+    expect(getByText("Launch")).toBeInTheDocument();
+    expect(getByText("Resuming interrupted playback from 300s")).toBeInTheDocument();
+
+    act(() => {
+      setVisibilityState("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(getByText("Page hidden")).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(getByText("Page hide")).toBeInTheDocument();
+    expect(getByText("Unloading")).toBeInTheDocument();
+  });
+});
+
+describe("AudioPlayer launch note across source changes", () => {
+  it("keeps the launch decision readable after the source switches", async () => {
+    const hash = "c".repeat(64);
+    const props = {
+      recordingHash: hash,
+      launchNote: "Resuming interrupted playback from 300s",
+    };
+    const view = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AudioPlayer src={`/api/catalogs/c/recordings/${hash}/audio`} {...props} />
+      </NextIntlClientProvider>,
+    );
+
+    // The saved source preference resolves after the player mounted.
+    view.rerender(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AudioPlayer
+          src={`/api/catalogs/c/recordings/${hash}/audio?source=listening`}
+          {...props}
+        />
+      </NextIntlClientProvider>,
+    );
+    await act(async () => {});
+
+    fireEvent.click(view.getAllByRole("button", { name: "Toggle debug info" })[0]);
+    expect(view.getByText("Resuming interrupted playback from 300s")).toBeInTheDocument();
+    // Logged once per source, not accumulated.
+    expect(view.getAllByText("Launch")).toHaveLength(1);
+  });
+});

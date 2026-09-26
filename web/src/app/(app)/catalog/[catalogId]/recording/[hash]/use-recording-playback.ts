@@ -9,6 +9,12 @@ import { useDownloadRecord } from "@/hooks/use-downloads";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { buildPlaybackProgressUrl } from "@/lib/api/recording-urls";
 import { getPendingPlaybackProgress } from "@/lib/offline/downloads-db";
+import {
+  clearNowPlaying,
+  saveNowPlaying,
+  stopNowPlaying,
+  takeResumableNowPlaying,
+} from "@/lib/now-playing";
 import { isNetworkFailure } from "@/lib/offline/local-source";
 import {
   flushPendingPlaybackProgress,
@@ -75,10 +81,16 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const remoteRestoreAppliedRef = useRef(false);
   const playbackSeekedRef = useRef(false);
   const lastRequestRef = useRef<{ signature: string; sentAt: number } | null>(null);
+  const isPlayingRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [seekRequest, setSeekRequest] = useState<RecordingSeekRequest | undefined>(undefined);
+  // Play as soon as the pending seek applies. Set by the radio handoff and by
+  // an interrupted session; cleared once playback starts or the listener
+  // seeks, so a later seek never starts a paused player on its own.
   const [autoPlayOnSeek, setAutoPlayOnSeek] = useState(false);
+  // What this view decided about interrupted playback, for the player's log.
+  const [launchNote, setLaunchNote] = useState<string | null>(null);
 
   // Durable offline progress: synchronised by the download-manager bridge on
   // the next successful connection.
@@ -158,6 +170,12 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
         return;
       }
 
+      // Heartbeat for the interrupted-session check: a kill leaves this as the
+      // last word, a pause or close overwrites it below.
+      if (isPlayingRef.current && !options.completed) {
+        saveNowPlaying({ catalogId, hash, positionSec, playing: true });
+      }
+
       if (options.completed) {
         completedLocallyRef.current = true;
         markPlaybackCompleted(hash);
@@ -190,7 +208,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
         durationSec,
       });
     },
-    [hash, queueOfflineProgress, sendPlaybackProgress]
+    [catalogId, hash, queueOfflineProgress, sendPlaybackProgress]
   );
 
   useEffect(() => {
@@ -237,13 +255,6 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   }, [radio, fromRadio, hash]);
 
   useEffect(() => {
-    if (autoPlayOnSeek && seekRequest) {
-      const timer = setTimeout(() => setAutoPlayOnSeek(false), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [autoPlayOnSeek, seekRequest]);
-
-  useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
 
@@ -261,10 +272,14 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     // position would never restore in dev. The positionRestoredRef one-shot
     // guard prevents re-entry / loops.
     /* eslint-disable react-hooks/set-state-in-effect -- one-shot position restore; must stay synchronous (see above) */
+    // Consumed on every load so a shared link opened after a kill does not
+    // leave the record to resume some later visit.
+    const interrupted = takeResumableNowPlaying(catalogId, hash);
     const parsedSeek = seekParam ? Number.parseFloat(seekParam) : Number.NaN;
     if (Number.isFinite(parsedSeek) && parsedSeek >= 0) {
       const parsedEnd = endParam ? Number.parseFloat(endParam) : Number.NaN;
       positionRestoredRef.current = true;
+      setLaunchNote("Seek from the URL; interrupted playback not considered");
       setSeekRequest({
         time: parsedSeek,
         ...(Number.isFinite(parsedEnd) && parsedEnd > parsedSeek
@@ -278,11 +293,23 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     positionRestoredRef.current = true;
 
     const savedPosition = localPositionAtMountRef.current;
+    if (interrupted.record) {
+      // The page is back after the OS killed the app mid-playback: continue
+      // where it stopped. A deliberate pause or close would have cleared the
+      // playing flag, so this never restarts audio the listener turned off.
+      const time = Math.max(savedPosition ?? 0, interrupted.record.positionSec);
+      setLaunchNote(`Resuming interrupted playback from ${time.toFixed(0)}s`);
+      setSeekRequest({ time, key: Date.now() });
+      setAutoPlayOnSeek(true);
+      return;
+    }
+    setLaunchNote(`No interrupted playback (${interrupted.reason})`);
+
     if (savedPosition && savedPosition > 0) {
       setSeekRequest({ time: savedPosition, key: Date.now() });
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [hash, endParam, fromRadio, radio.isActive, seekParam]);
+  }, [catalogId, hash, endParam, fromRadio, radio.isActive, seekParam]);
 
   useEffect(() => {
     if (
@@ -448,8 +475,12 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   }, [persistCurrentPlaybackPosition]);
 
   useEffect(() => {
+    // Hiding keeps the session alive: the app is in the background, possibly
+    // still playing. Unloading is a deliberate close, a reload or a navigation
+    // away, none of which should come back playing.
     const handlePageHide = () => {
       persistCurrentPlaybackPosition({ keepalive: true });
+      stopNowPlaying(hash);
     };
 
     const handleVisibilityChange = () => {
@@ -465,23 +496,32 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
       window.removeEventListener("pagehide", handlePageHide);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [persistCurrentPlaybackPosition]);
+  }, [hash, persistCurrentPlaybackPosition]);
 
+  // Unmount only. persistCurrentPlaybackPosition changes identity when the
+  // progress owner resolves, which must not look like leaving the page.
+  const persistOnLeaveRef = useRef(persistCurrentPlaybackPosition);
+  useEffect(() => {
+    persistOnLeaveRef.current = persistCurrentPlaybackPosition;
+  }, [persistCurrentPlaybackPosition]);
   useEffect(() => {
     return () => {
-      persistCurrentPlaybackPosition({ keepalive: true });
+      persistOnLeaveRef.current({ keepalive: true });
+      // Leaving the page in the app stops the recording; it is not interrupted.
+      stopNowPlaying(hash);
     };
-  }, [persistCurrentPlaybackPosition]);
+  }, [hash]);
 
   const handleAudioEnded = useCallback((duration: number) => {
     const resolvedDuration = duration > 0 ? duration : durationRef.current;
+    clearNowPlaying(hash);
     persistCurrentPlaybackPosition({
       completed: true,
       positionSec: resolvedDuration || currentTimeRef.current,
       durationSec: resolvedDuration,
       keepalive: true,
     });
-  }, [persistCurrentPlaybackPosition]);
+  }, [hash, persistCurrentPlaybackPosition]);
 
   const handleDurationChange = useCallback((duration: number) => {
     if (Number.isFinite(duration) && duration > 0) {
@@ -490,14 +530,25 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   }, []);
 
   const handlePlayingChange = useCallback((playing: boolean) => {
+    isPlayingRef.current = playing;
     setIsPlaying(playing);
-    if (!playing) {
-      persistCurrentPlaybackPosition();
+    if (playing) {
+      setAutoPlayOnSeek(false);
+      saveNowPlaying({
+        catalogId,
+        hash,
+        positionSec: currentTimeRef.current,
+        playing: true,
+      });
+      return;
     }
-  }, [persistCurrentPlaybackPosition]);
+    persistCurrentPlaybackPosition();
+    stopNowPlaying(hash);
+  }, [catalogId, hash, persistCurrentPlaybackPosition]);
 
   const handleSeek = useCallback((time: number) => {
     playbackSeekedRef.current = true;
+    setAutoPlayOnSeek(false);
     setSeekRequest({ time, key: Date.now() });
     currentTimeRef.current = time;
     persistCurrentPlaybackPosition({ positionSec: time });
@@ -511,6 +562,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     handlePlayingChange,
     handleSeek,
     isPlaying,
+    launchNote,
     seekRequest,
     setCurrentTime,
   };
