@@ -13,6 +13,16 @@ import {
   VIRTUAL_SCROLL_THRESHOLD,
 } from "./transcript-viewer-types";
 
+// Scroll only the transcript viewport. Element.scrollIntoView() would also
+// scroll every scrollable ancestor, shifting the whole page during playback.
+function centerInViewport(viewport: Element, element: Element) {
+  const viewportRect = viewport.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const offset =
+    elementRect.top - viewportRect.top + elementRect.height / 2 - viewport.clientHeight / 2;
+  viewport.scrollTo({ top: viewport.scrollTop + offset, behavior: "smooth" });
+}
+
 export function TranscriptContent({
   transcript,
   currentTime,
@@ -41,7 +51,7 @@ export function TranscriptContent({
       const isBelow = elementRect.bottom > containerRect.bottom;
 
       if (isAbove || isBelow) {
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        centerInViewport(viewport, element);
       }
     }
   }, [currentTime, autoScroll]);
@@ -53,11 +63,11 @@ export function TranscriptContent({
       );
       if (targetIdx >= 0) {
         requestAnimationFrame(() => {
-          const element = scrollContainerRef.current?.querySelector(
-            `[data-segment-index="${targetIdx}"]`,
-          );
-          if (element) {
-            element.scrollIntoView({ behavior: "smooth", block: "center" });
+          const container = scrollContainerRef.current;
+          const viewport = container?.querySelector("[data-radix-scroll-area-viewport]");
+          const element = container?.querySelector(`[data-segment-index="${targetIdx}"]`);
+          if (viewport && element) {
+            centerInViewport(viewport, element);
           }
           onScrollComplete?.();
         });
