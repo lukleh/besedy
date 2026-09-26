@@ -29,6 +29,7 @@ const transcript: Transcript = {
 
 // jsdom has no layout: every non-viewport element reports this rect.
 let contentRect = { top: 900, bottom: 920, height: 20 };
+const HEADER_RECT = { top: 0, bottom: 150, height: 150 };
 
 function rect({ top, bottom, height }: { top: number; bottom: number; height: number }) {
   return { top, bottom, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON() {} };
@@ -55,7 +56,9 @@ describe("TranscriptContent scrolling", () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
       this: Element,
     ) {
-      return rect(this.matches(VIEWPORT_SELECTOR) ? VIEWPORT_RECT : contentRect) as DOMRect;
+      if (this.matches(VIEWPORT_SELECTOR)) return rect(VIEWPORT_RECT) as DOMRect;
+      if (this.matches("[data-app-header]")) return rect(HEADER_RECT) as DOMRect;
+      return rect(contentRect) as DOMRect;
     });
     vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (
       this: Element,
@@ -66,6 +69,8 @@ describe("TranscriptContent scrolling", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.querySelector("[data-app-header]")?.remove();
     for (const [name, descriptor] of originals) {
       if (descriptor) {
         Object.defineProperty(Element.prototype, name, descriptor);
@@ -95,6 +100,47 @@ describe("TranscriptContent scrolling", () => {
     render(<TranscriptContent transcript={transcript} currentTime={2.5} autoScroll />);
 
     expect(elementScrollTo).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("keeps the active word in the on-screen part of a box that runs off the window", () => {
+    vi.stubGlobal("innerHeight", 400);
+    contentRect = { top: 420, bottom: 440, height: 20 };
+
+    render(<TranscriptContent transcript={transcript} currentTime={2.5} autoScroll />);
+
+    // Visible band 100-400: 430 - 250
+    expect(elementScrollTo).toHaveBeenCalledWith({ top: 180, behavior: "smooth" });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("keeps the active word clear of the fixed app header", () => {
+    const header = document.createElement("header");
+    header.setAttribute("data-app-header", "");
+    document.body.prepend(header);
+    contentRect = { top: 120, bottom: 140, height: 20 };
+
+    render(<TranscriptContent transcript={transcript} currentTime={2.5} autoScroll />);
+
+    // Visible band 150-500: 130 - 325
+    expect(elementScrollTo).toHaveBeenCalledWith({ top: -195, behavior: "smooth" });
+  });
+
+  it("uses the whole box when only a sliver of it is on screen", () => {
+    vi.stubGlobal("innerHeight", 150);
+    contentRect = { top: 420, bottom: 440, height: 20 };
+
+    render(<TranscriptContent transcript={transcript} currentTime={2.5} autoScroll />);
+
+    expect(elementScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("keeps following inside the box while it is off screen", () => {
+    vi.stubGlobal("innerHeight", 50);
+
+    render(<TranscriptContent transcript={transcript} currentTime={2.5} autoScroll />);
+
+    expect(elementScrollTo).toHaveBeenCalledWith({ top: 610, behavior: "smooth" });
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
