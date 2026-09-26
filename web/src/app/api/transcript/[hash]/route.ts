@@ -9,6 +9,7 @@ import { AuthError } from "@/lib/auth/permissions";
 import { logTranscriptViewed } from "@/lib/audit/logger";
 import { resolveTranscriptRouteAccess } from "@/lib/access/transcript-route-access";
 import { HashSchema, TranscriptBackendSchema } from "@/lib/validation/schemas";
+import { selectDefaultTranscriptBackend } from "@/lib/transcript-default";
 
 export const dynamic = "force-dynamic";
 
@@ -68,18 +69,24 @@ export async function GET(
     const available = await getAvailableTranscripts(transcriptsPath, hash, {
       priorities,
     });
-    // Ordered by configured priority, so the first is the default one.
-    const defaultBackend = available.backends[0] ?? null;
+    // The same default every consumer uses (ADR 0006): the configured search
+    // backend, falling back to the priority order. Correction freezes this
+    // one, so the reader has to show it.
+    const defaultBackend = selectDefaultTranscriptBackend(available.backends);
 
     // Without the administrative view, there is one transcript: the default.
     // The alternatives are unevaluated machine output, so they are neither
     // listed nor servable, and hiding the picker alone would not achieve that.
+    // With it, the default still comes first, because the viewer opens on the
+    // first backend listed.
     if (!backend) {
-      return NextResponse.json(
-        capability.canSeeTranscriptVariants || defaultBackend === null
-          ? available
-          : { ...available, backends: [defaultBackend] }
-      );
+      const backends =
+        defaultBackend === null
+          ? available.backends
+          : capability.canSeeTranscriptVariants
+            ? [defaultBackend, ...available.backends.filter((key) => key !== defaultBackend)]
+            : [defaultBackend];
+      return NextResponse.json({ ...available, backends });
     }
 
     if (!capability.canSeeTranscriptVariants && backend !== defaultBackend) {

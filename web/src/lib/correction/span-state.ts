@@ -33,12 +33,15 @@ export interface SpanDecisionSummary {
 
 /**
  * Reduce a span's decision history on its current revision to one effective
- * decision per person: the latest row wins, and a withdrawal leaves that
+ * decision per person: the last row wins, and a withdrawal leaves that
  * person with none.
  *
- * Callers pass only decisions bound to the current revision. Decisions on
- * superseded revisions never count, which is what stops an old approval from
- * reviving when text returns to earlier wording.
+ * Callers pass decisions in write order (the stored sequence), and only those
+ * bound to the current revision. Timestamps are not consulted: they have
+ * millisecond precision and can tie, and a tie broken the wrong way would
+ * revive an approval the person had withdrawn. Decisions on superseded
+ * revisions never count, which is what stops an old approval from reviving
+ * when text returns to earlier wording.
  */
 export function summarizeSpanDecisions(
   decisions: readonly DecisionRow[]
@@ -46,10 +49,7 @@ export function summarizeSpanDecisions(
   const effective = new Map<string, DecisionRow>();
 
   for (const decision of decisions) {
-    const previous = effective.get(decision.actorKey);
-    if (!previous || previous.createdAt <= decision.createdAt) {
-      effective.set(decision.actorKey, decision);
-    }
+    effective.set(decision.actorKey, decision);
   }
 
   const approverIds: string[] = [];

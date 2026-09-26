@@ -75,7 +75,7 @@ export async function loadSpanSummaries(
       : await client.transcriptSpanDecision.findMany({
           where: { revisionId: { in: revisionIds } },
           select: { spanId: true, actorKey: true, kind: true, createdAt: true },
-          orderBy: { createdAt: "asc" },
+          orderBy: { sequence: "asc" },
         });
 
   const decisionsBySpan = new Map<string, DecisionRow[]>();
