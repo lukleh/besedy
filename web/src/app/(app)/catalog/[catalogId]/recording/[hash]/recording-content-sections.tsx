@@ -49,8 +49,18 @@ interface RecordingPageStateProps {
   variant: RecordingPageStateVariant;
 }
 
+/** What the heading names; a page with its own context (an event) passes it instead of the recording's. */
+export interface RecordingHeading {
+  title?: string | null;
+  dateYear?: number | null;
+  dateMonth?: number | null;
+  dateDay?: number | null;
+  locationName?: string | null;
+}
+
 interface RecordingHeaderProps {
   hash: string;
+  heading?: RecordingHeading;
   headerActions?: ReactNode;
   headerIdentity?: ReactNode;
   hideDefaultRecorder?: boolean;
@@ -147,23 +157,36 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
   );
 }
 
+function recordingHeading(recording: CatalogEntryResponse, hash: string): RecordingHeading {
+  const title = recording.curatedTitle || recording.title;
+  return {
+    // Older offline snapshots fall back to the audio hash when there is no title.
+    title: title === hash ? null : title,
+    dateYear: recording.dateYear,
+    dateMonth: recording.dateMonth,
+    dateDay: recording.dateDay,
+    locationName: recording.location?.name,
+  };
+}
+
 export function RecordingHeader({
   hash,
+  heading,
   headerActions,
   headerIdentity,
   hideDefaultRecorder = false,
   recording,
 }: RecordingHeaderProps) {
   const locale = useLocale();
-  const { dateYear, dateMonth, dateDay } = recording;
+  const { title, dateYear, dateMonth, dateDay, locationName } = heading ?? recordingHeading(recording, hash);
   const formattedDate = !dateYear
     ? null
     : dateMonth && dateDay
       ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
       : formatPartialDate(dateYear, dateMonth, null, locale);
-  const headingParts = [recording.curatedTitle || recording.title, formattedDate, recording.location?.name].filter(
-    (part): part is string => !!part
-  );
+  const headingParts = [title, formattedDate, locationName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => !!part);
   const fallbackTitle = recording.filename || hash.slice(0, 16);
   const defaultRecorderIdentity =
     recording.recorder && !hideDefaultRecorder ? (
@@ -178,7 +201,7 @@ export function RecordingHeader({
     <div className="flex flex-col gap-3 mb-4 sm:mb-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="space-y-2 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight break-words">
             {headingParts.length > 0
               ? headingParts.map((part, index) => (
                   <Fragment key={index}>

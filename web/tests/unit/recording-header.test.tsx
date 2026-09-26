@@ -1,13 +1,17 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { RecordingHeader } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content-sections";
+import { cleanup, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  RecordingHeader,
+  type RecordingHeading,
+} from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content-sections";
 import type { CatalogEntryResponse } from "@/types/catalog";
 
 const HASH = "a".repeat(64);
+let locale = "en";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
-  useLocale: () => "en",
+  useLocale: () => locale,
 }));
 
 vi.mock("@/components/player/audio-player", () => ({
@@ -22,19 +26,23 @@ vi.mock("@/components/transcript/transcript-viewer", () => ({
   TranscriptViewer: () => null,
 }));
 
-function renderHeader(overrides: Partial<CatalogEntryResponse>) {
+function renderHeading(overrides: Partial<CatalogEntryResponse>, heading?: RecordingHeading) {
   const recording = {
     hash: HASH,
     filename: "recording.wav",
     ...overrides,
   } as CatalogEntryResponse;
-  render(<RecordingHeader hash={HASH} recording={recording} />);
-  return screen.getByRole("heading", { level: 1 });
+  render(<RecordingHeader hash={HASH} recording={recording} heading={heading} />);
+  return screen.getByRole("heading", { level: 1 }).textContent;
 }
 
 describe("RecordingHeader", () => {
+  beforeEach(() => {
+    locale = "en";
+  });
+
   it("shows title, full date and location together", () => {
-    const heading = renderHeader({
+    const heading = renderHeading({
       dateYear: 2006,
       dateMonth: 6,
       dateDay: 18,
@@ -42,11 +50,11 @@ describe("RecordingHeader", () => {
       curatedTitle: "Mind Mapping 4",
     });
 
-    expect(heading).toHaveTextContent("Mind Mapping 4 · Jun 18, 2006 · Library");
+    expect(heading).toBe("Mind Mapping 4 · Jun 18, 2006 · Library");
   });
 
   it("keeps date and location when the date has no day", () => {
-    const heading = renderHeader({
+    const heading = renderHeading({
       dateYear: 2006,
       dateMonth: 6,
       dateDay: null,
@@ -54,36 +62,82 @@ describe("RecordingHeader", () => {
       curatedTitle: "Mind Mapping 4",
     });
 
-    expect(heading).toHaveTextContent("Mind Mapping 4 · June 2006 · Library");
+    expect(heading).toBe("Mind Mapping 4 · June 2006 · Library");
+  });
+
+  it("formats Czech full and month-only dates", () => {
+    locale = "cs";
+    const recording = { location: { id: 1, name: "Městská knihovna" }, curatedTitle: "Mapování mysli 4" };
+
+    expect(renderHeading({ ...recording, dateYear: 2006, dateMonth: 6, dateDay: 18 })).toBe(
+      "Mapování mysli 4 · 18. Června 2006 · Městská knihovna"
+    );
+    cleanup();
+    expect(renderHeading({ ...recording, dateYear: 2006, dateMonth: 6 })).toBe(
+      "Mapování mysli 4 · Červen 2006 · Městská knihovna"
+    );
   });
 
   it("shows a year-only date", () => {
-    const heading = renderHeader({ dateYear: 2006, location: { id: 1, name: "Library" } });
+    const heading = renderHeading({ dateYear: 2006, location: { id: 1, name: "Library" } });
 
-    expect(heading).toHaveTextContent("2006 · Library");
+    expect(heading).toBe("2006 · Library");
+  });
+
+  it("shows only the year when the month is missing", () => {
+    const heading = renderHeading({ dateYear: 2006, dateDay: 18 });
+
+    expect(heading).toBe("2006");
   });
 
   it("ignores a month or day without a year", () => {
-    const heading = renderHeader({ dateMonth: 6, dateDay: 18, location: { id: 1, name: "Library" } });
+    const heading = renderHeading({ dateMonth: 6, dateDay: 18, location: { id: 1, name: "Library" } });
 
-    expect(heading).toHaveTextContent(/^Library$/);
+    expect(heading).toBe("Library");
   });
 
   it("falls back to the source title when there is no curated title", () => {
-    const heading = renderHeader({ dateYear: 2006, title: "Source title" });
+    const heading = renderHeading({ dateYear: 2006, title: "Source title" });
 
-    expect(heading).toHaveTextContent("Source title · 2006");
+    expect(heading).toBe("Source title · 2006");
+  });
+
+  it("ignores a title that is the audio hash", () => {
+    const heading = renderHeading({ dateYear: 2006, title: HASH });
+
+    expect(heading).toBe("2006");
+  });
+
+  it("trims parts and drops blank ones", () => {
+    const heading = renderHeading({ dateYear: 2006, curatedTitle: "  ", location: { id: 1, name: " Library " } });
+
+    expect(heading).toBe("2006 · Library");
   });
 
   it("falls back to the filename when there is no date, location or title", () => {
-    const heading = renderHeader({});
+    const heading = renderHeading({ curatedTitle: " " });
 
-    expect(heading).toHaveTextContent(/^recording\.wav$/);
+    expect(heading).toBe("recording.wav");
   });
 
   it("does not add the filename when date or location exist", () => {
-    const heading = renderHeader({ location: { id: 1, name: "Library" } });
+    const heading = renderHeading({ location: { id: 1, name: "Library" } });
 
-    expect(heading).toHaveTextContent(/^Library$/);
+    expect(heading).toBe("Library");
+  });
+
+  it("uses a passed heading instead of the recording's own fields", () => {
+    const heading = renderHeading(
+      {
+        curatedTitle: "Recording title",
+        dateYear: 2006,
+        dateMonth: 6,
+        dateDay: 18,
+        location: { id: 1, name: "Recording place" },
+      },
+      { title: "Event title", dateYear: 2006, dateMonth: 6, dateDay: null, locationName: "Event place" }
+    );
+
+    expect(heading).toBe("Event title · June 2006 · Event place");
   });
 });
