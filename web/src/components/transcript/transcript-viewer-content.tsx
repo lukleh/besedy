@@ -17,13 +17,36 @@ function getViewport(container: Element | null) {
   return container?.querySelector('[data-slot="scroll-area-viewport"]') ?? null;
 }
 
+const MIN_VISIBLE_BAND_HEIGHT = 100;
+
+interface Band {
+  top: number;
+  bottom: number;
+}
+
+// The part of the viewport the user can see: below the fixed app header and
+// within the visual viewport, which excludes pinch-zoomed-out areas and the
+// on-screen keyboard. Falls back to the whole viewport when too little of it
+// is on screen, so following continues out of sight.
+function getVisibleBand(viewport: Element): Band {
+  const rect = viewport.getBoundingClientRect();
+  const headerBottom =
+    document.querySelector("[data-app-header]")?.getBoundingClientRect().bottom ?? 0;
+  const screen = window.visualViewport;
+  const screenTop = screen?.offsetTop ?? 0;
+  const screenBottom = screen ? screen.offsetTop + screen.height : window.innerHeight;
+  const top = Math.max(rect.top, headerBottom, screenTop);
+  const bottom = Math.min(rect.bottom, screenBottom);
+  return bottom - top >= MIN_VISIBLE_BAND_HEIGHT
+    ? { top, bottom }
+    : { top: rect.top, bottom: rect.bottom };
+}
+
 // Scroll only the transcript viewport. Element.scrollIntoView() would also
 // scroll every scrollable ancestor, shifting the whole page during playback.
-function centerInViewport(viewport: Element, element: Element) {
-  const viewportRect = viewport.getBoundingClientRect();
+function centerInBand(viewport: Element, element: Element, band: Band) {
   const elementRect = element.getBoundingClientRect();
-  const offset =
-    elementRect.top - viewportRect.top + elementRect.height / 2 - viewport.clientHeight / 2;
+  const offset = elementRect.top + elementRect.height / 2 - (band.top + band.bottom) / 2;
   viewport.scrollTo({ top: viewport.scrollTop + offset, behavior: "smooth" });
 }
 
@@ -49,13 +72,18 @@ export function TranscriptContent({
       const viewport = getViewport(container);
       if (!viewport) return;
 
-      const containerRect = viewport.getBoundingClientRect();
+      const band = getVisibleBand(viewport);
       const elementRect = element.getBoundingClientRect();
-      const isAbove = elementRect.top < containerRect.top;
-      const isBelow = elementRect.bottom > containerRect.bottom;
+      // Near either end of the transcript the viewport may already be scrolled
+      // as far as it goes; scrolling again would only restart the animation.
+      const canScrollUp = viewport.scrollTop > 0;
+      const canScrollDown =
+        viewport.scrollTop < viewport.scrollHeight - viewport.clientHeight - 1;
+      const isAbove = elementRect.top < band.top && canScrollUp;
+      const isBelow = elementRect.bottom > band.bottom && canScrollDown;
 
       if (isAbove || isBelow) {
-        centerInViewport(viewport, element);
+        centerInBand(viewport, element, band);
       }
     }
   }, [currentTime, autoScroll]);
@@ -71,7 +99,7 @@ export function TranscriptContent({
           const viewport = getViewport(container);
           const element = container?.querySelector(`[data-segment-index="${targetIdx}"]`);
           if (viewport && element) {
-            centerInViewport(viewport, element);
+            centerInBand(viewport, element, getVisibleBand(viewport));
           }
           onScrollComplete?.();
         });
