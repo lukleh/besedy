@@ -245,6 +245,10 @@ function synthesizeEntry(record: DownloadRecord): CatalogEntryResponse {
     recorder: recording?.recorderName
       ? { id: 0, name: recording.recorderName }
       : null,
+    // Only event downloads stored a location; it is the event's.
+    location: record.event?.locationName
+      ? { id: 0, name: record.event.locationName }
+      : null,
     hasArchived: true,
     hasMetadata: true,
     isActionable: true,

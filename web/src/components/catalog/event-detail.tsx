@@ -228,8 +228,9 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     )
   ) : null;
 
+  // The event title is derived from its date and location, which the recording heading already shows.
   const detailExtras =
-    canViewArtworkCandidates || canManageSources || data.title || data.description ? (
+    canViewArtworkCandidates || canManageSources || data.description ? (
       <div className="space-y-3">
         {artworkStatusBadge}
         {(canViewArtworkCandidates || canManageSources) && (
@@ -252,12 +253,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
             )}
           </div>
         )}
-        {(data.title || data.description) && (
-          <div className="space-y-1 text-sm text-muted-foreground">
-            {data.title && <p>{data.title}</p>}
-            {data.description && <p>{data.description}</p>}
-          </div>
-        )}
+        {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
       </div>
     ) : null;
 
@@ -276,6 +272,12 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         key={selectedRecording.audioHash}
         params={{ catalogId, hash: selectedRecording.audioHash }}
         downloadEventId={eventId}
+        headingContext={{
+          dateYear: data.dateYear,
+          dateMonth: data.dateMonth,
+          dateDay: data.dateDay,
+          locationName: data.location?.name,
+        }}
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder

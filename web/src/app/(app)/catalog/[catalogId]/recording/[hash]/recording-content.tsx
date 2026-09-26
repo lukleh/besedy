@@ -20,6 +20,7 @@ import {
   RecordingPageSkeleton,
   RecordingPageState,
   RecordingTranscriptSection,
+  type RecordingHeadingContext,
 } from "./recording-content-sections";
 import { useRecordingPlayback } from "./use-recording-playback";
 
@@ -28,6 +29,7 @@ interface RecordingContentProps {
   beforeAudioPlayer?: ReactNode;
   afterAudioPlayer?: ReactNode;
   downloadEventId?: number;
+  headingContext?: RecordingHeadingContext;
   headerActions?: ReactNode;
   headerIdentity?: ReactNode;
   hideDefaultRecorder?: boolean;
@@ -83,6 +85,7 @@ export default function RecordingContent({
   beforeAudioPlayer,
   afterAudioPlayer,
   downloadEventId,
+  headingContext,
   headerActions,
   headerIdentity,
   hideDefaultRecorder = false,
@@ -247,6 +250,7 @@ export default function RecordingContent({
       <RecordingHeader
         hash={hash}
         recording={recording}
+        headingContext={headingContext}
         headerActions={headerActions}
         headerIdentity={headerIdentity}
         hideDefaultRecorder={hideDefaultRecorder}

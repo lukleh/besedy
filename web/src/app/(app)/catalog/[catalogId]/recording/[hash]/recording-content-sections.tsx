@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, Download, FileAudio, Mic, Music, Pencil } from "lucide-react";
@@ -24,7 +24,7 @@ import {
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
 import { cn } from "@/lib/utils";
-import { formatMediumDate } from "@/lib/date-format";
+import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import type { CatalogEntryResponse } from "@/types/catalog";
 import type { RecordingSeekRequest } from "./use-recording-playback";
 
@@ -49,8 +49,17 @@ interface RecordingPageStateProps {
   variant: RecordingPageStateVariant;
 }
 
+/** When and where, for a page whose own context (an event) replaces the recording's; the title stays the recording's. */
+export interface RecordingHeadingContext {
+  dateYear?: number | null;
+  dateMonth?: number | null;
+  dateDay?: number | null;
+  locationName?: string | null;
+}
+
 interface RecordingHeaderProps {
   hash: string;
+  headingContext?: RecordingHeadingContext;
   headerActions?: ReactNode;
   headerIdentity?: ReactNode;
   hideDefaultRecorder?: boolean;
@@ -149,19 +158,31 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
 
 export function RecordingHeader({
   hash,
+  headingContext,
   headerActions,
   headerIdentity,
   hideDefaultRecorder = false,
   recording,
 }: RecordingHeaderProps) {
   const locale = useLocale();
-  const hasFullDate = recording.dateYear && recording.dateMonth && recording.dateDay;
-  const hasLocation = !!recording.location?.name;
-  const useContextTitle = hasFullDate && hasLocation;
-  const formattedDate = hasFullDate
-    ? formatMediumDate(recording.dateYear!, recording.dateMonth!, recording.dateDay!, locale)
-    : null;
-  const fallbackTitle = recording.curatedTitle || recording.title || recording.filename || hash.slice(0, 16);
+  const { dateYear, dateMonth, dateDay, locationName } = headingContext ?? {
+    dateYear: recording.dateYear,
+    dateMonth: recording.dateMonth,
+    dateDay: recording.dateDay,
+    locationName: recording.location?.name,
+  };
+  const formattedDate = !dateYear
+    ? null
+    : dateMonth && dateDay
+      ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
+      : formatPartialDate(dateYear, dateMonth, null, locale);
+  // Only a curated title leads the heading; source-file titles are mostly the recorder's date labels.
+  const headingParts = [recording.curatedTitle, formattedDate, locationName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => !!part);
+  // Older offline snapshots fall back to the audio hash when there is no title.
+  const sourceTitle = recording.title?.trim();
+  const fallbackTitle = (sourceTitle !== hash && sourceTitle) || recording.filename || hash.slice(0, 16);
   const defaultRecorderIdentity =
     recording.recorder && !hideDefaultRecorder ? (
       <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">
@@ -175,16 +196,15 @@ export function RecordingHeader({
     <div className="flex flex-col gap-3 mb-4 sm:mb-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="space-y-2 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            {useContextTitle ? (
-              <>
-                <span className="block sm:inline">{formattedDate}</span>
-                <span className="hidden sm:inline"> · </span>
-                <span className="block sm:inline">{recording.location!.name}</span>
-              </>
-            ) : (
-              fallbackTitle
-            )}
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight break-words">
+            {headingParts.length > 0
+              ? headingParts.map((part, index) => (
+                  <Fragment key={index}>
+                    {index > 0 && <span className="hidden sm:inline"> · </span>}
+                    <span className="block sm:inline">{part}</span>
+                  </Fragment>
+                ))
+              : fallbackTitle}
           </h1>
         </div>
         {(resolvedHeaderIdentity || headerActions) && (

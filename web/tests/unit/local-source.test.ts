@@ -304,8 +304,16 @@ describe('local content source', () => {
         duration: '01:00:00',
         isActionable: true,
         recorder: { name: 'Zoom' },
+        location: { name: 'Prague' },
       });
       expect(result?.canViewTranscripts).toBe(false);
+    });
+
+    it('leaves the location empty for a download made outside an event', async () => {
+      mocks.records = [record({ eventKey: null, event: null })];
+      const { readLocalRecordingEntry } = await loadSource();
+      const result = await readLocalRecordingEntry(CATALOG, HASH);
+      expect(result?.entry.location).toBeNull();
     });
   });
 
