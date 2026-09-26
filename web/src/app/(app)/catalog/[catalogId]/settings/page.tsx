@@ -25,6 +25,7 @@ export default async function CatalogSettingsPage({
   // what opens it is having any of them rather than a single settings right.
   const cards: CatalogSettingsCards = {
     transcriptExports: capability.canBulkExportTranscripts,
+    correctionGuide: capability.canEditCorrectionGuide,
     configuration: capability.canManageCatalogConfiguration,
     eventHealth: features.features.events.canEdit,
     access: capability.canManageAccess,

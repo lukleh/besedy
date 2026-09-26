@@ -8,6 +8,7 @@ import {
 import { logAccessDenied } from "@/lib/audit/logger";
 import { CatalogHashParamSchema } from "@/lib/validation/schemas";
 import { validateParams } from "@/lib/api";
+import { resolveReaderTranscriptSource } from "@/lib/correction/resolve";
 import { toCatalogEntryResponse } from "@/types/catalog";
 
 export const runtime = "nodejs";
@@ -137,6 +138,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       duplicateCount,
     };
 
+    // Whether the recording is in correction scope (ADR 0006: a live workspace,
+    // or currently primary). Resolved here, the one route that reports it,
+    // rather than inside every recording capability lookup.
+    const readerSource = await resolveReaderTranscriptSource(catalogId, hash);
+
     return NextResponse.json({
       entry: toCatalogEntryResponse(enrichedEntry),
       canViewTranscripts: capability.canViewRecordingTranscripts,
@@ -146,6 +152,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canDownloadTranscripts: capability.canDownloadTranscripts,
       canSeeTranscriptVariants: capability.canSeeTranscriptVariants,
       canSeeSpeakers: capability.canSeeSpeakers,
+      canCorrectTranscripts: capability.canCorrectTranscripts,
+      correctionEligible: readerSource.kind !== "machine",
     });
   } catch (error) {
     if (isAuthError(error)) {
