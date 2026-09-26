@@ -25,15 +25,21 @@ interface Band {
 }
 
 // The part of the viewport the user can see: below the fixed app header and
-// above the bottom of the window. Falls back to the whole viewport when too
-// little of it is on screen, so following continues out of sight.
+// within the visual viewport, which excludes pinch-zoomed-out areas and the
+// on-screen keyboard. Falls back to the whole viewport when too little of it
+// is on screen, so following continues out of sight.
 function getVisibleBand(viewport: Element): Band {
   const rect = viewport.getBoundingClientRect();
   const headerBottom =
     document.querySelector("[data-app-header]")?.getBoundingClientRect().bottom ?? 0;
-  const top = Math.max(rect.top, headerBottom);
-  const bottom = Math.min(rect.bottom, window.innerHeight);
-  return bottom - top >= MIN_VISIBLE_BAND_HEIGHT ? { top, bottom } : rect;
+  const screen = window.visualViewport;
+  const screenTop = screen?.offsetTop ?? 0;
+  const screenBottom = screen ? screen.offsetTop + screen.height : window.innerHeight;
+  const top = Math.max(rect.top, headerBottom, screenTop);
+  const bottom = Math.min(rect.bottom, screenBottom);
+  return bottom - top >= MIN_VISIBLE_BAND_HEIGHT
+    ? { top, bottom }
+    : { top: rect.top, bottom: rect.bottom };
 }
 
 // Scroll only the transcript viewport. Element.scrollIntoView() would also
@@ -68,8 +74,13 @@ export function TranscriptContent({
 
       const band = getVisibleBand(viewport);
       const elementRect = element.getBoundingClientRect();
-      const isAbove = elementRect.top < band.top;
-      const isBelow = elementRect.bottom > band.bottom;
+      // Near either end of the transcript the viewport may already be scrolled
+      // as far as it goes; scrolling again would only restart the animation.
+      const canScrollUp = viewport.scrollTop > 0;
+      const canScrollDown =
+        viewport.scrollTop < viewport.scrollHeight - viewport.clientHeight - 1;
+      const isAbove = elementRect.top < band.top && canScrollUp;
+      const isBelow = elementRect.bottom > band.bottom && canScrollDown;
 
       if (isAbove || isBelow) {
         centerInBand(viewport, element, band);
