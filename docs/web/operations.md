@@ -25,6 +25,15 @@ unrelated shell state, fixes the Compose identity independently from runtime
 `APP_ENV`, and validates the fully rendered configuration before Docker can
 create, replace, stop, or remove resources.
 
+Env files are copied once from their template and drift as the template changes.
+Before running Compose, the wrapper (via `scripts/check_web_env_keys.sh`) lists
+every key the mode's Compose files require (`${VAR:?…}` or `${VAR?…}`) that the
+env file lacks, and on `up`, `create` and `run` it warns about keys that neither
+the Compose files nor the template use any more, which usually means a key was
+renamed or removed. `just env-check <mode>` prints the full comparison,
+including optional template keys that are not set. Only key names are
+compared or printed, never values.
+
 ---
 
 ## Development Setup
