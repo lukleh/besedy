@@ -8,7 +8,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { TEST_AUDIO_FILES } from "../../../prisma/test-data";
+import { TEST_AUDIO_FILES, TEST_TRANSCRIPTS_SUBDIR } from "../../../prisma/test-data";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -191,8 +191,10 @@ const TRANSCRIPT_BACKENDS = [
  * Generate all transcript files
  */
 export async function generateAllTranscripts(fixturesDir: string): Promise<void> {
-  const transcriptsDir = path.join(fixturesDir, "transcripts_test");
+  const transcriptsDir = path.join(fixturesDir, TEST_TRANSCRIPTS_SUBDIR);
 
+  // Earlier versions wrote here, where the web app never looked.
+  await fs.rm(path.join(fixturesDir, "transcripts_test"), { recursive: true, force: true });
   await fs.mkdir(transcriptsDir, { recursive: true });
 
   console.log("Generating test transcripts...");

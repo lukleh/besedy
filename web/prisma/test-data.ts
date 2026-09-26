@@ -9,6 +9,11 @@
 
 export const TEST_CATALOG_ID = "20251225_120000";
 
+// Where transcript fixtures live under TEXT_DATA_DIR. The web app resolves
+// transcripts as <text_data_dir>/<transcripts_dir>/transcripts_<catalogId>
+// (resolveTranscriptsPath), with transcripts_dir = "transcripts" in besedy.docker.toml.
+export const TEST_TRANSCRIPTS_SUBDIR = `transcripts/transcripts_${TEST_CATALOG_ID}`;
+
 export interface TestAudioSpec {
   shortHash: string;
   filename: string;
