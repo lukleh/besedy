@@ -9,7 +9,7 @@
 
 import { test, expect } from "./helpers/base-test";
 import { loginAs } from "./helpers/auth";
-import { URLS } from "./helpers/fixtures";
+import { FIRST_RECORDING, TEST_CATALOG_ID, URLS } from "./helpers/fixtures";
 import {
   openFirstPlayableCatalogItem,
   waitForAudioState,
@@ -132,6 +132,26 @@ test.describe("Smoke Tests @smoke", () => {
 
     // Keep a direct signal in the failure output about which UI route was used.
     expect(["recording", "event"]).toContain(openedRoute);
+  });
+
+  test("reader sees the transcript of a recording", async ({ page }) => {
+    await loginAs(page, "viewer");
+
+    // The fixtures must sit where the app resolves transcripts; the access
+    // checks in security.spec.ts pass wherever they are.
+    const response = await page.request.get(
+      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}`
+    );
+    expect(response.status()).toBe(200);
+    const { backends } = await response.json();
+    expect(backends).toHaveLength(1);
+
+    await page.goto(URLS.recording(FIRST_RECORDING.hash));
+    await waitForPageReady(page);
+    await expect(
+      page.getByText("Dobrý den, vítejte u dnešního rozhovoru.").first()
+    ).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/no transcripts available/i)).toHaveCount(0);
   });
 
   test("user can start radio mode", async ({ page }) => {
