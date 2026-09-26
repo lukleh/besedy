@@ -33,7 +33,7 @@ function renderHeader(overrides: Partial<CatalogEntryResponse>) {
 }
 
 describe("RecordingHeader", () => {
-  it("shows full date, location and title together", () => {
+  it("shows title, full date and location together", () => {
     const heading = renderHeader({
       dateYear: 2006,
       dateMonth: 6,
@@ -42,7 +42,7 @@ describe("RecordingHeader", () => {
       curatedTitle: "Mind Mapping 4",
     });
 
-    expect(heading).toHaveTextContent("Jun 18, 2006 · Library · Mind Mapping 4");
+    expect(heading).toHaveTextContent("Mind Mapping 4 · Jun 18, 2006 · Library");
   });
 
   it("keeps date and location when the date has no day", () => {
@@ -54,7 +54,7 @@ describe("RecordingHeader", () => {
       curatedTitle: "Mind Mapping 4",
     });
 
-    expect(heading).toHaveTextContent("June 2006 · Library · Mind Mapping 4");
+    expect(heading).toHaveTextContent("Mind Mapping 4 · June 2006 · Library");
   });
 
   it("shows a year-only date", () => {
@@ -72,7 +72,7 @@ describe("RecordingHeader", () => {
   it("falls back to the source title when there is no curated title", () => {
     const heading = renderHeader({ dateYear: 2006, title: "Source title" });
 
-    expect(heading).toHaveTextContent("2006 · Source title");
+    expect(heading).toHaveTextContent("Source title · 2006");
   });
 
   it("falls back to the filename when there is no date, location or title", () => {

@@ -161,7 +161,7 @@ export function RecordingHeader({
     : dateMonth && dateDay
       ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
       : formatPartialDate(dateYear, dateMonth, null, locale);
-  const headingParts = [formattedDate, recording.location?.name, recording.curatedTitle || recording.title].filter(
+  const headingParts = [recording.curatedTitle || recording.title, formattedDate, recording.location?.name].filter(
     (part): part is string => !!part
   );
   const fallbackTitle = recording.filename || hash.slice(0, 16);
