@@ -108,6 +108,12 @@ describe("RecordingHeader", () => {
     expect(heading).toBe("2006");
   });
 
+  it("falls back to the source title when the curated title is blank or the hash", () => {
+    expect(renderHeading({ curatedTitle: "  ", title: "Source title" })).toBe("Source title");
+    cleanup();
+    expect(renderHeading({ curatedTitle: HASH, title: "Source title" })).toBe("Source title");
+  });
+
   it("trims parts and drops blank ones", () => {
     const heading = renderHeading({ dateYear: 2006, curatedTitle: "  ", location: { id: 1, name: " Library " } });
 

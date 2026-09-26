@@ -158,10 +158,12 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
 }
 
 function recordingHeading(recording: CatalogEntryResponse, hash: string): RecordingHeading {
-  const title = recording.curatedTitle || recording.title;
+  // Older offline snapshots fall back to the audio hash when there is no title.
+  const title = [recording.curatedTitle, recording.title]
+    .map((candidate) => candidate?.trim())
+    .find((candidate) => candidate && candidate !== hash);
   return {
-    // Older offline snapshots fall back to the audio hash when there is no title.
-    title: title === hash ? null : title,
+    title,
     dateYear: recording.dateYear,
     dateMonth: recording.dateMonth,
     dateDay: recording.dateDay,
