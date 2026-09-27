@@ -5,6 +5,26 @@ export interface PlaybackProgressSummary {
   completed: boolean;
 }
 
+/**
+ * A saved position this close to the end counts as finished even without a
+ * media `ended` event. Browser-only positions are floored to whole seconds, so
+ * the tolerance must exceed one second.
+ */
+export const PLAYBACK_END_TOLERANCE_SEC = 1.5;
+
+export function isAtPlaybackEnd(
+  positionSec: number,
+  durationSec: number | null | undefined,
+): boolean {
+  return (
+    durationSec !== null &&
+    durationSec !== undefined &&
+    durationSec > 0 &&
+    positionSec > 0 &&
+    positionSec >= durationSec - PLAYBACK_END_TOLERANCE_SEC
+  );
+}
+
 interface PlaybackProgressRow {
   positionSec: number;
   durationSec: number | null;

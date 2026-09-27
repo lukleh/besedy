@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isAtPlaybackEnd,
   selectEventPlaybackProgress,
   summarizePlaybackProgress,
 } from "@/lib/playback-progress";
@@ -48,5 +49,19 @@ describe("playback progress summaries", () => {
     });
 
     expect(selectEventPlaybackProgress([partial, completed])).toEqual(completed);
+  });
+});
+
+describe("isAtPlaybackEnd", () => {
+  it("accepts a position floored to whole seconds at the end", () => {
+    expect(isAtPlaybackEnd(16350, 16350.231)).toBe(true);
+    expect(isAtPlaybackEnd(99, 99.964)).toBe(true);
+  });
+
+  it("rejects positions before the tolerance or without a duration", () => {
+    expect(isAtPlaybackEnd(98, 100)).toBe(false);
+    expect(isAtPlaybackEnd(100, null)).toBe(false);
+    expect(isAtPlaybackEnd(100, 0)).toBe(false);
+    expect(isAtPlaybackEnd(0, 1)).toBe(false);
   });
 });

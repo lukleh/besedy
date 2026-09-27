@@ -430,6 +430,43 @@ describe("useRecordingPlayback", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("completes a browser position left at the end instead of resuming it", async () => {
+    // Older clients saved the floored position again after the ended event.
+    localStorage.setItem(STORAGE_KEY, "16350");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          progress: {
+            positionSec: 10159,
+            durationSec: 16350.231,
+            completed: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.seekRequest?.time).toBe(0);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(COMPLETION_KEY)).toBe("true");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [, request] = vi.mocked(fetch).mock.calls[1];
+    expect(JSON.parse(String(request?.body))).toEqual({
+      positionSec: 16350,
+      durationSec: 16350.231,
+      completed: true,
+    });
+  });
+
   it("does not overwrite further server progress when playback starts before restore", async () => {
     let resolveRestore: ((response: Response) => void) | undefined;
     vi.mocked(fetch).mockReturnValueOnce(
@@ -550,6 +587,61 @@ describe("useRecordingPlayback", () => {
     const [, completionRequest] = vi.mocked(fetch).mock.calls[1];
     expect(JSON.parse(String(completionRequest?.body))).toMatchObject({
       completed: true,
+    });
+  });
+
+  it("completes a lifecycle save at the end when the ended event was missed", async () => {
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleDurationChange(100);
+      result.current.setCurrentTime(99.2);
+    });
+    act(() => {
+      setVisibilityState("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(COMPLETION_KEY)).toBe("true");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [, request] = vi.mocked(fetch).mock.calls[1];
+    expect(JSON.parse(String(request?.body))).toEqual({
+      positionSec: 99.2,
+      durationSec: 100,
+      completed: true,
+    });
+  });
+
+  it("keeps a lifecycle save before the end tolerance in progress", async () => {
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleDurationChange(100);
+      result.current.setCurrentTime(97);
+    });
+    act(() => {
+      setVisibilityState("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("97");
+    expect(localStorage.getItem(COMPLETION_KEY)).toBeNull();
+    const [, request] = vi.mocked(fetch).mock.calls[1];
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      completed: false,
     });
   });
 

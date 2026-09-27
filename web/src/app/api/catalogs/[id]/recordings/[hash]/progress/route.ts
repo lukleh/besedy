@@ -12,6 +12,7 @@ import {
   validateParams,
   validateRequestBody,
 } from '@/lib/api';
+import { isAtPlaybackEnd } from '@/lib/playback-progress';
 import { CatalogHashParamSchema } from '@/lib/validation/schemas';
 
 export const dynamic = 'force-dynamic';
@@ -103,7 +104,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const positionSec = durationSec
       ? Math.min(bodyResult.data.positionSec, durationSec)
       : bodyResult.data.positionSec;
-    const completed = bodyResult.data.completed;
+    // A position at the end is finished even when the ended event's own
+    // request was lost or the position came from browser-only storage.
+    const completed =
+      bodyResult.data.completed || isAtPlaybackEnd(positionSec, durationSec);
     const now = new Date();
     const progress = await prisma.recordingPlaybackProgress.upsert({
       where: { userId_audioHash: { userId, audioHash: hash } },
