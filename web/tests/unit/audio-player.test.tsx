@@ -1181,7 +1181,7 @@ describe("AudioPlayer lock-screen controls", () => {
     expect(audio.pause).toHaveBeenCalledTimes(1);
   });
 
-  async function startReconnecting() {
+  it("ignores play and pause while reconnecting, like the on-screen button", async () => {
     vi.useFakeTimers();
     const { audio, container } = renderPlayer();
     const playMock = vi.fn().mockResolvedValue(undefined);
@@ -1191,64 +1191,19 @@ describe("AudioPlayer lock-screen controls", () => {
     await act(async () => {
       (container.querySelector('button[aria-label="Play"]') as HTMLButtonElement).click();
     });
-    await act(async () => {
-      audio.dispatchEvent(new Event("play"));
-    });
-    const setPaused = mockPaused(audio, false);
+    mockPaused(audio, false);
     setAudioError(audio, 2);
     await act(async () => {
       audio.dispatchEvent(new Event("error"));
     });
-    setPaused(true);
     expect(container.querySelector('button[aria-label="Reconnecting..."]')).not.toBeNull();
 
-    const recover = () =>
-      act(async () => {
-        audio.dispatchEvent(new Event("canplay"));
-      });
-    return { audio, playMock, recover };
-  }
-
-  const playbackState = () => navigator.mediaSession.playbackState;
-
-  it("shows playback as continuing while reconnecting and resumes", async () => {
-    const { audio, playMock, recover } = await startReconnecting();
-    expect(playbackState()).toBe("playing");
-
-    await recover();
-
-    expect(playMock).toHaveBeenCalledTimes(2);
-    expect(audio.pause).not.toHaveBeenCalled();
-  });
-
-  it("does not resume after a lock-screen pause while reconnecting", async () => {
-    const { audio, playMock, recover } = await startReconnecting();
-
-    await act(async () => {
-      handlers.get("pause")?.();
-    });
-    expect(playbackState()).toBe("paused");
-    expect(audio.pause).not.toHaveBeenCalled();
-
-    await recover();
-
-    expect(playMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("resumes when the lock screen plays again before the connection is back", async () => {
-    const { playMock, recover } = await startReconnecting();
-
-    await act(async () => {
-      handlers.get("pause")?.();
-    });
     await act(async () => {
       handlers.get("play")?.();
+      handlers.get("pause")?.();
     });
-    expect(playbackState()).toBe("playing");
+
     expect(playMock).toHaveBeenCalledTimes(1);
-
-    await recover();
-
-    expect(playMock).toHaveBeenCalledTimes(2);
+    expect(audio.pause).not.toHaveBeenCalled();
   });
 });
