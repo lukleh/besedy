@@ -13,7 +13,7 @@
 import { execSync } from "child_process";
 import path from "path";
 import fs from "fs/promises";
-import { TEST_AUDIO_FILES } from "../../prisma/test-data";
+import { TEST_AUDIO_FILES, TEST_TRANSCRIPTS_COMPLETE_MARKER } from "../../prisma/test-data";
 
 const TEST_WEB_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3002";
 const MAX_RETRIES = 60;
@@ -85,6 +85,7 @@ async function generateFixtures(): Promise<void> {
   const audioDir = path.join(fixturesDir, "audio");
 
   // Check if fixtures already exist and match expected hashes
+  let outdated = false;
   try {
     await fs.access(catalogPath);
     const catalog = await fs.readFile(catalogPath, "utf-8");
@@ -96,6 +97,7 @@ async function generateFixtures(): Promise<void> {
     const expectedCompressed = expectedHash
       ? path.join(audioDir, "compressed", `${expectedHash}.webm`)
       : undefined;
+    const transcriptsMarker = path.join(fixturesDir, TEST_TRANSCRIPTS_COMPLETE_MARKER);
 
     if (
       expectedHash &&
@@ -103,7 +105,7 @@ async function generateFixtures(): Promise<void> {
       expectedWav &&
       expectedCompressed
     ) {
-      const [wavOk, compressedOk] = await Promise.all([
+      const [wavOk, compressedOk, transcriptsOk] = await Promise.all([
         fs
           .access(expectedWav)
           .then(() => true)
@@ -112,18 +114,35 @@ async function generateFixtures(): Promise<void> {
           .access(expectedCompressed)
           .then(() => true)
           .catch(() => false),
+        fs
+          .access(transcriptsMarker)
+          .then(() => true)
+          .catch(() => false),
       ]);
-      if (wavOk && compressedOk) {
+      if (wavOk && compressedOk && transcriptsOk) {
         console.log("Fixtures already exist, skipping generation...");
         return;
       }
     }
-    if (expectedHash) {
-      console.log("Fixtures exist but are outdated, regenerating...");
-      await fs.rm(audioDir, { recursive: true, force: true });
-    }
+    outdated = !!expectedHash;
   } catch {
     // Fixtures don't exist, generate them
+  }
+
+  if (outdated) {
+    console.log("Fixtures exist but are outdated, regenerating...");
+    // Empty the directory instead of removing it: the test stack bind-mounts
+    // it as /data/audio, and a removed-and-recreated directory leaves that
+    // mount on the deleted one, so a running container would serve no audio.
+    const entries = await fs.readdir(audioDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    await Promise.all(
+      entries.map((entry) =>
+        fs.rm(path.join(audioDir, entry), { recursive: true, force: true })
+      )
+    );
   }
 
   console.log("Generating test fixtures...");

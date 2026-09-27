@@ -26,6 +26,7 @@ import { grantFieldsForRole } from "../src/lib/policy/catalog-permissions";
 import {
   TEST_AUDIO_FILES,
   TEST_CATALOG_ID,
+  TEST_TRANSCRIPTS_SUBDIR,
   TEST_EVENTS,
   TEST_LOCATIONS,
   TEST_RECORDERS,
@@ -178,7 +179,7 @@ const TEST_WORKFLOW_GROUP = {
   archivedCatalogPath: "/data/text/audio_catalog_test_archived.csv",
   metadataCatalogPath: "/data/text/audio_catalog_test.csv",
   duplicatesCatalogPath: "/data/text/audio_catalog_test_duplicates.csv",
-  transcriptsPath: "/data/text/transcripts_test",
+  transcriptsPath: `/data/text/${TEST_TRANSCRIPTS_SUBDIR}`,
   isDefault: true,
   isActive: true,
 };
