@@ -105,6 +105,11 @@ export function AudioPlayer({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  // The listener paused from the lock screen while reconnecting, so playback
+  // is not resumed once the connection is back. The ref is read by the
+  // recovery handler, the state by the lock screen.
+  const pausedWhileReconnectingRef = useRef(false);
+  const [pausedWhileReconnecting, setPausedWhileReconnecting] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const {
     bufferInfo,
@@ -525,6 +530,8 @@ export function AudioPlayer({
         savedPosition: audio.currentTime || 0,
         wasPlaying: !audio.paused || playIntentRef.current,
       });
+      pausedWhileReconnectingRef.current = false;
+      setPausedWhileReconnecting(false);
       setIsPlaying(false);
       onPlayingChange?.(false);
     } else {
@@ -565,7 +572,7 @@ export function AudioPlayer({
       audio.currentTime = phase.savedPosition;
       setCurrentTime(phase.savedPosition);
     }
-    if (phase.wasPlaying) {
+    if (phase.wasPlaying && !pausedWhileReconnectingRef.current) {
       safePlay(audio, 'resume after reconnect', logDebugEvent);
     }
 
@@ -848,21 +855,38 @@ export function AudioPlayer({
   };
 
   // Lock-screen and notification controls drive the same paths as the
-  // on-screen buttons, including play/pause being unavailable while reconnecting.
+  // on-screen buttons. The lock screen has no "reconnecting" state, so while
+  // reconnecting it shows whether playback will resume, and play/pause change
+  // that instead of touching the element.
+  const resumesAfterReconnect =
+    (retryState.phase === 'scheduled' || retryState.phase === 'reloading') &&
+    retryState.wasPlaying &&
+    !pausedWhileReconnecting;
   useMediaSession({
     metadata: mediaMetadata,
-    isPlaying,
+    isPlaying: isPlaying || resumesAfterReconnect,
     onPlay: () => {
       const audio = audioRef.current;
-      if (!audio || isReconnecting) return;
+      if (!audio) return;
+      if (isRetrying(retryStateRef.current)) {
+        pausedWhileReconnectingRef.current = false;
+        setPausedWhileReconnecting(false);
+        return;
+      }
       userInitiatedRef.current = true;
       safePlay(audio, 'media session play', logDebugEvent);
     },
     onPause: () => {
       const audio = audioRef.current;
-      if (!audio || isReconnecting) return;
-      userInitiatedRef.current = true;
+      if (!audio) return;
       playIntentRef.current = false;
+      if (isRetrying(retryStateRef.current)) {
+        pausedWhileReconnectingRef.current = true;
+        setPausedWhileReconnecting(true);
+        logDebugEvent('pause', 'Paused while reconnecting', 'Will not resume');
+        return;
+      }
+      userInitiatedRef.current = true;
       audio.pause();
     },
     onSkipBackward: skipBackward,
