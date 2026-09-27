@@ -20,6 +20,7 @@ import {
   markPlaybackCompleted,
   savePlaybackPosition,
 } from "@/lib/playback-position";
+import { isAtPlaybackEnd } from "@/lib/playback-progress";
 
 export interface RecordingSeekRequest {
   time: number;
@@ -158,7 +159,12 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
         return;
       }
 
-      if (options.completed) {
+      // Reaching the end also finishes playback when the ended event was
+      // missed, e.g. a position restored from browser-only storage.
+      if (
+        options.completed ||
+        (!completedLocallyRef.current && isAtPlaybackEnd(positionSec, durationSec))
+      ) {
         completedLocallyRef.current = true;
         markPlaybackCompleted(hash);
         sendPlaybackProgress({
@@ -382,6 +388,18 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
         }
 
         if (mergedPosition <= 0) return;
+
+        // A position left at the end (e.g. by an older client that saved it
+        // after the ended event) is a finished listen, not one to resume.
+        if (isAtPlaybackEnd(mergedPosition, durationRef.current)) {
+          persistCurrentPlaybackPosition({
+            completed: true,
+            positionSec: mergedPosition,
+            durationSec: durationRef.current,
+          });
+          setSeekRequest({ time: 0, key: Date.now() });
+          return;
+        }
 
         if (pending) {
           savePlaybackPosition(hash, mergedPosition, { clearWhenZero: true });

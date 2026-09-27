@@ -121,7 +121,7 @@ describe("recording playback progress route", () => {
     });
   });
 
-  it("keeps near-end playback in progress without an ended event", async () => {
+  it("completes playback that reaches the end without an ended event", async () => {
     mocks.upsert.mockImplementation(async ({ create }) => ({
       positionSec: create.positionSec,
       durationSec: create.durationSec,
@@ -136,7 +136,44 @@ describe("recording playback progress route", () => {
           Origin: "http://localhost",
         },
         body: JSON.stringify({
-          positionSec: 99.9,
+          positionSec: 99,
+          durationSec: 100,
+          completed: false,
+        }),
+      },
+    );
+
+    const response = await PUT(request, { params });
+
+    expect(response.status).toBe(200);
+    expect(mocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          completedAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(await response.json()).toMatchObject({
+      progress: { completed: true },
+    });
+  });
+
+  it("keeps playback that stops before the end tolerance in progress", async () => {
+    mocks.upsert.mockImplementation(async ({ create }) => ({
+      positionSec: create.positionSec,
+      durationSec: create.durationSec,
+      completedAt: create.completedAt,
+    }));
+    const request = new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/progress`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          positionSec: 98,
           durationSec: 100,
           completed: false,
         }),
