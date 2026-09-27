@@ -29,14 +29,18 @@ Env files are copied once from their template and drift as the template changes.
 Compose alone decides whether an env file is usable. When Compose rejects one,
 it names only the first missing variable, so the wrapper (via
 `scripts/check_web_env_keys.sh`) adds every variable Compose marks required
-that the env file appears not to set, with the template to compare against. On
-`up`, `create`, `run`, `scale` and `watch` it also warns about keys that
-neither the Compose files nor the template use any more, which usually means a
-key was renamed or removed; the warning never fails a command.
-`just env-check <dev|prod|test>` prints the full comparison, including optional
-template keys that are not set. The variable list comes from
-`docker compose config --variables`, and only key names are compared or
-printed, never values.
+that the env file leaves unset or empty, with the template to compare against.
+On `up`, `create`, `run`, `scale` and `watch` it also warns about keys that
+neither the Compose files, the template, nor another key of the same file use,
+which usually means a key was renamed or removed; the warning never fails a
+command. `just env-check <dev|prod|test>` prints the full comparison, including
+optional template keys that are not set or empty, and exits with Compose's own
+verdict. Compose supplies everything compared: the variable list comes from
+`docker compose config --variables`, and the env file is parsed by Compose's
+dotenv parser (as a minimal service's `env_file`). Only key names and whether
+each is empty are compared or printed, never values. Because Compose's list
+does not tell `${VAR:?}` from `${VAR?}`, a required key is reported as
+"missing or empty".
 
 ---
 

@@ -18,21 +18,18 @@ case "$mode" in
     instance="development"
     jobs_runtime="dev"
     compose_args=(-f docker-compose.yml -f docker-compose.dev.yml --profile mock-oauth)
-    env_template_name=".env.dev.example"
     ;;
   production)
     expected_app_env="production"
     instance="production"
     jobs_runtime="prod"
     compose_args=(-f docker-compose.yml -f docker-compose.secure.yml -f docker-compose.production.yml --profile backup)
-    env_template_name=".env.prod.example"
     ;;
   test)
     expected_app_env="test"
     instance="${BESEDY_WEB_COMPOSE_INSTANCE:-test}"
     jobs_runtime="test"
     compose_args=(-f docker-compose.yml -f docker-compose.secure.yml --profile mock-oauth)
-    env_template_name=".env.test.example"
     ;;
   *)
     echo "Unsupported mode: $mode" >&2
@@ -203,27 +200,49 @@ compose_command=(
 
 # Env files are copied once from their template and drift as it changes.
 # Compose alone decides whether an env file is usable; these checks only
-# explain its verdict, comparing key names (never values) with the variables
-# Compose reports for this mode's files. "env-check" prints the full comparison.
+# explain its verdict. Compose also parses the env file for them, so they
+# compare key names and whether each is empty, never values, with the
+# variables Compose reports for this mode's files. "env-check" prints the full
+# comparison.
 provided_names=""
 for entry in "${clean_env[@]}"; do
   if [[ "$entry" == *=* ]]; then
     provided_names+="${entry%%=*} "
   fi
 done
-env_template="$repo_root/web/$env_template_name"
+env_template="$("$script_dir/resolve_web_env_file.sh" "$mode" --template)"
+
+# "NAME=set" or "NAME=empty" for each key of the env file, as Compose's own
+# dotenv parser reads it: the file is loaded as the env_file of a minimal
+# service, whose rendered environment is an unambiguous JSON map even for
+# multi-line values. Only jq sees the values.
+env_file_facts() {
+  jq -n --arg path "$env_file" \
+    '{services: {envcheck: {image: "scratch", env_file: [{path: $path}]}}}' \
+    | "${clean_env[@]}" docker compose -f - --env-file /dev/null config --format json 2>/dev/null \
+    | jq -r '.services.envcheck.environment // {} | to_entries[]
+        | "\(.key)=\(if (.value // "") == "" then "empty" else "set" end)"' \
+    | tr '\n' ' '
+}
+
 check_env_keys() {
-  local variables
+  local variables facts
   variables="$("${compose_command[@]}" config --variables --format json 2>/dev/null)" || return 0
   jq -e 'type == "object"' >/dev/null 2>&1 <<<"$variables" || return 0
+  facts="$(env_file_facts)" || return 0
   "$script_dir/check_web_env_keys.sh" "$1" "$mode" "$env_file" "$env_template" \
-    "$provided_names" <<<"$variables" || true
+    "$provided_names" "$facts" <<<"$variables" || true
 }
 
 if [[ "$compose_command_name" == "env-check" ]]; then
-  variables="$("${compose_command[@]}" config --variables --format json)"
+  # The exit status is Compose's own verdict; the lists only explain it.
+  compose_status=0
+  "${compose_command[@]}" config --quiet >/dev/null 2>&1 || compose_status=$?
+  variables="$("${compose_command[@]}" config --variables --format json 2>/dev/null)" || variables="{}"
+  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$variables" || variables="{}"
+  facts="$(env_file_facts)" || facts=""
   exec "$script_dir/check_web_env_keys.sh" report "$mode" "$env_file" "$env_template" \
-    "$provided_names" <<<"$variables"
+    "$provided_names" "$facts" "$compose_status" <<<"$variables"
 fi
 
 compose_status=0

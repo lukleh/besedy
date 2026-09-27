@@ -2,9 +2,11 @@
 
 set -euo pipefail
 
+# With --template, print the mode's env template instead of its env file.
 mode="${1:-}"
-if [[ -z "$mode" ]]; then
-  echo "Usage: $0 <development|production|test>" >&2
+option="${2:-}"
+if [[ -z "$mode" || ( -n "$option" && "$option" != "--template" ) ]]; then
+  echo "Usage: $0 <development|production|test> [--template]" >&2
   exit 1
 fi
 
@@ -36,6 +38,12 @@ esac
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+example_path="$repo_root/web/$example_name"
+
+if [[ "$option" == "--template" ]]; then
+  printf '%s\n' "$example_path"
+  exit 0
+fi
 
 normalize_path() {
   local raw="$1"
@@ -70,7 +78,6 @@ if [[ -f "$canonical_path" ]]; then
   exit 0
 fi
 
-example_path="$repo_root/web/$example_name"
 cat >&2 <<EOF
 $mode_label env file not found.
 

@@ -74,8 +74,9 @@ copying command tables or test-user matrices into provider-specific files.
 - Env files resolve through `scripts/resolve_web_env_file.sh`; when one is missing it
   fails with the `.env.<mode>.example` template to copy and the target path.
   `just env-check <dev|prod|test>` compares an env file's key names with the
-  variables its Compose files use and with its template; when Compose rejects an
-  env file, the wrapper lists every required key that appears missing.
+  variables its Compose files use and with its template, and exits with
+  Compose's verdict; when Compose rejects an env file, the wrapper lists every
+  required key left unset or empty.
 - E2E tests run against a **production build** with security hardening (read-only filesystem, dropped capabilities)
 - Next.js 16 uses `web/src/proxy.ts` instead of `middleware.ts`; keep auth/request interception there and use `proxy*` config keys in `web/next.config.ts`.
 
