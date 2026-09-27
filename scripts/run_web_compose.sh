@@ -225,33 +225,52 @@ env_file_facts() {
     | tr '\n' ' '
 }
 
+# Variables Compose's error output names as missing: it stops at the first one,
+# but that one is right on every Compose version.
+compose_error_names() {
+  { grep -oE 'required variable [A-Za-z_][A-Za-z0-9_]* is missing a value' "$1" || true; } \
+    | awk '{ print $3 }' | LC_ALL=C sort -u | tr '\n' ' '
+}
+
+# Compose before 2.40 cannot list these files' variables; the key check then
+# gets no list and falls back to the names in Compose's error.
+compose_variables() {
+  "${compose_command[@]}" config --variables --format json 2>/dev/null || true
+}
+
 check_env_keys() {
   local variables facts
-  variables="$("${compose_command[@]}" config --variables --format json 2>/dev/null)" || return 0
-  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$variables" || return 0
+  variables="$(compose_variables)"
   facts="$(env_file_facts)" || return 0
   "$script_dir/check_web_env_keys.sh" "$1" "$mode" "$env_file" "$env_template" \
-    "$provided_names" "$facts" <<<"$variables" || true
+    "$provided_names" "$facts" "${2:-0}" "${3:-}" <<<"$variables" || true
 }
+
+compose_errors="$(mktemp)"
+trap 'rm -f "$compose_errors"' EXIT
 
 if [[ "$compose_command_name" == "env-check" ]]; then
   # The exit status is Compose's own verdict; the lists only explain it.
   compose_status=0
-  "${compose_command[@]}" config --quiet >/dev/null 2>&1 || compose_status=$?
-  variables="$("${compose_command[@]}" config --variables --format json 2>/dev/null)" || variables="{}"
-  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$variables" || variables="{}"
+  "${compose_command[@]}" config --quiet >/dev/null 2>"$compose_errors" || compose_status=$?
+  error_names="$(compose_error_names "$compose_errors")"
+  variables="$(compose_variables)"
   facts="$(env_file_facts)" || facts=""
+  rm -f "$compose_errors"
   exec "$script_dir/check_web_env_keys.sh" report "$mode" "$env_file" "$env_template" \
-    "$provided_names" "$facts" "$compose_status" <<<"$variables"
+    "$provided_names" "$facts" "$compose_status" "$error_names" <<<"$variables"
 fi
 
 compose_status=0
-rendered_config="$("${compose_command[@]}" config --format json)" || compose_status=$?
+rendered_config="$("${compose_command[@]}" config --format json 2>"$compose_errors")" \
+  || compose_status=$?
+cat "$compose_errors" >&2
 if (( compose_status != 0 )); then
   # Compose reports only the first missing key; list every one it requires.
-  check_env_keys missing
+  check_env_keys missing "$compose_status" "$(compose_error_names "$compose_errors")"
   exit "$compose_status"
 fi
+rm -f "$compose_errors"
 printf '%s\n' "$rendered_config" \
   | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network"
 

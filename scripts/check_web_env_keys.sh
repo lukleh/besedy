@@ -7,7 +7,7 @@
 # Usage:
 #   docker compose ... config --variables --format json \
 #     | check_web_env_keys.sh <missing|unknown|report> <mode> <env-file> \
-#         <template> <provided-names> <facts> [<compose-status>]
+#         <template> <provided-names> <facts> [<compose-status> [<error-names>]]
 #
 # Compose decides whether an env file is usable, and it also parses the env
 # file for this script: <facts> holds "NAME=set" or "NAME=empty" for every key
@@ -25,7 +25,15 @@
 #
 # provided-names is a space-separated list of variables the caller supplies
 # itself (the wrapper's clean environment), which never count as missing or
-# unknown.
+# unknown. error-names lists the variables Compose's own error named as missing
+# ("required variable NAME is missing a value"); they are always listed as
+# missing, whatever the variable list says.
+#
+# Compose before 2.40 cannot list the variables of these Compose files (it
+# rejects `${VAR:-default}:/path:ro` volume specs in `config --variables`).
+# When stdin is not a JSON object, the lists fall back to error-names, say
+# that the full list needs a newer Compose, and skip the unknown-key check,
+# which would otherwise flag keys only the Compose files use.
 #
 # Compose does not distinguish ${VAR:?} from ${VAR?} in its variable list, so
 # the lists call a required key "missing or empty": an empty value is
@@ -34,7 +42,7 @@
 
 set -euo pipefail
 
-usage="Usage: $0 <missing|unknown|report> <mode> <env-file> <template> <provided-names> <facts> [<compose-status>]"
+usage="Usage: $0 <missing|unknown|report> <mode> <env-file> <template> <provided-names> <facts> [<compose-status> [<error-names>]]"
 action="${1:-}"
 case "$action" in
   missing | unknown | report) ;;
@@ -43,12 +51,19 @@ case "$action" in
     exit 2
     ;;
 esac
-if (( $# != 6 && $# != 7 )); then
+if (( $# < 6 || $# > 8 )); then
   echo "$usage" >&2
   exit 2
 fi
 mode="$2" env_file="$3" template="$4" provided="$5" facts="$6" compose_status="${7:-0}"
+error_names="${8:-}"
 variables="$(cat)"
+variables_listed=true
+if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$variables"; then
+  variables_listed=false
+  variables="{}"
+fi
+newer_compose_note="this Compose version cannot list every variable its files require; Compose 2.40 or newer can"
 
 # Key names a template mentions: "all" includes commented-out optional keys,
 # "active" only the keys it assigns. Templates are checked into this repo.
@@ -101,11 +116,14 @@ compose_names="$(jq -r 'keys[]' <<<"$variables" | LC_ALL=C sort -u)"
 required_names="$(jq -r 'to_entries[] | select(.value.Required) | .key' <<<"$variables" | LC_ALL=C sort -u)"
 set_keys="$(fact_names set)"
 
+named_missing="$(printf '%s\n' "$error_names" | tr ' ' '\n' | sed '/^$/d' | LC_ALL=C sort -u)"
+
 required_missing() {
-  minus "$(minus "$required_names" "$provided_names")" "$set_keys"
+  minus "$(sorted "$(minus "$required_names" "$set_keys")" "$named_missing")" "$provided_names"
 }
 
 unknown_keys() {
+  [[ "$variables_listed" == true ]] || return 0
   minus "$(fact_names any)" "$(sorted "$(template_keys "$template" all)" "$compose_names" \
     "$provided_names" "$(referenced_names "$env_file")")"
 }
@@ -119,6 +137,9 @@ The $mode env file leaves unset or empty keys its Compose files require: $(join_
   env file: $env_file
   compare with: $template
 EOF
+      if [[ "$variables_listed" == false ]]; then
+        echo "  ($newer_compose_note)" >&2
+      fi
     fi
     ;;
   unknown)
@@ -143,7 +164,12 @@ EOF
     fi
     echo "Missing or empty required keys: $(words_or_none "$missing")"
     echo "Optional template keys not set: $(words_or_none "$unset_optional")"
-    echo "Keys no Compose file, the template, or another key uses: $(words_or_none "$(unknown_keys)")"
+    if [[ "$variables_listed" == true ]]; then
+      echo "Keys no Compose file, the template, or another key uses: $(words_or_none "$(unknown_keys)")"
+    else
+      echo "Keys no Compose file, the template, or another key uses: not checked"
+      echo "Note: $newer_compose_note."
+    fi
     if (( compose_status != 0 )); then
       exit 1
     fi

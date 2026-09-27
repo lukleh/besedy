@@ -716,7 +716,7 @@ def _variables(*required: str, optional: tuple[str, ...] = ()) -> dict[str, dict
 
 def _fake_docker_for_key_checks(
     bin_dir: Path,
-    variables: dict[str, dict[str, object]],
+    variables: dict[str, dict[str, object]] | None,
     environment: dict[str, str],
     rendered: dict[str, object] | None = None,
 ) -> Path:
@@ -727,12 +727,14 @@ def _fake_docker_for_key_checks(
     For the mode's own Compose files, `config --format json` prints `rendered`
     and `config --quiet` succeeds, or both fail the way Compose does on a
     missing required variable when `rendered` is None. `config --variables
-    --format json` prints `variables`.
+    --format json` prints `variables`, or fails the way Compose before 2.40
+    does on these files when `variables` is None.
     """
     bin_dir.mkdir()
     calls = bin_dir / "calls.log"
     variables_file = bin_dir / "variables.json"
-    variables_file.write_text(json.dumps(variables), encoding="utf-8")
+    if variables is not None:
+        variables_file.write_text(json.dumps(variables), encoding="utf-8")
     environment_file = bin_dir / "environment.json"
     environment_file.write_text(
         json.dumps({"services": {"envcheck": {"environment": environment}}}), encoding="utf-8"
@@ -751,8 +753,12 @@ if [[ " $* " == *" -f - "* ]]; then
   exit 0
 fi
 if [[ " $* " == *" config --variables --format json "* ]]; then
-  cat {variables_file}
-  exit 0
+  if [[ -f {variables_file} ]]; then
+    cat {variables_file}
+    exit 0
+  fi
+  echo 'invalid spec: ${{DB_INIT_SCRIPT:-/dev/null}}:/docker-entrypoint-initdb.d/init-users.sh:ro: too many colons' >&2
+  exit 15
 fi
 if [[ " $* " == *" config --format json "* || " $* " == *" config --quiet "* ]]; then
   if [[ -f {rendered_file} ]]; then
@@ -1024,18 +1030,21 @@ def test_env_check_recipe_accepts_short_and_long_mode_names(
     assert calls.exists()
 
 
-def _compose_available() -> bool:
+def _compose_lists_variables() -> bool:
+    """Compose 2.40 or newer, the first that lists these files' variables."""
     if shutil.which("docker") is None:
         return False
-    return (
-        subprocess.run(
-            ["docker", "compose", "version"], capture_output=True, check=False
-        ).returncode
-        == 0
+    result = subprocess.run(
+        ["docker", "compose", "version", "--short"], capture_output=True, text=True, check=False
     )
+    match = re.match(r"v?(\d+)\.(\d+)", result.stdout.strip())
+    return result.returncode == 0 and match is not None and (
+        int(match.group(1)),
+        int(match.group(2)),
+    ) >= (2, 40)
 
 
-@pytest.mark.skipif(not _compose_available(), reason="requires docker compose")
+@pytest.mark.skipif(not _compose_lists_variables(), reason="requires docker compose 2.40+")
 @pytest.mark.parametrize(
     ("replace", "extra", "status", "missing", "unset", "unknown"),
     [
@@ -1095,3 +1104,99 @@ def test_env_check_matches_real_compose(
     assert f"Optional template keys not set: {unset}\n" in result.stdout
     assert f"Keys no Compose file, the template, or another key uses: {unknown}\n" in result.stdout
     assert SENTINEL not in result.stdout + result.stderr
+
+
+def test_web_compose_wrapper_names_composes_missing_key_when_it_cannot_list_variables(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "production.env"
+    env_file.write_text(f"APP_ENV=production\nSTALE_SECRET={SENTINEL}\n", encoding="utf-8")
+    calls = _fake_docker_for_key_checks(
+        tmp_path / "bin",
+        None,
+        {"APP_ENV": "production", "STALE_SECRET": SENTINEL},
+    )
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_PROD"] = str(env_file)
+    env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "production", "ps"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 15
+    assert "required variable CONFIG_FILE is missing a value" in result.stderr
+    assert "leaves unset or empty keys its Compose files require: CONFIG_FILE\n" in result.stderr
+    assert "Compose 2.40 or newer" in result.stderr
+    assert SENTINEL not in result.stdout + result.stderr
+    assert _compose_calls(calls) == ["--format json", "--variables --format json", "env-file parse"]
+
+
+def test_env_check_reports_composes_missing_key_when_it_cannot_list_variables(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "test.env"
+    env_file.write_text(f"APP_ENV=test\nSTALE_SECRET={SENTINEL}\n", encoding="utf-8")
+    _fake_docker_for_key_checks(
+        tmp_path / "bin", None, {"APP_ENV": "test", "STALE_SECRET": SENTINEL}
+    )
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_TEST"] = str(env_file)
+    env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", "env-check"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Missing or empty required keys: CONFIG_FILE\n" in result.stdout
+    # Without Compose's variable list, a key only the Compose files use would
+    # look unused, so that check is skipped rather than guessed.
+    assert "Keys no Compose file, the template, or another key uses: not checked\n" in result.stdout
+    assert "Compose 2.40 or newer" in result.stdout
+    assert SENTINEL not in result.stdout + result.stderr
+
+
+def test_web_compose_wrapper_skips_unused_key_warning_when_it_cannot_list_variables(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "host"
+    (root / "checkout").mkdir(parents=True)
+    env_file = tmp_path / "test.env"
+    # Used by the Compose files but not in the template: without Compose's
+    # variable list it would look unused.
+    env_file.write_text("APP_ENV=test\nCOMPOSE_ONLY_KEY=value\n", encoding="utf-8")
+    calls = _fake_docker_for_key_checks(
+        tmp_path / "bin",
+        None,
+        {"APP_ENV": "test", "COMPOSE_ONLY_KEY": "value"},
+        rendered=_bind_config("test", root),
+    )
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_TEST"] = str(env_file)
+    env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", "up", "-d"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    # The check ran and asked for the variable list, which this Compose lacks.
+    assert "--variables" in calls.read_text(encoding="utf-8")
+    assert "COMPOSE_ONLY_KEY" not in result.stderr
+    assert "renamed or removed?" not in result.stderr
