@@ -265,6 +265,7 @@ export default function RecordingContent({
         downloadEventId={downloadEventId}
         currentTimeSetter={setCurrentTime}
         hash={hash}
+        headingContext={headingContext}
         onAudioDownload={handleAudioDownload}
         onAudioEnded={handleAudioEnded}
         onDurationChange={handleDurationChange}

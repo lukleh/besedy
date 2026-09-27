@@ -16,6 +16,14 @@ export interface AudioPlayerProps {
   seekKey?: number;
   playbackEnd?: number;
   autoPlayOnSeek?: boolean;
+  /** What the lock screen and media notification show for this recording. */
+  mediaMetadata?: MediaSessionMetadata;
+}
+
+export interface MediaSessionMetadata {
+  title: string;
+  artist?: string;
+  album?: string;
 }
 
 export interface DebugInfo {

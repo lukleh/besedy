@@ -48,6 +48,7 @@ import {
   safePlay,
 } from './audio-player-utils';
 import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
+import { useMediaSession } from './use-media-session';
 import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
@@ -83,6 +84,7 @@ export function AudioPlayer({
   seekKey,
   playbackEnd,
   autoPlayOnSeek,
+  mediaMetadata,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -843,6 +845,28 @@ export function AudioPlayer({
     setCurrentTime(time);
     onSeek?.(time);
   };
+
+  // Lock-screen and notification controls drive the same paths as the
+  // on-screen buttons.
+  useMediaSession({
+    metadata: mediaMetadata,
+    isPlaying,
+    onPlay: () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      userInitiatedRef.current = true;
+      safePlay(audio, 'media session play', logDebugEvent);
+    },
+    onPause: () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      userInitiatedRef.current = true;
+      playIntentRef.current = false;
+      audio.pause();
+    },
+    onSkipBackward: skipBackward,
+    onSkipForward: skipForward,
+  });
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
