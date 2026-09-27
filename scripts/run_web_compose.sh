@@ -199,80 +199,41 @@ compose_command=(
 )
 
 # Env files are copied once from their template and drift as it changes.
-# Compose alone decides whether an env file is usable; these checks only
-# explain its verdict. Compose also parses the env file for them, so they
-# compare key names and whether each is empty, never values, with the
-# variables Compose reports for this mode's files. "env-check" prints the full
-# comparison.
-# Only non-empty values supply a key: an empty one (say CONFIG_FILE= passed
-# through with test overrides) is still missing to ${VAR:?}.
-provided_names=""
-for entry in "${clean_env[@]}"; do
-  if [[ "$entry" == *=?* ]]; then
-    provided_names+="${entry%%=*} "
+# Compose alone decides whether an env file is usable; when it rejects one, the
+# wrapper keeps Compose's error and exit status and points at the template.
+# check_web_env_keys.sh compares key names only (never values) with the
+# template and the Compose files. "env-check" prints that comparison.
+env_template="$("$script_dir/resolve_web_env_file.sh" "$mode" --template)"
+compose_files=()
+for (( i = 0; i < ${#compose_args[@]}; i++ )); do
+  if [[ "${compose_args[$i]}" == "-f" ]]; then
+    compose_files+=("$repo_root/web/${compose_args[$((i + 1))]}")
   fi
 done
-env_template="$("$script_dir/resolve_web_env_file.sh" "$mode" --template)"
-
-# "NAME=set" or "NAME=empty" for each key of the env file, as Compose's own
-# dotenv parser reads it: the file is loaded as the env_file of a minimal
-# service, whose rendered environment is an unambiguous JSON map even for
-# multi-line values. Only jq sees the values.
-env_file_facts() {
-  jq -n --arg path "$env_file" \
-    '{services: {envcheck: {image: "scratch", env_file: [{path: $path}]}}}' \
-    | "${clean_env[@]}" docker compose -f - --env-file /dev/null config --format json 2>/dev/null \
-    | jq -r '.services.envcheck.environment // {} | to_entries[]
-        | "\(.key)=\(if (.value // "") == "" then "empty" else "set" end)"' \
-    | tr '\n' ' '
-}
-
-# Variables Compose's error output names as missing: it stops at the first one,
-# but that one is right on every Compose version.
-compose_error_names() {
-  { grep -oE 'required variable [A-Za-z_][A-Za-z0-9_]* is missing a value' "$1" || true; } \
-    | awk '{ print $3 }' | LC_ALL=C sort -u | tr '\n' ' '
-}
-
-# Compose before 2.40 cannot list these files' variables; the key check then
-# gets no list and falls back to the names in Compose's error.
-compose_variables() {
-  "${compose_command[@]}" config --variables --format json 2>/dev/null || true
-}
-
-check_env_keys() {
-  local variables facts
-  variables="$(compose_variables)"
-  facts="$(env_file_facts)" || return 0
-  "$script_dir/check_web_env_keys.sh" "$1" "$mode" "$env_file" "$env_template" \
-    "$provided_names" "$facts" "${2:-0}" "${3:-}" <<<"$variables" || true
-}
-
-compose_errors="$(mktemp)"
-trap 'rm -f "$compose_errors"' EXIT
+case "$mode" in
+  development) short_mode="dev" ;;
+  production) short_mode="prod" ;;
+  *) short_mode="$mode" ;;
+esac
 
 if [[ "$compose_command_name" == "env-check" ]]; then
-  # The exit status is Compose's own verdict; the lists only explain it.
+  # The exit status is Compose's own verdict; the lists only show drift.
   compose_status=0
-  "${compose_command[@]}" config --quiet >/dev/null 2>"$compose_errors" || compose_status=$?
-  error_names="$(compose_error_names "$compose_errors")"
-  variables="$(compose_variables)"
-  facts="$(env_file_facts)" || facts=""
-  rm -f "$compose_errors"
+  "${compose_command[@]}" config --quiet || compose_status=$?
   exec "$script_dir/check_web_env_keys.sh" report "$mode" "$env_file" "$env_template" \
-    "$provided_names" "$facts" "$compose_status" "$error_names" <<<"$variables"
+    "$compose_status" "${compose_files[@]}"
 fi
 
 compose_status=0
-rendered_config="$("${compose_command[@]}" config --format json 2>"$compose_errors")" \
-  || compose_status=$?
-cat "$compose_errors" >&2
+rendered_config="$("${compose_command[@]}" config --format json)" || compose_status=$?
 if (( compose_status != 0 )); then
-  # Compose reports only the first missing key; list every one it requires.
-  check_env_keys missing "$compose_status" "$(compose_error_names "$compose_errors")"
+  cat >&2 <<MSG
+Compare the $mode env file with its template; \`just env-check $short_mode\` lists the differences.
+  env file: $env_file
+  template: $env_template
+MSG
   exit "$compose_status"
 fi
-rm -f "$compose_errors"
 printf '%s\n' "$rendered_config" \
   | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network"
 
@@ -280,7 +241,8 @@ printf '%s\n' "$rendered_config" \
 # silently. Warn only when containers are created or changed (up, create, run,
 # scale, watch), so ps, logs, and exec stay quiet.
 if [[ "$changes_resources" == true ]]; then
-  check_env_keys unknown
+  "$script_dir/check_web_env_keys.sh" unknown "$mode" "$env_file" "$env_template" 0 \
+    "${compose_files[@]}" || true
 fi
 
 # The Docker daemon creates a missing bind-mount source, and a mountpoint

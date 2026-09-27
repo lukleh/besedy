@@ -27,20 +27,18 @@ create, replace, stop, or remove resources.
 
 Env files are copied once from their template and drift as the template changes.
 Compose alone decides whether an env file is usable. When Compose rejects one,
-it names only the first missing variable, so the wrapper (via
-`scripts/check_web_env_keys.sh`) adds every variable Compose marks required
-that the env file leaves unset or empty, with the template to compare against.
-On `up`, `create`, `run`, `scale` and `watch` it also warns about keys that
-neither the Compose files, the template, nor another key of the same file use,
-which usually means a key was renamed or removed; the warning never fails a
-command. `just env-check <dev|prod|test>` prints the full comparison, including
-optional template keys that are not set or empty, and exits with Compose's own
-verdict. Compose supplies everything compared: the variable list comes from
-`docker compose config --variables`, and the env file is parsed by Compose's
-dotenv parser (as a minimal service's `env_file`). Only key names and whether
-each is empty are compared or printed, never values. Because Compose's list
-does not tell `${VAR:?}` from `${VAR?}`, a required key is reported as
-"missing or empty".
+the wrapper keeps Compose's error and exit status and adds the env file and
+template paths to compare. On `up`, `create`, `run`, `scale` and `watch` it also
+warns (via `scripts/check_web_env_keys.sh`) about keys that neither the template,
+the mode's Compose files, nor another key of the same file use, which usually
+means a key was renamed or removed; the warning never fails a command.
+`just env-check <dev|prod|test>` prints Compose's verdict, the template keys the
+env file does not set (many are optional), and those unused keys, and exits with
+Compose's verdict. It does not say which keys are required: Compose names a
+missing required key in its own error. Only key names are compared or printed,
+never values, and names come from plain `KEY=value` lines, so unusual dotenv
+syntax (`KEY: value`, multi-line quoted values) can make the advisory lists miss
+or invent a name.
 
 ---
 
