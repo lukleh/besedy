@@ -400,6 +400,49 @@ describe("useRecordingPlayback", () => {
     });
   });
 
+  it("completes a browser position left at the end on the next save when restore beats the duration", async () => {
+    // Without a server row the duration is unknown at restore, so the
+    // position is imported unfinished; the next lifecycle save completes it.
+    localStorage.setItem(STORAGE_KEY, "16350");
+
+    const { result } = renderHook(() =>
+      useRecordingPlayback(CATALOG_ID, HASH)
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.seekRequest?.time).toBe(16350);
+    const [, importRequest] = vi.mocked(fetch).mock.calls[1];
+    expect(JSON.parse(String(importRequest?.body))).toEqual({
+      positionSec: 16350,
+      durationSec: null,
+      completed: false,
+    });
+
+    act(() => {
+      // The player applies the restore seek, then reports the duration.
+      result.current.setCurrentTime(16350);
+      result.current.handleDurationChange(16350.231);
+    });
+    act(() => {
+      setVisibilityState("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(COMPLETION_KEY)).toBe("true");
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const [, completionRequest] = vi.mocked(fetch).mock.calls[2];
+    expect(JSON.parse(String(completionRequest?.body))).toEqual({
+      positionSec: 16350,
+      durationSec: 16350.231,
+      completed: true,
+    });
+  });
+
   it("keeps server completion authoritative and restarts at the beginning", async () => {
     localStorage.setItem(STORAGE_KEY, "75");
     vi.mocked(fetch).mockResolvedValueOnce(
