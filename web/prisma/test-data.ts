@@ -14,6 +14,10 @@ export const TEST_CATALOG_ID = "20251225_120000";
 // (resolveTranscriptsPath), with transcripts_dir = "transcripts" in besedy.docker.toml.
 export const TEST_TRANSCRIPTS_SUBDIR = `transcripts/transcripts_${TEST_CATALOG_ID}`;
 
+// Written to the fixtures root once every transcript fixture is in place, so
+// an interrupted generation is regenerated rather than mistaken for complete.
+export const TEST_TRANSCRIPTS_COMPLETE_MARKER = ".transcripts-complete";
+
 export interface TestAudioSpec {
   shortHash: string;
   filename: string;

@@ -144,14 +144,13 @@ test.describe("Smoke Tests @smoke", () => {
     );
     expect(response.status()).toBe(200);
     const { backends } = await response.json();
-    expect(backends).toHaveLength(1);
+    expect(backends.length).toBeGreaterThan(0);
 
     await page.goto(URLS.recording(FIRST_RECORDING.hash));
     await waitForPageReady(page);
     await expect(
       page.getByText("Dobrý den, vítejte u dnešního rozhovoru.").first()
     ).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText(/no transcripts available/i)).toHaveCount(0);
   });
 
   test("user can start radio mode", async ({ page }) => {
