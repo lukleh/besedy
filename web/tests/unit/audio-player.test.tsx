@@ -253,6 +253,17 @@ describe("AudioPlayer skip controls", () => {
     expect(onSeek).toHaveBeenCalledWith(40);
   });
 
+  it("skips forward from the current position while the duration is unknown", async () => {
+    const { audio, container } = renderPlayer();
+    audio.currentTime = 30;
+
+    await act(async () => {
+      (container.querySelector('[data-testid="audio-skip-forward"]') as HTMLButtonElement).click();
+    });
+
+    expect(audio.currentTime).toBe(40);
+  });
+
   it("does not skip backward below 0", async () => {
     const { audio, container } = renderPlayer();
     audio.currentTime = 5;
@@ -1127,5 +1138,72 @@ describe("AudioPlayer lifecycle resume", () => {
 
     expect(audio.currentTime).toBe(47.6);
     expect(onTimeUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("AudioPlayer lock-screen controls", () => {
+  const handlers = new Map<MediaSessionAction, () => void>();
+
+  beforeEach(() => {
+    handlers.clear();
+    Object.defineProperty(navigator, "mediaSession", {
+      configurable: true,
+      value: {
+        metadata: null,
+        playbackState: "none",
+        setActionHandler: (action: MediaSessionAction, handler: (() => void) | null) => {
+          if (handler) handlers.set(action, handler);
+          else handlers.delete(action);
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "mediaSession");
+    vi.useRealTimers();
+  });
+
+  it("plays and pauses the player", async () => {
+    const { audio } = renderPlayer();
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+    audio.pause = vi.fn();
+
+    await act(async () => {
+      handlers.get("play")?.();
+    });
+    expect(playMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      handlers.get("pause")?.();
+    });
+    expect(audio.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores play and pause while reconnecting, like the on-screen button", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+    audio.pause = vi.fn();
+
+    await act(async () => {
+      (container.querySelector('button[aria-label="Play"]') as HTMLButtonElement).click();
+    });
+    mockPaused(audio, false);
+    setAudioError(audio, 2);
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    expect(container.querySelector('button[aria-label="Reconnecting..."]')).not.toBeNull();
+
+    await act(async () => {
+      handlers.get("play")?.();
+      handlers.get("pause")?.();
+    });
+
+    expect(playMock).toHaveBeenCalledTimes(1);
+    expect(audio.pause).not.toHaveBeenCalled();
   });
 });

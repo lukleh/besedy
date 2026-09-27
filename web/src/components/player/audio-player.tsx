@@ -840,26 +840,27 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     playbackEndRef.current = null;
-    const time = Math.min(duration, audio.currentTime + 10);
+    // Until the duration is known it is 0, which would send playback to the start.
+    const time = duration > 0 ? Math.min(duration, audio.currentTime + 10) : audio.currentTime + 10;
     audio.currentTime = time;
     setCurrentTime(time);
     onSeek?.(time);
   };
 
   // Lock-screen and notification controls drive the same paths as the
-  // on-screen buttons.
+  // on-screen buttons, including play/pause being unavailable while reconnecting.
   useMediaSession({
     metadata: mediaMetadata,
     isPlaying,
     onPlay: () => {
       const audio = audioRef.current;
-      if (!audio) return;
+      if (!audio || isReconnecting) return;
       userInitiatedRef.current = true;
       safePlay(audio, 'media session play', logDebugEvent);
     },
     onPause: () => {
       const audio = audioRef.current;
-      if (!audio) return;
+      if (!audio || isReconnecting) return;
       userInitiatedRef.current = true;
       playIntentRef.current = false;
       audio.pause();

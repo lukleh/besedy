@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  RecordingAudioSection,
   RecordingHeader,
   type RecordingHeadingContext,
 } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content-sections";
@@ -8,6 +9,7 @@ import type { CatalogEntryResponse } from "@/types/catalog";
 
 const HASH = "a".repeat(64);
 let locale = "en";
+const playerProps = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -15,7 +17,10 @@ vi.mock("next-intl", () => ({
 }));
 
 vi.mock("@/components/player/audio-player", () => ({
-  AudioPlayer: () => null,
+  AudioPlayer: (props: Record<string, unknown>) => {
+    playerProps.current = props;
+    return null;
+  },
 }));
 
 vi.mock("@/components/transcript/transcript-stream-viewer", () => ({
@@ -151,5 +156,52 @@ describe("RecordingHeader", () => {
     );
 
     expect(heading).toBe("Recording title · June 2006 · Event place");
+  });
+});
+
+describe("RecordingAudioSection lock-screen metadata", () => {
+  it("uses the page heading as the title and prefers the curated artist", () => {
+    locale = "en";
+    const recording = {
+      hash: HASH,
+      filename: "recording.wav",
+      title: "REC_0012",
+      curatedTitle: "Mind Mapping 4",
+      dateYear: 2006,
+      dateMonth: 6,
+      dateDay: 18,
+      location: { id: 1, name: "Library" },
+      artist: "Unknown",
+      curatedArtist: "Jan Novák",
+      album: { id: 1, name: "Series" },
+    } as CatalogEntryResponse;
+    const noop = () => {};
+
+    render(
+      <RecordingAudioSection
+        audioSource="archived"
+        audioUrl="/audio"
+        autoPlayOnSeek={false}
+        catalogId="c"
+        currentTimeSetter={noop}
+        hash={HASH}
+        onAudioDownload={noop}
+        onAudioEnded={noop}
+        onDurationChange={noop}
+        onPlayingChange={noop}
+        onSeek={noop}
+        onSourceChange={noop}
+        permissions={{}}
+        recording={recording}
+        savedSourceId={null}
+        sources={[]}
+      />,
+    );
+
+    expect(playerProps.current.mediaMetadata).toEqual({
+      title: "Mind Mapping 4 · Jun 18, 2006 · Library",
+      artist: "Jan Novák",
+      album: "Series",
+    });
   });
 });

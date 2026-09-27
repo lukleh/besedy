@@ -158,8 +158,9 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
 }
 
 /**
- * The recording's heading parts (title · date · location) and the title shown
- * when none of them exist. The lock screen uses the same rule as the page.
+ * The recording's heading parts (title · date · location), the title shown
+ * when none of them exist, and the heading as one line of text. The lock
+ * screen uses the same heading as the page.
  */
 function useRecordingHeading(
   recording: CatalogEntryResponse,
@@ -185,7 +186,8 @@ function useRecordingHeading(
   // Older offline snapshots fall back to the audio hash when there is no title.
   const sourceTitle = recording.title?.trim();
   const fallbackTitle = (sourceTitle !== hash && sourceTitle) || recording.filename || hash.slice(0, 16);
-  return { headingParts, fallbackTitle };
+  const headingText = headingParts.length > 0 ? headingParts.join(" · ") : fallbackTitle;
+  return { headingParts, fallbackTitle, headingText };
 }
 
 export function RecordingHeader({
@@ -256,7 +258,7 @@ export function RecordingAudioSection({
   sources,
 }: RecordingAudioSectionProps) {
   const t = useTranslations();
-  const { headingParts, fallbackTitle } = useRecordingHeading(recording, hash, headingContext);
+  const { headingText } = useRecordingHeading(recording, hash, headingContext);
 
   return (
     <div className="space-y-4 mb-6">
@@ -301,8 +303,8 @@ export function RecordingAudioSection({
         playbackEnd={seekRequest?.end}
         autoPlayOnSeek={autoPlayOnSeek}
         mediaMetadata={{
-          title: headingParts.length > 0 ? headingParts.join(" · ") : fallbackTitle,
-          artist: recording.artist ?? undefined,
+          title: headingText,
+          artist: recording.curatedArtist ?? recording.artist ?? undefined,
           album: recording.album?.name,
         }}
       />
