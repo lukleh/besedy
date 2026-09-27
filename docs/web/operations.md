@@ -26,13 +26,17 @@ unrelated shell state, fixes the Compose identity independently from runtime
 create, replace, stop, or remove resources.
 
 Env files are copied once from their template and drift as the template changes.
-Before running Compose, the wrapper (via `scripts/check_web_env_keys.sh`) lists
-every key the mode's Compose files require (`${VAR:?…}` or `${VAR?…}`) that the
-env file lacks, and on `up`, `create` and `run` it warns about keys that neither
-the Compose files nor the template use any more, which usually means a key was
-renamed or removed. `just env-check <mode>` prints the full comparison,
-including optional template keys that are not set. Only key names are
-compared or printed, never values.
+Compose alone decides whether an env file is usable. When Compose rejects one,
+it names only the first missing variable, so the wrapper (via
+`scripts/check_web_env_keys.sh`) adds every variable Compose marks required
+that the env file appears not to set, with the template to compare against. On
+`up`, `create`, `run`, `scale` and `watch` it also warns about keys that
+neither the Compose files nor the template use any more, which usually means a
+key was renamed or removed; the warning never fails a command.
+`just env-check <dev|prod|test>` prints the full comparison, including optional
+template keys that are not set. The variable list comes from
+`docker compose config --variables`, and only key names are compared or
+printed, never values.
 
 ---
 

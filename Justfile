@@ -391,10 +391,11 @@ dev_compose := "bash ../scripts/run_web_compose.sh development"
 prod_compose := "bash ../scripts/run_web_compose.sh production"
 test_compose := "bash ../scripts/run_web_compose.sh test"
 
-# Compare a mode's env file with its Compose files and template (key names only).
-# Fails only when keys the Compose files require are missing.
+# Compares key names only; fails only when keys the Compose files require
+# appear missing. mode: dev, prod, or test (or the long names).
+# Compare a mode's env file with its Compose variables and template
 env-check mode:
-    bash scripts/run_web_compose.sh {{ mode }} env-check
+    bash scripts/run_web_compose.sh {{ if mode == "dev" { "development" } else if mode == "prod" { "production" } else { mode } }} env-check
 
 # Start dev environment (detached)
 dev-up:

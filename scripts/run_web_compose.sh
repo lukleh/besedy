@@ -192,30 +192,6 @@ for env_name in "${passthrough_vars[@]}"; do
   fi
 done
 
-# Env files are copied once from their template and drift as it changes. List
-# every key the Compose files require at once, before Compose stops at the
-# first; on up/create/run, also warn about keys nothing uses any more. Only
-# key names are compared. "env-check" prints the full comparison instead.
-compose_files=()
-for (( i = 0; i < ${#compose_args[@]}; i++ )); do
-  if [[ "${compose_args[$i]}" == "-f" ]]; then
-    compose_files+=("$repo_root/web/${compose_args[$((i + 1))]}")
-  fi
-done
-provided_names=""
-for entry in "${clean_env[@]}"; do
-  if [[ "$entry" == *=* ]]; then
-    provided_names+="${entry%%=*} "
-  fi
-done
-env_template="$repo_root/web/$env_template_name"
-if [[ "$compose_command_name" == "env-check" ]]; then
-  exec "$script_dir/check_web_env_keys.sh" report "$mode" "$env_file" "$env_template" \
-    "$provided_names" "${compose_files[@]}"
-fi
-"$script_dir/check_web_env_keys.sh" check "$mode" "$env_file" "$env_template" \
-  "$provided_names" "$changes_resources" "${compose_files[@]}"
-
 cd "$repo_root/web"
 compose_command=(
   "${clean_env[@]}"
@@ -225,9 +201,47 @@ compose_command=(
   --env-file "$env_file"
 )
 
-rendered_config="$("${compose_command[@]}" config --format json)"
+# Env files are copied once from their template and drift as it changes.
+# Compose alone decides whether an env file is usable; these checks only
+# explain its verdict, comparing key names (never values) with the variables
+# Compose reports for this mode's files. "env-check" prints the full comparison.
+provided_names=""
+for entry in "${clean_env[@]}"; do
+  if [[ "$entry" == *=* ]]; then
+    provided_names+="${entry%%=*} "
+  fi
+done
+env_template="$repo_root/web/$env_template_name"
+check_env_keys() {
+  local variables
+  variables="$("${compose_command[@]}" config --variables --format json 2>/dev/null)" || return 0
+  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$variables" || return 0
+  "$script_dir/check_web_env_keys.sh" "$1" "$mode" "$env_file" "$env_template" \
+    "$provided_names" <<<"$variables" || true
+}
+
+if [[ "$compose_command_name" == "env-check" ]]; then
+  variables="$("${compose_command[@]}" config --variables --format json)"
+  exec "$script_dir/check_web_env_keys.sh" report "$mode" "$env_file" "$env_template" \
+    "$provided_names" <<<"$variables"
+fi
+
+compose_status=0
+rendered_config="$("${compose_command[@]}" config --format json)" || compose_status=$?
+if (( compose_status != 0 )); then
+  # Compose reports only the first missing key; list every one it requires.
+  check_env_keys missing
+  exit "$compose_status"
+fi
 printf '%s\n' "$rendered_config" \
   | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network"
+
+# Keys nothing uses any more are usually renamed ones, which Compose ignores
+# silently. Warn only when containers are created or changed (up, create, run,
+# scale, watch), so ps, logs, and exec stay quiet.
+if [[ "$changes_resources" == true ]]; then
+  check_env_keys unknown
+fi
 
 # The Docker daemon creates a missing bind-mount source, and a mountpoint
 # inside the bind-mounted checkout, as root. Later host commands (npm ci,
