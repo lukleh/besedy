@@ -204,9 +204,11 @@ compose_command=(
 # compare key names and whether each is empty, never values, with the
 # variables Compose reports for this mode's files. "env-check" prints the full
 # comparison.
+# Only non-empty values supply a key: an empty one (say CONFIG_FILE= passed
+# through with test overrides) is still missing to ${VAR:?}.
 provided_names=""
 for entry in "${clean_env[@]}"; do
-  if [[ "$entry" == *=* ]]; then
+  if [[ "$entry" == *=?* ]]; then
     provided_names+="${entry%%=*} "
   fi
 done

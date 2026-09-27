@@ -118,8 +118,10 @@ set_keys="$(fact_names set)"
 
 named_missing="$(printf '%s\n' "$error_names" | tr ' ' '\n' | sed '/^$/d' | LC_ALL=C sort -u)"
 
+# Compose's own error is its verdict, so the names it gives are never
+# filtered out, not even ones the caller provides (with an empty value).
 required_missing() {
-  minus "$(sorted "$(minus "$required_names" "$set_keys")" "$named_missing")" "$provided_names"
+  sorted "$(minus "$(minus "$required_names" "$set_keys")" "$provided_names")" "$named_missing"
 }
 
 unknown_keys() {

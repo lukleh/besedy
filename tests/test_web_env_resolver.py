@@ -1200,3 +1200,35 @@ def test_web_compose_wrapper_skips_unused_key_warning_when_it_cannot_list_variab
     assert "--variables" in calls.read_text(encoding="utf-8")
     assert "COMPOSE_ONLY_KEY" not in result.stderr
     assert "renamed or removed?" not in result.stderr
+
+
+@pytest.mark.parametrize("lists_variables", [True, False])
+def test_env_check_lists_a_provided_key_compose_rejects_as_empty(
+    tmp_path: Path, lists_variables: bool
+) -> None:
+    env_file = tmp_path / "test.env"
+    env_file.write_text("APP_ENV=test\n", encoding="utf-8")
+    _fake_docker_for_key_checks(
+        tmp_path / "bin",
+        _variables("CONFIG_FILE", optional=("APP_ENV",)) if lists_variables else None,
+        {"APP_ENV": "test"},
+    )
+
+    env = os.environ.copy()
+    env["BESEDY_WEB_ENV_TEST"] = str(env_file)
+    env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
+    # Test overrides pass CONFIG_FILE through from the shell, here empty.
+    env["BESEDY_WEB_ALLOW_TEST_OVERRIDES"] = "1"
+    env["CONFIG_FILE"] = ""
+    result = subprocess.run(
+        ["bash", str(COMPOSE_WRAPPER), "test", "env-check"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Compose: rejects this env file" in result.stdout
+    assert "Missing or empty required keys: CONFIG_FILE\n" in result.stdout
