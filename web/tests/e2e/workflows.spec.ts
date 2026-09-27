@@ -99,32 +99,10 @@ test.describe("User Workflows", () => {
     });
     await expect(transcriptHeading).toBeVisible({ timeout: 10000 });
 
-    // Transcript availability depends on current backend fixture mapping.
-    // Readers land on the reading view, which renders "No transcripts
-    // available" when there is nothing; the stream view is administrative and
-    // they never see it. The stream heading stays in this matcher for an
-    // administrator running the same check.
-    const noTranscriptHeading = page
-      .getByRole("heading", {
-        name: /no transcripts available|transcript stream unavailable|přepisy nejsou|přepis.*není/i,
-      })
-      .first();
-    const transcriptSegments = page.locator("[data-segment-index]");
-
-    await expect
-      .poll(
-        async () => {
-          if (await noTranscriptHeading.isVisible().catch(() => false)) {
-            return "empty";
-          }
-          if ((await transcriptSegments.count()) > 0) {
-            return "content";
-          }
-          return "pending";
-        },
-        { timeout: 10000 }
-      )
-      .toMatch(/empty|content/);
+    // Every seeded recording has transcript fixtures, so the segments render.
+    await expect(page.locator("[data-segment-index]").first()).toBeVisible({
+      timeout: 10000,
+    });
 
     // Cannot export the audio file. The offline-download control is separate
     // and is available to anyone who can stream the recording.

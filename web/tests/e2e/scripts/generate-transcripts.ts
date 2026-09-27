@@ -8,7 +8,11 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { TEST_AUDIO_FILES } from "../../../prisma/test-data";
+import {
+  TEST_AUDIO_FILES,
+  TEST_TRANSCRIPTS_COMPLETE_MARKER,
+  TEST_TRANSCRIPTS_SUBDIR,
+} from "../../../prisma/test-data";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -191,8 +195,14 @@ const TRANSCRIPT_BACKENDS = [
  * Generate all transcript files
  */
 export async function generateAllTranscripts(fixturesDir: string): Promise<void> {
-  const transcriptsDir = path.join(fixturesDir, "transcripts_test");
+  const transcriptsDir = path.join(fixturesDir, TEST_TRANSCRIPTS_SUBDIR);
+  const completeMarker = path.join(fixturesDir, TEST_TRANSCRIPTS_COMPLETE_MARKER);
 
+  // Start clean so hashes or backends no longer generated don't linger.
+  // Earlier versions wrote to transcripts_test, where the web app never looked.
+  await fs.rm(completeMarker, { force: true });
+  await fs.rm(transcriptsDir, { recursive: true, force: true });
+  await fs.rm(path.join(fixturesDir, "transcripts_test"), { recursive: true, force: true });
   await fs.mkdir(transcriptsDir, { recursive: true });
 
   console.log("Generating test transcripts...");
@@ -210,6 +220,8 @@ export async function generateAllTranscripts(fixturesDir: string): Promise<void>
     await generateDiarizationFile(transcriptsDir, hash, file.duration);
     console.log(`  Generated: Diarization for ${file.filename}`);
   }
+
+  await fs.writeFile(completeMarker, "");
 }
 
 // Run if executed directly
