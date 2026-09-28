@@ -428,6 +428,7 @@
     "stateNeedsAttention": "Needs attention",
     "progressSummary": "{done} of {total} segments done",
     "blockedSummary": "{count, plural, one {# segment needs attention} other {# segments need attention}}",
+    "emptyRevision": "(no speech)",
     "currentText": "Current text",
     "loadEarlier": "Load earlier segments",
     "loadLater": "Load later segments"

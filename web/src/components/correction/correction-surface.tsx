@@ -94,17 +94,31 @@ export function CorrectionSurface({
     resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
   );
   const [draft, setDraft] = useState("");
-  // A draft that hit a revision conflict. It stays until the person acts or
-  // moves on, and while it is set the current stored text is shown beside it.
-  const [conflict, setConflict] = useState<{ draft: string } | null>(null);
+  // Set when the stored text moved under a draft. It stays until the person
+  // acts or moves on, and while it is set the current stored text is shown
+  // beside the editor.
+  const [conflict, setConflict] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   const [seekRequest, setSeekRequest] = useState<{
+    spanId: string;
     time: number;
     end: number;
     key: number;
+    autoPlay: boolean;
   } | null>(null);
-  const seekKeyRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // The span on screen, for callbacks that outlive the render they came from.
+  const selectedIdRef = useRef<string | null>(null);
+  // A command whose outcome is not known yet: the response was lost, or the
+  // server could not answer. Repeating the same action reuses its key, so
+  // the server replays what it recorded instead of refusing a stale revision.
+  const pendingCommandRef = useRef<{
+    spanId: string;
+    revisionId: string;
+    action: SpanCommandInput["action"];
+    text: string | undefined;
+    key: string;
+  } | null>(null);
 
   const spansQuery = useInfiniteQuery<SpanPage>({
     queryKey: ["correction-spans", catalogId, hash, workspace.id, initialOffset],
@@ -137,21 +151,44 @@ export function CorrectionSurface({
     [spans, selectedSpanId]
   );
 
-  // A fresh selection starts from the stored text. When the revision moves
-  // under the same span after a conflict, the draft is kept instead, because
-  // it is work that would be lost. State is adjusted during render, keyed on
-  // the span and revision the draft belongs to.
-  const draftKey = selected ? `${selected.id}:${selected.revisionId}` : null;
-  const [draftFor, setDraftFor] = useState<string | null>(null);
-  if (selected && draftKey !== draftFor) {
-    const spanChanged = draftFor === null || !draftFor.startsWith(`${selected.id}:`);
-    setDraftFor(draftKey);
+  // A fresh selection starts from the stored text and positions the audio on
+  // the span without playing it. When the revision moves under the same span
+  // while the draft is dirty, the draft is kept and flagged as a conflict,
+  // whatever caused the refresh: the wording is work that would be lost. A
+  // clean draft simply follows the stored text. State is adjusted during
+  // render, keyed on the span and revision the draft belongs to.
+  const [draftFor, setDraftFor] = useState<{
+    spanId: string;
+    revisionId: string;
+    baseText: string;
+  } | null>(null);
+  if (
+    selected &&
+    (draftFor?.spanId !== selected.id || draftFor.revisionId !== selected.revisionId)
+  ) {
+    const spanChanged = draftFor?.spanId !== selected.id;
     if (spanChanged) {
-      setConflict(null);
+      setDraftFor({ spanId: selected.id, revisionId: selected.revisionId, baseText: selected.text });
+      setConflict(false);
       setCommentBody("");
       setDraft(selected.text);
+      if (seekRequest?.spanId !== selected.id) {
+        setSeekRequest({
+          spanId: selected.id,
+          time: selected.startSeconds,
+          end: selected.endSeconds,
+          key: (seekRequest?.key ?? 0) + 1,
+          autoPlay: false,
+        });
+      }
     } else {
-      setDraft(conflict ? conflict.draft : selected.text);
+      const dirty = draft.trim() !== draftFor.baseText.trim();
+      setDraftFor({ ...draftFor, revisionId: selected.revisionId });
+      if (dirty) {
+        setConflict(true);
+      } else {
+        setDraft(selected.text);
+      }
     }
   }
 
@@ -165,12 +202,13 @@ export function CorrectionSurface({
   });
 
   const playSpan = useCallback((span: SpanView) => {
-    seekKeyRef.current += 1;
-    setSeekRequest({
+    setSeekRequest((previous) => ({
+      spanId: span.id,
       time: span.startSeconds,
       end: span.endSeconds,
-      key: seekKeyRef.current,
-    });
+      key: (previous?.key ?? 0) + 1,
+      autoPlay: true,
+    }));
   }, []);
 
   const selectSpan = useCallback(
@@ -181,23 +219,31 @@ export function CorrectionSurface({
     [playSpan]
   );
 
-  const advance = useCallback(async () => {
-    if (!selected) return;
-    const index = spans.findIndex((span) => span.id === selected.id);
-    const next = spans[index + 1];
-    if (next) {
-      selectSpan(next);
-      return;
-    }
-    if (!spansQuery.hasNextPage) return;
+  // Move on from the span a command was issued on. Anchored on that span
+  // rather than on whatever is selected now, and only while it is still the
+  // selection: the sidebar stays clickable during a command, and somebody who
+  // has already moved on must not be moved again.
+  const advance = useCallback(
+    async (fromSpanId: string) => {
+      if (selectedIdRef.current !== fromSpanId) return;
+      const index = spans.findIndex((span) => span.id === fromSpanId);
+      if (index < 0) return;
+      const next = spans[index + 1];
+      if (next) {
+        selectSpan(next);
+        return;
+      }
+      if (!spansQuery.hasNextPage) return;
 
-    // The next span is on a page that is not loaded yet. Selecting it has to
-    // wait for the fetch, or approving the last span of a page would leave the
-    // surface sitting on it with nothing selected and nothing playing.
-    const fetched = await spansQuery.fetchNextPage();
-    const first = fetched.data?.pages.at(-1)?.spans[0];
-    if (first) selectSpan(first);
-  }, [selected, spans, selectSpan, spansQuery]);
+      // The next span is on a page that is not loaded yet. Selecting it has to
+      // wait for the fetch, or approving the last span of a page would leave
+      // the surface sitting on it with nothing selected and nothing playing.
+      const fetched = await spansQuery.fetchNextPage();
+      const first = fetched.data?.pages.at(-1)?.spans[0];
+      if (first && selectedIdRef.current === fromSpanId) selectSpan(first);
+    },
+    [spans, selectSpan, spansQuery]
+  );
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -223,19 +269,25 @@ export function CorrectionSurface({
         schema: spanCommandResultSchema,
       }),
     onSuccess: async (_result, variables) => {
-      setConflict(null);
+      pendingCommandRef.current = null;
+      setConflict(false);
       await refresh();
       if (variables.action === "approve" || variables.action === "save_and_approve") {
-        await advance();
+        await advance(variables.span.id);
       }
     },
-    onError: async (error, variables) => {
+    onError: async (error) => {
+      // A definite answer settles the command; a lost connection or a server
+      // failure does not, and the key stays for a retry.
+      if (error instanceof ApiError && error.status < 500) {
+        pendingCommandRef.current = null;
+      }
       if (error instanceof ApiError && error.status === 409) {
         const payload = error.payload as { code?: string } | undefined;
         if (payload?.code === "REVISION_CONFLICT") {
-          // The draft is kept and the current text is shown beside it, so the
-          // author decides whether their change still applies.
-          setConflict({ draft: variables.text ?? draft });
+          // The refresh brings the newer revision; a dirty draft is then kept
+          // and flagged, so the author decides whether their change applies.
+          setConflict(true);
           await refresh();
           toast({ description: t("conflict"), variant: "destructive" });
           return;
@@ -247,6 +299,23 @@ export function CorrectionSurface({
       });
     },
   });
+
+  const issue = useCallback(
+    (span: SpanView, action: SpanCommandInput["action"], text?: string) => {
+      const pending = pendingCommandRef.current;
+      const key =
+        pending &&
+        pending.spanId === span.id &&
+        pending.revisionId === span.revisionId &&
+        pending.action === action &&
+        pending.text === text
+          ? pending.key
+          : crypto.randomUUID();
+      pendingCommandRef.current = { spanId: span.id, revisionId: span.revisionId, action, text, key };
+      command.mutate({ span, action, text, idempotencyKey: key });
+    },
+    [command]
+  );
 
   const comment = useMutation({
     mutationFn: async (input: { span: SpanView; body: string }) =>
@@ -273,13 +342,9 @@ export function CorrectionSurface({
 
   const runPrimary = useCallback(() => {
     if (!selected || command.isPending) return;
-    const idempotencyKey = crypto.randomUUID();
-    command.mutate(
-      isEdited
-        ? { span: selected, action: "save_and_approve", text: draft, idempotencyKey }
-        : { span: selected, action: "approve", idempotencyKey }
-    );
-  }, [selected, command, isEdited, draft]);
+    if (isEdited) issue(selected, "save_and_approve", draft);
+    else issue(selected, "approve");
+  }, [selected, command.isPending, isEdited, draft, issue]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -292,6 +357,7 @@ export function CorrectionSurface({
   );
 
   useEffect(() => {
+    selectedIdRef.current = selected?.id ?? null;
     textareaRef.current?.focus();
   }, [selected?.id]);
 
@@ -367,7 +433,7 @@ export function CorrectionSurface({
           seekTo={seekRequest?.time}
           seekKey={seekRequest?.key}
           playbackEnd={seekRequest?.end}
-          autoPlayOnSeek
+          autoPlayOnSeek={seekRequest?.autoPlay ?? false}
         />
 
         {selected ? (
@@ -427,13 +493,7 @@ export function CorrectionSurface({
                 variant="outline"
                 className="gap-2"
                 disabled={command.isPending}
-                onClick={() =>
-                  command.mutate({
-                    span: selected,
-                    action: "disapprove",
-                    idempotencyKey: crypto.randomUUID(),
-                  })
-                }
+                onClick={() => issue(selected, "disapprove")}
               >
                 <ThumbsDown className="h-4 w-4" />
                 {t("disapprove")}
@@ -443,13 +503,7 @@ export function CorrectionSurface({
                   variant="ghost"
                   className="gap-2"
                   disabled={command.isPending}
-                  onClick={() =>
-                    command.mutate({
-                      span: selected,
-                      action: "withdraw",
-                      idempotencyKey: crypto.randomUUID(),
-                    })
-                  }
+                  onClick={() => issue(selected, "withdraw")}
                 >
                   <Undo2 className="h-4 w-4" />
                   {t("withdraw")}
@@ -503,6 +557,11 @@ export function CorrectionSurface({
                     <span>{entry.kind}</span>
                     {entry.decision ? ` · ${entry.decision.toLowerCase()}` : ""}
                     {entry.body ? ` · ${entry.body}` : ""}
+                    {entry.kind === "revision" && entry.text !== undefined && (
+                      <span className="block whitespace-pre-wrap pl-4 text-foreground">
+                        {entry.text === "" ? t("emptyRevision") : entry.text}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

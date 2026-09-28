@@ -428,6 +428,7 @@
     "stateNeedsAttention": "Vyžaduje pozornost",
     "progressSummary": "Hotovo {done} z {total} segmentů",
     "blockedSummary": "{count, plural, one {# segment vyžaduje pozornost} few {# segmenty vyžadují pozornost} other {# segmentů vyžaduje pozornost}}",
+    "emptyRevision": "(bez řeči)",
     "currentText": "Aktuální text",
     "loadEarlier": "Načíst předchozí segmenty",
     "loadLater": "Načíst další segmenty"
