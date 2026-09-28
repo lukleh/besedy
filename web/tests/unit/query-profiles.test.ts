@@ -60,12 +60,17 @@ describe("default query retry", () => {
     }
   });
 
+  it("does not retry a payload that fails its schema", () => {
+    expect(
+      shouldRetryQuery(0, new SchemaValidationError("Invalid response payload", null, []))
+    ).toBe(false);
+  });
+
   it("retries temporary failures up to three times", () => {
     const temporary = [
       new ApiError("Request Timeout", 408),
       new ApiError("Too Many Requests", 429),
       new ApiError("Internal error", 500),
-      new SchemaValidationError("Invalid response payload", null, []),
       new TypeError("Failed to fetch"),
     ];
     for (const error of temporary) {

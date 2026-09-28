@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api/fetch-json";
+import { ApiError, SchemaValidationError } from "@/lib/api/fetch-json";
 
 // Query updates should be driven by navigation, explicit invalidation, or
 // polling where needed, not by every tab focus event.
@@ -56,10 +56,13 @@ export const STATIC_QUERY_PROFILE = {
 
 const MAX_QUERY_RETRIES = 3;
 
-// A 4xx answer (missing, hidden, or invalid) will not change on retry, so
-// fail at once instead of waiting through the retry backoff. Timeouts and
-// rate limits are temporary and still retry.
+// A 4xx answer (missing, hidden, or invalid) or a payload that fails its
+// schema will not change on retry, so fail at once instead of waiting through
+// the retry backoff. Timeouts and rate limits are temporary and still retry.
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
+  if (error instanceof SchemaValidationError) {
+    return false;
+  }
   if (
     error instanceof ApiError &&
     error.status >= 400 &&
