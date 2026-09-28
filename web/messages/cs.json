@@ -390,6 +390,12 @@
     "copyError": "Nepodařilo se zkopírovat přepis"
   },
   "correction": {
+    "readerTitle": "Probíhá korektura",
+    "notStarted": "Korektura nezačala",
+    "notStartedDescription": "Přepis bude ke čtení, až jej dva lidé zkontrolují od začátku do konce a kurátor jej zveřejní.",
+    "inProgressDescription": "Přepis se právě kontroluje proti zvuku. Ke čtení bude, až bude zkontrolovaná každá pasáž a kurátor jej zveřejní.",
+    "reviewedOnce": "Jednou zkontrolováno",
+    "fullyApproved": "Plně schváleno",
     "openSurface": "Otevřít korekturu",
     "pageTitle": "Korektura přepisu",
     "frozenSource": "Zmrazený zdroj {backend}",

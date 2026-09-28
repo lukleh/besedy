@@ -143,10 +143,10 @@ All four routes first require the recording itself be visible (catalog access, r
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/transcript/:hash` | `read_transcripts`; a non-default backend additionally requires `see_transcript_variants`; the `speaker` field on segments additionally requires `see_speakers` | Transcript or available backends |
+| GET | `/api/transcript/:hash` | `read_transcripts`; a non-default backend additionally requires `see_transcript_variants`; the `speaker` field on segments additionally requires `see_speakers`. For a recording in correction scope (ADR 0006) the default is the published corrected transcript, `corrected/published`; before publication the listing carries correction progress and no text | Transcript or available backends |
 | GET | `/api/transcript/:hash/speakers` | `read_transcripts` + `see_speakers` | Diarization or available backends |
 | GET | `/api/transcript/:hash/formats` | `read_transcripts` | Available download formats |
-| GET | `/api/transcript/:hash/download` | `read_transcripts` + `download_transcripts` | Download transcript sidecar |
+| GET | `/api/transcript/:hash/download` | `read_transcripts` + `download_transcripts`; `original=1` additionally requires `download_original_transcript` and delivers the machine text underneath, or the frozen source once correction started | Download transcript sidecar |
 
 Semantic search is catalog-wide rather than per recording:
 

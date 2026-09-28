@@ -439,6 +439,7 @@ export function RecordingTranscriptSection({
           canDownload={canDownloadTranscripts}
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}
+          canCorrectTranscripts={canCorrectTranscripts}
         />
       )}
     </div>

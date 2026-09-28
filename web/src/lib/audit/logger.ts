@@ -57,7 +57,8 @@ type DataAccessAction =
   | "AUDIO_STREAMED"
   | "AUDIO_DOWNLOADED"
   | "TRANSCRIPT_VIEWED"
-  | "TRANSCRIPT_DOWNLOADED";
+  | "TRANSCRIPT_DOWNLOADED"
+  | "TRANSCRIPT_ORIGINAL_DOWNLOADED";
 type ContentAuditAction =
   | "METADATA_UPDATED"
   | "METADATA_VERIFIED"
@@ -517,6 +518,28 @@ export async function logTranscriptDownloaded(
       ...(backend ? { backend } : {}),
       ...(format ? { format } : {}),
     },
+  });
+}
+
+/**
+ * Taking the machine text out is a different act from downloading the
+ * transcript an account can read, and the audit log has to be able to tell
+ * them apart: one is ordinary delivery, the other is a named exception.
+ */
+export async function logOriginalTranscriptDownloaded(
+  userId: string | null,
+  audioHash: string,
+  groupId: string,
+  details: { source: "machine" | "frozen"; backend?: string; format?: string }
+): Promise<void> {
+  await logDataAccessEvent({
+    userId,
+    action: "TRANSCRIPT_ORIGINAL_DOWNLOADED",
+    resource: "transcript",
+    resourceId: audioHash,
+    groupId,
+    subjectType: "transcript",
+    details,
   });
 }
 

@@ -390,6 +390,12 @@
     "copyError": "Unable to copy transcript"
   },
   "correction": {
+    "readerTitle": "Correction in progress",
+    "notStarted": "Correction has not started",
+    "notStartedDescription": "This transcript will be readable once two people have checked it from beginning to end and a curator has published it.",
+    "inProgressDescription": "People are checking this transcript against the audio. It becomes readable once every passage has been checked and a curator publishes it.",
+    "reviewedOnce": "Reviewed once",
+    "fullyApproved": "Fully approved",
     "openSurface": "Open the correction surface",
     "pageTitle": "Correct transcript",
     "frozenSource": "Frozen source {backend}",

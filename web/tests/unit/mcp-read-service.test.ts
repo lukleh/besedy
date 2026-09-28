@@ -23,6 +23,25 @@ import {
   searchMcpTranscripts,
 } from '@/lib/mcp/read-service';
 
+// Correction resolution is exercised in its own tests; these route tests cover
+// recordings outside correction scope, where the machine transcript is served.
+vi.mock("@/lib/correction/resolve", () => ({
+  resolveReaderTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveSearchTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveOriginalTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveReaderTranscriptSources: vi.fn(async (_catalogId, hashes) => {
+    const map = new Map();
+    for (const hash of hashes) map.set(hash, { kind: "machine" });
+    return map;
+  }),
+  publicationArtifactPath: vi.fn(() => "/tmp/publication/transcript.json"),
+  frozenSourcePath: vi.fn(() => "/tmp/workspace/source/transcript.json"),
+}));
+
+vi.mock('@/lib/correction/reader-transcript', () => ({
+  loadPublishedTranscript: vi.fn(),
+}));
+
 vi.mock('@/lib/db', () => ({
   default: {
     $queryRaw: vi.fn(),
@@ -812,6 +831,44 @@ describe('MCP read service', () => {
       'visible-recording',
       'whisperx/model@lang-auto',
     );
+  });
+
+  // Agents resolve what search indexed: the corrected snapshot once one is
+  // published, and never the machine text underneath it.
+  it('reads the published correction when search resolves one', async () => {
+    const { resolveSearchTranscriptSource } = await import('@/lib/correction/resolve');
+    const { loadPublishedTranscript } = await import('@/lib/correction/reader-transcript');
+    vi.mocked(resolveSearchTranscriptSource).mockResolvedValueOnce({
+      kind: 'publication',
+      workspaceId: 'ws-1',
+      publicationId: 'pub-1',
+    });
+    vi.mocked(loadPublishedTranscript).mockResolvedValue({
+      hash: 'visible-recording',
+      backend: 'corrected/published',
+      segments: [{ text: 'corrected words', start: 0, end: 5, words: [] }],
+    } as never);
+
+    const result = await getMcpTranscript('catalog-a', 'visible-recording', { mode: 'full' });
+
+    expect(result.segments.totalMatching).toBe(1);
+    expect(loadTranscript).not.toHaveBeenCalled();
+  });
+
+  it('does not answer from machine text when the published artifact is missing', async () => {
+    const { resolveSearchTranscriptSource } = await import('@/lib/correction/resolve');
+    const { loadPublishedTranscript } = await import('@/lib/correction/reader-transcript');
+    vi.mocked(resolveSearchTranscriptSource).mockResolvedValueOnce({
+      kind: 'publication',
+      workspaceId: 'ws-1',
+      publicationId: 'pub-1',
+    });
+    vi.mocked(loadPublishedTranscript).mockResolvedValue(null);
+
+    await expect(
+      getMcpTranscript('catalog-a', 'visible-recording', { mode: 'full' }),
+    ).rejects.toMatchObject({ code: 'transcript_not_found' });
+    expect(loadTranscript).not.toHaveBeenCalled();
   });
 
   it('falls back only to the legacy unsuffixed canonical directory', async () => {

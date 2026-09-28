@@ -9,7 +9,7 @@
 
 import { test, expect } from "./helpers/base-test";
 import { loginAs } from "./helpers/auth";
-import { FIRST_RECORDING, TEST_CATALOG_ID, URLS } from "./helpers/fixtures";
+import { FIRST_RECORDING, TEST_AUDIO_FILES, TEST_CATALOG_ID, URLS } from "./helpers/fixtures";
 import {
   openFirstPlayableCatalogItem,
   waitForAudioState,
@@ -151,6 +151,28 @@ test.describe("Smoke Tests @smoke", () => {
     await expect(
       page.getByText("Dobrý den, vítejte u dnešního rozhovoru.").first()
     ).toBeVisible({ timeout: 15000 });
+  });
+
+  test("reader sees correction progress instead of a primary recording's machine transcript", async ({
+    page,
+  }) => {
+    await loginAs(page, "viewer");
+
+    // The primary recording of an event is in correction scope (ADR 0006):
+    // until a corrected transcript is published there is no text to read.
+    const primary = TEST_AUDIO_FILES[4]; // ab00005eaf, primary of the first event
+    const response = await page.request.get(
+      `/api/transcript/${primary.hash}?group=${TEST_CATALOG_ID}`
+    );
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.backends).toEqual([]);
+    expect(body.correction).toMatchObject({ started: false });
+
+    await page.goto(URLS.recording(primary.hash));
+    await waitForPageReady(page);
+    await expect(page.getByText(/correction has not started/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("[data-segment-index]")).toHaveCount(0);
   });
 
   test("user can start radio mode", async ({ page }) => {

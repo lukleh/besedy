@@ -2,6 +2,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getFormats } from "@/app/api/transcript/[hash]/formats/route";
 
+// Correction resolution is exercised in its own tests; these route tests cover
+// recordings outside correction scope, where the machine transcript is served.
+vi.mock("@/lib/correction/resolve", () => ({
+  resolveReaderTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveSearchTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveOriginalTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveReaderTranscriptSources: vi.fn(async (_catalogId, hashes) => {
+    const map = new Map();
+    for (const hash of hashes) map.set(hash, { kind: "machine" });
+    return map;
+  }),
+  publicationArtifactPath: vi.fn(() => "/tmp/publication/transcript.json"),
+  frozenSourcePath: vi.fn(() => "/tmp/workspace/source/transcript.json"),
+}));
+
+vi.mock("@/lib/correction/reader-transcript", () => ({
+  PUBLISHED_TRANSCRIPT_FORMATS: ["json", "txt", "srt", "vtt"],
+}));
+
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
 }));
@@ -195,5 +214,71 @@ describe("transcript formats route", () => {
       const body = await response.json();
       expect(body.error).toMatch(/Invalid hash/);
     });
+  });
+});
+
+describe("transcript formats route under the reading gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const GROUP = "20251225_120000";
+  const MACHINE = "faster-whisper/large-v3@silero_vad_v6";
+
+  async function arrange(capability: Record<string, boolean>) {
+    const { requireAuth } = await import("@/lib/auth/permissions");
+    const { getRecordingCapability } = await import("@/lib/access/capabilities");
+    const { resolveActiveGroup } = await import("@/lib/catalog/resolve-group");
+    const { resolveTranscriptsPath } = await import("@/lib/paths");
+    const { getAvailableFormats } = await import("@/lib/transcript");
+    vi.mocked(requireAuth).mockResolvedValue("user-1");
+    vi.mocked(getRecordingCapability).mockResolvedValue({
+      canAccessRecording: true,
+      canViewRecordingTranscripts: true,
+      canDownloadRecording: true,
+      canDownloadTranscripts: true,
+      ...capability,
+    } as never);
+    vi.mocked(resolveActiveGroup).mockResolvedValue({ id: GROUP, isActive: true } as never);
+    vi.mocked(resolveTranscriptsPath).mockReturnValue("/transcripts" as never);
+    vi.mocked(getAvailableFormats).mockResolvedValue({ formats: ["json", "srt"] } as never);
+  }
+
+  function run(backend: string) {
+    return getFormats(
+      new NextRequest(`http://localhost/api/transcript/${VALID_HASH}/formats?group=${GROUP}&backend=${encodeURIComponent(backend)}`),
+      { params: Promise.resolve({ hash: VALID_HASH }) }
+    );
+  }
+
+  it("lists a machine variant of a recording in correction scope as inspectable but not downloadable", async () => {
+    await arrange({ canSeeTranscriptVariants: true });
+    const { resolveReaderTranscriptSource } = await import("@/lib/correction/resolve");
+    vi.mocked(resolveReaderTranscriptSource).mockResolvedValueOnce({ kind: "withheld", workspaceId: "ws-1" });
+
+    const response = await run(MACHINE);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ formats: ["json", "srt"], canDownload: false });
+  });
+
+  it("lists all four formats for a published correction without probing disk", async () => {
+    await arrange({});
+    const { resolveReaderTranscriptSource } = await import("@/lib/correction/resolve");
+    const { getAvailableFormats } = await import("@/lib/transcript");
+    vi.mocked(resolveReaderTranscriptSource).mockResolvedValueOnce({
+      kind: "publication",
+      workspaceId: "ws-1",
+      publicationId: "pub-1",
+    });
+
+    const response = await run("corrected/published");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      formats: ["json", "txt", "srt", "vtt"],
+      canDownload: true,
+    });
+    expect(getAvailableFormats).not.toHaveBeenCalled();
   });
 });

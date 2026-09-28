@@ -54,6 +54,7 @@ export interface Transcript {
 export interface AvailableTranscripts {
   hash: string;
   backends: TranscriptBackend[];
+  correction?: CorrectionReaderState;
 }
 
 export const availableFormatsSchema = z.object({
@@ -101,14 +102,34 @@ export const transcriptSchema = z.object({
   segments: z.array(transcriptSegmentSchema),
 });
 
+/**
+ * Correction progress the reader sees instead of an unpublished transcript.
+ * Present only for a correction-eligible primary recording that has no
+ * reader publication.
+ */
+export const correctionReaderStateSchema = z.object({
+  started: z.boolean(),
+  spanCount: z.number(),
+  totalDurationSeconds: z.number(),
+  reviewedOnceDurationSeconds: z.number(),
+  fullyApprovedDurationSeconds: z.number(),
+  reviewedOnceRatio: z.number(),
+  fullyApprovedRatio: z.number(),
+});
+
+export type CorrectionReaderState = z.infer<typeof correctionReaderStateSchema>;
+
 export const availableTranscriptsSchema = z.object({
   hash: z.string(),
   backends: z.array(z.string()),
+  correction: correctionReaderStateSchema.optional(),
 });
 
 export interface TranscriptViewerProps {
   hash: string;
   groupId?: string;
+  /** Offers the correction surface from the progress panel */
+  canCorrectTranscripts?: boolean;
   currentTime?: number;
   onSeek?: (time: number) => void;
   isPlaying?: boolean;
