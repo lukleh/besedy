@@ -1079,14 +1079,6 @@ def sync_colbert_index(
         else colbert_model
     )
 
-    source_build = discover_transcript_sources(
-        workflow_group_id=workflow_group_id,
-        backend_key=backend_key,
-        transcripts_root=transcripts_root,
-        chunk_tokenizer_model=effective_chunk_tokenizer_model,
-    )
-    current_sources = {source.audio_hash: source for source in source_build.sources}
-    discovered_count = 1 if normalized_target_audio_hash is not None else len(current_sources)
     chunking_fingerprint = _build_chunking_fingerprint(
         chunk_version=CHUNK_VERSION,
         min_chunk_tokens=min_chunk_tokens,
@@ -1100,17 +1092,39 @@ def sync_colbert_index(
         index_bsize=index_bsize,
         plaid_backend=COLBERT_DEFAULT_PLAID_BACKEND,
     )
-    exposed_index_dir, existing_bundle_dir, staging_dir = _resolve_sync_bundle_context(
-        workflow_group_id=workflow_group_id,
-        backend_key=backend_key,
-        colbert_model=colbert_model,
-        chunk_version=CHUNK_VERSION,
-        index_dir=index_dir,
-    )
     explicit_index_dir = index_dir is not None
+    exposed_index_dir = (
+        Path(index_dir)
+        if index_dir is not None
+        else default_colbert_index_dir(
+            workflow_group_id=workflow_group_id,
+            backend_key=backend_key,
+            chunk_version=CHUNK_VERSION,
+            colbert_model=colbert_model,
+        )
+    )
     lock_path = exposed_index_dir.parent / COLBERT_SYNC_LOCK_NAME
 
     with _colbert_scope_lock(lock_path):
+        # Both the effective source and the active bundle must be resolved
+        # after acquiring this lock. A queued publish sync can otherwise keep
+        # a correction it discovered before rollback, then cut it over after
+        # the rollback sync has already restored the machine source.
+        source_build = discover_transcript_sources(
+            workflow_group_id=workflow_group_id,
+            backend_key=backend_key,
+            transcripts_root=transcripts_root,
+            chunk_tokenizer_model=effective_chunk_tokenizer_model,
+        )
+        current_sources = {source.audio_hash: source for source in source_build.sources}
+        discovered_count = 1 if normalized_target_audio_hash is not None else len(current_sources)
+        exposed_index_dir, existing_bundle_dir, staging_dir = _resolve_sync_bundle_context(
+            workflow_group_id=workflow_group_id,
+            backend_key=backend_key,
+            colbert_model=colbert_model,
+            chunk_version=CHUNK_VERSION,
+            index_dir=index_dir,
+        )
 
         def _full_rebuild(sync_mode: str, *, reason: str) -> ColbertIndexResult:
             _emit_sync_progress(

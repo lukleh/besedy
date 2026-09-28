@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -493,6 +496,88 @@ def test_sync_colbert_index_carries_a_published_correction_into_the_bundle(
     assert state.transcript_path == str(corrected)
     staged_chunks = list_chunks(path=bundle_dir / "chunk_store.sqlite")
     assert [chunk.text for chunk in staged_chunks] == ["corrected human words"]
+
+
+def test_queued_sync_resolves_source_after_rollback_pointer_change(
+    tmp_path: Path,
+    fake_colbert_worker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An older publish run must not cut over its pre-rollback source."""
+    import hashlib
+
+    catalog_id = "20260206_120004"
+    audio_hash = "e" * 64
+    backend = "faster-whisper/large-v3@silero_vad_v6"
+    transcripts_root = tmp_path / f"transcripts_{catalog_id}"
+    machine_path = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6" / audio_hash / "transcript.json"
+    _write_transcript(machine_path, [{"start": 0.0, "end": 1.0, "text": "machine words"}])
+    bundle_dir = tmp_path / "bundle"
+    corrections_root = tmp_path / "corrections"
+    monkeypatch.setenv("BESEDY_CORRECTIONS_ROOT", str(corrections_root))
+
+    sync_colbert_index(
+        workflow_group_id=catalog_id,
+        backend_key=backend,
+        transcripts_root=transcripts_root,
+        index_dir=bundle_dir,
+    )
+
+    corrected = corrections_root / f"corrections_{catalog_id}" / "workspace" / "publications" / "publication" / "transcript.json"
+    _write_transcript(corrected, [{"start": 0.0, "end": 1.0, "text": "corrected words"}])
+    pointer_dir = corrections_root / f"corrections_{catalog_id}" / "index-sources"
+    pointer_dir.mkdir(parents=True)
+    pointer_path = pointer_dir / f"{audio_hash}.json"
+    pointer_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "workflow_group_id": catalog_id,
+                "audio_hash": audio_hash,
+                "workspace_id": "workspace",
+                "publication_id": "publication",
+                "state": "activating",
+                "backend": backend,
+                "transcript_path": str(corrected.relative_to(corrections_root)),
+                "artifact_sha256": hashlib.sha256(corrected.read_bytes()).hexdigest(),
+                "updated_at": "2026-09-20T00:00:00.000Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    waiting_for_lock = Event()
+    release_lock = Event()
+    original_lock = rag_colbert._colbert_scope_lock
+
+    @contextmanager
+    def pause_before_lock(lock_path: Path):
+        waiting_for_lock.set()
+        if not release_lock.wait(timeout=10):
+            raise TimeoutError("Sync did not resume after rollback")
+        with original_lock(lock_path):
+            yield
+
+    monkeypatch.setattr(rag_colbert, "_colbert_scope_lock", pause_before_lock)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            sync_colbert_index,
+            workflow_group_id=catalog_id,
+            backend_key=backend,
+            transcripts_root=transcripts_root,
+            index_dir=bundle_dir,
+            target_audio_hash=audio_hash,
+        )
+        try:
+            assert waiting_for_lock.wait(timeout=10)
+            pointer_path.unlink()  # Rollback restores the machine source.
+        finally:
+            release_lock.set()
+        result = future.result(timeout=30)
+
+    assert result.hashes_unchanged == 1
+    assert read_source_state(bundle_dir / "source_state.sqlite")[audio_hash].transcript_path == str(machine_path)
+    assert [chunk.text for chunk in list_chunks(path=bundle_dir / "chunk_store.sqlite")] == ["machine words"]
 
 
 def test_classify_target_hash_outside_scope_removes_its_stale_row() -> None:

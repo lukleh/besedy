@@ -49,6 +49,7 @@ const AUDIO_HASH = createHash("sha256").update(randomUUID()).digest("hex");
 const BACKEND_WORKFLOW = "faster-whisper";
 const BACKEND_MODEL = "large-v3@silero_vad_v6";
 const BACKEND = `${BACKEND_WORKFLOW}/${BACKEND_MODEL}`;
+process.env.RAG_BACKEND_KEY = BACKEND;
 
 const machineDir = path.join(transcriptsDir, `transcripts_${CATALOG_ID}`, BACKEND_WORKFLOW, BACKEND_MODEL, AUDIO_HASH);
 fs.mkdirSync(machineDir, { recursive: true });
@@ -535,6 +536,25 @@ async function main() {
       },
       deps
     );
+    // Return to a machine source so the rollback checks below always exercise
+    // a machine transcript that belongs to the active search backend.
+    await withdrawFromSearch(CATALOG_ID, AUDIO_HASH, deps);
+    const withdrawal = await prisma.transcriptWorkspace.findUniqueOrThrow({
+      where: { id: workspace.id },
+      select: { searchWithdrawalId: true },
+    });
+    await completeIndexSync(
+      {
+        catalogId: CATALOG_ID,
+        audioHash: AUDIO_HASH,
+        operation: "withdraw",
+        operationToken: withdrawal.searchWithdrawalId!,
+        status: "SUCCEEDED",
+        transcriptFingerprint: "m".repeat(64),
+        transcriptPath: machineIndexedPath,
+      },
+      deps
+    );
   }
 
   // Put the span back into an approved state for the rest of the run.
@@ -619,6 +639,24 @@ async function main() {
   // Roll it back so the ordinary path below starts clean; it is activating,
   // so the search side has to confirm before it is gone.
   await rollbackPublication(stalled.publicationId, workspace.id, deps);
+  const missingMachineRollback = await completeIndexSync(
+    {
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      operation: "rollback",
+      operationToken: stalled.publicationId,
+      status: "SUCCEEDED",
+      transcriptFingerprint: null,
+      transcriptPath: null,
+    },
+    deps
+  );
+  check(
+    "rollback waits when the in-scope machine transcript is missing from search",
+    missingMachineRollback.outcome === "source_mismatch" &&
+      (await publicationStatus(stalled.publicationId)) === "ROLLING_BACK",
+    missingMachineRollback
+  );
   await completeIndexSync(
     {
       catalogId: CATALOG_ID,

@@ -22,6 +22,7 @@ import { evaluateWorkspace, type ManifestEntry } from "@/lib/correction/publicat
 import { fingerprintContent } from "@/lib/correction/text";
 import { getActiveGuideRevisionId } from "@/lib/correction/guide";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
+import { getRagBackendKey } from "@/lib/runtime-config";
 import {
   requestIndexSync,
   type IndexSyncCompletion,
@@ -807,7 +808,16 @@ export async function completeIndexSync(
         resolvePublicationFilePath(previous.workflowGroupId, previous.workspaceId, previous.id, "json")
       );
   } else {
-    restored = !indexedPathIsCorrection(report.transcriptPath, report.catalogId);
+    // A fallback machine backend may be absent from the active search scope.
+    // When the frozen machine backend *is* that scope, an absent row means the
+    // sync removed the correction without restoring its replacement. Keep the
+    // rollback resumable instead of declaring that missing text a success.
+    const machineShouldBeIndexed =
+      publication.previousSourceKind === "machine" &&
+      publication.previousSourceRef === getRagBackendKey();
+    restored =
+      !indexedPathIsCorrection(report.transcriptPath, report.catalogId) &&
+      (!machineShouldBeIndexed || Boolean(report.transcriptPath && report.transcriptFingerprint));
   }
   if (!restored) {
     await prisma.transcriptPublication.updateMany({
