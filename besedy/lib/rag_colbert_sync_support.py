@@ -149,8 +149,14 @@ def _classify_sources(
     if target_audio_hash is not None:
         source = current_sources.get(target_audio_hash)
         if source is None:
-            raise FileNotFoundError(
-                f"Requested audio hash is not present in the current transcript scope: {target_audio_hash}"
+            # The recording has left the scope: its correction pointer was
+            # withdrawn and its machine transcript belongs to another backend,
+            # or it was removed. What the bundle still holds for it is stale.
+            previous = previous_rows.get(target_audio_hash)
+            if previous is not None:
+                removed.append(previous)
+            return _SyncClassification(
+                added=added, updated=updated, removed=removed, unchanged=unchanged
             )
         previous = previous_rows.get(target_audio_hash)
         delta = _TranscriptDelta(source=source, previous=previous)

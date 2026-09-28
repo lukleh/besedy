@@ -1,20 +1,21 @@
 "use client";
 
-// The correction page shell: the layout gate, the deliberate start action and
-// the progress summary. The working surface itself lives in
-// correction-surface.tsx.
+// The correction page shell: the layout gate, the deliberate start action, the
+// progress summary and the publication controls. The working surface itself
+// lives in correction-surface.tsx.
 
 import Link from "next/link";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
+  buildCorrectionPublicationUrl,
   buildCorrectionUrl,
   buildRecordingEntryUrl,
   buildRecordingPagePath,
@@ -22,12 +23,18 @@ import {
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionSurface } from "./correction-surface";
 import { useLandscapeWorkspace } from "./use-landscape-workspace";
-import { correctionStateSchema, type CorrectionState } from "./correction-types";
+import {
+  correctionStateSchema,
+  publishResultSchema,
+  type CorrectionState,
+  type PublishResult,
+} from "./correction-types";
 
 interface CorrectionWorkspaceProps {
   catalogId: string;
   hash: string;
   userId: string;
+  canPublish: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -41,6 +48,7 @@ export function CorrectionWorkspace({
   catalogId,
   hash,
   userId,
+  canPublish,
 }: CorrectionWorkspaceProps) {
   const t = useTranslations("correction");
   const { toast } = useToast();
@@ -54,6 +62,11 @@ export function CorrectionWorkspace({
         schema: correctionStateSchema,
       }),
     enabled: supported === true,
+    // Publication waits for the search index, which runs on the host worker
+    // and takes minutes. While a publication is in flight the page polls, so
+    // the curator sees it finish, or fail, without reloading.
+    refetchInterval: (query) =>
+      query.state.data?.activePublication && !query.state.data.activePublication.error ? 5_000 : false,
   });
 
   // The surface always says which recording it is working on (ADR 0006): a
@@ -86,6 +99,39 @@ export function CorrectionWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expectedBackend }),
       }),
+    onSuccess: refreshState,
+    onError: (error) =>
+      toast({
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
+  const publish = useMutation({
+    mutationFn: async () =>
+      fetchJson<PublishResult>(buildCorrectionPublicationUrl(catalogId, hash), {
+        method: "POST",
+        schema: publishResultSchema,
+      }),
+    onSuccess: (result) => {
+      refreshState();
+      if (result.status === "FAILED") {
+        toast({
+          description: result.error ? `${t("publishFailed")}: ${result.error.message}` : t("publishFailed"),
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error) =>
+      toast({
+        description: error instanceof Error ? error.message : t("publishFailed"),
+        variant: "destructive",
+      }),
+  });
+
+  const unpublish = useMutation({
+    mutationFn: async () =>
+      fetchJson(buildCorrectionPublicationUrl(catalogId, hash), { method: "DELETE" }),
     onSuccess: refreshState,
     onError: (error) =>
       toast({
@@ -155,6 +201,9 @@ export function CorrectionWorkspace({
                 {t("blockedSummary", { count: state.progress.blockedSpanCount })}
               </Badge>
             )}
+            {state.workspace.readerPublicationId && (
+              <Badge>{t("published")}</Badge>
+            )}
           </div>
         )}
       </div>
@@ -200,6 +249,90 @@ export function CorrectionWorkspace({
 
       {state?.workspace && (
         <>
+          {canPublish && state.publication && (
+            <div className="rounded-lg border p-4" data-testid="publication-card">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="font-medium">{t("publishTitle")}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {state.publication.eligible ? t("publishEligible") : t("publishBlocked")}
+                  </p>
+                  {state.workspace.readerPublicationId && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("unpublishedKeepsSearch")}
+                    </p>
+                  )}
+                  {state.activePublication && !state.activePublication.error && (
+                    <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      {state.activePublication.status === "ROLLING_BACK"
+                        ? t("rollbackInFlight")
+                        : t("publishInFlight")}
+                    </p>
+                  )}
+                  {state.activePublication?.error && (
+                    <p
+                      className="mt-1 text-xs text-destructive"
+                      data-testid="publication-error"
+                    >
+                      {t("publishStalled", {
+                        code: state.activePublication.error.code,
+                        message: state.activePublication.error.message,
+                      })}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {state.activePublication?.error &&
+                  state.activePublication.status !== "ROLLING_BACK" ? (
+                    <Button
+                      className="gap-2"
+                      disabled={publish.isPending}
+                      onClick={() => publish.mutate()}
+                    >
+                      {publish.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-4 w-4" />
+                      )}
+                      {t("retryPublish")}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="gap-2"
+                      disabled={
+                        !state.publication.eligible ||
+                        publish.isPending ||
+                        state.activePublication !== null
+                      }
+                      onClick={() => publish.mutate()}
+                    >
+                      {publish.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      {state.workspace.readerPublicationId ? t("republish") : t("publish")}
+                    </Button>
+                  )}
+                  {state.workspace.readerPublicationId && (
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      // Serialized behind an in-flight publication on the
+                      // server; disabled here so the refusal is not a surprise.
+                      disabled={unpublish.isPending || state.activePublication !== null}
+                      onClick={() => unpublish.mutate()}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      {t("unpublish")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <details className="rounded-lg border p-4">
             <summary className="cursor-pointer text-sm font-medium">
               {t("guide")}

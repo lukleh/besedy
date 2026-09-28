@@ -17,12 +17,14 @@ if __package__ in {None, ""}:  # pragma: no cover - direct script execution
     from besedy.lib.prefect_jobs.flows.deep_search import deep_search_flow
     from besedy.lib.prefect_jobs.flows.ingest_recording import ingest_recording_flow
     from besedy.lib.prefect_jobs.flows.remove_recording import remove_recording_flow
+    from besedy.lib.prefect_jobs.flows.sync_correction_index import sync_correction_index_flow
     from besedy.lib.prefect_jobs.models import JobKind, job_kind_tag
 else:  # pragma: no branch
     from .client import RuntimePrefectJobsClient
     from .flows.deep_search import deep_search_flow
     from .flows.ingest_recording import ingest_recording_flow
     from .flows.remove_recording import remove_recording_flow
+    from .flows.sync_correction_index import sync_correction_index_flow
     from .models import JobKind, job_kind_tag
 
 
@@ -58,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
         "--ingest-remove-deployment-name",
         default=os.getenv("PREFECT_INGEST_REMOVE_DEPLOYMENT_NAME", "ingest-remove-default"),
     )
+    parser.add_argument(
+        "--correction-index-deployment-name",
+        default=os.getenv("PREFECT_CORRECTION_INDEX_DEPLOYMENT_NAME", "correction-index-default"),
+    )
     args = parser.parse_args(argv)
 
     client = RuntimePrefectJobsClient()
@@ -86,6 +92,18 @@ def main(argv: list[str] | None = None) -> int:
         deployment_name=args.ingest_remove_deployment_name,
         concurrency_limit=args.ingest_concurrency_limit,
         kind=JobKind.INGEST,
+        ensure_pool=False,
+    )
+    # The correction index sync runs the same ColBERT sync the pipeline ends
+    # with, so it lives on the ingest pool too: same host, same GPU, same
+    # transcript tree. Ingests are rare, so queueing behind one is acceptable.
+    _register(
+        client=client,
+        flow=sync_correction_index_flow,
+        work_pool=args.ingest_work_pool,
+        deployment_name=args.correction_index_deployment_name,
+        concurrency_limit=args.ingest_concurrency_limit,
+        kind=JobKind.CORRECTION_INDEX,
         ensure_pool=False,
     )
     return 0

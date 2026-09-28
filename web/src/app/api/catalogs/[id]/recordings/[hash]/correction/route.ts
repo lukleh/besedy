@@ -8,6 +8,7 @@ import { requireCorrectionAccess } from "@/lib/correction/access";
 import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
 import { isCorrectionEligibleRecording } from "@/lib/correction/eligibility";
 import { getActiveGuide } from "@/lib/correction/guide";
+import { findInFlightPublication } from "@/lib/correction/publication-service";
 import { resolveConfiguredDefaultBackend } from "@/lib/correction/source";
 import {
   archiveWorkspace,
@@ -74,6 +75,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       /** Where this person should pick the work up */
       resume: summary?.resume ?? null,
       publication: summary?.publication ?? null,
+      /** A publication on its way, with the error that stopped it if any */
+      activePublication: workspace ? await findInFlightPublication(workspace.id) : null,
     });
   } catch (error) {
     return handleCorrectionRouteError(error, "fetch");

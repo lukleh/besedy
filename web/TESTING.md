@@ -271,10 +271,12 @@ describe("validateEmail", () => {
 
 `npm run test:correction-smoke` drives correction end to end against a real
 PostgreSQL: starting a workspace, editing and approving as two people,
-archiving and recreating, and what survives a deleted account. It exists
-because the parts of that feature most likely to break are the seams the unit
-tests mock away — the partial unique indexes, the atomic edit-and-approve, the
-frozen source on disk.
+publishing with a stand-in for the host worker's index sync, recovery from
+interrupted rollbacks and withdrawals, archiving and recreating, and what
+survives a deleted account. It exists because the parts of that feature most
+likely to break are the seams the unit tests mock away — the partial unique
+indexes, the atomic edit-and-approve, the frozen source on disk, the rendered
+artifacts and the pointer file the Python indexer reads.
 
 It creates its own catalog, users and data root, so give it a throwaway
 database. The header of `scripts/correction-smoke.ts` has the exact commands.

@@ -196,6 +196,14 @@ is what the reader, the ordinary download and the bulk export resolve;
 `search_publication_id` is what search indexing and MCP resolve. An ordinary
 unpublish clears only the first.
 
+Neither pointer moves until the search index has caught up. A publication in
+`ACTIVATING` carries `index_job_id`, the Prefect flow run asked to sync the
+recording, and receives `search_source_fingerprint` and `search_source_path`
+from that run's completion report; the pointers move only when the reported
+path is this publication's own artifact. `search_withdrawal_job_id` plays the
+same role for a withdrawal from search. The wiring is described with the
+pointer file in [Data model](../data-model.md#publication-waits-for-the-index).
+
 ---
 
 ## Configuration

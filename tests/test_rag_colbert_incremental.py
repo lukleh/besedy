@@ -493,3 +493,38 @@ def test_sync_colbert_index_carries_a_published_correction_into_the_bundle(
     assert state.transcript_path == str(corrected)
     staged_chunks = list_chunks(path=bundle_dir / "chunk_store.sqlite")
     assert [chunk.text for chunk in staged_chunks] == ["corrected human words"]
+
+
+def test_classify_target_hash_outside_scope_removes_its_stale_row() -> None:
+    """A withdrawn or removed recording is deleted from the bundle, not refused.
+
+    After a withdrawal the recording's correction pointer is gone, and when it
+    was frozen from a backend outside the search scope it has no machine
+    transcript there either. The single-hash sync the withdrawal waits on
+    then has to remove what the bundle still holds for it.
+    """
+    from types import SimpleNamespace
+
+    from besedy.lib.rag_colbert_sync_support import _classify_sources
+
+    stale = SimpleNamespace(
+        audio_hash="a" * 64,
+        transcript_path="/corrections/corrections_x/ws/publications/p/transcript.json",
+        transcript_fingerprint="f" * 64,
+    )
+    classification = _classify_sources(
+        current_sources={},
+        previous_rows={"a" * 64: stale},  # type: ignore[dict-item]
+        force=False,
+        target_audio_hash="a" * 64,
+    )
+    assert classification.removed == [stale]
+    assert not classification.added and not classification.updated
+
+    absent = _classify_sources(
+        current_sources={},
+        previous_rows={},
+        force=False,
+        target_audio_hash="a" * 64,
+    )
+    assert not absent.removed and not absent.added and not absent.updated

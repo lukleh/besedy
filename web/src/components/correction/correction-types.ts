@@ -67,6 +67,32 @@ export const publicationEligibilitySchema = z.object({
 
 export type PublicationEligibility = z.infer<typeof publicationEligibilitySchema>;
 
+export const publicationErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+});
+
+export const inFlightPublicationSchema = z.object({
+  id: z.string(),
+  status: z.enum(["PENDING", "ACTIVATING", "ROLLING_BACK"]),
+  attemptCount: z.number(),
+  indexJobId: z.string().nullable(),
+  createdAt: z.string(),
+  error: publicationErrorSchema.nullable(),
+});
+
+export type InFlightPublication = z.infer<typeof inFlightPublicationSchema>;
+
+export const publishResultSchema = z.object({
+  publicationId: z.string(),
+  status: z.enum(["SUCCEEDED", "ACTIVATING", "FAILED"]),
+  reused: z.boolean(),
+  resumed: z.boolean(),
+  error: publicationErrorSchema.nullable(),
+});
+
+export type PublishResult = z.infer<typeof publishResultSchema>;
+
 export const correctionStateSchema = z.object({
   catalogId: z.string(),
   audioHash: z.string(),
@@ -93,6 +119,8 @@ export const correctionStateSchema = z.object({
     })
     .nullable(),
   publication: publicationEligibilitySchema.nullable(),
+  /** The publication currently holding the workspace, with its last error */
+  activePublication: inFlightPublicationSchema.nullable(),
   resume: z
     .object({ spanId: z.string(), ordinal: z.number() })
     .nullable(),

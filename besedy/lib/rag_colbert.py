@@ -1110,14 +1110,6 @@ def sync_colbert_index(
     explicit_index_dir = index_dir is not None
     lock_path = exposed_index_dir.parent / COLBERT_SYNC_LOCK_NAME
 
-    if (
-        normalized_target_audio_hash is not None
-        and normalized_target_audio_hash not in current_sources
-    ):
-        raise FileNotFoundError(
-            f"Requested audio hash is not present in the current transcript scope: {normalized_target_audio_hash}"
-        )
-
     with _colbert_scope_lock(lock_path):
 
         def _full_rebuild(sync_mode: str, *, reason: str) -> ColbertIndexResult:

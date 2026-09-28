@@ -16,11 +16,14 @@ from besedy.lib.http_server import JsonApiHandler
 
 from .client import PrefectJobsClient, RuntimePrefectJobsClient
 from .models import (
+    CorrectionIndexSyncRequest,
     DeepSearchSubmitRequest,
     IngestRemovalRequest,
     IngestSubmitRequest,
     JobKind,
     JobStatus,
+    build_correction_index_flow_run_name,
+    build_correction_index_flow_run_tags,
     build_flow_run_name,
     build_flow_run_tags,
     build_ingest_flow_run_name,
@@ -37,6 +40,9 @@ T = TypeVar("T")
 _SUBMIT_ROUTE = re.compile(r"^/catalogs/(?P<catalog_id>[^/]+)/deep-search/jobs$")
 _INGEST_SUBMIT_ROUTE = re.compile(r"^/catalogs/(?P<catalog_id>[^/]+)/ingest/jobs$")
 _INGEST_REMOVAL_ROUTE = re.compile(r"^/catalogs/(?P<catalog_id>[^/]+)/ingest/removals$")
+_CORRECTION_INDEX_ROUTE = re.compile(
+    r"^/catalogs/(?P<catalog_id>[^/]+)/correction/index-sync/jobs$"
+)
 _JOB_ROUTE = re.compile(r"^/jobs/(?P<job_id>[^/]+)$")
 _JOB_HISTORY_ROUTE = re.compile(r"^/jobs/(?P<job_id>[^/]+)/history$")
 _JOB_CANCEL_ROUTE = re.compile(r"^/jobs/(?P<job_id>[^/]+)/cancel$")
@@ -53,6 +59,7 @@ class PrefectJobsApiService:
         deployment_name: str | None = None,
         ingest_deployment_name: str | None = None,
         ingest_remove_deployment_name: str | None = None,
+        correction_index_deployment_name: str | None = None,
         prefect_ui_url: str | None = None,
     ) -> None:
         self._client = client or RuntimePrefectJobsClient()
@@ -71,6 +78,10 @@ class PrefectJobsApiService:
         self._ingest_remove_deployment_name = ingest_remove_deployment_name or os.getenv(
             "PREFECT_INGEST_REMOVE_FULL_DEPLOYMENT_NAME",
             "remove_recording_flow/ingest-remove-default",
+        )
+        self._correction_index_deployment_name = correction_index_deployment_name or os.getenv(
+            "PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME",
+            "sync_correction_index_flow/correction-index-default",
         )
         self._prefect_ui_url = (
             prefect_ui_url or os.getenv("PREFECT_UI_URL") or os.getenv("PREFECT_UI_API_URL")
@@ -134,6 +145,29 @@ class PrefectJobsApiService:
             idempotency_key=(
                 f"ingest-remove:{request.intake_id}:{request.audio_hash}:{request.idempotency_key}"
             ),
+        )
+        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+
+    def submit_correction_index_sync(
+        self, *, catalog_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        request = CorrectionIndexSyncRequest.from_payload(payload)
+        parameters = request.to_flow_parameters(catalog_id=catalog_id)
+        flow_run = self._client.create_deployment_run(
+            deployment_name=self._correction_index_deployment_name,
+            parameters=parameters,
+            flow_run_name=build_correction_index_flow_run_name(
+                catalog_id=catalog_id,
+                audio_hash=request.audio_hash,
+                operation=request.operation,
+            ),
+            tags=build_correction_index_flow_run_tags(
+                catalog_id=catalog_id,
+                audio_hash=request.audio_hash,
+                operation=request.operation,
+                requested_by_id=request.requested_by_id,
+            ),
+            idempotency_key=request.idempotency_key,
         )
         return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
 
@@ -249,6 +283,16 @@ def create_handler(service: PrefectJobsApiService):
                 self._dispatch_json(
                     lambda: service.submit_ingest_removal(
                         catalog_id=removal_match.group("catalog_id"),
+                        payload=self._read_json_payload(),
+                    )
+                )
+                return
+
+            correction_match = _CORRECTION_INDEX_ROUTE.match(parsed.path)
+            if correction_match is not None:
+                self._dispatch_json(
+                    lambda: service.submit_correction_index_sync(
+                        catalog_id=correction_match.group("catalog_id"),
                         payload=self._read_json_payload(),
                     )
                 )

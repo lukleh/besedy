@@ -898,6 +898,7 @@ def test_deploy_cli_registers_runner_deployment(monkeypatch) -> None:
     monkeypatch.setattr(deploy_module, "deep_search_flow", FakeFlow())
     monkeypatch.setattr(deploy_module, "ingest_recording_flow", FakeFlow())
     monkeypatch.setattr(deploy_module, "remove_recording_flow", FakeFlow())
+    monkeypatch.setattr(deploy_module, "sync_correction_index_flow", FakeFlow())
 
     assert (
         deploy_module.main(
@@ -916,6 +917,8 @@ def test_deploy_cli_registers_runner_deployment(monkeypatch) -> None:
                 "0",
                 "--ingest-remove-deployment-name",
                 "ingest-remove-default",
+                "--correction-index-deployment-name",
+                "correction-index-default",
             ]
         )
         == 0
@@ -950,10 +953,23 @@ def test_deploy_cli_registers_runner_deployment(monkeypatch) -> None:
             "concurrency_limit": 1,
             "entrypoint_type": deploy_module.EntrypointType.MODULE_PATH,
         },
+        {
+            "name": "correction-index-default",
+            "work_pool_name": "besedy-ingest",
+            "parameters": {},
+            "tags": ["job-kind:correction-index"],
+            "concurrency_limit": 1,
+            "entrypoint_type": deploy_module.EntrypointType.MODULE_PATH,
+        },
     ]
     assert apply_calls == [
         {
             "work_pool_name": "besedy-deep-search",
+            "image": None,
+            "version_info": None,
+        },
+        {
+            "work_pool_name": "besedy-ingest",
             "image": None,
             "version_info": None,
         },

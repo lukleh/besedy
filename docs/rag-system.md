@@ -260,6 +260,23 @@ in whichever backend scope is being built. The recording then classifies as
 coexist. The pointer contract is in
 [Data model](data-model.md#index-sourcesltaudio_hashgtjson).
 
+Publication does not wait for a routine sync. The web application submits a
+`sync_correction_index_flow` job (deployment
+`sync_correction_index_flow/correction-index-<env>` on the ingest work pool),
+which runs `catalog rag-colbert-index --group <catalog> --hash <audio_hash>`
+on the host worker and reports the recording's row from the new bundle's
+`source_state.sqlite` back to the web application. Only then do the reader and
+search pointers move. Withdrawal from search and rollback run the same job.
+Because the sync stages a copy of the active bundle, a publication takes
+minutes, and it queues behind a running ingest on the same pool.
+
+Settings, alongside the ingest ones in `jobs.env.<env>`:
+`PREFECT_CORRECTION_INDEX_DEPLOYMENT_NAME` (default `correction-index-<env>`)
+and `PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME` (default
+`sync_correction_index_flow/correction-index-<env>`). The host worker reads
+`[paths].corrections_dir` from the host `besedy.toml`, which must name the
+same tree the web container mounts.
+
 ## Status
 
 ### Completed

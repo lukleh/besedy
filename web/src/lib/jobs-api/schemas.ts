@@ -121,6 +121,24 @@ export const ingestJobSchema = z
   })
   .passthrough();
 
+export const correctionIndexJobSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.literal('CORRECTION_INDEX'),
+    status: deepSearchJobStatusSchema,
+    catalog_id: z.string().nullable(),
+    payload: z
+      .object({
+        audioHash: z.string().nullable().optional(),
+        operation: z.string().nullable().optional(),
+        operationToken: z.string().nullable().optional(),
+      })
+      .passthrough(),
+    error_message: z.string().nullable().optional(),
+    prefectFlowRunId: z.string().nullable().optional(),
+  })
+  .passthrough();
+
 export const deepSearchJobShareSchema = z.object({
   id: z.string().min(1),
   jobId: z.string().min(1),
@@ -182,6 +200,7 @@ export const deepSearchSubmitInputSchema = z
   });
 
 export type IngestJob = z.infer<typeof ingestJobSchema>;
+export type CorrectionIndexJob = z.infer<typeof correctionIndexJobSchema>;
 export type DeepSearchJobStatus = z.infer<typeof deepSearchJobStatusSchema>;
 export type DeepSearchJob = z.infer<typeof deepSearchJobSchema>;
 export type DeepSearchJobsList = z.infer<typeof deepSearchJobsListSchema>;

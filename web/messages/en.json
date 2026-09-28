@@ -431,7 +431,20 @@
     "emptyRevision": "(no speech)",
     "currentText": "Current text",
     "loadEarlier": "Load earlier segments",
-    "loadLater": "Load later segments"
+    "loadLater": "Load later segments",
+    "publishTitle": "Publication",
+    "publishEligible": "Every segment has been checked. This transcript can be published.",
+    "publishBlocked": "Not every segment has been checked yet.",
+    "publish": "Publish transcript",
+    "republish": "Republish",
+    "retryPublish": "Retry publication",
+    "unpublish": "Unpublish",
+    "published": "Published for readers",
+    "unpublishedKeepsSearch": "Unpublishing takes the transcript off the reading page. Search and agents keep the last published version.",
+    "publishInFlight": "Publishing: the search index is being updated with the new text. The transcript becomes readable once that has finished; this page refreshes on its own.",
+    "rollbackInFlight": "Rolling back: the search index is being returned to the previous text.",
+    "publishStalled": "Publication stopped: {code}. {message}",
+    "publishFailed": "Publication failed"
   },
   "metadata": {
     "title": "Metadata",

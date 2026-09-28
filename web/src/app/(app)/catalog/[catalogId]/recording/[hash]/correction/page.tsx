@@ -30,6 +30,7 @@ export default async function CorrectionPage({ params }: CorrectionPageProps) {
       catalogId={catalogId}
       hash={hash}
       userId={session.user.id}
+      canPublish={capability.canPublishTranscript}
     />
   );
 }

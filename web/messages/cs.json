@@ -431,7 +431,20 @@
     "emptyRevision": "(bez řeči)",
     "currentText": "Aktuální text",
     "loadEarlier": "Načíst předchozí segmenty",
-    "loadLater": "Načíst další segmenty"
+    "loadLater": "Načíst další segmenty",
+    "publishTitle": "Zveřejnění",
+    "publishEligible": "Každý segment je zkontrolovaný. Přepis lze zveřejnit.",
+    "publishBlocked": "Zatím není zkontrolovaný každý segment.",
+    "publish": "Zveřejnit přepis",
+    "republish": "Zveřejnit znovu",
+    "retryPublish": "Zkusit zveřejnění znovu",
+    "unpublish": "Zrušit zveřejnění",
+    "published": "Zveřejněno pro čtenáře",
+    "unpublishedKeepsSearch": "Zrušením zveřejnění zmizí přepis ze stránky ke čtení. Vyhledávání a agenti si ponechají poslední zveřejněnou verzi.",
+    "publishInFlight": "Zveřejňuje se: vyhledávací index se aktualizuje novým textem. Přepis bude čitelný, až to skončí; stránka se obnovuje sama.",
+    "rollbackInFlight": "Vrací se zpět: vyhledávací index se vrací k předchozímu textu.",
+    "publishStalled": "Zveřejnění se zastavilo: {code}. {message}",
+    "publishFailed": "Zveřejnění selhalo"
   },
   "metadata": {
     "title": "Metadata",

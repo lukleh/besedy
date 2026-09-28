@@ -507,9 +507,13 @@ currently active, switches it and checks again. Bundle identity is irrelevant,
 so unrelated successful syncs cannot strand the workspace. The workspace
 remains locked until reconciliation succeeds.
 
-An explicit rollback likewise operates on the latest active bundle: it restores
-the previous effective transcript only for this audio hash, verifies that
-fingerprint, then abandons the candidate and unlocks the workspace. It never
+An explicit rollback likewise operates on the latest active bundle. It first
+records the publication as `rolling_back`, a committed intent that keeps the
+workspace locked and stops every consumer from preferring the abandoned
+candidate, then restores the previous effective transcript only for this
+audio hash, verifies that fingerprint, and only then marks the candidate
+`rolled_back` and unlocks the workspace. A `pending` candidate that never
+reached the index is rolled back at once. It never
 reactivates an old whole bundle and therefore does not discard unrelated index
 updates. Job attempts and their errors are recorded separately from the logical
 publication.

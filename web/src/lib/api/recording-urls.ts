@@ -157,6 +157,10 @@ export function buildCorrectionSpanCommentsUrl(
   return `${buildCorrectionSpanUrl(catalogId, hash, spanId)}/comments`;
 }
 
+export function buildCorrectionPublicationUrl(catalogId: string, hash: string): string {
+  return `${buildCorrectionUrl(catalogId, hash)}/publication`;
+}
+
 export function buildCorrectionPagePath(catalogId: string, hash: string): string {
   return `/catalog/${catalogId}/recording/${hash}/correction`;
 }
