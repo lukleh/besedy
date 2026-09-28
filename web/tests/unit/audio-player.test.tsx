@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import { StrictMode } from "react";
 import { render, act, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
@@ -47,6 +48,7 @@ interface RenderPlayerOptions {
   autoPlayOnSeek?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
+  strictMode?: boolean;
 }
 
 function renderPlayer(options: RenderPlayerOptions = {}) {
@@ -58,6 +60,7 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
     autoPlayOnSeek,
     onTimeUpdate,
     onSeek,
+    strictMode = false,
   } = options;
   const utils = render(
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -70,7 +73,8 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
       />
-    </NextIntlClientProvider>
+    </NextIntlClientProvider>,
+    { wrapper: strictMode ? StrictMode : undefined }
   );
 
   const audio = utils.container.querySelector("audio");
@@ -113,6 +117,18 @@ function mockPaused(audio: HTMLAudioElement, initial: boolean) {
     paused = value;
   };
 }
+
+// jsdom does not implement load(), which the player calls when it unmounts.
+// A plain stub rather than a spy, which some suites here restore after each test.
+const originalLoad = HTMLMediaElement.prototype.load;
+
+beforeAll(() => {
+  HTMLMediaElement.prototype.load = () => {};
+});
+
+afterAll(() => {
+  HTMLMediaElement.prototype.load = originalLoad;
+});
 
 afterEach(() => {
   localStorage.clear();
@@ -1205,5 +1221,31 @@ describe("AudioPlayer lock-screen controls", () => {
 
     expect(playMock).toHaveBeenCalledTimes(1);
     expect(audio.pause).not.toHaveBeenCalled();
+  });
+});
+
+describe("AudioPlayer unmount", () => {
+  it("releases the audio source when the player unmounts", async () => {
+    const { audio, unmount } = renderPlayer();
+    const loadSpy = vi.spyOn(audio, "load");
+
+    await act(async () => {});
+    expect(audio.getAttribute("src")).toBe("https://example.com/audio.mp3");
+
+    unmount();
+
+    expect(audio.hasAttribute("src")).toBe(false);
+    expect(loadSpy).toHaveBeenCalled();
+  });
+
+  it("keeps the audio source through Strict Mode's simulated unmount", async () => {
+    const { audio, unmount } = renderPlayer({ strictMode: true });
+
+    await act(async () => {});
+    expect(audio.getAttribute("src")).toBe("https://example.com/audio.mp3");
+
+    // The real unmount still releases it.
+    unmount();
+    expect(audio.hasAttribute("src")).toBe(false);
   });
 });
