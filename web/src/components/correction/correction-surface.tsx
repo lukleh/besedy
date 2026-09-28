@@ -181,14 +181,21 @@ export function CorrectionSurface({
           autoPlay: false,
         });
       }
-    } else {
-      const dirty = draft.trim() !== draftFor.baseText.trim();
+    } else if (draft.trim() === selected.text.trim()) {
+      // The new revision says what the draft says: this person's own save
+      // landing, or somebody saving the same wording. Nothing to flag.
+      setDraftFor({ ...draftFor, revisionId: selected.revisionId, baseText: selected.text });
+      setConflict(false);
+    } else if (draft.trim() !== draftFor.baseText.trim()) {
+      // Dirty: keep the wording, and keep the baseline it was measured
+      // against so later refreshes still see it as unsaved work.
       setDraftFor({ ...draftFor, revisionId: selected.revisionId });
-      if (dirty) {
-        setConflict(true);
-      } else {
-        setDraft(selected.text);
-      }
+      setConflict(true);
+    } else {
+      // Clean: follow the stored text, and move the baseline with it so the
+      // next revision is measured against this one.
+      setDraftFor({ ...draftFor, revisionId: selected.revisionId, baseText: selected.text });
+      setDraft(selected.text);
     }
   }
 

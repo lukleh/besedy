@@ -344,4 +344,77 @@ describe("CorrectionSurface", () => {
     expect(await screen.findByText("older wording")).toBeInTheDocument();
     expect(screen.getByText("emptyRevision")).toBeInTheDocument();
   });
+
+  // A person's own save is not a conflict: the revision that arrives says
+  // what the draft says. Visible on the last span, where nothing advances.
+  it("does not flag a conflict when the person's own save comes back", async () => {
+    let spansServed = 0;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/spans?offset=0")) {
+        spansServed += 1;
+        return spansServed === 1
+          ? page(0, 1, 1)
+          : page(0, 1, 1, [span(0, { text: "my text", revisionId: "rev-0-2", isEdited: true })]);
+      }
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return {
+          spanId: "span-0",
+          revisionId: "rev-0-2",
+          text: "my text",
+          state: "needs_second_approval",
+          approverIds: ["user-1"],
+          disapproverIds: [],
+          replayed: false,
+        };
+      }
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+
+    await waitFor(() => expect(spansServed).toBeGreaterThan(1));
+    expect(editor).toHaveValue("my text");
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    // The baseline moved with the save: the text is no longer an edit.
+    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+  });
+
+  // A clean draft follows each revision in turn. The baseline has to move
+  // with it, or the second revision would be measured against the first and
+  // flagged as unsaved work.
+  it("follows successive clean revisions without flagging a conflict", async () => {
+    let spansServed = 0;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/spans?offset=0")) {
+        spansServed += 1;
+        const text = spansServed === 1 ? "machine 0" : spansServed === 2 ? "second" : "third";
+        return page(0, 1, 1, [span(0, { text, revisionId: `rev-0-${spansServed}` })]);
+      }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        return { id: `comment-${spansServed}`, createdAt: "2026-09-28T10:00:00.000Z" };
+      }
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "one");
+    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    expect(await screen.findByDisplayValue("second")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "two");
+    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    expect(await screen.findByDisplayValue("third")).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+  });
 });
