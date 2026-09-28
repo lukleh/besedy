@@ -443,6 +443,7 @@
     "unpublishedKeepsSearch": "Unpublishing takes the transcript off the reading page. Search and agents keep the last published version.",
     "publishInFlight": "Publishing: the search index is being updated with the new text. The transcript becomes readable once that has finished; this page refreshes on its own.",
     "rollbackInFlight": "Rolling back: the search index is being returned to the previous text.",
+    "publishInterrupted": "Publication was interrupted before it reached the search index.",
     "publishStalled": "Publication stopped: {code}. {message}",
     "publishFailed": "Publication failed"
   },

@@ -65,8 +65,10 @@ export function CorrectionWorkspace({
     // Publication waits for the search index, which runs on the host worker
     // and takes minutes. While a publication is in flight the page polls, so
     // the curator sees it finish, or fail, without reloading.
-    refetchInterval: (query) =>
-      query.state.data?.activePublication && !query.state.data.activePublication.error ? 5_000 : false,
+    refetchInterval: (query) => {
+      const active = query.state.data?.activePublication;
+      return active && !active.error && active.status !== "PENDING" ? 5_000 : false;
+    },
   });
 
   // The surface always says which recording it is working on (ADR 0006): a
@@ -262,7 +264,9 @@ export function CorrectionWorkspace({
                       {t("unpublishedKeepsSearch")}
                     </p>
                   )}
-                  {state.activePublication && !state.activePublication.error && (
+                  {state.activePublication &&
+                    !state.activePublication.error &&
+                    state.activePublication.status !== "PENDING" && (
                     <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       {state.activePublication.status === "ROLLING_BACK"
@@ -281,10 +285,21 @@ export function CorrectionWorkspace({
                       })}
                     </p>
                   )}
+                  {state.activePublication?.status === "PENDING" && !state.activePublication.error && (
+                    <p className="mt-1 text-xs text-destructive" data-testid="publication-error">
+                      {t("publishInterrupted")}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {state.activePublication?.error &&
-                  state.activePublication.status !== "ROLLING_BACK" ? (
+                  {/*
+                    Publishing runs inside the request, so a PENDING row the page
+                    sees is a leftover from a crash between manifest and render:
+                    nothing is running, and the retry picks it up like an error.
+                  */}
+                  {state.activePublication &&
+                  state.activePublication.status !== "ROLLING_BACK" &&
+                  (state.activePublication.error || state.activePublication.status === "PENDING") ? (
                     <Button
                       className="gap-2"
                       disabled={publish.isPending}

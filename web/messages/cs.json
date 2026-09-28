@@ -443,6 +443,7 @@
     "unpublishedKeepsSearch": "Zrušením zveřejnění zmizí přepis ze stránky ke čtení. Vyhledávání a agenti si ponechají poslední zveřejněnou verzi.",
     "publishInFlight": "Zveřejňuje se: vyhledávací index se aktualizuje novým textem. Přepis bude čitelný, až to skončí; stránka se obnovuje sama.",
     "rollbackInFlight": "Vrací se zpět: vyhledávací index se vrací k předchozímu textu.",
+    "publishInterrupted": "Zveřejnění bylo přerušeno dřív, než se dostalo k vyhledávacímu indexu.",
     "publishStalled": "Zveřejnění se zastavilo: {code}. {message}",
     "publishFailed": "Zveřejnění selhalo"
   },

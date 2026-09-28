@@ -263,8 +263,11 @@ coexist. The pointer contract is in
 Publication does not wait for a routine sync. The web application submits a
 `sync_correction_index_flow` job (deployment
 `sync_correction_index_flow/correction-index-<env>` on the ingest work pool),
-which runs `catalog rag-colbert-index --group <catalog> --hash <audio_hash>`
-on the host worker and reports the recording's row from the new bundle's
+which runs `catalog rag-colbert-index --group <catalog> --backend <key>
+--transcripts-root <parent>/transcripts_<catalog> --hash <audio_hash>` on the
+host worker — the backend is the web application's `RAG_BACKEND_KEY` and the
+root is the catalog's own generation, so the sync never follows the host's
+`transcripts` symlink — and reports the recording's row from the new bundle's
 `source_state.sqlite` back to the web application. Only then do the reader and
 search pointers move. Withdrawal from search and rollback run the same job.
 Because the sync stages a copy of the active bundle, a publication takes

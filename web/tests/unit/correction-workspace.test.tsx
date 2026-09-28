@@ -151,6 +151,28 @@ describe("CorrectionWorkspace publication card", () => {
     expect(screen.getByRole("button", { name: "unpublish" })).toBeDisabled();
   });
 
+  // Publishing runs inside the request, so a pending publication the page
+  // sees is a leftover from a crash. Nothing is running: no spinner, and the
+  // publisher can pick it up.
+  it("treats a leftover pending publication as interrupted and offers a retry", async () => {
+    renderWorkspace(
+      state({
+        activePublication: {
+          id: "pub-1",
+          status: "PENDING",
+          attemptCount: 1,
+          indexJobId: null,
+          createdAt: "2026-09-28T10:00:00.000Z",
+          error: null,
+        },
+      })
+    );
+
+    expect(await screen.findByTestId("publication-error")).toHaveTextContent("publishInterrupted");
+    expect(screen.getByRole("button", { name: "retryPublish" })).toBeEnabled();
+    expect(screen.queryByText("publishInFlight")).not.toBeInTheDocument();
+  });
+
   it("does not offer a retry for a rollback that stalled", async () => {
     renderWorkspace(
       state({

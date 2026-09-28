@@ -170,6 +170,28 @@ Semantic search is catalog-wide rather than per recording:
 | GET/PUT/DELETE | `/api/metadata/locations/:id` | Catalog access / `manage_lookups` | Manage location |
 | GET/POST | `/api/metadata/albums` | Catalog access / `manage_lookups` | List or create albums |
 | GET/PUT/DELETE | `/api/metadata/albums/:id` | Catalog access / `manage_lookups` | Manage album |
+
+### Transcript Correction Endpoints
+
+Human transcript correction ([ADR 0006](../adr/0006-transcript-correction.md)).
+Recording routes are release-scoped like the reading routes; each additionally
+requires the named catalog permission.
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| GET | `/api/catalogs/:id/correction-guide` | `correct_transcripts` or `manage_catalog_config` | The catalog's correction guide, or the built-in default |
+| PUT | `/api/catalogs/:id/correction-guide` | `manage_catalog_config` | Append a guide revision; takes effect at once |
+| GET | `/api/catalogs/:id/recordings/:hash/correction` | `correct_transcripts` | Correction state: workspace, progress, resume position, publication eligibility, in-flight publication |
+| POST | `/api/catalogs/:id/recordings/:hash/correction` | `correct_transcripts` | Start correction: freeze the default machine transcript and import its segments |
+| DELETE | `/api/catalogs/:id/recordings/:hash/correction` | `manage_catalog_config` | Archive the workspace with a reason so a new one can be started |
+| GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state |
+| GET | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Span history: revisions, decisions, comments |
+| POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Approve, disapprove, withdraw, or save and approve, against an expected revision |
+| POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId/comments` | `correct_transcripts` | Add a comment |
+| GET | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Publications of the workspace and their state |
+| POST | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Publish or republish; resumes a publication that stalled |
+| DELETE | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Unpublish: clears the reader pointer, search keeps the snapshot |
+| POST | `/api/catalogs/:id/recordings/:hash/correction/publication/recover` | `manage_catalog_config` | Reconcile or roll back a publication, or withdraw corrected text from search |
 | GET | `/api/metadata/artists` | Catalog access | Distinct artist values for filter |
 | GET | `/api/metadata/duplicate-counts` | Catalog access | Duplicate count options for filter |
 

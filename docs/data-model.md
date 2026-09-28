@@ -428,10 +428,12 @@ classify the hash as changed and revert the corrected chunks to machine text.
 
 The pointer is written in `activating` state, and the database pointers do not
 move until the search side has confirmed what it holds. The web application
-submits a `sync_correction_index_flow` job through the jobs API; the host
-ingest worker runs `catalog rag-colbert-index --group <catalog> --hash
-<audio_hash>` for the active search scope, reads the recording's row from the
-new bundle's `source_state.sqlite`, and reports it to
+submits a `sync_correction_index_flow` job through the jobs API, carrying
+its search backend key; the host ingest worker runs
+`catalog rag-colbert-index --group <catalog> --backend <key> --transcripts-root
+<parent>/transcripts_<catalog> --hash <audio_hash>`, pinned to the catalog's
+own transcript generation rather than the host's `transcripts` symlink, reads
+the recording's row from the new bundle's `source_state.sqlite`, and reports it to
 `POST /api/internal/correction/index-sync/complete`. The web application
 accepts the report only if the reported `transcript_path` ends with this
 publication's `corrections_<catalog_id>/<workspace_id>/publications/<publication_id>/transcript.json`
