@@ -138,19 +138,6 @@ describe("EventDetail load failures", () => {
     vi.clearAllMocks();
   });
 
-  it("does not retry client errors but retries server and network errors", () => {
-    renderEventDetail(eventDetail());
-    const { retry } = useQueryMock.mock.calls[0][0] as {
-      retry: (failureCount: number, error: unknown) => boolean;
-    };
-
-    expect(retry(0, new ApiError("Catalog event not found", 404))).toBe(false);
-    expect(retry(0, new ApiError("Forbidden", 403))).toBe(false);
-    expect(retry(0, new ApiError("Internal error", 500))).toBe(true);
-    expect(retry(0, new TypeError("Failed to fetch"))).toBe(true);
-    expect(retry(3, new ApiError("Internal error", 500))).toBe(false);
-  });
-
   it("shows a not-found state with a way back to the events list", () => {
     renderEventDetailError(new ApiError("Catalog event not found", 404));
 
@@ -164,12 +151,21 @@ describe("EventDetail load failures", () => {
     expect(screen.queryByRole("button", { name: /retry/ })).not.toBeInTheDocument();
   });
 
-  it("offers a retry for other failures", () => {
+  it("treats an event hidden with 403 as not found", () => {
+    renderEventDetailError(new ApiError("Forbidden", 403));
+
+    expect(screen.getByRole("heading", { name: "notFoundTitle" })).toBeInTheDocument();
+    expect(screen.queryByText("Forbidden")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/ })).not.toBeInTheDocument();
+  });
+
+  it("offers a retry for other failures without showing the raw error", () => {
     const refetch = vi.fn();
     renderEventDetailError(new ApiError("Internal error", 500), refetch);
 
     expect(screen.getByRole("heading", { name: "loadErrorTitle" })).toBeInTheDocument();
-    expect(screen.getByText("Internal error")).toBeInTheDocument();
+    expect(screen.getByText("errors.serverErrorDescription")).toBeInTheDocument();
+    expect(screen.queryByText("Internal error")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/ }));
     expect(refetch).toHaveBeenCalledTimes(1);
   });

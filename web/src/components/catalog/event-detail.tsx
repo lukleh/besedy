@@ -38,15 +38,6 @@ import {
 } from "@/components/ui/responsive-menu";
 import { SessionOrdinalBadge } from "./session-ordinal-badge";
 
-const MAX_EVENT_DETAIL_RETRIES = 3;
-
-// A 4xx answer (a missing or hidden event) will not change on retry, so show it
-// at once instead of waiting through the retry backoff.
-function shouldRetryEventDetail(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false;
-  return failureCount < MAX_EVENT_DETAIL_RETRIES;
-}
-
 interface EventDetailProps {
   catalogId: string;
   eventId: number;
@@ -76,7 +67,6 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
         () => readLocalEventDetail(catalogId, eventId)
       ),
-    retry: shouldRetryEventDetail,
   });
   const localArtworkUrl = useLocalArtworkUrl(catalogId, eventId, data?.publishedArtwork?.id ?? null);
 
@@ -131,18 +121,15 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   }
 
   if (error || !data) {
-    const isNotFound = error instanceof ApiError && error.status === 404;
+    // A hidden event answers 403 or 404; either way there is nothing to retry.
+    const isNotFound = error instanceof ApiError && (error.status === 404 || error.status === 403);
     return (
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <CalendarX className="h-12 w-12 text-muted-foreground mb-4" />
           <h1 className="text-lg font-semibold">{isNotFound ? t("notFoundTitle") : t("loadErrorTitle")}</h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-md">
-            {isNotFound
-              ? t("notFoundDescription")
-              : error instanceof Error
-                ? error.message
-                : t("unknownError")}
+            {isNotFound ? t("notFoundDescription") : tRoot("errors.serverErrorDescription")}
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <Button asChild variant={isNotFound ? "default" : "outline"}>
