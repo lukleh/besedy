@@ -1546,7 +1546,11 @@
       "loadError": "Failed to load events: {message}"
     },
     "detail": {
-      "loadError": "Failed to load event detail: {message}",
+      "notFoundTitle": "Event not found",
+      "notFoundDescription": "This event may have been removed or is not accessible.",
+      "loadErrorTitle": "Could not load this event",
+      "backToEvents": "Back to events",
+      "retry": "Try again",
       "unknownError": "Unknown error",
       "eventFallbackTitle": "Event {id}",
       "recordingCount": "{count, plural, one {# recording} other {# recordings}}",

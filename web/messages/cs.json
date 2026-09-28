@@ -1545,7 +1545,11 @@
       "loadError": "Nepodařilo se načíst události: {message}"
     },
     "detail": {
-      "loadError": "Nepodařilo se načíst detail události: {message}",
+      "notFoundTitle": "Událost nenalezena",
+      "notFoundDescription": "Tato událost mohla být odstraněna nebo není dostupná.",
+      "loadErrorTitle": "Událost se nepodařilo načíst",
+      "backToEvents": "Zpět na události",
+      "retry": "Zkusit znovu",
       "unknownError": "Neznámá chyba",
       "eventFallbackTitle": "Událost {id}",
       "recordingCount": "{count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
