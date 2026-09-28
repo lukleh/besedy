@@ -1950,6 +1950,7 @@
   "errors": {
     "notFound": "Page not found",
     "notFoundDescription": "The page you're looking for doesn't exist.",
+    "goToCatalogs": "Go to catalogs",
     "unauthorized": "Unauthorized",
     "unauthorizedDescription": "You don't have permission to access this page.",
     "serverError": "Server error",

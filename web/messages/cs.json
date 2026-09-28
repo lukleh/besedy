@@ -1953,6 +1953,7 @@
   "errors": {
     "notFound": "Stránka nenalezena",
     "notFoundDescription": "Stránka, kterou hledáte, neexistuje.",
+    "goToCatalogs": "Přejít na katalogy",
     "unauthorized": "Neoprávněný přístup",
     "unauthorizedDescription": "Nemáte oprávnění k přístupu na tuto stránku.",
     "serverError": "Chyba serveru",
