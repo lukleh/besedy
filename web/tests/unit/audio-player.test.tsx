@@ -115,18 +115,16 @@ function mockPaused(audio: HTMLAudioElement, initial: boolean) {
   };
 }
 
-// jsdom implements neither; the player calls both when it unmounts. Plain
-// stubs rather than spies, which some suites here restore after each test.
-const { load: originalLoad, pause: originalPause } = HTMLMediaElement.prototype;
+// jsdom does not implement load(), which the player calls when it unmounts.
+// A plain stub rather than a spy, which some suites here restore after each test.
+const originalLoad = HTMLMediaElement.prototype.load;
 
 beforeAll(() => {
   HTMLMediaElement.prototype.load = () => {};
-  HTMLMediaElement.prototype.pause = () => {};
 });
 
 afterAll(() => {
   HTMLMediaElement.prototype.load = originalLoad;
-  HTMLMediaElement.prototype.pause = originalPause;
 });
 
 afterEach(() => {
@@ -1226,7 +1224,6 @@ describe("AudioPlayer lock-screen controls", () => {
 describe("AudioPlayer unmount", () => {
   it("releases the audio source when the player unmounts", async () => {
     const { audio, unmount } = renderPlayer();
-    const pauseSpy = vi.spyOn(audio, "pause");
     const loadSpy = vi.spyOn(audio, "load");
 
     await act(async () => {});
@@ -1234,13 +1231,12 @@ describe("AudioPlayer unmount", () => {
 
     unmount();
 
-    expect(pauseSpy).toHaveBeenCalled();
     expect(audio.hasAttribute("src")).toBe(false);
     expect(loadSpy).toHaveBeenCalled();
   });
 
   it("keeps the audio source through Strict Mode's simulated unmount", async () => {
-    const { container } = render(
+    const { container, unmount } = render(
       <StrictMode>
         <NextIntlClientProvider locale="en" messages={messages}>
           <AudioPlayer src="https://example.com/audio.mp3" />
@@ -1250,8 +1246,11 @@ describe("AudioPlayer unmount", () => {
 
     await act(async () => {});
 
-    expect(container.querySelector("audio")?.getAttribute("src")).toBe(
-      "https://example.com/audio.mp3"
-    );
+    const audio = container.querySelector("audio");
+    expect(audio?.getAttribute("src")).toBe("https://example.com/audio.mp3");
+
+    // The real unmount still releases it.
+    unmount();
+    expect(audio?.hasAttribute("src")).toBe(false);
   });
 });

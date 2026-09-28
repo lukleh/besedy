@@ -787,7 +787,6 @@ export function AudioPlayer({
     if (!audio) return;
     return () => {
       if (audio.isConnected) return;
-      audio.pause();
       audio.removeAttribute('src');
       audio.load();
     };
