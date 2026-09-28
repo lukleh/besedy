@@ -48,6 +48,7 @@ interface RenderPlayerOptions {
   autoPlayOnSeek?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
+  strictMode?: boolean;
 }
 
 function renderPlayer(options: RenderPlayerOptions = {}) {
@@ -59,6 +60,7 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
     autoPlayOnSeek,
     onTimeUpdate,
     onSeek,
+    strictMode = false,
   } = options;
   const utils = render(
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -71,7 +73,8 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
       />
-    </NextIntlClientProvider>
+    </NextIntlClientProvider>,
+    { wrapper: strictMode ? StrictMode : undefined }
   );
 
   const audio = utils.container.querySelector("audio");
@@ -1236,21 +1239,13 @@ describe("AudioPlayer unmount", () => {
   });
 
   it("keeps the audio source through Strict Mode's simulated unmount", async () => {
-    const { container, unmount } = render(
-      <StrictMode>
-        <NextIntlClientProvider locale="en" messages={messages}>
-          <AudioPlayer src="https://example.com/audio.mp3" />
-        </NextIntlClientProvider>
-      </StrictMode>
-    );
+    const { audio, unmount } = renderPlayer({ strictMode: true });
 
     await act(async () => {});
-
-    const audio = container.querySelector("audio");
-    expect(audio?.getAttribute("src")).toBe("https://example.com/audio.mp3");
+    expect(audio.getAttribute("src")).toBe("https://example.com/audio.mp3");
 
     // The real unmount still releases it.
     unmount();
-    expect(audio?.hasAttribute("src")).toBe(false);
+    expect(audio.hasAttribute("src")).toBe(false);
   });
 });
