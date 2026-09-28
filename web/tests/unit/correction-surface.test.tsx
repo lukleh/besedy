@@ -345,9 +345,13 @@ describe("CorrectionSurface", () => {
     expect(screen.getByText("emptyRevision")).toBeInTheDocument();
   });
 
-  // A person's own save is not a conflict: the revision that arrives says
-  // what the draft says. Visible on the last span, where nothing advances.
-  it("does not flag a conflict when the person's own save comes back", async () => {
+  // A person's own save is not a conflict, including when the server
+  // canonicalizes the submitted text. Visible on the last span, where nothing
+  // advances.
+  it.each([
+    ["my text", "my text"],
+    ["my  text", "my text"],
+  ])("settles an own save of %j as %j", async (draftText, storedText) => {
     let spansServed = 0;
     fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
@@ -355,13 +359,13 @@ describe("CorrectionSurface", () => {
         spansServed += 1;
         return spansServed === 1
           ? page(0, 1, 1)
-          : page(0, 1, 1, [span(0, { text: "my text", revisionId: "rev-0-2", isEdited: true })]);
+          : page(0, 1, 1, [span(0, { text: storedText, revisionId: "rev-0-2", isEdited: true })]);
       }
       if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
         return {
           spanId: "span-0",
           revisionId: "rev-0-2",
-          text: "my text",
+          text: storedText,
           state: "needs_second_approval",
           approverIds: ["user-1"],
           disapproverIds: [],
@@ -376,11 +380,11 @@ describe("CorrectionSurface", () => {
 
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
-    await userEvent.type(editor, "my text");
+    await userEvent.type(editor, draftText);
     await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
 
     await waitFor(() => expect(spansServed).toBeGreaterThan(1));
-    expect(editor).toHaveValue("my text");
+    expect(editor).toHaveValue(storedText);
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     // The baseline moved with the save: the text is no longer an edit.
     expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();

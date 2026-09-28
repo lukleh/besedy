@@ -275,8 +275,14 @@ export function CorrectionSurface({
         }),
         schema: spanCommandResultSchema,
       }),
-    onSuccess: async (_result, variables) => {
+    onSuccess: async (result, variables) => {
       pendingCommandRef.current = null;
+      // The server canonicalizes whitespace and Unicode before saving. Adopt
+      // its returned wording only while the submitted draft is still on screen;
+      // a newer local edit or another selected span belongs to the person.
+      if (variables.action === "save_and_approve" && selectedIdRef.current === variables.span.id) {
+        setDraft((current) => (current === variables.text ? result.text : current));
+      }
       setConflict(false);
       await refresh();
       if (variables.action === "approve" || variables.action === "save_and_approve") {
