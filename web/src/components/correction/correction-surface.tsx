@@ -88,12 +88,15 @@ export function CorrectionSurface({
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(
     resume?.spanId ?? null
   );
-  const initialOffset = useMemo(
-    () => (resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0),
-    [resume]
+  // Captured once: the resume position moves as work is done, and following
+  // it would restart the list from a different page under the person.
+  const [initialOffset] = useState(() =>
+    resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
   );
   const [draft, setDraft] = useState("");
-  const [conflictDraft, setConflictDraft] = useState<string | null>(null);
+  // A draft that hit a revision conflict. It stays until the person acts or
+  // moves on, and while it is set the current stored text is shown beside it.
+  const [conflict, setConflict] = useState<{ draft: string } | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [seekRequest, setSeekRequest] = useState<{
     time: number;
@@ -118,6 +121,10 @@ export function CorrectionSurface({
       const next = lastPage.offset + lastPage.spans.length;
       return next < lastPage.total ? next : undefined;
     },
+    // The list can start in the middle of the recording, so it loads in both
+    // directions: pages before the resume position are reachable too.
+    getPreviousPageParam: (firstPage) =>
+      firstPage.offset > 0 ? Math.max(0, firstPage.offset - PAGE_SIZE) : undefined,
   });
 
   const spans = useMemo(
@@ -130,20 +137,23 @@ export function CorrectionSurface({
     [spans, selectedSpanId]
   );
 
-  useEffect(() => {
-    if (!selected) return;
-    setSelectedSpanId((current) => current ?? selected.id);
-  }, [selected]);
-
-  // A fresh selection starts from the stored text. A draft kept through a
-  // conflict is the one exception, because it is work that would be lost.
-  useEffect(() => {
-    if (!selected) return;
-    setDraft(conflictDraft ?? selected.text);
-    setConflictDraft(null);
-    setCommentBody("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, selected?.revisionId]);
+  // A fresh selection starts from the stored text. When the revision moves
+  // under the same span after a conflict, the draft is kept instead, because
+  // it is work that would be lost. State is adjusted during render, keyed on
+  // the span and revision the draft belongs to.
+  const draftKey = selected ? `${selected.id}:${selected.revisionId}` : null;
+  const [draftFor, setDraftFor] = useState<string | null>(null);
+  if (selected && draftKey !== draftFor) {
+    const spanChanged = draftFor === null || !draftFor.startsWith(`${selected.id}:`);
+    setDraftFor(draftKey);
+    if (spanChanged) {
+      setConflict(null);
+      setCommentBody("");
+      setDraft(selected.text);
+    } else {
+      setDraft(conflict ? conflict.draft : selected.text);
+    }
+  }
 
   const historyQuery = useQuery({
     queryKey: ["correction-span-history", catalogId, hash, selected?.id],
@@ -213,6 +223,7 @@ export function CorrectionSurface({
         schema: spanCommandResultSchema,
       }),
     onSuccess: async (_result, variables) => {
+      setConflict(null);
       await refresh();
       if (variables.action === "approve" || variables.action === "save_and_approve") {
         await advance();
@@ -222,9 +233,9 @@ export function CorrectionSurface({
       if (error instanceof ApiError && error.status === 409) {
         const payload = error.payload as { code?: string } | undefined;
         if (payload?.code === "REVISION_CONFLICT") {
-          // The draft is kept and the newer text is shown, so the author
-          // decides whether their change still applies.
-          setConflictDraft(variables.text ?? draft);
+          // The draft is kept and the current text is shown beside it, so the
+          // author decides whether their change still applies.
+          setConflict({ draft: variables.text ?? draft });
           await refresh();
           toast({ description: t("conflict"), variant: "destructive" });
           return;
@@ -295,6 +306,17 @@ export function CorrectionSurface({
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
       <aside className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
+        {spansQuery.hasPreviousPage && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full"
+            disabled={spansQuery.isFetchingPreviousPage}
+            onClick={() => spansQuery.fetchPreviousPage()}
+          >
+            {t("loadEarlier")}
+          </Button>
+        )}
         {spans.map((span) => (
           <button
             key={span.id}
@@ -333,7 +355,7 @@ export function CorrectionSurface({
             disabled={spansQuery.isFetchingNextPage}
             onClick={() => spansQuery.fetchNextPage()}
           >
-            {spansQuery.isFetchingNextPage ? "…" : "+"}
+            {t("loadLater")}
           </Button>
         )}
       </aside>
@@ -373,10 +395,14 @@ export function CorrectionSurface({
               </Badge>
             </div>
 
-            {conflictDraft !== null && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-                {t("conflict")}
-              </p>
+            {conflict && (
+              <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <p>{t("conflict")}</p>
+                <p className="text-xs font-medium uppercase text-muted-foreground">
+                  {t("currentText")}
+                </p>
+                <p data-testid="conflict-current-text">{selected.text}</p>
+              </div>
             )}
 
             <Textarea

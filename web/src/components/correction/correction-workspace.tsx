@@ -152,11 +152,7 @@ export function CorrectionWorkspace({
             </span>
             {state.progress.blockedSpanCount > 0 && (
               <Badge variant="destructive">
-                {state.progress.blockedSpanCount === 1
-                  ? t("blockedSummary", { count: 1 })
-                  : t("blockedSummaryPlural", {
-                      count: state.progress.blockedSpanCount,
-                    })}
+                {t("blockedSummary", { count: state.progress.blockedSpanCount })}
               </Badge>
             )}
           </div>

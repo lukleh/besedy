@@ -421,14 +421,16 @@
     "guideSave": "Save guide",
     "guideSaved": "Correction guide saved",
     "shortcutHint": "Ctrl+Enter or Cmd+Enter does the same as the button.",
-    "conflict": "Somebody changed this segment while you were working on it. Your text is kept below; the newer text is shown above.",
+    "conflict": "Somebody changed this segment while you were working on it. Your text is kept in the editor; the current text is shown here.",
     "stateNotReviewed": "Not reviewed",
     "stateNeedsSecondApproval": "Needs second approval",
     "stateDone": "Done",
     "stateNeedsAttention": "Needs attention",
     "progressSummary": "{done} of {total} segments done",
-    "blockedSummary": "{count} segment needs attention",
-    "blockedSummaryPlural": "{count} segments need attention"
+    "blockedSummary": "{count, plural, one {# segment needs attention} other {# segments need attention}}",
+    "currentText": "Current text",
+    "loadEarlier": "Load earlier segments",
+    "loadLater": "Load later segments"
   },
   "metadata": {
     "title": "Metadata",

@@ -421,14 +421,16 @@
     "guideSave": "Uložit pravidla",
     "guideSaved": "Pravidla korektury uložena",
     "shortcutHint": "Ctrl+Enter nebo Cmd+Enter udělá totéž co tlačítko.",
-    "conflict": "Někdo tento segment mezitím změnil. Váš text je níže, novější text je nahoře.",
+    "conflict": "Někdo tento segment mezitím změnil. Váš text zůstává v editoru; aktuální text je zobrazen zde.",
     "stateNotReviewed": "Nezkontrolováno",
     "stateNeedsSecondApproval": "Chybí druhé schválení",
     "stateDone": "Hotovo",
     "stateNeedsAttention": "Vyžaduje pozornost",
     "progressSummary": "Hotovo {done} z {total} segmentů",
-    "blockedSummary": "{count} segment vyžaduje pozornost",
-    "blockedSummaryPlural": "{count} segmentů vyžaduje pozornost"
+    "blockedSummary": "{count, plural, one {# segment vyžaduje pozornost} few {# segmenty vyžadují pozornost} other {# segmentů vyžaduje pozornost}}",
+    "currentText": "Aktuální text",
+    "loadEarlier": "Načíst předchozí segmenty",
+    "loadLater": "Načíst další segmenty"
   },
   "metadata": {
     "title": "Metadata",

@@ -76,9 +76,12 @@ export function CatalogSettingsCorrectionGuideCard({
       }),
   });
 
-  // The stored guide until somebody types; the draft from then on.
+  // The stored guide until somebody types; the draft from then on. The
+  // built-in default is not a stored revision, so saving it unchanged is
+  // still a change: it becomes the catalog's first revision.
   const body = draft ?? guideQuery.data?.guide.body ?? "";
-  const unchanged = body === guideQuery.data?.guide.body;
+  const unchanged =
+    guideQuery.data?.guide.isDefault === false && body === guideQuery.data.guide.body;
 
   return (
     <Card>
