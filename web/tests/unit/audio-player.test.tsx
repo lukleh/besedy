@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import { StrictMode } from "react";
 import { render, act, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
@@ -113,6 +114,20 @@ function mockPaused(audio: HTMLAudioElement, initial: boolean) {
     paused = value;
   };
 }
+
+// jsdom implements neither; the player calls both when it unmounts. Plain
+// stubs rather than spies, which some suites here restore after each test.
+const { load: originalLoad, pause: originalPause } = HTMLMediaElement.prototype;
+
+beforeAll(() => {
+  HTMLMediaElement.prototype.load = () => {};
+  HTMLMediaElement.prototype.pause = () => {};
+});
+
+afterAll(() => {
+  HTMLMediaElement.prototype.load = originalLoad;
+  HTMLMediaElement.prototype.pause = originalPause;
+});
 
 afterEach(() => {
   localStorage.clear();
@@ -1205,5 +1220,38 @@ describe("AudioPlayer lock-screen controls", () => {
 
     expect(playMock).toHaveBeenCalledTimes(1);
     expect(audio.pause).not.toHaveBeenCalled();
+  });
+});
+
+describe("AudioPlayer unmount", () => {
+  it("releases the audio source when the player unmounts", async () => {
+    const { audio, unmount } = renderPlayer();
+    const pauseSpy = vi.spyOn(audio, "pause");
+    const loadSpy = vi.spyOn(audio, "load");
+
+    await act(async () => {});
+    expect(audio.getAttribute("src")).toBe("https://example.com/audio.mp3");
+
+    unmount();
+
+    expect(pauseSpy).toHaveBeenCalled();
+    expect(audio.hasAttribute("src")).toBe(false);
+    expect(loadSpy).toHaveBeenCalled();
+  });
+
+  it("keeps the audio source through Strict Mode's simulated unmount", async () => {
+    const { container } = render(
+      <StrictMode>
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <AudioPlayer src="https://example.com/audio.mp3" />
+        </NextIntlClientProvider>
+      </StrictMode>
+    );
+
+    await act(async () => {});
+
+    expect(container.querySelector("audio")?.getAttribute("src")).toBe(
+      "https://example.com/audio.mp3"
+    );
   });
 });

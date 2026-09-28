@@ -778,6 +778,21 @@ export function AudioPlayer({
     updateDebugInfo,
   ]);
 
+  // Leaving the page detaches the <audio> element, but it keeps its source,
+  // so Android goes on showing a media notification that can resume it with
+  // no page behind it. Releasing the source ends that. Strict Mode's simulated
+  // unmount leaves the element in the document, and is skipped.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    return () => {
+      if (audio.isConnected) return;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    };
+  }, []);
+
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
