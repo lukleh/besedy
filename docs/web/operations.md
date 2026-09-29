@@ -302,7 +302,43 @@ for the schema, storage, and CLI rename and its own migration
 (`20260920160000_rename_event_poster_to_artwork`), which ran after this
 cutover.
 
+#### ADR 0011 rename cutover
+
 Completed September 2026; see [ADR 0011](../adr/0011-poster-to-artwork-rename.md).
+
+### Event artwork CLI
+
+Use the retained artwork CLI for normal event artwork operations:
+
+```bash
+just artwork list --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod
+just artwork create --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --square <file> --landscape <file> --label <text> --prod --yes
+just artwork publish --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --artwork <artwork-id> --prod --yes
+just artwork unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
+just artwork delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
+  --artwork <artwork-id> --prod --yes
+```
+
+`ARTWORK_DIR` must belong to the shared `UPLOADS_GID` group and have mode
+`2770`. Artwork writes preserve that shared group on descendant directories and
+use group-readable files so host-run CLI imports and the web container can read
+each other's candidates.
+
+For host-run commands, the CLI rewrites the container database hostname to the
+published `DB_PORT` binding from the selected environment file. Production
+mutations require the explicit `--yes` confirmation.
+
+To verify that no artwork is currently published:
+
+```sql
+SELECT count(*) AS published_artwork
+  FROM catalog_event_artwork_publication;
+```
+
+The result must be zero when the deployment policy requires every artwork to
+remain unpublished.
 
 ### Permissions rework rollout
 

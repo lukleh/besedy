@@ -75,7 +75,9 @@ jobs_prod_codex_compose := "docker compose --env-file \"$(bash scripts/resolve_j
 _colbert-state-dir:
     @mkdir -p "${RAG_COLBERT_HOST_DIR:-${BESEDY_STATE_HOME:-$HOME/.local/state/lukleh/besedy}/tmp/rag_colbert}"
 
-_guard-shared-colbert:
+# Refuse to act on the shared besedy-colbert container unless it was started
+# from this checkout; prod, dev and test search all use the one container.
+_guard-shared-colbert recipe:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "${BESEDY_COLBERT_FORCE:-0}" = "1" ]; then
@@ -85,28 +87,36 @@ _guard-shared-colbert:
     if ! docker container inspect besedy-colbert >/dev/null 2>&1; then
         exit 0
     fi
-    checkout_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
-    expected_working_dir="$checkout_root/rag-services"
-    running_working_dir="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null || true)"
-    if [ "$running_working_dir" = "$expected_working_dir" ]; then
+    expected_working_dir="$(cd "{{ justfile_directory() }}/rag-services" && pwd -P)"
+    running_working_dir="$(docker inspect --format '{{{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null || true)"
+    running_physical_dir=""
+    if [ -n "$running_working_dir" ] && [ -d "$running_working_dir" ]; then
+        running_physical_dir="$(cd "$running_working_dir" && pwd -P)"
+    fi
+    if [ -n "$running_physical_dir" ] && [ "$running_physical_dir" = "$expected_working_dir" ]; then
         exit 0
     fi
-    echo "Refusing to manage besedy-colbert from this checkout." >&2
+    echo "Refusing to run '{{ recipe }}' against besedy-colbert from this checkout." >&2
     echo "Running ColBERT checkout: ${running_working_dir:-<unknown>}" >&2
-    echo "Expected checkout: $expected_working_dir" >&2
-    echo "Recreate it from the running checkout with:" >&2
-    if [ -n "$running_working_dir" ]; then
-        printf '  (cd %q && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert)\n' "$running_working_dir" >&2
-    else
-        echo "  cd <running-checkout>/rag-services && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert" >&2
-    fi
+    echo "This checkout: $expected_working_dir" >&2
+    running_dir="${running_working_dir:-<running-checkout>/rag-services}"
+    case "{{ recipe }}" in
+        *-up)
+            echo "Recreate it from the running checkout with:" >&2
+            printf '  (cd %q && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert)\n' "$running_dir" >&2
+            ;;
+        *)
+            echo "Run it from the running checkout with:" >&2
+            printf '  (cd %q/.. && just %s)\n' "$running_dir" "{{ recipe }}" >&2
+            ;;
+    esac
     echo "Set BESEDY_COLBERT_FORCE=1 only after confirming the shared container is safe to replace." >&2
     exit 1
 
-rag-services-up: _colbert-state-dir _guard-shared-colbert
+rag-services-up: (_guard-shared-colbert "rag-services-up") _colbert-state-dir
     {{ rag_services_compose }} up -d
 
-rag-services-down: _guard-shared-colbert
+rag-services-down: (_guard-shared-colbert "rag-services-down")
     {{ rag_services_compose }} down
 
 rag-services-logs:
@@ -121,10 +131,10 @@ tei-down:
 tei-logs:
     {{ rag_services_compose }} logs -f embeddings reranker
 
-colbert-up: _colbert-state-dir _guard-shared-colbert
+colbert-up: (_guard-shared-colbert "colbert-up") _colbert-state-dir
     {{ rag_services_compose }} up -d --build colbert
 
-colbert-down: _guard-shared-colbert
+colbert-down: (_guard-shared-colbert "colbert-down")
     {{ rag_services_compose }} stop colbert
 
 colbert-logs:

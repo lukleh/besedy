@@ -1,52 +1,188 @@
-"""Static guardrails for the operator-facing Justfile surface."""
+"""Guardrails for the operator-facing Justfile surface."""
 
+import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-JUSTFILE = PROJECT_ROOT / "Justfile"
 WEB_PACKAGE = PROJECT_ROOT / "web" / "package.json"
 ARTWORK_MIGRATION = PROJECT_ROOT / "web" / "scripts" / "migrate-artwork-storage.ts"
 
+RETIRED_RECIPES = {
+    "jobs-up",
+    "jobs-down",
+    "jobs-down-clean",
+    "jobs-logs",
+    "jobs-rebuild",
+    "jobs-status",
+    "jobs-db",
+    "jobs-deploy",
+    "prefect-deploy",
+    "embeddings-up",
+    "embeddings-down",
+    "embeddings-logs",
+    "artwork-storage",
+}
 
+SHARED_COLBERT_RECIPES = (
+    "rag-services-up",
+    "rag-services-down",
+    "colbert-up",
+    "colbert-down",
+)
+
+requires_just = pytest.mark.skipif(shutil.which("just") is None, reason="requires just")
+
+
+def _dump_justfile() -> dict:
+    result = subprocess.run(
+        ["just", "--dump", "--dump-format", "json"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
+@requires_just
 def test_retired_operator_recipes_are_removed() -> None:
-    justfile = JUSTFILE.read_text(encoding="utf-8")
+    dump = _dump_justfile()
 
-    for recipe in (
-        "jobs-up",
-        "jobs-down",
-        "jobs-down-clean",
-        "jobs-logs",
-        "jobs-rebuild",
-        "jobs-status",
-        "jobs-db",
-        "jobs-deploy",
-        "prefect-deploy",
-        "embeddings-up",
-        "embeddings-down",
-        "embeddings-logs",
-        "artwork-storage",
-    ):
-        assert f"\n{recipe}:" not in justfile
+    assert RETIRED_RECIPES.isdisjoint(dump["recipes"])
+    assert RETIRED_RECIPES.isdisjoint(dump["aliases"])
 
 
-def test_shared_colbert_operations_have_a_checkout_guard() -> None:
-    justfile = JUSTFILE.read_text(encoding="utf-8")
+@requires_just
+def test_shared_colbert_recipes_run_the_checkout_guard_first() -> None:
+    recipes = _dump_justfile()["recipes"]
 
-    assert "_guard-shared-colbert:" in justfile
-    assert "besedy-colbert" in justfile
-    assert "com.docker.compose.project.working_dir" in justfile
-    assert "BESEDY_COLBERT_FORCE" in justfile
-    assert "docker compose -f docker-compose.yml up -d --no-build --no-deps colbert" in justfile
-    assert "rag-services-up: _colbert-state-dir _guard-shared-colbert" in justfile
-    assert "rag-services-down: _guard-shared-colbert" in justfile
-    assert "colbert-up: _colbert-state-dir _guard-shared-colbert" in justfile
-    assert "colbert-down: _guard-shared-colbert" in justfile
+    for name in SHARED_COLBERT_RECIPES:
+        first = recipes[name]["dependencies"][0]
+        assert first == {"recipe": "_guard-shared-colbert", "arguments": [name]}
 
 
 def test_completed_artwork_storage_migration_is_no_longer_exposed() -> None:
-    justfile = JUSTFILE.read_text(encoding="utf-8")
-    package = WEB_PACKAGE.read_text(encoding="utf-8")
+    package = json.loads(WEB_PACKAGE.read_text(encoding="utf-8"))
 
-    assert "storage:artwork-rename" not in justfile
-    assert "storage:artwork-rename" not in package
+    assert "storage:artwork-rename" not in package["scripts"]
     assert not ARTWORK_MIGRATION.exists()
+
+
+def _run_guard(
+    tmp_path: Path,
+    recipe: str,
+    *,
+    container_exists: bool,
+    working_dir: str = "",
+    force: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [ "$1" = "container" ]; then exit "$STUB_CONTAINER_STATUS"; fi\n'
+        'printf "%s\\n" "$STUB_WORKING_DIR"\n',
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+    env = os.environ.copy()
+    env.pop("BESEDY_COLBERT_FORCE", None)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["STUB_CONTAINER_STATUS"] = "0" if container_exists else "1"
+    env["STUB_WORKING_DIR"] = working_dir
+    if force:
+        env["BESEDY_COLBERT_FORCE"] = "1"
+    return subprocess.run(
+        ["just", "_guard-shared-colbert", recipe],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@requires_just
+def test_colbert_guard_allows_when_no_container_exists(tmp_path: Path) -> None:
+    result = _run_guard(tmp_path, "colbert-up", container_exists=False)
+
+    assert result.returncode == 0, result.stderr
+
+
+@requires_just
+def test_colbert_guard_allows_the_owning_checkout(tmp_path: Path) -> None:
+    result = _run_guard(
+        tmp_path,
+        "colbert-down",
+        container_exists=True,
+        working_dir=str(PROJECT_ROOT / "rag-services"),
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@requires_just
+def test_colbert_guard_allows_the_owning_checkout_through_a_symlink(tmp_path: Path) -> None:
+    link = tmp_path / "checkout"
+    link.symlink_to(PROJECT_ROOT, target_is_directory=True)
+
+    result = _run_guard(
+        tmp_path,
+        "colbert-down",
+        container_exists=True,
+        working_dir=str(link / "rag-services"),
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@requires_just
+def test_colbert_guard_refuses_another_checkout_for_up(tmp_path: Path) -> None:
+    other = tmp_path / "prod-colbert" / "rag-services"
+    other.mkdir(parents=True)
+
+    result = _run_guard(tmp_path, "colbert-up", container_exists=True, working_dir=str(other))
+
+    assert result.returncode == 1
+    assert f"Running ColBERT checkout: {other}" in result.stderr
+    assert "up -d --no-build --no-deps colbert" in result.stderr
+
+
+@requires_just
+def test_colbert_guard_points_down_recipes_at_the_owning_checkout(tmp_path: Path) -> None:
+    other = tmp_path / "prod-colbert" / "rag-services"
+    other.mkdir(parents=True)
+
+    result = _run_guard(tmp_path, "colbert-down", container_exists=True, working_dir=str(other))
+
+    assert result.returncode == 1
+    assert "just colbert-down" in result.stderr
+    assert "up -d" not in result.stderr
+
+
+@requires_just
+def test_colbert_guard_refuses_a_container_without_a_compose_label(tmp_path: Path) -> None:
+    result = _run_guard(tmp_path, "rag-services-down", container_exists=True)
+
+    assert result.returncode == 1
+    assert "Running ColBERT checkout: <unknown>" in result.stderr
+
+
+@requires_just
+def test_colbert_guard_force_override(tmp_path: Path) -> None:
+    result = _run_guard(
+        tmp_path,
+        "colbert-down",
+        container_exists=True,
+        working_dir="/elsewhere/rag-services",
+        force=True,
+    )
+
+    assert result.returncode == 0
+    assert "BESEDY_COLBERT_FORCE=1" in result.stdout
