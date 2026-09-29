@@ -13,9 +13,12 @@ from besedy.commands.catalog.archive import (
     OPUS_BITRATES,
     OPUS_SUPPORTED_RATES,
     ArchivedManifestWriter,
+    ArchiveRequest,
     ArchiveSkippedEntry,
     CompressedEntry,
     compute_output_path,
+    handle_archive,
+    load_archived_hashes,
     nearest_opus_sample_rate,
 )
 
@@ -189,6 +192,47 @@ class TestArchivedManifestWriter:
             assert row["Duration"] == "01:01:01"
         finally:
             path.unlink(missing_ok=True)
+
+
+class TestLoadArchivedHashes:
+    """Tests for reading the existing archived manifest."""
+
+    def test_missing_file_returns_empty_set(self, tmp_path):
+        """A missing manifest is a normal first run."""
+        assert load_archived_hashes(tmp_path / "missing_archived.csv") == set()
+
+    def test_reads_hashes(self, tmp_path):
+        """Hashes are read, and short or blank rows are ignored."""
+        path = tmp_path / "catalog_archived.csv"
+        path.write_text("Hash,Original Path\nabc,/a.mp3\n\n,/b.mp3\n", encoding="utf-8")
+        assert load_archived_hashes(path) == {"abc"}
+
+    def test_unreadable_file_raises_with_path(self, tmp_path):
+        """A manifest that exists but cannot be decoded must not read as empty."""
+        path = tmp_path / "catalog_archived.csv"
+        path.write_bytes(b"Hash,Original Path\nabc,/\xff.mp3\n")
+        with pytest.raises(ValueError, match="catalog_archived.csv"):
+            load_archived_hashes(path)
+
+
+class TestHandleArchiveUnreadableManifest:
+    """handle_archive must stop before touching an unreadable manifest."""
+
+    def test_exits_nonzero_and_leaves_manifest_unchanged(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(tmp_path / "artifacts"))
+        source_csv = tmp_path / "audio_catalog_20260101_000000_loudness.csv"
+        source_csv.write_text(
+            "Hash,Full Path,Duration\nabc,/src/a.mp3,00:01:00\n", encoding="utf-8"
+        )
+        archived_csv = tmp_path / "audio_catalog_20260101_000000_loudness_archived.csv"
+        original = b"Hash,Original Path\nabc,/\xff.mp3\n"
+        archived_csv.write_bytes(original)
+
+        result = handle_archive(ArchiveRequest(csv=source_csv, no_symlink=True))
+
+        assert result == 1
+        assert archived_csv.read_bytes() == original
+        assert str(archived_csv) in capsys.readouterr().err
 
 
 class TestDataclasses:

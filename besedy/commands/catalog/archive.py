@@ -448,7 +448,11 @@ def load_archived_hashes(csv_path: Path) -> set[str]:
         csv_path: Path to the archived CSV file.
 
     Returns:
-        Set of audio hashes from the CSV.
+        Set of audio hashes from the CSV (empty if the file does not exist).
+
+    Raises:
+        ValueError: If the file exists but cannot be read. Treating it as
+            empty would truncate it and re-encode every recording.
     """
     hashes: set[str] = set()
     if not csv_path.exists():
@@ -458,11 +462,11 @@ def load_archived_hashes(csv_path: Path) -> set[str]:
         with csv_path.open("r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                hash_value = row.get("Hash", "").strip()
+                hash_value = (row.get("Hash") or "").strip()
                 if hash_value:
                     hashes.add(hash_value)
-    except Exception:
-        pass
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        raise ValueError(f"Cannot read archived CSV {csv_path}: {exc}") from exc
 
     return hashes
 
@@ -702,7 +706,11 @@ def handle_archive(
     archived_csv_path = csv_path.with_name(f"{csv_path.stem}_archived.csv")
 
     # 4. Load existing state if resuming
-    already_archived = load_archived_sha256s(archived_csv_path)
+    try:
+        already_archived = load_archived_sha256s(archived_csv_path)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     is_resume = bool(already_archived)
 
     if is_resume:
