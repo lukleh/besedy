@@ -135,6 +135,8 @@ prefect-rebuild:
 
 prefect-status:
     {{ prefect_compose }} ps
+    @echo "Prefect client pin (pyproject.toml): $(sed -n 's/.*"prefect==\([^"]*\)".*/\1/p' pyproject.toml)"
+    @echo "Prefect server (running): $({{ prefect_compose }} exec -T prefect-server prefect --version 2>/dev/null || echo 'not running')"
 
 prefect-db:
     {{ prefect_compose }} exec prefect-postgres psql -U ${PREFECT_POSTGRES_USER:-prefect} ${PREFECT_POSTGRES_DB:-prefect}

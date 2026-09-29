@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 jobs = [
-    "prefect==3.8.0",
+    "prefect==3.8.7",
     "rlmbenchy @ git+https://github.com/lukleh/rlmbenchy.git",
 ]
 ml = [

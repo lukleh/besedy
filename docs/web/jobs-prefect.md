@@ -459,7 +459,7 @@ For the first local spike, `prefect-redis` is optional. Start with the minimal r
 
 Suggested image split:
 
-- use the official `prefecthq/prefect:3-latest` image for `prefect-server` and `prefect-services`
+- use the official `prefecthq/prefect:<version>-python3.13` image for `prefect-server` and `prefect-services`, pinned to the same version as the `prefect==` client pin (see "Prefect Version and State" in `operations.md`)
 - use a Besedy repo image for `jobs-api` and `prefect-worker`, with `prefect` and the packaged `rlmbenchy` distribution installed in the same environment as Besedy
 
 The production runtime is image-only: it does not mount the Besedy checkout.

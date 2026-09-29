@@ -654,6 +654,36 @@ through the development runtime.
    `PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT`). Use `just jobs-dev-deploy` for
    development; the bare `just jobs-deploy` alias targets **dev**.
 
+### Prefect Version and State
+
+- **Version.** The server image is set by the default in
+  `jobs-service/docker-compose.prefect.yml`. It must match the `prefect==`
+  pin in `pyproject.toml`, which the jobs images and the host ingest worker
+  install from `uv.lock`. `tests/test_web_production_hardening.py` enforces
+  this. Leave `PREFECT_IMAGE` unset in `jobs.env.prefect`: a copied value
+  silently pins the old server at the next bump. `just prefect-status` prints
+  the client pin and the running server version.
+- **Upgrading.** The server is shared, so first make sure no flow run of any
+  deployment is running or pending (Prefect UI, or the `flow_runs/filter` API);
+  `just jobs-prod-check-idle` covers only the production Deep Search
+  deployment. Stop every Prefect worker (dev, test and prod jobs, and the host
+  ingest worker). Then stop the old server with `just prefect-down` (named
+  volumes are kept) and start the new one with `just prefect-up`: the
+  `prefect-db-upgrade` service migrates the database, one-way, before the
+  server starts. After that, upgrade the clients
+  (`just jobs-<env>-rebuild && just jobs-<env>-deploy`, using the `-codex`
+  variants for `model-chatgpt-*` profiles), then restart the ingest worker.
+- **State is disposable.** The Prefect database holds only:
+  - Deep Search job records (query, owner, state, logs);
+  - deployments and work pools, which `just jobs-<env>-deploy` re-creates;
+  - ingest runs, whose outcome is also recorded in `recording_intake`.
+
+  Neither it nor the deep-search output directory is backed up. Losing them
+  empties the Deep Search history, which is accepted. To recover, run
+  `just prefect-down`, drop the Prefect Postgres volume
+  (`${BESEDY_PREFECT_POSTGRES_VOLUME:-besedy_prefect_postgres}`), run
+  `just prefect-up`, then `just jobs-<env>-deploy` for each environment.
+
 ### Verification
 
 ```bash
