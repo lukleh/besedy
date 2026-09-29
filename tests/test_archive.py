@@ -223,7 +223,7 @@ class TestLoadArchivedHashes:
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
     def test_inaccessible_parent_raises(self, tmp_path):
-        """Path.exists() is False when the parent can't be searched; that isn't 'missing'."""
+        """A permission error is a clear error with the path, not a traceback or 'missing'."""
         catalog_dir = tmp_path / "catalog"
         catalog_dir.mkdir()
         path = catalog_dir / "catalog_archived.csv"
@@ -238,7 +238,7 @@ class TestLoadArchivedHashes:
     def test_header_without_hash_column_raises(self, tmp_path):
         """A BOM or damaged header hides the Hash column and must not read as empty."""
         path = tmp_path / "catalog_archived.csv"
-        path.write_text("﻿Hash,Original Path\nabc,/a.mp3\n", encoding="utf-8")
+        path.write_text("\ufeffHash,Original Path\nabc,/a.mp3\n", encoding="utf-8")
         with pytest.raises(ValueError, match="no 'Hash' column"):
             load_archived_hashes(path)
 
