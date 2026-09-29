@@ -63,8 +63,8 @@ speaker_clusters_dir = "speaker_clusters"
 sample_rate = 16000
 
 # `language` is an ISO 639 code configured per workflow; entries that omit it
-# default to "cs" (the historical behavior). Explicit or defaulted "cs" retains
-# historical output paths; "auto" and other language values add `@lang-auto` or
+# default to "cs" (the historical inference behavior). Explicit or defaulted
+# "cs" uses `@lang-cs` output paths; "auto" and other languages add `@lang-auto` or
 # `@lang-<code>` to the workflow output component so incompatible transcripts
 # are never silently reused.
 [[transcription_workflows]]

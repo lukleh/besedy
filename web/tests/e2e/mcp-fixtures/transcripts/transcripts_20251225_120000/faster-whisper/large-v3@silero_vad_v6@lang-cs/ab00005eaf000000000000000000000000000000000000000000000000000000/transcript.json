@@ -1,7 +1,7 @@
 {
   "backend": "faster-whisper",
   "hash": "ab00005eaf000000000000000000000000000000000000000000000000000000",
-  "model": "large-v3@silero_vad_v6",
+  "model": "large-v3@silero_vad_v6@lang-cs",
   "language": "cs",
   "duration": 45,
   "segments": [

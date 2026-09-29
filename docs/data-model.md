@@ -35,7 +35,7 @@ web-specific docs for those).
 | **Speaker ID scope** | Speaker identifiers (e.g. `SPEAKER_01`) are unique only within a single audio file. The same ID in different files refers to different speakers. |
 | **Segment** | Continuous speech region with text, timestamps, and confidence. |
 | **Word** | Individual word with precise timing and confidence score. |
-| **Pipeline naming** | Format: `model[strategy]@vad[@align][@lang-<language>]`. Model = ASR engine. Optional strategy = NeMo decode mode (`[greedy]`/`[beam]`). VAD = voice activity detector. Align = alignment model when applicable. Language is omitted only for the legacy-compatible Czech (`cs`) path; automatic detection uses `@lang-auto`. |
+| **Pipeline naming** | Format: `model[strategy]@vad[@align]@lang-<language>`. Model = ASR engine. Optional strategy = NeMo decode mode (`[greedy]`/`[beam]`). VAD = voice activity detector. Align = alignment model when applicable. Czech uses `@lang-cs`; automatic detection uses `@lang-auto`. |
 
 ---
 
@@ -46,19 +46,18 @@ Canonical workflow IDs used in CLI commands, directory names, and
 
 | Backend | Workflow ID | Directory Pattern |
 |---------|-------------|-------------------|
-| Canary-NeMo | `canary-nemo` | `canary-nemo/nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0` |
-| Canary-NeMo (beam) | `canary-nemo-beam` | `canary-nemo/nvidia_canary-1b-v2[beam]@...` |
-| Faster-Whisper | `faster-whisper` | `faster-whisper/large-v3@silero_vad_v6@lang-auto` |
-| WhisperX | `whisperx` | `whisperx/large-v3@silero@lang-auto` |
-| Qwen3-ASR | `qwen3-asr` | `qwen3-asr/<model>@<vad>[@<align>]@lang-auto` |
+| Canary-NeMo | `canary-nemo` | `canary-nemo/nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs` |
+| Canary-NeMo (beam) | `canary-nemo-beam` | `canary-nemo/nvidia_canary-1b-v2[beam]@...@lang-cs` |
+| Faster-Whisper | `faster-whisper` | `faster-whisper/large-v3@silero_vad_v6@lang-cs` |
+| WhisperX | `whisperx` | `whisperx/large-v3@silero@lang-cs` |
+| Qwen3-ASR | `qwen3-asr` | `qwen3-asr/<model>@<vad>[@<align>]@lang-cs` |
 | Pyannote Diarization | `pyannote` | `speaker_diarization/pyannote_speaker-diarization-community-1` |
 
 **Output-component pattern:**
-`{model_name}[{strategy}]@{vad_model}[@{align_model}][@lang-{language}]`.
-The language suffix prevents auto-detected or explicitly non-Czech runs from
-reusing transcripts created under the old forced-Czech default. Czech
-(`language = "cs"`, which is also the default when the key is omitted)
-deliberately retains the historical path without a suffix.
+`{model_name}[{strategy}]@{vad_model}[@{align_model}]@lang-{language}`.
+The language suffix separates transcripts produced with different language
+settings. Czech (`language = "cs"`, also the default when omitted) uses
+`@lang-cs`; older unsuffixed Czech directories must be migrated.
 
 Source of truth: `besedy/lib/backend_ids.py`
 
@@ -457,18 +456,18 @@ previous publication, is what the bundle holds again.
 ```
 transcripts/
   canary-nemo/
-    nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0/
+    nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs/
       {audio_hash}/
         transcript.json
   faster-whisper/
-    large-v3@silero_vad_v6/
+    large-v3@silero_vad_v6@lang-cs/
       {audio_hash}/
         transcript.json
         transcript.txt          # optional sidecar
         transcript.srt          # optional sidecar
         transcript.vtt          # optional sidecar
   whisperx/
-    large-v3@silero@comodoro_wav2vec2-xls-r-300m-cs-250/
+    large-v3@silero@comodoro_wav2vec2-xls-r-300m-cs-250@lang-cs/
       {audio_hash}/
         transcript.json
   speaker_diarization/

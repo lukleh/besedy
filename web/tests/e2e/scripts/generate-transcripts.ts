@@ -107,7 +107,7 @@ async function generateASRTranscript(
   hash: string,
   duration: number,
   backend: string = "faster-whisper",
-  model: string = "large-v3@silero_vad_v6"
+  model: string = "large-v3@silero_vad_v6@lang-cs"
 ): Promise<void> {
   const outputDir = path.join(transcriptsDir, backend, model, hash);
   await fs.mkdir(outputDir, { recursive: true });
@@ -187,8 +187,8 @@ async function generateDiarizationFile(
 
 // Backends to generate transcripts for
 const TRANSCRIPT_BACKENDS = [
-  { backend: "faster-whisper", model: "large-v3@silero_vad_v6" },
-  { backend: "canary-nemo", model: "canary-1b" },
+  { backend: "faster-whisper", model: "large-v3@silero_vad_v6@lang-cs" },
+  { backend: "canary-nemo", model: "canary-1b@lang-cs" },
 ];
 
 /**

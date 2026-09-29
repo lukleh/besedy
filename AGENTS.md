@@ -199,9 +199,9 @@ manages workflow-group records themselves.
   source of truth: `besedy/lib/backend_ids.py`.
 - Transcripts live under
   `<workflow>/<output-component>/<audio_hash>/transcript.json` (sidecars
-  `transcript.txt|srt|vtt`). The output component appends `@lang-auto` or
-  `@lang-<code>` for non-Czech language variants; `cs` (explicit or the
-  default when `language` is omitted) retains legacy paths without a suffix.
+  `transcript.txt|srt|vtt`). Every transcription output component ends in
+  `@lang-<code>` or `@lang-auto`; omitted `language` defaults to `cs` and uses
+  `@lang-cs`. Older unsuffixed Czech trees require migration.
 - The active audio-preparation path is loudness analysis followed by
   `stage-audio`; `run-pipeline` orchestrates it automatically.
 

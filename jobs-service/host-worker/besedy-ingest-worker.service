@@ -23,9 +23,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Repository checkout that owns the `besedy` package and the `uv` environment.
+# The `ml` extra supplies the tokenizer that `rag-colbert-index` needs for the
+# ingest and correction-index flows.
 WorkingDirectory=%h/projects/besedy
 EnvironmentFile=%h/.config/lukleh/besedy/ingest-worker.env
-ExecStart=/usr/bin/env bash -lc 'exec uv run --extra jobs prefect worker start --pool "${PREFECT_INGEST_WORK_POOL}" --type process --limit 1 --install-policy never'
+ExecStart=/usr/bin/env bash -lc 'exec uv run --extra jobs --extra ml prefect worker start --pool "${PREFECT_INGEST_WORK_POOL}" --type process --limit 1 --install-policy never'
 Restart=on-failure
 RestartSec=10
 KillMode=mixed

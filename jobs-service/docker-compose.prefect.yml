@@ -5,6 +5,12 @@ name: besedy-prefect
 x-prefect-database-url: &prefect-database-url
   ${PREFECT_SERVER_DATABASE_CONNECTION_URL:-postgresql+asyncpg://${PREFECT_POSTGRES_USER:-prefect}:${PREFECT_POSTGRES_PASSWORD:-prefect}@prefect-postgres:5432/${PREFECT_POSTGRES_DB:-prefect}}
 
+# The server version lives here and must match the prefect== pin in
+# pyproject.toml. Set PREFECT_IMAGE in the host env file only to pin a
+# different version on purpose; a copied value goes stale at the next bump.
+x-prefect-image: &prefect-image
+  ${PREFECT_IMAGE:-prefecthq/prefect:3.8.7-python3.13}
+
 services:
   prefect-postgres:
     image: postgres:${POSTGRES_VERSION:-17}-alpine
@@ -29,7 +35,7 @@ services:
     restart: unless-stopped
 
   prefect-db-upgrade:
-    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.8.0-python3.13}
+    image: *prefect-image
     container_name: besedy-prefect-db-upgrade
     depends_on:
       prefect-postgres:
@@ -46,7 +52,7 @@ services:
       - prefect
 
   prefect-server:
-    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.8.0-python3.13}
+    image: *prefect-image
     container_name: besedy-prefect-server
     depends_on:
       prefect-db-upgrade:
@@ -81,7 +87,7 @@ services:
     restart: unless-stopped
 
   prefect-services:
-    image: ${PREFECT_IMAGE:-prefecthq/prefect:3.8.0-python3.13}
+    image: *prefect-image
     container_name: besedy-prefect-services
     depends_on:
       prefect-db-upgrade:

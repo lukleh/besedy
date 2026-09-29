@@ -61,7 +61,7 @@ vi.mock('@/lib/transcript', () => ({
 
 vi.mock('@/lib/runtime-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/runtime-config')>()),
-  getRagBackendKey: () => 'whisperx/model@lang-auto',
+  getRagBackendKey: () => 'whisperx/model@lang-cs',
 }));
 
 vi.mock('@/lib/paths', () => ({
@@ -116,11 +116,11 @@ describe('MCP read service', () => {
     });
     vi.mocked(getAvailableTranscripts).mockResolvedValue({
       hash: 'visible-recording',
-      backends: ['whisperx/model'],
+      backends: ['whisperx/model@lang-cs'],
     });
     vi.mocked(loadTranscript).mockResolvedValue({
       hash: 'visible-recording',
-      backend: 'whisperx/model',
+      backend: 'whisperx/model@lang-cs',
       language: 'cs',
       duration: 20,
       segments: [
@@ -184,12 +184,12 @@ describe('MCP read service', () => {
             startSec: 60,
             endSec: 90,
             workflowGroupId: 'catalog-a',
-            backendKey: 'whisperx/model@lang-auto',
+            backendKey: 'whisperx/model@lang-cs',
             chunkVersion: 'v1',
           },
           provenance: {
             workflowGroupId: 'catalog-a',
-            backendKey: 'whisperx/model@lang-auto',
+            backendKey: 'whisperx/model@lang-cs',
             runId: 'run-1',
             chunkVersion: 'v1',
             embeddingModel: 'colbert',
@@ -819,7 +819,7 @@ describe('MCP read service', () => {
     expect(getAvailableTranscripts).not.toHaveBeenCalled();
   });
 
-  it('reads the configured transcript directory before its legacy unsuffixed path', async () => {
+  it('reads the configured transcript directory', async () => {
     const result = await getMcpTranscript('catalog-a', 'visible-recording', {
       mode: 'full',
     });
@@ -829,7 +829,7 @@ describe('MCP read service', () => {
     expect(loadTranscript).toHaveBeenCalledWith(
       '/transcripts/catalog-a',
       'visible-recording',
-      'whisperx/model@lang-auto',
+      'whisperx/model@lang-cs',
     );
   });
 
@@ -871,10 +871,10 @@ describe('MCP read service', () => {
     expect(loadTranscript).not.toHaveBeenCalled();
   });
 
-  it('falls back only to the legacy unsuffixed canonical directory', async () => {
+  it('does not read a transcript from an unsuffixed directory', async () => {
     vi.mocked(getAvailableTranscripts).mockResolvedValue({
       hash: 'visible-recording',
-      backends: ['other/model'],
+      backends: ['whisperx/model'],
     });
     vi.mocked(loadTranscript).mockResolvedValue(null);
 
@@ -885,18 +885,11 @@ describe('MCP read service', () => {
       retryable: false,
     });
 
-    expect(loadTranscript).toHaveBeenCalledTimes(2);
-    expect(loadTranscript).toHaveBeenNthCalledWith(
-      1,
+    expect(loadTranscript).toHaveBeenCalledTimes(1);
+    expect(loadTranscript).toHaveBeenCalledWith(
       '/transcripts/catalog-a',
       'visible-recording',
-      'whisperx/model@lang-auto',
-    );
-    expect(loadTranscript).toHaveBeenNthCalledWith(
-      2,
-      '/transcripts/catalog-a',
-      'visible-recording',
-      'whisperx/model',
+      'whisperx/model@lang-cs',
     );
     expect(getAvailableTranscripts).not.toHaveBeenCalled();
   });
@@ -1140,7 +1133,7 @@ describe('MCP read service', () => {
   it('offers a transcript handoff when only the suffixed canonical directory exists', async () => {
     vi.mocked(getAvailableTranscripts).mockResolvedValue({
       hash: 'visible-recording',
-      backends: ['whisperx/model@lang-auto'],
+      backends: ['whisperx/model@lang-cs'],
     });
 
     const result = await searchMcpTranscripts('catalog-a', {

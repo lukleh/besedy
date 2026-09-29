@@ -358,17 +358,14 @@ function eventAfterCursorWhere(
 }
 
 /**
- * Transcript directories that count as the canonical transcript, in order.
+ * Transcript directory that counts as the canonical machine transcript.
  *
  * The transcription pipeline names its output component with the language
- * suffix carried by `RAG_BACKEND_KEY` (for example `…@lang-auto`), so the exact
- * key is tried first. Czech runs and older bundles keep the legacy unsuffixed
- * directory, so that is the only fallback. No other backend is consulted.
+ * suffix carried by `RAG_BACKEND_KEY` (for example `…@lang-cs`). No other
+ * backend is consulted.
  */
-function getCanonicalTranscriptBackends(): TranscriptBackend[] {
-  const configured = getRagBackendKey();
-  const legacy = configured.replace(/@lang-[^/@]+$/, '');
-  return legacy === configured ? [configured] : [configured, legacy];
+function getCanonicalTranscriptBackend(): TranscriptBackend {
+  return getRagBackendKey();
 }
 
 function serializeRecording(recording: CatalogRecordingReadModel) {
@@ -734,10 +731,7 @@ export async function getMcpTranscript(
       );
     }
   } else {
-    for (const backend of getCanonicalTranscriptBackends()) {
-      transcript = await loadTranscript(transcriptsPath, audioHash, backend);
-      if (transcript) break;
-    }
+    transcript = await loadTranscript(transcriptsPath, audioHash, getCanonicalTranscriptBackend());
   }
 
   if (!transcript) {
@@ -990,7 +984,7 @@ async function serializeMcpSearchResults(
   const audioHashes = [
     ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const canonicalBackends = getCanonicalTranscriptBackends();
+  const canonicalBackend = getCanonicalTranscriptBackend();
   const transcriptsPath = resolveTranscriptsPath(catalogId);
   const canonicalTranscriptAvailability = new Map(
     await mapWithConcurrency(
@@ -1003,9 +997,7 @@ async function serializeMcpSearchResults(
         );
         return [
           audioHash,
-          canonicalBackends.some((backend) =>
-            available.backends.includes(backend),
-          ),
+          available.backends.includes(canonicalBackend),
         ] as const;
       },
     ),

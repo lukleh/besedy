@@ -236,15 +236,15 @@ class TestResolveBundleRoot:
         assert "faster-whisper" in str(result) or "large-v3" in str(result)
 
     def test_language_component_lands_in_output_dir(self, tmp_path, monkeypatch):
-        """Non-Czech languages get their own output component; cs keeps legacy paths."""
+        """Every transcription language gets an explicit output component."""
         monkeypatch.setattr(
             "besedy.workflows.transcribe_faster_whisper.resolve_transcripts_root",
             lambda x=None: tmp_path / "transcripts",
         )
 
-        legacy = resolve_bundle_root(None, "large-v3", "silero_vad_v6", language="cs")
+        czech = resolve_bundle_root(None, "large-v3", "silero_vad_v6", language="cs")
         automatic = resolve_bundle_root(None, "large-v3", "silero_vad_v6", language="auto")
-        assert legacy.name == "large-v3@silero_vad_v6"
+        assert czech.name == "large-v3@silero_vad_v6@lang-cs"
         assert automatic.name == "large-v3@silero_vad_v6@lang-auto"
 
     def test_custom_output_dir(self, tmp_path, monkeypatch):
