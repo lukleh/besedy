@@ -44,7 +44,7 @@ def _load_chunk_tokenizer(model_name: str):
     except ImportError as exc:
         raise ImportError(
             "transformers is required for tokenizer-aware chunk sizing. "
-            "Install dependencies with `uv sync`."
+            "Install the ml extra with `just setup-ml` (uv sync --extra ml)."
         ) from exc
 
     # Chunk sizing only needs the tokenizer vocabulary, never a model's custom
