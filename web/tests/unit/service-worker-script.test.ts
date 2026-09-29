@@ -299,6 +299,45 @@ describe('downloaded audio', () => {
     ]);
   });
 
+  it('keeps the download when the player abandons a response mid-read', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+    ]);
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    // The stream starts reading the first chunk as soon as it exists; the
+    // player cancelling it now (a seek, or after the headers) must not look
+    // like a damaged download.
+    await response.body!.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(await cache.match(getAudioMetaKey(baseKey))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeDefined();
+  });
+
+  it('discards the download when a cached chunk is missing', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+    ]);
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    await cache.delete(getAudioChunkKey(baseKey, 1));
+
+    await expect(response.arrayBuffer()).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeUndefined();
+  });
+
   it('rejects malformed and reversed ranges', () => {
     const { internals } = loadScript();
     expect(internals.parseRangeHeader('bytes=9-2', 10)).toEqual({

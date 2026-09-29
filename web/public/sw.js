@@ -457,6 +457,7 @@ function createChunkStream(options) {
     end,
   } = options;
   let chunkIndex = startChunk;
+  let cancelled = false;
 
   return new ReadableStream({
     async pull(controller) {
@@ -465,28 +466,38 @@ function createChunkStream(options) {
         return;
       }
 
+      let bytes;
       try {
         const response = await cache.match(getChunkKey(baseKey, chunkIndex));
         if (!response) {
           throw new Error(`Missing audio chunk ${chunkIndex}`);
         }
-        const bytes = await response.arrayBuffer();
+        bytes = await response.arrayBuffer();
         if (bytes.byteLength !== chunkSizes[chunkIndex]) {
           throw new Error(
             `Audio chunk ${chunkIndex} has ${bytes.byteLength} bytes; expected ${chunkSizes[chunkIndex]}`,
           );
         }
-
-        const absoluteChunkStart = chunkOffsets[chunkIndex];
-        const from = Math.max(0, start - absoluteChunkStart);
-        const to = Math.min(bytes.byteLength, end - absoluteChunkStart + 1);
-        controller.enqueue(new Uint8Array(bytes, from, to - from));
-        chunkIndex += 1;
-        if (chunkIndex > endChunk) controller.close();
       } catch (error) {
         void deleteAudioCacheEntries(cache, baseKey);
         controller.error(error);
+        return;
       }
+
+      // Media elements cancel responses on every seek and after reading the
+      // headers. A chunk read that finishes afterwards is simply dropped:
+      // enqueueing it would throw, and that is not a damaged download.
+      if (cancelled) return;
+
+      const absoluteChunkStart = chunkOffsets[chunkIndex];
+      const from = Math.max(0, start - absoluteChunkStart);
+      const to = Math.min(bytes.byteLength, end - absoluteChunkStart + 1);
+      controller.enqueue(new Uint8Array(bytes, from, to - from));
+      chunkIndex += 1;
+      if (chunkIndex > endChunk) controller.close();
+    },
+    cancel() {
+      cancelled = true;
     },
   });
 }
