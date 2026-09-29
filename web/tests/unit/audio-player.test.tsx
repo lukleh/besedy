@@ -1051,9 +1051,9 @@ describe("AudioPlayer progress slider", () => {
     expect(container.textContent).toContain("0:20");
   });
 
-  it("commits a drag made before the duration is known", async () => {
+  it("replaces a queued restore with a drag before the duration is known", async () => {
     const onSeek = vi.fn();
-    const { audio, container } = renderPlayer({ onSeek });
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, onSeek });
     const seeks = countSeeks(audio);
     const slider = progressSlider(container);
 
@@ -1069,10 +1069,68 @@ describe("AudioPlayer progress slider", () => {
 
     expect(seeks).toEqual([45]);
     expect(onSeek).toHaveBeenCalledWith(45);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(45);
+    expect(onSeek).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("AudioPlayer external seek", () => {
+  it.each([
+    { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 10 },
+    { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 0 },
+    { control: "ArrowLeft", testId: undefined, code: "ArrowLeft", target: 0 },
+    { control: "ArrowRight", testId: undefined, code: "ArrowRight", target: 0 },
+  ])("keeps a $control seek when queued restore metadata arrives", async ({ testId, code, target }) => {
+    const onSeek = vi.fn();
+    const onTimeUpdate = vi.fn();
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, onSeek, onTimeUpdate });
+
+    await act(async () => {
+      if (testId) {
+        fireEvent.click(container.querySelector(`[data-testid="${testId}"]`)!);
+      } else {
+        fireEvent.keyDown(document.body, { code });
+      }
+    });
+    expect(audio.currentTime).toBe(target);
+    expect(onSeek).toHaveBeenCalledExactlyOnceWith(target);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(target);
+    expect(onTimeUpdate).toHaveBeenCalledWith(target);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves queued auto-play after the user changes the target", async () => {
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, autoPlayOnSeek: true });
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    expect(playMock).not.toHaveBeenCalled();
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(10);
+    expect(playMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a queued restore when the user seeks after metadata is available", async () => {
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1 });
+    mockReadyState(audio, 1);
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    expect(audio.currentTime).toBe(10);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(10);
+  });
+
   it("applies seek immediately when metadata is already loaded", async () => {
     const onTimeUpdate = vi.fn();
     const { audio, rerender } = renderPlayer({
