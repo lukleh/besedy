@@ -158,6 +158,26 @@ describe("useRecordingPlayback", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
+  it("does not turn the player's own seek into a seek request", () => {
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+
+    act(() => {
+      vi.runAllTimers();
+      result.current.handlePlayerSeek(70);
+    });
+
+    // The player has already moved the media element; a request would seek
+    // it a second time. The page still follows and remembers the position.
+    expect(result.current.seekRequest).toBeUndefined();
+    expect(result.current.currentTime).toBe(70);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("70");
+
+    act(() => {
+      result.current.handleSeek(42);
+    });
+    expect(result.current.seekRequest?.time).toBe(42);
+  });
+
   it("hands off radio playback when arriving from the radio on the same recording", async () => {
     mocks.searchParams = new URLSearchParams({ fromRadio: "true" });
     mocks.radio = {

@@ -941,7 +941,196 @@ describe("AudioPlayer retry logic", () => {
   });
 });
 
+/** Count assignments to currentTime, the only thing that starts a seek. */
+function countSeeks(audio: HTMLAudioElement) {
+  let position = 0;
+  const seeks: number[] = [];
+  Object.defineProperty(audio, "currentTime", {
+    configurable: true,
+    get: () => position,
+    set: (value: number) => {
+      position = value;
+      seeks.push(value);
+    },
+  });
+  return seeks;
+}
+
+async function loadMetadata(audio: HTMLAudioElement, duration = 100) {
+  mockReadyState(audio, 1);
+  Object.defineProperty(audio, "duration", { value: duration, configurable: true });
+  await act(async () => {
+    audio.dispatchEvent(new Event("loadedmetadata"));
+  });
+}
+
+describe("AudioPlayer progress slider", () => {
+  const pointerCapture = {
+    setPointerCapture: HTMLElement.prototype.setPointerCapture,
+    hasPointerCapture: HTMLElement.prototype.hasPointerCapture,
+    releasePointerCapture: HTMLElement.prototype.releasePointerCapture,
+  };
+
+  beforeEach(() => {
+    // jsdom has no pointer capture; Radix's slider needs it to track a drag.
+    const captured = new Set<number>();
+    HTMLElement.prototype.setPointerCapture = (id: number) => void captured.add(id);
+    HTMLElement.prototype.hasPointerCapture = (id: number) => captured.has(id);
+    HTMLElement.prototype.releasePointerCapture = (id: number) => void captured.delete(id);
+  });
+
+  afterEach(() => {
+    for (const [name, original] of Object.entries(pointerCapture)) {
+      if (original) {
+        Object.assign(HTMLElement.prototype, { [name]: original });
+      } else {
+        delete HTMLElement.prototype[name as keyof typeof pointerCapture];
+      }
+    }
+  });
+
+  function progressSlider(container: HTMLElement) {
+    const slider = container.querySelector('[data-slot="slider"]') as HTMLElement;
+    // 100 px wide for a 100 s recording: clientX is the target second.
+    slider.getBoundingClientRect = () =>
+      ({ left: 0, right: 100, width: 100, top: 0, bottom: 10, height: 10, x: 0, y: 0 }) as DOMRect;
+    return slider;
+  }
+
+  it("seeks once when a drag ends, not on every move", async () => {
+    const onSeek = vi.fn();
+    const { audio, container } = renderPlayer({ onSeek });
+    const seeks = countSeeks(audio);
+    await loadMetadata(audio);
+    const slider = progressSlider(container);
+
+    await act(async () => {
+      fireEvent.pointerDown(slider, { pointerId: 1, clientX: 10, button: 0 });
+    });
+    for (const clientX of [30, 50, 70]) {
+      await act(async () => {
+        fireEvent.pointerMove(slider, { pointerId: 1, clientX });
+      });
+    }
+    // Dragging only previews the position.
+    expect(seeks).toEqual([]);
+    expect(container.textContent).toContain("1:10");
+
+    await act(async () => {
+      fireEvent.pointerUp(slider, { pointerId: 1, clientX: 70 });
+    });
+
+    expect(seeks).toEqual([70]);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith(70);
+  });
+
+  it("still seeks on every arrow key press", async () => {
+    const { audio, container } = renderPlayer();
+    const seeks = countSeeks(audio);
+    await loadMetadata(audio);
+    const thumb = container.querySelector(
+      '[data-slot="slider"] [role="slider"]'
+    ) as HTMLElement;
+
+    await act(async () => {
+      fireEvent.keyDown(thumb, { key: "End" });
+    });
+    await act(async () => {
+      fireEvent.keyDown(thumb, { key: "ArrowLeft" });
+    });
+
+    expect(seeks).toEqual([100, 99.9]);
+
+    // No preview lingers from the key press: the thumb follows playback.
+    audio.currentTime = 20;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(thumb.getAttribute("aria-valuenow")).toBe("20");
+    expect(container.textContent).toContain("0:20");
+  });
+
+  it("replaces a queued restore with a drag before the duration is known", async () => {
+    const onSeek = vi.fn();
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, onSeek });
+    const seeks = countSeeks(audio);
+    const slider = progressSlider(container);
+
+    await act(async () => {
+      fireEvent.pointerDown(slider, { pointerId: 1, clientX: 10, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.pointerMove(slider, { pointerId: 1, clientX: 45 });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(slider, { pointerId: 1, clientX: 45 });
+    });
+
+    expect(seeks).toEqual([45]);
+    expect(onSeek).toHaveBeenCalledWith(45);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(45);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("AudioPlayer external seek", () => {
+  it.each([
+    { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 10 },
+    { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 0 },
+    { control: "ArrowLeft", testId: undefined, code: "ArrowLeft", target: 0 },
+    { control: "ArrowRight", testId: undefined, code: "ArrowRight", target: 0 },
+  ])("keeps a $control seek when queued restore metadata arrives", async ({ testId, code, target }) => {
+    const onSeek = vi.fn();
+    const onTimeUpdate = vi.fn();
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, onSeek, onTimeUpdate });
+
+    await act(async () => {
+      if (testId) {
+        fireEvent.click(container.querySelector(`[data-testid="${testId}"]`)!);
+      } else {
+        fireEvent.keyDown(document.body, { code });
+      }
+    });
+    expect(audio.currentTime).toBe(target);
+    expect(onSeek).toHaveBeenCalledExactlyOnceWith(target);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(target);
+    expect(onTimeUpdate).toHaveBeenCalledWith(target);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves queued auto-play after the user changes the target", async () => {
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, autoPlayOnSeek: true });
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    audio.play = playMock;
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    expect(playMock).not.toHaveBeenCalled();
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(10);
+    expect(playMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a queued restore when the user seeks after metadata is available", async () => {
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1 });
+    mockReadyState(audio, 1);
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    expect(audio.currentTime).toBe(10);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(10);
+  });
+
   it("applies seek immediately when metadata is already loaded", async () => {
     const onTimeUpdate = vi.fn();
     const { audio, rerender } = renderPlayer({
