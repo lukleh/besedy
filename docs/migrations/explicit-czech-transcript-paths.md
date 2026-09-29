@@ -116,8 +116,9 @@ just catalog rag-colbert-index \
 
 If cutover fails, keep writers paused, restore the old env values in production
 and development and the host worker, restore the backend-priority rows, and
-run the path tool with the same roots and
-`--rollback --apply`. Restore the previous pipeline and host-worker code
+run the path tool with the same transcript roots, every `--merged-root` used
+during cutover, and `--rollback --apply`. This also restores the merged
+`slots.json` model labels. Restore the previous pipeline and host-worker code
 revision before resuming transcription; the new revision always writes
 `@lang-cs` paths. The old ColBERT scope remains available. A rollback dry run
 omits `--apply`. To reverse only the priority-row change, use:

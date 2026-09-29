@@ -52,6 +52,14 @@ def test_plan_moves_rejects_symlink_root(tmp_path) -> None:
         plan_moves([alias], {"faster-whisper"})
 
 
+def test_plan_moves_accepts_timestamped_rerun_root(tmp_path) -> None:
+    root = tmp_path / "transcripts_20260929_120000_rerun"
+    old = root / "faster-whisper" / "model"
+    old.mkdir(parents=True)
+
+    assert plan_moves([root], {"faster-whisper"}) == [(old, old.with_name("model@lang-cs"))]
+
+
 @pytest.mark.parametrize("indent", [None, 2])
 def test_merged_slots_update_model_labels_without_changing_transcript_text(
     tmp_path, indent: int | None
@@ -68,7 +76,10 @@ def test_merged_slots_update_model_labels_without_changing_transcript_text(
             ]
         },
         "slots": [
-            {"candidates": [{"model": "faster-whisper/model", "text": "faster-whisper/model"}]}
+            {
+                "models": ["canary-nemo/canary[beam]@vad"],
+                "candidates": [{"model": "faster-whisper/model", "text": "faster-whisper/model"}],
+            }
         ],
     }
     labels = {"canary-nemo", "faster-whisper", "whisperx"}
@@ -86,7 +97,17 @@ def test_merged_slots_update_model_labels_without_changing_transcript_text(
     assert updated["slots"][0]["candidates"] == [
         {"model": "faster-whisper/model@lang-cs", "text": "faster-whisper/model"}
     ]
+    assert updated["slots"][0]["models"] == ["canary-nemo/canary[beam]@vad@lang-cs"]
     assert plan_merged_slot_rewrites([root], labels) == []
     assert plan_merged_slot_rewrites([root], labels, rollback=True) == [path]
     rewrite_merged_slots(path, labels, rollback=True)
     assert json.loads(path.read_text()) == source
+
+
+def test_merged_slots_accepts_timestamped_rerun_root(tmp_path) -> None:
+    root = tmp_path / "transcripts_merged_20260929_120000_rerun"
+    path = root / "hash" / "slots.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"meta":{"models":["faster-whisper/model"]}}')
+
+    assert plan_merged_slot_rewrites([root], {"faster-whisper"}) == [path]

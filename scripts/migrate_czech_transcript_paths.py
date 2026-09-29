@@ -31,7 +31,7 @@ def plan_moves(
         if (
             not root.is_dir()
             or root.is_symlink()
-            or not re.fullmatch(r"transcripts_\d{8}_\d{6}", root.name)
+            or not re.fullmatch(r"transcripts_\d{8}_\d{6}(?:_.+)?", root.name)
         ):
             raise ValueError(f"Expected a timestamped transcript directory, not {root}")
         if root.resolve() in seen_roots:
@@ -95,35 +95,45 @@ def _models_array_end(text: str) -> int | None:
 def _rewrite_slot_line(
     line: str, workflow_labels: set[str], *, rollback: bool, in_models: bool
 ) -> tuple[str, bool]:
-    open_match = None if in_models else MODELS_OPEN_RE.search(line)
-    if open_match:
-        prefix = line[: open_match.end()]
-        remaining = line[open_match.end() :]
-        in_models = True
-    else:
-        prefix = ""
-        remaining = line
+    pieces: list[str] = []
+    remaining = line
+    while remaining:
+        if in_models:
+            close_index = _models_array_end(remaining)
+            models_text = remaining if close_index is None else remaining[:close_index]
+            pieces.append(
+                QUOTED_VALUE_RE.sub(
+                    lambda match: (
+                        f'"{_rewrite_model_key(match.group(1), workflow_labels, rollback=rollback)}"'
+                    ),
+                    models_text,
+                )
+            )
+            if close_index is None:
+                return "".join(pieces), True
+            pieces.append("]")
+            remaining = remaining[close_index + 1 :]
+            in_models = False
+            continue
 
-    if in_models:
-        close_index = _models_array_end(remaining)
-        models_text = remaining if close_index is None else remaining[:close_index]
-        models_text = QUOTED_VALUE_RE.sub(
-            lambda match: f'"{_rewrite_model_key(match.group(1), workflow_labels, rollback=rollback)}"',
-            models_text,
+        open_match = MODELS_OPEN_RE.search(remaining)
+        before = remaining if open_match is None else remaining[: open_match.start()]
+        pieces.append(
+            MODEL_FIELD_RE.sub(
+                lambda match: (
+                    match.group(1)
+                    + _rewrite_model_key(match.group(2), workflow_labels, rollback=rollback)
+                    + match.group(3)
+                ),
+                before,
+            )
         )
-        if close_index is None:
-            return prefix + models_text, True
-        remaining = prefix + models_text + remaining[close_index:]
-
-    rewritten = MODEL_FIELD_RE.sub(
-        lambda match: (
-            match.group(1)
-            + _rewrite_model_key(match.group(2), workflow_labels, rollback=rollback)
-            + match.group(3)
-        ),
-        remaining,
-    )
-    return rewritten, False
+        if open_match is None:
+            break
+        pieces.append(open_match.group())
+        remaining = remaining[open_match.end() :]
+        in_models = True
+    return "".join(pieces), in_models
 
 
 def _iter_rewritten_slot_lines(path: Path, workflow_labels: set[str], *, rollback: bool):
@@ -146,7 +156,7 @@ def plan_merged_slot_rewrites(
         if (
             not root.is_dir()
             or root.is_symlink()
-            or not re.fullmatch(r"transcripts_merged_\d{8}_\d{6}", root.name)
+            or not re.fullmatch(r"transcripts_merged_\d{8}_\d{6}(?:_.+)?", root.name)
         ):
             raise ValueError(f"Expected a timestamped merged-transcripts directory, not {root}")
         if root.resolve() in seen_roots:
