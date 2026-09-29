@@ -137,7 +137,6 @@ export function TranscriptStreamViewer({
   const [displayTime, setDisplayTime] = useState(currentTime);
   const [visibleModels, setVisibleModels] = useState<Set<string>>(new Set());
 
-  const lastSeekRef = useRef(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const lastTimeUpdateRef = useRef({ time: currentTime, ts: 0 });
   const rafRef = useRef<number | null>(null);
@@ -399,9 +398,11 @@ export function TranscriptStreamViewer({
                 );
                 const time =
                   renderViewportStart + (x / rect.width) * viewportSeconds;
+                // Preview while dragging; the seek happens once on release.
+                // Every seek restarts the audio request, and a burst of them
+                // can leave the media element stuck mid-seek.
                 setDragTime(time);
                 setIsDragging(true);
-                onSeek(time);
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onPointerMove={(event) => {
@@ -414,11 +415,6 @@ export function TranscriptStreamViewer({
                 const time =
                   renderViewportStart + (x / rect.width) * viewportSeconds;
                 setDragTime(time);
-                const now = performance.now();
-                if (now - lastSeekRef.current > 80) {
-                  onSeek(time);
-                  lastSeekRef.current = now;
-                }
               }}
               onPointerUp={(event) => {
                 if (!isDragging || !onSeek) return;

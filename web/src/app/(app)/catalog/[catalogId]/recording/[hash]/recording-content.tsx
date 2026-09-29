@@ -112,6 +112,7 @@ export default function RecordingContent({
     handleAudioEnded,
     handleDurationChange,
     handlePlayingChange,
+    handlePlayerSeek,
     handleSeek,
     isPlaying,
     seekRequest,
@@ -270,7 +271,7 @@ export default function RecordingContent({
         onAudioEnded={handleAudioEnded}
         onDurationChange={handleDurationChange}
         onPlayingChange={handlePlayingChange}
-        onSeek={handleSeek}
+        onSeek={handlePlayerSeek}
         onSourceChange={handleSourceChange}
         permissions={data ?? {}}
         recording={recording}

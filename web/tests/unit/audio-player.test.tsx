@@ -980,7 +980,13 @@ describe("AudioPlayer progress slider", () => {
   });
 
   afterEach(() => {
-    Object.assign(HTMLElement.prototype, pointerCapture);
+    for (const [name, original] of Object.entries(pointerCapture)) {
+      if (original) {
+        Object.assign(HTMLElement.prototype, { [name]: original });
+      } else {
+        delete HTMLElement.prototype[name as keyof typeof pointerCapture];
+      }
+    }
   });
 
   function progressSlider(container: HTMLElement) {
@@ -1035,6 +1041,34 @@ describe("AudioPlayer progress slider", () => {
     });
 
     expect(seeks).toEqual([100, 99.9]);
+
+    // No preview lingers from the key press: the thumb follows playback.
+    audio.currentTime = 20;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(thumb.getAttribute("aria-valuenow")).toBe("20");
+    expect(container.textContent).toContain("0:20");
+  });
+
+  it("commits a drag made before the duration is known", async () => {
+    const onSeek = vi.fn();
+    const { audio, container } = renderPlayer({ onSeek });
+    const seeks = countSeeks(audio);
+    const slider = progressSlider(container);
+
+    await act(async () => {
+      fireEvent.pointerDown(slider, { pointerId: 1, clientX: 10, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.pointerMove(slider, { pointerId: 1, clientX: 45 });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(slider, { pointerId: 1, clientX: 45 });
+    });
+
+    expect(seeks).toEqual([45]);
+    expect(onSeek).toHaveBeenCalledWith(45);
   });
 });
 
@@ -1069,33 +1103,6 @@ describe("AudioPlayer external seek", () => {
     // The seek should happen immediately because readyState >= 1
     expect(audio.currentTime).toBe(25);
     expect(onTimeUpdate).toHaveBeenCalledWith(25);
-  });
-
-  it("does not seek again when a parent echoes the player's own seek", async () => {
-    const { audio, container, rerender } = renderPlayer();
-    const seeks = countSeeks(audio);
-    await loadMetadata(audio);
-
-    await act(async () => {
-      (container.querySelector('[data-testid="audio-skip-forward"]') as HTMLButtonElement).click();
-    });
-    expect(seeks).toEqual([10]);
-
-    // The recording page turns onSeek into a seek request for the player.
-    rerender(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <AudioPlayer src="https://example.com/audio.mp3" seekTo={10} seekKey={1} />
-      </NextIntlClientProvider>
-    );
-    expect(seeks).toEqual([10]);
-
-    // A request for a different position still seeks.
-    rerender(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <AudioPlayer src="https://example.com/audio.mp3" seekTo={42} seekKey={2} />
-      </NextIntlClientProvider>
-    );
-    expect(seeks).toEqual([10, 42]);
   });
 
   it("queues seek when metadata not loaded and applies on loadedmetadata", async () => {
