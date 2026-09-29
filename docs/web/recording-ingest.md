@@ -99,41 +99,51 @@ containers. Source files:
 The production worker runs from its own checkout,
 `~/worktrees/besedy/prod-ingest`, with its own frozen venv. Merges, branch
 switches or `just setup` in the dev checkout therefore never change production
-ingest; only `just ingest-worker-deploy` does.
+ingest; only `just ingest-worker-deploy` does. The checkout is a locked git
+worktree, so `git worktree remove` and `web/scripts/worktree-report.sh` leave
+it alone; do not remove it while the unit is installed.
 
-Install (once per host):
+Install (once per host). The first deploy creates the checkout and stops at the
+unit check, so systemd never points at a missing directory:
 
 ```bash
 cp jobs-service/host-worker/ingest-worker.env.example ~/.config/lukleh/besedy/ingest-worker.env
 # fill in PREFECT_INGEST_WORK_POOL, BESEDY_INTERNAL_BASE_URL, BESEDY_JOB_SERVICE_SECRET,
 # BESEDY_CONFIG, RAG_BACKEND_KEY, HF_TOKEN, PATH
+sha="$(curl -s http://localhost:3000/api/version | jq -r .commit)"
+just ingest-worker-deploy "$sha"    # creates ~/worktrees/besedy/prod-ingest, then asks for the unit
 mkdir -p ~/.config/systemd/user
 cp jobs-service/host-worker/besedy-ingest-worker.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable besedy-ingest-worker
-just ingest-worker-deploy    # creates ~/worktrees/besedy/prod-ingest and starts the worker
+just ingest-worker-deploy "$sha"    # starts the worker
 loginctl enable-linger "$USER"
 journalctl --user -u besedy-ingest-worker -f
 ```
 
-Deploy a revision (default `origin/main`) with `just ingest-worker-deploy
-<rev>`, from any checkout of the repository. It:
+Deploy with `just ingest-worker-deploy <rev>` from any checkout of the
+repository, at the revision production web runs
+(`curl -s http://localhost:3000/api/version | jq -r .commit`), so the flows and
+the web completion callback agree. The recipe reads
+`~/.config/lukleh/besedy/ingest-worker.env`, the unit's environment file. It:
 
-1. refuses unless the installed unit runs from `~/worktrees/besedy/prod-ingest`
+1. creates the checkout on first use, or refuses if it has local changes;
+2. refuses unless the installed unit runs from `~/worktrees/besedy/prod-ingest`
    (after changing the unit, copy it again and `systemctl --user daemon-reload`);
-2. creates the checkout on first use, or refuses if it has local changes;
-3. refuses while any flow run on `PREFECT_INGEST_WORK_POOL` is scheduled,
-   pending, running, paused or cancelling
-   (`python -m besedy.lib.prefect_jobs.maintenance --work-pool <pool>`), because
-   stopping the worker would kill it;
+3. while the worker is running, refuses if any flow run on
+   `PREFECT_INGEST_WORK_POOL` is scheduled, pending, running, paused or
+   cancelling (`python -m besedy.lib.prefect_jobs.maintenance --work-pool
+   <pool>`), because stopping the worker would kill it;
 4. asks for confirmation, checks again, stops the unit, checks out the revision
    (detached), runs `uv sync --frozen --extra jobs --extra ml` and starts the
    unit again.
 
 Uploads made while the worker is stopped wait in the Prefect queue. To roll
-back, deploy the previous revision; the recipe prints it if a step fails.
-Deploy ingest at the same revision as production web, so the flows and the
-web completion callback agree.
+back, deploy the previous revision; the recipe prints it if a step fails. A
+stopped worker skips the idle check, so queued uploads never block that
+redeploy. The pool is not paused, so a run the worker claims in the second
+between the last check and the stop is killed; ingests are rare enough that
+this is accepted.
 
 Keep every `[paths]` value in the host `besedy.toml` absolute: an empty or
 relative value resolves against the checkout the worker runs from, so ingest

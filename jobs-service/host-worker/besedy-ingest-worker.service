@@ -9,15 +9,16 @@
 # checkout: merges, branch switches and `just setup` there must not change
 # production ingest.
 #
-# Install:
+# Install (see docs/web/recording-ingest.md):
+#   cp jobs-service/host-worker/ingest-worker.env.example ~/.config/lukleh/besedy/ingest-worker.env
+#   # edit the env file, then create the checkout before systemd points at it:
+#   just ingest-worker-deploy <rev>   # stops at the unit check
 #   mkdir -p ~/.config/systemd/user
 #   cp jobs-service/host-worker/besedy-ingest-worker.service ~/.config/systemd/user/
-#   cp jobs-service/host-worker/ingest-worker.env.example ~/.config/lukleh/besedy/ingest-worker.env
-#   # edit the env file, then:
 #   systemctl --user daemon-reload
 #   systemctl --user enable besedy-ingest-worker
-#   just ingest-worker-deploy        # creates the checkout and starts the worker
-#   loginctl enable-linger "$USER"   # keep the user session alive after logout
+#   just ingest-worker-deploy <rev>   # starts the worker
+#   loginctl enable-linger "$USER"    # keep the user session alive after logout
 #
 # Logs: journalctl --user -u besedy-ingest-worker -f
 

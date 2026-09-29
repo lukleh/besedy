@@ -126,7 +126,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Check every deployment on this work pool instead of one deployment.",
     )
     args = parser.parse_args(argv)
-    if args.work_pool:
+    if args.work_pool is not None:
+        if not args.work_pool:
+            parser.error("--work-pool must not be empty")
         return check_idle(work_pool=args.work_pool)
     return check_idle(deployment_name=args.deployment_name)
 

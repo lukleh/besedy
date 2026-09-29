@@ -126,3 +126,14 @@ def test_check_idle_allows_an_idle_work_pool(monkeypatch, capsys) -> None:
     assert maintenance.main(["--work-pool", "besedy-ingest-prod"]) == 0
     assert "work pool is idle: besedy-ingest-prod" in capsys.readouterr().out
     assert "work_pool_filter" in client.read_kwargs
+
+
+def test_main_rejects_an_empty_work_pool(monkeypatch) -> None:
+    client = FakeClient()
+    monkeypatch.setattr(maintenance, "get_client", lambda **_: nullcontext(client))
+
+    with pytest.raises(SystemExit) as exc_info:
+        maintenance.main(["--work-pool", ""])
+
+    assert exc_info.value.code == 2
+    assert client.read_kwargs == {}

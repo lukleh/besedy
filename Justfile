@@ -343,17 +343,21 @@ ingest-worker-run:
         --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
         --type process --limit 1 --install-policy never
 
-# Deploy the production host ingest worker at <rev> (default: origin/main).
-# The systemd unit runs from the fixed checkout ~/worktrees/besedy/prod-ingest,
-# never the dev checkout. Refuses while the ingest pool has work, asks before
-# stopping the worker, then checks out <rev>, syncs the frozen venv and starts
-# it again. Uploads made meanwhile wait in the Prefect queue.
-ingest-worker-deploy rev="origin/main":
+# Deploy the production host ingest worker at <rev>; use the commit production
+# web runs (`curl -s http://localhost:3000/api/version | jq -r .commit`).
+# The systemd unit runs from the fixed, locked checkout
+# ~/worktrees/besedy/prod-ingest, never the dev checkout. Refuses while the
+# running worker has work, asks before stopping it, then checks out <rev>,
+# syncs the frozen venv and starts it again. Uploads made meanwhile wait in the
+# Prefect queue.
+ingest-worker-deploy rev:
     #!/usr/bin/env bash
     set -euo pipefail
     worktree="$HOME/worktrees/besedy/prod-ingest"
     unit="besedy-ingest-worker"
-    env_file="${BESEDY_INGEST_WORKER_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/lukleh/besedy/ingest-worker.env}"
+    # The unit's EnvironmentFile; no overrides, so the idle check sees the
+    # same Prefect API and pool as the worker.
+    env_file="$HOME/.config/lukleh/besedy/ingest-worker.env"
     if [ ! -f "$env_file" ]; then
         echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
         exit 1
@@ -363,18 +367,12 @@ ingest-worker-deploy rev="origin/main":
     set +a
     : "${PREFECT_INGEST_WORK_POOL:?PREFECT_INGEST_WORK_POOL must be set in $env_file}"
 
-    unit_dir="$(systemctl --user show -P WorkingDirectory "$unit")"
-    if [ "$unit_dir" != "$worktree" ]; then
-        echo "The installed $unit unit runs from '${unit_dir:-<none>}', not $worktree." >&2
-        echo "Install the current unit first:" >&2
-        echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
-        exit 1
-    fi
-
     git fetch --quiet origin
     sha="$(git rev-parse --verify "$1^{commit}")"
     if [ ! -e "$worktree" ]; then
-        git worktree add --detach "$worktree" "$sha"
+        # Locked so worktree cleanup (`git worktree remove`, worktree-report.sh)
+        # never removes the checkout the unit runs from.
+        git worktree add --detach --lock --reason "production ingest worker (besedy-ingest-worker)" "$worktree" "$sha"
     elif [ -n "$(git -C "$worktree" status --porcelain)" ]; then
         echo "Refusing to deploy: $worktree has local changes." >&2
         git -C "$worktree" status --short >&2
@@ -383,10 +381,25 @@ ingest-worker-deploy rev="origin/main":
     if [ ! -x "$worktree/.venv/bin/python" ]; then
         (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
     fi
-    # Prefect comes from the deployed venv; `-m` imports besedy from this
-    # checkout (the working directory), so the check still works after a
-    # rollback to a revision that predates `--work-pool`.
+
+    # Checked after the checkout exists, so installing the unit never points
+    # systemd at a missing directory.
+    unit_dir="$(systemctl --user show -P WorkingDirectory "$unit")"
+    if [ "$unit_dir" != "$worktree" ]; then
+        echo "The installed $unit unit runs from '${unit_dir:-<none>}', not $worktree." >&2
+        echo "$worktree is ready. Install the current unit, then run this again:" >&2
+        echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
+        exit 1
+    fi
+
+    # Only a running worker can lose work to the stop. Skipping the check for a
+    # stopped worker keeps a failed deploy redeployable: queued uploads or a
+    # half-synced venv would otherwise block it. Prefect comes from the
+    # deployed venv; `-m` imports besedy from this checkout (the working
+    # directory), so the check works after a rollback to a revision that
+    # predates `--work-pool`.
     check_idle() {
+        systemctl --user is-active --quiet "$unit" || return 0
         "$worktree/.venv/bin/python" -m besedy.lib.prefect_jobs.maintenance \
             --work-pool "$PREFECT_INGEST_WORK_POOL"
     }

@@ -725,15 +725,16 @@ Deploy additions on top of the Deep Search steps above:
 2. `just prod-deploy` (includes the `recording_intake` migration) and
    `just jobs-prod-rebuild && just jobs-prod-deploy` (registers the
    `besedy-ingest-prod` pool and `ingest_recording_flow/ingest-prod`).
-3. Install the host worker unit from
-   `jobs-service/host-worker/besedy-ingest-worker.service` with
+3. Set up the host worker as described in
+   [recording-ingest.md](recording-ingest.md#host-worker):
    `~/.config/lukleh/besedy/ingest-worker.env` filled in
    (`BESEDY_INTERNAL_BASE_URL=http://127.0.0.1:3000`, the production
    `BESEDY_JOB_SERVICE_SECRET`, `PREFECT_INGEST_WORK_POOL=besedy-ingest-prod`),
-   then start it with `just ingest-worker-deploy <sha>`. The worker runs from
-   its own checkout, `~/worktrees/besedy/prod-ingest`, not from the dev
-   checkout. Redeploy it at the same revision whenever production web is
-   deployed.
+   `just ingest-worker-deploy <sha>` to create its checkout
+   `~/worktrees/besedy/prod-ingest`, then the unit from
+   `jobs-service/host-worker/besedy-ingest-worker.service` and the same deploy
+   again to start it. Redeploy the worker at the same revision whenever
+   production web is deployed.
 4. Verify: `systemctl --user status besedy-ingest-worker`, the pool shows a
    healthy worker in the Prefect UI, then upload a short recording and watch it
    reach `SUCCEEDED` with a hash link.
