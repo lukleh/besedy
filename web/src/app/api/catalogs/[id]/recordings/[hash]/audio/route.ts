@@ -397,11 +397,26 @@ export async function GET(
     // Use the resolved (canonical) path for file operations
     const resolvedAudioPath = pathValidation.resolvedPath;
 
-    // Check if file exists
+    // Check that the file exists and that this process can read it. stat()
+    // succeeds on an unreadable file, and the read stream would only fail after
+    // the response has been built.
     let stat: fs.Stats;
     try {
       stat = await fs.promises.stat(resolvedAudioPath);
-    } catch {
+      await fs.promises.access(resolvedAudioPath, fs.constants.R_OK);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EACCES" || code === "EPERM") {
+        const response = NextResponse.json(
+          { error: "Audio file is not readable" },
+          { status: 500 }
+        );
+        logResponse("error", response.status, "audio_file_unreadable", {
+          errorName: code,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        return response;
+      }
       const response = NextResponse.json(
         { error: "Audio file not found on disk" },
         { status: 404 }
@@ -461,9 +476,10 @@ export async function GET(
         }
 
         const chunkSize = end - start + 1;
-        const stream = fs.createReadStream(resolvedAudioPath, { start, end });
 
-        // Log access for range requests with range info
+        // Log access for range requests with range info. Await the audit log
+        // before opening the stream so its error listener is attached in the
+        // same tick; an open error during an await would be uncaught.
         const range: AudioStreamRange = { start, end, fileSize };
         if (forceDownload) {
           await logAudioDownloaded(userId, hash, catalogId, audioSource);
@@ -471,6 +487,7 @@ export async function GET(
           await logAudioStreamed(userId, hash, catalogId, range);
         }
 
+        const stream = fs.createReadStream(resolvedAudioPath, { start, end });
         const response = new NextResponse(stream as unknown as ReadableStream, {
           status: 206,
           headers: {
@@ -520,10 +537,10 @@ export async function GET(
     // Without an explicit Range request, return a normal 200 streaming
     // response. Sending a synthetic first chunk as 206 is not reliably
     // interoperable across browsers and can truncate playback.
-    const stream = fs.createReadStream(resolvedAudioPath);
     const range: AudioStreamRange = { start: 0, end: fileSize - 1, fileSize };
     await logAudioStreamed(userId, hash, catalogId, range);
 
+    const stream = fs.createReadStream(resolvedAudioPath);
     const response = new NextResponse(stream as unknown as ReadableStream, {
       status: 200,
       headers: {

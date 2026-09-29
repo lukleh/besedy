@@ -333,6 +333,72 @@ describe("catalog audio route", () => {
     }
   });
 
+  it("returns a clear error without opening a stream when the file is not readable", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const accessSpy = vi
+      .spyOn(fs.promises, "access")
+      .mockRejectedValue(
+        Object.assign(new Error(`EACCES: permission denied, access '${audioPath}'`), {
+          code: "EACCES",
+        })
+      );
+    const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
+        {
+          headers: { range: "bytes=0-" },
+        }
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: "Audio file is not readable" });
+      expect(createReadStreamSpy).not.toHaveBeenCalled();
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+
+      const event = findStructuredEvent(errorSpy.mock.calls as unknown[][], "audio_route_response");
+      expect(event).toMatchObject({
+        status: 500,
+        reason: "audio_file_unreadable",
+        errorName: "EACCES",
+      });
+    } finally {
+      errorSpy.mockRestore();
+      accessSpy.mockRestore();
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
+  it("writes the audit log before opening the stream", async () => {
+    const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
+        {
+          headers: { range: "bytes=0-" },
+        }
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(206);
+      // An open error that fires while an await is pending has no listener yet
+      // and becomes an uncaught exception, so no await may sit in between.
+      expect(mockLogAudioStreamed.mock.invocationCallOrder[0]).toBeLessThan(
+        createReadStreamSpy.mock.invocationCallOrder[0]
+      );
+      await response.arrayBuffer();
+    } finally {
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
   it("logs invalid route parameter responses", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
