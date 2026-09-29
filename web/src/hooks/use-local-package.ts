@@ -84,6 +84,8 @@ export function useLocalAudioSrc(
 
   const inline = useQuery({
     queryKey: ["local-inline-audio", record?.key ?? null],
+    // IndexedDB reads do not need a network connection.
+    networkMode: "always",
     enabled: useLocal && needsInline,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
@@ -119,6 +121,7 @@ export function useLocalArtworkUrl(
 
   const { data: blob } = useQuery({
     queryKey: ["local-artwork", key, artworkId],
+    networkMode: "always",
     enabled: key !== null && artworkId !== null,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
