@@ -8,6 +8,7 @@ import { requireCatalogEventsAccess } from "@/lib/catalog-events/access";
 import { canManageEventSources } from "@/lib/policy/event";
 import { IntIdSchema, validateParams } from "@/lib/api/validation";
 import { validatePathAsync } from "@/lib/security/path-validation";
+import { checkReadableFile, openReadStream } from "@/lib/readable-file";
 import { TimestampIdSchema } from "@/lib/validation/schemas";
 import {
   readEventSources,
@@ -127,19 +128,35 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Invalid file path" }, { status: 403 });
     }
 
-    const stat = await fs.promises.stat(pathValidation.resolvedPath);
+    // stat() alone accepts an unreadable file or a directory, and the stream
+    // would only fail after the response has been built.
+    const fileCheck = await checkReadableFile(pathValidation.resolvedPath);
+    if (!fileCheck.ok) {
+      if (fileCheck.reason === "missing") {
+        return NextResponse.json({ error: "File not found" }, { status: 404 });
+      }
+      console.error(
+        `Event source file is not readable (${fileCheck.reason}` +
+          `${fileCheck.code ? `, ${fileCheck.code}` : ""}): ${pathValidation.resolvedPath}`
+      );
+      return NextResponse.json({ error: "Source file is not readable" }, { status: 500 });
+    }
     const contentType = fileSource.mimeType || "application/octet-stream";
-    const stream = fs.createReadStream(pathValidation.resolvedPath);
     const downloadName = fileSource.originalName || fileSource.storedName;
 
-    return new NextResponse(stream as unknown as ReadableStream, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Length": String(stat.size),
-        "Content-Disposition": getContentDisposition(downloadName),
-        "Cache-Control": "private, max-age=3600",
-      },
+    return openReadStream(pathValidation.resolvedPath, undefined, (stream) => {
+      stream.on("error", (error) => {
+        console.error(`Error streaming event source ${pathValidation.resolvedPath}:`, error);
+      });
+      return new NextResponse(stream as unknown as ReadableStream, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": String(fileCheck.stat.size),
+          "Content-Disposition": getContentDisposition(downloadName),
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
     });
   } catch (error) {
     if (isAuthError(error)) {

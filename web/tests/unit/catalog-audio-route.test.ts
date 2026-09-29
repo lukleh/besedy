@@ -333,6 +333,181 @@ describe("catalog audio route", () => {
     }
   });
 
+  it("returns a clear error without opening a stream when the file is not readable", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const accessSpy = vi
+      .spyOn(fs.promises, "access")
+      .mockRejectedValue(
+        Object.assign(new Error(`EACCES: permission denied, access '${audioPath}'`), {
+          code: "EACCES",
+        })
+      );
+    const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
+        {
+          headers: { range: "bytes=0-" },
+        }
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: "Audio file is not readable" });
+      expect(createReadStreamSpy).not.toHaveBeenCalled();
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+
+      const event = findStructuredEvent(errorSpy.mock.calls as unknown[][], "audio_route_response");
+      expect(event).toMatchObject({
+        status: 500,
+        reason: "audio_file_unreadable",
+        errorName: "Error",
+        errorCode: "EACCES",
+      });
+    } finally {
+      errorSpy.mockRestore();
+      accessSpy.mockRestore();
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    { label: "range stream", query: "", range: "bytes=0-", status: 206, audit: mockLogAudioStreamed },
+    { label: "full stream", query: "", range: null, status: 200, audit: mockLogAudioStreamed },
+    { label: "range download", query: "?download=true", range: "bytes=0-", status: 206, audit: mockLogAudioDownloaded },
+    { label: "full download", query: "?download=true", range: null, status: 200, audit: mockLogAudioDownloaded },
+  ])("writes the audit log before opening the stream ($label)", async ({ query, range, status, audit }) => {
+    const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio${query}`,
+        range ? { headers: { range } } : undefined
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(status);
+      // An open error that fires while an await is pending has no listener yet
+      // and becomes an uncaught exception, so no await may sit in between.
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(createReadStreamSpy).toHaveBeenCalledTimes(1);
+      expect(audit.mock.invocationCallOrder[0]).toBeLessThan(
+        createReadStreamSpy.mock.invocationCallOrder[0]
+      );
+      await response.arrayBuffer();
+    } finally {
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
+  it("returns 416 without an audit entry for an inverted range", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
+        {
+          headers: { range: "bytes=100-50" },
+        }
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(416);
+      expect(response.headers.get("Content-Range")).toBe(`bytes */${FILE_SIZE}`);
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("returns a clear error without opening a stream when the path is a directory", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+    mockGetCatalogEntry.mockResolvedValue({
+      compressedPath: tmpDir,
+      originalPath: tmpDir,
+      isActionable: true,
+    });
+    mockValidatePathAsync.mockResolvedValue({ valid: true, resolvedPath: tmpDir });
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: "Audio file is not readable" });
+      expect(createReadStreamSpy).not.toHaveBeenCalled();
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+
+      const event = findStructuredEvent(errorSpy.mock.calls as unknown[][], "audio_route_response");
+      expect(event).toMatchObject({ status: 500, reason: "audio_file_not_regular" });
+    } finally {
+      errorSpy.mockRestore();
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
+  it("returns 404 with the errno code when the file is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    fs.rmSync(audioPath);
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({ error: "Audio file not found on disk" });
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+
+      const event = findStructuredEvent(warnSpy.mock.calls as unknown[][], "audio_route_response");
+      expect(event).toMatchObject({
+        status: 404,
+        reason: "audio_file_missing",
+        errorCode: "ENOENT",
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("returns 416 without an audit entry for a suffix range on an empty file", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    fs.writeFileSync(audioPath, Buffer.alloc(0));
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
+        {
+          headers: { range: "bytes=-5" },
+        }
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(416);
+      expect(response.headers.get("Content-Range")).toBe("bytes */0");
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("logs invalid route parameter responses", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
