@@ -85,6 +85,8 @@ the equivalent one-level directory rename on disk. Both are idempotent and run
 inside the same deploy downtime window as the migration, filesystem first (no
 transactional rollback there, so a failure there aborts before any schema
 change).
+The storage rename ran in that window in September 2026, and the
+script was then removed (#226); recover it from git history if needed.
 
 ADR 0009 also named a pending follow-up cleanup (retiring the `inventory` and
 `import-legacy` CLI subcommands and the poster branch of

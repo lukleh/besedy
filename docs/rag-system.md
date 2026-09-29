@@ -157,6 +157,19 @@ just tei-up            # optional legacy TEI services
 just tei-down
 ```
 
+`besedy-colbert` is one container with a fixed name that production,
+development and test search all use, so `rag-services-up`/`-down` and
+`colbert-up`/`-down` act on it from whichever checkout runs them. Those
+recipes refuse when the container's Compose `working_dir` label points at
+another checkout's `rag-services/`; the message names the owning checkout and
+the container state, so run the recipe there instead (on the production host
+that is the `prod-colbert` worktree). `BESEDY_COLBERT_FORCE=1` only skips the
+check; the recipe determines what happens to the container. `colbert-down`
+stops it without changing its owner label, so a later `colbert-up` from
+another checkout still needs the override. Use force only when the shared
+container is safe to stop or replace, such as after its owning worktree has
+been removed.
+
 ## Incremental Sync
 
 ### Model
