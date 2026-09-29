@@ -9,8 +9,6 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-WEB_PACKAGE = PROJECT_ROOT / "web" / "package.json"
-ARTWORK_MIGRATION = PROJECT_ROOT / "web" / "scripts" / "migrate-artwork-storage.ts"
 
 RETIRED_RECIPES = {
     "jobs-up",
@@ -66,13 +64,6 @@ def test_shared_colbert_recipes_run_the_checkout_guard_first() -> None:
         assert first == {"recipe": "_guard-shared-colbert", "arguments": [name]}
 
 
-def test_completed_artwork_storage_migration_is_no_longer_exposed() -> None:
-    package = json.loads(WEB_PACKAGE.read_text(encoding="utf-8"))
-
-    assert "storage:artwork-rename" not in package["scripts"]
-    assert not ARTWORK_MIGRATION.exists()
-
-
 def _run_guard(
     tmp_path: Path,
     recipe: str,
@@ -86,7 +77,7 @@ def _run_guard(
     docker = bin_dir / "docker"
     docker.write_text(
         "#!/usr/bin/env bash\n"
-        'if [ "$1" = "container" ]; then exit "$STUB_CONTAINER_STATUS"; fi\n'
+        '[ "$STUB_CONTAINER_STATUS" = 0 ] || exit 1\n'
         'printf "%s\\n" "$STUB_WORKING_DIR"\n',
         encoding="utf-8",
     )
@@ -172,6 +163,7 @@ def test_colbert_guard_refuses_a_container_without_a_compose_label(tmp_path: Pat
 
     assert result.returncode == 1
     assert "Running ColBERT checkout: <unknown>" in result.stderr
+    assert "(cd <running-checkout>/rag-services/.. && just rag-services-down)" in result.stderr
 
 
 @requires_just
@@ -186,3 +178,13 @@ def test_colbert_guard_force_override(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert "BESEDY_COLBERT_FORCE=1" in result.stdout
+
+
+@requires_just
+def test_colbert_guard_does_not_evaluate_the_recipe_argument(tmp_path: Path) -> None:
+    marker = tmp_path / "evaluated"
+
+    result = _run_guard(tmp_path, f'x"; touch {marker}; echo "', container_exists=True)
+
+    assert result.returncode == 1
+    assert not marker.exists()

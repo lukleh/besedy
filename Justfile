@@ -80,15 +80,15 @@ _colbert-state-dir:
 _guard-shared-colbert recipe:
     #!/usr/bin/env bash
     set -euo pipefail
+    recipe="$1"
     if [ "${BESEDY_COLBERT_FORCE:-0}" = "1" ]; then
         echo "BESEDY_COLBERT_FORCE=1: bypassing shared ColBERT checkout guard."
         exit 0
     fi
-    if ! docker container inspect besedy-colbert >/dev/null 2>&1; then
+    if ! running_working_dir="$(docker container inspect --format '{{{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null)"; then
         exit 0
     fi
     expected_working_dir="$(cd "{{ justfile_directory() }}/rag-services" && pwd -P)"
-    running_working_dir="$(docker inspect --format '{{{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null || true)"
     running_physical_dir=""
     if [ -n "$running_working_dir" ] && [ -d "$running_working_dir" ]; then
         running_physical_dir="$(cd "$running_working_dir" && pwd -P)"
@@ -96,18 +96,22 @@ _guard-shared-colbert recipe:
     if [ -n "$running_physical_dir" ] && [ "$running_physical_dir" = "$expected_working_dir" ]; then
         exit 0
     fi
-    echo "Refusing to run '{{ recipe }}' against besedy-colbert from this checkout." >&2
+    echo "Refusing to run '$recipe' against besedy-colbert from this checkout." >&2
     echo "Running ColBERT checkout: ${running_working_dir:-<unknown>}" >&2
     echo "This checkout: $expected_working_dir" >&2
-    running_dir="${running_working_dir:-<running-checkout>/rag-services}"
-    case "{{ recipe }}" in
+    if [ -n "$running_working_dir" ]; then
+        running_dir="$(printf '%q' "$running_working_dir")"
+    else
+        running_dir="<running-checkout>/rag-services"
+    fi
+    case "$recipe" in
         *-up)
             echo "Recreate it from the running checkout with:" >&2
-            printf '  (cd %q && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert)\n' "$running_dir" >&2
+            echo "  (cd $running_dir && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert)" >&2
             ;;
         *)
             echo "Run it from the running checkout with:" >&2
-            printf '  (cd %q/.. && just %s)\n' "$running_dir" "{{ recipe }}" >&2
+            echo "  (cd $running_dir/.. && just $recipe)" >&2
             ;;
     esac
     echo "Set BESEDY_COLBERT_FORCE=1 only after confirming the shared container is safe to replace." >&2
