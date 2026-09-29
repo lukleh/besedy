@@ -310,7 +310,7 @@ ingest-worker-run:
     else
         echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
     fi
-    exec uv run --extra jobs prefect worker start \
+    exec uv run --extra jobs --extra ml prefect worker start \
         --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
         --type process --limit 1 --install-policy never
 
