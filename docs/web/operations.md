@@ -302,71 +302,7 @@ for the schema, storage, and CLI rename and its own migration
 (`20260920160000_rename_event_poster_to_artwork`), which ran after this
 cutover.
 
-#### ADR 0011 rename cutover
-
-The poster-to-artwork rename is a hard cut: nothing reads `POSTERS_DIR`,
-`posters_dir`, or the `posters_<catalogId>` directory layout after it. The
-storage rename, the config rename, and the database migration must all land in
-one downtime window, in this order. Filesystem first, because it has no
-transactional rollback: a failure there aborts before any schema change.
-
-1. Stop the web container and scheduled backup so nothing writes artwork while
-   paths move, leaving the database up for the migration:
-   `cd web && bash ../scripts/run_web_compose.sh production stop web backup`
-   (the same step `just prod-apply` performs; `just prod-down` would also stop
-   the database).
-2. Rename the host directory and update the operator files outside the checkout:
-   - `mv ~/projects/besedy_posters ~/projects/besedy_artwork`
-   - in the production env file (`CONFIG_FILE`'s sibling `web.env.prod`):
-     replace `POSTERS_DIR=...` with `ARTWORK_DIR=/home/<user>/projects/besedy_artwork`
-   - in the container TOML that `CONFIG_FILE` points at: replace
-     `posters_dir = "/data/posters"` with `artwork_dir = "/data/artwork"`
-3. Rename the per-catalog directories inside the storage root:
-   `just artwork-storage --prod --dry-run`, review, then
-   `just artwork-storage --prod --yes`. The script refuses to touch a root
-   where a prefixed entry is not a plain directory or where both names exist.
-4. `just prod-build`, then `just prod-apply`, which takes the pre-migration
-   backup, runs migration `20260920160000_rename_event_poster_to_artwork`, and
-   restarts web with the renamed mount.
-5. `just artwork-storage --prod --verify` to confirm every
-   `catalog_event_artwork` row's files exist at the renamed paths.
-
-Rolling back before step 4 is `just artwork-storage --prod --reverse --yes`
-plus restoring the two operator files and the host directory name. After step
-4 the database rename has committed; use the pre-migration backup that
-`just prod-apply` takes.
-
-Use the retained artwork CLI for normal event artwork operations:
-
-```bash
-just artwork list --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod
-just artwork create --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
-  --square <file> --landscape <file> --label <text> --prod --yes
-just artwork publish --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
-  --artwork <artwork-id> --prod --yes
-just artwork unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
-just artwork delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
-  --artwork <artwork-id> --prod --yes
-```
-
-`ARTWORK_DIR` must belong to the shared `UPLOADS_GID` group and have mode
-`2770`. Artwork writes preserve that shared group on descendant directories and
-use group-readable files so host-run CLI imports and the web container can read
-each other's candidates.
-
-For host-run commands, the CLI rewrites the container database hostname to the
-published `DB_PORT` binding from the selected environment file. Production
-mutations require the explicit `--yes` confirmation.
-
-To verify that no artwork is currently published:
-
-```sql
-SELECT count(*) AS published_artwork
-  FROM catalog_event_artwork_publication;
-```
-
-The result must be zero when the deployment policy requires every artwork to
-remain unpublished.
+Completed September 2026; see [ADR 0011](../adr/0011-poster-to-artwork-rename.md).
 
 ### Permissions rework rollout
 
@@ -652,7 +588,7 @@ through the development runtime.
    Registers/refreshes the `besedy-deep-search-prod` work pool and the
    `deep_search_flow/deep-search-prod` deployment (concurrency from
    `PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT`). Use `just jobs-dev-deploy` for
-   development; the bare `just jobs-deploy` alias targets **dev**.
+   development.
 
 ### Verification
 
@@ -687,10 +623,8 @@ Then submit one small Deep Search job through the UI and confirm a
 
 ### Rollback
 
-- Jobs failed while web is healthy: `just jobs-prod-down`. **Do not** use
-  `just jobs-down` -- it is a backward-compatible alias for the **dev** runtime.
-  Deep Search goes offline while the catalog web app and dev runtime keep
-  running.
+- Jobs failed while web is healthy: `just jobs-prod-down`. Deep Search goes
+  offline while the catalog web app and dev runtime keep running.
 - The Deep Search share table is additive -- do not drop it manually unless
   there is a concrete data or availability problem.
 

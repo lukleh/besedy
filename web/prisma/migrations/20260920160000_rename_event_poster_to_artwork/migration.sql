@@ -2,8 +2,8 @@
 -- Tables, the column, the audit enum labels, and the stored permission names are
 -- renamed in place; no table is dropped or recreated. The only rows removed are
 -- the handful of pre-rename artwork audit entries (step 5).
--- The filesystem rename (scripts/migrate-artwork-storage.ts) runs in the same
--- downtime window, before this migration.
+-- The one-time filesystem rename was completed in the same downtime window,
+-- before this migration.
 
 -- 1. Audit enum. RENAME VALUE (PG10+) keeps every existing audit_log row valid and
 --    preserves the label's sort position, so no row rewrite and no type swap.

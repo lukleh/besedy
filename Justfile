@@ -75,22 +75,41 @@ jobs_prod_codex_compose := "docker compose --env-file \"$(bash scripts/resolve_j
 _colbert-state-dir:
     @mkdir -p "${RAG_COLBERT_HOST_DIR:-${BESEDY_STATE_HOME:-$HOME/.local/state/lukleh/besedy}/tmp/rag_colbert}"
 
-rag-services-up: _colbert-state-dir
+_guard-shared-colbert:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "${BESEDY_COLBERT_FORCE:-0}" = "1" ]; then
+        echo "BESEDY_COLBERT_FORCE=1: bypassing shared ColBERT checkout guard."
+        exit 0
+    fi
+    if ! docker container inspect besedy-colbert >/dev/null 2>&1; then
+        exit 0
+    fi
+    checkout_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+    expected_working_dir="$checkout_root/rag-services"
+    running_working_dir="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null || true)"
+    if [ "$running_working_dir" = "$expected_working_dir" ]; then
+        exit 0
+    fi
+    echo "Refusing to manage besedy-colbert from this checkout." >&2
+    echo "Running ColBERT checkout: ${running_working_dir:-<unknown>}" >&2
+    echo "Expected checkout: $expected_working_dir" >&2
+    echo "Recreate it from the running checkout with:" >&2
+    if [ -n "$running_working_dir" ]; then
+        printf '  (cd %q && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert)\n' "$running_working_dir" >&2
+    else
+        echo "  cd <running-checkout>/rag-services && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert" >&2
+    fi
+    echo "Set BESEDY_COLBERT_FORCE=1 only after confirming the shared container is safe to replace." >&2
+    exit 1
+
+rag-services-up: _colbert-state-dir _guard-shared-colbert
     {{ rag_services_compose }} up -d
 
-rag-services-down:
+rag-services-down: _guard-shared-colbert
     {{ rag_services_compose }} down
 
 rag-services-logs:
-    {{ rag_services_compose }} logs -f
-
-embeddings-up: _colbert-state-dir
-    {{ rag_services_compose }} up -d
-
-embeddings-down:
-    {{ rag_services_compose }} down
-
-embeddings-logs:
     {{ rag_services_compose }} logs -f
 
 tei-up:
@@ -102,10 +121,10 @@ tei-down:
 tei-logs:
     {{ rag_services_compose }} logs -f embeddings reranker
 
-colbert-up: _colbert-state-dir
+colbert-up: _colbert-state-dir _guard-shared-colbert
     {{ rag_services_compose }} up -d --build colbert
 
-colbert-down:
+colbert-down: _guard-shared-colbert
     {{ rag_services_compose }} stop colbert
 
 colbert-logs:
@@ -138,9 +157,6 @@ prefect-status:
 
 prefect-db:
     {{ prefect_compose }} exec prefect-postgres psql -U ${PREFECT_POSTGRES_USER:-prefect} ${PREFECT_POSTGRES_DB:-prefect}
-
-prefect-deploy:
-    just jobs-dev-deploy
 
 # A jobs runtime with an empty BESEDY_JOB_SERVICE_SECRET stays healthy but
 # answers 401 to every web request, so refuse to start one.
@@ -312,31 +328,6 @@ ingest-worker-run:
         --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
         --type process --limit 1 --install-policy never
 
-# Backward-compatible aliases while the old jobs-* naming is phased out.
-jobs-up:
-    just jobs-dev-up
-
-jobs-down:
-    just jobs-dev-down
-
-jobs-down-clean:
-    just jobs-dev-down
-
-jobs-logs:
-    just jobs-dev-logs
-
-jobs-rebuild:
-    just jobs-dev-rebuild
-
-jobs-status:
-    just jobs-dev-status
-
-jobs-db:
-    just prefect-db
-
-jobs-deploy:
-    just jobs-dev-deploy
-
 # ============================================================================
 # Web App - Code Quality Checks
 # ============================================================================
@@ -377,10 +368,6 @@ web-test:
 # Event artwork candidates and publication (see: just artwork --help)
 artwork *args:
     cd web && npm run artwork -- "$@"
-
-# One-time storage rename: posters_<catalogId> -> artwork_<catalogId> (see: just artwork-storage --help)
-artwork-storage *args:
-    cd web && npm run storage:artwork-rename -- "$@"
 
 # ============================================================================
 # Web App - Development (port 3001)

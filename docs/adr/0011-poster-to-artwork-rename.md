@@ -80,11 +80,8 @@ pre-rename artwork audit rows (four `EVENT_POSTER_CREATED` entries from the
 2026-09-19 import) are deleted rather than rewritten: their `details` carry
 the old name in field names and generated text next to user-entered labels,
 and editing audit history in place is not worth the risk for four rows whose
-subject candidates still exist. A companion script, `scripts/migrate-artwork-storage.ts`, does
-the equivalent one-level directory rename on disk. Both are idempotent and run
-inside the same deploy downtime window as the migration, filesystem first (no
-transactional rollback there, so a failure there aborts before any schema
-change).
+subject candidates still exist. The one-time storage rename was completed as
+part of this cutover; the live system now uses the `artwork_<catalogId>` layout.
 
 ADR 0009 also named a pending follow-up cleanup (retiring the `inventory` and
 `import-legacy` CLI subcommands and the poster branch of
