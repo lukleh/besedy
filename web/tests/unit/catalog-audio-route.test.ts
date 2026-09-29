@@ -364,7 +364,8 @@ describe("catalog audio route", () => {
       expect(event).toMatchObject({
         status: 500,
         reason: "audio_file_unreadable",
-        errorName: "EACCES",
+        errorName: "Error",
+        errorCode: "EACCES",
       });
     } finally {
       errorSpy.mockRestore();
@@ -373,29 +374,56 @@ describe("catalog audio route", () => {
     }
   });
 
-  it("writes the audit log before opening the stream", async () => {
+  it.each([
+    { label: "range stream", query: "", range: "bytes=0-", status: 206, audit: mockLogAudioStreamed },
+    { label: "full stream", query: "", range: null, status: 200, audit: mockLogAudioStreamed },
+    { label: "range download", query: "?download=true", range: "bytes=0-", status: 206, audit: mockLogAudioDownloaded },
+    { label: "full download", query: "?download=true", range: null, status: 200, audit: mockLogAudioDownloaded },
+  ])("writes the audit log before opening the stream ($label)", async ({ query, range, status, audit }) => {
     const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio${query}`,
+        range ? { headers: { range } } : undefined
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(status);
+      // An open error that fires while an await is pending has no listener yet
+      // and becomes an uncaught exception, so no await may sit in between.
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(createReadStreamSpy).toHaveBeenCalledTimes(1);
+      expect(audit.mock.invocationCallOrder[0]).toBeLessThan(
+        createReadStreamSpy.mock.invocationCallOrder[0]
+      );
+      await response.arrayBuffer();
+    } finally {
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
+  it("returns 416 without an audit entry for an inverted range", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     try {
       const request = new NextRequest(
         `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
         {
-          headers: { range: "bytes=0-" },
+          headers: { range: "bytes=100-50" },
         }
       );
       const response = await getAudio(request, {
         params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
       });
 
-      expect(response.status).toBe(206);
-      // An open error that fires while an await is pending has no listener yet
-      // and becomes an uncaught exception, so no await may sit in between.
-      expect(mockLogAudioStreamed.mock.invocationCallOrder[0]).toBeLessThan(
-        createReadStreamSpy.mock.invocationCallOrder[0]
-      );
-      await response.arrayBuffer();
+      expect(response.status).toBe(416);
+      expect(response.headers.get("Content-Range")).toBe(`bytes */${FILE_SIZE}`);
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
     } finally {
-      createReadStreamSpy.mockRestore();
+      warnSpy.mockRestore();
     }
   });
 

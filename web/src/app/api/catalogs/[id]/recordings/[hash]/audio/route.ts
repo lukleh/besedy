@@ -104,6 +104,7 @@ function logAudioRouteResponse(
     fileSize?: number;
     responseBytes?: number;
     errorName?: string;
+    errorCode?: string;
     errorMessage?: string;
   }
 ): void {
@@ -216,6 +217,7 @@ export async function GET(
       fileSize?: number;
       responseBytes?: number;
       errorName?: string;
+      errorCode?: string;
       errorMessage?: string;
     }
   ) =>
@@ -412,7 +414,8 @@ export async function GET(
           { status: 500 }
         );
         logResponse("error", response.status, "audio_file_unreadable", {
-          errorName: code,
+          errorName: error instanceof Error ? error.name : undefined,
+          errorCode: code,
           errorMessage: error instanceof Error ? error.message : String(error),
         });
         return response;
@@ -421,7 +424,7 @@ export async function GET(
         { error: "Audio file not found on disk" },
         { status: 404 }
       );
-      logResponse("warn", response.status, "audio_file_missing");
+      logResponse("warn", response.status, "audio_file_missing", { errorCode: code });
       return response;
     }
     const fileSize = stat.size;
@@ -473,6 +476,19 @@ export async function GET(
           // behavior and can stop playback early on some clients.
           const requestedEnd = hasEnd ? parseInt(match[2], 10) : fileSize - 1;
           end = Math.min(requestedEnd, fileSize - 1);
+        }
+
+        // An inverted range (`bytes=100-50`) or a suffix range on an empty
+        // file leaves end < start, which createReadStream rejects.
+        if (end < start) {
+          const response = new NextResponse(null, {
+            status: 416,
+            headers: {
+              "Content-Range": `bytes */${fileSize}`,
+            },
+          });
+          logResponse("warn", response.status, "range_not_satisfiable", { fileSize });
+          return response;
         }
 
         const chunkSize = end - start + 1;
