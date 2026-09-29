@@ -343,6 +343,74 @@ ingest-worker-run:
         --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
         --type process --limit 1 --install-policy never
 
+# Deploy the production host ingest worker at <rev> (default: origin/main).
+# The systemd unit runs from the fixed checkout ~/worktrees/besedy/prod-ingest,
+# never the dev checkout. Refuses while the ingest pool has work, asks before
+# stopping the worker, then checks out <rev>, syncs the frozen venv and starts
+# it again. Uploads made meanwhile wait in the Prefect queue.
+ingest-worker-deploy rev="origin/main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    worktree="$HOME/worktrees/besedy/prod-ingest"
+    unit="besedy-ingest-worker"
+    env_file="${BESEDY_INGEST_WORKER_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/lukleh/besedy/ingest-worker.env}"
+    if [ ! -f "$env_file" ]; then
+        echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
+        exit 1
+    fi
+    set -a
+    . "$env_file"
+    set +a
+    : "${PREFECT_INGEST_WORK_POOL:?PREFECT_INGEST_WORK_POOL must be set in $env_file}"
+
+    unit_dir="$(systemctl --user show -P WorkingDirectory "$unit")"
+    if [ "$unit_dir" != "$worktree" ]; then
+        echo "The installed $unit unit runs from '${unit_dir:-<none>}', not $worktree." >&2
+        echo "Install the current unit first:" >&2
+        echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
+        exit 1
+    fi
+
+    git fetch --quiet origin
+    sha="$(git rev-parse --verify "$1^{commit}")"
+    if [ ! -e "$worktree" ]; then
+        git worktree add --detach "$worktree" "$sha"
+    elif [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+        echo "Refusing to deploy: $worktree has local changes." >&2
+        git -C "$worktree" status --short >&2
+        exit 1
+    fi
+    if [ ! -x "$worktree/.venv/bin/python" ]; then
+        (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    fi
+    check_idle() {
+        "$worktree/.venv/bin/python" -m besedy.lib.prefect_jobs.maintenance \
+            --work-pool "$PREFECT_INGEST_WORK_POOL"
+    }
+
+    current="$(git -C "$worktree" rev-parse HEAD)"
+    check_idle
+    echo "Deploying the ingest worker: ${current:0:12} -> ${sha:0:12} ($(git log -1 --format=%s "$sha"))"
+    read -r -p "Stop $unit, update $worktree and start it again? [y/N] " answer
+    if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+        echo "Aborted; the worker was not touched." >&2
+        exit 1
+    fi
+    check_idle
+    systemctl --user stop "$unit"
+    trap 'echo "Deploy failed with $unit stopped. Redeploy the previous revision: just ingest-worker-deploy $current" >&2' ERR
+    git -C "$worktree" checkout --quiet --detach "$sha"
+    (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    systemctl --user start "$unit"
+    sleep 10
+    if ! systemctl --user is-active --quiet "$unit"; then
+        echo "$unit is not active after the start; see: journalctl --user -u $unit -n 50" >&2
+        echo "Redeploy the previous revision: just ingest-worker-deploy $current" >&2
+        exit 1
+    fi
+    trap - ERR
+    echo "Ingest worker running at ${sha:0:12} from $worktree"
+
 # ============================================================================
 # Web App - Code Quality Checks
 # ============================================================================

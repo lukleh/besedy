@@ -96,6 +96,11 @@ containers. Source files:
 - `jobs-service/host-worker/ingest-worker.env.example` - required environment
 - `besedy/lib/prefect_jobs/flows/ingest_recording.py` - the flow
 
+The production worker runs from its own checkout,
+`~/worktrees/besedy/prod-ingest`, with its own frozen venv. Merges, branch
+switches or `just setup` in the dev checkout therefore never change production
+ingest; only `just ingest-worker-deploy` does.
+
 Install (once per host):
 
 ```bash
@@ -105,19 +110,42 @@ cp jobs-service/host-worker/ingest-worker.env.example ~/.config/lukleh/besedy/in
 mkdir -p ~/.config/systemd/user
 cp jobs-service/host-worker/besedy-ingest-worker.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now besedy-ingest-worker
+systemctl --user enable besedy-ingest-worker
+just ingest-worker-deploy    # creates ~/worktrees/besedy/prod-ingest and starts the worker
 loginctl enable-linger "$USER"
 journalctl --user -u besedy-ingest-worker -f
 ```
 
-The unit assumes the checkout lives at `~/projects/besedy`; adjust
-`WorkingDirectory` otherwise. For development run it in the foreground with
+Deploy a revision (default `origin/main`) with `just ingest-worker-deploy
+<rev>`, from any checkout of the repository. It:
+
+1. refuses unless the installed unit runs from `~/worktrees/besedy/prod-ingest`
+   (after changing the unit, copy it again and `systemctl --user daemon-reload`);
+2. creates the checkout on first use, or refuses if it has local changes;
+3. refuses while any flow run on `PREFECT_INGEST_WORK_POOL` is scheduled,
+   pending, running, paused or cancelling
+   (`python -m besedy.lib.prefect_jobs.maintenance --work-pool <pool>`), because
+   stopping the worker would kill it;
+4. asks for confirmation, checks again, stops the unit, checks out the revision
+   (detached), runs `uv sync --frozen --extra jobs --extra ml` and starts the
+   unit again.
+
+Uploads made while the worker is stopped wait in the Prefect queue. To roll
+back, deploy the previous revision; the recipe prints it if a step fails.
+Deploy ingest at the same revision as production web, so the flows and the
+web completion callback agree.
+
+Keep every `[paths]` value in the host `besedy.toml` absolute: an empty or
+relative value resolves against the checkout the worker runs from, so ingest
+output would land inside `~/worktrees/besedy/prod-ingest`.
+
+For development run the worker in the foreground from the dev checkout with
 `just ingest-worker-run` (defaults to pool `besedy-ingest-dev`).
 
 Both start the worker with the `jobs` and `ml` extras: the flows run
 `rag-colbert-index`, which chunks transcripts with a `transformers` tokenizer on
-the host. `just setup-jobs` is an exact sync that removes the `ml` extra, so
-restart the worker after running it (the unit reinstalls the extra on start).
+the host. `just setup-jobs` is an exact sync that removes the `ml` extra from
+the dev venv, so restart `just ingest-worker-run` after running it.
 
 Register the pool and deployment together with deep search:
 
