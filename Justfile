@@ -85,35 +85,34 @@ _guard-shared-colbert recipe:
         echo "BESEDY_COLBERT_FORCE=1: bypassing shared ColBERT checkout guard."
         exit 0
     fi
-    if ! running_working_dir="$(docker container inspect --format '{{{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null)"; then
+    # One inspect call: "<state> <compose working_dir label>"; the state has no spaces.
+    if ! inspect_output="$(docker container inspect --format '{{{{ .State.Status }} {{{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' besedy-colbert 2>/dev/null)"; then
         exit 0
     fi
+    read -r container_state owning_working_dir <<< "$inspect_output"
     expected_working_dir="$(cd "{{ justfile_directory() }}/rag-services" && pwd -P)"
-    running_physical_dir=""
-    if [ -n "$running_working_dir" ] && [ -d "$running_working_dir" ]; then
-        running_physical_dir="$(cd "$running_working_dir" && pwd -P)"
+    owning_physical_dir=""
+    if [ -n "$owning_working_dir" ]; then
+        # A removed or unreadable checkout must reach the refusal below, not abort under set -e.
+        owning_physical_dir="$(cd "$owning_working_dir" 2>/dev/null && pwd -P || true)"
     fi
-    if [ -n "$running_physical_dir" ] && [ "$running_physical_dir" = "$expected_working_dir" ]; then
+    if [ -n "$owning_physical_dir" ] && [ "$owning_physical_dir" = "$expected_working_dir" ]; then
         exit 0
     fi
     echo "Refusing to run '$recipe' against besedy-colbert from this checkout." >&2
-    echo "Running ColBERT checkout: ${running_working_dir:-<unknown>}" >&2
+    echo "Container state: $container_state" >&2
+    echo "Owning ColBERT checkout: ${owning_working_dir:-<unknown>}" >&2
     echo "This checkout: $expected_working_dir" >&2
-    if [ -n "$running_working_dir" ]; then
-        running_dir="$(printf '%q' "$running_working_dir")"
+    if [ -z "$owning_working_dir" ]; then
+        echo "Run it from the owning checkout with:" >&2
+        echo "  (cd <owning-checkout>/rag-services/.. && just $recipe)" >&2
+    elif [ -z "$owning_physical_dir" ]; then
+        echo "The owning checkout is missing or not readable from here; if its worktree was removed," >&2
+        echo "BESEDY_COLBERT_FORCE=1 lets this checkout take over the container." >&2
     else
-        running_dir="<running-checkout>/rag-services"
+        echo "Run it from the owning checkout with:" >&2
+        echo "  (cd $(printf '%q' "$owning_working_dir")/.. && just $recipe)" >&2
     fi
-    case "$recipe" in
-        *-up)
-            echo "Recreate it from the running checkout with:" >&2
-            echo "  (cd $running_dir && docker compose -f docker-compose.yml up -d --no-build --no-deps colbert)" >&2
-            ;;
-        *)
-            echo "Run it from the running checkout with:" >&2
-            echo "  (cd $running_dir/.. && just $recipe)" >&2
-            ;;
-    esac
     echo "Set BESEDY_COLBERT_FORCE=1 only after confirming the shared container is safe to replace." >&2
     exit 1
 
