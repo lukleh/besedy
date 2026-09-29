@@ -654,6 +654,32 @@ through the development runtime.
    `PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT`). Use `just jobs-dev-deploy` for
    development; the bare `just jobs-deploy` alias targets **dev**.
 
+### Prefect Version and State
+
+- **Version.** The server image is set by the default in
+  `jobs-service/docker-compose.prefect.yml`. It must match the `prefect==`
+  pin in `pyproject.toml`, which the jobs images and the host ingest worker
+  install from `uv.lock`. `tests/test_web_production_hardening.py` enforces
+  this. Leave `PREFECT_IMAGE` unset in `jobs.env.prefect`: a copied value
+  silently pins the old server at the next bump. `just prefect-status` prints
+  the client pin and the running server version.
+- **Upgrading.** Stop every Prefect worker first (dev, test and prod jobs, and
+  the host ingest worker), because the server is shared. Check with
+  `just jobs-prod-check-idle`. Then upgrade the server (`just prefect-up`; the
+  `prefect-db-upgrade` service migrates its database before the server
+  starts, one-way). After that, upgrade the clients
+  (`just jobs-<env>-rebuild && just jobs-<env>-deploy`, then restart the
+  ingest worker).
+- **State is disposable.** The Prefect database holds only:
+  - Deep Search job records (query, owner, state, logs);
+  - deployments and work pools, which `just jobs-<env>-deploy` re-creates;
+  - ingest runs, whose outcome is also recorded in `recording_intake`.
+
+  Neither it nor the deep-search output directory is backed up. Losing them
+  empties the Deep Search history, which is accepted. To recover, drop the
+  `besedy_prefect_postgres` volume, run `just prefect-up`, then
+  `just jobs-<env>-deploy` for each environment.
+
 ### Verification
 
 ```bash

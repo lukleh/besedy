@@ -304,7 +304,9 @@ def test_prefect_template_configures_only_the_control_plane() -> None:
     template = _env_assignments(JOBS_SERVICE / ".env.prefect.example")
     prefect_compose = JOBS_SERVICE / "docker-compose.prefect.yml"
 
-    assert "PREFECT_IMAGE" in template
+    # The server image comes from the compose default so upgrades reach hosts;
+    # a value copied from the template would pin the version that was current then.
+    assert "PREFECT_IMAGE" not in template
     assert template.keys() <= _compose_variables(prefect_compose)
     assert "BESEDY_JOB_SERVICE_SECRET" not in template
     # The server URL is derived from the credentials prefect-postgres starts
@@ -314,6 +316,17 @@ def test_prefect_template_configures_only_the_control_plane() -> None:
         "postgresql+asyncpg://${PREFECT_POSTGRES_USER:-prefect}:${PREFECT_POSTGRES_PASSWORD:-prefect}"
         "@prefect-postgres:5432/${PREFECT_POSTGRES_DB:-prefect}"
     ) in prefect_compose.read_text(encoding="utf-8")
+
+
+def test_prefect_server_image_matches_client_pin() -> None:
+    compose = (JOBS_SERVICE / "docker-compose.prefect.yml").read_text(encoding="utf-8")
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    server_versions = set(re.findall(r"prefecthq/prefect:(\d+\.\d+\.\d+)-python", compose))
+    client = re.search(r'"prefect==(\d+\.\d+\.\d+)"', pyproject)
+
+    assert client is not None
+    assert server_versions == {client.group(1)}
 
 
 @pytest.mark.parametrize(
