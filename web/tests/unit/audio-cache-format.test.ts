@@ -97,6 +97,21 @@ describe("audio cache format", () => {
     ).toBe(100);
   });
 
+  it("preserves download generations while keeping legacy metadata readable", async () => {
+    const cache = new MemoryCache();
+    const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
+    const meta = {
+      totalSize: 3,
+      chunkCount: 1,
+      chunkSizes: [3],
+      contentType: 'audio/webm',
+      complete: true,
+      generation: 'download-attempt',
+    };
+    await writeAudioCacheMeta(cache as unknown as Cache, base, meta);
+    expect(await readAudioCacheMeta(cache as unknown as Cache, base)).toEqual(meta);
+  });
+
   it("recognizes mobile browsers and Safari that need inline playback", () => {
     expect(
       requiresInlineOfflineAudio(

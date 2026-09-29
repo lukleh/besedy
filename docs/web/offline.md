@@ -150,6 +150,18 @@ requests persistent storage before the first download. User-paused downloads
 resume on demand; network-paused downloads resume after reconnection; a
 download interrupted by page close returns to `queued` at hydration.
 
+A third, per-recording storage lock (`besedy-audio-cache:<cache key>`) is
+shared with the service worker. The page holds it while it commits a chunk
+and its metadata, or rewrites metadata when a download resumes; network
+fetches happen outside it. Each download attempt writes a fresh `generation`
+marker into the metadata. Before the worker deletes a download it found
+damaged during playback, it takes the same lock and rechecks that the stored
+metadata is still the exact text it read when the request started, so a
+response that discovers damage after another download has already repaired
+the bytes deletes nothing. Without Web Locks the worker fails the damaged
+response but keeps the bytes; a wrong-size chunk then needs a manual remove
+and re-download.
+
 On startup and reconnect, the manager rechecks completed packages for the
 signed-in account. If the account no longer has transcript-download
 permission, it removes the stored transcript and diarization while retaining

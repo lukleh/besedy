@@ -24,6 +24,21 @@ export interface AudioCacheMeta {
   chunkSizes: number[];
   contentType: string;
   complete: boolean;
+  /** Changes on restart/repair so old playback failures cannot delete new bytes. */
+  generation?: string;
+}
+
+/** Shared with the worker; never hold this lock across a network request. */
+export function getAudioCacheLockName(baseKey: string): string {
+  return `besedy-audio-cache:${baseKey}`;
+}
+
+export async function withAudioCacheLock<T>(
+  baseKey: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  return locks ? locks.request(getAudioCacheLockName(baseKey), work) : work();
 }
 
 /**
@@ -103,12 +118,16 @@ export async function readAudioCacheMeta(
       chunkSizes: parsed.chunkSizes,
       contentType: parsed.contentType,
       complete: parsed.complete === true,
+      ...(typeof parsed.generation === 'string'
+        ? { generation: parsed.generation }
+        : {}),
     };
   } catch {
     return null;
   }
 }
 
+/** Call under withAudioCacheLock when updating a download's stored state. */
 export async function writeAudioCacheMeta(
   cache: Cache,
   baseKey: string,
@@ -218,10 +237,12 @@ export function summarizeAudioCacheMeta(meta: AudioCacheMeta): AudioCacheProgres
 
 /** Remove every chunk and the metadata entry stored for `baseKey`. */
 export async function deleteAudioCacheEntries(cache: Cache, baseKey: string): Promise<void> {
-  const keys = await cache.keys();
-  await Promise.all(
-    keys
-      .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
-      .map((request) => cache.delete(request))
-  );
+  await withAudioCacheLock(baseKey, async () => {
+    const keys = await cache.keys();
+    await Promise.all(
+      keys
+        .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
+        .map((request) => cache.delete(request))
+    );
+  });
 }

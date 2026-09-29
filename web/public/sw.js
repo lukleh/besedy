@@ -346,14 +346,29 @@ function isAudioCacheEntryFor(baseKey, entryUrl) {
 // says nothing about the download and must not discard it.
 class DamagedDownloadError extends Error {}
 
-async function deleteAudioCacheEntries(cache, baseKey) {
+function getAudioCacheLockName(baseKey) {
+  return `besedy-audio-cache:${baseKey}`;
+}
+
+async function deleteAudioCacheEntries(cache, baseKey, metaIdentity) {
+  // An identity check alone can race a page's next write. Without a shared
+  // lock, fail the response but retain bytes rather than risk a replacement.
+  const locks = self.navigator?.locks;
+  if (!locks) {
+    console.warn('[SW] Web Locks unavailable; keeping damaged audio cache entries for', baseKey);
+    return;
+  }
   try {
-    const keys = await cache.keys();
-    await Promise.all(
-      keys
-        .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
-        .map((request) => cache.delete(request)),
-    );
+    await locks.request(getAudioCacheLockName(baseKey), async () => {
+      const current = await cache.match(getMetaKey(baseKey));
+      if (!current || (await current.text()) !== metaIdentity) return;
+      const keys = await cache.keys();
+      await Promise.all(
+        keys
+          .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
+          .map((request) => cache.delete(request)),
+      );
+    });
   } catch (error) {
     console.error('[SW] Audio cache cleanup failed:', error);
   }
@@ -379,15 +394,23 @@ async function handleAudioRequest(request) {
   const metaResponse = await cache.match(getMetaKey(cacheKey));
   if (!metaResponse) return fetch(request);
 
+  let metaIdentity;
+  try {
+    metaIdentity = await metaResponse.text();
+  } catch {
+    // A body that cannot be read says nothing about the download: serve the
+    // network and keep the bytes.
+    return fetch(request);
+  }
   let meta;
   try {
-    meta = await metaResponse.json();
+    meta = JSON.parse(metaIdentity);
   } catch {
-    await deleteAudioCacheEntries(cache, cacheKey);
+    await deleteAudioCacheEntries(cache, cacheKey, metaIdentity);
     return fetch(request);
   }
   if (!isWellFormedAudioMeta(meta)) {
-    await deleteAudioCacheEntries(cache, cacheKey);
+    await deleteAudioCacheEntries(cache, cacheKey, metaIdentity);
     return fetch(request);
   }
   // The page-side manager's own Range requests pass through this worker while
@@ -398,6 +421,7 @@ async function handleAudioRequest(request) {
     cache,
     cacheKey,
     meta,
+    metaIdentity,
     request.headers.get('range'),
     request,
   );
@@ -454,6 +478,7 @@ function createChunkStream(options) {
   const {
     cache,
     baseKey,
+    metaIdentity,
     chunkSizes,
     chunkOffsets,
     startChunk,
@@ -499,7 +524,7 @@ function createChunkStream(options) {
           // Damaged bytes are damage even if the player has already moved on;
           // erroring a cancelled stream is a no-op.
           if (error instanceof DamagedDownloadError) {
-            await deleteAudioCacheEntries(cache, baseKey);
+            await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
           }
           controller.error(error);
         }
@@ -519,6 +544,7 @@ async function handleRangeFromChunks(
   cache,
   baseKey,
   meta,
+  metaIdentity,
   rangeHeader,
   request,
 ) {
@@ -528,7 +554,7 @@ async function handleRangeFromChunks(
     chunkOffsets.push(chunkOffsets[index] + chunkSizes[index]);
   }
   if (chunkOffsets[chunkSizes.length] !== totalSize) {
-    await deleteAudioCacheEntries(cache, baseKey);
+    await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
     return fetch(request);
   }
 
@@ -552,13 +578,13 @@ async function handleRangeFromChunks(
     }
   }
   if (startChunk === -1 || endChunk === -1) {
-    await deleteAudioCacheEntries(cache, baseKey);
+    await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
     return fetch(request);
   }
 
   for (let index = startChunk; index <= endChunk; index += 1) {
     if (!(await cache.match(getChunkKey(baseKey, index)))) {
-      await deleteAudioCacheEntries(cache, baseKey);
+      await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
       return fetch(request);
     }
   }
@@ -566,6 +592,7 @@ async function handleRangeFromChunks(
   const body = createChunkStream({
     cache,
     baseKey,
+    metaIdentity,
     chunkSizes,
     chunkOffsets,
     startChunk,
@@ -598,6 +625,7 @@ self.__BESEDY_SW_INTERNALS = {
   getCacheKey,
   getChunkKey,
   getMetaKey,
+  getAudioCacheLockName,
   isAudioCacheEntryFor,
   isDownloadsPath,
   parseRangeHeader,
