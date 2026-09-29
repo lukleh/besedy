@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
 import {
@@ -26,8 +26,9 @@ vi.mock("@/hooks/use-downloads", () => ({
   }),
   useEventDownload: () => undefined,
 }));
+const device = vi.hoisted(() => ({ transport: "blob" as "blob" | "worker" }));
 vi.mock("@/hooks/use-offline-audio-transport", () => ({
-  useOfflineAudioTransport: () => "blob",
+  useOfflineAudioTransport: () => device.transport,
 }));
 vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: () => ({ isOnline: false }),
@@ -82,12 +83,19 @@ const clients: QueryClient[] = [];
 function wrapper() {
   const client = new QueryClient({ defaultOptions: QUERY_CLIENT_DEFAULT_OPTIONS });
   clients.push(client);
+  // Strict Mode's extra effect cycle is what the dev server runs; the object
+  // URL must survive it.
   return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <StrictMode>
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      </StrictMode>
+    );
   };
 }
 
 beforeEach(() => {
+  device.transport = "blob";
   store.clear();
   vi.clearAllMocks();
   vi.stubGlobal("caches", cacheStorage);
@@ -121,6 +129,9 @@ describe("blob offline audio transport", () => {
     expect(result.current).toEqual({ src: null, pending: true });
     await waitFor(() => expect(result.current.src).toBe("blob:local-audio-5"));
     expect(result.current.pending).toBe(false);
+    // The URL handed to the player is live: nothing revoked it on the way.
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
 
     const blob = createObjectURL.mock.calls[0][0];
     expect(blob.type).toBe("audio/webm");
@@ -129,7 +140,22 @@ describe("blob offline audio transport", () => {
     expect(getDownloadBundle).not.toHaveBeenCalled();
 
     unmount();
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-audio-5");
+  });
+
+  it("releases the Blob when the device switches to another transport", async () => {
+    seed([[0, 1, 2]]);
+    const { result, rerender } = renderHook(
+      () => useLocalAudioSrc(CATALOG, HASH, AUDIO_URL, false),
+      { wrapper: wrapper() }
+    );
+    await waitFor(() => expect(result.current.src).toBe("blob:local-audio-3"));
+
+    device.transport = "worker";
+    rerender();
+    expect(result.current).toEqual({ src: `${AUDIO_URL}?local=1`, pending: false });
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-audio-3");
   });
 
   it("falls back to the worker URL when the chunk set is incomplete", async () => {

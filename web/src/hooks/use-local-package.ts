@@ -5,7 +5,7 @@
  * event and recording pages. Pages stay unaware of caches, data URLs and
  * storage formats; they receive a `src` and use it.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
 import { useOfflineAudioTransport } from "@/hooks/use-offline-audio-transport";
@@ -46,6 +46,31 @@ export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): stri
  */
 export function localAudioSrc(audioUrl: string): string {
   return `${audioUrl}${audioUrl.includes("?") ? "&" : "?"}local=1`;
+}
+
+/**
+ * An object URL that lives exactly as long as `blob` is the current value.
+ * Created and revoked in an effect so a render React discards (Strict Mode,
+ * an interrupted render) never leaks a URL, and a change of `blob` revokes
+ * the previous one.
+ */
+function useObjectUrl(blob: Blob | null | undefined): string | null {
+  const [entry, setEntry] = useState<{ blob: Blob; url: string } | null>(null);
+  useEffect(() => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    // The URL belongs to the committed blob; it cannot be derived in render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEntry({ blob, url });
+    return () => {
+      URL.revokeObjectURL(url);
+      // Drop the reference so the Blob can be collected once it is unused.
+      setEntry((current) => (current?.url === url ? null : current));
+    };
+  }, [blob]);
+  // Never report a URL for a blob other than the current one, not even for
+  // the render between a change of `blob` and the effect that follows it.
+  return entry && entry.blob === blob ? entry.url : null;
 }
 
 export interface LocalAudioSource {
@@ -119,20 +144,18 @@ export function useLocalAudioSrc(
       return readCompleteAudioBlob(cache, record.audioCacheKey);
     },
   });
-  const blobUrl = useMemo(
-    () => (composed.data ? URL.createObjectURL(composed.data) : null),
-    [composed.data]
-  );
-  useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
+  // Scoped to the transport so switching away in the debug panel releases the
+  // Blob instead of holding it alongside the next transport's copy.
+  const blobUrl = useObjectUrl(transport === "blob" ? composed.data : null);
 
   if (!useLocal || !record?.audioUrl) return { src: null, pending: false };
   const local = localAudioSrc(record.audioUrl);
   if (transport === "blob") {
-    if (blobEnabled && composed.isPending) return { src: null, pending: true };
+    // Hold the player until the URL exists too, so it is never handed the
+    // worker URL for the one render between the read and the commit.
+    if (blobEnabled && (composed.isPending || (composed.data && !blobUrl))) {
+      return { src: null, pending: true };
+    }
     // Without a readable chunk set the worker URL still plays the download.
     return { src: blobUrl ?? local, pending: false };
   }
@@ -171,11 +194,5 @@ export function useLocalArtworkUrl(
     },
   });
 
-  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
-  useEffect(() => {
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [url]);
-  return url;
+  return useObjectUrl(blob);
 }
