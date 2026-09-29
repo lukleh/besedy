@@ -182,6 +182,30 @@ async function respondedWith(event: FetchHandlerEvent): Promise<Response> {
   return (await event.respondWith.mock.calls[0][0]) as Response;
 }
 
+/**
+ * Hold the worker's next cache read until the test decides how it ends, so a
+ * "read in flight" state does not depend on undici's timing. Only that one
+ * read is gated; later reads (including the test's own) behave normally.
+ */
+function gateNextRead(cache: MemoryCache) {
+  const original = cache.match;
+  let markStarted!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let settle!: (error?: Error) => void;
+  const gate = new Promise<void>((resolve, reject) => {
+    settle = (error) => (error ? reject(error) : resolve());
+  });
+  cache.match = async (request) => {
+    cache.match = original;
+    markStarted();
+    await gate;
+    return original.call(cache, request);
+  };
+  return { readStarted, settle };
+}
+
 async function seedAudio(
   cacheStorage: MemoryCacheStorage,
   chunks: Uint8Array[],
@@ -299,6 +323,30 @@ describe('downloaded audio', () => {
     ]);
   });
 
+  it('does not read a chunk until the player asks for bytes', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+    ]);
+    const match = vi.spyOn(cache, 'match');
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    const chunkReads = () =>
+      match.mock.calls.filter(([request]) =>
+        String(request).includes('_chunk='),
+      );
+    // The range handler checks that the chunks exist before responding; the
+    // stream itself must not start reading them for a header-only probe.
+    const beforeRead = chunkReads().length;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(chunkReads()).toHaveLength(beforeRead);
+
+    await response.body!.getReader().read();
+    expect(chunkReads()).toHaveLength(beforeRead + 1);
+  });
+
   it('keeps the download when the player abandons a response mid-read', async () => {
     const { fetchHandler, cacheStorage } = loadScript();
     const { url, baseKey, cache } = await seedAudio(cacheStorage, [
@@ -309,12 +357,60 @@ describe('downloaded audio', () => {
     const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
     fetchHandler(event);
     const response = await respondedWith(event);
-    // The stream starts reading the first chunk as soon as it exists; the
-    // player cancelling it now (a seek, or after the headers) must not look
-    // like a damaged download.
-    await response.body!.cancel();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    const { readStarted, settle } = gateNextRead(cache);
+    const reader = response.body!.getReader();
+    const read = reader.read();
+    await readStarted;
+    // A seek, or the headers being enough: the player cancels while the chunk
+    // is still being read. That must not look like a damaged download.
+    await reader.cancel();
+    settle();
+    await expect(read).resolves.toEqual({ done: true, value: undefined });
 
+    expect(await cache.match(getAudioMetaKey(baseKey))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeDefined();
+  });
+
+  it('keeps the download when a read fails after the player cancelled', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+    ]);
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    const { readStarted, settle } = gateNextRead(cache);
+    const reader = response.body!.getReader();
+    const read = reader.read();
+    await readStarted;
+    await reader.cancel();
+    settle(new Error('Cache Storage went away'));
+    await expect(read).resolves.toEqual({ done: true, value: undefined });
+
+    expect(await cache.match(getAudioMetaKey(baseKey))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeDefined();
+  });
+
+  it('keeps the download when Cache Storage itself fails to read', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+    ]);
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    const { readStarted, settle } = gateNextRead(cache);
+    const body = response.arrayBuffer();
+    await readStarted;
+    settle(new Error('QuotaExceededError'));
+
+    await expect(body).rejects.toThrow('QuotaExceededError');
     expect(await cache.match(getAudioMetaKey(baseKey))).toBeDefined();
     expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeDefined();
     expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeDefined();
@@ -332,8 +428,31 @@ describe('downloaded audio', () => {
     const response = await respondedWith(event);
     await cache.delete(getAudioChunkKey(baseKey, 1));
 
-    await expect(response.arrayBuffer()).rejects.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(response.arrayBuffer()).rejects.toThrow(
+      'Missing audio chunk 1',
+    );
+    // The entries are gone by the time the response fails: the delete runs
+    // before the stream is errored, so the player's retry cannot race it.
+    expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
+    expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeUndefined();
+  });
+
+  it('discards the download when a cached chunk has the wrong size', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+    ]);
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    await cache.put(
+      getAudioChunkKey(baseKey, 1),
+      new Response(Uint8Array.from([3, 4]).buffer),
+    );
+
+    await expect(response.arrayBuffer()).rejects.toThrow('expected 3');
     expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
     expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeUndefined();
   });
