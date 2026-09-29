@@ -20,9 +20,10 @@ import { getDownloadBundle } from "@/lib/offline/downloads-db";
 /**
  * Encode a stored recording as a data URL.
  *
- * WebKit rejects service-worker and blob-backed media once offline, so those
- * browsers play from an inline copy. This is the transport #163 replaces; it
- * lives here so it can be removed in one place.
+ * Android browsers and WebKit default to this inline copy on the assumption,
+ * from emulator evidence only, that they cannot play service-worker or
+ * blob-backed media offline; #162 tests that on devices. It lives here so it
+ * can be removed in one place.
  */
 export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): string {
   const bytes = new Uint8Array(data);
@@ -129,8 +130,9 @@ export function useLocalAudioSrc(
     },
   });
 
-  // One Blob composed from the cached chunk Blobs: the browser keeps
-  // references to the stored parts instead of copying them into one buffer.
+  // One Blob composed from the cached chunk Blobs rather than one ArrayBuffer.
+  // Whether the browser keeps it as references to the stored parts or reads
+  // them into memory is engine-specific; the debug panel run measures it.
   const composed = useQuery({
     queryKey: ["local-blob-audio", record?.key ?? null, record?.audioCacheKey ?? null],
     networkMode: "always",
