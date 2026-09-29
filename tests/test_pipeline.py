@@ -460,7 +460,7 @@ class TestPipelineRagIndexing:
             lambda **_kwargs: [workflow],
         )
 
-        assert default_pipeline_rag_backend_key() == "faster-whisper/large-v3@silero_vad_v6"
+        assert default_pipeline_rag_backend_key() == "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 
     def test_should_run_rag_colbert_index_enabled_by_default(self) -> None:
         with pytest.MonkeyPatch.context() as monkeypatch:

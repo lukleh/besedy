@@ -361,14 +361,11 @@ function eventAfterCursorWhere(
  * Transcript directories that count as the canonical transcript, in order.
  *
  * The transcription pipeline names its output component with the language
- * suffix carried by `RAG_BACKEND_KEY` (for example `…@lang-auto`), so the exact
- * key is tried first. Czech runs and older bundles keep the legacy unsuffixed
- * directory, so that is the only fallback. No other backend is consulted.
+ * suffix carried by `RAG_BACKEND_KEY` (for example `…@lang-cs`). No other
+ * backend is consulted.
  */
 function getCanonicalTranscriptBackends(): TranscriptBackend[] {
-  const configured = getRagBackendKey();
-  const legacy = configured.replace(/@lang-[^/@]+$/, '');
-  return legacy === configured ? [configured] : [configured, legacy];
+  return [getRagBackendKey()];
 }
 
 function serializeRecording(recording: CatalogRecordingReadModel) {

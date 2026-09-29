@@ -6,6 +6,7 @@ import pytest
 
 from besedy.config.settings import PathsConfig, _load_transcription_workflows
 from besedy.lib.workflow.language import (
+    language_output_component,
     normalize_config_language,
     qwen_language_code,
     qwen_language_name,
@@ -14,17 +15,19 @@ from besedy.lib.workflow.language import (
     translation_language_setting,
     validate_workflow_language,
 )
+from besedy.lib.workflow.paths import sanitize_model_identifier
 from tests.helpers.workflows import make_workflow_entry
 
 
 @pytest.mark.parametrize("workflow_id", ["faster-whisper", "whisperx", "qwen3-asr", "canary-nemo"])
-def test_missing_language_key_keeps_legacy_czech_default(workflow_id: str) -> None:
-    """Legacy configs (no language key) keep the historical forced-Czech behavior."""
+def test_missing_language_key_defaults_to_explicit_czech_path(workflow_id: str) -> None:
+    """A missing language keeps forced-Czech inference and uses the new path."""
     configs = _load_transcription_workflows(
         {"transcription_workflows": [make_workflow_entry(workflow_id)]}
     )
 
     assert configs[0].language == "cs"
+    assert language_output_component(configs[0].language, sanitize_model_identifier) == "lang-cs"
 
 
 def test_automatic_detection_is_an_explicit_opt_in() -> None:

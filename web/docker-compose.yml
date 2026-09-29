@@ -110,7 +110,7 @@ services:
       # container; the bare service name jobs-api resolves to every runtime.
       JOBS_API_BASE_URL: ${JOBS_API_BASE_URL:-http://${BESEDY_JOBS_API_HOST:-jobs-api}:8390}
       # RAG search (ColBERT sidecar + optional reranker)
-      RAG_BACKEND_KEY: ${RAG_BACKEND_KEY:-faster-whisper/large-v3@silero_vad_v6@lang-auto}
+      RAG_BACKEND_KEY: ${RAG_BACKEND_KEY:-faster-whisper/large-v3@silero_vad_v6@lang-cs}
       RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}
       RAG_TEI_RERANK_URL: ${RAG_TEI_RERANK_URL:-http://host.docker.internal:8191/rerank}
       RAG_COLBERT_RERANK_ENABLED: ${RAG_COLBERT_RERANK_ENABLED:-false}

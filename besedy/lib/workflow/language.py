@@ -22,9 +22,8 @@ from collections.abc import Callable
 
 AUTO_LANGUAGE = "auto"
 
-# Every workflow transcribed Czech before language became configurable, so a
-# missing `language` key keeps that behavior (and the legacy output paths).
-LEGACY_DEFAULT_LANGUAGE = "cs"
+# A missing `language` key keeps the historical forced-Czech inference mode.
+DEFAULT_TRANSCRIPTION_LANGUAGE = "cs"
 
 # Canary prompts require explicit source/target languages.
 _WORKFLOWS_WITHOUT_LANGUAGE_DETECTION = frozenset({"canary-nemo", "canary-nemo-beam"})
@@ -86,11 +85,9 @@ def resolve_language_setting(cli_value: str | None, configured: str) -> str:
 def language_output_component(
     language: str,
     sanitize_fn: Callable[[str], str],
-) -> str | None:
-    """Return a path component when language differs from the legacy Czech default."""
+) -> str:
+    """Return the explicit language component for a transcription path."""
     normalized = language.strip().casefold()
-    if normalized == LEGACY_DEFAULT_LANGUAGE:
-        return None
     return f"lang-{sanitize_fn(normalized)}"
 
 

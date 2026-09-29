@@ -116,7 +116,7 @@ class TestWorkflowConfig:
         component = config.output_component(sanitize_model_identifier)
         assert component == "large-v3@silero@lang-auto"
 
-    def test_output_component_preserves_legacy_czech_path_and_identifies_other_languages(
+    def test_output_component_identifies_czech_and_other_languages(
         self,
     ):
         czech = make_workflow_config(vad_model="silero", language="cs")
@@ -126,10 +126,10 @@ class TestWorkflowConfig:
         automatic = make_workflow_config(vad_model="silero", language="auto")
         english = make_workflow_config(vad_model="silero", language="en")
 
-        assert czech.output_component(sanitize_model_identifier) == "large-v3@silero"
+        assert czech.output_component(sanitize_model_identifier) == "large-v3@silero@lang-cs"
         assert (
             czech_aligned.output_component(sanitize_model_identifier)
-            == "large-v3@silero@czech-aligner"
+            == "large-v3@silero@czech-aligner@lang-cs"
         )
         assert automatic.output_component(sanitize_model_identifier) == "large-v3@silero@lang-auto"
         assert english.output_component(sanitize_model_identifier) == "large-v3@silero@lang-en"

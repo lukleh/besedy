@@ -115,7 +115,7 @@ transcripts/ ──────▶ transcripts_20251129_160000/   (symlink)
 
 transcripts/
 └── faster-whisper/
-    └── large-v3@silero_vad_v6/
+    └── large-v3@silero_vad_v6@lang-cs/
         └── 0f2fa31aad030970…cc91/ ◀── full 64-character audio hash
             └── transcript.json
 ```
@@ -195,8 +195,8 @@ All transcription backends output the same JSON schema: `segments[]` with `start
 Transcripts are stored as
 `<workflow>/<output-component>/<audio_hash>/transcript.json`, where
 `audio_hash` is the full 64-character SHA-256 value. The output
-component includes a language suffix for auto-detected and explicitly
-non-Czech variants; explicit Czech retains the legacy suffix-free path.
+component includes a language suffix for every transcription language;
+explicit or defaulted Czech uses `@lang-cs`.
 
 **Rationale:** The backend and model-component levels partition the artifact
 tree, while the full hash provides deterministic, collision-resistant lookup

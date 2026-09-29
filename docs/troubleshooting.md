@@ -64,7 +64,7 @@ prefix, or the hash hasn't been transcribed yet).
 # Find transcripts for a hash prefix
 find transcripts/ -type d -name "abc123*"
 # List hashes for a backend
-ls transcripts/faster-whisper/large-v3@silero_vad_v6@lang-auto/ | head -20
+ls transcripts/faster-whisper/large-v3@silero_vad_v6@lang-cs/ | head -20
 # Check if hash is in a catalog
 grep "abc123" audio_catalog_*.csv
 ```

@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 from besedy.core.paths_common import resolve_xdg_root
 from besedy.lib.workflow.language import (
-    LEGACY_DEFAULT_LANGUAGE,
+    DEFAULT_TRANSCRIPTION_LANGUAGE,
     normalize_config_language,
     validate_workflow_language,
 )
@@ -237,7 +237,7 @@ def _load_transcription_workflows(
         is_nemo = workflow_id in {"canary-nemo", "canary-nemo-beam"}
         context = f"transcription_workflows[{idx}]"
         language = normalize_config_language(
-            item.get("language", LEGACY_DEFAULT_LANGUAGE), context=context
+            item.get("language", DEFAULT_TRANSCRIPTION_LANGUAGE), context=context
         )
         validate_workflow_language(workflow_id, language, align_model, context=context)
 

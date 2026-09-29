@@ -231,8 +231,9 @@ prompts require a concrete language code, so the example configuration keeps
 `language = "cs"` for Canary.
 
 Entries that omit `language` keep the historical forced-Czech behavior
-(`"cs"`) and their legacy output paths, so existing configs and transcripts
-keep working; automatic detection is always an explicit opt-in. When WhisperX
+(`"cs"`) and write `@lang-cs` output paths. Older unsuffixed Czech transcripts
+require [migration](docs/migrations/explicit-czech-transcript-paths.md);
+automatic detection is always an explicit opt-in. When WhisperX
 uses automatic detection, omit `align_model` so WhisperX can select an
 alignment model for the detected language. See
 [`besedy.toml.example`](besedy.toml.example) for complete examples.
@@ -358,13 +359,14 @@ transcripts/
 The output component includes the configured model, VAD, optional alignment
 model, and decoding strategy. Automatic and explicitly non-Czech language
 variants append `@lang-auto` or `@lang-<code>` so they cannot reuse transcripts
-from a different language setting. Explicit Czech (`cs`) keeps the historical
-path without a language suffix.
+from a different language setting. Explicit or defaulted Czech uses `@lang-cs`.
 
-If an existing web deployment sets `RAG_BACKEND_KEY`, update it to the new
-language-aware backend key (for the default workflow,
-`faster-whisper/large-v3@silero_vad_v6@lang-auto`). Repository defaults and
-environment templates already use that key; private env files are not rewritten.
+If an existing web deployment sets `RAG_BACKEND_KEY`, update it to the matching
+language-aware backend key (for the default Czech workflow,
+`faster-whisper/large-v3@silero_vad_v6@lang-cs`). Repository defaults and
+environment templates use that key; private env files are not rewritten. See
+[the Czech path migration](docs/migrations/explicit-czech-transcript-paths.md)
+before changing a deployed backend key.
 
 ## Optional: Backend Image Builds
 
