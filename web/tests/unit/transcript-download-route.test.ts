@@ -307,15 +307,19 @@ describe("transcript download route under the reading gate", () => {
     const sidecar = await run(`backend=${encodeURIComponent(MACHINE)}&format=txt&original=1`);
     expect(sidecar.status).toBe(404);
 
-    const response = await run(`backend=${encodeURIComponent(MACHINE)}&format=json&original=1`);
+    // Asked for under the corrected key, but what leaves is the frozen machine
+    // source, and the filename and the audit event say so.
+    const response = await run("backend=corrected%2Fpublished&format=json&original=1");
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("frozen");
-    expect(response.headers.get("content-disposition")).toContain("_original.json");
+    expect(response.headers.get("content-disposition")).toContain(
+      "faster-whisper_large-v3@silero_vad_v6_original.json"
+    );
     expect(logOriginalTranscriptDownloaded).toHaveBeenCalledWith(
       "user-1",
       VALID_HASH,
       GROUP,
-      expect.objectContaining({ source: "frozen" })
+      expect.objectContaining({ source: "frozen", backend: MACHINE })
     );
     expect(logTranscriptDownloaded).not.toHaveBeenCalled();
   });

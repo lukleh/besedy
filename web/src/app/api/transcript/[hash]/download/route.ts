@@ -117,6 +117,11 @@ export async function GET(
     const wantsOriginal = searchParams.get("original") === "1";
     let result: { content: string; filename: string } | null = null;
     let originalSource: "machine" | "frozen" = "machine";
+    // The backend whose text is actually served. For an original that is the
+    // frozen source's backend or the resolved default, whatever the client
+    // named; the filename and the audit event describe what left, not what
+    // was asked for.
+    let servedBackend = backend;
 
     if (wantsOriginal) {
       if (!capability.canDownloadOriginalTranscript) {
@@ -129,6 +134,7 @@ export async function GET(
       const original = await resolveOriginalTranscriptSource(group.id, hash);
       originalSource = original.kind === "frozen" ? "frozen" : "machine";
       if (original.kind === "frozen") {
+        servedBackend = original.backend;
         // Once correction has started this is always the frozen source, before
         // or after publication, so the original is the text the corrections
         // were actually made against.
@@ -148,6 +154,7 @@ export async function GET(
           transcriptsPath,
           hash
         );
+        if (defaultBackend) servedBackend = defaultBackend;
         result = defaultBackend
           ? await readTranscriptFile(transcriptsPath, hash, defaultBackend, format)
           : null;
@@ -196,7 +203,7 @@ export async function GET(
     if (wantsOriginal) {
       await logOriginalTranscriptDownloaded(userId, hash, group.id, {
         source: originalSource,
-        backend,
+        backend: servedBackend,
         format,
       });
     } else {
@@ -204,7 +211,7 @@ export async function GET(
     }
 
     // Return file content
-    const safeBackend = (wantsOriginal ? `${backend}_original` : backend).replace(
+    const safeBackend = (wantsOriginal ? `${servedBackend}_original` : backend).replace(
       /[\\/]/g,
       "_"
     );
