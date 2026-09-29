@@ -650,6 +650,21 @@ describe('downloaded audio', () => {
     expect(await cache.keys()).toHaveLength(2);
   });
 
+  it('uses the network and keeps the download when the metadata body cannot be read', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [new Uint8Array([0, 1, 2])]);
+    const unreadable = new ReadableStream({
+      pull(controller) {
+        controller.error(new Error('Cache Storage went away'));
+      },
+    });
+    await cache.put(getAudioMetaKey(baseKey), new Response(unreadable));
+    const event = createEvent(url);
+    fetchHandler(event);
+    expect(await (await respondedWith(event)).text()).toBe('network');
+    expect(await cache.keys()).toHaveLength(2);
+  });
+
   it('rejects malformed and reversed ranges', () => {
     const { internals } = loadScript();
     expect(internals.parseRangeHeader('bytes=9-2', 10)).toEqual({

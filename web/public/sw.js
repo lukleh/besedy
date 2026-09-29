@@ -354,7 +354,10 @@ async function deleteAudioCacheEntries(cache, baseKey, metaIdentity) {
   // An identity check alone can race a page's next write. Without a shared
   // lock, fail the response but retain bytes rather than risk a replacement.
   const locks = self.navigator?.locks;
-  if (!locks) return;
+  if (!locks) {
+    console.warn('[SW] Web Locks unavailable; keeping damaged audio cache entries for', baseKey);
+    return;
+  }
   try {
     await locks.request(getAudioCacheLockName(baseKey), async () => {
       const current = await cache.match(getMetaKey(baseKey));
@@ -391,7 +394,14 @@ async function handleAudioRequest(request) {
   const metaResponse = await cache.match(getMetaKey(cacheKey));
   if (!metaResponse) return fetch(request);
 
-  const metaIdentity = await metaResponse.text();
+  let metaIdentity;
+  try {
+    metaIdentity = await metaResponse.text();
+  } catch {
+    // A body that cannot be read says nothing about the download: serve the
+    // network and keep the bytes.
+    return fetch(request);
+  }
   let meta;
   try {
     meta = JSON.parse(metaIdentity);
