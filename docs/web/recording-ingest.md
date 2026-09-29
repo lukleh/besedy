@@ -114,6 +114,11 @@ The unit assumes the checkout lives at `~/projects/besedy`; adjust
 `WorkingDirectory` otherwise. For development run it in the foreground with
 `just ingest-worker-run` (defaults to pool `besedy-ingest-dev`).
 
+Both start the worker with the `jobs` and `ml` extras: the flows run
+`rag-colbert-index`, which chunks transcripts with a `transformers` tokenizer on
+the host. `just setup-jobs` is an exact sync that removes the `ml` extra, so
+restart the worker after running it (the unit reinstalls the extra on start).
+
 Register the pool and deployment together with deep search:
 
 ```bash
