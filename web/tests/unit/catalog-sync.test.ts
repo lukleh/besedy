@@ -42,6 +42,7 @@ const mockPrisma: any = {
     callback(mockTx),
   ),
   $executeRaw: vi.fn(),
+  $queryRaw: vi.fn(),
   workflowGroup: mockTx.workflowGroup,
   catalogSyncState: {
     findMany: (...args: unknown[]) => mockTx.catalogSyncState.findMany(...args),
@@ -95,6 +96,9 @@ describe('catalog-sync', () => {
     mockTx.catalogListeningEntry.createMany.mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.groupBy.mockResolvedValue([]);
     mockPrisma.$executeRaw.mockResolvedValue(0);
+    mockPrisma.$queryRaw.mockResolvedValue([
+      { deleted: 0, unreleasedEventIds: null },
+    ]);
   });
 
   it('uses tx-scoped advisory lock and purges stale listening rows when variant path is removed', async () => {
@@ -328,7 +332,7 @@ describe('catalog-sync', () => {
     expect(mockPrisma.catalogSyncState.upsert).not.toHaveBeenCalled();
   });
 
-  it('runs orphan event-recording cleanup after metadata/archived sync success', async () => {
+  it('runs orphan event-recording cleanup after metadata/archived sync success and reports unreleased events', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
       id: '20251222_144441',
       metadataCatalogPath: '/data/meta.csv',
@@ -366,12 +370,23 @@ describe('catalog-sync', () => {
       },
     );
 
+    mockPrisma.$queryRaw.mockResolvedValue([
+      { deleted: BigInt(2), unreleasedEventIds: [7] },
+    ]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
     const result = await syncCatalogGroup('20251222_144441');
 
     expect(result.status).toBe('success');
     expect(result.changedSources).toEqual(['metadata', 'archived']);
-    expect(mockPrisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const sql = (mockPrisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+    expect(sql).toContain('DELETE FROM catalog_event_recording');
+    expect(sql).toContain('SET released = false');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Deleted 2 event-recording rows'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('20251222_144441: 7'));
+    warn.mockRestore();
   });
 
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {

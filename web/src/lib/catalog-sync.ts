@@ -112,25 +112,52 @@ function shouldRunOrphanCleanup(result: CatalogSyncResult): boolean {
   return changed.has('metadata') || changed.has('archived');
 }
 
+// Deletes event assignments whose recording left the catalog. A released event
+// that loses its primary recording is unreleased in the same statement, as
+// removeRecordingWebState does, so it never stays released without a primary.
 async function cleanupOrphanEventRecordings(groupId: string): Promise<number> {
-  const deleted = await prisma.$executeRaw`
-    DELETE FROM catalog_event_recording cer
-    WHERE cer.workflow_group_id = ${groupId}
-      AND NOT EXISTS (
-        SELECT 1
-        FROM catalog_entry ce
-        WHERE ce.workflow_group_id = cer.workflow_group_id
-          AND ce.audio_hash = cer.audio_hash
-      )
+  const rows = await prisma.$queryRaw<
+    Array<{ deleted: number | bigint; unreleasedEventIds: number[] | null }>
+  >`
+    WITH orphaned AS (
+      DELETE FROM catalog_event_recording cer
+      WHERE cer.workflow_group_id = ${groupId}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM catalog_entry ce
+          WHERE ce.workflow_group_id = cer.workflow_group_id
+            AND ce.audio_hash = cer.audio_hash
+        )
+      RETURNING cer.event_id, cer.is_primary
+    ),
+    unreleased AS (
+      UPDATE catalog_event e
+      SET released = false, updated_at = NOW()
+      WHERE e.workflow_group_id = ${groupId}
+        AND e.released = true
+        AND e.id IN (SELECT event_id FROM orphaned WHERE is_primary)
+      RETURNING e.id
+    )
+    SELECT
+      (SELECT COUNT(*) FROM orphaned) AS "deleted",
+      (SELECT array_agg(id ORDER BY id) FROM unreleased) AS "unreleasedEventIds"
   `;
 
-  if (typeof deleted === 'number' && deleted > 0) {
-    console.log(
-      `[catalog-sync] Cleaned ${deleted} orphaned event-recording rows for ${groupId}`,
+  const deleted = Number(rows[0]?.deleted ?? 0);
+  const unreleasedEventIds = rows[0]?.unreleasedEventIds ?? [];
+
+  if (deleted > 0) {
+    console.warn(
+      `[catalog-sync] Deleted ${deleted} event-recording rows for ${groupId} whose recording left the catalog`,
+    );
+  }
+  if (unreleasedEventIds.length > 0) {
+    console.warn(
+      `[catalog-sync] Unreleased events that lost their primary recording in ${groupId}: ${unreleasedEventIds.join(', ')}`,
     );
   }
 
-  return typeof deleted === 'number' ? deleted : 0;
+  return deleted;
 }
 
 function normalizeHeader(value: string): string {
