@@ -121,10 +121,12 @@ loginctl enable-linger "$USER"
 journalctl --user -u besedy-ingest-worker -f
 ```
 
-Deploy with `just ingest-worker-deploy <rev>` from any checkout of the
-repository, at the revision production web runs
-(`curl -s http://localhost:3000/api/version | jq -r .commit`), so the flows and
-the web completion callback agree. The recipe reads
+Deploy with `just ingest-worker-deploy <rev>` at the revision production web
+runs (`curl -s http://localhost:3000/api/version | jq -r .commit`), so the
+flows and the web completion callback agree; `prod-deploy` does not do this for
+you. Run it from any worktree of the repository that contains the recipe: the
+idle check imports `besedy` from the invoking checkout, so that checkout must be
+at this change or newer, while `<rev>` itself may be older. The recipe reads
 `~/.config/lukleh/besedy/ingest-worker.env`, the unit's environment file. It:
 
 1. creates the checkout on first use, or refuses if it has local changes;
@@ -145,9 +147,20 @@ redeploy. The pool is not paused, so a run the worker claims in the second
 between the last check and the stop is killed; ingests are rare enough that
 this is accepted.
 
-Keep every `[paths]` value in the host `besedy.toml` absolute: an empty or
-relative value resolves against the checkout the worker runs from, so ingest
-output would land inside `~/worktrees/besedy/prod-ingest`.
+The checkout path no longer changes per deploy, so the unit logs the revision
+it runs on every start. To tie a failed flow run to a revision, find the last
+`revision` line before it:
+
+```bash
+journalctl --user -u besedy-ingest-worker | grep revision
+```
+
+Keep `audio_artifacts_dir` and `text_data_dir` in the host `besedy.toml`
+absolute: an empty or relative value resolves against the checkout the worker
+runs from, so ingest output would land inside `~/worktrees/besedy/prod-ingest`.
+The other roots (`uploads_dir`, `sources_dir`, `corrections_dir`) resolve under
+those two when relative, and keys such as `transcripts_dir` are subdirectory
+names that stay relative.
 
 For development run the worker in the foreground from the dev checkout with
 `just ingest-worker-run` (defaults to pool `besedy-ingest-dev`).

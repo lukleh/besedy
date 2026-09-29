@@ -35,7 +35,9 @@ Type=simple
 # flows.
 WorkingDirectory=%h/worktrees/besedy/prod-ingest
 EnvironmentFile=%h/.config/lukleh/besedy/ingest-worker.env
-ExecStart=/usr/bin/env bash -lc 'exec uv run --frozen --extra jobs --extra ml prefect worker start --pool "${PREFECT_INGEST_WORK_POOL}" --type process --limit 1 --install-policy never'
+# The checkout path is fixed, so the start line records the revision; a failed
+# flow run in the journal can then be tied to the revision that was live.
+ExecStart=/usr/bin/env bash -lc 'echo "besedy-ingest-worker: revision $(git rev-parse HEAD) in $(pwd)"; exec uv run --frozen --extra jobs --extra ml prefect worker start --pool "${PREFECT_INGEST_WORK_POOL}" --type process --limit 1 --install-policy never'
 Restart=on-failure
 RestartSec=10
 KillMode=mixed

@@ -256,6 +256,15 @@ versions, and a scheduled `pg_dump` cannot hold locks across the migration. If
 backup or migration fails, the recipe exits with `web` and scheduled backups
 stopped; inspect the error and restore or retry before starting them again.
 
+The host ingest worker is not part of `prod-deploy`. After a web release,
+redeploy it at the same commit so the flows and the web completion callback
+agree (it waits for the ingest pool to be idle and asks before restarting the
+worker; see [recording-ingest.md](recording-ingest.md#host-worker)):
+
+```bash
+just ingest-worker-deploy "$(curl -s http://localhost:3000/api/version | jq -r .commit)"
+```
+
 Production builds retain immutable `besedy-web:<full-commit>` images in addition
 to the mutable deployment tag. When a jobs image already exists, they also
 snapshot it as `besedy-jobs:<full-commit>`; a coordinated build replaces that
@@ -625,6 +634,11 @@ through the development runtime.
    `deep_search_flow/deep-search-prod` deployment (concurrency from
    `PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT`). Use `just jobs-dev-deploy` for
    development.
+4. **Host ingest worker:** after every web release, `just ingest-worker-deploy
+   <sha>` at the commit production web now runs (`/api/version`), so the host
+   flows and the web completion callback agree. It is a separate step because
+   the worker runs on the host from `~/worktrees/besedy/prod-ingest`, not from
+   a container image; see [recording-ingest.md](recording-ingest.md#host-worker).
 
 ### Prefect Version and State
 

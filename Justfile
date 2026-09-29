@@ -367,7 +367,11 @@ ingest-worker-deploy rev:
     set +a
     : "${PREFECT_INGEST_WORK_POOL:?PREFECT_INGEST_WORK_POOL must be set in $env_file}"
 
-    git fetch --quiet origin
+    # <rev> is a commit-ish resolved against local refs after the fetch (a
+    # branch name means the local branch, so pass the SHA production web
+    # reports). A failed fetch only matters when the revision is not local yet,
+    # so an offline rollback to an earlier deploy still works.
+    git fetch --quiet origin || echo "Warning: git fetch failed; resolving '$1' from local refs." >&2
     sha="$(git rev-parse --verify "$1^{commit}")"
     if [ ! -e "$worktree" ]; then
         # Locked so worktree cleanup (`git worktree remove`, worktree-report.sh)
@@ -425,7 +429,9 @@ ingest-worker-deploy rev:
         exit 1
     fi
     trap - ERR
-    echo "Ingest worker running at ${sha:0:12} from $worktree"
+    # The unit logs the revision on every start, so this line and the worker's
+    # journal agree on what was live when a flow run failed.
+    echo "Ingest worker running at ${sha:0:12} from $worktree (journal: journalctl --user -u $unit | grep revision)"
 
 # ============================================================================
 # Web App - Code Quality Checks
