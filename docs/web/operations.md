@@ -613,8 +613,10 @@ through the development runtime.
 
    `jobs-prod-up` refuses a dirty Besedy worktree, labels the image with the
    Besedy revision and build time, then starts both services with `--no-build`.
-   The image build refreshes the public `rlmbenchy` repository's default branch
-   and packages the resolved revision into the image. Running containers
+   The image build packages the `rlmbenchy` commit pinned in `uv.lock`, so the
+   image's Besedy revision label also identifies its `rlmbenchy` commit. Take a
+   newer `rlmbenchy` with `just bump-rlmbenchy` and commit the lock change
+   before rebuilding. Running containers
    therefore execute immutable packaged image code rather than a mutable
    repository bind mount.
 

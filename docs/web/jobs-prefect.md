@@ -53,8 +53,9 @@ The following boundary points still hold, independent of the orchestration subst
 - Besedy owns the deep-search signature and retrieval tools; `rlmbenchy` provides the generic RLM runtime
 - the worker runtime is Python-based
 - the `jobs` extra declares `rlmbenchy` as a Git dependency tracking its
-  default branch; jobs setup, tests, CI, and image builds refresh that branch
-  before syncing, while `uv.lock` records the revision resolved most recently
+  default branch, and `uv.lock` pins the commit that setup, tests, CI, and
+  image builds install; `just bump-rlmbenchy` moves the pin to the latest
+  commit, runs the jobs tests, and leaves the lock change to review and commit
 - the public route shape stays typed and Besedy-owned
 - product auth and per-user visibility rules are still deferred until the execution path is proven
 
@@ -463,8 +464,8 @@ Suggested image split:
 - use a Besedy repo image for `jobs-api` and `prefect-worker`, with `prefect` and the packaged `rlmbenchy` distribution installed in the same environment as Besedy
 
 The production runtime is image-only: it does not mount the Besedy checkout.
-The Docker build refreshes and installs Besedy's `rlmbenchy` dependency from
-the latest default-branch revision in the public Git repository over HTTPS.
+The Docker build installs Besedy's `rlmbenchy` dependency over HTTPS from the
+public Git repository, at the commit pinned in `uv.lock`.
 Production containers run as a non-root UID/GID, use a read-only root filesystem
 with a bounded `/tmp` tmpfs, drop all capabilities, and enable
 `no-new-privileges`. Only the worker output directory is writable persistently;
@@ -475,8 +476,8 @@ config file read-only). The production API sees output read-only; the worker
 sees it read-write.
 
 Do not mount the `rlmbenchy` checkout into the build or running worker. The
-dependency remains packaged into the image; rebuilding refreshes its default
-branch and records the resolved commit in the build-stage lockfile.
+dependency remains packaged into the image; rebuilding the same Besedy commit
+installs the same `rlmbenchy` commit.
 
 ## Deployment Registration Plan
 
