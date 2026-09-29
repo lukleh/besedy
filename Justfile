@@ -17,11 +17,11 @@ setup-ml:
 
 # Setup Python environment with optional Prefect jobs tooling.
 setup-jobs:
-    uv sync --extra jobs --upgrade-package rlmbenchy
+    uv sync --locked --extra jobs
 
 # Setup Python environment with all optional extras.
 setup-all:
-    uv sync --all-extras --upgrade-package rlmbenchy
+    uv sync --locked --all-extras
 
 # Invoke the audio catalog CLI (e.g., `just catalog create <dir>` or `just catalog check --csv catalog.csv`).
 catalog *args:
@@ -37,7 +37,15 @@ transcribe-oneoff *args:
 
 # Test shortcuts
 test *args:
-    uv run --all-extras --upgrade-package rlmbenchy pytest "$@"
+    uv run --locked --all-extras pytest "$@"
+
+# Move the rlmbenchy pin in uv.lock to its latest default-branch commit, run the
+# jobs tests, and show the lock change to review and commit. Locks with the
+# jobs image's uv (jobs-service/Dockerfile) so unrelated markers stay put.
+bump-rlmbenchy:
+    uvx --from 'uv==0.9.26' uv lock --upgrade-package rlmbenchy
+    uv run --locked --extra jobs pytest tests/test_prefect_jobs.py tests/test_prefect_jobs_maintenance.py tests/test_jobs_production_hardening.py tests/test_rlm_integration.py -q
+    git diff --stat -- uv.lock
 
 # Run ty against the full production package.
 ty *args:
@@ -192,7 +200,7 @@ jobs-dev-up: (_jobs-secret-check "development")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_dev_compose }} build --build-arg RLMBENCHY_REFRESH="$(date +%s)" jobs-api prefect-worker
+    {{ jobs_dev_compose }} build jobs-api prefect-worker
     {{ jobs_dev_compose }} up -d --no-build
 
 jobs-dev-down:
@@ -204,7 +212,7 @@ jobs-dev-logs:
 jobs-dev-rebuild:
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_dev_compose }} build --build-arg RLMBENCHY_REFRESH="$(date +%s)" jobs-api prefect-worker
+    {{ jobs_dev_compose }} build jobs-api prefect-worker
     {{ jobs_dev_compose }} up -d --no-build jobs-api prefect-worker
 
 jobs-dev-status:
@@ -219,7 +227,7 @@ jobs-test-up: (_jobs-secret-check "test")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_test_compose }} build --build-arg RLMBENCHY_REFRESH="$(date +%s)" jobs-api prefect-worker
+    {{ jobs_test_compose }} build jobs-api prefect-worker
     {{ jobs_test_compose }} up -d --no-build
 
 jobs-test-down:
@@ -231,7 +239,7 @@ jobs-test-logs:
 jobs-test-rebuild:
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_test_compose }} build --build-arg RLMBENCHY_REFRESH="$(date +%s)" jobs-api prefect-worker
+    {{ jobs_test_compose }} build jobs-api prefect-worker
     {{ jobs_test_compose }} up -d --no-build jobs-api prefect-worker
 
 jobs-test-status:
@@ -271,9 +279,7 @@ jobs-prod-build:
     set -a
     . "$jobs_env"
     set +a
-    {{ jobs_prod_compose }} build --pull \
-        --build-arg RLMBENCHY_REFRESH="$(date +%s)" \
-        jobs-api
+    {{ jobs_prod_compose }} build --pull jobs-api
     docker image tag "${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}" "besedy-jobs:$GIT_COMMIT"
     echo "Built production jobs image for commit ${GIT_COMMIT:0:12}"
 
