@@ -20,6 +20,7 @@ import { createServerLogger } from "@/lib/log/server";
 import { validatePathAsync, rewritePath } from "@/lib/security/path-validation";
 import { AudioQuerySchema, CatalogHashParamSchema } from "@/lib/validation/schemas";
 import { validateParams } from "@/lib/api";
+import { checkReadableFile, openReadStream } from "@/lib/readable-file";
 
 // Force Node.js runtime for filesystem access
 export const runtime = "nodejs";
@@ -104,6 +105,7 @@ function logAudioRouteResponse(
     fileSize?: number;
     responseBytes?: number;
     errorName?: string;
+    errorCode?: string;
     errorMessage?: string;
   }
 ): void {
@@ -172,6 +174,27 @@ function attachAudioStreamDiagnostics(
 }
 
 /**
+ * Open the audio file, wrap it in the response, and attach the stream
+ * diagnostics, all in the same tick so an open error always has a listener
+ * (see openReadStream). The response is built first because the diagnostics
+ * destroy the stream at once for an already-aborted request.
+ */
+function createAudioStreamResponse(
+  request: NextRequest,
+  filePath: string,
+  options: { start?: number; end?: number } | undefined,
+  init: ResponseInit,
+  context: AudioRouteLogContext,
+  startedAtMs: number
+): NextResponse {
+  return openReadStream(filePath, options, (stream) => {
+    const response = new NextResponse(stream as unknown as ReadableStream, init);
+    attachAudioStreamDiagnostics(request, stream, context, startedAtMs);
+    return response;
+  });
+}
+
+/**
  * GET /api/catalogs/:id/recordings/:hash/audio - Stream audio file
  *
  * Supports HTTP Range requests for seeking.
@@ -216,6 +239,7 @@ export async function GET(
       fileSize?: number;
       responseBytes?: number;
       errorName?: string;
+      errorCode?: string;
       errorMessage?: string;
     }
   ) =>
@@ -225,6 +249,16 @@ export async function GET(
       handlerMs: Date.now() - requestStartedAt,
       ...(extra ?? {}),
     });
+  const rangeNotSatisfiable = (fileSize: number) => {
+    const response = new NextResponse(null, {
+      status: 416,
+      headers: {
+        "Content-Range": `bytes */${fileSize}`,
+      },
+    });
+    logResponse("warn", response.status, "range_not_satisfiable", { fileSize });
+    return response;
+  };
 
   try {
     const rawParams = await params;
@@ -397,19 +431,39 @@ export async function GET(
     // Use the resolved (canonical) path for file operations
     const resolvedAudioPath = pathValidation.resolvedPath;
 
-    // Check if file exists
-    let stat: fs.Stats;
-    try {
-      stat = await fs.promises.stat(resolvedAudioPath);
-    } catch {
+    // Check that the path is a regular file this process can read. stat()
+    // succeeds on an unreadable file and on a directory, and the read stream
+    // would only fail after the response has been built.
+    const fileCheck = await checkReadableFile(resolvedAudioPath);
+    if (!fileCheck.ok) {
+      if (fileCheck.reason === "missing") {
+        const response = NextResponse.json(
+          { error: "Audio file not found on disk" },
+          { status: 404 }
+        );
+        logResponse("warn", response.status, "audio_file_missing", {
+          errorCode: fileCheck.code,
+        });
+        return response;
+      }
       const response = NextResponse.json(
-        { error: "Audio file not found on disk" },
-        { status: 404 }
+        { error: "Audio file is not readable" },
+        { status: 500 }
       );
-      logResponse("warn", response.status, "audio_file_missing");
+      const { error } = fileCheck;
+      logResponse(
+        "error",
+        response.status,
+        fileCheck.reason === "not_a_file" ? "audio_file_not_regular" : "audio_file_unreadable",
+        {
+          errorName: error instanceof Error ? error.name : undefined,
+          errorCode: fileCheck.code,
+          errorMessage: error instanceof Error ? error.message : undefined,
+        }
+      );
       return response;
     }
-    const fileSize = stat.size;
+    const fileSize = fileCheck.stat.size;
 
     // Determine content type
     const ext = path.extname(resolvedAudioPath).toLowerCase();
@@ -429,14 +483,7 @@ export async function GET(
           // Suffix range: last N bytes. Zero-length is not satisfiable.
           const suffixLength = parseInt(match[2], 10);
           if (suffixLength === 0) {
-            const response = new NextResponse(null, {
-              status: 416,
-              headers: {
-                "Content-Range": `bytes */${fileSize}`,
-              },
-            });
-            logResponse("warn", response.status, "range_not_satisfiable", { fileSize });
-            return response;
+            return rangeNotSatisfiable(fileSize);
           }
           // If suffix exceeds the file, RFC says serve the whole file.
           start = Math.max(0, fileSize - suffixLength);
@@ -444,14 +491,7 @@ export async function GET(
         } else {
           start = parseInt(match[1], 10);
           if (start >= fileSize) {
-            const response = new NextResponse(null, {
-              status: 416,
-              headers: {
-                "Content-Range": `bytes */${fileSize}`,
-              },
-            });
-            logResponse("warn", response.status, "range_not_satisfiable", { fileSize });
-            return response;
+            return rangeNotSatisfiable(fileSize);
           }
           // Honor the requested range exactly. Truncating open-ended ranges to
           // an arbitrary chunk size depends on browser-specific follow-up
@@ -460,10 +500,17 @@ export async function GET(
           end = Math.min(requestedEnd, fileSize - 1);
         }
 
-        const chunkSize = end - start + 1;
-        const stream = fs.createReadStream(resolvedAudioPath, { start, end });
+        // An inverted range (`bytes=100-50`) or a suffix range on an empty
+        // file leaves end < start, which createReadStream rejects.
+        if (end < start) {
+          return rangeNotSatisfiable(fileSize);
+        }
 
-        // Log access for range requests with range info
+        const chunkSize = end - start + 1;
+
+        // Log access for range requests with range info. Write the audit entry
+        // before opening the file so a failed audit write leaves no descriptor
+        // open.
         const range: AudioStreamRange = { start, end, fileSize };
         if (forceDownload) {
           await logAudioDownloaded(userId, hash, catalogId, audioSource);
@@ -471,19 +518,25 @@ export async function GET(
           await logAudioStreamed(userId, hash, catalogId, range);
         }
 
-        const response = new NextResponse(stream as unknown as ReadableStream, {
-          status: 206,
-          headers: {
-            "Content-Type": contentType,
-            "Content-Length": String(chunkSize),
-            "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-            "Accept-Ranges": "bytes",
-            ...(forceDownload && downloadFilename && {
-              "Content-Disposition": getContentDisposition(downloadFilename),
-            }),
+        const response = createAudioStreamResponse(
+          request,
+          resolvedAudioPath,
+          { start, end },
+          {
+            status: 206,
+            headers: {
+              "Content-Type": contentType,
+              "Content-Length": String(chunkSize),
+              "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+              "Accept-Ranges": "bytes",
+              ...(forceDownload && downloadFilename && {
+                "Content-Disposition": getContentDisposition(downloadFilename),
+              }),
+            },
           },
-        });
-        attachAudioStreamDiagnostics(request, stream, currentLogContext(), requestStartedAt);
+          currentLogContext(),
+          requestStartedAt
+        );
         logResponse("info", response.status, forceDownload ? "range_download" : "range_stream", {
           fileSize,
           responseBytes: chunkSize,
@@ -496,20 +549,24 @@ export async function GET(
     if (forceDownload) {
       // Downloads get the full file
       await logAudioDownloaded(userId, hash, catalogId, audioSource);
-      const stream = fs.createReadStream(resolvedAudioPath);
-
-      const response = new NextResponse(stream as unknown as ReadableStream, {
-        status: 200,
-        headers: {
-          "Content-Type": contentType,
-          "Content-Length": String(fileSize),
-          "Accept-Ranges": "bytes",
-          ...(downloadFilename && {
-            "Content-Disposition": getContentDisposition(downloadFilename),
-          }),
+      const response = createAudioStreamResponse(
+        request,
+        resolvedAudioPath,
+        undefined,
+        {
+          status: 200,
+          headers: {
+            "Content-Type": contentType,
+            "Content-Length": String(fileSize),
+            "Accept-Ranges": "bytes",
+            ...(downloadFilename && {
+              "Content-Disposition": getContentDisposition(downloadFilename),
+            }),
+          },
         },
-      });
-      attachAudioStreamDiagnostics(request, stream, currentLogContext(), requestStartedAt);
+        currentLogContext(),
+        requestStartedAt
+      );
       logResponse("info", response.status, "full_download", {
         fileSize,
         responseBytes: fileSize,
@@ -520,19 +577,24 @@ export async function GET(
     // Without an explicit Range request, return a normal 200 streaming
     // response. Sending a synthetic first chunk as 206 is not reliably
     // interoperable across browsers and can truncate playback.
-    const stream = fs.createReadStream(resolvedAudioPath);
     const range: AudioStreamRange = { start: 0, end: fileSize - 1, fileSize };
     await logAudioStreamed(userId, hash, catalogId, range);
 
-    const response = new NextResponse(stream as unknown as ReadableStream, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Length": String(fileSize),
-        "Accept-Ranges": "bytes",
+    const response = createAudioStreamResponse(
+      request,
+      resolvedAudioPath,
+      undefined,
+      {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": String(fileSize),
+          "Accept-Ranges": "bytes",
+        },
       },
-    });
-    attachAudioStreamDiagnostics(request, stream, currentLogContext(), requestStartedAt);
+      currentLogContext(),
+      requestStartedAt
+    );
     logResponse("info", response.status, "full_stream", {
       fileSize,
       responseBytes: fileSize,
