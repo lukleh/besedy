@@ -395,6 +395,31 @@ describe('downloaded audio', () => {
     expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeDefined();
   });
 
+  it('discards a damaged download even after the player cancelled', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+    ]);
+
+    const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    const { readStarted, settle } = gateNextRead(cache);
+    const reader = response.body!.getReader();
+    const read = reader.read();
+    await readStarted;
+    await reader.cancel();
+    await cache.delete(getAudioChunkKey(baseKey, 0));
+    settle();
+    await expect(read).resolves.toEqual({ done: true, value: undefined });
+
+    await vi.waitFor(async () => {
+      expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
+    });
+    expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeUndefined();
+  });
+
   it('keeps the download when Cache Storage itself fails to read', async () => {
     const { fetchHandler, cacheStorage } = loadScript();
     const { url, baseKey, cache } = await seedAudio(cacheStorage, [

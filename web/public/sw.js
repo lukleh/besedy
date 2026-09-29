@@ -496,9 +496,8 @@ function createChunkStream(options) {
           chunkIndex += 1;
           if (chunkIndex > endChunk) controller.close();
         } catch (error) {
-          // A read that fails after the player abandoned the response says
-          // nothing about the download either.
-          if (cancelled) return;
+          // Damaged bytes are damage even if the player has already moved on;
+          // erroring a cancelled stream is a no-op.
           if (error instanceof DamagedDownloadError) {
             await deleteAudioCacheEntries(cache, baseKey);
           }
