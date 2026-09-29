@@ -359,6 +359,12 @@ by hash, playback starts without the network, and the online-to-offline
 transition stops being a special case for the player. Presentation components
 never see URLs, manifests, segments, caches, or player engines.
 
+React Query's default `online` network mode would pause such a query before
+its function runs once the browser reports offline, so the fallback would never
+be reached. Every reader that goes through `withLocalFallback` therefore sets
+`networkMode: "offlineFirst"`, and queries that only read IndexedDB (local audio,
+artwork) set `networkMode: "always"`.
+
 The source returns explicit capabilities (for example, `canPlay`,
 `hasTranscript`, and `canManageDownload`) together with the model. The local
 source derives them from the durable package and its availability manifest;

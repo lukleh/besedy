@@ -49,6 +49,9 @@ export function isNetworkFailure(error: unknown): boolean {
  * Run `request`; if it fails because the network is unreachable and `local`
  * can answer from a complete package, return that answer instead. Every other
  * error propagates unchanged.
+ *
+ * Queries that use this must set `networkMode: "offlineFirst"`; React Query's
+ * default mode pauses the query function while offline, before it can run.
  */
 export async function withLocalFallback<T>(
   request: () => Promise<T>,
