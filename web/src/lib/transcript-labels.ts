@@ -8,10 +8,10 @@ export function trimModelComponent(model: string, maxLength = 28): string {
   const parts = model.split("@");
   const [primary, secondary] = parts;
   // The language component distinguishes otherwise identical variants
-  // (large-v3@silero_vad_v6 vs ...@lang-en), so it always survives trimming.
-  const language = parts.slice(2).find((part) => part.startsWith("lang-"));
+  // (...@lang-cs vs ...@lang-en), so it always survives trimming.
+  const language = parts.slice(1).find((part) => part.startsWith("lang-"));
   let label = primary;
-  if (secondary) {
+  if (secondary && !secondary.startsWith("lang-")) {
     label = `${primary}@${secondary}`;
   }
   const suffix = language ? `@${language}` : "";

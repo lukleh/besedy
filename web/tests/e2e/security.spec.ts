@@ -17,7 +17,7 @@ test.describe("API Security Boundaries @security", () => {
 
     // Try to fetch transcript directly via API
     const response = await page.request.get(
-      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}&backend=faster-whisper/large-v3@silero_vad_v6`
+      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}&backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
     );
 
     // Should be forbidden (LISTENER role cannot view transcripts)
@@ -183,7 +183,7 @@ test.describe("Unauthenticated API Access @security", () => {
   }) => {
     // Direct API call without any session/cookies
     const response = await request.get(
-      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}&backend=faster-whisper/large-v3@silero_vad_v6`
+      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}&backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
     );
 
     // Unauthenticated requests should return 401.

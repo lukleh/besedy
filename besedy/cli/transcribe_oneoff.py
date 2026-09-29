@@ -28,7 +28,7 @@ from besedy.lib.analysis.subtitles import render_srt, render_vtt
 from besedy.lib.analysis.timeline import Segment, extract_segments
 from besedy.lib.data.encoding import load_json_with_fallback
 from besedy.lib.workflow.language import (
-    LEGACY_DEFAULT_LANGUAGE,
+    DEFAULT_TRANSCRIPTION_LANGUAGE,
     resolve_inference_language,
     resolve_language_setting,
 )
@@ -47,7 +47,7 @@ class MissingFasterWhisperRuntimeError(RuntimeError):
 class OneOffDefaults:
     model_name: str = FALLBACK_MODEL
     vad_model: str | None = FALLBACK_VAD_MODEL
-    language: str = LEGACY_DEFAULT_LANGUAGE
+    language: str = DEFAULT_TRANSCRIPTION_LANGUAGE
     vad_filter: bool = True
     word_timestamps: bool = True
     min_silence_ms: int | None = None
@@ -244,7 +244,7 @@ def resolve_defaults() -> OneOffDefaults:
     return OneOffDefaults(
         model_name=workflow.model_name if workflow else FALLBACK_MODEL,
         vad_model=workflow.vad_model if workflow else FALLBACK_VAD_MODEL,
-        language=workflow.language if workflow else LEGACY_DEFAULT_LANGUAGE,
+        language=workflow.language if workflow else DEFAULT_TRANSCRIPTION_LANGUAGE,
         vad_filter=bool(app_config.vad.filter_enabled),
         word_timestamps=bool(app_config.vad.word_timestamps),
         min_silence_ms=app_config.vad.min_silence_ms,

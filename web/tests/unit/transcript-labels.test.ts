@@ -22,6 +22,9 @@ describe("transcript label helpers", () => {
     expect(trimModelComponent("large-v3@silero_vad_v6@lang-en")).toBe(
       "large-v3@silero_v...@lang-en"
     );
+    expect(trimModelComponent(`${"a".repeat(30)}@lang-cs`)).toBe(
+      `${"a".repeat(17)}...@lang-cs`
+    );
   });
 
   it("renders distinct labels for language variants of the same model", () => {

@@ -93,7 +93,7 @@ Example:
         "--model",
         type=str,
         default=None,
-        help="Only export transcripts from specific model variant (e.g., 'large-v3@silero_vad_v6').",
+        help="Only export transcripts from a model variant (e.g., 'large-v3@silero_vad_v6@lang-cs').",
     )
     parser.add_argument(
         "--stats",

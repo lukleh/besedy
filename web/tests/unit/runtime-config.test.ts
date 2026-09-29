@@ -69,7 +69,7 @@ describe("runtime config helpers", () => {
 
   it("uses the language-aware default RAG backend key", () => {
     expect(getRagBackendKey(undefined)).toBe(
-      "faster-whisper/large-v3@silero_vad_v6@lang-auto"
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs"
     );
     expect(getRagBackendKey("faster-whisper/custom@lang-en")).toBe(
       "faster-whisper/custom@lang-en"

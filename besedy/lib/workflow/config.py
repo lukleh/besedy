@@ -63,9 +63,8 @@ class WorkflowConfig:
             components.append(sanitize_fn(self.vad_model))
         if self.align_model:
             components.append(sanitize_fn(self.align_model))
-        language_component = language_output_component(self.language, sanitize_fn)
-        if self.workflow_type == "transcription" and language_component:
-            components.append(language_component)
+        if self.workflow_type == "transcription":
+            components.append(language_output_component(self.language, sanitize_fn))
         return "@".join(components)
 
 

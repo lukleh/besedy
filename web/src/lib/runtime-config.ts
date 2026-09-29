@@ -14,7 +14,7 @@ export const RAG_DEFAULTS = {
   RERANK_TOP_N: 50,
   RELATIVE_SCORE_CUTOFF: 0,
   TIMEOUT_MS: 8000,
-  BACKEND_KEY: "faster-whisper/large-v3@silero_vad_v6@lang-auto",
+  BACKEND_KEY: "faster-whisper/large-v3@silero_vad_v6@lang-cs",
   RERANK_URL: "http://host.docker.internal:8191/rerank",
   RERANK_MODEL: "Alibaba-NLP/gte-multilingual-reranker-base",
   COLBERT_URL: "http://host.docker.internal:8192/query",

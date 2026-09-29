@@ -165,9 +165,9 @@ backend language detection. Canary requires a concrete prompt language such as
 `"cs"`. Qwen3-ASR expects full language names ("Czech"); the workflow derives
 them from the configured code at the inference boundary.
 
-Entries that omit `language` default to `"cs"` — the behavior every workflow
-had before language became configurable — so legacy configs keep their
-behavior and output paths. Automatic detection is always an explicit opt-in.
+Entries that omit `language` default to `"cs"` — the inference behavior every
+workflow had before language became configurable. Automatic detection is always
+an explicit opt-in.
 
 For WhisperX with `language = "auto"`, omit `align_model`; WhisperX then chooses
 an alignment model after detecting the language. A fixed language-specific
@@ -176,9 +176,10 @@ requesting `auto` with a fixed aligner is rejected, at config load and at the
 workflow CLI.
 
 The configured language is also part of transcript identity: `auto` appends
-`@lang-auto` to the workflow output component, and an explicitly non-Czech
-language appends `@lang-<code>`. Czech (`cs`, explicit or defaulted) keeps the
-historical path without a suffix so existing Czech transcripts remain reusable.
+`@lang-auto` to the workflow output component, and every concrete language
+appends `@lang-<code>`. Czech (`cs`, explicit or defaulted) uses `@lang-cs`.
+Unsuffixed Czech transcript trees need the path migration described in
+[the migration guide](migrations/explicit-czech-transcript-paths.md).
 Canary translation runs with different source and target languages append
 `@lang-<source>-<target>` so translations never collide with native
 transcriptions.
