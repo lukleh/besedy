@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   Bug,
@@ -69,6 +70,11 @@ export function AudioPlayerChrome({
   volume,
 }: AudioPlayerChromeProps) {
   const t = useTranslations("player");
+  // While the thumb is being dragged, show where it is without seeking: every
+  // seek cancels the in-flight audio request, and a burst of them can leave
+  // the media element stuck mid-seek. The seek happens once, on commit.
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const shownTime = scrubTime ?? currentTime;
   const downloadControl =
     hash && catalogId ? (
       downloadEventId !== undefined ? (
@@ -87,15 +93,23 @@ export function AudioPlayerChrome({
     <>
       <div className="mb-4">
         <Slider
-          value={[duration > 0 ? currentTime : 0]}
+          value={[duration > 0 ? shownTime : 0]}
           max={duration || 100}
           step={0.1}
-          onValueChange={onSeek}
+          onValueChange={([value]) => setScrubTime(value)}
+          onValueCommit={(value) => {
+            setScrubTime(null);
+            onSeek(value);
+          }}
+          // A drag that ends where it started, or is cancelled, commits
+          // nothing; stop previewing either way.
+          onPointerUp={() => setScrubTime(null)}
+          onPointerCancel={() => setScrubTime(null)}
           className="min-h-11 cursor-pointer [&_[data-slot=slider-thumb]]:size-6"
           aria-label={t("progress")}
         />
         <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-          <span>{formatAudioTime(currentTime)}</span>
+          <span>{formatAudioTime(shownTime)}</span>
           <span>{formatAudioTime(duration)}</span>
         </div>
       </div>

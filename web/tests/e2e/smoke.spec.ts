@@ -97,7 +97,7 @@ test.describe("Smoke Tests @smoke", () => {
     await progressSlider.focus();
     await page.keyboard.press("End");
     // currentTime settles asynchronously after the slider value change
-    // propagates through onValueChange → audio.currentTime.
+    // propagates through onValueCommit → audio.currentTime.
     await expect
       .poll(
         async () =>

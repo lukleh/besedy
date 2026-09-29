@@ -52,6 +52,9 @@ import { useMediaSession } from './use-media-session';
 import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
 
+// The slider steps in 0.1 s; anything closer than this is the same position.
+const SEEK_ECHO_TOLERANCE_SEC = 0.05;
+
 function resolvePlaybackEnd(value: number | undefined): number | null {
   return value !== undefined && Number.isFinite(value) && value >= 0
     ? value
@@ -261,8 +264,12 @@ export function AudioPlayer({
     if (audio && seekTo !== undefined && seekTo >= 0) {
       // Check if audio has metadata loaded (readyState >= 1 = HAVE_METADATA)
       if (audio.readyState >= 1) {
-        // Metadata loaded - seek immediately
-        audio.currentTime = seekTo;
+        // Metadata loaded - seek immediately. A parent that echoes the
+        // player's own onSeek back as seekTo lands here with the position the
+        // player already set; seeking again would restart the audio request.
+        if (Math.abs(audio.currentTime - seekTo) >= SEEK_ECHO_TOLERANCE_SEC) {
+          audio.currentTime = seekTo;
+        }
         // Sync React state with audio element - intentional for controlled seek
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentTime(seekTo);
