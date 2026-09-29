@@ -22,6 +22,20 @@ function timeRanges(ranges: Array<[number, number]>): TimeRanges {
 }
 
 describe('audio retry state', () => {
+  it('keeps a user seek through reload failures, including a seek to zero', () => {
+    let state = retryReducer(INITIAL_RETRY_STATE, {
+      type: 'ERROR_DETECTED', savedPosition: 42, wasPlaying: true,
+    });
+    state = retryReducer(state, { type: 'SEEK_REQUESTED', time: 10 });
+    state = retryReducer(state, { type: 'TIMER_FIRED' });
+    state = retryReducer(state, { type: 'SEEK_REQUESTED', time: 0 });
+    state = retryReducer(state, { type: 'RELOAD_FAILED' });
+    expect(state).toMatchObject({
+      phase: 'scheduled', savedPosition: 0, wasPlaying: true, attempt: 2,
+    });
+    expect(retryReducer(INITIAL_RETRY_STATE, { type: 'SEEK_REQUESTED', time: 5 })).toBe(INITIAL_RETRY_STATE);
+  });
+
   it('preserves resume context while advancing with capped exponential backoff', () => {
     let state = retryReducer(INITIAL_RETRY_STATE, {
       type: 'ERROR_DETECTED',

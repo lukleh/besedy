@@ -42,6 +42,7 @@ const messages = {
 
 interface RenderPlayerOptions {
   src?: string;
+  recordingHash?: string;
   seekTo?: number;
   seekKey?: number;
   playbackEnd?: number;
@@ -51,21 +52,22 @@ interface RenderPlayerOptions {
   strictMode?: boolean;
 }
 
-function renderPlayer(options: RenderPlayerOptions = {}) {
+function playerElement(options: RenderPlayerOptions = {}) {
   const {
     src = "https://example.com/audio.mp3",
+    recordingHash,
     seekTo,
     seekKey,
     playbackEnd,
     autoPlayOnSeek,
     onTimeUpdate,
     onSeek,
-    strictMode = false,
   } = options;
-  const utils = render(
+  return (
     <NextIntlClientProvider locale="en" messages={messages}>
       <AudioPlayer
         src={src}
+        recordingHash={recordingHash}
         seekTo={seekTo}
         seekKey={seekKey}
         playbackEnd={playbackEnd}
@@ -73,9 +75,14 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
       />
-    </NextIntlClientProvider>,
-    { wrapper: strictMode ? StrictMode : undefined }
+    </NextIntlClientProvider>
   );
+}
+
+function renderPlayer(options: RenderPlayerOptions = {}) {
+  const utils = render(playerElement(options), {
+    wrapper: options.strictMode ? StrictMode : undefined,
+  });
 
   const audio = utils.container.querySelector("audio");
   if (!audio) {
@@ -405,6 +412,66 @@ describe("AudioPlayer retry logic", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    { phase: "scheduled", external: false, target: 50 },
+    { phase: "scheduled", external: true, target: 0 },
+    { phase: "reloading", external: false, target: 10 },
+    { phase: "reloading", external: true, target: 50 },
+    { phase: "reloading", external: true, target: 0 },
+  ])("retains a later seek to $target during $phase recovery (external $external)", async ({ phase, external, target }) => {
+    vi.useFakeTimers();
+    const { audio, container, rerender } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+      audio.dispatchEvent(new Event("play"));
+    });
+    audio.currentTime = 40;
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+
+    if (phase === "reloading") {
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      audio.currentTime = 0;
+      mockReadyState(audio, 0);
+    }
+    if (external) {
+      rerender(playerElement({ seekTo: target, seekKey: 1 }));
+    } else {
+      await act(async () => {
+        fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+      });
+    }
+    await loadMetadata(audio);
+    // Simulate the decoder reporting its old position as recovery completes;
+    // a request to zero must still be restored, not treated as no request.
+    audio.currentTime = 25;
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the existing retry deadline when the user seeks", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.load = vi.fn();
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(audio.load).toHaveBeenCalledTimes(1);
   });
 
   it("deduplicates errors while retry is pending and continues retry chain", async () => {
@@ -1077,6 +1144,143 @@ describe("AudioPlayer progress slider", () => {
 });
 
 describe("AudioPlayer external seek", () => {
+  it.each([1, undefined])("keeps a pending user seek when autoplay resets (key %s)", async (seekKey) => {
+    const onTimeUpdate = vi.fn();
+    const options = { seekTo: 30, seekKey, autoPlayOnSeek: true, onTimeUpdate };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.play = vi.fn().mockResolvedValue(undefined);
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    expect(audio.currentTime).toBe(10);
+
+    // The page resets the handoff flag after 100 ms. A new callback must not
+    // turn that prop update into another request either.
+    rerender(playerElement({ ...options, autoPlayOnSeek: false, onTimeUpdate: vi.fn() }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(10);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay a completed handoff when autoplay resets", async () => {
+    const options = { seekTo: 30, seekKey: 1, autoPlayOnSeek: true };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    const seeks = countSeeks(audio);
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-backward"]')!);
+    });
+    expect(seeks).toEqual([30, 20]);
+
+    rerender(playerElement({ ...options, autoPlayOnSeek: false }));
+    expect(seeks).toEqual([30, 20]);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { testId: "audio-skip-forward", target: 10 },
+    { testId: "audio-skip-backward", target: 0 },
+  ])("keeps queued autoplay at $target when controls beat the metadata event", async ({ testId, target }) => {
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, autoPlayOnSeek: true });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    // readyState changes before the browser dispatches loadedmetadata.
+    mockReadyState(audio, 1);
+    await act(async () => {
+      fireEvent.click(container.querySelector(`[data-testid="${testId}"]`)!);
+    });
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 50])("supersedes a pending target with an immediate external seek to %s", async (target) => {
+    const { audio, rerender } = renderPlayer({ seekTo: 30, seekKey: 1, autoPlayOnSeek: true });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    mockReadyState(audio, 1);
+    // The newer request carries its own play intent, replacing the old one.
+    rerender(playerElement({ seekTo: target, seekKey: 2, autoPlayOnSeek: false }));
+    expect(audio.currentTime).toBe(target);
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
+  it("allows repeated same-time requests with distinct keys", async () => {
+    const { audio, rerender } = renderPlayer();
+    await loadMetadata(audio);
+    const seeks = countSeeks(audio);
+    rerender(playerElement({ seekTo: 25, seekKey: 1 }));
+    audio.currentTime = 40;
+    rerender(playerElement({ seekTo: 25, seekKey: 2 }));
+    expect(seeks).toEqual([25, 40, 25]);
+  });
+
+  it("accepts target changes and cleared requests without a key", async () => {
+    const { audio, rerender } = renderPlayer();
+    await loadMetadata(audio);
+    const seeks = countSeeks(audio);
+    rerender(playerElement({ seekTo: 25 }));
+    rerender(playerElement({ seekTo: 0 }));
+    rerender(playerElement());
+    rerender(playerElement({ seekTo: 0 }));
+    expect(seeks).toEqual([25, 0, 0]);
+  });
+
+  it("restores the latest user target across a same-recording transport switch", async () => {
+    const hash = "a".repeat(64);
+    const src = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const options = { src, recordingHash: hash, seekTo: 30, seekKey: 1, autoPlayOnSeek: true };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.pause = vi.fn();
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    audio.currentTime = 0; // Changing src resets the media element.
+    rerender(playerElement({ ...options, src: `${src}?local=1`, autoPlayOnSeek: false }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(10);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the current position instead of replaying a consumed request on source switch", async () => {
+    const hash = "a".repeat(64);
+    const src = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const options = { src, recordingHash: hash, seekTo: 30, seekKey: 1 };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.pause = vi.fn();
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-backward"]')!);
+    });
+    expect(audio.currentTime).toBe(20);
+
+    mockReadyState(audio, 0);
+    audio.currentTime = 0;
+    rerender(playerElement({ ...options, src: `${src}?local=1` }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(20);
+  });
+
+  it("accepts a new recording's request after resetting the previous source", async () => {
+    const first = "a".repeat(64);
+    const second = "b".repeat(64);
+    const { audio, rerender } = renderPlayer({
+      src: `/api/catalogs/cat/recordings/${first}/audio`, seekTo: 30, seekKey: 1,
+    });
+    // Equal time and key are independent requests for different recordings.
+    rerender(playerElement({
+      src: `/api/catalogs/cat/recordings/${second}/audio`, seekTo: 30, seekKey: 1,
+    }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(30);
+  });
+
   it.each([
     { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 10 },
     { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 0 },

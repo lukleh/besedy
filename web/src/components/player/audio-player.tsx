@@ -216,6 +216,11 @@ export function AudioPlayer({
   const pendingSeekRef = useRef<{ time: number; autoPlay: boolean } | null>(
     null,
   );
+  const lastExternalSeekRef = useRef<{
+    recording: string;
+    time: number;
+    key: number | undefined;
+  } | null>(null);
 
   const restoreSavedPositionAfterResume = useCallback(() => {
     const audio = audioRef.current;
@@ -254,42 +259,6 @@ export function AudioPlayer({
     );
   }, [hash, onTimeUpdate, logDebugEvent]);
 
-  // Handle external seek requests - sync React state with audio element
-  // Must wait for metadata to load before seeking, otherwise seek is silently ignored
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio && seekTo !== undefined && seekTo >= 0) {
-      // Check if audio has metadata loaded (readyState >= 1 = HAVE_METADATA)
-      if (audio.readyState >= 1) {
-        // Metadata loaded - seek immediately
-        audio.currentTime = seekTo;
-        // Sync React state with audio element - intentional for controlled seek
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCurrentTime(seekTo);
-        onTimeUpdate?.(seekTo);
-        logDebugEvent(
-          'seek',
-          'External seek applied',
-          `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
-        );
-
-        // Auto-play after seek if requested (used for radio handoff)
-        if (autoPlayOnSeek) {
-          userInitiatedRef.current = true;
-          safePlay(audio, 'auto-play after external seek', logDebugEvent);
-        }
-      } else {
-        // Metadata not loaded yet - queue the seek for when it loads
-        pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
-        logDebugEvent(
-          'seek',
-          'External seek queued',
-          `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
-        );
-      }
-    }
-  }, [seekTo, seekKey, onTimeUpdate, autoPlayOnSeek, logDebugEvent]);
-
   // Drive the retry machine. When phase transitions to "scheduled", schedule
   // the reload; when it transitions to "exhausted", log and clear transient
   // UI state. The timer itself lives in `retryTimerRef` so it can be
@@ -298,6 +267,9 @@ export function AudioPlayer({
   // phase via the ref and bails if it's moved out of "scheduled", which
   // closes the window between a cancel on a different tick and a timer that
   // was already about to fire.
+  // A seek changes the restore target, not the deadline of a scheduled retry.
+  const retryAttempt = 'attempt' in retryState ? retryState.attempt : 0;
+  const retryDelayMs = retryState.phase === 'scheduled' ? retryState.delayMs : 0;
   useEffect(() => {
     let cancelled = false;
 
@@ -307,8 +279,8 @@ export function AudioPlayer({
 
       logDebugEvent(
         'retry',
-        `Retry attempt ${retryState.attempt}`,
-        `Waiting ${retryState.delayMs}ms`,
+        `Retry attempt ${retryAttempt}`,
+        `Waiting ${retryDelayMs}ms`,
       );
 
       cancelRetryTimer();
@@ -322,7 +294,7 @@ export function AudioPlayer({
         }
         dispatchRetry({ type: 'TIMER_FIRED' });
         audio.load();
-      }, retryState.delayMs);
+      }, retryDelayMs);
 
       return () => cancelRetryTimer();
     }
@@ -346,7 +318,7 @@ export function AudioPlayer({
     return () => {
       cancelled = true;
     };
-  }, [retryState, logDebugEvent, cancelRetryTimer, dispatchRetry]);
+  }, [retryState.phase, retryAttempt, retryDelayMs, logDebugEvent, cancelRetryTimer, dispatchRetry]);
 
   useEffect(() => {
     const handlePageShow = () => {
@@ -441,6 +413,54 @@ export function AudioPlayer({
       onPlayingChange?.(false);
     });
   }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
+
+  // Consume each external request once. Callback changes and the page clearing
+  // autoPlayOnSeek must not replay an old handoff over a later user seek. The
+  // recording identity survives transport changes; the source-switch effect
+  // above restores the latest position before a genuinely new request is read.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || seekTo === undefined || !Number.isFinite(seekTo) || seekTo < 0) {
+      lastExternalSeekRef.current = null;
+      return;
+    }
+    const recording = hash ?? src;
+    const previous = lastExternalSeekRef.current;
+    if (
+      previous?.recording === recording &&
+      previous.time === seekTo &&
+      previous.key === seekKey
+    ) {
+      return;
+    }
+    lastExternalSeekRef.current = { recording, time: seekTo, key: seekKey };
+    dispatchRetry({ type: 'SEEK_REQUESTED', time: seekTo });
+
+    if (audio.readyState >= 1) {
+      // A newer request also supersedes a seek queued before metadata arrived.
+      pendingSeekRef.current = null;
+      audio.currentTime = seekTo;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCurrentTime(seekTo);
+      onTimeUpdate?.(seekTo);
+      logDebugEvent(
+        'seek',
+        'External seek applied',
+        `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
+      );
+      if (autoPlayOnSeek) {
+        userInitiatedRef.current = true;
+        safePlay(audio, 'auto-play after external seek', logDebugEvent);
+      }
+    } else {
+      pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
+      logDebugEvent(
+        'seek',
+        'External seek queued',
+        `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
+      );
+    }
+  }, [src, hash, seekTo, seekKey, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry]);
 
   useEffect(() => {
     lastTimeRef.current = currentTime;
@@ -561,7 +581,7 @@ export function AudioPlayer({
       `After ${phase.attempt} attempt(s)`,
     );
 
-    if (phase.savedPosition > 0) {
+    if (audio.currentTime !== phase.savedPosition) {
       audio.currentTime = phase.savedPosition;
       setCurrentTime(phase.savedPosition);
     }
@@ -814,15 +834,21 @@ export function AudioPlayer({
     playbackEndRef.current = null;
     // A user seek supersedes a restore still waiting for metadata. Keep its
     // play intent, but never let the old position replace the user's target.
-    if (pendingSeekRef.current) {
+    const pendingSeek = pendingSeekRef.current;
+    if (pendingSeek) {
       pendingSeekRef.current = audio.readyState >= 1
         ? null
-        : { ...pendingSeekRef.current, time };
+        : { ...pendingSeek, time };
     }
+    dispatchRetry({ type: 'SEEK_REQUESTED', time });
     audio.currentTime = time;
     setCurrentTime(time);
     onSeek?.(time);
-  }, [onSeek]);
+    if (audio.readyState >= 1 && pendingSeek?.autoPlay) {
+      userInitiatedRef.current = true;
+      safePlay(audio, 'auto-play after control seek', logDebugEvent);
+    }
+  }, [onSeek, dispatchRetry, logDebugEvent]);
 
   const handleSeek = (value: number[]) => seekFromControls(value[0]);
 

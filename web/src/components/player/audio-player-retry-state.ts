@@ -32,6 +32,7 @@ export type RetryAction =
   | { type: 'RESET' }
   | { type: 'ERROR_DETECTED'; savedPosition: number; wasPlaying: boolean }
   | { type: 'TIMER_FIRED' }
+  | { type: 'SEEK_REQUESTED'; time: number }
   | { type: 'RECOVERED' }
   | { type: 'RELOAD_FAILED' };
 
@@ -65,6 +66,12 @@ export function retryReducer(
         savedPosition: state.savedPosition,
         wasPlaying: state.wasPlaying,
       };
+
+    case 'SEEK_REQUESTED':
+      if (state.phase !== 'scheduled' && state.phase !== 'reloading') {
+        return state;
+      }
+      return { ...state, savedPosition: action.time };
 
     case 'RECOVERED':
       return INITIAL_RETRY_STATE;
