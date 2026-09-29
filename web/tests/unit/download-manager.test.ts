@@ -12,9 +12,11 @@ import {
   getAudioCacheKey,
   getAudioChunkKey,
   getAudioMetaKey,
+  getAudioCacheLockName,
   readAudioCacheMeta,
   writeAudioCacheMeta,
 } from '@/lib/offline/audio-cache-format';
+import { MemoryLocks } from './helpers/memory-locks';
 import { OFFLINE_CACHE_NAMES } from '@/lib/offline/cache-names';
 
 const HASH = 'c'.repeat(64);
@@ -534,6 +536,47 @@ describe('download manager', () => {
     // The transcript itself is still permitted and stays.
     expect(bundle?.transcript).not.toBeNull();
     expect(downloadManager.getSnapshot().records[0]?.transcriptBackend).toBe('whisperx/large');
+  });
+
+  it('locks cache commits together and keeps fetches outside the storage lock', async () => {
+    const locks = new MemoryLocks();
+    vi.stubGlobal('navigator', { locks });
+    const server = createFakeServer();
+    const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+    const cacheKey = 'locked-audio';
+    const lockName = getAudioCacheLockName(cacheKey);
+    const fetchImpl = server.fetchMock.getMockImplementation()!;
+    server.fetchMock.mockImplementation(async (...args) => {
+      expect(locks.isHeld(lockName)).toBe(false);
+      return fetchImpl(...args);
+    });
+    vi.stubGlobal('fetch', server.fetchMock);
+    const put = cache.put.bind(cache);
+    const generations: string[] = [];
+    vi.spyOn(cache, 'put').mockImplementation(async (request, response) => {
+      expect(locks.isHeld(lockName)).toBe(true);
+      if (request === getAudioMetaKey(cacheKey)) {
+        generations.push((await response.clone().json()).generation);
+      }
+      await put(request, response);
+    });
+    const { downloadAudioChunks } = await loadManager();
+    const download = () => downloadAudioChunks({
+      cache: cache as unknown as Cache,
+      url: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
+      cacheKey,
+      signal: new AbortController().signal,
+      onProgress: async () => {},
+    });
+    await download();
+    expect(generations).toHaveLength(3);
+    expect(generations[0]).toEqual(expect.any(String));
+    expect(new Set(generations).size).toBe(1);
+    // A new attempt gets a new identity even if the completed bytes survive.
+    await download();
+    expect(generations).toHaveLength(4);
+    expect(generations[3]).not.toBe(generations[0]);
+    expect(server.rangeRequests).toHaveLength(3);
   });
 
   it('resumes a download from the surviving contiguous prefix when a later chunk is missing', async () => {
