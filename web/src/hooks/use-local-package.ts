@@ -10,7 +10,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
 import { useOfflineAudioTransport } from "@/hooks/use-offline-audio-transport";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { getAudioCacheKey } from "@/lib/offline/audio-cache-format";
+import {
+  getAudioCacheKey,
+  readCompleteAudioBlob,
+} from "@/lib/offline/audio-cache-format";
+import { OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
 
 /**
@@ -80,7 +84,9 @@ export function useLocalAudioSrc(
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
   // The browser default can be overridden per device from the player's debug
   // panel, so a transport can be tried on a real phone without a release.
-  const needsInline = useOfflineAudioTransport() === "inline";
+  const transport = useOfflineAudioTransport();
+  const needsInline = transport === "inline";
+  const blobEnabled = useLocal && transport === "blob" && !!record?.audioCacheKey;
 
   const inline = useQuery({
     queryKey: ["local-inline-audio", record?.key ?? null],
@@ -98,8 +104,38 @@ export function useLocalAudioSrc(
     },
   });
 
+  // One Blob composed from the cached chunk Blobs: the browser keeps
+  // references to the stored parts instead of copying them into one buffer.
+  const composed = useQuery({
+    queryKey: ["local-blob-audio", record?.key ?? null, record?.audioCacheKey ?? null],
+    networkMode: "always",
+    enabled: blobEnabled,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      if (!record?.audioCacheKey || typeof caches === "undefined") return null;
+      const cache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+      return readCompleteAudioBlob(cache, record.audioCacheKey);
+    },
+  });
+  const blobUrl = useMemo(
+    () => (composed.data ? URL.createObjectURL(composed.data) : null),
+    [composed.data]
+  );
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
+
   if (!useLocal || !record?.audioUrl) return { src: null, pending: false };
   const local = localAudioSrc(record.audioUrl);
+  if (transport === "blob") {
+    if (blobEnabled && composed.isPending) return { src: null, pending: true };
+    // Without a readable chunk set the worker URL still plays the download.
+    return { src: blobUrl ?? local, pending: false };
+  }
   if (!needsInline) return { src: local, pending: false };
   if (inline.isPending) return { src: null, pending: true };
   return { src: inline.data ?? local, pending: false };

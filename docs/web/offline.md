@@ -95,15 +95,19 @@ Normal application HTML and API JSON are not placed in an offline cache.
 
 ### Diagnosing the local transport on a device
 
-A complete local recording reaches the media element in one of two ways: the
-service worker answers Range requests from the chunked cache (`worker`), or the
+A complete local recording reaches the media element in one of three ways: the
+service worker answers Range requests from the chunked cache (`worker`), the
 player loads a Base64 data URL built from the inline copy stored with the
-download (`inline`). The browser default comes from
+download (`inline`), or the player loads an object URL for one Blob composed
+from the cached chunks (`blob`), with no second copy and no worker in the media
+path. `blob` is a diagnostic option only: no browser defaults to it, and it
+falls back to the worker URL when the chunk set is incomplete. The browser
+default comes from
 `requiresInlineOfflineAudio` (WebKit on iOS and macOS, and Android browsers).
 That default was chosen on emulator evidence only, so the player's debug panel
 (the bug icon under the controls) shows the source kind the element was handed,
 the requested transport, the browser default, whether a worker controls the
-page, and an `auto | worker | inline` override. The two can differ: `inline`
+page, and an `auto | worker | inline | blob` override. The two can differ: `inline`
 requested without a stored inline copy is served from the worker cache, and
 the Source line is the one that tells the truth. Hydration builds the copy for
 the transport resolved at page load (see below), so this happens only when the
