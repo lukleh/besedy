@@ -60,6 +60,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EventDetailResponse>({
     queryKey: ["catalog-event-detail", eventId],
+    networkMode: "offlineFirst",
     // Network first; a complete local package answers when the request itself
     // cannot be made, so the same page renders online and offline.
     queryFn: () =>
