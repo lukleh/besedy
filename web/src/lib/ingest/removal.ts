@@ -1,7 +1,9 @@
+import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import prisma from '@/lib/db';
 
 export interface RecordingWebStateRemoval {
   detachedEventId: number | null;
+  promotedAudioHash: string | null;
   unreleasedEventId: number | null;
   metadataDeleted: number;
   progressDeleted: number;
@@ -11,9 +13,10 @@ export interface RecordingWebStateRemoval {
 
 /**
  * Delete everything the web app itself owns about one recording after the host
- * worker removed it from the catalog: event assignment (unreleasing an event
- * that loses its primary recording so listeners never see an event without
- * audio), curated metadata, playback progress and notifications. The projection
+ * worker removed it from the catalog: event assignment (promoting the event's
+ * next playable recording when this one was primary, or unreleasing the event
+ * when none is left, so listeners never see an event without audio), curated
+ * metadata, playback progress and notifications. The projection
  * tables are rebuilt by the following catalog sync.
  */
 export async function removeRecordingWebState(
@@ -22,17 +25,14 @@ export async function removeRecordingWebState(
 ): Promise<RecordingWebStateRemoval> {
   return prisma.$transaction(async (tx) => {
     let detachedEventId: number | null = null;
+    let promotedAudioHash: string | null = null;
     let unreleasedEventId: number | null = null;
 
     const assignment = await tx.catalogEventRecording.findUnique({
       where: {
         workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash },
       },
-      select: {
-        eventId: true,
-        isPrimary: true,
-        event: { select: { released: true } },
-      },
+      select: { eventId: true },
     });
     if (assignment) {
       // Serialize with release/detach operations on the same event row.
@@ -42,18 +42,22 @@ export async function removeRecordingWebState(
         WHERE id = ${assignment.eventId}
         FOR UPDATE
       `;
-      await tx.catalogEventRecording.delete({
+      // Read the primary flag from the deleted row, after the lock is held.
+      const detached = await tx.catalogEventRecording.delete({
         where: {
           workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash },
         },
+        select: { isPrimary: true },
       });
       detachedEventId = assignment.eventId;
-      if (assignment.isPrimary && assignment.event.released) {
-        await tx.catalogEvent.update({
-          where: { id: assignment.eventId },
-          data: { released: false },
-        });
-        unreleasedEventId = assignment.eventId;
+      if (detached.isPrimary) {
+        const outcome = await replaceLostPrimaryRecording(
+          tx,
+          catalogId,
+          assignment.eventId,
+        );
+        if (outcome.kind === 'promoted') promotedAudioHash = outcome.audioHash;
+        if (outcome.kind === 'unreleased') unreleasedEventId = assignment.eventId;
       }
     }
 
@@ -80,6 +84,7 @@ export async function removeRecordingWebState(
 
     return {
       detachedEventId,
+      promotedAudioHash,
       unreleasedEventId,
       metadataDeleted: metadata.count,
       progressDeleted: progress.count,

@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { removeRecordingWebState } from '@/lib/ingest/removal';
 
+const replaceLostPrimaryRecording = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/catalog-events/primary-succession', () => ({
+  replaceLostPrimaryRecording,
+}));
+
 const tx = vi.hoisted(() => ({
   $queryRaw: vi.fn(),
   catalogEventRecording: { findUnique: vi.fn(), delete: vi.fn() },
-  catalogEvent: { update: vi.fn() },
   catalogEntry: { count: vi.fn() },
   audioMetadata: { deleteMany: vi.fn() },
   recordingPlaybackProgress: { deleteMany: vi.fn() },
@@ -30,17 +34,16 @@ describe('removeRecordingWebState', () => {
     tx.recordingNotification.deleteMany.mockResolvedValue({ count: 2 });
   });
 
-  it('detaches the recording, unreleases an event that lost its primary, and deletes user-authored rows', async () => {
-    tx.catalogEventRecording.findUnique.mockResolvedValue({
-      eventId: 42,
-      isPrimary: true,
-      event: { released: true },
-    });
+  it('detaches the recording, repairs an event that lost its primary, and deletes user-authored rows', async () => {
+    tx.catalogEventRecording.findUnique.mockResolvedValue({ eventId: 42 });
+    tx.catalogEventRecording.delete.mockResolvedValue({ isPrimary: true });
+    replaceLostPrimaryRecording.mockResolvedValue({ kind: 'unreleased' });
 
     const result = await removeRecordingWebState(CATALOG_ID, HASH);
 
     expect(result).toEqual({
       detachedEventId: 42,
+      promotedAudioHash: null,
       unreleasedEventId: 42,
       metadataDeleted: 1,
       progressDeleted: 3,
@@ -55,11 +58,9 @@ describe('removeRecordingWebState', () => {
           audioHash: HASH,
         },
       },
+      select: { isPrimary: true },
     });
-    expect(tx.catalogEvent.update).toHaveBeenCalledWith({
-      where: { id: 42 },
-      data: { released: false },
-    });
+    expect(replaceLostPrimaryRecording).toHaveBeenCalledWith(tx, CATALOG_ID, 42);
     expect(tx.audioMetadata.deleteMany).toHaveBeenCalledWith({
       where: { workflowGroupId: CATALOG_ID, audioHash: HASH },
     });
@@ -72,18 +73,30 @@ describe('removeRecordingWebState', () => {
     expect(tx.workflowGroup.update).toHaveBeenCalled();
   });
 
-  it('keeps a released event released when a non-primary recording is removed', async () => {
-    tx.catalogEventRecording.findUnique.mockResolvedValue({
-      eventId: 42,
-      isPrimary: false,
-      event: { released: true },
+  it('reports the recording promoted to primary in place of the removed one', async () => {
+    const promotedHash = 'c'.repeat(64);
+    tx.catalogEventRecording.findUnique.mockResolvedValue({ eventId: 42 });
+    tx.catalogEventRecording.delete.mockResolvedValue({ isPrimary: true });
+    replaceLostPrimaryRecording.mockResolvedValue({
+      kind: 'promoted',
+      audioHash: promotedHash,
     });
+
+    const result = await removeRecordingWebState(CATALOG_ID, HASH);
+
+    expect(result.promotedAudioHash).toBe(promotedHash);
+    expect(result.unreleasedEventId).toBeNull();
+  });
+
+  it('leaves the event alone when a non-primary recording is removed', async () => {
+    tx.catalogEventRecording.findUnique.mockResolvedValue({ eventId: 42 });
+    tx.catalogEventRecording.delete.mockResolvedValue({ isPrimary: false });
 
     const result = await removeRecordingWebState(CATALOG_ID, HASH);
 
     expect(result.detachedEventId).toBe(42);
     expect(result.unreleasedEventId).toBeNull();
-    expect(tx.catalogEvent.update).not.toHaveBeenCalled();
+    expect(replaceLostPrimaryRecording).not.toHaveBeenCalled();
   });
 
   it('handles recordings that are not attached to any event', async () => {

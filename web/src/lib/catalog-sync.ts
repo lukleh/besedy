@@ -1,4 +1,6 @@
 import Papa from 'papaparse';
+import { Prisma } from '@/generated/prisma/client';
+import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import prisma from '@/lib/db';
 import fs from 'fs/promises';
 import { readSourceSnapshot } from '@/lib/catalog-sync/source-snapshot';
@@ -112,15 +114,14 @@ function shouldRunOrphanCleanup(result: CatalogSyncResult): boolean {
   return changed.has('metadata') || changed.has('archived');
 }
 
-// Deletes event assignments whose recording left the catalog. A released event
-// that loses its primary recording is unreleased in the same statement, as
-// removeRecordingWebState does, so it never stays released without a primary.
-async function cleanupOrphanEventRecordings(groupId: string): Promise<number> {
-  const rows = await prisma.$queryRaw<
-    Array<{ deleted: number | bigint; unreleasedEventIds: number[] | null }>
-  >`
-    WITH orphaned AS (
-      DELETE FROM catalog_event_recording cer
+// Deletes event assignments whose recording left the catalog. An event that
+// loses its primary recording this way gets its next playable recording as
+// primary, or is unreleased when none is left (see replaceLostPrimaryRecording).
+async function cleanupOrphanEventRecordings(groupId: string): Promise<void> {
+  const summary = await prisma.$transaction(async (tx) => {
+    const affected = await tx.$queryRaw<Array<{ eventId: number }>>`
+      SELECT DISTINCT cer.event_id AS "eventId"
+      FROM catalog_event_recording cer
       WHERE cer.workflow_group_id = ${groupId}
         AND NOT EXISTS (
           SELECT 1
@@ -128,36 +129,65 @@ async function cleanupOrphanEventRecordings(groupId: string): Promise<number> {
           WHERE ce.workflow_group_id = cer.workflow_group_id
             AND ce.audio_hash = cer.audio_hash
         )
-      RETURNING cer.event_id, cer.is_primary
-    ),
-    unreleased AS (
-      UPDATE catalog_event e
-      SET released = false, updated_at = NOW()
-      WHERE e.workflow_group_id = ${groupId}
-        AND e.released = true
-        AND e.id IN (SELECT event_id FROM orphaned WHERE is_primary)
-      RETURNING e.id
-    )
-    SELECT
-      (SELECT COUNT(*) FROM orphaned) AS "deleted",
-      (SELECT array_agg(id ORDER BY id) FROM unreleased) AS "unreleasedEventIds"
-  `;
+    `;
+    if (affected.length === 0) return null;
 
-  const deleted = Number(rows[0]?.deleted ?? 0);
-  const unreleasedEventIds = rows[0]?.unreleasedEventIds ?? [];
+    const eventIds = affected.map((row) => row.eventId);
+    // Serialize with release/detach operations on the affected event rows.
+    await tx.$queryRaw`
+      SELECT id
+      FROM catalog_event
+      WHERE id IN (${Prisma.join(eventIds)})
+      ORDER BY id
+      FOR UPDATE
+    `;
 
-  if (deleted > 0) {
+    // Read the primary flags from the deleted rows, after the locks are held.
+    const deleted = await tx.$queryRaw<
+      Array<{ eventId: number; isPrimary: boolean }>
+    >`
+      DELETE FROM catalog_event_recording cer
+      WHERE cer.workflow_group_id = ${groupId}
+        AND cer.event_id IN (${Prisma.join(eventIds)})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM catalog_entry ce
+          WHERE ce.workflow_group_id = cer.workflow_group_id
+            AND ce.audio_hash = cer.audio_hash
+        )
+      RETURNING cer.event_id AS "eventId", cer.is_primary AS "isPrimary"
+    `;
+
+    const promoted: string[] = [];
+    const unreleased: number[] = [];
+    const lostPrimary = new Set(
+      deleted.filter((row) => row.isPrimary).map((row) => row.eventId),
+    );
+    for (const eventId of lostPrimary) {
+      const outcome = await replaceLostPrimaryRecording(tx, groupId, eventId);
+      if (outcome.kind === 'promoted') {
+        promoted.push(`${eventId} -> ${outcome.audioHash}`);
+      }
+      if (outcome.kind === 'unreleased') unreleased.push(eventId);
+    }
+
+    return { deleted: deleted.length, promoted, unreleased };
+  });
+
+  if (!summary || summary.deleted === 0) return;
+  console.warn(
+    `[catalog-sync] Deleted ${summary.deleted} event-recording rows for ${groupId} whose recording left the catalog`,
+  );
+  if (summary.promoted.length > 0) {
     console.warn(
-      `[catalog-sync] Deleted ${deleted} event-recording rows for ${groupId} whose recording left the catalog`,
+      `[catalog-sync] Promoted a new primary recording in ${groupId} (event -> hash): ${summary.promoted.join(', ')}`,
     );
   }
-  if (unreleasedEventIds.length > 0) {
+  if (summary.unreleased.length > 0) {
     console.warn(
-      `[catalog-sync] Unreleased events that lost their primary recording in ${groupId}: ${unreleasedEventIds.join(', ')}`,
+      `[catalog-sync] Unreleased events left without a playable recording in ${groupId}: ${summary.unreleased.join(', ')}`,
     );
   }
-
-  return deleted;
 }
 
 function normalizeHeader(value: string): string {

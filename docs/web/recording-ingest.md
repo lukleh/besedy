@@ -249,7 +249,8 @@ Every row on **Admin -> Ingest** in a finished state has a **Remove** action
   PLAID index (no rebuild; the query server reloads on the next query) and
   `cluster-speakers` rebuilds without it, then removes the intake directories
   and reports `REMOVED`. The web app deletes the recording's event assignment
-  (unreleasing an event that loses its primary recording), curated metadata,
+  (when it was the primary, the event's next playable recording becomes primary;
+  with none left, the event is unreleased but kept), curated metadata,
   catalog metadata and notifications. Playback progress is globally keyed by
   hash, so it is deleted only if no other catalog still references the
   recording. The projection is then re-synced.

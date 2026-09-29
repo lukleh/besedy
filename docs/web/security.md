@@ -490,7 +490,10 @@ this action?"), not authorization ("may this actor do it?"). Keep them separate
 from the policy layer — they hold regardless of who acts:
 
 - An event may be **released only when it has exactly one primary recording**.
-- A released event **cannot lose its only primary recording**.
+- A released event **cannot lose its only primary recording**. When a primary
+  recording leaves the catalog (web removal or catalog sync), the event's next
+  playable recording becomes primary; with none left, the event is unreleased
+  but kept (`replaceLostPrimaryRecording`).
 - An **incomplete recording cannot be published**.
 - A recording in a **released event cannot be unpublished**.
 
