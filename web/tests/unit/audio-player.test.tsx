@@ -417,7 +417,9 @@ describe("AudioPlayer retry logic", () => {
   it.each([
     { phase: "scheduled", external: false, target: 50 },
     { phase: "scheduled", external: true, target: 0 },
-    { phase: "reloading", external: false, target: 10 },
+    // The reload empties the element to 0; a skip still starts from the 40 s
+    // the listener was at, not from 0.
+    { phase: "reloading", external: false, target: 50 },
     { phase: "reloading", external: true, target: 50 },
     { phase: "reloading", external: true, target: 0 },
   ])("retains a later seek to $target during $phase recovery (external $external)", async ({ phase, external, target }) => {
@@ -453,6 +455,28 @@ describe("AudioPlayer retry logic", () => {
     expect(audio.currentTime).toBe(target);
     expect(audio.play).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("skips backward from the interrupted position while reloading", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    audio.currentTime = 40;
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    audio.currentTime = 0;
+    mockReadyState(audio, 0);
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-backward"]')!);
+    });
+    await loadMetadata(audio);
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+    expect(audio.currentTime).toBe(30);
   });
 
   it("keeps the existing retry deadline when the user seeks", async () => {

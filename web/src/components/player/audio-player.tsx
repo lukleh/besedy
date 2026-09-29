@@ -877,18 +877,33 @@ export function AudioPlayer({
     }
   };
 
+  // A retry's reload empties the element, which then reports position 0 until
+  // metadata returns. A relative seek in that window starts from where the
+  // listener was, which the retry state holds.
+  const relativeSeekBase = useCallback((audio: HTMLAudioElement) => {
+    const retry = retryStateRef.current;
+    if (
+      audio.readyState < 1 &&
+      (retry.phase === 'scheduled' || retry.phase === 'reloading')
+    ) {
+      return retry.savedPosition;
+    }
+    return audio.currentTime;
+  }, []);
+
   const skipBackward = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    const time = Math.max(0, audio.currentTime - 10);
+    const time = Math.max(0, relativeSeekBase(audio) - 10);
     seekFromControls(time);
   };
 
   const skipForward = () => {
     const audio = audioRef.current;
     if (!audio) return;
+    const base = relativeSeekBase(audio);
     // Until the duration is known it is 0, which would send playback to the start.
-    const time = duration > 0 ? Math.min(duration, audio.currentTime + 10) : audio.currentTime + 10;
+    const time = duration > 0 ? Math.min(duration, base + 10) : base + 10;
     seekFromControls(time);
   };
 
@@ -945,11 +960,11 @@ export function AudioPlayer({
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          seekFromControls(Math.max(0, audio.currentTime - 5));
+          seekFromControls(Math.max(0, relativeSeekBase(audio) - 5));
           break;
         case 'ArrowRight':
           e.preventDefault();
-          seekFromControls(Math.min(duration, audio.currentTime + 5));
+          seekFromControls(Math.min(duration, relativeSeekBase(audio) + 5));
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -975,7 +990,7 @@ export function AudioPlayer({
           break;
       }
     },
-    [isPlaying, duration, volume, isMuted, logDebugEvent, seekFromControls],
+    [isPlaying, duration, volume, isMuted, logDebugEvent, seekFromControls, relativeSeekBase],
   );
 
   // Register keyboard shortcuts
