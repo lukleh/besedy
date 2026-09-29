@@ -47,7 +47,7 @@ const CATALOG_ID = [
 ].join("");
 const AUDIO_HASH = createHash("sha256").update(randomUUID()).digest("hex");
 const BACKEND_WORKFLOW = "faster-whisper";
-const BACKEND_MODEL = "large-v3@silero_vad_v6";
+const BACKEND_MODEL = "large-v3@silero_vad_v6@lang-cs";
 const BACKEND = `${BACKEND_WORKFLOW}/${BACKEND_MODEL}`;
 process.env.RAG_BACKEND_KEY = BACKEND;
 

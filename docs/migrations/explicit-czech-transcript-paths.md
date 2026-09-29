@@ -16,9 +16,14 @@ remain in place for rollback.
 1. Deploy the code that writes `@lang-cs` before allowing another transcription
    run. Pause the pipeline and ingest worker, and wait for active transcription
    and indexing runs to finish before paths and the index change.
-   Keep the web reader stopped during the directory move and index rebuild.
-2. Back up the transcript and merged-transcript trees and database. Record the old `RAG_BACKEND_KEY`
-   from the production web env and host worker env files.
+   Stop every web reader that shares the transcript and ColBERT roots, including
+   the running development stack, during the directory move and rebuild.
+2. Back up the transcript and merged-transcript trees and database. Record the
+   old `RAG_BACKEND_KEY` from the production and development web env files and
+   the host worker env file. Production and development share the live
+   transcript and index roots, so both active stacks must switch together.
+   Test uses a separate transcript fixture tree; regenerate its fixtures and
+   change its private backend key together before running E2E tests.
 3. Confirm no correction workspace or publication is in flight. This procedure
    requires both `transcript_workspace` and `transcript_publication` to be empty;
    otherwise their frozen backend references and search paths need a separate
@@ -87,9 +92,16 @@ just catalog rag-colbert-index \
 ```
 
 4. Set `RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs` in the
-   private production web env and host worker env files. Restart the web app
-   and worker from the new revision. Resume ingestion after the new index is
-   active. The repository example env files already use the new key.
+   private production and development web env files and the host worker env
+   file. Regenerate the test fixtures and set the test web env to the same key
+   before starting the test stack; its transcript tree is separate.
+   Restart active web stacks and the worker from the new revision. Resume
+   ingestion after the new index is active. The repository example env files
+   already use the new key.
+
+   Regenerate test transcripts from the new revision with
+   `cd web && npm run test:e2e:generate`; this writes fixture backends with
+   `@lang-cs` and removes the old fixture tree.
 
 ## Verify and rollback
 
@@ -97,12 +109,14 @@ just catalog rag-colbert-index \
   and its transcript count equals the preflight count.
 - Confirm the ColBERT resolver finds an active bundle under the new backend
   scope, then exercise search and a canonical transcript read.
-- Confirm backend-priority rows, the web app, and the host worker all name the
-  same suffixed key. Check that no unsuffixed Czech variant directories remain
-  in any migrated generation, and that merged slot model labels use the new key.
+- Confirm backend-priority rows, all active web stacks, and the host worker all
+  name the same suffixed key. Check that no unsuffixed Czech variant directories
+  remain in any migrated generation, and that merged slot model labels use the
+  new key.
 
-If cutover fails, keep writers paused, restore the old env values and
-backend-priority rows, and run the path tool with the same roots and
+If cutover fails, keep writers paused, restore the old env values in production
+and development and the host worker, restore the backend-priority rows, and
+run the path tool with the same roots and
 `--rollback --apply`. Restore the previous pipeline and host-worker code
 revision before resuming transcription; the new revision always writes
 `@lang-cs` paths. The old ColBERT scope remains available. A rollback dry run
