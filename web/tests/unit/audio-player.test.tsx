@@ -474,6 +474,26 @@ describe("AudioPlayer retry logic", () => {
     expect(audio.load).toHaveBeenCalledTimes(1);
   });
 
+  it("restores a seek queued before metadata when recovery completes", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1 });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.load = vi.fn();
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    // The element reports 0 until metadata loads; the error must not save that.
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(audio.load).toHaveBeenCalledTimes(1);
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(30);
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+    expect(audio.currentTime).toBe(30);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("deduplicates errors while retry is pending and continues retry chain", async () => {
     vi.useFakeTimers();
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");

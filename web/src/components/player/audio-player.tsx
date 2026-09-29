@@ -540,9 +540,11 @@ export function AudioPlayer({
       // handlers compare against audio.src so a pending retry can't leak
       // onto a newly-selected recording during the pre-RESET commit window.
       retrySrcRef.current = audio.src;
+      // A seek still waiting for metadata is the position to restore; the
+      // element itself reports 0 until metadata arrives.
       dispatchRetry({
         type: 'ERROR_DETECTED',
-        savedPosition: audio.currentTime || 0,
+        savedPosition: pendingSeekRef.current?.time ?? (audio.currentTime || 0),
         wasPlaying: !audio.paused || playIntentRef.current,
       });
       setIsPlaying(false);
