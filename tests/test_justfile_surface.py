@@ -61,7 +61,8 @@ def test_shared_colbert_recipes_run_the_checkout_guard_first() -> None:
 
     for name in SHARED_COLBERT_RECIPES:
         first = recipes[name]["dependencies"][0]
-        assert first == {"recipe": "_guard-shared-colbert", "arguments": [name]}
+        # Newer just versions add keys to the dump; compare only what the guard relies on.
+        assert (first["recipe"], first["arguments"]) == ("_guard-shared-colbert", [name])
 
 
 def _run_guard(
