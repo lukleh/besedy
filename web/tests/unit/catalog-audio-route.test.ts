@@ -427,6 +427,87 @@ describe("catalog audio route", () => {
     }
   });
 
+  it("returns a clear error without opening a stream when the path is a directory", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const createReadStreamSpy = vi.spyOn(fs, "createReadStream");
+    mockGetCatalogEntry.mockResolvedValue({
+      compressedPath: tmpDir,
+      originalPath: tmpDir,
+      isActionable: true,
+    });
+    mockValidatePathAsync.mockResolvedValue({ valid: true, resolvedPath: tmpDir });
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: "Audio file is not readable" });
+      expect(createReadStreamSpy).not.toHaveBeenCalled();
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+
+      const event = findStructuredEvent(errorSpy.mock.calls as unknown[][], "audio_route_response");
+      expect(event).toMatchObject({ status: 500, reason: "audio_file_not_regular" });
+    } finally {
+      errorSpy.mockRestore();
+      createReadStreamSpy.mockRestore();
+    }
+  });
+
+  it("returns 404 with the errno code when the file is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    fs.rmSync(audioPath);
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({ error: "Audio file not found on disk" });
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+
+      const event = findStructuredEvent(warnSpy.mock.calls as unknown[][], "audio_route_response");
+      expect(event).toMatchObject({
+        status: 404,
+        reason: "audio_file_missing",
+        errorCode: "ENOENT",
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("returns 416 without an audit entry for a suffix range on an empty file", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    fs.writeFileSync(audioPath, Buffer.alloc(0));
+
+    try {
+      const request = new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
+        {
+          headers: { range: "bytes=-5" },
+        }
+      );
+      const response = await getAudio(request, {
+        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
+      });
+
+      expect(response.status).toBe(416);
+      expect(response.headers.get("Content-Range")).toBe("bytes */0");
+      expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("logs invalid route parameter responses", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
