@@ -256,6 +256,15 @@ versions, and a scheduled `pg_dump` cannot hold locks across the migration. If
 backup or migration fails, the recipe exits with `web` and scheduled backups
 stopped; inspect the error and restore or retry before starting them again.
 
+The host ingest worker is not part of `prod-deploy`. After a web release,
+redeploy it at the same commit so the flows and the web completion callback
+agree (it refuses while the ingest pool has active runs and asks before
+restarting the worker; see [recording-ingest.md](recording-ingest.md#host-worker)):
+
+```bash
+just ingest-worker-deploy "$(curl -s http://localhost:3000/api/version | jq -r .commit)"
+```
+
 Production builds retain immutable `besedy-web:<full-commit>` images in addition
 to the mutable deployment tag. When a jobs image already exists, they also
 snapshot it as `besedy-jobs:<full-commit>`; a coordinated build replaces that
@@ -625,6 +634,11 @@ through the development runtime.
    `deep_search_flow/deep-search-prod` deployment (concurrency from
    `PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT`). Use `just jobs-dev-deploy` for
    development.
+4. **Host ingest worker:** after every web release, `just ingest-worker-deploy
+   <sha>` at the commit production web now runs (`/api/version`), so the host
+   flows and the web completion callback agree. It is a separate step because
+   the worker runs on the host from `~/worktrees/besedy/prod-ingest`, not from
+   a container image; see [recording-ingest.md](recording-ingest.md#host-worker).
 
 ### Prefect Version and State
 
@@ -725,11 +739,16 @@ Deploy additions on top of the Deep Search steps above:
 2. `just prod-deploy` (includes the `recording_intake` migration) and
    `just jobs-prod-rebuild && just jobs-prod-deploy` (registers the
    `besedy-ingest-prod` pool and `ingest_recording_flow/ingest-prod`).
-3. Install and start the host worker unit from
-   `jobs-service/host-worker/besedy-ingest-worker.service` with
+3. Set up the host worker as described in
+   [recording-ingest.md](recording-ingest.md#host-worker):
    `~/.config/lukleh/besedy/ingest-worker.env` filled in
    (`BESEDY_INTERNAL_BASE_URL=http://127.0.0.1:3000`, the production
-   `BESEDY_JOB_SERVICE_SECRET`, `PREFECT_INGEST_WORK_POOL=besedy-ingest-prod`).
+   `BESEDY_JOB_SERVICE_SECRET`, `PREFECT_INGEST_WORK_POOL=besedy-ingest-prod`),
+   `just ingest-worker-deploy <sha>` to create its checkout
+   `~/worktrees/besedy/prod-ingest`, then the unit from
+   `jobs-service/host-worker/besedy-ingest-worker.service` and the same deploy
+   again to start it. Redeploy the worker at the same revision whenever
+   production web is deployed.
 4. Verify: `systemctl --user status besedy-ingest-worker`, the pool shows a
    healthy worker in the Prefect UI, then upload a short recording and watch it
    reach `SUCCEEDED` with a hash link.
@@ -743,14 +762,15 @@ one more shared directory and one more deployment on the same worker:
    `corrections_dir = "/data/corrections"`. Host `besedy.toml`: set
    `[paths].corrections_dir` to the same host directory, because the worker's
    index sync reads published transcripts from it — but only **after** the
-   host checkout the worker runs from contains this code. `PathsConfig`
+   host checkout the worker runs from (`~/worktrees/besedy/prod-ingest`)
+   contains this code. `PathsConfig`
    rejects unknown keys, so adding the key to a host toml read by an older
    checkout stops every CLI command and flow run there from loading the
    configuration.
 2. `just prod-deploy` (includes the correction migrations) and
    `just jobs-prod-rebuild && just jobs-prod-deploy` (registers
    `sync_correction_index_flow/correction-index-prod` on the ingest pool), then
-   restart the host worker unit so it picks up the new flow.
+   `just ingest-worker-deploy <sha>` so the host worker runs the new flow.
 3. Verify: publish a corrected transcript and watch its publication go from
    `ACTIVATING` to `SUCCEEDED` once the flow run in the Prefect UI completes.
 

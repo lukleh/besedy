@@ -343,6 +343,96 @@ ingest-worker-run:
         --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
         --type process --limit 1 --install-policy never
 
+# Deploy the production host ingest worker at <rev>; use the commit production
+# web runs (`curl -s http://localhost:3000/api/version | jq -r .commit`).
+# The systemd unit runs from the fixed, locked checkout
+# ~/worktrees/besedy/prod-ingest, never the dev checkout. Refuses while the
+# running worker has work, asks before stopping it, then checks out <rev>,
+# syncs the frozen venv and starts it again. Uploads made meanwhile wait in the
+# Prefect queue.
+ingest-worker-deploy rev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    worktree="$HOME/worktrees/besedy/prod-ingest"
+    unit="besedy-ingest-worker"
+    # The unit's EnvironmentFile; no overrides, so the idle check sees the
+    # same Prefect API and pool as the worker.
+    env_file="$HOME/.config/lukleh/besedy/ingest-worker.env"
+    if [ ! -f "$env_file" ]; then
+        echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
+        exit 1
+    fi
+    set -a
+    . "$env_file"
+    set +a
+    : "${PREFECT_INGEST_WORK_POOL:?PREFECT_INGEST_WORK_POOL must be set in $env_file}"
+
+    # <rev> is a commit-ish resolved against local refs after the fetch (a
+    # branch name means the local branch, so pass the SHA production web
+    # reports). A failed fetch only matters when the revision is not local yet,
+    # so an offline rollback to an earlier deploy still works.
+    git fetch --quiet origin || echo "Warning: git fetch failed; resolving '$1' from local refs." >&2
+    sha="$(git rev-parse --verify "$1^{commit}")"
+    if [ ! -e "$worktree" ]; then
+        # Locked so worktree cleanup (`git worktree remove`, worktree-report.sh)
+        # never removes the checkout the unit runs from.
+        git worktree add --detach --lock --reason "production ingest worker (besedy-ingest-worker)" "$worktree" "$sha"
+    elif [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+        echo "Refusing to deploy: $worktree has local changes." >&2
+        git -C "$worktree" status --short >&2
+        exit 1
+    fi
+    if [ ! -x "$worktree/.venv/bin/python" ]; then
+        (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    fi
+
+    # Checked after the checkout exists, so installing the unit never points
+    # systemd at a missing directory.
+    unit_dir="$(systemctl --user show -P WorkingDirectory "$unit")"
+    if [ "$unit_dir" != "$worktree" ]; then
+        echo "The installed $unit unit runs from '${unit_dir:-<none>}', not $worktree." >&2
+        echo "$worktree is ready. Install the current unit, then run this again:" >&2
+        echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
+        exit 1
+    fi
+
+    # Only a running worker can lose work to the stop. Skipping the check for a
+    # stopped worker keeps a failed deploy redeployable: queued uploads or a
+    # half-synced venv would otherwise block it. Prefect comes from the
+    # deployed venv; `-m` imports besedy from this checkout (the working
+    # directory), so the check works after a rollback to a revision that
+    # predates `--work-pool`.
+    check_idle() {
+        systemctl --user is-active --quiet "$unit" || return 0
+        "$worktree/.venv/bin/python" -m besedy.lib.prefect_jobs.maintenance \
+            --work-pool "$PREFECT_INGEST_WORK_POOL"
+    }
+
+    current="$(git -C "$worktree" rev-parse HEAD)"
+    check_idle
+    echo "Deploying the ingest worker: ${current:0:12} -> ${sha:0:12} ($(git log -1 --format=%s "$sha"))"
+    read -r -p "Stop $unit, update $worktree and start it again? [y/N] " answer
+    if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+        echo "Aborted; the worker was not touched." >&2
+        exit 1
+    fi
+    check_idle
+    systemctl --user stop "$unit"
+    trap 'echo "Deploy failed with $unit stopped. Redeploy the previous revision: just ingest-worker-deploy $current" >&2' ERR
+    git -C "$worktree" checkout --quiet --detach "$sha"
+    (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    systemctl --user start "$unit"
+    sleep 10
+    if ! systemctl --user is-active --quiet "$unit"; then
+        echo "$unit is not active after the start; see: journalctl --user -u $unit -n 50" >&2
+        echo "Redeploy the previous revision: just ingest-worker-deploy $current" >&2
+        exit 1
+    fi
+    trap - ERR
+    # The unit logs the revision on every start, so this line and the worker's
+    # journal agree on what was live when a flow run failed.
+    echo "Ingest worker running at ${sha:0:12} from $worktree (journal: journalctl --user -u $unit | grep revision)"
+
 # ============================================================================
 # Web App - Code Quality Checks
 # ============================================================================
