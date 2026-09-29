@@ -807,15 +807,24 @@ export function AudioPlayer({
     }
   };
 
-  const handleSeek = (value: number[]) => {
+  const seekFromControls = useCallback((time: number) => {
     const audio = audioRef.current;
     if (!audio) return;
 
     playbackEndRef.current = null;
-    audio.currentTime = value[0];
-    setCurrentTime(value[0]);
-    onSeek?.(value[0]);
-  };
+    // A user seek supersedes a restore still waiting for metadata. Keep its
+    // play intent, but never let the old position replace the user's target.
+    if (pendingSeekRef.current) {
+      pendingSeekRef.current = audio.readyState >= 1
+        ? null
+        : { ...pendingSeekRef.current, time };
+    }
+    audio.currentTime = time;
+    setCurrentTime(time);
+    onSeek?.(time);
+  }, [onSeek]);
+
+  const handleSeek = (value: number[]) => seekFromControls(value[0]);
 
   const handleVolumeChange = (value: number[]) => {
     const audio = audioRef.current;
@@ -843,22 +852,16 @@ export function AudioPlayer({
   const skipBackward = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    playbackEndRef.current = null;
     const time = Math.max(0, audio.currentTime - 10);
-    audio.currentTime = time;
-    setCurrentTime(time);
-    onSeek?.(time);
+    seekFromControls(time);
   };
 
   const skipForward = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    playbackEndRef.current = null;
     // Until the duration is known it is 0, which would send playback to the start.
     const time = duration > 0 ? Math.min(duration, audio.currentTime + 10) : audio.currentTime + 10;
-    audio.currentTime = time;
-    setCurrentTime(time);
-    onSeek?.(time);
+    seekFromControls(time);
   };
 
   // Lock-screen and notification controls drive the same paths as the
@@ -914,17 +917,11 @@ export function AudioPlayer({
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          playbackEndRef.current = null;
-          audio.currentTime = Math.max(0, audio.currentTime - 5);
-          setCurrentTime(audio.currentTime);
-          onSeek?.(audio.currentTime);
+          seekFromControls(Math.max(0, audio.currentTime - 5));
           break;
         case 'ArrowRight':
           e.preventDefault();
-          playbackEndRef.current = null;
-          audio.currentTime = Math.min(duration, audio.currentTime + 5);
-          setCurrentTime(audio.currentTime);
-          onSeek?.(audio.currentTime);
+          seekFromControls(Math.min(duration, audio.currentTime + 5));
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -950,7 +947,7 @@ export function AudioPlayer({
           break;
       }
     },
-    [isPlaying, duration, volume, isMuted, logDebugEvent, onSeek],
+    [isPlaying, duration, volume, isMuted, logDebugEvent, seekFromControls],
   );
 
   // Register keyboard shortcuts

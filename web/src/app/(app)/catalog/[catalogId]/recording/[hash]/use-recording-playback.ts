@@ -514,18 +514,32 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     }
   }, [persistCurrentPlaybackPosition]);
 
-  const handleSeek = useCallback((time: number) => {
+  const noteSeek = useCallback((time: number) => {
     playbackSeekedRef.current = true;
-    setSeekRequest({ time, key: Date.now() });
     currentTimeRef.current = time;
     persistCurrentPlaybackPosition({ positionSec: time });
   }, [persistCurrentPlaybackPosition]);
+
+  // Seeks from outside the player (transcript clicks, the stream timeline)
+  // are handed to it as a request.
+  const handleSeek = useCallback((time: number) => {
+    noteSeek(time);
+    setSeekRequest({ time, key: Date.now() });
+  }, [noteSeek]);
+
+  // The player has already moved the media element; sending its own seek
+  // back as a request would seek a second time and restart the audio request.
+  const handlePlayerSeek = useCallback((time: number) => {
+    noteSeek(time);
+    setCurrentTime(time);
+  }, [noteSeek]);
 
   return {
     autoPlayOnSeek,
     currentTime,
     handleAudioEnded,
     handleDurationChange,
+    handlePlayerSeek,
     handlePlayingChange,
     handleSeek,
     isPlaying,

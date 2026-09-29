@@ -341,6 +341,11 @@ function isAudioCacheEntryFor(baseKey, entryUrl) {
   );
 }
 
+// Raised only when the cached bytes themselves are wrong. Any other failure
+// while reading Cache Storage (quota pressure, the worker being torn down)
+// says nothing about the download and must not discard it.
+class DamagedDownloadError extends Error {}
+
 async function deleteAudioCacheEntries(cache, baseKey) {
   try {
     const keys = await cache.keys();
@@ -457,38 +462,57 @@ function createChunkStream(options) {
     end,
   } = options;
   let chunkIndex = startChunk;
+  let cancelled = false;
 
-  return new ReadableStream({
-    async pull(controller) {
-      if (chunkIndex > endChunk) {
-        controller.close();
-        return;
-      }
-
-      try {
-        const response = await cache.match(getChunkKey(baseKey, chunkIndex));
-        if (!response) {
-          throw new Error(`Missing audio chunk ${chunkIndex}`);
-        }
-        const bytes = await response.arrayBuffer();
-        if (bytes.byteLength !== chunkSizes[chunkIndex]) {
-          throw new Error(
-            `Audio chunk ${chunkIndex} has ${bytes.byteLength} bytes; expected ${chunkSizes[chunkIndex]}`,
-          );
+  return new ReadableStream(
+    {
+      async pull(controller) {
+        if (chunkIndex > endChunk) {
+          controller.close();
+          return;
         }
 
-        const absoluteChunkStart = chunkOffsets[chunkIndex];
-        const from = Math.max(0, start - absoluteChunkStart);
-        const to = Math.min(bytes.byteLength, end - absoluteChunkStart + 1);
-        controller.enqueue(new Uint8Array(bytes, from, to - from));
-        chunkIndex += 1;
-        if (chunkIndex > endChunk) controller.close();
-      } catch (error) {
-        void deleteAudioCacheEntries(cache, baseKey);
-        controller.error(error);
-      }
+        try {
+          const response = await cache.match(getChunkKey(baseKey, chunkIndex));
+          if (!response) {
+            throw new DamagedDownloadError(`Missing audio chunk ${chunkIndex}`);
+          }
+          const bytes = await response.arrayBuffer();
+          if (bytes.byteLength !== chunkSizes[chunkIndex]) {
+            throw new DamagedDownloadError(
+              `Audio chunk ${chunkIndex} has ${bytes.byteLength} bytes; expected ${chunkSizes[chunkIndex]}`,
+            );
+          }
+
+          // Media elements cancel responses on every seek and after reading the
+          // headers. A chunk read that finishes afterwards is simply dropped:
+          // enqueueing it would throw, and that is not a damaged download.
+          if (cancelled) return;
+
+          const absoluteChunkStart = chunkOffsets[chunkIndex];
+          const from = Math.max(0, start - absoluteChunkStart);
+          const to = Math.min(bytes.byteLength, end - absoluteChunkStart + 1);
+          controller.enqueue(new Uint8Array(bytes, from, to - from));
+          chunkIndex += 1;
+          if (chunkIndex > endChunk) controller.close();
+        } catch (error) {
+          // Damaged bytes are damage even if the player has already moved on;
+          // erroring a cancelled stream is a no-op.
+          if (error instanceof DamagedDownloadError) {
+            await deleteAudioCacheEntries(cache, baseKey);
+          }
+          controller.error(error);
+        }
+      },
+      cancel() {
+        cancelled = true;
+      },
     },
-  });
+    // No read-ahead: the first chunk is only read once the player asks for
+    // bytes, so a header-only probe or an immediately cancelled seek costs
+    // nothing.
+    { highWaterMark: 0 },
+  );
 }
 
 async function handleRangeFromChunks(
