@@ -14,7 +14,8 @@ remain in place for rollback.
 ## Preflight
 
 1. Deploy the code that writes `@lang-cs` before allowing another transcription
-   run. Pause the pipeline and ingest worker while paths and the index change.
+   run. Pause the pipeline and ingest worker, and wait for active transcription
+   and indexing runs to finish before paths and the index change.
    Keep the web reader stopped during the directory move and index rebuild.
 2. Back up the transcript and merged-transcript trees and database. Record the old `RAG_BACKEND_KEY`
    from the production web env and host worker env files.
@@ -35,7 +36,8 @@ uv run python scripts/migrate_czech_transcript_paths.py \
 
 The tool recognizes `canary-nemo`, `faster-whisper`, `whisperx`, and `qwen3-asr`
 workflow directories. Add `--workflow-label NAME` for a custom transcription
-workflow label. It skips diarization and existing language-suffixed variants.
+workflow label, and include that label in the backend-priority SQL below if it
+has stored rows. It skips diarization and existing language-suffixed variants.
 Resolve any `Both Czech variant paths exist` error before proceeding; the tool
 never merges trees or overwrites a destination.
 
@@ -99,10 +101,12 @@ just catalog rag-colbert-index \
   same suffixed key. Check that no unsuffixed Czech variant directories remain
   in any migrated generation, and that merged slot model labels use the new key.
 
-If cutover fails, restore the old env values and backend-priority rows, then
-run the path tool with the same roots and `--rollback --apply` while writers are
-paused. The old ColBERT scope remains available. A rollback dry run omits
-`--apply`. To reverse only the priority-row change, use:
+If cutover fails, keep writers paused, restore the old env values and
+backend-priority rows, and run the path tool with the same roots and
+`--rollback --apply`. Restore the previous pipeline and host-worker code
+revision before resuming transcription; the new revision always writes
+`@lang-cs` paths. The old ColBERT scope remains available. A rollback dry run
+omits `--apply`. To reverse only the priority-row change, use:
 
 ```sql
 BEGIN;

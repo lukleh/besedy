@@ -76,6 +76,22 @@ def _rewrite_model_key(value: str, workflow_labels: set[str], *, rollback: bool)
     return value if "@lang-" in component else f"{value}@lang-cs"
 
 
+def _models_array_end(text: str) -> int | None:
+    """Find the closing bracket outside JSON strings (model names can contain ``]``)."""
+    in_string = False
+    escaped = False
+    for index, character in enumerate(text):
+        if escaped:
+            escaped = False
+        elif character == "\\" and in_string:
+            escaped = True
+        elif character == '"':
+            in_string = not in_string
+        elif character == "]" and not in_string:
+            return index
+    return None
+
+
 def _rewrite_slot_line(
     line: str, workflow_labels: set[str], *, rollback: bool, in_models: bool
 ) -> tuple[str, bool]:
@@ -89,14 +105,15 @@ def _rewrite_slot_line(
         remaining = line
 
     if in_models:
-        models_text, close, after_models = remaining.partition("]")
+        close_index = _models_array_end(remaining)
+        models_text = remaining if close_index is None else remaining[:close_index]
         models_text = QUOTED_VALUE_RE.sub(
             lambda match: f'"{_rewrite_model_key(match.group(1), workflow_labels, rollback=rollback)}"',
             models_text,
         )
-        if not close:
+        if close_index is None:
             return prefix + models_text, True
-        remaining = prefix + models_text + close + after_models
+        remaining = prefix + models_text + remaining[close_index:]
 
     rewritten = MODEL_FIELD_RE.sub(
         lambda match: (

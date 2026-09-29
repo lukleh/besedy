@@ -52,30 +52,41 @@ def test_plan_moves_rejects_symlink_root(tmp_path) -> None:
         plan_moves([alias], {"faster-whisper"})
 
 
-def test_merged_slots_update_model_labels_without_changing_transcript_text(tmp_path) -> None:
+@pytest.mark.parametrize("indent", [None, 2])
+def test_merged_slots_update_model_labels_without_changing_transcript_text(
+    tmp_path, indent: int | None
+) -> None:
     root = tmp_path / "transcripts_merged_20260929_120000"
     path = root / "hash" / "slots.json"
     path.parent.mkdir(parents=True)
     source = {
-        "meta": {"models": ["faster-whisper/model", "whisperx/model@lang-auto"]},
+        "meta": {
+            "models": [
+                "canary-nemo/canary[greedy]@vad",
+                "faster-whisper/model",
+                "whisperx/model@lang-auto",
+            ]
+        },
         "slots": [
             {"candidates": [{"model": "faster-whisper/model", "text": "faster-whisper/model"}]}
         ],
     }
-    path.write_text(json.dumps(source), encoding="utf-8")
+    labels = {"canary-nemo", "faster-whisper", "whisperx"}
+    path.write_text(json.dumps(source, indent=indent), encoding="utf-8")
 
-    rewrites = plan_merged_slot_rewrites([root], {"faster-whisper", "whisperx"})
+    rewrites = plan_merged_slot_rewrites([root], labels)
     assert rewrites == [path]
-    rewrite_merged_slots(path, {"faster-whisper", "whisperx"})
+    rewrite_merged_slots(path, labels)
     updated = json.loads(path.read_text())
     assert updated["meta"]["models"] == [
+        "canary-nemo/canary[greedy]@vad@lang-cs",
         "faster-whisper/model@lang-cs",
         "whisperx/model@lang-auto",
     ]
     assert updated["slots"][0]["candidates"] == [
         {"model": "faster-whisper/model@lang-cs", "text": "faster-whisper/model"}
     ]
-    assert plan_merged_slot_rewrites([root], {"faster-whisper", "whisperx"}) == []
-    assert plan_merged_slot_rewrites([root], {"faster-whisper"}, rollback=True) == [path]
-    rewrite_merged_slots(path, {"faster-whisper"}, rollback=True)
+    assert plan_merged_slot_rewrites([root], labels) == []
+    assert plan_merged_slot_rewrites([root], labels, rollback=True) == [path]
+    rewrite_merged_slots(path, labels, rollback=True)
     assert json.loads(path.read_text()) == source
