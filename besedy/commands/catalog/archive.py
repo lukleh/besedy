@@ -448,23 +448,29 @@ def load_archived_hashes(csv_path: Path) -> set[str]:
         csv_path: Path to the archived CSV file.
 
     Returns:
-        Set of audio hashes from the CSV (empty if the file does not exist).
+        Set of audio hashes from the CSV (empty if the file does not exist
+        or has no header).
 
     Raises:
-        ValueError: If the file exists but cannot be read. Treating it as
-            empty would truncate it and re-encode every recording.
+        ValueError: If the file exists but cannot be read, or its header has
+            no 'Hash' column. Treating it as empty would truncate it and
+            re-encode every recording.
     """
     hashes: set[str] = set()
-    if not csv_path.exists():
-        return hashes
-
     try:
         with csv_path.open("r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
+            if reader.fieldnames is not None and "Hash" not in reader.fieldnames:
+                raise ValueError(
+                    f"Archived CSV {csv_path} has no 'Hash' column "
+                    f"(found: {list(reader.fieldnames)})"
+                )
             for row in reader:
                 hash_value = (row.get("Hash") or "").strip()
                 if hash_value:
                     hashes.add(hash_value)
+    except FileNotFoundError:
+        return hashes
     except (OSError, UnicodeDecodeError, csv.Error) as exc:
         raise ValueError(f"Cannot read archived CSV {csv_path}: {exc}") from exc
 

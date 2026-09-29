@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import tempfile
 from pathlib import Path
 
@@ -201,8 +202,14 @@ class TestLoadArchivedHashes:
         """A missing manifest is a normal first run."""
         assert load_archived_hashes(tmp_path / "missing_archived.csv") == set()
 
+    def test_empty_file_returns_empty_set(self, tmp_path):
+        """A manifest with no header has nothing to lose."""
+        path = tmp_path / "catalog_archived.csv"
+        path.write_text("", encoding="utf-8")
+        assert load_archived_hashes(path) == set()
+
     def test_reads_hashes(self, tmp_path):
-        """Hashes are read, and short or blank rows are ignored."""
+        """Hashes are read, and blank lines and blank Hash cells are ignored."""
         path = tmp_path / "catalog_archived.csv"
         path.write_text("Hash,Original Path\nabc,/a.mp3\n\n,/b.mp3\n", encoding="utf-8")
         assert load_archived_hashes(path) == {"abc"}
@@ -212,6 +219,27 @@ class TestLoadArchivedHashes:
         path = tmp_path / "catalog_archived.csv"
         path.write_bytes(b"Hash,Original Path\nabc,/\xff.mp3\n")
         with pytest.raises(ValueError, match="catalog_archived.csv"):
+            load_archived_hashes(path)
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+    def test_inaccessible_parent_raises(self, tmp_path):
+        """Path.exists() is False when the parent can't be searched; that isn't 'missing'."""
+        catalog_dir = tmp_path / "catalog"
+        catalog_dir.mkdir()
+        path = catalog_dir / "catalog_archived.csv"
+        path.write_text("Hash\nabc\n", encoding="utf-8")
+        catalog_dir.chmod(0)
+        try:
+            with pytest.raises(ValueError, match="catalog_archived.csv"):
+                load_archived_hashes(path)
+        finally:
+            catalog_dir.chmod(0o700)
+
+    def test_header_without_hash_column_raises(self, tmp_path):
+        """A BOM or damaged header hides the Hash column and must not read as empty."""
+        path = tmp_path / "catalog_archived.csv"
+        path.write_text("﻿Hash,Original Path\nabc,/a.mp3\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="no 'Hash' column"):
             load_archived_hashes(path)
 
 
