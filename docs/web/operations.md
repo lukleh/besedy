@@ -258,8 +258,8 @@ stopped; inspect the error and restore or retry before starting them again.
 
 The host ingest worker is not part of `prod-deploy`. After a web release,
 redeploy it at the same commit so the flows and the web completion callback
-agree (it waits for the ingest pool to be idle and asks before restarting the
-worker; see [recording-ingest.md](recording-ingest.md#host-worker)):
+agree (it refuses while the ingest pool has active runs and asks before
+restarting the worker; see [recording-ingest.md](recording-ingest.md#host-worker)):
 
 ```bash
 just ingest-worker-deploy "$(curl -s http://localhost:3000/api/version | jq -r .commit)"
