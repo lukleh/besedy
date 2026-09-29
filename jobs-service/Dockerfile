@@ -17,10 +17,10 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md LICENSE ./
-RUN uv sync --frozen --no-dev --extra jobs --no-install-project
+RUN uv sync --locked --no-dev --extra jobs --no-install-project
 
 COPY besedy ./besedy
-RUN uv sync --frozen --no-dev --extra jobs --no-editable \
+RUN uv sync --locked --no-dev --extra jobs --no-editable \
     && uv pip check --python /opt/venv/bin/python \
     && /opt/venv/bin/python -c \
         'from besedy.lib.prefect_jobs.rlm_integration import BesedyDeepSearchSignature; from rlmbenchy.rlm import load_lm_profile, run_task' \

@@ -9,11 +9,11 @@ default:
 
 # Setup Python environment with uv.
 setup:
-    uv sync
+    uv sync --locked
 
 # Setup Python environment with optional host-side ML helpers.
 setup-ml:
-    uv sync --extra ml
+    uv sync --locked --extra ml
 
 # Setup Python environment with optional Prefect jobs tooling.
 setup-jobs:
@@ -45,7 +45,7 @@ test *args:
 bump-rlmbenchy:
     uvx --from 'uv==0.9.26' uv lock --upgrade-package rlmbenchy
     uv run --locked --extra jobs pytest tests/test_prefect_jobs.py tests/test_prefect_jobs_maintenance.py tests/test_jobs_production_hardening.py tests/test_rlm_integration.py -q
-    git diff --stat -- uv.lock
+    git diff -- uv.lock
 
 # Run ty against the full production package.
 ty *args:

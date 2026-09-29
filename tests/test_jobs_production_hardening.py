@@ -22,7 +22,8 @@ def test_jobs_image_uses_locked_non_editable_installs() -> None:
 
     assert "COPY pyproject.toml uv.lock" in dockerfile
     assert dockerfile.count("uv sync") == 2
-    assert dockerfile.count("--frozen") == 2
+    assert dockerfile.count("--locked") == 2
+    assert "--frozen" not in dockerfile
     assert "--mount=type=ssh" not in dockerfile
     assert "openssh-client" not in dockerfile
     assert "ssh-keyscan" not in dockerfile
