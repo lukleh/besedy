@@ -10,8 +10,11 @@ const mockReadFile = vi.fn();
 const mockParse = vi.fn();
 const mockRewritePath = vi.fn((input: string) => input);
 
+const mockReplaceLostPrimaryRecording = vi.fn();
+
 const mockTx: any = {
   $executeRaw: vi.fn(),
+  $queryRaw: vi.fn(),
   workflowGroup: {
     findUnique: vi.fn(),
   },
@@ -41,7 +44,6 @@ const mockPrisma: any = {
   $transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) =>
     callback(mockTx),
   ),
-  $executeRaw: vi.fn(),
   workflowGroup: mockTx.workflowGroup,
   catalogSyncState: {
     findMany: (...args: unknown[]) => mockTx.catalogSyncState.findMany(...args),
@@ -66,6 +68,10 @@ vi.mock('papaparse', () => ({
 
 vi.mock('@/lib/security/path-validation', () => ({
   rewritePath: mockRewritePath,
+}));
+
+vi.mock('@/lib/catalog-events/primary-succession', () => ({
+  replaceLostPrimaryRecording: mockReplaceLostPrimaryRecording,
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -94,7 +100,7 @@ describe('catalog-sync', () => {
     mockTx.catalogListeningEntry.deleteMany.mockResolvedValue({ count: 1 });
     mockTx.catalogListeningEntry.createMany.mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.groupBy.mockResolvedValue([]);
-    mockPrisma.$executeRaw.mockResolvedValue(0);
+    mockTx.$queryRaw.mockResolvedValue([]);
   });
 
   it('uses tx-scoped advisory lock and purges stale listening rows when variant path is removed', async () => {
@@ -144,7 +150,8 @@ describe('catalog-sync', () => {
 
     // Lock is now transaction-scoped and acquired on tx handle.
     expect(mockTx.$executeRaw).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.$executeRaw).not.toHaveBeenCalled();
+    // A listening-only change must not run the event-recording cleanup.
+    expect(mockTx.$queryRaw).not.toHaveBeenCalled();
     expect(mockReadFile.mock.invocationCallOrder.at(-1)).toBeLessThan(
       mockTx.$executeRaw.mock.invocationCallOrder[0],
     );
@@ -328,7 +335,7 @@ describe('catalog-sync', () => {
     expect(mockPrisma.catalogSyncState.upsert).not.toHaveBeenCalled();
   });
 
-  it('runs orphan event-recording cleanup after metadata/archived sync success', async () => {
+  it('runs orphan event-recording cleanup after metadata/archived sync success and repairs events that lost their primary', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
       id: '20251222_144441',
       metadataCatalogPath: '/data/meta.csv',
@@ -366,12 +373,62 @@ describe('catalog-sync', () => {
       },
     );
 
-    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const promotedHash = 'c'.repeat(64);
+    mockTx.$queryRaw
+      // Events with orphaned assignments.
+      .mockResolvedValueOnce([{ eventId: 7 }, { eventId: 8 }, { eventId: 9 }])
+      // Row locks.
+      .mockResolvedValueOnce([])
+      // Deleted assignments: events 7 and 8 lost their primary.
+      .mockResolvedValueOnce([
+        { eventId: 7, isPrimary: true },
+        { eventId: 8, isPrimary: true },
+        { eventId: 9, isPrimary: false },
+      ]);
+    mockReplaceLostPrimaryRecording.mockImplementation(
+      async (_tx: unknown, _groupId: string, eventId: number) =>
+        eventId === 7
+          ? { kind: 'promoted', audioHash: promotedHash }
+          : { kind: 'unreleased' },
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    expect(result.status).toBe('success');
-    expect(result.changedSources).toEqual(['metadata', 'archived']);
-    expect(mockPrisma.$executeRaw).toHaveBeenCalledTimes(1);
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      const result = await syncCatalogGroup('20251222_144441');
+
+      expect(result.status).toBe('success');
+      expect(result.changedSources).toEqual(['metadata', 'archived']);
+      expect(mockTx.$queryRaw).toHaveBeenCalledTimes(3);
+      const [selectSql, lockSql, deleteSql] = mockTx.$queryRaw.mock.calls.map(
+        (call: [TemplateStringsArray]) => call[0].join('?'),
+      );
+      expect(selectSql).toContain('FROM catalog_event_recording');
+      expect(lockSql).toContain('FOR UPDATE');
+      expect(deleteSql).toContain('DELETE FROM catalog_event_recording');
+      expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledTimes(2);
+      expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(
+        mockTx,
+        '20251222_144441',
+        7,
+      );
+      expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(
+        mockTx,
+        '20251222_144441',
+        8,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Deleted 3 event-recording rows'),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`7 -> ${promotedHash}`),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('without a playable recording in 20251222_144441: 8'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {
