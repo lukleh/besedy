@@ -107,13 +107,13 @@ _guard-shared-colbert recipe:
         echo "Run it from the owning checkout with:" >&2
         echo "  (cd <owning-checkout>/rag-services/.. && just $recipe)" >&2
     elif [ -z "$owning_physical_dir" ]; then
-        echo "The owning checkout is missing or not readable from here; if its worktree was removed," >&2
-        echo "BESEDY_COLBERT_FORCE=1 lets this checkout take over the container." >&2
+        echo "The owning checkout is missing or not readable from here." >&2
+        echo "If its worktree was removed, BESEDY_COLBERT_FORCE=1 bypasses this check." >&2
     else
         echo "Run it from the owning checkout with:" >&2
         echo "  (cd $(printf '%q' "$owning_working_dir")/.. && just $recipe)" >&2
     fi
-    echo "Set BESEDY_COLBERT_FORCE=1 only after confirming the shared container is safe to replace." >&2
+    echo "Use BESEDY_COLBERT_FORCE=1 only after confirming the shared container is safe to stop or replace." >&2
     exit 1
 
 rag-services-up: (_guard-shared-colbert "rag-services-up") _colbert-state-dir

@@ -163,9 +163,12 @@ development and test search all use, so `rag-services-up`/`-down` and
 recipes refuse when the container's Compose `working_dir` label points at
 another checkout's `rag-services/`; the message names the owning checkout and
 the container state, so run the recipe there instead (on the production host
-that is the `prod-colbert` worktree). `BESEDY_COLBERT_FORCE=1` skips the check
-and hands the container to the current checkout; use it only when the owning
-checkout is gone or the container is confirmed safe to replace.
+that is the `prod-colbert` worktree). `BESEDY_COLBERT_FORCE=1` only skips the
+check; the recipe determines what happens to the container. `colbert-down`
+stops it without changing its owner label, so a later `colbert-up` from
+another checkout still needs the override. Use force only when the shared
+container is safe to stop or replace, such as after its owning worktree has
+been removed.
 
 ## Incremental Sync
 
