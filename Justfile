@@ -383,6 +383,9 @@ ingest-worker-deploy rev="origin/main":
     if [ ! -x "$worktree/.venv/bin/python" ]; then
         (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
     fi
+    # Prefect comes from the deployed venv; `-m` imports besedy from this
+    # checkout (the working directory), so the check still works after a
+    # rollback to a revision that predates `--work-pool`.
     check_idle() {
         "$worktree/.venv/bin/python" -m besedy.lib.prefect_jobs.maintenance \
             --work-pool "$PREFECT_INGEST_WORK_POOL"
