@@ -510,6 +510,16 @@ class TestArchiveCommand:
         args = parser.parse_args(["archive", "--continue-on-error"])
         assert args.continue_on_error is True
 
+    def test_aac_copy_flags(self, parser):
+        """Archive writes the AAC copy unless --no-aac, and can backfill it."""
+        args = parser.parse_args(["archive"])
+        assert args.no_aac is False
+        assert args.backfill_aac is False
+        args = parser.parse_args(["archive", "--no-aac"])
+        assert args.no_aac is True
+        args = parser.parse_args(["archive", "--backfill-aac"])
+        assert args.backfill_aac is True
+
 
 class TestRunPipelineCommand:
     """Tests for 'run-pipeline' subcommand argument parsing."""

@@ -1,5 +1,10 @@
 """Audio archive command - compress audio to Opus/WebM or M4A with EBU R128 normalization.
 
+Opus archives also get an AAC-in-MP4 copy by default, encoded from the same
+decoded source with the same loudness measurement. iOS Safari loads a WebM
+file whole into its GPU process instead of streaming it, which fails for
+multi-hour recordings; the MP4 copy streams with range requests.
+
 Ownership note:
 - keep catalog-manifest coordination, output layout, and CLI-facing reporting here
 - keep reusable audio-analysis and codec primitives in `besedy.lib.audio.*`
@@ -9,15 +14,18 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Iterator
 
 from rich.console import Console
 from rich.markup import escape as rich_escape
@@ -61,6 +69,7 @@ from besedy.lib.audio.types import (
     detect_logical_cpus,
     format_size,
 )
+from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
 from besedy.lib.workflow.common import CsvAudioRow
 
 # =============================================================================
@@ -71,6 +80,14 @@ from besedy.lib.workflow.common import CsvAudioRow
 # At 32kbps Opus with voip mode, speech remains intelligible with 50% size reduction
 OPUS_BITRATES: dict[str, int] = {"low": 32, "medium": 48, "high": 64, "max": 96}
 M4A_VBR_MODES: dict[str, int] = {"low": 2, "medium": 3, "high": 4, "max": 5}
+
+# FDK VBR mode of the AAC-in-MP4 copy, the same for every recording (#291).
+# On 10-minute excerpts of 20 archive recordings (24 kHz mono), mode 3
+# averaged about 59 kbps and mode 4 about 73; ViSQOL (audio mode) scored them
+# 4.69 and 4.71 of about 4.75, never more than 0.07 apart, and NISQA found no
+# difference, so the larger mode buys nothing audible. On one of those
+# excerpts, modes 1 and 2 were no smaller than mode 3.
+AAC_COPY_VBR_MODE = 3
 
 # Super-wideband sample rate - optimal for speech (captures 0-12 kHz)
 # 24 kHz is sufficient for full speech quality; 48 kHz offers no benefit for voice
@@ -83,6 +100,10 @@ OPUS_SUPPORTED_RATES = [8000, 12000, 16000, 24000]
 
 # File extensions by format
 FORMAT_EXTENSIONS: dict[str, str] = {"opus": ".webm", "m4a": ".m4a"}
+
+# The AAC copy of an Opus archive sits next to it with this extension.
+AAC_COPY_EXTENSION = ".m4a"
+AAC_COPY_PATH_COLUMN = "Compressed AAC Path"
 
 
 # =============================================================================
@@ -104,6 +125,9 @@ class CompressedEntry:
     compression_ratio: float
     duration_seconds: float
     added_at: str | None = None  # ISO 8601 timestamp when record was added
+    aac_path: Path | None = None  # AAC-in-MP4 copy of an Opus archive
+    aac_size_bytes: int | None = None
+    aac_bitrate_kbps: int | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +145,9 @@ class CompressionResult:
 
     compressed: CompressedEntry | None
     skipped: ArchiveSkippedEntry | None
+    # The Opus archive succeeded but its AAC copy did not; the row is written
+    # with blank AAC columns so `--backfill-aac` can add the copy later.
+    warning: str | None = None
 
 
 @dataclass
@@ -138,6 +165,10 @@ class ArchiveRequest:
     ffmpeg_binary: Path | str = Path("ffmpeg")
     ffprobe_binary: Path | str = Path("ffprobe")
     no_symlink: bool = False
+    # Write an AAC-in-MP4 copy next to each Opus archive (ignored for m4a).
+    aac_copy: bool = True
+    # Only add the AAC copy to rows already in the archived manifest.
+    backfill_aac: bool = False
 
     @classmethod
     def from_args(
@@ -160,6 +191,8 @@ class ArchiveRequest:
             ffmpeg_binary=getattr(args, "ffmpeg_binary", Path("ffmpeg")),
             ffprobe_binary=getattr(args, "ffprobe_binary", Path("ffprobe")),
             no_symlink=bool(getattr(args, "no_symlink", False)),
+            aac_copy=not bool(getattr(args, "no_aac", False)),
+            backfill_aac=bool(getattr(args, "backfill_aac", False)),
         )
 
 
@@ -169,7 +202,12 @@ class ArchiveRequest:
 
 
 class ArchivedManifestWriter:
-    """Thread-safe CSV writer for archived audio manifest."""
+    """Thread-safe CSV writer for archived audio manifest.
+
+    Every write takes the manifest lock and reopens the file, so rows land in
+    the current file even after `--backfill-aac` has replaced it, and a
+    backfill never rewrites the file between a row's read and its append.
+    """
 
     FIELDNAMES = [
         "Hash",
@@ -182,6 +220,9 @@ class ArchivedManifestWriter:
         "Compression Ratio",
         "Duration",
         "added_at",
+        AAC_COPY_PATH_COLUMN,
+        "Compressed AAC Size (bytes)",
+        "Compressed AAC Bitrate (kbps)",
     ]
 
     def __init__(self, path: Path, append: bool = False) -> None:
@@ -190,51 +231,298 @@ class ArchivedManifestWriter:
         Args:
             path: Path to the CSV file.
             append: If True and file exists, append without writing header.
+                A manifest written before the AAC columns existed is first
+                rewritten with the current header, so appended rows line up.
         """
         self.lock = threading.Lock()
+        self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        if append and path.exists():
-            self.handle = path.open("a", newline="", encoding="utf-8")
-            self.writer = csv.DictWriter(
-                self.handle, fieldnames=self.FIELDNAMES, quoting=csv.QUOTE_MINIMAL
-            )
-            # Don't write header in append mode
-        else:
-            self.handle = path.open("w", newline="", encoding="utf-8")
-            self.writer = csv.DictWriter(
-                self.handle, fieldnames=self.FIELDNAMES, quoting=csv.QUOTE_MINIMAL
-            )
-            self.writer.writeheader()
-        self.handle.flush()
+        with manifest_lock(path):
+            if append and path.exists():
+                migrate_manifest_header(path)
+            else:
+                with path.open("w", newline="", encoding="utf-8") as handle:
+                    csv.DictWriter(
+                        handle, fieldnames=self.FIELDNAMES, quoting=csv.QUOTE_MINIMAL
+                    ).writeheader()
 
     def write_entry(self, entry: CompressedEntry) -> None:
-        """Write a compressed file entry to the manifest."""
-        row = {
-            "Hash": entry.sha256,
-            "Original Path": str(entry.source),
-            "Compressed Path": str(entry.compressed),
-            "Format": entry.format,
-            "Bitrate (kbps)": entry.bitrate_kbps,
-            "Original Size (bytes)": entry.source_size_bytes,
-            "Compressed Size (bytes)": entry.compressed_size_bytes,
-            "Compression Ratio": f"{entry.compression_ratio:.1f}",
-            "Duration": format_duration(entry.duration_seconds),
-            "added_at": entry.added_at or "",
-        }
-        with self.lock:
-            self.writer.writerow(row)
-            self.handle.flush()
+        """Append a compressed file entry to the manifest."""
+        with self.lock, manifest_lock(self.path):
+            # The header can have gained columns since this writer started.
+            fieldnames = _manifest_fieldnames(_read_header(self.path))
+            with self.path.open("a", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL, restval=""
+                )
+                writer.writerow(manifest_row(entry))
 
     def close(self) -> None:
-        """Close the manifest file."""
-        with self.lock:
-            self.handle.close()
+        """Nothing to release: every write opens and closes the file."""
+
+
+def manifest_lock(path: Path) -> AbstractContextManager[None]:
+    """Hold the archived manifest's lock while reading or changing it.
+
+    Taken by the archive writer for each appended row, by `--backfill-aac`
+    for each rewrite and by `catalog remove`, so none of them loses another's
+    rows, whether the archive runs from an upload, a manual `run-pipeline` or
+    `catalog archive`. It is only held for one file operation, so an upload
+    never waits for a whole backfill.
+    """
+    return rewrite_lock(path)
+
+
+@contextmanager
+def catalog_ingest_lock(archived_csv_path: Path) -> Iterator[None]:
+    """Hold the catalog's ingest lock, the one admin uploads take.
+
+    The upload flow (besedy/lib/prefect_jobs/flows/ingest_recording.py) holds
+    `<catalogs>/.ingest-<catalog_id>.lock` around its whole `run-pipeline`.
+    An ingest worker running a release from before `manifest_lock` keeps the
+    manifest open for appends for that whole time, so a backfill that replaced
+    the file then would lose the upload's row; taking this lock around each
+    backfill record keeps even that worker safe. Held for one record at a
+    time, it makes the backfill wait only while an upload is in its pipeline.
+    """
+    target = archived_csv_path.resolve()
+    catalog_id = extract_timestamp_from_archived_catalog(target)
+    if not catalog_id:
+        yield
+        return
+    with (target.parent / f".ingest-{catalog_id}.lock").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _read_header(path: Path) -> list[str]:
+    with path.open("r", encoding="utf-8", newline="") as f:
+        return next(csv.reader(f), [])
+
+
+def manifest_row(entry: CompressedEntry) -> dict[str, str | int]:
+    """The manifest columns for one archived file."""
+    return {
+        "Hash": entry.sha256,
+        "Original Path": str(entry.source),
+        "Compressed Path": str(entry.compressed),
+        "Format": entry.format,
+        "Bitrate (kbps)": entry.bitrate_kbps,
+        "Original Size (bytes)": entry.source_size_bytes,
+        "Compressed Size (bytes)": entry.compressed_size_bytes,
+        "Compression Ratio": f"{entry.compression_ratio:.1f}",
+        "Duration": format_duration(entry.duration_seconds),
+        "added_at": entry.added_at or "",
+        **aac_manifest_values(entry.aac_path, entry.aac_size_bytes, entry.aac_bitrate_kbps),
+    }
+
+
+def aac_manifest_values(
+    aac_path: Path | None, size_bytes: int | None, bitrate_kbps: int | None
+) -> dict[str, str | int]:
+    """The AAC-copy columns; empty when there is no copy."""
+    return {
+        AAC_COPY_PATH_COLUMN: str(aac_path) if aac_path else "",
+        "Compressed AAC Size (bytes)": size_bytes if size_bytes is not None else "",
+        "Compressed AAC Bitrate (kbps)": bitrate_kbps if bitrate_kbps is not None else "",
+    }
+
+
+def _read_manifest(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        return list(reader.fieldnames or []), list(reader)
+
+
+def _write_manifest_atomically(
+    path: Path, fieldnames: list[str], rows: Iterable[dict[str, str]]
+) -> None:
+    # atomic_path keeps the file mode, writes through a symlinked manifest to
+    # its target, and fsyncs before the rename.
+    with atomic_path(path) as temp:
+        with temp.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({name: row.get(name, "") for name in fieldnames})
+
+
+def _manifest_fieldnames(existing: list[str]) -> list[str]:
+    # Keep any column the file already has, in order, and add missing ones.
+    return existing + [name for name in ArchivedManifestWriter.FIELDNAMES if name not in existing]
+
+
+def migrate_manifest_header(path: Path) -> list[str]:
+    """Give an existing manifest every current column; return its header.
+
+    Rows keep their values, and new columns start empty. The file is only
+    rewritten when a column is missing. The caller holds `manifest_lock`.
+    """
+    existing, rows = _read_manifest(path)
+    fieldnames = _manifest_fieldnames(existing)
+    if fieldnames != existing:
+        _write_manifest_atomically(path, fieldnames, rows)
+    return fieldnames
+
+
+def update_manifest_rows(path: Path, updates: dict[str, dict[str, str | int]]) -> int:
+    """Set columns on manifest rows by hash, atomically; return rows changed."""
+    with manifest_lock(path):
+        existing, rows = _read_manifest(path)
+        fieldnames = _manifest_fieldnames(existing)
+        changed = 0
+        for row in rows:
+            values = updates.get((row.get("Hash") or "").strip())
+            if values:
+                row.update({name: str(value) for name, value in values.items()})
+                changed += 1
+        _write_manifest_atomically(path, fieldnames, rows)
+        return changed
 
 
 # =============================================================================
 # Core Compression Logic
 # =============================================================================
+
+
+@dataclass(frozen=True)
+class PreparedSource:
+    """Everything both encoders need from one source, computed once."""
+
+    temp_wav: Path
+    measured: dict[str, str]
+    apply_declipping: bool
+    input_bitrate: int | None
+    capped_sample_rate: int
+
+
+def prepare_source(
+    row: CsvAudioRow,
+    source: Path,
+    *,
+    ffmpeg_binary: str,
+    ffprobe_binary: str,
+) -> tuple[PreparedSource | None, str | None]:
+    """Probe, measure and decode a source to a temp WAV.
+
+    The caller owns ``temp_wav`` and must delete it. On failure returns
+    ``(None, reason)`` and leaves no temp file behind.
+    """
+    # Probe input bitrate and sample rate for capping (never upconvert)
+    input_bitrate = probe_input_bitrate(source, ffprobe_binary)
+    input_sample_rate = probe_input_sample_rate(source, ffprobe_binary)
+
+    # Cap sample rate: don't upsample low-quality sources
+    capped_sample_rate = min(input_sample_rate or ARCHIVE_SAMPLE_RATE, ARCHIVE_SAMPLE_RATE)
+
+    # Get loudness data (use pre-computed if available, else analyze)
+    if row.integrated_loudness_lufs and row.true_peak_db and row.loudness_range_lu:
+        # Use pre-computed loudness from catalog (skip first-pass analysis)
+        measured = {
+            "input_i": row.integrated_loudness_lufs,
+            "input_lra": row.loudness_range_lu,
+            "input_tp": row.true_peak_db,
+            "input_thresh": row.input_thresh or "-70.0",
+            "target_offset": row.target_offset or "0.0",
+        }
+    else:
+        # Fall back to first-pass analysis
+        analyzed, error = analyze_loudness(source, ffmpeg_binary)
+        if error:
+            return None, error
+        assert analyzed is not None
+        measured = analyzed
+
+    # Determine if declipping is needed (same logic as stage-audio)
+    # Use true_peak from measured data to detect clipping
+    apply_declipping = needs_declipping(measured.get("input_tp"), threshold=DECLIP_THRESHOLD_DBTP)
+
+    # Decode source to temp WAV (handles corruption gracefully)
+    # This prevents loudnorm filter issues with corrupted MP3 frames that cause
+    # audio loss at the end of files.
+    temp_fd, temp_path_str = tempfile.mkstemp(suffix=".wav", prefix="archive_")
+    temp_wav = Path(temp_path_str)
+    # Close the file descriptor - decode_to_temp_wav will write to the path
+    os.close(temp_fd)
+    try:
+        ok, decode_error = decode_to_temp_wav(source, temp_wav, ffmpeg_binary=ffmpeg_binary)
+    except Exception as exc:
+        temp_wav.unlink(missing_ok=True)
+        return None, f"decode failed: {exc}"
+    if not ok:
+        temp_wav.unlink(missing_ok=True)
+        return None, f"decode failed: {decode_error}"
+
+    return (
+        PreparedSource(
+            temp_wav=temp_wav,
+            measured=measured,
+            apply_declipping=apply_declipping,
+            input_bitrate=input_bitrate,
+            capped_sample_rate=capped_sample_rate,
+        ),
+        None,
+    )
+
+
+def aac_vbr_mode(quality: str, input_bitrate: int | None) -> int:
+    """VBR mode for the quality preset, capped to the source (never upconvert)."""
+    vbr_mode = M4A_VBR_MODES[quality]
+    # VBR 3 ≈ 48-56 kbps, VBR 4 ≈ 64-72 kbps, VBR 5 ≈ 96-112 kbps
+    if input_bitrate:
+        if input_bitrate < 50:
+            vbr_mode = min(vbr_mode, 3)
+        elif input_bitrate < 80:
+            vbr_mode = min(vbr_mode, 4)
+    return vbr_mode
+
+
+def _run_ffmpeg(cmd: list[str], output_path: Path) -> str | None:
+    """Run an encode; on failure remove partial output and return the reason."""
+    try:
+        result = subprocess.run(cmd, capture_output=True)
+    except Exception as exc:
+        output_path.unlink(missing_ok=True)
+        return f"compression failed: {exc}"
+    if result.returncode != 0:
+        output_path.unlink(missing_ok=True)
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        return f"ffmpeg failed: {stderr[:200]}"
+    return None
+
+
+def _encode_m4a(
+    prepared: PreparedSource,
+    output_path: Path,
+    *,
+    vbr_mode: int,
+    stereo: bool,
+    ffmpeg_binary: str,
+    use_fdk: bool,
+) -> str | None:
+    """Encode AAC in MP4 from the prepared source; return the error, if any."""
+    # M4A/AAC supports any sample rate, use capped rate directly
+    cmd = build_m4a_command(
+        prepared.temp_wav,
+        output_path,
+        prepared.measured,
+        vbr_mode,
+        prepared.capped_sample_rate,
+        stereo,
+        ffmpeg_binary,
+        use_fdk,
+        apply_declipping=prepared.apply_declipping,
+    )
+    return _run_ffmpeg(cmd, output_path)
+
+
+def _measured_kbps(size_bytes: int, duration_seconds: float) -> int | None:
+    if duration_seconds <= 0:
+        return None
+    return round(size_bytes * 8 / duration_seconds / 1000)
 
 
 def compress_audio_file(
@@ -249,8 +537,14 @@ def compress_audio_file(
     use_fdk: bool,
     force: bool = False,
     bitrate_override: int | None = None,
+    aac_output_path: Path | None = None,
 ) -> CompressionResult:
-    """Compress a single audio file with two-pass normalization."""
+    """Compress a single audio file with two-pass normalization.
+
+    With ``aac_output_path`` (Opus only), also encode an AAC-in-MP4 copy from
+    the same decoded source. If only the copy fails, the Opus archive is kept
+    and the result carries a warning; its AAC columns stay blank.
+    """
     source = Path(row.full_path)
     sha256 = row.sha256
 
@@ -277,134 +571,84 @@ def compress_audio_file(
     # Get source size
     source_size = source.stat().st_size
 
-    # Probe input bitrate and sample rate for capping (never upconvert)
-    input_bitrate = probe_input_bitrate(source, ffprobe_binary)
-    input_sample_rate = probe_input_sample_rate(source, ffprobe_binary)
-
-    # Cap sample rate: don't upsample low-quality sources
-    capped_sample_rate = min(input_sample_rate or ARCHIVE_SAMPLE_RATE, ARCHIVE_SAMPLE_RATE)
-
-    # Step 1: Get loudness data (use pre-computed if available, else analyze)
-    if row.integrated_loudness_lufs and row.true_peak_db and row.loudness_range_lu:
-        # Use pre-computed loudness from catalog (skip first-pass analysis)
-        measured = {
-            "input_i": row.integrated_loudness_lufs,
-            "input_lra": row.loudness_range_lu,
-            "input_tp": row.true_peak_db,
-            "input_thresh": row.input_thresh or "-70.0",
-            "target_offset": row.target_offset or "0.0",
-        }
-        error = None
-    else:
-        # Fall back to first-pass analysis
-        measured, error = analyze_loudness(source, ffmpeg_binary)
-        if error:
-            return CompressionResult(
-                compressed=None,
-                skipped=ArchiveSkippedEntry(sha256, source, error),
-            )
-        assert measured is not None
-
-    # Step 1.5: Determine if declipping is needed (same logic as stage-audio)
-    # Use true_peak from measured data to detect clipping
-    apply_declipping = needs_declipping(measured.get("input_tp"), threshold=DECLIP_THRESHOLD_DBTP)
-
-    # Step 1.6: Decode source to temp WAV (handles corruption gracefully)
-    # This prevents loudnorm filter issues with corrupted MP3 frames that cause
-    # audio loss at the end of files.
-    temp_fd, temp_path_str = tempfile.mkstemp(suffix=".wav", prefix="archive_")
-    temp_wav = Path(temp_path_str)
-    try:
-        # Close the file descriptor - decode_to_temp_wav will write to the path
-        os.close(temp_fd)
-
-        ok, decode_error = decode_to_temp_wav(
-            source,
-            temp_wav,
-            ffmpeg_binary=ffmpeg_binary,
+    prepared, error = prepare_source(
+        row, source, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
+    )
+    if prepared is None:
+        return CompressionResult(
+            compressed=None, skipped=ArchiveSkippedEntry(sha256, source, error or "")
         )
-        if not ok:
-            return CompressionResult(
-                compressed=None,
-                skipped=ArchiveSkippedEntry(sha256, source, f"decode failed: {decode_error}"),
-            )
 
-        # Step 2: Normalize and compress (second pass) - using temp WAV as input
+    duration = row.duration_seconds if row.duration_seconds else 0.0
+    aac_size: int | None = None
+    aac_warning: str | None = None
+    try:
+        # Normalize and compress (second pass) - using temp WAV as input
         if format == "opus":
             target_bitrate = bitrate_override if bitrate_override else OPUS_BITRATES[quality]
             # Cap bitrate to input (never upconvert)
-            if input_bitrate and input_bitrate < target_bitrate:
-                effective_bitrate = input_bitrate
+            if prepared.input_bitrate and prepared.input_bitrate < target_bitrate:
+                effective_bitrate = prepared.input_bitrate
             else:
                 effective_bitrate = target_bitrate
             # Opus requires specific sample rates - round to nearest supported
-            effective_sample_rate = nearest_opus_sample_rate(capped_sample_rate)
+            effective_sample_rate = nearest_opus_sample_rate(prepared.capped_sample_rate)
             cmd = build_opus_command(
-                temp_wav,  # Use temp WAV instead of original source
+                prepared.temp_wav,  # Use temp WAV instead of original source
                 output_path,
-                measured,
+                prepared.measured,
                 effective_bitrate,
                 effective_sample_rate,
                 stereo,
                 ffmpeg_binary,
-                apply_declipping=apply_declipping,
+                apply_declipping=prepared.apply_declipping,
             )
+            error = _run_ffmpeg(cmd, output_path)
         else:  # m4a
-            vbr_mode = M4A_VBR_MODES[quality]
-            # Cap VBR mode based on input bitrate
-            # VBR 3 ≈ 48-56 kbps, VBR 4 ≈ 64-72 kbps, VBR 5 ≈ 96-112 kbps
-            if input_bitrate:
-                if input_bitrate < 50:
-                    vbr_mode = min(vbr_mode, 3)
-                elif input_bitrate < 80:
-                    vbr_mode = min(vbr_mode, 4)
-            # M4A/AAC supports any sample rate, use capped rate directly
-            cmd = build_m4a_command(
-                temp_wav,  # Use temp WAV instead of original source
+            vbr_mode = aac_vbr_mode(quality, prepared.input_bitrate)
+            error = _encode_m4a(
+                prepared,
                 output_path,
-                measured,
-                vbr_mode,
-                capped_sample_rate,
-                stereo,
-                ffmpeg_binary,
-                use_fdk,
-                apply_declipping=apply_declipping,
+                vbr_mode=vbr_mode,
+                stereo=stereo,
+                ffmpeg_binary=ffmpeg_binary,
+                use_fdk=use_fdk,
             )
             # Approximate bitrate for M4A VBR
-            effective_bitrate = {3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
+            effective_bitrate = {2: 40, 3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
 
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
+        if error is None and format == "opus" and aac_output_path is not None:
+            aac_output_path.unlink(missing_ok=True)
+            aac_output_path.parent.mkdir(parents=True, exist_ok=True)
+            aac_error = _encode_m4a(
+                prepared,
+                aac_output_path,
+                vbr_mode=AAC_COPY_VBR_MODE,
+                stereo=stereo,
+                ffmpeg_binary=ffmpeg_binary,
+                use_fdk=use_fdk,
             )
-            if result.returncode != 0:
-                # Clean up partial output
-                if output_path.exists():
-                    output_path.unlink()
-                stderr = result.stderr.decode("utf-8", errors="replace")
-                return CompressionResult(
-                    compressed=None,
-                    skipped=ArchiveSkippedEntry(sha256, source, f"ffmpeg failed: {stderr[:200]}"),
-                )
-        except Exception as exc:
-            if output_path.exists():
-                output_path.unlink()
-            return CompressionResult(
-                compressed=None,
-                skipped=ArchiveSkippedEntry(sha256, source, f"compression failed: {exc}"),
-            )
-
+            if aac_error:
+                # Keep the Opus archive: the recording stays playable
+                # everywhere but Safari, and a later --backfill-aac retries
+                # only the copy.
+                aac_warning = f"aac copy {aac_error}"
+            else:
+                aac_size = aac_output_path.stat().st_size
     finally:
         # Always clean up temp WAV file
-        temp_wav.unlink(missing_ok=True)
+        prepared.temp_wav.unlink(missing_ok=True)
+
+    if error:
+        return CompressionResult(
+            compressed=None, skipped=ArchiveSkippedEntry(sha256, source, error)
+        )
 
     # Get output size and calculate ratio
     compressed_size = output_path.stat().st_size
     ratio = source_size / compressed_size if compressed_size > 0 else 0
 
-    duration = row.duration_seconds if row.duration_seconds else 0.0
-
+    has_aac = aac_size is not None
     return CompressionResult(
         compressed=CompressedEntry(
             sha256=sha256,
@@ -417,8 +661,70 @@ def compress_audio_file(
             compression_ratio=ratio,
             duration_seconds=duration,
             added_at=row.added_at,
+            aac_path=aac_output_path if has_aac else None,
+            aac_size_bytes=aac_size,
+            aac_bitrate_kbps=_measured_kbps(aac_size, duration) if aac_size is not None else None,
         ),
         skipped=None,
+        warning=aac_warning,
+    )
+
+
+@dataclass(frozen=True)
+class AacBackfillResult:
+    """Outcome of adding the AAC copy to one already archived row."""
+
+    sha256: str
+    values: dict[str, str | int] | None
+    skipped: ArchiveSkippedEntry | None
+
+
+def backfill_aac_copy(
+    row: CsvAudioRow,
+    compressed_path: Path,
+    *,
+    stereo: bool,
+    ffmpeg_binary: str,
+    ffprobe_binary: str,
+    use_fdk: bool,
+) -> AacBackfillResult:
+    """Encode the AAC copy for an existing Opus archive, next to it.
+
+    Uses the same source, loudness values and declip decision as a fresh
+    archive, at the copy's fixed VBR mode (``AAC_COPY_VBR_MODE``).
+    """
+    source = Path(row.full_path)
+    sha256 = row.sha256
+    if not source.exists():
+        return AacBackfillResult(
+            sha256, None, ArchiveSkippedEntry(sha256, source, "source file not found")
+        )
+    aac_path = compressed_path.with_suffix(AAC_COPY_EXTENSION)
+    prepared, error = prepare_source(
+        row, source, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
+    )
+    if prepared is None:
+        return AacBackfillResult(sha256, None, ArchiveSkippedEntry(sha256, source, error or ""))
+    try:
+        aac_path.unlink(missing_ok=True)
+        error = _encode_m4a(
+            prepared,
+            aac_path,
+            vbr_mode=AAC_COPY_VBR_MODE,
+            stereo=stereo,
+            ffmpeg_binary=ffmpeg_binary,
+            use_fdk=use_fdk,
+        )
+    finally:
+        prepared.temp_wav.unlink(missing_ok=True)
+    if error:
+        return AacBackfillResult(
+            sha256, None, ArchiveSkippedEntry(sha256, source, f"aac copy {error}")
+        )
+    size = aac_path.stat().st_size
+    duration = row.duration_seconds or 0.0
+    return AacBackfillResult(
+        sha256, aac_manifest_values(aac_path, size, _measured_kbps(size, duration)), None
     )
 
 
@@ -584,7 +890,8 @@ def register_parser(
         help="Compress audio for archival (up to 90%% space savings)",
         description="""\
 Creates space-efficient archived copies using modern codecs:
-  opus (default)  Best compression for speech, WebM container
+  opus (default)  Best compression for speech, WebM container, plus an
+                  AAC-in-MP4 copy for iOS Safari (skip with --no-aac)
   m4a             AAC codec, better compatibility
 
 Includes EBU R128 loudness normalization for consistent playback volume.
@@ -593,6 +900,7 @@ Example:
   catalog archive                              # Default: opus, low quality
   catalog archive --format m4a --quality high  # AAC for music
   catalog archive --bitrate 48                 # Custom bitrate
+  catalog archive --backfill-aac               # Add AAC copies to an existing archive
 """,
         formatter_class=formatter_class,
     )
@@ -670,6 +978,20 @@ Example:
         action="store_true",
         help="Do not create or update symlinks (archived catalog/audio).",
     )
+    parser.add_argument(
+        "--no-aac",
+        action="store_true",
+        help="Opus only: do not write the AAC-in-MP4 copy next to each archive.",
+    )
+    parser.add_argument(
+        "--backfill-aac",
+        action="store_true",
+        help=(
+            "Add the AAC-in-MP4 copy to Opus rows already in the archived manifest "
+            "that lack one, encoding from the same source, then update the manifest. "
+            "With --overwrite, re-encode existing copies too."
+        ),
+    )
     parser.set_defaults(func=handle_archive)
     return parser
 
@@ -677,6 +999,174 @@ Example:
 # =============================================================================
 # Main Handler
 # =============================================================================
+
+
+def select_aac_encoder(ffmpeg_binary: str) -> bool:
+    """True when libfdk_aac is available; otherwise the built-in encoder is used."""
+    if check_encoder_available(ffmpeg_binary, "libfdk_aac"):
+        print("Using libfdk_aac encoder for AAC")
+        return True
+    print("Note: libfdk_aac not available, using built-in AAC encoder")
+    return False
+
+
+def run_aac_backfill(
+    request: ArchiveRequest,
+    rows: list[CsvAudioRow],
+    archived_csv_path: Path,
+) -> int:
+    """Add the AAC copy to already archived Opus rows, updating the manifest.
+
+    Each copy is written next to its WebM from the row's source in the
+    loudness catalog, and recorded in the manifest as soon as it finishes, so
+    an interrupted run keeps what it did. Each record takes the catalog's
+    ingest lock and the manifest lock only for that one rewrite (see
+    `catalog_ingest_lock` and `manifest_lock`).
+    """
+    if not archived_csv_path.exists():
+        print(f"Error: no archived manifest to backfill: {archived_csv_path}", file=sys.stderr)
+        return 1
+
+    ffmpeg_binary = shutil.which(str(request.ffmpeg_binary))
+    ffprobe_binary = shutil.which(str(request.ffprobe_binary))
+    if not ffmpeg_binary or not ffprobe_binary:
+        missing = request.ffmpeg_binary if not ffmpeg_binary else request.ffprobe_binary
+        print(f"Error: not found: {missing}", file=sys.stderr)
+        return 1
+
+    try:
+        with manifest_lock(archived_csv_path):
+            _, manifest_rows = _read_manifest(archived_csv_path)
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        print(f"Error: cannot read {archived_csv_path}: {exc}", file=sys.stderr)
+        return 1
+    use_fdk = select_aac_encoder(ffmpeg_binary)
+    jobs, skipped = _select_backfill_jobs(request, rows, manifest_rows)
+    return _run_backfill_jobs(
+        request, jobs, skipped, archived_csv_path, ffmpeg_binary, ffprobe_binary, use_fdk
+    )
+
+
+def _select_backfill_jobs(
+    request: ArchiveRequest,
+    rows: list[CsvAudioRow],
+    manifest_rows: list[dict[str, str]],
+) -> tuple[list[tuple[CsvAudioRow, Path]], list[ArchiveSkippedEntry]]:
+    rows_by_hash = {row.sha256: row for row in rows}
+    jobs: list[tuple[CsvAudioRow, Path]] = []
+    skipped: list[ArchiveSkippedEntry] = []
+    queued: set[str] = set()
+    for manifest_row in manifest_rows:
+        sha256 = (manifest_row.get("Hash") or "").strip()
+        compressed = (manifest_row.get("Compressed Path") or "").strip()
+        # Only Opus archives (.webm) get a copy; never replace an .m4a archive.
+        if not sha256 or not compressed or Path(compressed).suffix != ".webm":
+            continue
+        if (manifest_row.get("Format") or "opus") != "opus":
+            continue
+        # A resumed --overwrite run can list a hash twice; encoding it twice
+        # at once would have two ffmpeg processes write the same file.
+        if sha256 in queued:
+            continue
+        existing_copy = (manifest_row.get(AAC_COPY_PATH_COLUMN) or "").strip()
+        if existing_copy and Path(existing_copy).is_file() and not request.overwrite:
+            continue
+        row = rows_by_hash.get(sha256)
+        compressed_path = Path(compressed)
+        if row is None or not compressed_path.is_file():
+            reason = "not in source catalog" if row is None else "archive file not found"
+            skipped.append(ArchiveSkippedEntry(sha256, compressed_path, reason))
+            continue
+        queued.add(sha256)
+        jobs.append((row, compressed_path))
+    return jobs, skipped
+
+
+def _run_backfill_jobs(
+    request: ArchiveRequest,
+    jobs: list[tuple[CsvAudioRow, Path]],
+    skipped: list[ArchiveSkippedEntry],
+    archived_csv_path: Path,
+    ffmpeg_binary: str,
+    ffprobe_binary: str,
+    use_fdk: bool,
+) -> int:
+    print(f"\nAdding AAC copies to {len(jobs)} archived files in {archived_csv_path.name}")
+    for skip in skipped:
+        print(f"  skipped {skip.sha256[:8]}: {skip.reason} ({skip.source})")
+
+    added = 0
+
+    def record(index: int, future: Future[AacBackfillResult], position: int) -> None:
+        nonlocal added
+        row, compressed_path = jobs[index]
+        try:
+            result = future.result()
+        except Exception as exc:  # one broken job must not end the run
+            result = AacBackfillResult(
+                row.sha256, None, ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}")
+            )
+        if result.values is not None:
+            # Record each copy as it finishes: an interrupted run keeps
+            # every copy it made.
+            with catalog_ingest_lock(archived_csv_path):
+                changed = update_manifest_rows(archived_csv_path, {result.sha256: result.values})
+            if changed:
+                added += 1
+                print(f"  [{position}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
+                return
+            # The row left the manifest while the copy was encoding (a
+            # `catalog remove`); do not leave its copy behind.
+            Path(str(result.values[AAC_COPY_PATH_COLUMN])).unlink(missing_ok=True)
+            result = AacBackfillResult(
+                row.sha256,
+                None,
+                ArchiveSkippedEntry(row.sha256, compressed_path, "no longer in the manifest"),
+            )
+        if result.skipped is not None:
+            skipped.append(result.skipped)
+            print(f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}")
+
+    if jobs:
+        workers = request.parallel or min(max(1, detect_logical_cpus()), len(jobs))
+        executor = ThreadPoolExecutor(max_workers=workers)
+        futures = [
+            executor.submit(
+                backfill_aac_copy,
+                row,
+                compressed_path,
+                stereo=request.stereo,
+                ffmpeg_binary=ffmpeg_binary,
+                ffprobe_binary=ffprobe_binary,
+                use_fdk=use_fdk,
+            )
+            for row, compressed_path in jobs
+        ]
+        index_of = {future: index for index, future in enumerate(futures)}
+        try:
+            for position, future in enumerate(as_completed(futures), start=1):
+                record(index_of[future], future, position)
+        except KeyboardInterrupt:
+            # Ctrl-C also reaches the ffmpeg processes (same process group),
+            # so the copies being encoded stop too and remove their partial
+            # files. Every copy recorded so far stays; a re-run does the rest.
+            queued = sum(future.cancel() for future in futures)
+            print(
+                f"\nInterrupted after {added} copies: {queued} queued copies not started; "
+                "copies being encoded were stopped. Run --backfill-aac again to finish."
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor.shutdown(wait=True)
+
+    print(f"\n  AAC copies added: {added}")
+    print(f"  Skipped:          {len(skipped)}")
+    print(f"  Manifest:         {archived_csv_path}")
+    has_errors = any(
+        s.reason not in ("source file not found", "not in source catalog", "archive file not found")
+        for s in skipped
+    )
+    return 1 if has_errors else 0
 
 
 def handle_archive(
@@ -718,6 +1208,9 @@ def handle_archive(
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     is_resume = bool(already_archived)
+
+    if request.backfill_aac:
+        return run_aac_backfill(request, rows, archived_csv_path)
 
     if is_resume:
         print(f"Found existing archive manifest: {archived_csv_path}")
@@ -816,14 +1309,9 @@ def handle_archive(
         print(f"Error: ffprobe not found: {request.ffprobe_binary}", file=sys.stderr)
         return 1
 
-    # Check encoder availability for M4A
-    use_fdk = False
-    if request.format == "m4a":
-        if check_encoder_available(ffmpeg_binary, "libfdk_aac"):
-            use_fdk = True
-            print("Using libfdk_aac encoder for M4A")
-        else:
-            print("Note: libfdk_aac not available, using built-in AAC encoder")
+    # Check encoder availability for M4A and the AAC copy
+    write_aac_copy = request.format == "opus" and request.aac_copy
+    use_fdk = select_aac_encoder(ffmpeg_binary) if (request.format == "m4a" or write_aac_copy) else False
 
     # 7. Filter rows to process (skip already archived unless overwrite)
     if request.overwrite:
@@ -868,12 +1356,15 @@ def handle_archive(
     print(f"  Format: {request.format} ({extension})")
     print(f"  Quality: {request.quality}")
     print(f"  Channels: {'stereo' if request.stereo else 'mono'}")
+    if request.format == "opus":
+        print(f"  AAC copy: {'yes' if write_aac_copy else 'no'}")
     print(f"  Output: {output_dir}")
     print()
 
     # 11. Process files
     compressed: list[CompressedEntry] = []
     skipped: list[ArchiveSkippedEntry] = []
+    aac_warnings: list[str] = []
     total = len(rows_to_process)
 
     # Use parallel processing - default to all available cores
@@ -919,6 +1410,9 @@ def handle_archive(
                         use_fdk=use_fdk,
                         force=request.overwrite or force_existing,
                         bitrate_override=request.bitrate,
+                        aac_output_path=(
+                            output_path.with_suffix(AAC_COPY_EXTENSION) if write_aac_copy else None
+                        ),
                     )
                     futures[future] = row
 
@@ -939,6 +1433,13 @@ def handle_archive(
                         entry = result.compressed
                         compressed.append(entry)
                         manifest_writer.write_entry(entry)
+                        if result.warning:
+                            aac_warnings.append(entry.sha256)
+                            progress.console.print(
+                                f"  [yellow]![/yellow] {rich_escape(entry.source.name)}: "
+                                f"{rich_escape(result.warning)} (run --backfill-aac to retry)",
+                                highlight=False,
+                            )
                         ratio_str = f"{entry.compression_ratio:.1f}x"
                         rel_source = rich_escape(entry.source.name)
                         rel_output = rich_escape(entry.compressed.name)
@@ -982,6 +1483,8 @@ def handle_archive(
     print("=" * 60)
     print(f"  Compressed: {len(compressed)}")
     print(f"  Skipped:    {len(skipped)}")
+    if aac_warnings:
+        print(f"  Without AAC copy: {len(aac_warnings)} (run --backfill-aac to retry)")
     if is_resume:
         print(f"  Previously archived: {len(already_archived)}")
 
