@@ -73,8 +73,47 @@ jobs:
           tests/test_rlm_integration.py
           -q
 
-  web:
-    name: Web type-check + lint + unit
+  web-static:
+    name: Web type-check + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run audit:dependencies
+      - run: npx prisma generate
+      - run: npm run type-check
+      - run: npm run lint
+
+  web-unit:
+    name: Web unit (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run test -- --shard=${{ matrix.shard }}/3
+
+  web-build:
+    name: Web production build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,11 +133,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-
       - run: npm ci
-      - run: npm run audit:dependencies
-      - run: npx prisma generate
-      - run: npm run type-check
-      - run: npm run lint
-      - run: npm run test
       - name: Build production bundle
         run: |
           AUTH_SECRET="$(openssl rand -hex 32)"
@@ -108,6 +142,24 @@ jobs:
           # Build-time placeholders only; production injects real values.
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           BETTER_AUTH_URL: http://localhost:3000
+
+  # The main ruleset requires this check name. It passes only when every
+  # split web job succeeded, so the parallel jobs can change without editing
+  # the ruleset.
+  web:
+    name: Web type-check + lint + unit
+    if: always()
+    needs: [web-static, web-unit, web-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every web job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Web job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done
 
   correction-integration:
     name: Transcript correction integration
