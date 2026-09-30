@@ -186,6 +186,23 @@ def test_plan_collects_every_artifact_of_one_hash(layout: Layout) -> None:
     assert not plan.is_empty
 
 
+def test_plan_removes_an_aac_copy_the_manifest_did_not_record(layout: Layout) -> None:
+    """An interrupted backfill can leave <name>.m4a on disk before the manifest names it."""
+    archived_csv = layout.catalog_csv.with_name(f"audio_catalog_{TS}_loudness_archived.csv")
+    _write_csv(
+        archived_csv,
+        ["Hash", "Full Path", "Compressed Path"],
+        [
+            {"Hash": h, "Full Path": str(layout.sources[h]), "Compressed Path": str(layout.archived[h])}
+            for h in (KEEP, GONE)
+        ],
+    )
+
+    plan = _plan(layout, GONE, delete_source=True)
+
+    assert plan.archived_files == [layout.archived[GONE], layout.archived_aac[GONE]]
+
+
 def test_plan_without_delete_source_keeps_the_original(layout: Layout) -> None:
     plan = _plan(layout, GONE, delete_source=False)
     assert plan.source_files == []

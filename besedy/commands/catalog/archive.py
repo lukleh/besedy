@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import os
 import shutil
 import subprocess
@@ -21,9 +22,10 @@ import sys
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from rich.console import Console
 from rich.markup import escape as rich_escape
@@ -67,6 +69,7 @@ from besedy.lib.audio.types import (
     detect_logical_cpus,
     format_size,
 )
+from besedy.lib.data.atomic_io import atomic_path
 from besedy.lib.workflow.common import CsvAudioRow
 
 # =============================================================================
@@ -134,6 +137,9 @@ class CompressionResult:
 
     compressed: CompressedEntry | None
     skipped: ArchiveSkippedEntry | None
+    # The Opus archive succeeded but its AAC copy did not; the row is written
+    # with blank AAC columns so `--backfill-aac` can add the copy later.
+    warning: str | None = None
 
 
 @dataclass
@@ -283,13 +289,14 @@ def _read_manifest(path: Path) -> tuple[list[str], list[dict[str, str]]]:
 def _write_manifest_atomically(
     path: Path, fieldnames: list[str], rows: Iterable[dict[str, str]]
 ) -> None:
-    temp = path.with_name(f".{path.name}.tmp")
-    with temp.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({name: row.get(name, "") for name in fieldnames})
-    os.replace(temp, path)
+    # atomic_path keeps the file mode, writes through a symlinked manifest to
+    # its target, and fsyncs before the rename.
+    with atomic_path(path) as temp:
+        with temp.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({name: row.get(name, "") for name in fieldnames})
 
 
 def _manifest_fieldnames(existing: list[str]) -> list[str]:
@@ -423,7 +430,12 @@ def aac_quality_for_opus_bitrate(opus_kbps: int) -> str:
     The AAC copy follows the Opus archive's actual bitrate, including a
     custom ``--bitrate`` or an older archive's preset.
     """
-    return min(OPUS_BITRATES, key=lambda preset: abs(OPUS_BITRATES[preset] - opus_kbps))
+    # A tie (40 kbps between low and medium) goes up: AAC-LC needs more bits
+    # than Opus for the same speech quality.
+    return min(
+        OPUS_BITRATES,
+        key=lambda preset: (abs(OPUS_BITRATES[preset] - opus_kbps), -OPUS_BITRATES[preset]),
+    )
 
 
 def _run_ffmpeg(cmd: list[str], output_path: Path) -> str | None:
@@ -489,8 +501,8 @@ def compress_audio_file(
     """Compress a single audio file with two-pass normalization.
 
     With ``aac_output_path`` (Opus only), also encode an AAC-in-MP4 copy from
-    the same decoded source. If the copy fails, the Opus output is removed
-    too, so a manifest row never records half an archive.
+    the same decoded source. If only the copy fails, the Opus archive is kept
+    and the result carries a warning; its AAC columns stay blank.
     """
     source = Path(row.full_path)
     sha256 = row.sha256
@@ -528,6 +540,7 @@ def compress_audio_file(
 
     duration = row.duration_seconds if row.duration_seconds else 0.0
     aac_size: int | None = None
+    aac_warning: str | None = None
     try:
         # Normalize and compress (second pass) - using temp WAV as input
         if format == "opus":
@@ -560,7 +573,7 @@ def compress_audio_file(
                 use_fdk=use_fdk,
             )
             # Approximate bitrate for M4A VBR
-            effective_bitrate = {3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
+            effective_bitrate = {2: 40, 3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
 
         if error is None and format == "opus" and aac_output_path is not None:
             aac_output_path.unlink(missing_ok=True)
@@ -574,8 +587,10 @@ def compress_audio_file(
                 use_fdk=use_fdk,
             )
             if aac_error:
-                output_path.unlink(missing_ok=True)
-                error = f"aac copy {aac_error}"
+                # Keep the Opus archive: the recording stays playable
+                # everywhere but Safari, and a later --backfill-aac retries
+                # only the copy.
+                aac_warning = f"aac copy {aac_error}"
             else:
                 aac_size = aac_output_path.stat().st_size
     finally:
@@ -609,6 +624,7 @@ def compress_audio_file(
             aac_bitrate_kbps=_measured_kbps(aac_size, duration) if aac_size is not None else None,
         ),
         skipped=None,
+        warning=aac_warning,
     )
 
 
@@ -944,6 +960,29 @@ Example:
 # =============================================================================
 
 
+@contextmanager
+def catalog_ingest_lock(archived_csv_path: Path) -> Iterator[None]:
+    """Hold the catalog's ingest lock, the one the upload flow takes.
+
+    Admin uploads run `run-pipeline` under `<catalogs>/.ingest-<id>.lock`
+    (besedy/lib/prefect_jobs/flows/ingest_recording.py), which appends to the
+    archived manifest. The backfill rewrites that manifest, so it waits for
+    the lock instead of racing an upload. The pipeline's own archive step does
+    not take it: it already runs under it.
+    """
+    catalog_id = extract_timestamp_from_archived_catalog(archived_csv_path.resolve())
+    if not catalog_id:
+        yield
+        return
+    lock_path = archived_csv_path.parent / f".ingest-{catalog_id}.lock"
+    with lock_path.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def select_aac_encoder(ffmpeg_binary: str) -> bool:
     """True when libfdk_aac is available; otherwise the built-in encoder is used."""
     if check_encoder_available(ffmpeg_binary, "libfdk_aac"):
@@ -958,19 +997,14 @@ def run_aac_backfill(
     rows: list[CsvAudioRow],
     archived_csv_path: Path,
 ) -> int:
-    """Add the AAC copy to already archived Opus rows, then update the manifest.
+    """Add the AAC copy to already archived Opus rows, updating the manifest.
 
     Each copy is written next to its WebM from the row's source in the
-    loudness catalog. The manifest is rewritten once, with every copy that
-    finished, even if the run stops early.
+    loudness catalog, and recorded in the manifest as soon as it finishes, so
+    an interrupted run keeps what it did. Runs under the catalog's ingest lock.
     """
     if not archived_csv_path.exists():
         print(f"Error: no archived manifest to backfill: {archived_csv_path}", file=sys.stderr)
-        return 1
-    try:
-        _, manifest_rows = _read_manifest(archived_csv_path)
-    except (OSError, UnicodeDecodeError, csv.Error) as exc:
-        print(f"Error: cannot read {archived_csv_path}: {exc}", file=sys.stderr)
         return 1
 
     ffmpeg_binary = shutil.which(str(request.ffmpeg_binary))
@@ -979,15 +1013,40 @@ def run_aac_backfill(
         missing = request.ffmpeg_binary if not ffmpeg_binary else request.ffprobe_binary
         print(f"Error: not found: {missing}", file=sys.stderr)
         return 1
-    use_fdk = select_aac_encoder(ffmpeg_binary)
 
+    with catalog_ingest_lock(archived_csv_path):
+        try:
+            _, manifest_rows = _read_manifest(archived_csv_path)
+        except (OSError, UnicodeDecodeError, csv.Error) as exc:
+            print(f"Error: cannot read {archived_csv_path}: {exc}", file=sys.stderr)
+            return 1
+        use_fdk = select_aac_encoder(ffmpeg_binary)
+        jobs, skipped = _select_backfill_jobs(request, rows, manifest_rows)
+        return _run_backfill_jobs(
+            request, jobs, skipped, archived_csv_path, ffmpeg_binary, ffprobe_binary, use_fdk
+        )
+
+
+def _select_backfill_jobs(
+    request: ArchiveRequest,
+    rows: list[CsvAudioRow],
+    manifest_rows: list[dict[str, str]],
+) -> tuple[list[tuple[CsvAudioRow, Path, int]], list[ArchiveSkippedEntry]]:
     rows_by_hash = {row.sha256: row for row in rows}
     jobs: list[tuple[CsvAudioRow, Path, int]] = []
     skipped: list[ArchiveSkippedEntry] = []
+    queued: set[str] = set()
     for manifest_row in manifest_rows:
         sha256 = (manifest_row.get("Hash") or "").strip()
         compressed = (manifest_row.get("Compressed Path") or "").strip()
-        if not sha256 or not compressed or (manifest_row.get("Format") or "opus") != "opus":
+        # Only Opus archives (.webm) get a copy; never replace an .m4a archive.
+        if not sha256 or not compressed or Path(compressed).suffix != ".webm":
+            continue
+        if (manifest_row.get("Format") or "opus") != "opus":
+            continue
+        # A resumed --overwrite run can list a hash twice; encoding it twice
+        # at once would have two ffmpeg processes write the same file.
+        if sha256 in queued:
             continue
         existing_copy = (manifest_row.get(AAC_COPY_PATH_COLUMN) or "").strip()
         if existing_copy and Path(existing_copy).is_file() and not request.overwrite:
@@ -1002,17 +1061,27 @@ def run_aac_backfill(
             opus_kbps = int(manifest_row.get("Bitrate (kbps)") or 0)
         except ValueError:
             opus_kbps = 0
+        queued.add(sha256)
         jobs.append((row, compressed_path, opus_kbps or OPUS_BITRATES[request.quality]))
+    return jobs, skipped
 
+
+def _run_backfill_jobs(
+    request: ArchiveRequest,
+    jobs: list[tuple[CsvAudioRow, Path, int]],
+    skipped: list[ArchiveSkippedEntry],
+    archived_csv_path: Path,
+    ffmpeg_binary: str,
+    ffprobe_binary: str,
+    use_fdk: bool,
+) -> int:
     print(f"\nAdding AAC copies to {len(jobs)} archived files in {archived_csv_path.name}")
-    if not jobs:
-        for skip in skipped:
-            print(f"  skipped {skip.sha256[:8]}: {skip.reason}")
-        return 0
+    for skip in skipped:
+        print(f"  skipped {skip.sha256[:8]}: {skip.reason} ({skip.source})")
 
-    updates: dict[str, dict[str, str | int]] = {}
-    workers = request.parallel or min(max(1, detect_logical_cpus()), len(jobs))
-    try:
+    added = 0
+    if jobs:
+        workers = request.parallel or min(max(1, detect_logical_cpus()), len(jobs))
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
                 executor.submit(
@@ -1030,16 +1099,18 @@ def run_aac_backfill(
             for done, future in enumerate(as_completed(futures), start=1):
                 result = future.result()
                 if result.values is not None:
-                    updates[result.sha256] = result.values
+                    # Record each copy as it finishes: an interrupted run
+                    # (Ctrl-C, a dropped ssh session) keeps every copy it made.
+                    update_manifest_rows(archived_csv_path, {result.sha256: result.values})
+                    added += 1
                     print(f"  [{done}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
                 elif result.skipped is not None:
                     skipped.append(result.skipped)
-                    print(f"  [{done}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}")
-    finally:
-        if updates:
-            update_manifest_rows(archived_csv_path, updates)
+                    print(
+                        f"  [{done}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}"
+                    )
 
-    print(f"\n  AAC copies added: {len(updates)}")
+    print(f"\n  AAC copies added: {added}")
     print(f"  Skipped:          {len(skipped)}")
     print(f"  Manifest:         {archived_csv_path}")
     has_errors = any(
@@ -1244,6 +1315,7 @@ def handle_archive(
     # 11. Process files
     compressed: list[CompressedEntry] = []
     skipped: list[ArchiveSkippedEntry] = []
+    aac_warnings: list[str] = []
     total = len(rows_to_process)
 
     # Use parallel processing - default to all available cores
@@ -1312,6 +1384,13 @@ def handle_archive(
                         entry = result.compressed
                         compressed.append(entry)
                         manifest_writer.write_entry(entry)
+                        if result.warning:
+                            aac_warnings.append(entry.sha256)
+                            progress.console.print(
+                                f"  [yellow]![/yellow] {rich_escape(entry.source.name)}: "
+                                f"{rich_escape(result.warning)} (run --backfill-aac to retry)",
+                                highlight=False,
+                            )
                         ratio_str = f"{entry.compression_ratio:.1f}x"
                         rel_source = rich_escape(entry.source.name)
                         rel_output = rich_escape(entry.compressed.name)
@@ -1355,6 +1434,8 @@ def handle_archive(
     print("=" * 60)
     print(f"  Compressed: {len(compressed)}")
     print(f"  Skipped:    {len(skipped)}")
+    if aac_warnings:
+        print(f"  Without AAC copy: {len(aac_warnings)} (run --backfill-aac to retry)")
     if is_resume:
         print(f"  Previously archived: {len(already_archived)}")
 

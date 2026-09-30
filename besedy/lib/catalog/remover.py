@@ -205,8 +205,13 @@ def build_removal_plan(
             plan.staged_files.extend(_existing_paths(rows, "Full Path"))
         elif csv_path.name.endswith("_loudness_archived.csv"):
             plan.archived_files.extend(_existing_paths(rows, "Compressed Path"))
-            # The AAC-in-MP4 copy that `catalog archive` writes next to the WebM.
+            # The AAC-in-MP4 copy that `catalog archive` writes next to the WebM,
+            # whether or not the manifest recorded it (an interrupted backfill).
             plan.archived_files.extend(_existing_paths(rows, "Compressed AAC Path"))
+            for webm in _existing_paths(rows, "Compressed Path"):
+                sibling = webm.with_suffix(".m4a")
+                if webm.suffix == ".webm" and sibling.is_file() and sibling not in plan.archived_files:
+                    plan.archived_files.append(sibling)
 
     plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
     plan.diarization_dirs = find_diarization_dirs(transcripts_root, sha256)

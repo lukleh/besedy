@@ -254,7 +254,8 @@ def build_m4a_command(
             ]
         )
     else:
-        bitrate_map = {3: 52, 4: 68, 5: 104}
+        # VBR 2 is the "low" preset; without an entry it fell through to 68 kbps.
+        bitrate_map = {2: 40, 3: 52, 4: 68, 5: 104}
         bitrate = bitrate_map.get(vbr_mode, 68)
         cmd.extend(["-c:a", "aac", "-b:a", f"{bitrate}k"])
 

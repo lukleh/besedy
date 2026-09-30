@@ -444,6 +444,7 @@ class TestAacQuality:
         assert aac_quality_for_opus_bitrate(32) == "low"
         assert aac_quality_for_opus_bitrate(48) == "medium"
         assert aac_quality_for_opus_bitrate(49) == "medium"  # a real production archive
+        assert aac_quality_for_opus_bitrate(40) == "medium"  # a tie rounds up
         assert aac_quality_for_opus_bitrate(64) == "high"
         assert aac_quality_for_opus_bitrate(96) == "max"
         assert aac_quality_for_opus_bitrate(200) == "max"
@@ -548,7 +549,7 @@ class TestAacCopyEncoding:
         assert result.compressed is not None
         assert qualities == ["max"]  # 96 kbps Opus, not the "low" preset
 
-    def test_a_failed_copy_removes_the_opus_archive_too(self, tmp_path, require_ffmpeg, monkeypatch):
+    def test_a_failed_copy_keeps_the_opus_archive(self, tmp_path, require_ffmpeg, monkeypatch):
         source = _tone(tmp_path / "talk.mp3", seconds=2)
         output = tmp_path / "out" / "talk.webm"
         monkeypatch.setattr(archive_module, "_encode_m4a", lambda *a, **k: (3, "ffmpeg failed: boom"))
@@ -565,10 +566,13 @@ class TestAacCopyEncoding:
             aac_output_path=output.with_suffix(".m4a"),
         )
 
-        assert result.compressed is None
-        assert result.skipped is not None
-        assert result.skipped.reason.startswith("aac copy")
-        assert not output.exists()
+        # The recording stays archived and playable; only the copy is missing,
+        # and the blank AAC columns let --backfill-aac retry it.
+        assert result.skipped is None
+        assert result.compressed is not None
+        assert result.compressed.aac_path is None
+        assert result.warning is not None and result.warning.startswith("aac copy")
+        assert output.is_file()
 
 
 @pytest.mark.integration
@@ -616,3 +620,119 @@ class TestArchiveAndBackfill:
         stamp = archived.stat().st_mtime_ns
         assert handle_archive(request) == 0
         assert archived.stat().st_mtime_ns == stamp
+
+
+class TestBackfillSafety:
+    """Backfill selection, locking and manifest writes."""
+
+    def _manifest(self, tmp_path: Path, rows: list[dict[str, str]]) -> Path:
+        path = tmp_path / "audio_catalog_20260101_000000_loudness_archived.csv"
+        _write_rows(path, OLD_HEADER, rows)
+        return path
+
+    def test_selects_each_hash_once_and_only_webm_archives(self, tmp_path):
+        webm = tmp_path / "a.webm"
+        webm.write_bytes(b"x")
+        m4a_archive = tmp_path / "b.m4a"
+        m4a_archive.write_bytes(b"x")
+        rows = [
+            CsvAudioRow(sha256="a" * 64, full_path=str(tmp_path / "a.mp3")),
+            CsvAudioRow(sha256="b" * 64, full_path=str(tmp_path / "b.mp3")),
+        ]
+        manifest_rows = [
+            # A resumed --overwrite run can list a hash twice.
+            {"Hash": "a" * 64, "Compressed Path": str(webm), "Format": "opus", "Bitrate (kbps)": "40"},
+            {"Hash": "a" * 64, "Compressed Path": str(webm), "Format": "opus", "Bitrate (kbps)": "40"},
+            # Blank Format but an .m4a archive: never replaced by a copy.
+            {"Hash": "b" * 64, "Compressed Path": str(m4a_archive), "Format": ""},
+        ]
+
+        jobs, skipped = archive_module._select_backfill_jobs(ArchiveRequest(), rows, manifest_rows)
+
+        assert [(row.sha256, path, kbps) for row, path, kbps in jobs] == [("a" * 64, webm, 40)]
+        assert skipped == []
+
+    def test_manifest_writes_keep_symlinks_and_permissions(self, tmp_path):
+        target = tmp_path / "real_archived.csv"
+        _write_rows(target, OLD_HEADER, [{"Hash": "a"}])
+        target.chmod(0o664)
+        link = tmp_path / "archived.csv"
+        link.symlink_to(target)
+
+        update_manifest_rows(link, {"a": {"Compressed AAC Path": "/out/a.m4a"}})
+
+        assert link.is_symlink()
+        assert _read_rows(target)[1][0]["Compressed AAC Path"] == "/out/a.m4a"
+        assert oct(target.stat().st_mode & 0o777) == oct(0o664)
+
+    @pytest.mark.integration
+    def test_records_each_copy_as_it_finishes(self, tmp_path, require_ffmpeg, monkeypatch):
+        """An interrupted run must keep the copies it already made."""
+        webms = []
+        for name in ("a", "b"):
+            webm = tmp_path / f"{name}.webm"
+            webm.write_bytes(b"x")
+            webms.append(webm)
+        rows = [CsvAudioRow(sha256=n * 64, full_path=str(tmp_path / f"{n}.mp3")) for n in "ab"]
+        manifest = self._manifest(
+            tmp_path,
+            [{"Hash": n * 64, "Compressed Path": str(w), "Format": "opus"} for n, w in zip("ab", webms)],
+        )
+        monkeypatch.setattr(
+            archive_module,
+            "backfill_aac_copy",
+            lambda row, path, kbps, **kwargs: archive_module.AacBackfillResult(
+                row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
+            ),
+        )
+        writes: list[set[str]] = []
+        original = archive_module.update_manifest_rows
+
+        def recording(path, updates):  # type: ignore[no-untyped-def]
+            writes.append(set(updates))
+            return original(path, updates)
+
+        monkeypatch.setattr(archive_module, "update_manifest_rows", recording)
+
+        assert archive_module.run_aac_backfill(ArchiveRequest(parallel=1), rows, manifest) == 0
+        assert writes == [{"a" * 64}, {"b" * 64}] or writes == [{"b" * 64}, {"a" * 64}]
+        assert {r["Compressed AAC Path"] for r in _read_rows(manifest)[1]} == {
+            str(w.with_suffix(".m4a")) for w in webms
+        }
+
+    @pytest.mark.integration
+    def test_waits_for_the_catalog_ingest_lock(self, tmp_path, require_ffmpeg, monkeypatch):
+        """An upload's run-pipeline holds this lock while it appends to the manifest."""
+        import fcntl
+        import threading
+        import time
+
+        webm = tmp_path / "a.webm"
+        webm.write_bytes(b"x")
+        manifest = self._manifest(
+            tmp_path, [{"Hash": "a" * 64, "Compressed Path": str(webm), "Format": "opus"}]
+        )
+        monkeypatch.setattr(
+            archive_module,
+            "backfill_aac_copy",
+            lambda row, path, kbps, **kwargs: archive_module.AacBackfillResult(
+                row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
+            ),
+        )
+        rows = [CsvAudioRow(sha256="a" * 64, full_path=str(tmp_path / "a.mp3"))]
+        lock_path = tmp_path / ".ingest-20260101_000000.lock"
+
+        with lock_path.open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            worker = threading.Thread(
+                target=archive_module.run_aac_backfill, args=(ArchiveRequest(), rows, manifest)
+            )
+            worker.start()
+            time.sleep(0.5)
+            assert worker.is_alive()
+            assert _read_rows(manifest)[1][0].get("Compressed AAC Path", "") == ""
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        worker.join(timeout=10)
+
+        assert not worker.is_alive()
+        assert _read_rows(manifest)[1][0]["Compressed AAC Path"] == str(webm.with_suffix(".m4a"))
