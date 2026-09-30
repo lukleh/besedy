@@ -1,7 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" covers .github/workflows; local composite actions pin their own
+    # action SHAs and must be listed separately.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
     # Disable routine version-update PRs. Dependabot security updates use a
