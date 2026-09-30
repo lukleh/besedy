@@ -26,6 +26,13 @@ const KNOWN_CACHE_NAMES = [
 const OWNED_CACHE_PREFIX = 'besedy-';
 
 const CHUNK_SIZE = 2 * 1024 * 1024;
+// A Range response covers at most this many cached chunks (4 MiB at the
+// default chunk size), however much the request asks for. WebKit's media
+// loader keeps every byte it is sent in the GPU process and does not stop
+// reading a service-worker stream, so answering `bytes=0-` with the whole
+// recording pushed that process past its memory limit on iPhone. A short 206
+// is a valid answer: the player asks for the next range when it needs it.
+const MAX_CHUNKS_PER_RANGE_RESPONSE = 2;
 const AUDIO_URL_PATTERN =
   /\/api\/catalogs\/[^/]+\/recordings\/([a-f0-9]{64})\/audio$/;
 const AUTH_NAVIGATION_PREFIXES = ['/api/auth/', '/mock-oauth/'];
@@ -564,7 +571,7 @@ async function handleRangeFromChunks(
   }
   const isRangeRequest = parsed.kind === 'range';
   const start = isRangeRequest ? parsed.start : 0;
-  const end = isRangeRequest ? parsed.end : totalSize - 1;
+  let end = isRangeRequest ? parsed.end : totalSize - 1;
 
   let startChunk = -1;
   let endChunk = -1;
@@ -580,6 +587,12 @@ async function handleRangeFromChunks(
   if (startChunk === -1 || endChunk === -1) {
     await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
     return fetch(request);
+  }
+  // A request without Range must get the whole body as a 200; only a 206 may
+  // be shorter than asked for.
+  if (isRangeRequest && endChunk - startChunk + 1 > MAX_CHUNKS_PER_RANGE_RESPONSE) {
+    endChunk = startChunk + MAX_CHUNKS_PER_RANGE_RESPONSE - 1;
+    end = chunkOffsets[endChunk + 1] - 1;
   }
 
   for (let index = startChunk; index <= endChunk; index += 1) {
@@ -620,6 +633,7 @@ self.__BESEDY_SW_INTERNALS = {
   STATIC_CACHE_NAME,
   STATIC_CACHE_MAX_ENTRIES,
   CHUNK_SIZE,
+  MAX_CHUNKS_PER_RANGE_RESPONSE,
   DOWNLOADS_PATH,
   OFFLINE_RESPONSE_HEADER,
   getCacheKey,

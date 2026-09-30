@@ -38,6 +38,7 @@ interface SwInternals {
   STATIC_CACHE_NAME: string;
   STATIC_CACHE_MAX_ENTRIES: number;
   CHUNK_SIZE: number;
+  MAX_CHUNKS_PER_RANGE_RESPONSE: number;
   DOWNLOADS_PATH: string;
   OFFLINE_RESPONSE_HEADER: string;
   getCacheKey: (url: string) => string;
@@ -332,8 +333,64 @@ describe('downloaded audio', () => {
 
     expect(response.body).toBeInstanceOf(ReadableStream);
     expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([
-      2, 3, 4, 5, 6, 7, 8,
+      2, 3, 4, 5,
     ]);
+  });
+
+  describe('range responses are capped', () => {
+    const chunks = () => [
+      new Uint8Array([0, 1, 2]),
+      new Uint8Array([3, 4, 5]),
+      new Uint8Array([6, 7, 8]),
+    ];
+
+    async function request(range: string | null) {
+      const { fetchHandler, cacheStorage, internals } = loadScript();
+      expect(internals.MAX_CHUNKS_PER_RANGE_RESPONSE).toBe(2);
+      const { url } = await seedAudio(cacheStorage, chunks());
+      const event = createEvent(url, range ? { headers: { Range: range } } : {});
+      fetchHandler(event);
+      const response = await respondedWith(event);
+      return {
+        response,
+        bytes: Array.from(new Uint8Array(await response.arrayBuffer())),
+      };
+    }
+
+    it('answers an open-ended range with at most two chunks', async () => {
+      const { response, bytes } = await request('bytes=0-');
+      expect(response.status).toBe(206);
+      expect(response.headers.get('content-range')).toBe('bytes 0-5/9');
+      expect(response.headers.get('content-length')).toBe('6');
+      expect(bytes).toEqual([0, 1, 2, 3, 4, 5]);
+    });
+
+    it('counts the partial first chunk as one of the two', async () => {
+      const { response, bytes } = await request('bytes=4-');
+      expect(response.headers.get('content-range')).toBe('bytes 4-8/9');
+      expect(bytes).toEqual([4, 5, 6, 7, 8]);
+    });
+
+    it('also shortens an explicit range that spans more chunks', async () => {
+      const { response, bytes } = await request('bytes=1-7');
+      expect(response.headers.get('content-range')).toBe('bytes 1-5/9');
+      expect(response.headers.get('content-length')).toBe('5');
+      expect(bytes).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('serves the rest when the player asks for the next range', async () => {
+      const { response, bytes } = await request('bytes=6-');
+      expect(response.headers.get('content-range')).toBe('bytes 6-8/9');
+      expect(bytes).toEqual([6, 7, 8]);
+    });
+
+    it('keeps a request without Range whole, since a 200 cannot be short', async () => {
+      const { response, bytes } = await request(null);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-range')).toBeNull();
+      expect(response.headers.get('content-length')).toBe('9');
+      expect(bytes).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    });
   });
 
   it('does not read a chunk until the player asks for bytes', async () => {
