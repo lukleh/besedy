@@ -26,13 +26,13 @@ const KNOWN_CACHE_NAMES = [
 const OWNED_CACHE_PREFIX = 'besedy-';
 
 const CHUNK_SIZE = 2 * 1024 * 1024;
-// A Range response covers at most this many cached chunks (4 MiB at the
-// default chunk size), however much the request asks for. WebKit's media
-// loader keeps every byte it is sent in the GPU process and does not stop
-// reading a service-worker stream, so answering `bytes=0-` with the whole
-// recording pushed that process past its memory limit on iPhone. A short 206
-// is a valid answer: the player asks for the next range when it needs it.
-const MAX_CHUNKS_PER_RANGE_RESPONSE = 2;
+// A Range response carries at most this many bytes, however much the request
+// asks for and however the recording is chunked. WebKit's media loader keeps
+// every byte it is sent in the GPU process and does not stop reading a
+// service-worker stream, so answering `bytes=0-` with the whole recording
+// pushed that process past its memory limit on iPhone. A short 206 is a valid
+// answer: the player asks for the next range when it needs it.
+const MAX_RANGE_RESPONSE_BYTES = 4 * 1024 * 1024;
 const AUDIO_URL_PATTERN =
   /\/api\/catalogs\/[^/]+\/recordings\/([a-f0-9]{64})\/audio$/;
 const AUTH_NAVIGATION_PREFIXES = ['/api/auth/', '/mock-oauth/'];
@@ -456,6 +456,7 @@ function parseRangeHeader(rangeHeader, totalSize) {
       kind: 'range',
       start: Math.max(0, totalSize - suffixLength),
       end: totalSize - 1,
+      suffix: true,
     };
   }
 
@@ -570,32 +571,43 @@ async function handleRangeFromChunks(
     return unsatisfiableRangeResponse(totalSize);
   }
   const isRangeRequest = parsed.kind === 'range';
-  const start = isRangeRequest ? parsed.start : 0;
-  let end = isRangeRequest ? parsed.end : totalSize - 1;
-
-  let startChunk = -1;
-  let endChunk = -1;
-  for (let index = 0; index < chunkSizes.length; index += 1) {
-    const chunkStart = chunkOffsets[index];
-    const chunkEnd = chunkOffsets[index + 1] - 1;
-    if (startChunk === -1 && start <= chunkEnd) startChunk = index;
-    if (end >= chunkStart && end <= chunkEnd) {
-      endChunk = index;
-      break;
-    }
+  const requestedStart = isRangeRequest ? parsed.start : 0;
+  const requestedEnd = isRangeRequest ? parsed.end : totalSize - 1;
+  // A request without Range must get the whole body as a 200; only a 206 may
+  // be shorter than asked for. A suffix range asks for the tail, so it keeps
+  // its end rather than its start.
+  let start = requestedStart;
+  let end = requestedEnd;
+  if (isRangeRequest && end - start + 1 > MAX_RANGE_RESPONSE_BYTES) {
+    if (parsed.suffix) start = end - MAX_RANGE_RESPONSE_BYTES + 1;
+    else end = start + MAX_RANGE_RESPONSE_BYTES - 1;
   }
-  if (startChunk === -1 || endChunk === -1) {
+
+  const chunkAt = (offset) => {
+    for (let index = 0; index < chunkSizes.length; index += 1) {
+      if (offset < chunkOffsets[index + 1]) return index;
+    }
+    return -1;
+  };
+  const startChunk = chunkAt(start);
+  const endChunk = chunkAt(end);
+  const firstRequestedChunk = chunkAt(requestedStart);
+  const lastRequestedChunk = chunkAt(requestedEnd);
+  if (
+    startChunk === -1 ||
+    endChunk === -1 ||
+    firstRequestedChunk === -1 ||
+    lastRequestedChunk === -1
+  ) {
     await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
     return fetch(request);
   }
-  // A request without Range must get the whole body as a 200; only a 206 may
-  // be shorter than asked for.
-  if (isRangeRequest && endChunk - startChunk + 1 > MAX_CHUNKS_PER_RANGE_RESPONSE) {
-    endChunk = startChunk + MAX_CHUNKS_PER_RANGE_RESPONSE - 1;
-    end = chunkOffsets[endChunk + 1] - 1;
-  }
 
-  for (let index = startChunk; index <= endChunk; index += 1) {
+  // Check every chunk the request asked for, not only the ones this capped
+  // response carries: a gap found now falls back to the network before any
+  // byte is committed, instead of deleting the cache under a playing element
+  // several ranges later.
+  for (let index = firstRequestedChunk; index <= lastRequestedChunk; index += 1) {
     if (!(await cache.match(getChunkKey(baseKey, index)))) {
       await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
       return fetch(request);
@@ -633,7 +645,7 @@ self.__BESEDY_SW_INTERNALS = {
   STATIC_CACHE_NAME,
   STATIC_CACHE_MAX_ENTRIES,
   CHUNK_SIZE,
-  MAX_CHUNKS_PER_RANGE_RESPONSE,
+  MAX_RANGE_RESPONSE_BYTES,
   DOWNLOADS_PATH,
   OFFLINE_RESPONSE_HEADER,
   getCacheKey,
