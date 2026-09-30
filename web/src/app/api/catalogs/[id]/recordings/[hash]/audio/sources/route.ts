@@ -76,13 +76,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       }),
     ]);
 
-    // Always have archived source
+    // Always listed; available when it has a file the audio route can serve.
+    const archivedFormats = formatsFor(archived);
     sources.push({
       id: "archived",
       label: "Archived",
       type: "archived",
-      available: true, // If we got here, archived exists
-      formats: formatsFor(archived),
+      available: archivedFormats.length > 0,
+      formats: archivedFormats,
     });
 
     const listeningAvailability = await Promise.all(
@@ -99,7 +100,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
             },
             select: { compressedPath: true, compressedAacPath: true },
           });
-          return { variant, available: !!row, formats: formatsFor(row) };
+          const formats = formatsFor(row);
+          return { variant, available: formats.length > 0, formats };
         })
     );
 

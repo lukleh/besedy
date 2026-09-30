@@ -863,5 +863,25 @@ describe("catalog audio route", () => {
       expect(mockValidatePathAsync).toHaveBeenCalledWith(aacPath);
       await response.arrayBuffer();
     });
+
+    it("audits the archived source when a listening download falls back to it", async () => {
+      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
+        variant: "enhanced",
+        listeningArchivedCatalogPath: "/catalogs/listening.csv",
+      });
+      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue(null);
+
+      const response = await request("source=listening&format=aac&download=true");
+
+      expect(response.status).toBe(200);
+      expect(mockLogAudioDownloaded).toHaveBeenCalledWith(
+        "user-1",
+        HASH,
+        CATALOG_ID,
+        "archived",
+        "aac"
+      );
+      await response.arrayBuffer();
+    });
   });
 });

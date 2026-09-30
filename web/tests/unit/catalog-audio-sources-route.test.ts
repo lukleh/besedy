@@ -161,7 +161,7 @@ describe("catalog audio sources route", () => {
     ]);
   });
 
-  it("lists no format for an archive without a catalogued WebM", async () => {
+  it("marks an archive without a catalogued WebM unavailable", async () => {
     requireAuth.mockResolvedValue("user-1");
     getRecordingCapability.mockResolvedValue({ catalogExists: true, canAccessRecording: true });
     prisma.catalogEntry.findUnique.mockResolvedValue({ compressedPath: null, compressedAacPath: null });
@@ -175,6 +175,6 @@ describe("catalog audio sources route", () => {
     );
 
     const body = await response.json();
-    expect(body.sources[0].formats).toEqual([]);
+    expect(body.sources[0]).toMatchObject({ id: "archived", available: false, formats: [] });
   });
 });
