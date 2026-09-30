@@ -30,7 +30,7 @@ type RangeParseResult =
   | { kind: 'full' }
   | { kind: 'invalid' }
   | { kind: 'unsatisfiable' }
-  | { kind: 'range'; start: number; end: number };
+  | { kind: 'range'; start: number; end: number; suffix?: boolean };
 
 interface SwInternals {
   AUDIO_CACHE_NAME: string;
@@ -38,6 +38,7 @@ interface SwInternals {
   STATIC_CACHE_NAME: string;
   STATIC_CACHE_MAX_ENTRIES: number;
   CHUNK_SIZE: number;
+  MAX_RANGE_RESPONSE_BYTES: number;
   DOWNLOADS_PATH: string;
   OFFLINE_RESPONSE_HEADER: string;
   getCacheKey: (url: string) => string;
@@ -318,22 +319,119 @@ describe('downloaded audio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('streams an open-ended range instead of concatenating it before responding', async () => {
-    const { fetchHandler, cacheStorage } = loadScript();
-    const { url } = await seedAudio(cacheStorage, [
-      new Uint8Array([0, 1, 2]),
-      new Uint8Array([3, 4, 5]),
-      new Uint8Array([6, 7, 8]),
-    ]);
+  describe('range responses are capped', () => {
+    // Real-size chunks, so the cap bites exactly as it does on a phone.
+    function pattern(length: number, offset = 0) {
+      return Uint8Array.from({ length }, (_, index) => (offset + index) % 251);
+    }
 
-    const event = createEvent(url, { headers: { Range: 'bytes=2-' } });
-    fetchHandler(event);
-    const response = await respondedWith(event);
+    async function request(
+      layout: number[],
+      range: string | null,
+      prepare?: (cache: MemoryCache, baseKey: string) => Promise<void>,
+    ) {
+      const { fetchHandler, cacheStorage, fetchMock } = loadScript();
+      let offset = 0;
+      const chunks = layout.map((length) => {
+        const chunk = pattern(length, offset);
+        offset += length;
+        return chunk;
+      });
+      const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
+      await prepare?.(cache, baseKey);
+      const event = createEvent(url, range ? { headers: { Range: range } } : {});
+      fetchHandler(event);
+      const response = await respondedWith(event);
+      return { response, cache, baseKey, fetchMock, total: offset };
+    }
 
-    expect(response.body).toBeInstanceOf(ReadableStream);
-    expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([
-      2, 3, 4, 5, 6, 7, 8,
-    ]);
+    async function body(response: Response) {
+      return new Uint8Array(await response.arrayBuffer());
+    }
+
+    // toEqual walks a 4 MiB array element by element; compare the bytes.
+    function expectBytes(actual: Uint8Array, length: number, offset: number) {
+      expect(actual.byteLength).toBe(length);
+      expect(Buffer.from(actual).equals(Buffer.from(pattern(length, offset)))).toBe(true);
+    }
+
+    const { CHUNK_SIZE: CHUNK, MAX_RANGE_RESPONSE_BYTES: MAX } = loadScript().internals;
+
+    it('is 4 MiB, two chunks at the default chunk size', () => {
+      expect(MAX).toBe(4 * 1024 * 1024);
+      expect(MAX).toBe(2 * CHUNK);
+    });
+
+    it('answers an open-ended range with at most the cap, as a stream', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], 'bytes=0-');
+      expect(response.status).toBe(206);
+      expect(response.body).toBeInstanceOf(ReadableStream);
+      expect(response.headers.get('content-range')).toBe(`bytes 0-${MAX - 1}/${total}`);
+      expect(response.headers.get('content-length')).toBe(String(MAX));
+      expectBytes(await body(response), MAX, 0);
+    });
+
+    it('slices inside a chunk when the range starts mid-chunk', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], 'bytes=1000-');
+      expect(response.headers.get('content-range')).toBe(
+        `bytes 1000-${1000 + MAX - 1}/${total}`,
+      );
+      expectBytes(await body(response), MAX, 1000);
+    });
+
+    it('caps a recording stored as one large chunk', async () => {
+      // A server that ignored Range leaves the whole file in chunk 0.
+      const { response, total } = await request([3 * CHUNK], 'bytes=0-');
+      expect(response.headers.get('content-range')).toBe(`bytes 0-${MAX - 1}/${total}`);
+      expectBytes(await body(response), MAX, 0);
+    });
+
+    it('shortens an explicit range that asks for more than the cap', async () => {
+      const { response, total } = await request(
+        [CHUNK, CHUNK, CHUNK],
+        `bytes=10-${10 + MAX + 5000}`,
+      );
+      expect(response.headers.get('content-range')).toBe(
+        `bytes 10-${10 + MAX - 1}/${total}`,
+      );
+      expect(response.headers.get('content-length')).toBe(String(MAX));
+    });
+
+    it('keeps the tail of a suffix range', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], `bytes=-${MAX + 100}`);
+      expect(response.headers.get('content-range')).toBe(
+        `bytes ${total - MAX}-${total - 1}/${total}`,
+      );
+      expectBytes(await body(response), MAX, total - MAX);
+    });
+
+    it('serves the rest when the player asks for the next range', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], `bytes=${MAX}-`);
+      expect(response.headers.get('content-range')).toBe(`bytes ${MAX}-${total - 1}/${total}`);
+      expectBytes(await body(response), total - MAX, MAX);
+    });
+
+    it('keeps a request without Range whole, since a 200 cannot be short', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], null);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-range')).toBeNull();
+      expect(response.headers.get('content-length')).toBe(String(total));
+      expect((await body(response)).byteLength).toBe(total);
+    });
+
+    it('finds a gap anywhere in the requested range before serving any of it', async () => {
+      const { response, cache, baseKey, fetchMock } = await request(
+        [CHUNK, CHUNK, CHUNK],
+        'bytes=0-',
+        // Chunk 2 lies beyond the capped response but inside the request.
+        async (cache, baseKey) => {
+          await cache.delete(getAudioChunkKey(baseKey, 2));
+        },
+      );
+      expect(await response.text()).toBe('network');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
+    });
   });
 
   it('does not read a chunk until the player asks for bytes', async () => {

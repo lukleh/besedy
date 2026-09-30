@@ -85,7 +85,15 @@ The `besedy-offline` IndexedDB database currently has three stores:
 Audio is written in 2 MiB chunks to Cache Storage (`besedy-audio-v5`). A
 metadata entry records size, MIME type, chunk sizes, and completion state; the
 service worker streams valid byte ranges from complete chunks without joining a
-recording in memory. The remaining caches are intentionally small:
+recording in memory. Each `206` carries at most 4 MiB (`MAX_RANGE_RESPONSE_BYTES`
+in `web/public/sw.js`) however much the request asks for, so the event log and
+network panel show runs of short responses such as `bytes 0-4194303/…` and
+`bytes 4194304-8388607/…`: Safari's media loader on iOS keeps every byte a
+service worker sends it in the GPU process and does not stop reading, so an
+uncapped `bytes=0-` for a multi-hour recording pushed that process past its
+memory limit and WebKit terminated the page. A suffix range keeps its tail; a
+request without `Range` still gets the whole body as a `200`. The remaining
+caches are intentionally small:
 
 - `besedy-offline-shell-v1` stores the session-free `/downloads` document.
 - `besedy-offline-static-v1` stores up to 96 content-hashed Next.js assets
