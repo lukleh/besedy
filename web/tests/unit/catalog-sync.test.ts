@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 
-// Must equal SOURCE_FINGERPRINT_VERSION (asserted below). The module cannot be
-// imported at the top: it loads fs/promises, which this file mocks.
+// Must equal SOURCE_FINGERPRINT_VERSION (asserted below). A static import of
+// source-snapshot would run before the mock functions below are initialized,
+// because it loads fs/promises and this file's vi.mock factories are hoisted.
 const FINGERPRINT_VERSION = 'v4';
 
 function buildSourceFingerprint(
@@ -465,6 +466,8 @@ describe('catalog-sync', () => {
           Hash: withCopy,
           'Compressed Path': '/data/audio/a_aaaaaaaa.webm',
           'Compressed AAC Path': '/data/audio/a_aaaaaaaa.m4a',
+          'Compressed AAC Size (bytes)': '1234',
+          'Compressed AAC Bitrate (kbps)': '68',
         },
         {
           Hash: blankCopy,
@@ -475,10 +478,11 @@ describe('catalog-sync', () => {
       // A variant catalog written before the column existed.
       '/data/listening.csv': [
         { Hash: noColumn, 'Compressed Path': '/data/audio/listen/c.webm' },
+        // Listening catalogs may use the snake_case column names.
         {
           Hash: withCopy,
-          'Compressed Path': '/data/audio/listen/a.webm',
-          'Compressed AAC Path': '/data/audio/listen/a.m4a',
+          compressed_path: '/data/audio/listen/a.webm',
+          compressed_aac_path: '/data/audio/listen/a.m4a',
         },
       ],
     };
@@ -511,6 +515,14 @@ describe('catalog-sync', () => {
     expect(entryPaths).toEqual({
       [withCopy]: '/data/audio/a_aaaaaaaa.m4a',
       [blankCopy]: null,
+    });
+    const withCopyEntry = entries.find(
+      (row: { audioHash: string }) => row.audioHash === withCopy,
+    );
+    expect(withCopyEntry.sourceArchivedPayload).toMatchObject({
+      compressedAacPath: '/data/audio/a_aaaaaaaa.m4a',
+      compressedAacSizeBytes: '1234',
+      compressedAacBitrateKbps: '68',
     });
     const listening = mockTx.catalogListeningEntry.createMany.mock.calls[0][0].data;
     expect(

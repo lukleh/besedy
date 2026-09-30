@@ -27,10 +27,13 @@ The discovery endpoint (`/api/catalogs/discover`) scans `BESEDY_BASE_DIR` for fi
 ### Sync Rules
 
 CSV-to-DB sync stores a versioned SHA-256 generation fingerprint for the exact
-source bytes that were parsed (`v3:sha256:<digest>`). Source snapshots are read
+source bytes that were parsed (`v4:sha256:<digest>`). Source snapshots are read
 once per reconciliation, before the database transaction and advisory lock, so
 fingerprinting and parsing cannot observe different file contents. Older
-stat-based fingerprints cause a one-time refresh after upgrade.
+stat-based fingerprints cause a one-time refresh after upgrade. The version is
+bumped when sync starts reading a column it ignored before, so every source is
+rebuilt once on the first sync after that deploy, even when its bytes are
+unchanged; `v4` added the AAC copy columns (#291).
 
 | Condition                        | Effect                                                   |
 | -------------------------------- | -------------------------------------------------------- |
