@@ -14,18 +14,17 @@ from __future__ import annotations
 
 import argparse
 import csv
-import fcntl
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable
 
 from rich.console import Console
 from rich.markup import escape as rich_escape
@@ -69,7 +68,7 @@ from besedy.lib.audio.types import (
     detect_logical_cpus,
     format_size,
 )
-from besedy.lib.data.atomic_io import atomic_path
+from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
 from besedy.lib.workflow.common import CsvAudioRow
 
 # =============================================================================
@@ -194,7 +193,12 @@ class ArchiveRequest:
 
 
 class ArchivedManifestWriter:
-    """Thread-safe CSV writer for archived audio manifest."""
+    """Thread-safe CSV writer for archived audio manifest.
+
+    Every write takes the manifest lock and reopens the file, so rows land in
+    the current file even after `--backfill-aac` has replaced it, and a
+    backfill never rewrites the file between a row's read and its append.
+    """
 
     FIELDNAMES = [
         "Hash",
@@ -222,34 +226,47 @@ class ArchivedManifestWriter:
                 rewritten with the current header, so appended rows line up.
         """
         self.lock = threading.Lock()
+        self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        if append and path.exists():
-            self.fieldnames = migrate_manifest_header(path)
-            self.handle = path.open("a", newline="", encoding="utf-8")
-            self.writer = csv.DictWriter(
-                self.handle, fieldnames=self.fieldnames, quoting=csv.QUOTE_MINIMAL
-            )
-            # Don't write header in append mode
-        else:
-            self.fieldnames = list(self.FIELDNAMES)
-            self.handle = path.open("w", newline="", encoding="utf-8")
-            self.writer = csv.DictWriter(
-                self.handle, fieldnames=self.fieldnames, quoting=csv.QUOTE_MINIMAL
-            )
-            self.writer.writeheader()
-        self.handle.flush()
+        with manifest_lock(path):
+            if append and path.exists():
+                migrate_manifest_header(path)
+            else:
+                with path.open("w", newline="", encoding="utf-8") as handle:
+                    csv.DictWriter(
+                        handle, fieldnames=self.FIELDNAMES, quoting=csv.QUOTE_MINIMAL
+                    ).writeheader()
 
     def write_entry(self, entry: CompressedEntry) -> None:
-        """Write a compressed file entry to the manifest."""
-        with self.lock:
-            self.writer.writerow(manifest_row(entry))
-            self.handle.flush()
+        """Append a compressed file entry to the manifest."""
+        with self.lock, manifest_lock(self.path):
+            # The header can have gained columns since this writer started.
+            fieldnames = _manifest_fieldnames(_read_header(self.path))
+            with self.path.open("a", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL, restval=""
+                )
+                writer.writerow(manifest_row(entry))
 
     def close(self) -> None:
-        """Close the manifest file."""
-        with self.lock:
-            self.handle.close()
+        """Nothing to release: every write opens and closes the file."""
+
+
+def manifest_lock(path: Path) -> AbstractContextManager[None]:
+    """Hold the archived manifest's lock while reading or changing it.
+
+    Taken by the archive writer for each appended row, by `--backfill-aac`
+    for each rewrite and by `catalog remove`, so none of them loses another's
+    rows, whether the archive runs from an upload, a manual `run-pipeline` or
+    `catalog archive`. It is only held for one file operation, so an upload
+    never waits for a whole backfill.
+    """
+    return rewrite_lock(path)
+
+
+def _read_header(path: Path) -> list[str]:
+    with path.open("r", encoding="utf-8", newline="") as f:
+        return next(csv.reader(f), [])
 
 
 def manifest_row(entry: CompressedEntry) -> dict[str, str | int]:
@@ -308,7 +325,7 @@ def migrate_manifest_header(path: Path) -> list[str]:
     """Give an existing manifest every current column; return its header.
 
     Rows keep their values, and new columns start empty. The file is only
-    rewritten when a column is missing.
+    rewritten when a column is missing. The caller holds `manifest_lock`.
     """
     existing, rows = _read_manifest(path)
     fieldnames = _manifest_fieldnames(existing)
@@ -319,16 +336,17 @@ def migrate_manifest_header(path: Path) -> list[str]:
 
 def update_manifest_rows(path: Path, updates: dict[str, dict[str, str | int]]) -> int:
     """Set columns on manifest rows by hash, atomically; return rows changed."""
-    existing, rows = _read_manifest(path)
-    fieldnames = _manifest_fieldnames(existing)
-    changed = 0
-    for row in rows:
-        values = updates.get((row.get("Hash") or "").strip())
-        if values:
-            row.update({name: str(value) for name, value in values.items()})
-            changed += 1
-    _write_manifest_atomically(path, fieldnames, rows)
-    return changed
+    with manifest_lock(path):
+        existing, rows = _read_manifest(path)
+        fieldnames = _manifest_fieldnames(existing)
+        changed = 0
+        for row in rows:
+            values = updates.get((row.get("Hash") or "").strip())
+            if values:
+                row.update({name: str(value) for name, value in values.items()})
+                changed += 1
+        _write_manifest_atomically(path, fieldnames, rows)
+        return changed
 
 
 # =============================================================================
@@ -395,7 +413,11 @@ def prepare_source(
     temp_wav = Path(temp_path_str)
     # Close the file descriptor - decode_to_temp_wav will write to the path
     os.close(temp_fd)
-    ok, decode_error = decode_to_temp_wav(source, temp_wav, ffmpeg_binary=ffmpeg_binary)
+    try:
+        ok, decode_error = decode_to_temp_wav(source, temp_wav, ffmpeg_binary=ffmpeg_binary)
+    except Exception as exc:
+        temp_wav.unlink(missing_ok=True)
+        return None, f"decode failed: {exc}"
     if not ok:
         temp_wav.unlink(missing_ok=True)
         return None, f"decode failed: {decode_error}"
@@ -960,29 +982,6 @@ Example:
 # =============================================================================
 
 
-@contextmanager
-def catalog_ingest_lock(archived_csv_path: Path) -> Iterator[None]:
-    """Hold the catalog's ingest lock, the one the upload flow takes.
-
-    Admin uploads run `run-pipeline` under `<catalogs>/.ingest-<id>.lock`
-    (besedy/lib/prefect_jobs/flows/ingest_recording.py), which appends to the
-    archived manifest. The backfill rewrites that manifest, so it waits for
-    the lock instead of racing an upload. The pipeline's own archive step does
-    not take it: it already runs under it.
-    """
-    catalog_id = extract_timestamp_from_archived_catalog(archived_csv_path.resolve())
-    if not catalog_id:
-        yield
-        return
-    lock_path = archived_csv_path.parent / f".ingest-{catalog_id}.lock"
-    with lock_path.open("a+") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
 def select_aac_encoder(ffmpeg_binary: str) -> bool:
     """True when libfdk_aac is available; otherwise the built-in encoder is used."""
     if check_encoder_available(ffmpeg_binary, "libfdk_aac"):
@@ -1001,7 +1000,8 @@ def run_aac_backfill(
 
     Each copy is written next to its WebM from the row's source in the
     loudness catalog, and recorded in the manifest as soon as it finishes, so
-    an interrupted run keeps what it did. Runs under the catalog's ingest lock.
+    an interrupted run keeps what it did. Each record takes the manifest lock
+    only for that one rewrite (see `manifest_lock`).
     """
     if not archived_csv_path.exists():
         print(f"Error: no archived manifest to backfill: {archived_csv_path}", file=sys.stderr)
@@ -1014,17 +1014,17 @@ def run_aac_backfill(
         print(f"Error: not found: {missing}", file=sys.stderr)
         return 1
 
-    with catalog_ingest_lock(archived_csv_path):
-        try:
+    try:
+        with manifest_lock(archived_csv_path):
             _, manifest_rows = _read_manifest(archived_csv_path)
-        except (OSError, UnicodeDecodeError, csv.Error) as exc:
-            print(f"Error: cannot read {archived_csv_path}: {exc}", file=sys.stderr)
-            return 1
-        use_fdk = select_aac_encoder(ffmpeg_binary)
-        jobs, skipped = _select_backfill_jobs(request, rows, manifest_rows)
-        return _run_backfill_jobs(
-            request, jobs, skipped, archived_csv_path, ffmpeg_binary, ffprobe_binary, use_fdk
-        )
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        print(f"Error: cannot read {archived_csv_path}: {exc}", file=sys.stderr)
+        return 1
+    use_fdk = select_aac_encoder(ffmpeg_binary)
+    jobs, skipped = _select_backfill_jobs(request, rows, manifest_rows)
+    return _run_backfill_jobs(
+        request, jobs, skipped, archived_csv_path, ffmpeg_binary, ffprobe_binary, use_fdk
+    )
 
 
 def _select_backfill_jobs(
@@ -1080,35 +1080,61 @@ def _run_backfill_jobs(
         print(f"  skipped {skip.sha256[:8]}: {skip.reason} ({skip.source})")
 
     added = 0
+    handled: set[int] = set()
+
+    def record(index: int, future: Future[AacBackfillResult], position: int) -> None:
+        nonlocal added
+        handled.add(index)
+        row, compressed_path, _ = jobs[index]
+        try:
+            result = future.result()
+        except Exception as exc:  # one broken job must not end the run
+            result = AacBackfillResult(
+                row.sha256, None, ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}")
+            )
+        if result.values is not None:
+            # Record each copy as it finishes: an interrupted run keeps
+            # every copy it made.
+            update_manifest_rows(archived_csv_path, {result.sha256: result.values})
+            added += 1
+            print(f"  [{position}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
+        elif result.skipped is not None:
+            skipped.append(result.skipped)
+            print(f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}")
+
     if jobs:
         workers = request.parallel or min(max(1, detect_logical_cpus()), len(jobs))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [
-                executor.submit(
-                    backfill_aac_copy,
-                    row,
-                    compressed_path,
-                    opus_kbps,
-                    stereo=request.stereo,
-                    ffmpeg_binary=ffmpeg_binary,
-                    ffprobe_binary=ffprobe_binary,
-                    use_fdk=use_fdk,
-                )
-                for row, compressed_path, opus_kbps in jobs
+        executor = ThreadPoolExecutor(max_workers=workers)
+        futures = [
+            executor.submit(
+                backfill_aac_copy,
+                row,
+                compressed_path,
+                opus_kbps,
+                stereo=request.stereo,
+                ffmpeg_binary=ffmpeg_binary,
+                ffprobe_binary=ffprobe_binary,
+                use_fdk=use_fdk,
+            )
+            for row, compressed_path, opus_kbps in jobs
+        ]
+        index_of = {future: index for index, future in enumerate(futures)}
+        try:
+            for position, future in enumerate(as_completed(futures), start=1):
+                record(index_of[future], future, position)
+        except KeyboardInterrupt:
+            # Stop queued encodes, but keep the copies already being made.
+            for future in futures:
+                future.cancel()
+            running = [
+                i for i, f in enumerate(futures) if i not in handled and not f.cancelled()
             ]
-            for done, future in enumerate(as_completed(futures), start=1):
-                result = future.result()
-                if result.values is not None:
-                    # Record each copy as it finishes: an interrupted run
-                    # (Ctrl-C, a dropped ssh session) keeps every copy it made.
-                    update_manifest_rows(archived_csv_path, {result.sha256: result.values})
-                    added += 1
-                    print(f"  [{done}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
-                elif result.skipped is not None:
-                    skipped.append(result.skipped)
-                    print(
-                        f"  [{done}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}"
-                    )
+            print(f"\nInterrupted: finishing {len(running)} copies already in progress...")
+            for index in running:
+                record(index, futures[index], len(handled) + 1)
+            raise
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
     print(f"\n  AAC copies added: {added}")
     print(f"  Skipped:          {len(skipped)}")

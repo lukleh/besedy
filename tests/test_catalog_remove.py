@@ -372,3 +372,27 @@ def test_cli_rejects_bad_hash(monkeypatch, layout: Layout, capsys) -> None:  # t
     code, payload = _run_cli(monkeypatch, layout, capsys, "--hash", "abc")
     assert code == 1
     assert payload["result"]["error"] == "invalid_hash"
+
+
+def test_archived_manifest_rewrite_waits_for_the_manifest_lock(tmp_path):
+    """`catalog archive --backfill-aac` rewrites this file under the same lock."""
+    import fcntl
+    import threading
+    import time
+
+    manifest = tmp_path / f"audio_catalog_{TS}_loudness_archived.csv"
+    _write_csv(manifest, ["Hash"], [{"Hash": KEEP}, {"Hash": GONE}])
+    link = tmp_path / "audio_catalog_archived.csv"
+    link.symlink_to(manifest.name)
+
+    with (tmp_path / f".{manifest.name}.lock").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        worker = threading.Thread(target=remover.remove_hash_from_csv, args=(link, GONE))
+        worker.start()
+        time.sleep(0.3)
+        assert worker.is_alive()
+        assert _read_hashes(manifest) == [KEEP, GONE]
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    worker.join(timeout=5)
+
+    assert _read_hashes(manifest) == [KEEP]

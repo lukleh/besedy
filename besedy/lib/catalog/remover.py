@@ -24,7 +24,7 @@ from besedy.lib.catalog.cleaner import (
     find_transcript_dirs,
 )
 from besedy.lib.catalog.manager import filter_catalog_rows, load_csv, resolve_hash_column
-from besedy.lib.data.atomic_io import atomic_path
+from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
 
 SPEAKER_EMBEDDINGS_DIRNAME = "speaker_embeddings"
 AUDIO_HASH_SIDECAR_SUFFIX = ".audiohash"
@@ -224,6 +224,15 @@ def build_removal_plan(
 
 def remove_hash_from_csv(csv_path: Path, sha256: str) -> int:
     """Rewrite one catalog CSV without the hash's rows; atomic on success."""
+    if csv_path.resolve().name.endswith("_loudness_archived.csv"):
+        # `catalog archive --backfill-aac` rewrites this manifest outside the
+        # ingest lock; share its lock so neither drops the other's change.
+        with rewrite_lock(csv_path):
+            return _remove_hash_from_csv(csv_path, sha256)
+    return _remove_hash_from_csv(csv_path, sha256)
+
+
+def _remove_hash_from_csv(csv_path: Path, sha256: str) -> int:
     columns, rows = load_csv(csv_path, encoding="utf-8")
     try:
         hash_column = resolve_hash_column(columns, csv_path, preferred="Hash")

@@ -700,27 +700,40 @@ class TestBackfillSafety:
             str(w.with_suffix(".m4a")) for w in webms
         }
 
+    def _fake_copy(self, calls=None, delay=0.0, fail=()):
+        import time
+
+        def fake(row, path, kbps, **kwargs):
+            if calls is not None:
+                calls.append(row.sha256)
+            time.sleep(delay)
+            if row.sha256 in fail:
+                raise RuntimeError("encoder vanished")
+            return archive_module.AacBackfillResult(
+                row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
+            )
+
+        return fake
+
+    def _jobs(self, tmp_path: Path, hashes: list[str]) -> tuple[Path, list[CsvAudioRow]]:
+        manifest_rows = []
+        for h in hashes:
+            webm = tmp_path / f"{h[0]}.webm"
+            webm.write_bytes(b"x")
+            manifest_rows.append({"Hash": h, "Compressed Path": str(webm), "Format": "opus"})
+        rows = [CsvAudioRow(sha256=h, full_path=str(tmp_path / f"{h[0]}.mp3")) for h in hashes]
+        return self._manifest(tmp_path, manifest_rows), rows
+
     @pytest.mark.integration
-    def test_waits_for_the_catalog_ingest_lock(self, tmp_path, require_ffmpeg, monkeypatch):
-        """An upload's run-pipeline holds this lock while it appends to the manifest."""
+    def test_waits_for_the_manifest_lock(self, tmp_path, require_ffmpeg, monkeypatch):
+        """The archive writer holds this lock while it appends a row."""
         import fcntl
         import threading
         import time
 
-        webm = tmp_path / "a.webm"
-        webm.write_bytes(b"x")
-        manifest = self._manifest(
-            tmp_path, [{"Hash": "a" * 64, "Compressed Path": str(webm), "Format": "opus"}]
-        )
-        monkeypatch.setattr(
-            archive_module,
-            "backfill_aac_copy",
-            lambda row, path, kbps, **kwargs: archive_module.AacBackfillResult(
-                row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
-            ),
-        )
-        rows = [CsvAudioRow(sha256="a" * 64, full_path=str(tmp_path / "a.mp3"))]
-        lock_path = tmp_path / ".ingest-20260101_000000.lock"
+        manifest, rows = self._jobs(tmp_path, ["a" * 64])
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", self._fake_copy())
+        lock_path = tmp_path / f".{manifest.name}.lock"
 
         with lock_path.open("a+") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -735,4 +748,77 @@ class TestBackfillSafety:
         worker.join(timeout=10)
 
         assert not worker.is_alive()
-        assert _read_rows(manifest)[1][0]["Compressed AAC Path"] == str(webm.with_suffix(".m4a"))
+        assert _read_rows(manifest)[1][0]["Compressed AAC Path"] == str(tmp_path / "a.m4a")
+
+    def test_an_open_writer_appends_to_the_rewritten_manifest(self, tmp_path):
+        """A running archive keeps its rows when a backfill replaces the file."""
+        manifest = self._manifest(tmp_path, [{"Hash": "a" * 64, "Format": "opus"}])
+        writer = ArchivedManifestWriter(manifest, append=True)
+
+        update_manifest_rows(manifest, {"a" * 64: {"Compressed AAC Path": "/out/a.m4a"}})
+        writer.write_entry(
+            CompressedEntry(
+                sha256="b" * 64,
+                source=Path("/src/b.mp3"),
+                compressed=Path("/out/b.webm"),
+                format="opus",
+                bitrate_kbps=32,
+                source_size_bytes=10,
+                compressed_size_bytes=5,
+                compression_ratio=2.0,
+                duration_seconds=1,
+            )
+        )
+        writer.close()
+
+        written = _read_rows(manifest)[1]
+        assert [row["Hash"] for row in written] == ["a" * 64, "b" * 64]
+        assert written[0]["Compressed AAC Path"] == "/out/a.m4a"
+
+    @pytest.mark.integration
+    def test_a_failing_copy_is_skipped_and_the_rest_continue(
+        self, tmp_path, require_ffmpeg, monkeypatch, capsys
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64])
+        monkeypatch.setattr(
+            archive_module, "backfill_aac_copy", self._fake_copy(fail={"a" * 64})
+        )
+
+        archive_module.run_aac_backfill(ArchiveRequest(), rows, manifest)
+
+        by_hash = {row["Hash"]: row for row in _read_rows(manifest)[1]}
+        assert by_hash["a" * 64].get("Compressed AAC Path", "") == ""
+        assert by_hash["b" * 64]["Compressed AAC Path"] == str(tmp_path / "b.m4a")
+        assert "exception: encoder vanished" in capsys.readouterr().out
+
+    @pytest.mark.integration
+    def test_interrupt_stops_queued_copies_and_keeps_running_ones(
+        self, tmp_path, require_ffmpeg, monkeypatch
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64, "c" * 64])
+        calls: list[str] = []
+        monkeypatch.setattr(
+            archive_module, "backfill_aac_copy", self._fake_copy(calls, delay=0.3)
+        )
+        real_update = archive_module.update_manifest_rows
+        interrupted = []
+
+        def update_then_interrupt(path, updates):
+            changed = real_update(path, updates)
+            if not interrupted:
+                interrupted.append(True)
+                raise KeyboardInterrupt
+            return changed
+
+        monkeypatch.setattr(archive_module, "update_manifest_rows", update_then_interrupt)
+
+        with pytest.raises(KeyboardInterrupt):
+            archive_module.run_aac_backfill(ArchiveRequest(parallel=1), rows, manifest)
+
+        # The first copy was recorded, the second was already encoding and is
+        # kept, and the third never started.
+        assert calls == ["a" * 64, "b" * 64]
+        by_hash = {row["Hash"]: row for row in _read_rows(manifest)[1]}
+        assert by_hash["a" * 64]["Compressed AAC Path"] == str(tmp_path / "a.m4a")
+        assert by_hash["b" * 64]["Compressed AAC Path"] == str(tmp_path / "b.m4a")
+        assert by_hash["c" * 64].get("Compressed AAC Path", "") == ""
