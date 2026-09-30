@@ -61,6 +61,7 @@ interface ArchivedPayload {
   [key: string]: string | undefined;
   originalPath?: string;
   compressedPath?: string;
+  compressedAacPath?: string;
   format?: string;
   bitrateKbps?: string;
   originalSizeBytes?: string;
@@ -206,6 +207,11 @@ function getRowValue(row: CsvRow, candidates: string[]): string | undefined {
   return undefined;
 }
 
+/** A path cell, or null when the column is missing or the cell is blank. */
+function optionalPath(raw: string | undefined): string | null {
+  return raw?.trim() || null;
+}
+
 function normalizeHash(raw: string | undefined): string | null {
   const hash = raw?.trim();
   if (!hash) return null;
@@ -291,6 +297,7 @@ function toArchivedPayload(row: CsvRow): ArchivedPayload {
   return {
     originalPath: getRowValue(row, ['Original Path']),
     compressedPath: getRowValue(row, ['Compressed Path']),
+    compressedAacPath: getRowValue(row, ['Compressed AAC Path']),
     format: getRowValue(row, ['Format']),
     bitrateKbps: getRowValue(row, ['Bitrate (kbps)']),
     originalSizeBytes: getRowValue(row, ['Original Size (bytes)']),
@@ -754,6 +761,7 @@ async function syncCatalogGroupAttempt(
             variant: string;
             audioHash: string;
             compressedPath: string;
+            compressedAacPath: string | null;
           }>
         >();
 
@@ -787,6 +795,9 @@ async function syncCatalogGroupAttempt(
                 variant,
                 audioHash,
                 compressedPath,
+                compressedAacPath: optionalPath(
+                  getRowValue(row, ['Compressed AAC Path']),
+                ),
               };
             })
             .filter((row): row is NonNullable<typeof row> => row !== null);
@@ -821,6 +832,7 @@ async function syncCatalogGroupAttempt(
           workflowGroupId: string;
           audioHash: string;
           compressedPath: string | null;
+          compressedAacPath: string | null;
           originalPath: string | null;
           filename: string | null;
           scanRoot: string | null;
@@ -887,6 +899,7 @@ async function syncCatalogGroupAttempt(
               workflowGroupId: groupId,
               audioHash,
               compressedPath: archivedPayload?.compressedPath ?? null,
+              compressedAacPath: optionalPath(archivedPayload?.compressedAacPath),
               originalPath,
               filename: metadataPayload?.filename ?? null,
               scanRoot: metadataPayload?.scanRoot ?? null,

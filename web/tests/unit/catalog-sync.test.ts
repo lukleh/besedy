@@ -431,6 +431,94 @@ describe('catalog-sync', () => {
     }
   });
 
+  it('stores the AAC copy path from the archived and listening catalogs, or null', async () => {
+    const withCopy = 'a'.repeat(64);
+    const blankCopy = 'b'.repeat(64);
+    const noColumn = 'c'.repeat(64);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: null,
+      variants: [
+        { variant: 'enhanced', listeningArchivedCatalogPath: '/data/listening.csv' },
+      ],
+    });
+    // Every source has a stale fingerprint, so all of them are rebuilt.
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: 'old' },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: 'old' },
+      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
+      { sourceKey: 'listening:enhanced', filePath: '/data/listening.csv', fingerprint: 'old' },
+    ]);
+    const rowsByFile: Record<string, Array<Record<string, string>>> = {
+      '/data/meta.csv': [withCopy, blankCopy].map((hash) => ({ Hash: hash })),
+      '/data/archived.csv': [
+        {
+          Hash: withCopy,
+          'Compressed Path': '/data/audio/a_aaaaaaaa.webm',
+          'Compressed AAC Path': '/data/audio/a_aaaaaaaa.m4a',
+        },
+        {
+          Hash: blankCopy,
+          'Compressed Path': '/data/audio/b_bbbbbbbb.webm',
+          'Compressed AAC Path': '  ',
+        },
+      ],
+      // A variant catalog written before the column existed.
+      '/data/listening.csv': [
+        { Hash: noColumn, 'Compressed Path': '/data/audio/listen/c.webm' },
+        {
+          Hash: withCopy,
+          'Compressed Path': '/data/audio/listen/a.webm',
+          'Compressed AAC Path': '/data/audio/listen/a.m4a',
+        },
+      ],
+    };
+    mockReadFile.mockImplementation(async (file: string) => `content:${file}`);
+    mockParse.mockImplementation(
+      (
+        content: string,
+        options: {
+          complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void;
+        },
+      ) => {
+        options.complete({
+          data: rowsByFile[content.replace(/^content:/, '')] ?? [],
+          errors: [],
+        });
+      },
+    );
+
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('success');
+    const entries = mockTx.catalogEntry.createMany.mock.calls[0][0].data;
+    const entryPaths = Object.fromEntries(
+      entries.map((row: { audioHash: string; compressedAacPath: string | null }) => [
+        row.audioHash,
+        row.compressedAacPath,
+      ]),
+    );
+    expect(entryPaths).toEqual({
+      [withCopy]: '/data/audio/a_aaaaaaaa.m4a',
+      [blankCopy]: null,
+    });
+    const listening = mockTx.catalogListeningEntry.createMany.mock.calls[0][0].data;
+    expect(
+      Object.fromEntries(
+        listening.map((row: { audioHash: string; compressedAacPath: string | null }) => [
+          row.audioHash,
+          row.compressedAacPath,
+        ]),
+      ),
+    ).toEqual({
+      [noColumn]: null,
+      [withCopy]: '/data/audio/listen/a.m4a',
+    });
+  });
+
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
       id: '20251222_144441',

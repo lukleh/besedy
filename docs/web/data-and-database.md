@@ -67,13 +67,16 @@ configuration error.
 - **Duration precedence:** metadata `Duration` first, then archived `Duration`
 - **Path resolution:**
   - `compressed_path` from archived `Compressed Path`
+  - `compressed_aac_path` from archived `Compressed AAC Path`, the AAC-in-MP4 copy that
+    `catalog archive` writes next to the Opus WebM (#291); `NULL` when the column is
+    missing or blank, and the WebM is then the only file
   - `original_path` from metadata full/original path when available, otherwise archived `Original Path`
 
 Rows missing from one source still exist in `catalog_entry` but remain non-actionable.
 
 ### WorkflowVariant Model
 
-`WorkflowVariant` enables alternate listening sources per catalog. Each variant points to a separate archived catalog via `listeningArchivedCatalogPath`. Variant availability is tracked in `catalog_listening_entry`, synced independently from the main catalog entries.
+`WorkflowVariant` enables alternate listening sources per catalog. Each variant points to a separate archived catalog via `listeningArchivedCatalogPath`. Variant availability is tracked in `catalog_listening_entry`, synced independently from the main catalog entries; its `compressed_aac_path` comes from the variant catalog's `Compressed AAC Path` in the same way.
 
 ### Audio Source Resolution
 
