@@ -399,19 +399,17 @@ export async function GET(
           await getListeningAudioPaths(catalogId, variant.variant, hash)
         : undefined;
       // Fall back to archived if listening not available
-      if (listening) {
-        audioPath = wantsAac ? listening.compressedAacPath : listening.compressedPath;
-        servedSource = "listening";
-      } else {
-        audioPath = wantsAac ? entry.compressedAacPath : entry.compressedPath;
-        servedSource = "archived";
-      }
+      servedSource = listening ? "listening" : "archived";
+      audioPath = pickFormat(listening ?? entry, wantsAac);
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
     } else {
       // Default: use archived path
-      audioPath = wantsAac ? entry.compressedAacPath : entry.compressedPath;
+      audioPath = pickFormat(entry, wantsAac);
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
     }
+
+    // Audit records keep their old shape for the default WebM.
+    const auditFormat = wantsAac ? "aac" : undefined;
 
     if (!audioPath && wantsAac) {
       const response = NextResponse.json(
@@ -537,9 +535,9 @@ export async function GET(
         // open.
         const range: AudioStreamRange = { start, end, fileSize };
         if (forceDownload) {
-          await logAudioDownloaded(userId, hash, catalogId, audioSource);
+          await logAudioDownloaded(userId, hash, catalogId, audioSource, auditFormat);
         } else {
-          await logAudioStreamed(userId, hash, catalogId, range);
+          await logAudioStreamed(userId, hash, catalogId, range, auditFormat);
         }
 
         const response = createAudioStreamResponse(
@@ -572,7 +570,7 @@ export async function GET(
     // Full file request (no Range header)
     if (forceDownload) {
       // Downloads get the full file
-      await logAudioDownloaded(userId, hash, catalogId, audioSource);
+      await logAudioDownloaded(userId, hash, catalogId, audioSource, auditFormat);
       const response = createAudioStreamResponse(
         request,
         resolvedAudioPath,
@@ -602,7 +600,7 @@ export async function GET(
     // response. Sending a synthetic first chunk as 206 is not reliably
     // interoperable across browsers and can truncate playback.
     const range: AudioStreamRange = { start: 0, end: fileSize - 1, fileSize };
-    await logAudioStreamed(userId, hash, catalogId, range);
+    await logAudioStreamed(userId, hash, catalogId, range, auditFormat);
 
     const response = createAudioStreamResponse(
       request,
@@ -663,6 +661,14 @@ async function resolveVariant(groupId: string, variantName?: string | null) {
     where: { workflowGroupId: groupId },
     orderBy: { variant: "asc" },
   });
+}
+
+/** The file for the requested format: the AAC-in-MP4 copy or the WebM. */
+function pickFormat(
+  paths: { compressedPath?: string | null; compressedAacPath?: string | null },
+  wantsAac: boolean
+): string | undefined {
+  return (wantsAac ? paths.compressedAacPath : paths.compressedPath) ?? undefined;
 }
 
 /**

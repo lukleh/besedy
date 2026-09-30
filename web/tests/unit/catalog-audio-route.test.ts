@@ -222,7 +222,7 @@ describe("catalog audio route", () => {
         start: 0,
         end: FILE_SIZE - 1,
         fileSize: FILE_SIZE,
-      });
+      }, undefined);
 
       const event = findStructuredEvent(infoSpy.mock.calls as unknown[][], "audio_route_response");
       expect(event).toMatchObject({
@@ -265,7 +265,7 @@ describe("catalog audio route", () => {
       start: 0,
       end: FILE_SIZE - 1,
       fileSize: FILE_SIZE,
-    });
+    }, undefined);
     await response.arrayBuffer();
   });
 
@@ -291,7 +291,7 @@ describe("catalog audio route", () => {
       start: expectedStart,
       end: FILE_SIZE - 1,
       fileSize: FILE_SIZE,
-    });
+    }, undefined);
     await response.arrayBuffer();
   });
 
@@ -716,6 +716,13 @@ describe("catalog audio route", () => {
         expect(mockValidatePathAsync).toHaveBeenCalledWith(aacPath);
         const event = findStructuredEvent(infoSpy.mock.calls as unknown[][], "audio_route_response");
         expect(event).toMatchObject({ reason: "range_stream", format: "aac", servedSource: "archived" });
+        expect(mockLogAudioStreamed).toHaveBeenCalledWith(
+          "user-1",
+          HASH,
+          CATALOG_ID,
+          { start: 0, end: 99, fileSize: 2048 },
+          "aac"
+        );
         await response.arrayBuffer();
       } finally {
         infoSpy.mockRestore();
@@ -786,7 +793,13 @@ describe("catalog audio route", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe("audio/mp4");
       expect(response.headers.get("Content-Disposition")).toContain('filename="recording.m4a"');
-      expect(mockLogAudioDownloaded).toHaveBeenCalledWith("user-1", HASH, CATALOG_ID, "archived");
+      expect(mockLogAudioDownloaded).toHaveBeenCalledWith(
+        "user-1",
+        HASH,
+        CATALOG_ID,
+        "archived",
+        "aac"
+      );
       await response.arrayBuffer();
     });
 

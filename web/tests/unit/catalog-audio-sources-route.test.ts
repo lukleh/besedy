@@ -97,6 +97,7 @@ describe("catalog audio sources route", () => {
       canAccessRecording: true,
     });
     prisma.catalogEntry.findUnique.mockResolvedValue({
+      compressedPath: "/data/audio/talk_aaaaaaaa.webm",
       compressedAacPath: "/data/audio/talk_aaaaaaaa.m4a",
     });
     prisma.workflowVariant.findMany.mockResolvedValue([
@@ -107,8 +108,8 @@ describe("catalog audio sources route", () => {
     prisma.catalogListeningEntry.findUnique.mockImplementation(
       async ({ where }: { where: { workflowGroupId_variant_audioHash: { variant: string } } }) => {
         const variant = where.workflowGroupId_variant_audioHash.variant;
-        if (variant === "enhanced") return { audioHash: "a".repeat(64), compressedAacPath: "/x.m4a" };
-        if (variant === "quiet") return { audioHash: "a".repeat(64), compressedAacPath: null };
+        if (variant === "enhanced") return { compressedPath: "/x.webm", compressedAacPath: "/x.m4a" };
+        if (variant === "quiet") return { compressedPath: "/q.webm", compressedAacPath: null };
         return null;
       },
     );
@@ -141,7 +142,10 @@ describe("catalog audio sources route", () => {
   it("lists only the WebM when the archive has no AAC copy yet", async () => {
     requireAuth.mockResolvedValue("user-1");
     getRecordingCapability.mockResolvedValue({ catalogExists: true, canAccessRecording: true });
-    prisma.catalogEntry.findUnique.mockResolvedValue({ compressedAacPath: null });
+    prisma.catalogEntry.findUnique.mockResolvedValue({
+      compressedPath: "/data/audio/talk_aaaaaaaa.webm",
+      compressedAacPath: null,
+    });
     prisma.workflowVariant.findMany.mockResolvedValue([]);
 
     const response = await getAudioSources(
@@ -155,5 +159,22 @@ describe("catalog audio sources route", () => {
     expect(body.sources).toEqual([
       { id: "archived", label: "Archived", type: "archived", available: true, formats: ["webm"] },
     ]);
+  });
+
+  it("lists no format for an archive without a catalogued WebM", async () => {
+    requireAuth.mockResolvedValue("user-1");
+    getRecordingCapability.mockResolvedValue({ catalogExists: true, canAccessRecording: true });
+    prisma.catalogEntry.findUnique.mockResolvedValue({ compressedPath: null, compressedAacPath: null });
+    prisma.workflowVariant.findMany.mockResolvedValue([]);
+
+    const response = await getAudioSources(
+      new NextRequest(
+        `http://localhost/api/catalogs/20250101_120000/recordings/${"a".repeat(64)}/audio/sources`,
+      ),
+      { params: Promise.resolve({ id: "20250101_120000", hash: "a".repeat(64) }) },
+    );
+
+    const body = await response.json();
+    expect(body.sources[0].formats).toEqual([]);
   });
 });
