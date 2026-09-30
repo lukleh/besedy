@@ -20,7 +20,6 @@ from besedy.commands.catalog.archive import (
     ArchiveRequest,
     ArchiveSkippedEntry,
     CompressedEntry,
-    aac_quality_for_opus_bitrate,
     aac_vbr_mode,
     compress_audio_file,
     compute_output_path,
@@ -438,16 +437,7 @@ class TestManifestMigration:
 
 
 class TestAacQuality:
-    """The AAC copy follows the Opus archive's bitrate."""
-
-    def test_nearest_preset(self):
-        assert aac_quality_for_opus_bitrate(32) == "low"
-        assert aac_quality_for_opus_bitrate(48) == "medium"
-        assert aac_quality_for_opus_bitrate(49) == "medium"  # a real production archive
-        assert aac_quality_for_opus_bitrate(40) == "medium"  # a tie rounds up
-        assert aac_quality_for_opus_bitrate(64) == "high"
-        assert aac_quality_for_opus_bitrate(96) == "max"
-        assert aac_quality_for_opus_bitrate(200) == "max"
+    """VBR modes for the m4a format."""
 
     def test_vbr_mode_never_exceeds_the_source(self):
         assert aac_vbr_mode("max", None) == M4A_VBR_MODES["max"]
@@ -522,14 +512,17 @@ class TestAacCopyEncoding:
         # Transcripts and saved positions are shared: the timelines must agree.
         assert abs(float(opus["duration"]) - float(copy["duration"])) < 0.05
 
-    def test_copy_quality_follows_a_custom_opus_bitrate(self, tmp_path, require_ffmpeg, monkeypatch):
+    @pytest.mark.parametrize("quality, bitrate", [("low", None), ("max", 96)])
+    def test_copy_uses_the_fixed_vbr_mode_whatever_the_opus_settings(
+        self, tmp_path, require_ffmpeg, monkeypatch, quality, bitrate
+    ):
         source = _tone(tmp_path / "talk.mp3", seconds=2)
         output = tmp_path / "out" / "talk.webm"
-        qualities: list[str] = []
+        modes: list[int] = []
         original = archive_module._encode_m4a
 
         def spy(*args, **kwargs):  # type: ignore[no-untyped-def]
-            qualities.append(kwargs["quality"])
+            modes.append(kwargs["vbr_mode"])
             return original(*args, **kwargs)
 
         monkeypatch.setattr(archive_module, "_encode_m4a", spy)
@@ -537,17 +530,43 @@ class TestAacCopyEncoding:
             self._row(source),
             output,
             format="opus",
-            quality="low",
+            quality=quality,
             stereo=False,
             ffmpeg_binary="ffmpeg",
             ffprobe_binary="ffprobe",
             use_fdk=False,
-            bitrate_override=96,
+            bitrate_override=bitrate,
             aac_output_path=output.with_suffix(".m4a"),
         )
 
         assert result.compressed is not None
-        assert qualities == ["max"]  # 96 kbps Opus, not the "low" preset
+        assert modes == [archive_module.AAC_COPY_VBR_MODE]
+
+    def test_backfill_uses_the_fixed_vbr_mode(self, tmp_path, require_ffmpeg, monkeypatch):
+        source = _tone(tmp_path / "talk.mp3", seconds=2)
+        webm = tmp_path / "out" / "talk.webm"
+        webm.parent.mkdir()
+        webm.write_bytes(b"opus")
+        modes: list[int] = []
+        original = archive_module._encode_m4a
+
+        def spy(*args, **kwargs):  # type: ignore[no-untyped-def]
+            modes.append(kwargs["vbr_mode"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(archive_module, "_encode_m4a", spy)
+        result = archive_module.backfill_aac_copy(
+            self._row(source),
+            webm,
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+        )
+
+        assert result.values is not None
+        assert webm.with_suffix(".m4a").is_file()
+        assert modes == [archive_module.AAC_COPY_VBR_MODE]
 
     def test_a_failed_copy_keeps_the_opus_archive(self, tmp_path, require_ffmpeg, monkeypatch):
         source = _tone(tmp_path / "talk.mp3", seconds=2)
@@ -649,7 +668,7 @@ class TestBackfillSafety:
 
         jobs, skipped = archive_module._select_backfill_jobs(ArchiveRequest(), rows, manifest_rows)
 
-        assert [(row.sha256, path, kbps) for row, path, kbps in jobs] == [("a" * 64, webm, 40)]
+        assert [(row.sha256, path) for row, path in jobs] == [("a" * 64, webm)]
         assert skipped == []
 
     def test_manifest_writes_keep_symlinks_and_permissions(self, tmp_path):
@@ -681,7 +700,7 @@ class TestBackfillSafety:
         monkeypatch.setattr(
             archive_module,
             "backfill_aac_copy",
-            lambda row, path, kbps, **kwargs: archive_module.AacBackfillResult(
+            lambda row, path, **kwargs: archive_module.AacBackfillResult(
                 row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
             ),
         )
@@ -703,7 +722,7 @@ class TestBackfillSafety:
     def _fake_copy(self, calls=None, delay=0.0, fail=()):
         import time
 
-        def fake(row, path, kbps, **kwargs):
+        def fake(row, path, **kwargs):
             if calls is not None:
                 calls.append(row.sha256)
             time.sleep(delay)
@@ -856,7 +875,7 @@ class TestBackfillSafety:
     ):
         manifest, rows = self._jobs(tmp_path, ["a" * 64])
 
-        def copy_while_removed(row, path, kbps, **kwargs):
+        def copy_while_removed(row, path, **kwargs):
             copy = path.with_suffix(".m4a")
             copy.write_bytes(b"aac")
             # `catalog remove` drops the row while the copy is encoding.
