@@ -81,6 +81,14 @@ from besedy.lib.workflow.common import CsvAudioRow
 OPUS_BITRATES: dict[str, int] = {"low": 32, "medium": 48, "high": 64, "max": 96}
 M4A_VBR_MODES: dict[str, int] = {"low": 2, "medium": 3, "high": 4, "max": 5}
 
+# FDK VBR mode of the AAC-in-MP4 copy, the same for every recording (#291).
+# On 24 kHz mono speech, modes 1-3 all land near 60 kbps (mode 3 is the
+# effective floor) and mode 4 near 73 kbps. On 10-minute excerpts of 20
+# archive recordings, ViSQOL (audio mode) scored mode 3 at 4.69 and mode 4 at
+# 4.71 of about 4.75, never more than 0.07 apart, and NISQA found no
+# difference, so the larger mode buys nothing audible.
+AAC_COPY_VBR_MODE = 3
+
 # Super-wideband sample rate - optimal for speech (captures 0-12 kHz)
 # 24 kHz is sufficient for full speech quality; 48 kHz offers no benefit for voice
 ARCHIVE_SAMPLE_RATE = 24000
@@ -472,20 +480,6 @@ def aac_vbr_mode(quality: str, input_bitrate: int | None) -> int:
     return vbr_mode
 
 
-def aac_quality_for_opus_bitrate(opus_kbps: int) -> str:
-    """The quality preset whose Opus bitrate is closest to ``opus_kbps``.
-
-    The AAC copy follows the Opus archive's actual bitrate, including a
-    custom ``--bitrate`` or an older archive's preset.
-    """
-    # A tie (40 kbps between low and medium) goes up: AAC-LC needs more bits
-    # than Opus for the same speech quality.
-    return min(
-        OPUS_BITRATES,
-        key=lambda preset: (abs(OPUS_BITRATES[preset] - opus_kbps), -OPUS_BITRATES[preset]),
-    )
-
-
 def _run_ffmpeg(cmd: list[str], output_path: Path) -> str | None:
     """Run an encode; on failure remove partial output and return the reason."""
     try:
@@ -504,13 +498,12 @@ def _encode_m4a(
     prepared: PreparedSource,
     output_path: Path,
     *,
-    quality: str,
+    vbr_mode: int,
     stereo: bool,
     ffmpeg_binary: str,
     use_fdk: bool,
-) -> tuple[int, str | None]:
-    """Encode AAC in MP4 from the prepared source; return (VBR mode, error)."""
-    vbr_mode = aac_vbr_mode(quality, prepared.input_bitrate)
+) -> str | None:
+    """Encode AAC in MP4 from the prepared source; return the error, if any."""
     # M4A/AAC supports any sample rate, use capped rate directly
     cmd = build_m4a_command(
         prepared.temp_wav,
@@ -523,7 +516,7 @@ def _encode_m4a(
         use_fdk,
         apply_declipping=prepared.apply_declipping,
     )
-    return vbr_mode, _run_ffmpeg(cmd, output_path)
+    return _run_ffmpeg(cmd, output_path)
 
 
 def _measured_kbps(size_bytes: int, duration_seconds: float) -> int | None:
@@ -612,10 +605,11 @@ def compress_audio_file(
             )
             error = _run_ffmpeg(cmd, output_path)
         else:  # m4a
-            vbr_mode, error = _encode_m4a(
+            vbr_mode = aac_vbr_mode(quality, prepared.input_bitrate)
+            error = _encode_m4a(
                 prepared,
                 output_path,
-                quality=quality,
+                vbr_mode=vbr_mode,
                 stereo=stereo,
                 ffmpeg_binary=ffmpeg_binary,
                 use_fdk=use_fdk,
@@ -626,10 +620,10 @@ def compress_audio_file(
         if error is None and format == "opus" and aac_output_path is not None:
             aac_output_path.unlink(missing_ok=True)
             aac_output_path.parent.mkdir(parents=True, exist_ok=True)
-            _, aac_error = _encode_m4a(
+            aac_error = _encode_m4a(
                 prepared,
                 aac_output_path,
-                quality=aac_quality_for_opus_bitrate(effective_bitrate),
+                vbr_mode=AAC_COPY_VBR_MODE,
                 stereo=stereo,
                 ffmpeg_binary=ffmpeg_binary,
                 use_fdk=use_fdk,
@@ -688,7 +682,6 @@ class AacBackfillResult:
 def backfill_aac_copy(
     row: CsvAudioRow,
     compressed_path: Path,
-    opus_kbps: int,
     *,
     stereo: bool,
     ffmpeg_binary: str,
@@ -698,7 +691,7 @@ def backfill_aac_copy(
     """Encode the AAC copy for an existing Opus archive, next to it.
 
     Uses the same source, loudness values and declip decision as a fresh
-    archive, and the quality preset closest to the archive's Opus bitrate.
+    archive, at the copy's fixed VBR mode (``AAC_COPY_VBR_MODE``).
     """
     source = Path(row.full_path)
     sha256 = row.sha256
@@ -714,10 +707,10 @@ def backfill_aac_copy(
         return AacBackfillResult(sha256, None, ArchiveSkippedEntry(sha256, source, error or ""))
     try:
         aac_path.unlink(missing_ok=True)
-        _, error = _encode_m4a(
+        error = _encode_m4a(
             prepared,
             aac_path,
-            quality=aac_quality_for_opus_bitrate(opus_kbps),
+            vbr_mode=AAC_COPY_VBR_MODE,
             stereo=stereo,
             ffmpeg_binary=ffmpeg_binary,
             use_fdk=use_fdk,
@@ -1058,9 +1051,9 @@ def _select_backfill_jobs(
     request: ArchiveRequest,
     rows: list[CsvAudioRow],
     manifest_rows: list[dict[str, str]],
-) -> tuple[list[tuple[CsvAudioRow, Path, int]], list[ArchiveSkippedEntry]]:
+) -> tuple[list[tuple[CsvAudioRow, Path]], list[ArchiveSkippedEntry]]:
     rows_by_hash = {row.sha256: row for row in rows}
-    jobs: list[tuple[CsvAudioRow, Path, int]] = []
+    jobs: list[tuple[CsvAudioRow, Path]] = []
     skipped: list[ArchiveSkippedEntry] = []
     queued: set[str] = set()
     for manifest_row in manifest_rows:
@@ -1084,18 +1077,14 @@ def _select_backfill_jobs(
             reason = "not in source catalog" if row is None else "archive file not found"
             skipped.append(ArchiveSkippedEntry(sha256, compressed_path, reason))
             continue
-        try:
-            opus_kbps = int(manifest_row.get("Bitrate (kbps)") or 0)
-        except ValueError:
-            opus_kbps = 0
         queued.add(sha256)
-        jobs.append((row, compressed_path, opus_kbps or OPUS_BITRATES[request.quality]))
+        jobs.append((row, compressed_path))
     return jobs, skipped
 
 
 def _run_backfill_jobs(
     request: ArchiveRequest,
-    jobs: list[tuple[CsvAudioRow, Path, int]],
+    jobs: list[tuple[CsvAudioRow, Path]],
     skipped: list[ArchiveSkippedEntry],
     archived_csv_path: Path,
     ffmpeg_binary: str,
@@ -1110,7 +1099,7 @@ def _run_backfill_jobs(
 
     def record(index: int, future: Future[AacBackfillResult], position: int) -> None:
         nonlocal added
-        row, compressed_path, _ = jobs[index]
+        row, compressed_path = jobs[index]
         try:
             result = future.result()
         except Exception as exc:  # one broken job must not end the run
@@ -1146,13 +1135,12 @@ def _run_backfill_jobs(
                 backfill_aac_copy,
                 row,
                 compressed_path,
-                opus_kbps,
                 stereo=request.stereo,
                 ffmpeg_binary=ffmpeg_binary,
                 ffprobe_binary=ffprobe_binary,
                 use_fdk=use_fdk,
             )
-            for row, compressed_path, opus_kbps in jobs
+            for row, compressed_path in jobs
         ]
         index_of = {future: index for index, future in enumerate(futures)}
         try:
