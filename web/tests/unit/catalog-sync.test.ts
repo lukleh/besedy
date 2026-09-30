@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 
-function buildSourceFingerprint(content: string): string {
-  return `v3:sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`;
+// Must equal SOURCE_FINGERPRINT_VERSION (asserted below). The module cannot be
+// imported at the top: it loads fs/promises, which this file mocks.
+const FINGERPRINT_VERSION = 'v4';
+
+function buildSourceFingerprint(
+  content: string,
+  version: string = FINGERPRINT_VERSION,
+): string {
+  return `${version}:sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`;
 }
 
 const mockAccess = vi.fn();
@@ -517,6 +524,40 @@ describe('catalog-sync', () => {
       [noColumn]: null,
       [withCopy]: '/data/audio/listen/a.m4a',
     });
+  });
+
+  it('rebuilds unchanged sources once after the fingerprint version changes', async () => {
+    // A manifest that gained a column while the previous release was running
+    // was synced then, so its bytes match what is stored. Only the version
+    // prefix tells the new release to read it again.
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: null,
+      variants: [],
+    });
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
+      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
+    ]);
+    mockParse.mockImplementation(
+      (
+        _content: string,
+        options: { complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void },
+      ) => {
+        options.complete({ data: [], errors: [] });
+      },
+    );
+
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+    const result = await syncCatalogGroup('20251222_144441');
+
+    const { SOURCE_FINGERPRINT_VERSION } = await import('@/lib/catalog-sync/source-snapshot');
+    expect(SOURCE_FINGERPRINT_VERSION).toBe(FINGERPRINT_VERSION);
+    expect(result.status).toBe('success');
+    expect(result.changedSources).toEqual(['metadata', 'archived']);
   });
 
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {

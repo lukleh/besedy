@@ -754,6 +754,42 @@ describe("catalog audio route", () => {
       }
     });
 
+    // The access checks come before the format is looked at; these pin that
+    // order, so a later refactor cannot serve the copy to someone the WebM
+    // would be refused to.
+    it("denies the AAC copy when the recording is not accessible", async () => {
+      mockRequireCatalogRecordingAccess.mockResolvedValue(
+        NextResponse.json({ error: "Access denied to this recording" }, { status: 403 })
+      );
+
+      const response = await request("format=aac");
+
+      expect(response.status).toBe(403);
+      expect(mockGetCatalogEntry).not.toHaveBeenCalled();
+      expect(mockValidatePathAsync).not.toHaveBeenCalled();
+    });
+
+    it("denies downloading the AAC copy without the download permission", async () => {
+      mockRequireCatalogRecordingDownload.mockResolvedValue(
+        NextResponse.json({ error: "Download not permitted for this recording" }, { status: 403 })
+      );
+
+      const response = await request("format=aac&download=true");
+
+      expect(response.status).toBe(403);
+      expect(mockGetCatalogEntry).not.toHaveBeenCalled();
+    });
+
+    it("downloads the AAC copy under its own file name and audits the download", async () => {
+      const response = await request("format=aac&download=true");
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("audio/mp4");
+      expect(response.headers.get("Content-Disposition")).toContain('filename="recording.m4a"');
+      expect(mockLogAudioDownloaded).toHaveBeenCalledWith("user-1", HASH, CATALOG_ID, "archived");
+      await response.arrayBuffer();
+    });
+
     it("rejects format=aac for the original recording", async () => {
       const response = await request("source=original&format=aac");
       expect(response.status).toBe(400);

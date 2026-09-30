@@ -40,6 +40,7 @@ interface ArchivedPayload {
   [key: string]: string | undefined;
   originalPath?: string;
   compressedPath?: string;
+  compressedAacPath?: string;
   format?: string;
   bitrateKbps?: string;
   originalSizeBytes?: string;
@@ -152,6 +153,7 @@ function toArchivedPayload(row: CsvRow): ArchivedPayload {
   return compactPayload({
     originalPath: getRowValue(row, ["Original Path"]),
     compressedPath: getRowValue(row, ["Compressed Path"]),
+    compressedAacPath: getRowValue(row, ["Compressed AAC Path"]),
     format: getRowValue(row, ["Format"]),
     bitrateKbps: getRowValue(row, ["Bitrate (kbps)"]),
     originalSizeBytes: getRowValue(row, ["Original Size (bytes)"]),
