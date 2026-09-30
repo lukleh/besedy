@@ -45,6 +45,8 @@ interface ArchivedPayload {
   bitrateKbps?: string;
   originalSizeBytes?: string;
   compressedSizeBytes?: string;
+  compressedAacSizeBytes?: string;
+  compressedAacBitrateKbps?: string;
   compressionRatio?: string;
   duration?: string;
 }
@@ -158,6 +160,8 @@ function toArchivedPayload(row: CsvRow): ArchivedPayload {
     bitrateKbps: getRowValue(row, ["Bitrate (kbps)"]),
     originalSizeBytes: getRowValue(row, ["Original Size (bytes)"]),
     compressedSizeBytes: getRowValue(row, ["Compressed Size (bytes)"]),
+    compressedAacSizeBytes: getRowValue(row, ["Compressed AAC Size (bytes)"]),
+    compressedAacBitrateKbps: getRowValue(row, ["Compressed AAC Bitrate (kbps)"]),
     compressionRatio: getRowValue(row, ["Compression Ratio"]),
     duration: getRowValue(row, ["Duration"]),
   });

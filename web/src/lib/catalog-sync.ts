@@ -66,6 +66,8 @@ interface ArchivedPayload {
   bitrateKbps?: string;
   originalSizeBytes?: string;
   compressedSizeBytes?: string;
+  compressedAacSizeBytes?: string;
+  compressedAacBitrateKbps?: string;
   compressionRatio?: string;
   duration?: string;
 }
@@ -302,6 +304,8 @@ function toArchivedPayload(row: CsvRow): ArchivedPayload {
     bitrateKbps: getRowValue(row, ['Bitrate (kbps)']),
     originalSizeBytes: getRowValue(row, ['Original Size (bytes)']),
     compressedSizeBytes: getRowValue(row, ['Compressed Size (bytes)']),
+    compressedAacSizeBytes: getRowValue(row, ['Compressed AAC Size (bytes)']),
+    compressedAacBitrateKbps: getRowValue(row, ['Compressed AAC Bitrate (kbps)']),
     compressionRatio: getRowValue(row, ['Compression Ratio']),
     duration: getRowValue(row, ['Duration']),
   };
@@ -796,7 +800,11 @@ async function syncCatalogGroupAttempt(
                 audioHash,
                 compressedPath,
                 compressedAacPath: optionalPath(
-                  getRowValue(row, ['Compressed AAC Path']),
+                  getRowValue(row, [
+                    'compressed aac path',
+                    'compressed_aac_path',
+                    'Compressed AAC Path',
+                  ]),
                 ),
               };
             })
