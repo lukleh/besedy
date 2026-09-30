@@ -122,38 +122,7 @@ describe("createRadioRuntime", () => {
     }
   });
 
-  it("retries a track as WebM once when its AAC copy fails", async () => {
-    const iphone =
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
-    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
-    try {
-      const runtime = createRadioRuntime();
-      const stop = runtime.start();
-      vi.mocked(fetchJson).mockResolvedValue({
-        hash: "track-1",
-        eventId: 1,
-        title: "Track",
-        hasAacCopy: true,
-        total: 2,
-        historyReset: false,
-      });
-      await runtime.startRadio("catalog-1");
-      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio?format=aac");
-      const fetchesBefore = vi.mocked(fetchJson).mock.calls.length;
-
-      audio.dispatchEvent(new Event("error"));
-
-      // Same track, WebM, and no request for another track.
-      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio");
-      expect(runtime.getSnapshot().currentTrack?.hash).toBe("track-1");
-      expect(vi.mocked(fetchJson).mock.calls.length).toBe(fetchesBefore);
-      stop();
-    } finally {
-      userAgent.mockRestore();
-    }
-  });
-
-  it("moves on when an AAC copy fails after it started playing", async () => {
+  it("moves on to the next track when an AAC copy fails, without a WebM retry", async () => {
     const iphone =
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
     const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
@@ -179,7 +148,7 @@ describe("createRadioRuntime", () => {
         total: 2,
         historyReset: false,
       });
-      audio.readyState = 4;
+      // Nothing loaded (a missing copy): no retry of the same track as WebM.
       audio.dispatchEvent(new Event("error"));
 
       await vi.waitFor(() =>

@@ -77,9 +77,9 @@ function saveHistory(catalogId: string, history: string[]): void {
   }
 }
 
-function getAudioUrl(track: RadioEventTrack, allowAac = true): string {
+function getAudioUrl(track: RadioEventTrack): string {
   const url = `/api/catalogs/${track.catalogId}/recordings/${track.hash}/audio`;
-  return allowAac && track.playAac ? `${url}?format=aac` : url;
+  return track.playAac ? `${url}?format=aac` : url;
 }
 
 function createInitialSnapshot(): RadioRuntimeSnapshot {
@@ -368,26 +368,6 @@ export function createRadioRuntime() {
         networkState: audioElement?.networkState,
         readyState: audioElement?.readyState,
       });
-
-      // The catalog listed an AAC copy the server could not serve (a missing
-      // file is a 404): play the same track from its WebM once before moving
-      // on. Only when nothing loaded; a copy that fails mid-play moves on to
-      // the next track like any other error.
-      const track = snapshot.currentTrack;
-      if (
-        track &&
-        src.includes("format=aac") &&
-        audio &&
-        audioElement.readyState === HTMLMediaElement.HAVE_NOTHING
-      ) {
-        logger.warn("AAC copy failed; retrying the track as WebM", { hash: track.hash });
-        audio.src = getAudioUrl(track, false);
-        audio.load();
-        audio.play().catch((error: unknown) => {
-          logger.error("Failed to play:", error);
-        });
-        return;
-      }
 
       playNextEventTrack();
     };

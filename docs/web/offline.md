@@ -114,8 +114,9 @@ differs), on purpose: finishing it would leave a package Safari cannot stream.
 The radio asks for the copy only after the controlling service worker confirms it
 keys audio by `format` (`GET_AUDIO_FORMAT_SUPPORT`); a worker from before that
 key would answer with a downloaded WebM, so until it updates the radio keeps
-the WebM. An AAC track that fails before anything loads (a missing copy) is
-retried once as WebM; one that fails mid-play moves on to the next track. Their offline transport default is unchanged here;
+the WebM. An AAC track
+that fails moves on to the next track like any other; there is no fallback
+between formats, since a catalogued file is either there or not. The WebKit browsers' offline transport default is unchanged here;
 moving it off the inline copy is #162. The remaining caches are intentionally
 small:
 

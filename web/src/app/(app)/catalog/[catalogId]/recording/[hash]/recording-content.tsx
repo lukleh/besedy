@@ -87,17 +87,18 @@ const audioSourcePreferenceSchema = z.object({
 export const FORMAT_WAIT_TIMEOUT_MS = 3000;
 
 /**
- * True while `waiting` is, for at most FORMAT_WAIT_TIMEOUT_MS: a slow sources
- * or preference request then plays the WebM instead of holding the page.
+ * True while `waiting` is, for at most FORMAT_WAIT_TIMEOUT_MS per `key` (the
+ * recording): a slow sources or preference request then plays the WebM
+ * instead of holding the page, and the next recording gets its own wait.
  */
-function useBoundedWait(waiting: boolean): boolean {
-  const [timedOut, setTimedOut] = useState(false);
+function useBoundedWait(waiting: boolean, key: string): boolean {
+  const [timedOutKey, setTimedOutKey] = useState<string | null>(null);
   useEffect(() => {
     if (!waiting) return;
-    const timeoutId = window.setTimeout(() => setTimedOut(true), FORMAT_WAIT_TIMEOUT_MS);
+    const timeoutId = window.setTimeout(() => setTimedOutKey(key), FORMAT_WAIT_TIMEOUT_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [waiting]);
-  return waiting && !timedOut;
+  }, [waiting, key]);
+  return waiting && timedOutKey !== key;
 }
 
 export default function RecordingContent({
@@ -227,7 +228,8 @@ export default function RecordingContent({
   const awaitingFormat = useBoundedWait(
     browserPrefersAacAudio() &&
       (sourcesLoading === true || preferenceLoading === true) &&
-      !localAudio.src
+      !localAudio.src,
+    hash
   );
   if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending || awaitingFormat) {
     return (

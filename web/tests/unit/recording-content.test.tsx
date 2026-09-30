@@ -555,6 +555,21 @@ describe("RecordingContent transcript toggle", () => {
       );
     });
 
+    it("waits again for the next recording after a timeout", () => {
+      vi.useFakeTimers();
+      useQueryMock.mockImplementation(queries("sources"));
+      const { rerender } = render(
+        <RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />
+      );
+      act(() => {
+        vi.advanceTimersByTime(FORMAT_WAIT_TIMEOUT_MS);
+      });
+      expect(screen.queryByTestId("audio-player")).not.toBeNull();
+
+      rerender(<RecordingContent params={{ catalogId: CATALOG_ID, hash: "b".repeat(64) }} />);
+      expect(screen.queryByTestId("audio-player")).toBeNull();
+    });
+
     it("plays the WebM once the sources take too long", () => {
       vi.useFakeTimers();
       useQueryMock.mockImplementation(queries("sources"));

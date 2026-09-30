@@ -58,6 +58,29 @@ describe("serviceWorkerKeysAudioByFormat", () => {
     await expect(answer).resolves.toBe(false);
   });
 
+  it("asks the same worker again after a timeout, and keeps a real answer", async () => {
+    vi.useFakeTimers();
+    let reply: Reply = null;
+    const postMessage = vi.fn((_message: unknown, ports: MessagePort[]) => {
+      if (reply) ports[0].postMessage(reply);
+    });
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), {
+      serviceWorker: { controller: { postMessage } },
+    }));
+    const { serviceWorkerKeysAudioByFormat, AUDIO_FORMAT_SUPPORT_TIMEOUT_MS } = await load();
+
+    const slow = serviceWorkerKeysAudioByFormat();
+    await vi.advanceTimersByTimeAsync(AUDIO_FORMAT_SUPPORT_TIMEOUT_MS);
+    await expect(slow).resolves.toBe(false);
+    vi.useRealTimers();
+
+    // The worker has started by now and answers.
+    reply = { type: "AUDIO_FORMAT_SUPPORT", formatKey: true };
+    await expect(serviceWorkerKeysAudioByFormat()).resolves.toBe(true);
+    await expect(serviceWorkerKeysAudioByFormat()).resolves.toBe(true);
+    expect(postMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("asks an updated worker again", async () => {
     stubController(null);
     vi.useFakeTimers();
