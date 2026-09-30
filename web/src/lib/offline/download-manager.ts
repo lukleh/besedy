@@ -1535,7 +1535,9 @@ class DownloadManager {
       const audioSource =
         preferredSource ?? sources?.defaultSource ?? 'archived';
       // The same file the page plays: the AAC-in-MP4 copy on WebKit when
-      // this source has one (#291), keyed by format in the audio cache.
+      // this source has one (#291), keyed by format in the audio cache. A
+      // WebM download paused before the copy existed therefore restarts as
+      // the copy rather than finishing a file Safari cannot stream.
       const audioUrl = buildAudioUrl(
         catalogId,
         hash,

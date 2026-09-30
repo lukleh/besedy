@@ -1,6 +1,6 @@
 "use client";
 
-import { use, type ReactNode } from "react";
+import { use, useEffect, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
@@ -83,6 +83,23 @@ const audioSourcePreferenceSchema = z.object({
   sourceId: z.string().nullable(),
 });
 
+/** Longest the player waits for the audio format before it plays the WebM. */
+export const FORMAT_WAIT_TIMEOUT_MS = 3000;
+
+/**
+ * True while `waiting` is, for at most FORMAT_WAIT_TIMEOUT_MS: a slow sources
+ * or preference request then plays the WebM instead of holding the page.
+ */
+function useBoundedWait(waiting: boolean): boolean {
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (!waiting) return;
+    const timeoutId = window.setTimeout(() => setTimedOut(true), FORMAT_WAIT_TIMEOUT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [waiting]);
+  return waiting && !timedOut;
+}
+
 export default function RecordingContent({
   params,
   beforeAudioPlayer,
@@ -126,7 +143,7 @@ export default function RecordingContent({
   const backToListUrl = `/catalog/${catalogId}`;
 
   // Fetch saved audio source preference from database
-  const { data: savedPreference } = useQuery<AudioSourcePreference>({
+  const { data: savedPreference, isLoading: preferenceLoading } = useQuery<AudioSourcePreference>({
     queryKey: ["audio-source-preference", hash, groupKey],
     queryFn: async () => {
       try {
@@ -204,9 +221,14 @@ export default function RecordingContent({
   // soon as that response resolves.
   const recording = data?.entry ?? (isValidatingAccess ? cachedData?.entry : undefined);
 
-  // On WebKit the file depends on /audio/sources (the AAC copy, #291); starting
-  // the player before they arrive would first load the WebM Safari cannot stream.
-  const awaitingFormat = sourcesLoading === true && browserPrefersAacAudio();
+  // On WebKit the file depends on the selected source and whether it has an AAC
+  // copy (#291); starting the player before both are known would first load
+  // the WebM Safari cannot stream. A local package does not depend on them.
+  const awaitingFormat = useBoundedWait(
+    browserPrefersAacAudio() &&
+      (sourcesLoading === true || preferenceLoading === true) &&
+      !localAudio.src
+  );
   if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending || awaitingFormat) {
     return (
       <div className="space-y-3">

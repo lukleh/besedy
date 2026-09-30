@@ -3,6 +3,7 @@
 import { fetchJson } from "@/lib/api/fetch-json";
 import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { createClientLogger } from "@/lib/log/client";
+import { serviceWorkerKeysAudioByFormat } from "@/lib/service-worker/audio-format-support";
 import type { RandomEventResponse } from "@/types/api";
 
 export interface RadioEventTrack {
@@ -15,8 +16,11 @@ export interface RadioEventTrack {
   dateMonth?: number | null;
   dateDay?: number | null;
   locationName?: string | null;
-  /** The recording has an AAC-in-MP4 copy for WebKit browsers (#291). */
-  hasAacCopy?: boolean;
+  /**
+   * Play the recording's AAC-in-MP4 copy (#291): it has one, this is a WebKit
+   * browser, and the service worker keys offline audio by format.
+   */
+  playAac?: boolean;
 }
 
 /** Why the radio last stopped; null while it is playing. */
@@ -75,8 +79,7 @@ function saveHistory(catalogId: string, history: string[]): void {
 
 function getAudioUrl(track: RadioEventTrack, allowAac = true): string {
   const url = `/api/catalogs/${track.catalogId}/recordings/${track.hash}/audio`;
-  // WebKit browsers get the AAC-in-MP4 copy when the recording has one (#291).
-  return allowAac && track.hasAacCopy && browserPrefersAacAudio() ? `${url}?format=aac` : url;
+  return allowAac && track.playAac ? `${url}?format=aac` : url;
 }
 
 function createInitialSnapshot(): RadioRuntimeSnapshot {
@@ -193,6 +196,10 @@ export function createRadioRuntime() {
         params.set("exclude", excludeHashes.join(","));
       }
 
+      // Asked alongside the track so it adds no wait before playback.
+      const aacSafe = browserPrefersAacAudio()
+        ? serviceWorkerKeysAudioByFormat()
+        : Promise.resolve(false);
       const data = await fetchJson<RandomEventResponse>(
         `/api/catalogs/${catalogId}/random-event?${params}`
       );
@@ -221,7 +228,7 @@ export function createRadioRuntime() {
         dateMonth: data.dateMonth,
         dateDay: data.dateDay,
         locationName: data.locationName,
-        hasAacCopy: data.hasAacCopy ?? false,
+        playAac: Boolean(data.hasAacCopy) && (await aacSafe),
       };
 
       playHistory.push(data.hash);
@@ -363,9 +370,16 @@ export function createRadioRuntime() {
       });
 
       // The catalog listed an AAC copy the server could not serve (a missing
-      // file is a 404): play the same track from its WebM once before moving on.
+      // file is a 404): play the same track from its WebM once before moving
+      // on. Only when nothing loaded; a copy that fails mid-play moves on to
+      // the next track like any other error.
       const track = snapshot.currentTrack;
-      if (track && src.includes("format=aac") && audio) {
+      if (
+        track &&
+        src.includes("format=aac") &&
+        audio &&
+        audioElement.readyState === HTMLMediaElement.HAVE_NOTHING
+      ) {
         logger.warn("AAC copy failed; retrying the track as WebM", { hash: track.hash });
         audio.src = getAudioUrl(track, false);
         audio.load();

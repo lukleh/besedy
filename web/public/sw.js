@@ -78,6 +78,11 @@ self.addEventListener('message', (event) => {
         version: self.__BESEDY_WEB_VERSION || null,
       });
       return;
+    case 'GET_AUDIO_FORMAT_SUPPORT':
+      // getCacheKey keeps `format`, so a format=aac request never gets a
+      // downloaded WebM. Pages ask before sending one (#291).
+      event.ports[0]?.postMessage({ type: 'AUDIO_FORMAT_SUPPORT', formatKey: true });
+      return;
     case 'SKIP_WAITING':
       self.skipWaiting();
       return;

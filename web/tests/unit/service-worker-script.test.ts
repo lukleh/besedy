@@ -265,6 +265,21 @@ describe('service worker version handshake', () => {
   });
 });
 
+describe('service worker audio format support', () => {
+  it('tells pages it keys offline audio by format', () => {
+    const { messageHandler } = loadScript();
+    const postMessage = vi.fn();
+    messageHandler({
+      data: { type: 'GET_AUDIO_FORMAT_SUPPORT' },
+      ports: [{ postMessage }],
+    });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'AUDIO_FORMAT_SUPPORT',
+      formatKey: true,
+    });
+  });
+});
+
 describe('service worker constants', () => {
   it('stays in sync with the page-side cache format', () => {
     const { internals } = loadScript();
