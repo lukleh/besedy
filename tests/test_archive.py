@@ -792,8 +792,8 @@ class TestBackfillSafety:
         assert "exception: encoder vanished" in capsys.readouterr().out
 
     @pytest.mark.integration
-    def test_interrupt_stops_queued_copies_and_keeps_running_ones(
-        self, tmp_path, require_ffmpeg, monkeypatch
+    def test_interrupt_keeps_recorded_copies_and_starts_no_queued_ones(
+        self, tmp_path, require_ffmpeg, monkeypatch, capsys
     ):
         manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64, "c" * 64])
         calls: list[str] = []
@@ -815,10 +815,61 @@ class TestBackfillSafety:
         with pytest.raises(KeyboardInterrupt):
             archive_module.run_aac_backfill(ArchiveRequest(parallel=1), rows, manifest)
 
-        # The first copy was recorded, the second was already encoding and is
-        # kept, and the third never started.
-        assert calls == ["a" * 64, "b" * 64]
+        # The first copy was recorded; the one being encoded (whose ffmpeg a
+        # real Ctrl-C stops too) is not waited for; the third never started.
+        assert calls[0] == "a" * 64
+        assert "c" * 64 not in calls
         by_hash = {row["Hash"]: row for row in _read_rows(manifest)[1]}
         assert by_hash["a" * 64]["Compressed AAC Path"] == str(tmp_path / "a.m4a")
-        assert by_hash["b" * 64]["Compressed AAC Path"] == str(tmp_path / "b.m4a")
+        assert by_hash["b" * 64].get("Compressed AAC Path", "") == ""
         assert by_hash["c" * 64].get("Compressed AAC Path", "") == ""
+        assert "Run --backfill-aac again" in capsys.readouterr().out
+
+    @pytest.mark.integration
+    def test_waits_for_the_catalog_ingest_lock(self, tmp_path, require_ffmpeg, monkeypatch):
+        """An ingest worker on an older release appends under this lock only."""
+        import fcntl
+        import threading
+        import time
+
+        manifest, rows = self._jobs(tmp_path, ["a" * 64])
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", self._fake_copy())
+
+        with (tmp_path / ".ingest-20260101_000000.lock").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            worker = threading.Thread(
+                target=archive_module.run_aac_backfill, args=(ArchiveRequest(), rows, manifest)
+            )
+            worker.start()
+            time.sleep(0.5)
+            assert worker.is_alive()
+            assert _read_rows(manifest)[1][0].get("Compressed AAC Path", "") == ""
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        worker.join(timeout=10)
+
+        assert not worker.is_alive()
+        assert _read_rows(manifest)[1][0]["Compressed AAC Path"] == str(tmp_path / "a.m4a")
+
+    @pytest.mark.integration
+    def test_a_copy_whose_row_was_removed_is_deleted(
+        self, tmp_path, require_ffmpeg, monkeypatch, capsys
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64])
+
+        def copy_while_removed(row, path, kbps, **kwargs):
+            copy = path.with_suffix(".m4a")
+            copy.write_bytes(b"aac")
+            # `catalog remove` drops the row while the copy is encoding.
+            _write_rows(manifest, OLD_HEADER, [])
+            return archive_module.AacBackfillResult(
+                row.sha256, {"Compressed AAC Path": str(copy)}, None
+            )
+
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", copy_while_removed)
+
+        archive_module.run_aac_backfill(ArchiveRequest(), rows, manifest)
+
+        assert not (tmp_path / "a.m4a").exists()
+        out = capsys.readouterr().out
+        assert "no longer in the manifest" in out
+        assert "AAC copies added: 0" in out

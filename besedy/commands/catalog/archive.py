@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import os
 import shutil
 import subprocess
@@ -21,10 +22,10 @@ import sys
 import tempfile
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from rich.console import Console
 from rich.markup import escape as rich_escape
@@ -262,6 +263,31 @@ def manifest_lock(path: Path) -> AbstractContextManager[None]:
     never waits for a whole backfill.
     """
     return rewrite_lock(path)
+
+
+@contextmanager
+def catalog_ingest_lock(archived_csv_path: Path) -> Iterator[None]:
+    """Hold the catalog's ingest lock, the one admin uploads take.
+
+    The upload flow (besedy/lib/prefect_jobs/flows/ingest_recording.py) holds
+    `<catalogs>/.ingest-<catalog_id>.lock` around its whole `run-pipeline`.
+    An ingest worker running a release from before `manifest_lock` keeps the
+    manifest open for appends for that whole time, so a backfill that replaced
+    the file then would lose the upload's row; taking this lock around each
+    backfill record keeps even that worker safe. Held for one record at a
+    time, it makes the backfill wait only while an upload is in its pipeline.
+    """
+    target = archived_csv_path.resolve()
+    catalog_id = extract_timestamp_from_archived_catalog(target)
+    if not catalog_id:
+        yield
+        return
+    with (target.parent / f".ingest-{catalog_id}.lock").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _read_header(path: Path) -> list[str]:
@@ -1000,8 +1026,9 @@ def run_aac_backfill(
 
     Each copy is written next to its WebM from the row's source in the
     loudness catalog, and recorded in the manifest as soon as it finishes, so
-    an interrupted run keeps what it did. Each record takes the manifest lock
-    only for that one rewrite (see `manifest_lock`).
+    an interrupted run keeps what it did. Each record takes the catalog's
+    ingest lock and the manifest lock only for that one rewrite (see
+    `catalog_ingest_lock` and `manifest_lock`).
     """
     if not archived_csv_path.exists():
         print(f"Error: no archived manifest to backfill: {archived_csv_path}", file=sys.stderr)
@@ -1080,11 +1107,9 @@ def _run_backfill_jobs(
         print(f"  skipped {skip.sha256[:8]}: {skip.reason} ({skip.source})")
 
     added = 0
-    handled: set[int] = set()
 
     def record(index: int, future: Future[AacBackfillResult], position: int) -> None:
         nonlocal added
-        handled.add(index)
         row, compressed_path, _ = jobs[index]
         try:
             result = future.result()
@@ -1095,10 +1120,21 @@ def _run_backfill_jobs(
         if result.values is not None:
             # Record each copy as it finishes: an interrupted run keeps
             # every copy it made.
-            update_manifest_rows(archived_csv_path, {result.sha256: result.values})
-            added += 1
-            print(f"  [{position}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
-        elif result.skipped is not None:
+            with catalog_ingest_lock(archived_csv_path):
+                changed = update_manifest_rows(archived_csv_path, {result.sha256: result.values})
+            if changed:
+                added += 1
+                print(f"  [{position}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
+                return
+            # The row left the manifest while the copy was encoding (a
+            # `catalog remove`); do not leave its copy behind.
+            Path(str(result.values[AAC_COPY_PATH_COLUMN])).unlink(missing_ok=True)
+            result = AacBackfillResult(
+                row.sha256,
+                None,
+                ArchiveSkippedEntry(row.sha256, compressed_path, "no longer in the manifest"),
+            )
+        if result.skipped is not None:
             skipped.append(result.skipped)
             print(f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}")
 
@@ -1123,18 +1159,17 @@ def _run_backfill_jobs(
             for position, future in enumerate(as_completed(futures), start=1):
                 record(index_of[future], future, position)
         except KeyboardInterrupt:
-            # Stop queued encodes, but keep the copies already being made.
-            for future in futures:
-                future.cancel()
-            running = [
-                i for i, f in enumerate(futures) if i not in handled and not f.cancelled()
-            ]
-            print(f"\nInterrupted: finishing {len(running)} copies already in progress...")
-            for index in running:
-                record(index, futures[index], len(handled) + 1)
+            # Ctrl-C also reaches the ffmpeg processes (same process group),
+            # so the copies being encoded stop too and remove their partial
+            # files. Every copy recorded so far stays; a re-run does the rest.
+            queued = sum(future.cancel() for future in futures)
+            print(
+                f"\nInterrupted after {added} copies: {queued} queued copies not started; "
+                "copies being encoded were stopped. Run --backfill-aac again to finish."
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
             raise
-        finally:
-            executor.shutdown(wait=True, cancel_futures=True)
+        executor.shutdown(wait=True)
 
     print(f"\n  AAC copies added: {added}")
     print(f"  Skipped:          {len(skipped)}")
