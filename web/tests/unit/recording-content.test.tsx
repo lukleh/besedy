@@ -387,6 +387,85 @@ describe("RecordingContent transcript toggle", () => {
     );
   });
 
+  it("plays the AAC copy on WebKit when the selected source lists one", () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    try {
+      useQueryMock.mockImplementation(
+        ({ queryKey }: { queryKey?: unknown[] } = {}) => {
+          const key = queryKey?.[0];
+          if (key === "audio-source-preference") {
+            return { data: { hash: HASH, sourceId: null } };
+          }
+          if (key === "audio-variants") {
+            return {
+              data: {
+                hash: HASH,
+                sources: [
+                  {
+                    id: "archived",
+                    label: "Archived",
+                    type: "archived",
+                    available: true,
+                    formats: ["webm", "aac"],
+                  },
+                ],
+                defaultSource: "archived",
+              },
+            };
+          }
+          return { data: undefined };
+        }
+      );
+
+      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+      expect(audioPlayerMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?format=aac`,
+        })
+      );
+    } finally {
+      userAgent.mockRestore();
+    }
+  });
+
+  it("keeps the formats that /audio/sources reports", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          hash: HASH,
+          sources: [
+            {
+              id: "archived",
+              label: "Archived",
+              type: "archived",
+              available: true,
+              formats: ["webm", "aac"],
+            },
+          ],
+          defaultSource: "archived",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+      const options = useQueryMock.mock.calls
+        .map(([arg]) => arg as { queryKey?: unknown[]; queryFn?: () => Promise<unknown> })
+        .find((arg) => arg.queryKey?.[0] === "audio-variants");
+
+      const data = (await options!.queryFn!()) as { sources: Array<{ formats?: string[] }> };
+
+      // The response schema must not strip the field the AAC choice depends on.
+      expect(data.sources[0].formats).toEqual(["webm", "aac"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("honors the selected audio source while online after a different variant was downloaded", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useDownloadRecordMock.mockReturnValue({

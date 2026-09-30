@@ -1,6 +1,7 @@
 "use client";
 
 import { fetchJson } from "@/lib/api/fetch-json";
+import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { createClientLogger } from "@/lib/log/client";
 import type { RandomEventResponse } from "@/types/api";
 
@@ -14,6 +15,8 @@ export interface RadioEventTrack {
   dateMonth?: number | null;
   dateDay?: number | null;
   locationName?: string | null;
+  /** The recording has an AAC-in-MP4 copy for WebKit browsers (#291). */
+  hasAacCopy?: boolean;
 }
 
 /** Why the radio last stopped; null while it is playing. */
@@ -70,8 +73,10 @@ function saveHistory(catalogId: string, history: string[]): void {
   }
 }
 
-function getAudioUrl(hash: string, catalogId: string): string {
-  return `/api/catalogs/${catalogId}/recordings/${hash}/audio`;
+function getAudioUrl(track: RadioEventTrack): string {
+  const url = `/api/catalogs/${track.catalogId}/recordings/${track.hash}/audio`;
+  // WebKit browsers get the AAC-in-MP4 copy when the recording has one (#291).
+  return track.hasAacCopy && browserPrefersAacAudio() ? `${url}?format=aac` : url;
 }
 
 function createInitialSnapshot(): RadioRuntimeSnapshot {
@@ -163,7 +168,7 @@ export function createRadioRuntime() {
       duration: 0,
     }));
 
-    audio.src = getAudioUrl(track.hash, track.catalogId);
+    audio.src = getAudioUrl(track);
     audio.load();
     audio.play().catch((error: unknown) => {
       logger.error("Failed to play:", error);
@@ -216,6 +221,7 @@ export function createRadioRuntime() {
         dateMonth: data.dateMonth,
         dateDay: data.dateDay,
         locationName: data.locationName,
+        hasAacCopy: data.hasAacCopy ?? false,
       };
 
       playHistory.push(data.hash);

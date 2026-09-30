@@ -6,6 +6,7 @@ import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
+import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
@@ -48,6 +49,7 @@ interface AudioSource {
   type: "archived" | "listening";
   variant?: string;
   available: boolean;
+  formats?: string[];
 }
 
 interface AudioSourcesResponse {
@@ -67,6 +69,7 @@ const audioSourceSchema = z.object({
   type: z.enum(["archived", "listening"]),
   variant: z.string().optional(),
   available: z.boolean(),
+  formats: z.array(z.string()).optional(),
 });
 
 const audioSourcesResponseSchema = z.object({
@@ -176,7 +179,10 @@ export default function RecordingContent({
       ? savedPreference.sourceId
       : null;
   const audioSource = preferredSource || sourcesData?.defaultSource || "archived";
-  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
+  // WebKit browsers get the AAC-in-MP4 copy when this source has one (#291).
+  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources, {
+    preferAac: browserPrefersAacAudio(),
+  });
   // A complete local package plays in preference to the network; the page
   // never learns how it is stored.
   const localAudio = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);

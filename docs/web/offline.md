@@ -92,8 +92,19 @@ network panel show runs of short responses such as `bytes 0-4194303/…` and
 service worker sends it in the GPU process and does not stop reading, so an
 uncapped `bytes=0-` for a multi-hour recording pushed that process past its
 memory limit and WebKit terminated the page. A suffix range keeps its tail; a
-request without `Range` still gets the whole body as a `200`. The remaining
-caches are intentionally small:
+request without `Range` still gets the whole body as a `200`.
+
+Each package is keyed by the URL's `source`, `variant` and `format`
+(`getAudioCacheKey` and the worker's `getCacheKey`, which must agree), with the
+defaults `archived` and `webm` dropped. WebKit browsers (`prefersAacAudio` in
+`web/src/lib/audio-format.ts`: every iOS browser and Safari on macOS) download
+and play the AAC-in-MP4 copy (`format=aac`) when `/audio/sources` lists one for
+the chosen source, because Safari loads a WebM audio file whole into its GPU
+process instead of streaming it (#291). That copy has its own key, so a WebM
+package downloaded earlier on the same device keeps working and is not touched
+by the AAC one's cleanup. Their offline transport default is unchanged here;
+moving it off the inline copy is #162. The remaining caches are intentionally
+small:
 
 - `besedy-offline-shell-v1` stores the session-free `/downloads` document.
 - `besedy-offline-static-v1` stores up to 96 content-hashed Next.js assets

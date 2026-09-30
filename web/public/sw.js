@@ -311,10 +311,13 @@ async function handleAppAssetRequest(request) {
   }
 }
 
+// Must match getAudioCacheKey in src/lib/offline/audio-cache-format.ts: the
+// AAC-in-MP4 copy (`format=aac`, #291) is a different file from the WebM.
 function getCacheKey(url) {
   const parsed = new URL(url, self.location.origin);
   const source = parsed.searchParams.get('source') || 'archived';
   const variant = parsed.searchParams.get('variant') || '';
+  const format = parsed.searchParams.get('format') || 'webm';
 
   parsed.search = '';
   parsed.hash = '';
@@ -323,6 +326,9 @@ function getCacheKey(url) {
   }
   if (variant) {
     parsed.searchParams.set('variant', variant);
+  }
+  if (format !== 'webm') {
+    parsed.searchParams.set('format', format);
   }
   return parsed.toString();
 }

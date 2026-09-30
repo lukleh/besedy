@@ -9,6 +9,8 @@ export interface AudioSourceOption {
   id: string;
   type: "archived" | "listening";
   variant?: string;
+  /** Files the audio route can serve for this source (`/audio/sources`). */
+  formats?: readonly string[];
 }
 
 export function buildRecordingEntryUrl(catalogId: string, hash: string): string {
@@ -28,21 +30,30 @@ export function buildPlaybackProgressUrl(catalogId: string, hash: string): strin
   return `/api/catalogs/${catalogId}/recordings/${hash}/progress`;
 }
 
+/**
+ * The streaming URL for a source. With `preferAac` (see prefersAacAudio), the
+ * URL asks for the AAC-in-MP4 copy, but only when `/audio/sources` lists one
+ * for that source; otherwise it is the WebM URL, unchanged, so existing offline
+ * packages keep their cache keys.
+ */
 export function buildAudioUrl(
   catalogId: string,
   hash: string,
   audioSource: string,
-  sources: readonly AudioSourceOption[]
+  sources: readonly AudioSourceOption[],
+  options: { preferAac?: boolean } = {}
 ): string {
   const selectedSource = sources.find((source) => source.id === audioSource);
+  const params = new URLSearchParams();
   if (selectedSource?.type === "listening" && selectedSource.variant) {
-    const params = new URLSearchParams({
-      source: "listening",
-      variant: selectedSource.variant,
-    });
-    return `/api/catalogs/${catalogId}/recordings/${hash}/audio?${params.toString()}`;
+    params.set("source", "listening");
+    params.set("variant", selectedSource.variant);
   }
-  return `/api/catalogs/${catalogId}/recordings/${hash}/audio`;
+  if (options.preferAac && selectedSource?.formats?.includes("aac")) {
+    params.set("format", "aac");
+  }
+  const query = params.toString();
+  return `/api/catalogs/${catalogId}/recordings/${hash}/audio${query ? `?${query}` : ""}`;
 }
 
 export function buildAudioDownloadUrl(catalogId: string, hash: string, source: "archived" | "original"): string {

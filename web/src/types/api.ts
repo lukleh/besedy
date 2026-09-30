@@ -17,6 +17,8 @@ export interface RandomEventResponse {
   dateMonth?: number | null;
   dateDay?: number | null;
   locationName?: string | null;
+  /** The recording has an AAC-in-MP4 copy for WebKit browsers (#291). */
+  hasAacCopy?: boolean;
   total: number;
   historyReset: boolean;
 }

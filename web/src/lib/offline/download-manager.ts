@@ -14,6 +14,7 @@
  * see each other's changes.
  */
 import { createClientLogger } from '@/lib/log/client';
+import { browserPrefersAacAudio } from '@/lib/audio-format';
 import {
   buildAudioSourcePreferenceUrl,
   buildAudioSourcesUrl,
@@ -1533,11 +1534,14 @@ class DownloadManager {
           : null;
       const audioSource =
         preferredSource ?? sources?.defaultSource ?? 'archived';
+      // The same file the page plays: the AAC-in-MP4 copy on WebKit when
+      // this source has one (#291), keyed by format in the audio cache.
       const audioUrl = buildAudioUrl(
         catalogId,
         hash,
         audioSource,
         availableSources,
+        { preferAac: browserPrefersAacAudio() },
       );
       const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
 

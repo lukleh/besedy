@@ -42,15 +42,17 @@ export async function withAudioCacheLock<T>(
 }
 
 /**
- * Normalize an audio URL into its cache key. Only `source` and `variant`
- * change the bytes served, so only they survive; `archived` is the default
- * source and is dropped so `…/audio` and `…/audio?source=archived` share one
- * entry.
+ * Normalize an audio URL into its cache key. Only `source`, `variant` and
+ * `format` change the bytes served, so only they survive. The defaults
+ * (`archived`, `webm`) are dropped so `…/audio` and `…/audio?source=archived`
+ * share one entry, and so WebM packages downloaded before `format` existed
+ * keep their keys; the AAC-in-MP4 copy (#291) gets its own.
  */
 export function getAudioCacheKey(url: string, origin: string): string {
   const parsed = new URL(url, origin);
   const source = parsed.searchParams.get("source") || "archived";
   const variant = parsed.searchParams.get("variant") || "";
+  const format = parsed.searchParams.get("format") || "webm";
 
   parsed.search = "";
   parsed.hash = "";
@@ -59,6 +61,9 @@ export function getAudioCacheKey(url: string, origin: string): string {
   }
   if (variant) {
     parsed.searchParams.set("variant", variant);
+  }
+  if (format !== "webm") {
+    parsed.searchParams.set("format", format);
   }
   return parsed.toString();
 }

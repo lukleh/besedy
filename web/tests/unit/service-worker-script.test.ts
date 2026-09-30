@@ -284,6 +284,9 @@ describe('service worker constants', () => {
       `/api/catalogs/cat/recordings/${HASH}/audio`,
       `/api/catalogs/cat/recordings/${HASH}/audio?source=archived`,
       `/api/catalogs/cat/recordings/${HASH}/audio?source=listening&variant=loud`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?format=aac`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?format=webm`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?source=listening&variant=loud&format=aac&local=1`,
     ]) {
       const key = getAudioCacheKey(url, ORIGIN);
       expect(internals.getCacheKey(url)).toBe(key);
