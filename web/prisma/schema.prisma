@@ -693,6 +693,8 @@ model CatalogEntry {
   workflowGroupId       String   @map("workflow_group_id") @db.VarChar(15)
   audioHash             String   @map("audio_hash") @db.VarChar(64)
   compressedPath        String?  @map("compressed_path")
+  /// AAC-in-MP4 copy next to the Opus WebM, for browsers that cannot stream WebM (#291)
+  compressedAacPath     String?  @map("compressed_aac_path")
   originalPath          String?  @map("original_path")
   filename              String?
   scanRoot              String?  @map("scan_root")
@@ -743,12 +745,14 @@ model CatalogDuplicate {
 
 /// Hash availability in each listening variant catalog
 model CatalogListeningEntry {
-  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
-  variant         String   @db.VarChar(50)
-  audioHash       String   @map("audio_hash") @db.VarChar(64)
-  compressedPath  String   @map("compressed_path")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  workflowGroupId   String   @map("workflow_group_id") @db.VarChar(15)
+  variant           String   @db.VarChar(50)
+  audioHash         String   @map("audio_hash") @db.VarChar(64)
+  compressedPath    String   @map("compressed_path")
+  /// AAC-in-MP4 copy of this variant's archive, when the variant catalog has one (#291)
+  compressedAacPath String?  @map("compressed_aac_path")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   workflowGroup   WorkflowGroup   @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   workflowVariant WorkflowVariant @relation(fields: [workflowGroupId, variant], references: [workflowGroupId, variant], onDelete: Cascade)

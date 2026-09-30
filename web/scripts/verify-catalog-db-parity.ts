@@ -40,10 +40,13 @@ interface ArchivedPayload {
   [key: string]: string | undefined;
   originalPath?: string;
   compressedPath?: string;
+  compressedAacPath?: string;
   format?: string;
   bitrateKbps?: string;
   originalSizeBytes?: string;
   compressedSizeBytes?: string;
+  compressedAacSizeBytes?: string;
+  compressedAacBitrateKbps?: string;
   compressionRatio?: string;
   duration?: string;
 }
@@ -101,6 +104,14 @@ function normalizeHeader(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** The AAC copy path as sync stores it: trimmed, or null when blank or missing. */
+function expectedAacPath(row: CsvRow): string | null {
+  return (
+    getRowValue(row, ["compressed aac path", "compressed_aac_path", "Compressed AAC Path"])?.trim() ||
+    null
+  );
+}
+
 function getRowValue(row: CsvRow, candidates: string[]): string | undefined {
   const normalizedCandidates = new Set(candidates.map((c) => normalizeHeader(c)));
   for (const key of Object.keys(row)) {
@@ -152,10 +163,13 @@ function toArchivedPayload(row: CsvRow): ArchivedPayload {
   return compactPayload({
     originalPath: getRowValue(row, ["Original Path"]),
     compressedPath: getRowValue(row, ["Compressed Path"]),
+    compressedAacPath: getRowValue(row, ["Compressed AAC Path"]),
     format: getRowValue(row, ["Format"]),
     bitrateKbps: getRowValue(row, ["Bitrate (kbps)"]),
     originalSizeBytes: getRowValue(row, ["Original Size (bytes)"]),
     compressedSizeBytes: getRowValue(row, ["Compressed Size (bytes)"]),
+    compressedAacSizeBytes: getRowValue(row, ["Compressed AAC Size (bytes)"]),
+    compressedAacBitrateKbps: getRowValue(row, ["Compressed AAC Bitrate (kbps)"]),
     compressionRatio: getRowValue(row, ["Compression Ratio"]),
     duration: getRowValue(row, ["Duration"]),
   });
@@ -341,13 +355,17 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
   }
 
   const expectedListeningByVariant = new Map<string, Set<string>>();
+  const expectedListeningAacPaths = new Map<string, string | null>();
   for (const variant of group.variants) {
     const variantSet = new Set<string>();
     if (variant.listeningArchivedCatalogPath) {
       const listeningRows = await loadCsvRows(variant.listeningArchivedCatalogPath);
       for (const row of listeningRows) {
         const hash = normalizeHash(getRowValue(row, ["sha256", "hash", "Hash"]));
-        if (hash) variantSet.add(hash);
+        if (hash) {
+          variantSet.add(hash);
+          expectedListeningAacPaths.set(`${variant.variant}\u0000${hash}`, expectedAacPath(row));
+        }
       }
     }
     expectedListeningByVariant.set(variant.variant, variantSet);
@@ -365,6 +383,7 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
         detailsPayloadVersion: true,
         sourceMetadataPayload: true,
         sourceArchivedPayload: true,
+        compressedAacPath: true,
       },
     }),
     prisma.catalogDuplicate.findMany({
@@ -382,6 +401,7 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
       select: {
         variant: true,
         audioHash: true,
+        compressedAacPath: true,
       },
     }),
   ]);
@@ -453,6 +473,15 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
     if (stableStringify(dbArchivedPayload) !== stableStringify(expectedArchivedPayload)) {
       mismatches.push(`catalog_entry.source_archived_payload mismatch for ${hash}`);
     }
+    // The column itself, not only the payload: a sync by a release that did
+    // not read it leaves it NULL (the reason for the v4 fingerprint bump).
+    const archivedRow = archivedByHash.get(hash);
+    const expectedAac = archivedRow ? expectedAacPath(archivedRow) : null;
+    if ((row.compressedAacPath ?? null) !== expectedAac) {
+      mismatches.push(
+        `catalog_entry.compressed_aac_path mismatch for ${hash}: db=${row.compressedAacPath ?? "NULL"} expected=${expectedAac ?? "NULL"}`
+      );
+    }
   }
 
   const dbDuplicateKeys = new Set(
@@ -494,6 +523,14 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
     const set = dbListeningByVariant.get(row.variant) ?? new Set<string>();
     set.add(row.audioHash);
     dbListeningByVariant.set(row.variant, set);
+    const key = `${row.variant}\u0000${row.audioHash}`;
+    if (!expectedListeningAacPaths.has(key)) continue;
+    const expectedAac = expectedListeningAacPaths.get(key) ?? null;
+    if ((row.compressedAacPath ?? null) !== expectedAac) {
+      mismatches.push(
+        `catalog_listening_entry.compressed_aac_path mismatch for variant=${row.variant} ${row.audioHash}: db=${row.compressedAacPath ?? "NULL"} expected=${expectedAac ?? "NULL"}`
+      );
+    }
   }
 
   const allVariants = new Set([

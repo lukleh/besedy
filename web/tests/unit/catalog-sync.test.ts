@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 
-function buildSourceFingerprint(content: string): string {
-  return `v3:sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`;
+// Must equal SOURCE_FINGERPRINT_VERSION (asserted below). A static import of
+// source-snapshot would run before the mock functions below are initialized,
+// because it loads fs/promises and this file's vi.mock factories are hoisted.
+const FINGERPRINT_VERSION = 'v4';
+
+function buildSourceFingerprint(
+  content: string,
+  version: string = FINGERPRINT_VERSION,
+): string {
+  return `${version}:sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`;
 }
 
 const mockAccess = vi.fn();
@@ -429,6 +437,139 @@ describe('catalog-sync', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('stores the AAC copy path from the archived and listening catalogs, or null', async () => {
+    const withCopy = 'a'.repeat(64);
+    const blankCopy = 'b'.repeat(64);
+    const noColumn = 'c'.repeat(64);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: null,
+      variants: [
+        { variant: 'enhanced', listeningArchivedCatalogPath: '/data/listening.csv' },
+      ],
+    });
+    // Every source has a stale fingerprint, so all of them are rebuilt.
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: 'old' },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: 'old' },
+      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
+      { sourceKey: 'listening:enhanced', filePath: '/data/listening.csv', fingerprint: 'old' },
+    ]);
+    const rowsByFile: Record<string, Array<Record<string, string>>> = {
+      '/data/meta.csv': [withCopy, blankCopy].map((hash) => ({ Hash: hash })),
+      '/data/archived.csv': [
+        {
+          Hash: withCopy,
+          'Compressed Path': '/data/audio/a_aaaaaaaa.webm',
+          'Compressed AAC Path': '/data/audio/a_aaaaaaaa.m4a',
+          'Compressed AAC Size (bytes)': '1234',
+          'Compressed AAC Bitrate (kbps)': '68',
+        },
+        {
+          Hash: blankCopy,
+          'Compressed Path': '/data/audio/b_bbbbbbbb.webm',
+          'Compressed AAC Path': '  ',
+        },
+      ],
+      // A variant catalog written before the column existed.
+      '/data/listening.csv': [
+        { Hash: noColumn, 'Compressed Path': '/data/audio/listen/c.webm' },
+        // Listening catalogs may use the snake_case column names.
+        {
+          Hash: withCopy,
+          compressed_path: '/data/audio/listen/a.webm',
+          compressed_aac_path: '/data/audio/listen/a.m4a',
+        },
+      ],
+    };
+    mockReadFile.mockImplementation(async (file: string) => `content:${file}`);
+    mockParse.mockImplementation(
+      (
+        content: string,
+        options: {
+          complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void;
+        },
+      ) => {
+        options.complete({
+          data: rowsByFile[content.replace(/^content:/, '')] ?? [],
+          errors: [],
+        });
+      },
+    );
+
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('success');
+    const entries = mockTx.catalogEntry.createMany.mock.calls[0][0].data;
+    const entryPaths = Object.fromEntries(
+      entries.map((row: { audioHash: string; compressedAacPath: string | null }) => [
+        row.audioHash,
+        row.compressedAacPath,
+      ]),
+    );
+    expect(entryPaths).toEqual({
+      [withCopy]: '/data/audio/a_aaaaaaaa.m4a',
+      [blankCopy]: null,
+    });
+    const withCopyEntry = entries.find(
+      (row: { audioHash: string }) => row.audioHash === withCopy,
+    );
+    expect(withCopyEntry.sourceArchivedPayload).toMatchObject({
+      compressedAacPath: '/data/audio/a_aaaaaaaa.m4a',
+      compressedAacSizeBytes: '1234',
+      compressedAacBitrateKbps: '68',
+    });
+    const listening = mockTx.catalogListeningEntry.createMany.mock.calls[0][0].data;
+    expect(
+      Object.fromEntries(
+        listening.map((row: { audioHash: string; compressedAacPath: string | null }) => [
+          row.audioHash,
+          row.compressedAacPath,
+        ]),
+      ),
+    ).toEqual({
+      [noColumn]: null,
+      [withCopy]: '/data/audio/listen/a.m4a',
+    });
+  });
+
+  it('rebuilds unchanged sources once after the fingerprint version changes', async () => {
+    // A manifest that gained a column while the previous release was running
+    // was synced then, so its bytes match what is stored. Only the version
+    // prefix tells the new release to read it again.
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: null,
+      variants: [],
+    });
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
+      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
+    ]);
+    mockParse.mockImplementation(
+      (
+        _content: string,
+        options: { complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void },
+      ) => {
+        options.complete({ data: [], errors: [] });
+      },
+    );
+
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+    const result = await syncCatalogGroup('20251222_144441');
+
+    const { SOURCE_FINGERPRINT_VERSION } = await import('@/lib/catalog-sync/source-snapshot');
+    expect(SOURCE_FINGERPRINT_VERSION).toBe(FINGERPRINT_VERSION);
+    expect(result.status).toBe('success');
+    expect(result.changedSources).toEqual(['metadata', 'archived']);
   });
 
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {
