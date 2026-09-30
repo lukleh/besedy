@@ -82,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-web
-      - run: npx prisma generate
+      # pretype-check runs prisma generate.
       - run: npm run type-check
 
   web-lint:
@@ -141,33 +141,24 @@ jobs:
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           BETTER_AUTH_URL: http://localhost:3000
 
-  # The main ruleset requires this check name, so it stays although the gate
-  # now also covers the build. It passes only when every split web job
-  # succeeded, and names each one that did not.
+  # The main ruleset requires this check name and no other web check, so it
+  # stays and gates every web job, including the build and the correction
+  # integration run. It passes only when all of them succeeded, and names
+  # each one that did not. It skips when the run itself was cancelled.
   web:
     name: Web type-check + lint + unit
-    if: always()
-    needs: [web-typecheck, web-lint, web-unit, web-build]
+    if: ${{ !cancelled() }}
+    needs: [web-typecheck, web-lint, web-unit, web-build, correction-integration]
     runs-on: ubuntu-latest
     steps:
       - name: Require every web job to succeed
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
-          results="$(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<<"$NEEDS")"
-          if [ -z "$results" ]; then
-            echo "::error::No web job results to check"
-            exit 1
-          fi
-          failed=0
-          while read -r job result; do
-            echo "$job: $result"
-            if [ "$result" != success ]; then
-              echo "::error title=$job $result::The $job job finished as $result"
-              failed=1
-            fi
-          done <<<"$results"
-          exit "$failed"
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          jq -r 'to_entries[] | select(.value.result != "success")
+            | "::error title=\(.key) \(.value.result)::The \(.key) job finished as \(.value.result)"' <<<"$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null
 
   correction-integration:
     name: Transcript correction integration

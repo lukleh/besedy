@@ -1,7 +1,7 @@
 name: Set up web dependencies
 description: >-
   Install Node and web/node_modules, reusing a cached install while
-  web/package-lock.json and the Node version are unchanged.
+  web/package.json, web/package-lock.json and the Node version are unchanged.
 runs:
   using: composite
   steps:
@@ -10,13 +10,15 @@ runs:
       with:
         node-version: "24"
     # Cache the installed tree rather than npm's download cache: a hit skips
-    # npm ci entirely. The key carries the exact Node version so native
-    # modules are rebuilt when the runner's Node changes.
+    # npm ci entirely. The key carries the OS, architecture and exact Node
+    # version so native modules are rebuilt when the runner changes, and
+    # package.json as well as the lockfile so a hit never hides a package.json
+    # that npm ci would reject as out of sync.
     - id: modules
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: web/node_modules
-        key: ${{ runner.os }}-node-${{ steps.node.outputs.node-version }}-web-modules-${{ hashFiles('web/package-lock.json') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-node-${{ steps.node.outputs.node-version }}-web-modules-${{ hashFiles('web/package.json', 'web/package-lock.json') }}
     - if: steps.modules.outputs.cache-hit != 'true'
       shell: bash
       working-directory: web
