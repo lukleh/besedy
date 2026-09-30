@@ -431,6 +431,78 @@ describe("RecordingContent transcript toggle", () => {
     }
   });
 
+  it("keeps playing a WebM download on WebKit once the source also has an AAC copy", () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    try {
+      useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+      const webmUrl = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
+      useDownloadRecordMock.mockReturnValue({
+        status: "complete",
+        audioUrl: webmUrl,
+        audioCacheKey: new URL(webmUrl, window.location.origin).toString(),
+      });
+      useQueryMock.mockImplementation(
+        ({ queryKey }: { queryKey?: unknown[] } = {}) => {
+          const key = queryKey?.[0];
+          if (key === "audio-source-preference") {
+            return { data: { hash: HASH, sourceId: null } };
+          }
+          if (key === "audio-variants") {
+            return {
+              data: {
+                hash: HASH,
+                sources: [
+                  { id: "archived", label: "Archived", type: "archived", available: true, formats: ["webm", "aac"] },
+                ],
+                defaultSource: "archived",
+              },
+            };
+          }
+          return { data: undefined };
+        }
+      );
+
+      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+      // The local package, not a network request a previous release's
+      // service worker would answer with that same package's WebM.
+      expect(audioPlayerMock).toHaveBeenCalledWith(
+        expect.objectContaining({ src: expect.stringContaining("local=1") })
+      );
+      expect(audioPlayerMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ src: expect.stringContaining("format=aac") })
+      );
+    } finally {
+      userAgent.mockRestore();
+    }
+  });
+
+  it("waits for /audio/sources before starting the player on WebKit only", () => {
+    const loadingSources = ({ queryKey }: { queryKey?: unknown[] } = {}) => {
+      const key = queryKey?.[0];
+      if (key === "audio-source-preference") return { data: { hash: HASH, sourceId: null } };
+      if (key === "audio-variants") return { data: undefined, isLoading: true };
+      return { data: undefined };
+    };
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+
+    useQueryMock.mockImplementation(loadingSources);
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    try {
+      const { unmount } = render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+      expect(audioPlayerMock).not.toHaveBeenCalled();
+      unmount();
+    } finally {
+      userAgent.mockRestore();
+    }
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+    expect(audioPlayerMock).toHaveBeenCalled();
+  });
+
   it("keeps the formats that /audio/sources reports", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(

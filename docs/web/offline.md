@@ -101,8 +101,12 @@ defaults `archived` and `webm` dropped. WebKit browsers (`prefersAacAudio` in
 and play the AAC-in-MP4 copy (`format=aac`) when `/audio/sources` lists one for
 the chosen source, because Safari loads a WebM audio file whole into its GPU
 process instead of streaming it (#291). That copy has its own key, so a WebM
-package downloaded earlier on the same device keeps working and is not touched
-by the AAC one's cleanup. Their offline transport default is unchanged here;
+package downloaded earlier on the same device is not touched by the AAC one's
+cleanup, and it still counts as the download of that source: the page keeps
+playing it rather than streaming the copy, which a service worker from before
+the `format` key would otherwise answer with that WebM package in 4 MiB pieces.
+On WebKit the player waits for `/audio/sources` before it starts, so it never
+begins on the WebM of a recording that has a copy. Their offline transport default is unchanged here;
 moving it off the inline copy is #162. The remaining caches are intentionally
 small:
 

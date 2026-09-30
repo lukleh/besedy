@@ -27,6 +27,14 @@ describe("prefersAacAudio", () => {
     }
   });
 
+  it("recognises an iPad asking for desktop sites in any browser", () => {
+    // iPadOS reports a Mac user agent in desktop mode; only touch support differs.
+    expect(prefersAacAudio(UA.macChrome, 5)).toBe(true);
+    expect(prefersAacAudio(UA.macFirefox, 5)).toBe(true);
+    expect(prefersAacAudio(UA.macChrome, 0)).toBe(false);
+    expect(prefersAacAudio(UA.androidChrome, 5)).toBe(false);
+  });
+
   it("keeps the WebM for Chrome, Edge, Firefox and Android", () => {
     for (const ua of [UA.macChrome, UA.macEdge, UA.macFirefox, UA.androidChrome, UA.windowsChrome]) {
       expect(prefersAacAudio(ua)).toBe(false);

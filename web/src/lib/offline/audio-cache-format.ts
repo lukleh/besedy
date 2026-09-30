@@ -28,6 +28,16 @@ export interface AudioCacheMeta {
   generation?: string;
 }
 
+/**
+ * A cache key without its `format`: the recording and source it stores.
+ * Used to recognise a download of the same source in the other format.
+ */
+export function withoutAudioFormat(cacheKey: string): string {
+  const parsed = new URL(cacheKey);
+  parsed.searchParams.delete("format");
+  return parsed.toString();
+}
+
 /** Shared with the worker; never hold this lock across a network request. */
 export function getAudioCacheLockName(baseKey: string): string {
   return `besedy-audio-cache:${baseKey}`;

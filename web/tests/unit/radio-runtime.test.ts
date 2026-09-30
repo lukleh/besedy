@@ -122,6 +122,37 @@ describe("createRadioRuntime", () => {
     }
   });
 
+  it("retries a track as WebM once when its AAC copy fails", async () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    try {
+      const runtime = createRadioRuntime();
+      const stop = runtime.start();
+      vi.mocked(fetchJson).mockResolvedValue({
+        hash: "track-1",
+        eventId: 1,
+        title: "Track",
+        hasAacCopy: true,
+        total: 2,
+        historyReset: false,
+      });
+      await runtime.startRadio("catalog-1");
+      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio?format=aac");
+      const fetchesBefore = vi.mocked(fetchJson).mock.calls.length;
+
+      audio.dispatchEvent(new Event("error"));
+
+      // Same track, WebM, and no request for another track.
+      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio");
+      expect(runtime.getSnapshot().currentTrack?.hash).toBe("track-1");
+      expect(vi.mocked(fetchJson).mock.calls.length).toBe(fetchesBefore);
+      stop();
+    } finally {
+      userAgent.mockRestore();
+    }
+  });
+
   it("hands off playback without clearing listening history", async () => {
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === "besedy-radio-history-catalog-1") {

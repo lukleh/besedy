@@ -141,7 +141,7 @@ export default function RecordingContent({
   });
 
   // Fetch available audio sources
-  const { data: sourcesData } = useQuery<AudioSourcesResponse>({
+  const { data: sourcesData, isLoading: sourcesLoading } = useQuery<AudioSourcesResponse>({
     queryKey: ["audio-variants", hash, groupKey],
     queryFn: async () => {
       try {
@@ -204,7 +204,10 @@ export default function RecordingContent({
   // soon as that response resolves.
   const recording = data?.entry ?? (isValidatingAccess ? cachedData?.entry : undefined);
 
-  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending) {
+  // On WebKit the file depends on /audio/sources (the AAC copy, #291); starting
+  // the player before they arrive would first load the WebM Safari cannot stream.
+  const awaitingFormat = sourcesLoading === true && browserPrefersAacAudio();
+  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending || awaitingFormat) {
     return (
       <div className="space-y-3">
         <RecordingPageSkeleton />
