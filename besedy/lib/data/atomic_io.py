@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import os
 import stat
@@ -36,6 +37,7 @@ __all__ = [
     "atomic_path",
     "atomic_write_json",
     "atomic_write_text",
+    "rewrite_lock",
 ]
 
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -191,3 +193,23 @@ def atomic_write_json(
         before_replace=before_replace,
         follow_symlinks=follow_symlinks,
     )
+
+
+@contextlib.contextmanager
+def rewrite_lock(path: str | Path) -> Iterator[None]:
+    """Hold an exclusive lock for reading and rewriting ``path``.
+
+    For files that more than one process rewrites (read, change, atomically
+    replace): each takes this lock around its whole read-modify-write, so none
+    of them replaces the file with a copy missing another's change. The lock
+    file is ``.<name>.lock`` next to the resolved target, so a symlink and the
+    file it points to share one lock.
+    """
+    target = Path(path).resolve()
+    lock_path = target.with_name(f".{target.name}.lock")
+    with lock_path.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
