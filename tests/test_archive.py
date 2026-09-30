@@ -437,10 +437,7 @@ class TestManifestMigration:
 
 
 class TestAacQuality:
-    """VBR modes for the m4a format; the AAC copy uses one fixed mode."""
-
-    def test_copy_uses_vbr_mode_3(self):
-        assert archive_module.AAC_COPY_VBR_MODE == 3
+    """VBR modes for the m4a format."""
 
     def test_vbr_mode_never_exceeds_the_source(self):
         assert aac_vbr_mode("max", None) == M4A_VBR_MODES["max"]
@@ -543,6 +540,32 @@ class TestAacCopyEncoding:
         )
 
         assert result.compressed is not None
+        assert modes == [archive_module.AAC_COPY_VBR_MODE]
+
+    def test_backfill_uses_the_fixed_vbr_mode(self, tmp_path, require_ffmpeg, monkeypatch):
+        source = _tone(tmp_path / "talk.mp3", seconds=2)
+        webm = tmp_path / "out" / "talk.webm"
+        webm.parent.mkdir()
+        webm.write_bytes(b"opus")
+        modes: list[int] = []
+        original = archive_module._encode_m4a
+
+        def spy(*args, **kwargs):  # type: ignore[no-untyped-def]
+            modes.append(kwargs["vbr_mode"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(archive_module, "_encode_m4a", spy)
+        result = archive_module.backfill_aac_copy(
+            self._row(source),
+            webm,
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+        )
+
+        assert result.values is not None
+        assert webm.with_suffix(".m4a").is_file()
         assert modes == [archive_module.AAC_COPY_VBR_MODE]
 
     def test_a_failed_copy_keeps_the_opus_archive(self, tmp_path, require_ffmpeg, monkeypatch):

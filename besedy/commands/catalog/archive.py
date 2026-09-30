@@ -82,11 +82,11 @@ OPUS_BITRATES: dict[str, int] = {"low": 32, "medium": 48, "high": 64, "max": 96}
 M4A_VBR_MODES: dict[str, int] = {"low": 2, "medium": 3, "high": 4, "max": 5}
 
 # FDK VBR mode of the AAC-in-MP4 copy, the same for every recording (#291).
-# On 24 kHz mono speech, modes 1-3 all land near 60 kbps (mode 3 is the
-# effective floor) and mode 4 near 73 kbps. On 10-minute excerpts of 20
-# archive recordings, ViSQOL (audio mode) scored mode 3 at 4.69 and mode 4 at
-# 4.71 of about 4.75, never more than 0.07 apart, and NISQA found no
-# difference, so the larger mode buys nothing audible.
+# On 10-minute excerpts of 20 archive recordings (24 kHz mono), mode 3
+# averaged about 59 kbps and mode 4 about 73; ViSQOL (audio mode) scored them
+# 4.69 and 4.71 of about 4.75, never more than 0.07 apart, and NISQA found no
+# difference, so the larger mode buys nothing audible. On one of those
+# excerpts, modes 1 and 2 were no smaller than mode 3.
 AAC_COPY_VBR_MODE = 3
 
 # Super-wideband sample rate - optimal for speech (captures 0-12 kHz)
