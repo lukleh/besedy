@@ -57,6 +57,7 @@ interface AudioRouteLogContext {
   requestedSource: string | null;
   servedSource: string | null;
   variant: string | null;
+  format: string | null;
   download: boolean | null;
   rangeHeader: string | null;
   userAgent: string | null;
@@ -77,6 +78,7 @@ function buildAudioRouteLogContext(
     requestedSource: string | null;
     servedSource: string | null;
     variant: string | null;
+    format: string | null;
     download: boolean | null;
     rangeHeader: string | null;
   }
@@ -89,6 +91,7 @@ function buildAudioRouteLogContext(
     requestedSource: params.requestedSource,
     servedSource: params.servedSource,
     variant: params.variant,
+    format: params.format,
     download: params.download,
     rangeHeader: params.rangeHeader,
     userAgent: normalizeUserAgent(request.headers.get("user-agent")),
@@ -201,6 +204,9 @@ function createAudioStreamResponse(
  * Query params:
  * - source: Audio source - "archived" (default) or "listening"
  * - variant: Variant name when source=listening (uses default variant if not specified)
+ * - format: "webm" (default) or "aac", the AAC-in-MP4 copy of the resolved
+ *   source. There is no fallback to WebM: iOS Safari cannot stream it, so a
+ *   missing copy is a 404 and the client picks another source or format.
  * - download: If "true", force download instead of streaming
  */
 export async function GET(
@@ -215,6 +221,7 @@ export async function GET(
   let requestedSource: string | null = searchParams.get("source");
   let servedSource: string | null = requestedSource;
   let variantName: string | null = searchParams.get("variant");
+  let audioFormat: string | null = searchParams.get("format");
   let forceDownload: boolean | null =
     searchParams.get("download") === "true"
       ? true
@@ -228,6 +235,7 @@ export async function GET(
       requestedSource,
       servedSource,
       variant: variantName,
+      format: audioFormat,
       download: forceDownload,
       rangeHeader,
     });
@@ -280,6 +288,7 @@ export async function GET(
     const queryResult = AudioQuerySchema.safeParse({
       source: searchParams.get("source") ?? undefined,
       variant: searchParams.get("variant") ?? undefined,
+      format: searchParams.get("format") ?? undefined,
       download: searchParams.get("download") ?? undefined,
     });
     if (!queryResult.success) {
@@ -297,6 +306,18 @@ export async function GET(
     variantName = queryResult.data.variant ?? null;
     forceDownload = queryResult.data.download;
     servedSource = requestedSource;
+    const wantsAac = queryResult.data.format === "aac";
+    audioFormat = queryResult.data.format;
+
+    // The master is kept as it was recorded; only archives have an AAC copy.
+    if (wantsAac && audioSource === "original") {
+      const response = NextResponse.json(
+        { error: "The original recording has no AAC copy" },
+        { status: 400 }
+      );
+      logResponse("warn", response.status, "aac_original_unsupported");
+      return response;
+    }
 
     const access = await resolveCatalogRecordingRouteAccess(catalogId, hash);
     if (!access.ok) {
@@ -373,29 +394,32 @@ export async function GET(
       // Get variant for listening source
       const variant = await resolveVariant(catalogId, variantName);
       variantName = variant?.variant ?? variantName;
-      if (variant?.listeningArchivedCatalogPath) {
-        // Check DB-backed listening availability and resolve path
-        const listeningPath = await getListeningAudioPath(
-          catalogId,
-          variant.variant,
-          hash
-        );
-        if (listeningPath) {
-          audioPath = listeningPath;
-        }
-      }
+      const listening = variant?.listeningArchivedCatalogPath
+        ? // Check DB-backed listening availability and resolve path
+          await getListeningAudioPaths(catalogId, variant.variant, hash)
+        : undefined;
       // Fall back to archived if listening not available
-      if (!audioPath) {
-        audioPath = entry.compressedPath;
-        servedSource = "archived";
-      } else {
+      if (listening) {
+        audioPath = wantsAac ? listening.compressedAacPath : listening.compressedPath;
         servedSource = "listening";
+      } else {
+        audioPath = wantsAac ? entry.compressedAacPath : entry.compressedPath;
+        servedSource = "archived";
       }
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
     } else {
       // Default: use archived path
-      audioPath = entry.compressedPath;
+      audioPath = wantsAac ? entry.compressedAacPath : entry.compressedPath;
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
+    }
+
+    if (!audioPath && wantsAac) {
+      const response = NextResponse.json(
+        { error: "No AAC copy for this recording" },
+        { status: 404 }
+      );
+      logResponse("warn", response.status, "aac_unavailable");
+      return response;
     }
 
     if (!audioPath) {
@@ -642,13 +666,14 @@ async function resolveVariant(groupId: string, variantName?: string | null) {
 }
 
 /**
- * Get audio path from DB-backed listening catalog table
+ * Get the variant's audio paths from the DB-backed listening catalog table,
+ * or undefined when the variant has no row for this recording.
  */
-async function getListeningAudioPath(
+async function getListeningAudioPaths(
   groupId: string,
   variant: string,
   hash: string
-): Promise<string | undefined> {
+): Promise<{ compressedPath: string; compressedAacPath: string | undefined } | undefined> {
   const row = await prisma.catalogListeningEntry.findUnique({
     where: {
       workflowGroupId_variant_audioHash: {
@@ -657,7 +682,11 @@ async function getListeningAudioPath(
         audioHash: hash,
       },
     },
-    select: { compressedPath: true },
+    select: { compressedPath: true, compressedAacPath: true },
   });
-  return row?.compressedPath ?? undefined;
+  if (!row?.compressedPath) return undefined;
+  return {
+    compressedPath: row.compressedPath,
+    compressedAacPath: row.compressedAacPath ?? undefined,
+  };
 }

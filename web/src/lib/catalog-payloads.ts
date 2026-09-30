@@ -15,6 +15,7 @@ interface JsonObject {
 export interface CatalogEntryRow {
   audioHash: string;
   compressedPath: string | null;
+  compressedAacPath?: string | null;
   filename: string | null;
   originalPath: string | null;
   scanRoot: string | null;
@@ -44,6 +45,7 @@ export function mapCatalogEntryRowToCatalogEntry(row: CatalogEntryRow): CatalogE
   return {
     hash: row.audioHash,
     compressedPath: row.compressedPath ?? undefined,
+    compressedAacPath: row.compressedAacPath ?? undefined,
     filename: row.filename ?? undefined,
     originalPath: row.originalPath ?? undefined,
     scanRoot: row.scanRoot ?? undefined,

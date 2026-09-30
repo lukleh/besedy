@@ -110,8 +110,8 @@ Per-catalog authorization no longer uses an ordered access-level scale. An actor
 | GET | `/api/catalog/filter-options` | `browse_recordings` | Dynamic filter values/counts |
 | GET | `/api/catalogs/:id/recordings/:hash/entry` | Catalog access, release-scoped | Single enriched entry |
 | GET | `/api/catalogs/:id/recordings/:hash/details` | `edit_metadata` | Full source details for edit UI |
-| GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | Catalog access, release-scoped | Audio source options |
-| GET | `/api/catalogs/:id/recordings/:hash/audio` | Catalog access, release-scoped to stream; `download_audio` to force a download; `original` source additionally requires `download_original_audio` | Stream or download audio |
+| GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | Catalog access, release-scoped | Audio source options and the `formats` each can be served in |
+| GET | `/api/catalogs/:id/recordings/:hash/audio` | Catalog access, release-scoped to stream; `download_audio` to force a download; `original` source additionally requires `download_original_audio` | Stream or download audio; `format=aac` serves the AAC-in-MP4 copy or `404` |
 
 - "Catalog access, release-scoped" means: the actor holds a grant on the catalog, and if that grant lacks `see_unreleased` the recording must also be published and actionable (`status=ready`); no unpublished or non-actionable rows otherwise. `browse_recordings` is carried by `curator` and `catalog_admin` by default and can otherwise only be granted as a named extra -- `listener`, `reader`, `corrector` and `host` do not have it out of the box.
 - `/api/catalog/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). Requests from a grant without `see_unreleased` are visibility-scoped before counts.
