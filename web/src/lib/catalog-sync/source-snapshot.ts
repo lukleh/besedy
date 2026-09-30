@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import fs from 'fs/promises';
 
-export const SOURCE_FINGERPRINT_VERSION = 'v3';
+/**
+ * Part of every stored fingerprint. Bump it when sync starts reading
+ * something new from unchanged sources: the next sync then sees every source
+ * as changed and rebuilds it once, instead of skipping a file whose bytes
+ * are the same. v4: `compressed_aac_path` from `Compressed AAC Path` (#291).
+ */
+export const SOURCE_FINGERPRINT_VERSION = 'v4';
 
 export interface SourceSnapshot {
   content: string;
