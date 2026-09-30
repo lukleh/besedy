@@ -144,10 +144,12 @@ jobs:
   # The main ruleset requires this check name and no other web check, so it
   # stays and gates every web job, including the build and the correction
   # integration run. It passes only when all of them succeeded, and names
-  # each one that did not. It skips when the run itself was cancelled.
+  # each one that did not. It runs even when the run was cancelled: GitHub
+  # counts a skipped required check as passing, so skipping here would let a
+  # cancelled run's PR merge without the web checks.
   web:
     name: Web type-check + lint + unit
-    if: ${{ !cancelled() }}
+    if: always()
     needs: [web-typecheck, web-lint, web-unit, web-build, correction-integration]
     runs-on: ubuntu-latest
     steps:
