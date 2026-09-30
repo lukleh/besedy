@@ -408,7 +408,8 @@ export async function GET(
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
     }
 
-    // Audit records keep their old shape for the default WebM.
+    // Audit records keep their old shape for the default WebM, and name the
+    // source that was served (a listening request can fall back to archived).
     const auditFormat = wantsAac ? "aac" : undefined;
 
     if (!audioPath && wantsAac) {
@@ -535,7 +536,7 @@ export async function GET(
         // open.
         const range: AudioStreamRange = { start, end, fileSize };
         if (forceDownload) {
-          await logAudioDownloaded(userId, hash, catalogId, audioSource, auditFormat);
+          await logAudioDownloaded(userId, hash, catalogId, servedSource ?? audioSource, auditFormat);
         } else {
           await logAudioStreamed(userId, hash, catalogId, range, auditFormat);
         }
@@ -570,7 +571,7 @@ export async function GET(
     // Full file request (no Range header)
     if (forceDownload) {
       // Downloads get the full file
-      await logAudioDownloaded(userId, hash, catalogId, audioSource, auditFormat);
+      await logAudioDownloaded(userId, hash, catalogId, servedSource ?? audioSource, auditFormat);
       const response = createAudioStreamResponse(
         request,
         resolvedAudioPath,
