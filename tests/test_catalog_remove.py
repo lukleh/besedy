@@ -55,6 +55,9 @@ class Layout:
         self.archived = {
             h: _touch(self.audio / f"audio_archived_{TS}" / f"{h}.webm") for h in (KEEP, GONE)
         }
+        self.archived_aac = {
+            h: _touch(self.audio / f"audio_archived_{TS}" / f"{h}.m4a") for h in (KEEP, GONE)
+        }
         self.transcript_dirs = {
             h: [
                 _touch(
@@ -122,12 +125,13 @@ class Layout:
         )
         _write_csv(
             self.catalog_csv.with_name(f"audio_catalog_{TS}_loudness_archived.csv"),
-            ["Hash", "Full Path", "Compressed Path"],
+            ["Hash", "Full Path", "Compressed Path", "Compressed AAC Path"],
             [
                 {
                     "Hash": h,
                     "Full Path": str(self.sources[h]),
                     "Compressed Path": str(self.archived[h]),
+                    "Compressed AAC Path": str(self.archived_aac[h]),
                 }
                 for h in (KEEP, GONE)
             ],
@@ -175,7 +179,7 @@ def test_plan_collects_every_artifact_of_one_hash(layout: Layout) -> None:
         Path(f"{layout.sources[GONE]}.audiohash"),
     }
     assert plan.staged_files == [layout.staged[GONE]]
-    assert plan.archived_files == [layout.archived[GONE]]
+    assert plan.archived_files == [layout.archived[GONE], layout.archived_aac[GONE]]
     assert set(plan.transcript_dirs) == set(layout.transcript_dirs[GONE])
     assert plan.diarization_dirs == [layout.diarization_dirs[GONE]]
     assert plan.embedding_dirs == [layout.embedding_dirs[GONE]]
@@ -234,7 +238,7 @@ def test_execute_removes_only_the_requested_hash(layout: Layout) -> None:
     result = remover.execute_removal(plan)
 
     assert result.ok, result.errors
-    assert result.files_removed == 4  # source, sidecar, staged, archived
+    assert result.files_removed == 5  # source, sidecar, staged, archived WebM and AAC copy
     assert result.dirs_removed == 4  # 2 transcript dirs, diarization, embeddings
 
     for path in plan.files:
@@ -246,6 +250,7 @@ def test_execute_removes_only_the_requested_hash(layout: Layout) -> None:
     assert layout.sources[KEEP].exists()
     assert layout.staged[KEEP].exists()
     assert layout.archived[KEEP].exists()
+    assert layout.archived_aac[KEEP].exists()
     for directory in layout.transcript_dirs[KEEP]:
         assert directory.is_dir()
     assert layout.diarization_dirs[KEEP].is_dir()
@@ -337,7 +342,7 @@ def test_cli_execute_removes_and_is_idempotent(monkeypatch, layout: Layout, caps
     )
     assert code == 0
     assert payload["result"]["status"] == "removed"
-    assert payload["result"]["files_removed"] == 4
+    assert payload["result"]["files_removed"] == 5
     assert not layout.sources[GONE].exists()
     assert _read_hashes(layout.catalog_csv) == [KEEP]
 

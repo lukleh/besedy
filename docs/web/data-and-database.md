@@ -67,6 +67,8 @@ configuration error.
 - **Duration precedence:** metadata `Duration` first, then archived `Duration`
 - **Path resolution:**
   - `compressed_path` from archived `Compressed Path`
+    (the archived manifest also records the AAC-in-MP4 copy in `Compressed AAC Path`;
+    sync does not read it yet, see #291)
   - `original_path` from metadata full/original path when available, otherwise archived `Original Path`
 
 Rows missing from one source still exist in `catalog_entry` but remain non-actionable.

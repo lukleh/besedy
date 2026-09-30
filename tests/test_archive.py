@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
 import pytest
 
+from besedy.commands.catalog import archive as archive_module
 from besedy.commands.catalog.archive import (
     M4A_VBR_MODES,
     OPUS_BITRATES,
@@ -17,11 +20,17 @@ from besedy.commands.catalog.archive import (
     ArchiveRequest,
     ArchiveSkippedEntry,
     CompressedEntry,
+    aac_quality_for_opus_bitrate,
+    aac_vbr_mode,
+    compress_audio_file,
     compute_output_path,
     handle_archive,
     load_archived_hashes,
+    migrate_manifest_header,
     nearest_opus_sample_rate,
+    update_manifest_rows,
 )
+from besedy.lib.workflow.common import CsvAudioRow
 
 
 class TestNearestOpusSampleRate:
@@ -151,6 +160,9 @@ class TestArchivedManifestWriter:
                 "Compression Ratio",
                 "Duration",
                 "added_at",
+                "Compressed AAC Path",
+                "Compressed AAC Size (bytes)",
+                "Compressed AAC Bitrate (kbps)",
             ]
             assert header == expected
         finally:
@@ -317,3 +329,290 @@ class TestConstants:
     def test_opus_supported_rates_values(self):
         """OPUS_SUPPORTED_RATES should be capped at 24kHz for speech archiving."""
         assert OPUS_SUPPORTED_RATES == [8000, 12000, 16000, 24000]
+
+
+OLD_HEADER = [
+    "Hash",
+    "Original Path",
+    "Compressed Path",
+    "Format",
+    "Bitrate (kbps)",
+    "Original Size (bytes)",
+    "Compressed Size (bytes)",
+    "Compression Ratio",
+    "Duration",
+    "added_at",
+]
+
+
+def _write_rows(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _read_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        return list(reader.fieldnames or []), list(reader)
+
+
+def _entry(sha256: str, **aac: object) -> CompressedEntry:
+    return CompressedEntry(
+        sha256=sha256,
+        source=Path(f"/src/{sha256}.mp3"),
+        compressed=Path(f"/out/{sha256}.webm"),
+        format="opus",
+        bitrate_kbps=48,
+        source_size_bytes=1000,
+        compressed_size_bytes=100,
+        compression_ratio=10.0,
+        duration_seconds=60,
+        **aac,  # type: ignore[arg-type]
+    )
+
+
+class TestManifestMigration:
+    """Manifests written before the AAC columns keep working."""
+
+    def test_writes_aac_columns(self, tmp_path):
+        path = tmp_path / "archived.csv"
+        writer = ArchivedManifestWriter(path)
+        writer.write_entry(
+            _entry("abc", aac_path=Path("/out/abc.m4a"), aac_size_bytes=120, aac_bitrate_kbps=16)
+        )
+        writer.write_entry(_entry("def"))
+        writer.close()
+
+        _, rows = _read_rows(path)
+        assert rows[0]["Compressed AAC Path"] == "/out/abc.m4a"
+        assert rows[0]["Compressed AAC Size (bytes)"] == "120"
+        assert rows[0]["Compressed AAC Bitrate (kbps)"] == "16"
+        assert rows[1]["Compressed AAC Path"] == ""
+
+    def test_append_to_an_old_manifest_rewrites_its_header_first(self, tmp_path):
+        """Appending with more columns than the header would shift every value."""
+        path = tmp_path / "archived.csv"
+        _write_rows(path, OLD_HEADER, [{"Hash": "old", "Compressed Path": "/out/old.webm"}])
+
+        writer = ArchivedManifestWriter(path, append=True)
+        writer.write_entry(_entry("new", aac_path=Path("/out/new.m4a"), aac_size_bytes=5))
+        writer.close()
+
+        header, rows = _read_rows(path)
+        assert header == ArchivedManifestWriter.FIELDNAMES
+        assert rows[0]["Hash"] == "old"
+        assert rows[0]["Compressed Path"] == "/out/old.webm"
+        assert rows[0]["Compressed AAC Path"] == ""
+        assert rows[1]["Hash"] == "new"
+        assert rows[1]["Compressed AAC Path"] == "/out/new.m4a"
+
+    def test_migration_keeps_unknown_columns_and_skips_current_files(self, tmp_path):
+        path = tmp_path / "archived.csv"
+        _write_rows(path, OLD_HEADER + ["Note"], [{"Hash": "a", "Note": "keep me"}])
+
+        header = migrate_manifest_header(path)
+        assert header[: len(OLD_HEADER) + 1] == OLD_HEADER + ["Note"]
+        assert _read_rows(path)[1][0]["Note"] == "keep me"
+
+        before = path.stat().st_mtime_ns
+        os.utime(path, ns=(before - 10_000_000, before - 10_000_000))
+        stamped = path.stat().st_mtime_ns
+        migrate_manifest_header(path)
+        assert path.stat().st_mtime_ns == stamped  # already current: not rewritten
+
+    def test_update_rows_sets_columns_by_hash(self, tmp_path):
+        path = tmp_path / "archived.csv"
+        _write_rows(path, OLD_HEADER, [{"Hash": "a"}, {"Hash": "b", "Format": "opus"}])
+
+        changed = update_manifest_rows(path, {"b": {"Compressed AAC Path": "/out/b.m4a"}})
+
+        header, rows = _read_rows(path)
+        assert changed == 1
+        assert "Compressed AAC Path" in header
+        assert rows[0]["Compressed AAC Path"] == ""
+        assert rows[1]["Compressed AAC Path"] == "/out/b.m4a"
+        assert rows[1]["Format"] == "opus"
+        assert not (tmp_path / ".archived.csv.tmp").exists()
+
+
+class TestAacQuality:
+    """The AAC copy follows the Opus archive's bitrate."""
+
+    def test_nearest_preset(self):
+        assert aac_quality_for_opus_bitrate(32) == "low"
+        assert aac_quality_for_opus_bitrate(48) == "medium"
+        assert aac_quality_for_opus_bitrate(49) == "medium"  # a real production archive
+        assert aac_quality_for_opus_bitrate(64) == "high"
+        assert aac_quality_for_opus_bitrate(96) == "max"
+        assert aac_quality_for_opus_bitrate(200) == "max"
+
+    def test_vbr_mode_never_exceeds_the_source(self):
+        assert aac_vbr_mode("max", None) == M4A_VBR_MODES["max"]
+        assert aac_vbr_mode("max", 40) == 3
+        assert aac_vbr_mode("max", 64) == 4
+        assert aac_vbr_mode("low", 40) == M4A_VBR_MODES["low"]
+
+
+def _tone(path: Path, seconds: int = 6) -> Path:
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+            "-i", f"sine=frequency=440:duration={seconds}:sample_rate=44100",
+            "-ac", "1", "-c:a", "libmp3lame", "-b:a", "128k", str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def _probe(path: Path) -> dict[str, str]:
+    out = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration,format_name:stream=codec_name",
+            "-of", "json", str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    data = json.loads(out)
+    return {
+        "duration": data["format"]["duration"],
+        "format": data["format"]["format_name"],
+        "codec": data["streams"][0]["codec_name"],
+    }
+
+
+@pytest.mark.integration
+class TestAacCopyEncoding:
+    """Real ffmpeg: the copy is AAC in MP4 and lines up with the Opus archive."""
+
+    def _row(self, source: Path) -> CsvAudioRow:
+        return CsvAudioRow(sha256="c" * 64, full_path=str(source), duration_seconds=6.0)
+
+    def test_writes_opus_and_aac_with_matching_durations(self, tmp_path, require_ffmpeg):
+        source = _tone(tmp_path / "talk.mp3")
+        output = tmp_path / "out" / "talk_cccccccc.webm"
+        aac = output.with_suffix(".m4a")
+
+        result = compress_audio_file(
+            self._row(source),
+            output,
+            format="opus",
+            quality="medium",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+            aac_output_path=aac,
+        )
+
+        assert result.skipped is None, result.skipped
+        entry = result.compressed
+        assert entry is not None
+        assert entry.aac_path == aac
+        assert entry.aac_size_bytes == aac.stat().st_size
+        assert entry.aac_bitrate_kbps and entry.aac_bitrate_kbps > 0
+        opus, copy = _probe(output), _probe(aac)
+        assert (opus["codec"], copy["codec"]) == ("opus", "aac")
+        assert "mp4" in copy["format"]
+        # Transcripts and saved positions are shared: the timelines must agree.
+        assert abs(float(opus["duration"]) - float(copy["duration"])) < 0.05
+
+    def test_copy_quality_follows_a_custom_opus_bitrate(self, tmp_path, require_ffmpeg, monkeypatch):
+        source = _tone(tmp_path / "talk.mp3", seconds=2)
+        output = tmp_path / "out" / "talk.webm"
+        qualities: list[str] = []
+        original = archive_module._encode_m4a
+
+        def spy(*args, **kwargs):  # type: ignore[no-untyped-def]
+            qualities.append(kwargs["quality"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(archive_module, "_encode_m4a", spy)
+        result = compress_audio_file(
+            self._row(source),
+            output,
+            format="opus",
+            quality="low",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+            bitrate_override=96,
+            aac_output_path=output.with_suffix(".m4a"),
+        )
+
+        assert result.compressed is not None
+        assert qualities == ["max"]  # 96 kbps Opus, not the "low" preset
+
+    def test_a_failed_copy_removes_the_opus_archive_too(self, tmp_path, require_ffmpeg, monkeypatch):
+        source = _tone(tmp_path / "talk.mp3", seconds=2)
+        output = tmp_path / "out" / "talk.webm"
+        monkeypatch.setattr(archive_module, "_encode_m4a", lambda *a, **k: (3, "ffmpeg failed: boom"))
+
+        result = compress_audio_file(
+            self._row(source),
+            output,
+            format="opus",
+            quality="low",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+            aac_output_path=output.with_suffix(".m4a"),
+        )
+
+        assert result.compressed is None
+        assert result.skipped is not None
+        assert result.skipped.reason.startswith("aac copy")
+        assert not output.exists()
+
+
+@pytest.mark.integration
+class TestArchiveAndBackfill:
+    """handle_archive writes the copy, and --backfill-aac adds it later."""
+
+    def _catalog(self, tmp_path: Path, monkeypatch) -> tuple[Path, Path]:  # type: ignore[no-untyped-def]
+        monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(tmp_path / "artifacts"))
+        (tmp_path / "media").mkdir()
+        source = _tone(tmp_path / "media" / "talk.mp3", seconds=3)
+        loudness = tmp_path / "audio_catalog_20260101_000000_loudness.csv"
+        loudness.write_text(
+            f"Hash,Full Path,Duration\n{'d' * 64},{source},00:00:03\n", encoding="utf-8"
+        )
+        return loudness, loudness.with_name(f"{loudness.stem}_archived.csv")
+
+    def test_archive_writes_both_files(self, tmp_path, require_ffmpeg, monkeypatch):
+        loudness, archived = self._catalog(tmp_path, monkeypatch)
+
+        assert handle_archive(ArchiveRequest(csv=loudness, no_symlink=True)) == 0
+
+        _, rows = _read_rows(archived)
+        webm, m4a = Path(rows[0]["Compressed Path"]), Path(rows[0]["Compressed AAC Path"])
+        assert webm.suffix == ".webm" and webm.is_file()
+        assert m4a == webm.with_suffix(".m4a") and m4a.is_file()
+        assert rows[0]["Compressed AAC Size (bytes)"] == str(m4a.stat().st_size)
+
+    def test_no_aac_then_backfill(self, tmp_path, require_ffmpeg, monkeypatch):
+        loudness, archived = self._catalog(tmp_path, monkeypatch)
+        assert handle_archive(ArchiveRequest(csv=loudness, no_symlink=True, aac_copy=False)) == 0
+        _, rows = _read_rows(archived)
+        webm = Path(rows[0]["Compressed Path"])
+        assert rows[0]["Compressed AAC Path"] == ""
+        assert not webm.with_suffix(".m4a").exists()
+
+        request = ArchiveRequest(csv=loudness, no_symlink=True, backfill_aac=True)
+        assert handle_archive(request) == 0
+
+        _, rows = _read_rows(archived)
+        assert rows[0]["Compressed AAC Path"] == str(webm.with_suffix(".m4a"))
+        assert webm.with_suffix(".m4a").is_file()
+        assert rows[0]["Compressed Path"] == str(webm)  # the Opus row is otherwise unchanged
+
+        # Nothing left to do on a second run.
+        stamp = archived.stat().st_mtime_ns
+        assert handle_archive(request) == 0
+        assert archived.stat().st_mtime_ns == stamp

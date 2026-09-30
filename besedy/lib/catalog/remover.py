@@ -205,6 +205,8 @@ def build_removal_plan(
             plan.staged_files.extend(_existing_paths(rows, "Full Path"))
         elif csv_path.name.endswith("_loudness_archived.csv"):
             plan.archived_files.extend(_existing_paths(rows, "Compressed Path"))
+            # The AAC-in-MP4 copy that `catalog archive` writes next to the WebM.
+            plan.archived_files.extend(_existing_paths(rows, "Compressed AAC Path"))
 
     plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
     plan.diarization_dirs = find_diarization_dirs(transcripts_root, sha256)
