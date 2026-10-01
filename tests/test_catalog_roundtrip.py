@@ -9,6 +9,7 @@ import csv
 
 import pytest
 
+from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS
 from besedy.lib.catalog.manager import (
     AUDIO_HASH_ALGORITHM,
     FileRecord,
@@ -93,6 +94,7 @@ class TestCatalogFieldnames:
         assert "sample_rate" in fields
         assert "integrated_loudness_lufs" in fields
         assert "true_peak_db" in fields
+        assert all(col in fields for col in AUDIO_QUALITY_COLUMNS)
 
 
 class TestFileRecordToRow:
