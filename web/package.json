@@ -10,7 +10,7 @@
     "prebuild": "npm run prisma:generate",
     "build": "next build",
     "start": "next start",
-    "pretype-check": "npm run prisma:generate && next typegen",
+    "pretype-check": "npm run prisma:generate && NEXT_DIST_DIR=.next next typegen",
     "type-check": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
