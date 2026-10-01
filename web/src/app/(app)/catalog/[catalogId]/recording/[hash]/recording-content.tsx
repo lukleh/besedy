@@ -210,7 +210,8 @@ export default function RecordingContent({
   // A WebM download from before the AAC copy, playing on WebKit, stops early;
   // offer the copy here as well as on the Downloads page.
   const downloadRecord = useDownloadRecord(catalogId, hash);
-  const formatUpgrade = useAacUpgradeAvailable(downloadRecord) && localAudioSrc !== null;
+  const formatUpgrade =
+    useAacUpgradeAvailable(downloadRecord, availableSources) && localAudioSrc !== null;
 
   const handleSourceChange = (sourceId: string) => {
     savePreference.mutate(sourceId);

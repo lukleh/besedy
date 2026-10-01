@@ -256,7 +256,9 @@ async function removeInlineAudioCopies(
   let bundleCursor = await bundlesStore.openCursor();
   while (bundleCursor) {
     const bundle = bundleCursor.value as DownloadBundlePayload & { inlineAudio?: unknown };
-    if (bundle.inlineAudio !== undefined) {
+    // Only real copies: downloads that needed none stored `inlineAudio: null`,
+    // and rewriting those bundles (transcripts included) would free nothing.
+    if (bundle.inlineAudio) {
       delete bundle.inlineAudio;
       await bundleCursor.update(bundle);
     }

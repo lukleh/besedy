@@ -58,15 +58,15 @@ describe("DownloadsContent", () => {
     upgrade.mockReturnValue(true);
     render(<DownloadsContent />);
 
-    expect(screen.getByTestId(`download-format-upgrade-${HASH}`)).toHaveTextContent("formatUpgrade");
-    fireEvent.click(screen.getByTestId(`download-redownload-${HASH}`));
+    expect(screen.getByTestId("format-upgrade-notice")).toHaveTextContent("formatUpgrade");
+    fireEvent.click(screen.getByRole("button", { name: /redownload/ }));
     expect(redownload).toHaveBeenCalledWith(`cat:${HASH}`);
   });
 
   it("shows neither the notice nor the button otherwise", () => {
     render(<DownloadsContent />);
 
-    expect(screen.queryByTestId(`download-format-upgrade-${HASH}`)).toBeNull();
-    expect(screen.queryByTestId(`download-redownload-${HASH}`)).toBeNull();
+    expect(screen.queryByTestId("format-upgrade-notice")).toBeNull();
+    expect(screen.queryByRole("button", { name: /redownload/ })).toBeNull();
   });
 });

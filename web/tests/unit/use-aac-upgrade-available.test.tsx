@@ -83,6 +83,20 @@ describe("useAacUpgradeAvailable", () => {
     expect(result.current).toBe(false);
   });
 
+  it("uses sources the page already has instead of asking again", () => {
+    const withCopy = renderHook(
+      () => useAacUpgradeAvailable(record(AUDIO), [{ id: "archived", formats: ["webm", "aac"] }]),
+      { wrapper: wrapper() }
+    );
+    expect(withCopy.result.current).toBe(true);
+    const withoutCopy = renderHook(
+      () => useAacUpgradeAvailable(record(AUDIO), [{ id: "archived", formats: ["webm"] }]),
+      { wrapper: wrapper() }
+    );
+    expect(withoutCopy.result.current).toBe(false);
+    expect(fetchJson).not.toHaveBeenCalled();
+  });
+
   it("asks nothing without a download", () => {
     const { result } = renderHook(() => useAacUpgradeAvailable(null), { wrapper: wrapper() });
     expect(result.current).toBe(false);

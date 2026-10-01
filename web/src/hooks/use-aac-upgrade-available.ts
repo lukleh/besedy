@@ -17,15 +17,20 @@ import type { DownloadRecord } from "@/lib/offline/downloads-db";
  * the AAC copy, so downloading it again lets the whole recording play offline.
  * Checked only while online, since a new download needs the network anyway.
  *
- * The Downloads page works without a session, so a failed check (an expired
- * session's 401 included) only means no flag: it never redirects to sign-in.
+ * A page that already has the recording's `/audio/sources` passes them as
+ * `knownSources` and nothing is fetched; the Downloads page asks per package.
+ * It works without a session, so a failed check (an expired session's 401
+ * included) only means no flag: it never redirects to sign-in.
  */
-export function useAacUpgradeAvailable(record: DownloadRecord | null | undefined): boolean {
+export function useAacUpgradeAvailable(
+  record: DownloadRecord | null | undefined,
+  knownSources?: readonly AudioSourceFormats[]
+): boolean {
   const { isOnline } = useOnlineStatus();
   const enabled = !!record && isOnline && browserPrefersAacAudio() && isWebmPackage(record);
-  const { data } = useQuery({
+  const { data: fetched } = useQuery({
     queryKey: ["download-audio-formats", record?.catalogId ?? null, record?.hash ?? null],
-    enabled,
+    enabled: enabled && knownSources === undefined,
     staleTime: 5 * 60 * 1000,
     retry: false,
     queryFn: async (): Promise<AudioSourceFormats[]> => {
@@ -41,5 +46,6 @@ export function useAacUpgradeAvailable(record: DownloadRecord | null | undefined
       }
     },
   });
-  return enabled && !!record && !!data && hasAacCopyForPackage(record, data);
+  const sources = knownSources ?? fetched;
+  return enabled && !!record && !!sources && hasAacCopyForPackage(record, sources);
 }

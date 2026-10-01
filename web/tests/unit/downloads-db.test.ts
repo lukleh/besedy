@@ -180,6 +180,7 @@ describe('downloads database', () => {
   it('deletes stored inline audio copies and recovers packages stuck on the inline error', async () => {
     const complete = 'cat:' + HASH;
     const stuck = 'cat:' + 'f'.repeat(64);
+    const withoutCopy = 'cat:' + 'd'.repeat(64);
     const legacy = indexedDB.open('besedy-offline', 5);
     const record = (key: string, status: string, error: string | null) => ({
       key,
@@ -231,6 +232,16 @@ describe('downloads database', () => {
             updatedAt: 0,
           });
         }
+        // A download that needed no copy: the old job stored an explicit null.
+        tx.objectStore('downloadBundles').put({
+          key: withoutCopy,
+          transcriptBackend: null,
+          transcript: null,
+          diarization: null,
+          artwork: null,
+          inlineAudio: null,
+          updatedAt: 0,
+        });
         tx.oncomplete = () => {
           database.close();
           resolve();
@@ -246,6 +257,8 @@ describe('downloads database', () => {
       expect(bundle).not.toHaveProperty('inlineAudio');
       expect(bundle?.transcriptBackend).toBe('whisperx/large');
     }
+    // Left as it was rather than rewritten for nothing.
+    expect(await db.getDownloadBundle(withoutCopy)).toHaveProperty('inlineAudio', null);
     expect(await db.getDownload(complete)).toMatchObject({ status: 'complete', error: null });
     // Its chunks verified before; hydration checks them again as for any package.
     expect(await db.getDownload(stuck)).toMatchObject({

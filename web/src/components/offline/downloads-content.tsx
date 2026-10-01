@@ -25,6 +25,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { FormatUpgradeNotice } from '@/components/offline/format-upgrade-notice';
 import { useAacUpgradeAvailable } from '@/hooks/use-aac-upgrade-available';
 import { useDownloadManager } from '@/hooks/use-downloads';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
@@ -331,11 +332,7 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
               </span>
             )}
           </div>
-          {aacUpgrade && (
-            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid={`download-format-upgrade-${record.hash}`}>
-              {t('formatUpgrade')}
-            </p>
-          )}
+          {aacUpgrade && <FormatUpgradeNotice downloadKey={record.key} />}
           {(record.status === 'downloading' ||
             record.status === 'paused' ||
             record.status === 'queued') && (
@@ -363,19 +360,6 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
                 <Play className="mr-2 h-4 w-4" />
                 {t('open')}
               </a>
-            </Button>
-          )}
-          {aacUpgrade && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void downloadManager.redownload(record.key);
-              }}
-              data-testid={`download-redownload-${record.hash}`}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {t('redownload')}
             </Button>
           )}
           {(record.status === 'downloading' || record.status === 'queued') && (
