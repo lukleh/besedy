@@ -220,7 +220,9 @@ only in an explicit, backed-up maintenance procedure.
 
 ### Release Preflight
 
-- [ ] Deploy from a clean checkout of the intended commit
+- [ ] Deploy from a clean per-commit worktree under `~/worktrees/besedy/`
+      (see [Deploy checkout](#deploy-checkout)), never from a checkout inside
+      `~/projects`
 - [ ] Keep `CONFIG_FILE` on an absolute path outside the checkout; the deploy
       preflight requires a regular file readable by the unprivileged web container
 - [ ] Record current deployed version: `curl -s https://besedy.org/api/version | jq`
@@ -232,6 +234,35 @@ only in an explicit, backed-up maintenance procedure.
 - [ ] Check whether `web/prisma/migrations/` changed
 - [ ] Verify `AUTH_URL` still matches `NEXT_PUBLIC_APP_URL`
 - [ ] Verify latest backup exists in `BACKUP_DIR`
+
+### Deploy checkout
+
+Every production deploy, web or jobs, runs from a detached worktree of the
+release commit at `~/worktrees/besedy/prod-deploy-<sha>`:
+
+```bash
+sha=$(git rev-parse --short=8 origin/main)
+git worktree add --detach ~/worktrees/besedy/prod-deploy-$sha $sha
+cd ~/worktrees/besedy/prod-deploy-$sha
+(cd web && npm ci)    # prod-build runs web-check on the host
+just prod-deploy-with-jobs
+```
+
+Do not create deploy checkouts inside `~/projects`: everything there is
+snapshotted nightly and synced off-host, and a deploy checkout with installed
+web dependencies adds over a gigabyte to that sync. Compose records the
+checkout as each container's working directory, so web and jobs deployed from
+the same worktree are visibly at the same revision
+(`docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' <container>`).
+
+Prefer `prod-deploy-with-jobs` (or `prod-deploy-with-jobs-codex`, see below)
+whenever jobs code or `uv.lock` changed since the running jobs image's
+`org.opencontainers.image.revision`. A web-only `prod-deploy` leaves the jobs
+stack on whichever worktree it was last deployed from. Once no container runs
+from an older deploy worktree, remove it; `web/scripts/worktree-report.sh`
+lists it as removable and prints the `git worktree remove` command. The host
+ingest worker has its own fixed checkout, `~/worktrees/besedy/prod-ingest`
+(see below).
 
 ### Release Workflow
 
