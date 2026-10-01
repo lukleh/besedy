@@ -203,7 +203,7 @@ export default function RecordingContent({
   });
   // A complete local package plays in preference to the network; the page
   // never learns how it is stored.
-  const localAudio = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
+  const localAudioSrc = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
 
   const handleSourceChange = (sourceId: string) => {
     savePreference.mutate(sourceId);
@@ -228,10 +228,10 @@ export default function RecordingContent({
   const awaitingFormat = useBoundedWait(
     browserPrefersAacAudio() &&
       (sourcesLoading === true || preferenceLoading === true) &&
-      !localAudio.src,
+      !localAudioSrc,
     hash
   );
-  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending || awaitingFormat) {
+  if (catalogValidationLoading || (isLoading && !recording) || awaitingFormat) {
     return (
       <div className="space-y-3">
         <RecordingPageSkeleton />
@@ -277,7 +277,7 @@ export default function RecordingContent({
   const handleAudioDownload = (source: "original" | "archived") => {
     window.open(buildAudioDownloadUrl(catalogId, hash, source), "_blank");
   };
-  const audioUrl = localAudio.src ?? selectedAudioUrl;
+  const audioUrl = localAudioSrc ?? selectedAudioUrl;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">

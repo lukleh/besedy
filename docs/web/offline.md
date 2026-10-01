@@ -136,28 +136,26 @@ The remaining caches are intentionally small:
 
 Normal application HTML and API JSON are not placed in an offline cache.
 
-### Diagnosing the local transport on a device
+### Diagnosing local playback on a device
 
-A complete local recording reaches the media element in one of two ways. Every
-browser uses `worker`: the service worker answers Range requests from the
-chunked cache. `blob`, an object URL for one Blob composed from the cached
-chunks with no worker in the media path, is a diagnostic option only, and it
-falls back to the worker URL when the chunk set is incomplete. Until #162 the
-WebKit and Android browsers used a third transport, a Base64 data URL built
-from an inline copy stored with the download; device runs showed the worker
-playing offline on a Pixel and, with the AAC copy, on an iPhone, while the
-inline copy of a multi-hour recording was too large for Safari to play.
+A complete local recording reaches the media element one way on every browser:
+the player loads the recording URL with a `local=1` marker and the service
+worker answers Range requests from the chunked cache. Until #162 the WebKit and
+Android browsers used a Base64 data URL built from an inline copy stored with
+the download, and the debug panel could switch a device to it or to an object
+URL composed from the chunks (`blob`). Device runs showed the worker playing
+offline on a Pixel and, with the AAC copy, on an iPhone, while the inline copy
+of a multi-hour recording was too large for Safari to play and the composed
+Blob was read whole into Safari's GPU process, so both are gone, with the
+per-device override. A `besedy:offline-audio-transport` value left in
+`localStorage` from that override is no longer read.
 
 The player's debug panel (the bug icon under the controls) shows the source
-kind the element was handed, the requested transport, the default, whether a
-worker controls the page, and an `auto | worker | blob` override, stored in
-`localStorage` under `besedy:offline-audio-transport` on that device alone; no
-other user or device is affected, `auto` removes it, and a stored `inline` from
-before #162 reads as `auto`. The Source line is the one that tells the truth
-about what the element got. To test a phone: open a downloaded recording,
-switch to airplane mode with Wi-Fi off too (iOS keeps Wi-Fi on in airplane mode
-if it was turned back on there before), play and seek, then read the event log
-in the same panel.
+kind the element was handed (`network` or `worker-cache`), whether a worker
+controls the page, and whether the browser reports itself online. To test a
+phone: open a downloaded recording, switch to airplane mode with Wi-Fi off too
+(iOS keeps Wi-Fi on in airplane mode if it was turned back on there before),
+play and seek, then read the event log in the same panel.
 
 ### Download manager and lifecycle
 

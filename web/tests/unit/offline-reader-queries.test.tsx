@@ -53,9 +53,6 @@ vi.mock('@/hooks/use-downloads', () => ({
     hasArtwork: true,
   }),
 }));
-vi.mock('@/hooks/use-offline-audio-transport', () => ({
-  useOfflineAudioTransport: () => 'worker',
-}));
 vi.mock('@/hooks/use-online-status', () => ({
   useOnlineStatus: () => ({ isOnline: false }),
 }));
@@ -163,13 +160,9 @@ describe('downloaded readers after going offline', () => {
       ({ hash }) => useLocalAudioSrc(CATALOG, hash, `/audio/${hash}`, false),
       { initialProps: { hash: HASH }, wrapper: wrapper() },
     );
-    await waitFor(() => expect(result.current.src).toBe(`/audio/${HASH}?local=1`));
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current).toBe(`/audio/${HASH}?local=1`));
     rerender({ hash: OTHER_HASH });
-    await waitFor(() =>
-      expect(result.current.src).toBe(`/audio/${OTHER_HASH}?local=1`),
-    );
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current).toBe(`/audio/${OTHER_HASH}?local=1`));
     expect(fetchJson).not.toHaveBeenCalled();
   });
 

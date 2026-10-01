@@ -8,14 +8,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
-import { useOfflineAudioTransport } from "@/hooks/use-offline-audio-transport";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   getAudioCacheKey,
-  readCompleteAudioBlob,
   withoutAudioFormat,
 } from "@/lib/offline/audio-cache-format";
-import { OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
 
 /**
@@ -53,13 +50,6 @@ function useObjectUrl(blob: Blob | null | undefined): string | null {
   return entry && entry.blob === blob ? entry.url : null;
 }
 
-export interface LocalAudioSource {
-  /** Playable local source, or null when the page should use its network URL. */
-  src: string | null;
-  /** The local source is being prepared; hold the player until it resolves. */
-  pending: boolean;
-}
-
 /**
  * Prefer a complete local recording over the network.
  *
@@ -74,7 +64,7 @@ export function useLocalAudioSrc(
   hash: string,
   selectedUrl: string,
   sourcesKnown: boolean
-): LocalAudioSource {
+): string | null {
   const record = useDownloadRecord(catalogId, hash);
   const { isOnline } = useOnlineStatus();
   const complete = record?.status === "complete" && !!record.audioUrl;
@@ -93,43 +83,7 @@ export function useLocalAudioSrc(
     );
   }, [complete, recordCacheKey, selectedUrl]);
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
-  // The worker default can be overridden per device from the player's debug
-  // panel, so the blob transport can be tried on a real phone.
-  const transport = useOfflineAudioTransport();
-  const blobEnabled = useLocal && transport === "blob" && !!record?.audioCacheKey;
-
-  // One Blob composed from the cached chunk Blobs rather than one ArrayBuffer.
-  // Whether the browser keeps it as references to the stored parts or reads
-  // them into memory is engine-specific; the debug panel run measures it.
-  const composed = useQuery({
-    queryKey: ["local-blob-audio", record?.key ?? null, record?.audioCacheKey ?? null],
-    networkMode: "always",
-    enabled: blobEnabled,
-    staleTime: Number.POSITIVE_INFINITY,
-    gcTime: 0,
-    retry: false,
-    queryFn: async () => {
-      if (!record?.audioCacheKey || typeof caches === "undefined") return null;
-      const cache = await caches.open(OFFLINE_CACHE_NAMES.audio);
-      return readCompleteAudioBlob(cache, record.audioCacheKey);
-    },
-  });
-  // Scoped to the transport so switching away in the debug panel releases the
-  // Blob instead of holding it alongside the next transport's copy.
-  const blobUrl = useObjectUrl(transport === "blob" ? composed.data : null);
-
-  if (!useLocal || !record?.audioUrl) return { src: null, pending: false };
-  const local = localAudioSrc(record.audioUrl);
-  if (transport === "blob") {
-    // Hold the player until the URL exists too, so it is never handed the
-    // worker URL for the one render between the read and the commit.
-    if (blobEnabled && (composed.isPending || (composed.data && !blobUrl))) {
-      return { src: null, pending: true };
-    }
-    // Without a readable chunk set the worker URL still plays the download.
-    return { src: blobUrl ?? local, pending: false };
-  }
-  return { src: local, pending: false };
+  return useLocal && record?.audioUrl ? localAudioSrc(record.audioUrl) : null;
 }
 
 /**

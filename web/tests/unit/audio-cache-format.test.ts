@@ -7,7 +7,6 @@ import {
   getAudioChunkKey,
   getAudioMetaKey,
   isAudioCacheEntryFor,
-  readCompleteAudioBlob,
   readAudioCacheMeta,
   summarizeAudioCacheMeta,
   writeAudioCacheMeta,
@@ -122,24 +121,6 @@ describe("audio cache format", () => {
     };
     await writeAudioCacheMeta(cache as unknown as Cache, base, meta);
     expect(await readAudioCacheMeta(cache as unknown as Cache, base)).toEqual(meta);
-  });
-
-  it("assembles a complete cached recording as a Blob", async () => {
-    const cache = new MemoryCache();
-    const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
-    await writeAudioCacheMeta(cache as unknown as Cache, base, {
-      totalSize: 5,
-      chunkCount: 2,
-      chunkSizes: [2, 3],
-      contentType: "audio/webm",
-      complete: true,
-    });
-    await cache.put(getAudioChunkKey(base, 0), new Response(new Uint8Array([1, 2])));
-    await cache.put(getAudioChunkKey(base, 1), new Response(new Uint8Array([3, 4, 5])));
-
-    const blob = await readCompleteAudioBlob(cache as unknown as Cache, base);
-    expect(blob?.type).toBe("audio/webm");
-    expect(blob?.size).toBe(5);
   });
 
   it("rejects malformed metadata", async () => {

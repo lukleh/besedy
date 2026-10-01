@@ -193,31 +193,6 @@ export async function verifyAudioCache(
   return true;
 }
 
-/** Assemble a complete cached recording without copying all chunks into one ArrayBuffer. */
-export async function readCompleteAudioBlob(
-  cache: Cache,
-  baseKey: string,
-): Promise<Blob | null> {
-  const meta = await readAudioCacheMeta(cache, baseKey);
-  if (!meta?.complete || meta.totalSize <= 0) return null;
-  if (
-    meta.chunkSizes.length === 0 ||
-    meta.chunkSizes.reduce((sum, size) => sum + size, 0) !== meta.totalSize
-  ) {
-    return null;
-  }
-
-  const chunks: Blob[] = [];
-  for (let index = 0; index < meta.chunkSizes.length; index += 1) {
-    const response = await cache.match(getAudioChunkKey(baseKey, index));
-    if (!response) return null;
-    const chunk = await response.blob();
-    if (chunk.size !== meta.chunkSizes[index]) return null;
-    chunks.push(chunk);
-  }
-  return new Blob(chunks, { type: meta.contentType || 'audio/webm' });
-}
-
 export interface AudioCacheProgress {
   bytesLoaded: number;
   totalBytes: number;
