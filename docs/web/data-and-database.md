@@ -27,10 +27,13 @@ The discovery endpoint (`/api/catalogs/discover`) scans `BESEDY_BASE_DIR` for fi
 ### Sync Rules
 
 CSV-to-DB sync stores a versioned SHA-256 generation fingerprint for the exact
-source bytes that were parsed (`v3:sha256:<digest>`). Source snapshots are read
+source bytes that were parsed (`v4:sha256:<digest>`). Source snapshots are read
 once per reconciliation, before the database transaction and advisory lock, so
 fingerprinting and parsing cannot observe different file contents. Older
-stat-based fingerprints cause a one-time refresh after upgrade.
+stat-based fingerprints cause a one-time refresh after upgrade. The version is
+bumped when sync starts reading a column it ignored before, so every source is
+rebuilt once on the first sync after that deploy, even when its bytes are
+unchanged; `v4` added the AAC copy columns (#291).
 
 | Condition                        | Effect                                                   |
 | -------------------------------- | -------------------------------------------------------- |
@@ -67,13 +70,16 @@ configuration error.
 - **Duration precedence:** metadata `Duration` first, then archived `Duration`
 - **Path resolution:**
   - `compressed_path` from archived `Compressed Path`
+  - `compressed_aac_path` from archived `Compressed AAC Path`, the AAC-in-MP4 copy that
+    `catalog archive` writes next to the Opus WebM (#291); `NULL` when the column is
+    missing or blank, and the WebM is then the only file
   - `original_path` from metadata full/original path when available, otherwise archived `Original Path`
 
 Rows missing from one source still exist in `catalog_entry` but remain non-actionable.
 
 ### WorkflowVariant Model
 
-`WorkflowVariant` enables alternate listening sources per catalog. Each variant points to a separate archived catalog via `listeningArchivedCatalogPath`. Variant availability is tracked in `catalog_listening_entry`, synced independently from the main catalog entries.
+`WorkflowVariant` enables alternate listening sources per catalog. Each variant points to a separate archived catalog via `listeningArchivedCatalogPath`. Variant availability is tracked in `catalog_listening_entry`, synced independently from the main catalog entries; its `compressed_aac_path` comes from the variant catalog's `Compressed AAC Path` in the same way.
 
 ### Audio Source Resolution
 
@@ -84,6 +90,15 @@ When serving audio, the app resolves sources in priority order:
 3. **Original** -- uncompressed source for download
 
 Per-recording source preferences are stored in `user_preferences.settings.audioSources`.
+
+Independently of the source, `format` picks the file: `webm` (default), the Opus
+archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,
+#291) for browsers that cannot stream WebM. The route resolves the source first
+(a variant without a row for the recording falls back to archived) and then takes
+that source's AAC copy; when it has none the response is `404` rather than the
+WebM, and `format=aac` with `source=original` is a `400`. `/audio/sources` lists
+the `formats` each source can be served in, so clients only ask for copies that
+exist.
 
 ---
 

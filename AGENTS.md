@@ -45,7 +45,9 @@ copying command tables or test-user matrices into provider-specific files.
   uploads in the foreground (see `docs/web/recording-ingest.md`).
 - `just analyze <command>`: analysis CLI wrapper (e.g. `just analyze validate`)
 - `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/ --batch`)
-- `just test` (or `uv run --all-extras pytest`): run the full test suite
+- `just test` (or `uv run --locked --all-extras pytest`): run the full test suite
+- `just bump-rlmbenchy`: move the `rlmbenchy` pin in `uv.lock` to its latest
+  default-branch commit and run the jobs tests; commit the lock change through a PR
 - `just ruff`: run Ruff lint checks across `besedy/` and `tests/`
 - `just ty`: run the Python type checker across `besedy/`
 - `just web-check`: TypeScript + ESLint + web unit tests

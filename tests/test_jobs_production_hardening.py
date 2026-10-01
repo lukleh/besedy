@@ -22,15 +22,16 @@ def test_jobs_image_uses_locked_non_editable_installs() -> None:
 
     assert "COPY pyproject.toml uv.lock" in dockerfile
     assert dockerfile.count("uv sync") == 2
-    assert dockerfile.count("--frozen") == 2
+    assert dockerfile.count("--locked") == 2
+    assert "--frozen" not in dockerfile
     assert "--mount=type=ssh" not in dockerfile
     assert "openssh-client" not in dockerfile
     assert "ssh-keyscan" not in dockerfile
     assert dockerfile.count("apt-get install") == 1
     assert "uv pip check --python /opt/venv/bin/python" in dockerfile
     assert "from rlmbenchy.rlm import load_lm_profile, run_task" in dockerfile
-    assert "ARG RLMBENCHY_REFRESH=manual" in dockerfile
-    assert "uv lock --upgrade-package rlmbenchy" in dockerfile
+    assert "RLMBENCHY_REFRESH" not in dockerfile
+    assert "uv lock" not in dockerfile
     assert "uv build --wheel" not in dockerfile
     assert "rlmbenchy_source" not in dockerfile
     assert "DSPY_CACHEDIR=/tmp/cache/dspy" in dockerfile
@@ -41,11 +42,12 @@ def test_jobs_image_uses_locked_non_editable_installs() -> None:
     assert "python -m pip install" not in dockerfile
 
 
-def test_jobs_extra_tracks_and_refreshes_rlmbenchy_default_branch() -> None:
+def test_committed_lock_pins_rlmbenchy_default_branch() -> None:
     pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     lock = tomllib.loads(UV_LOCK.read_text(encoding="utf-8"))
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     justfile = JUSTFILE.read_text(encoding="utf-8")
+    dockerfile = JOBS_DOCKERFILE.read_text(encoding="utf-8")
 
     assert (
         f"rlmbenchy @ git+{RLMBENCHY_GIT_URL}"
@@ -57,11 +59,17 @@ def test_jobs_extra_tracks_and_refreshes_rlmbenchy_default_branch() -> None:
         rf"{re.escape(RLMBENCHY_GIT_URL)}#[0-9a-f]{{40}}",
         rlmbenchy["source"]["git"],
     )
-    assert "uv lock --upgrade-package rlmbenchy" in workflow
-    assert "uv sync --extra jobs --upgrade-package rlmbenchy" in justfile
-    assert "uv sync --all-extras --upgrade-package rlmbenchy" in justfile
-    assert "uv run --all-extras --upgrade-package rlmbenchy pytest" in justfile
-    assert justfile.count("--build-arg RLMBENCHY_REFRESH=") == 5
+    # Only the reviewed bump recipe may move the pin.
+    assert "--upgrade-package" not in workflow
+    assert "RLMBENCHY_REFRESH" not in justfile
+    assert "uv sync --locked --extra jobs" in workflow
+    assert "uv sync --locked --extra jobs" in justfile
+    assert "uv sync --locked --all-extras" in justfile
+    assert "uv run --locked --all-extras pytest" in justfile
+    bump_recipe = justfile.split("\nbump-rlmbenchy:\n", 1)[1].split("\n\n", 1)[0]
+    assert justfile.count("--upgrade-package") == bump_recipe.count("--upgrade-package") == 1
+    image_uv = re.search(r"ghcr\.io/astral-sh/uv:(\S+)", dockerfile).group(1)
+    assert f"uvx --from 'uv=={image_uv}' uv lock --upgrade-package rlmbenchy" in bump_recipe
 
 
 def test_diskcache_audit_exception_is_scoped_and_documented() -> None:

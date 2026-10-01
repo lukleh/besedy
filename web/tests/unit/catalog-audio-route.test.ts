@@ -222,7 +222,7 @@ describe("catalog audio route", () => {
         start: 0,
         end: FILE_SIZE - 1,
         fileSize: FILE_SIZE,
-      });
+      }, undefined);
 
       const event = findStructuredEvent(infoSpy.mock.calls as unknown[][], "audio_route_response");
       expect(event).toMatchObject({
@@ -265,7 +265,7 @@ describe("catalog audio route", () => {
       start: 0,
       end: FILE_SIZE - 1,
       fileSize: FILE_SIZE,
-    });
+    }, undefined);
     await response.arrayBuffer();
   });
 
@@ -291,7 +291,7 @@ describe("catalog audio route", () => {
       start: expectedStart,
       end: FILE_SIZE - 1,
       fileSize: FILE_SIZE,
-    });
+    }, undefined);
     await response.arrayBuffer();
   });
 
@@ -675,5 +675,213 @@ describe("catalog audio route", () => {
     } finally {
       infoSpy.mockRestore();
     }
+  });
+
+  describe("format=aac", () => {
+    let aacPath: string;
+
+    beforeEach(() => {
+      aacPath = path.join(tmpDir, "recording.m4a");
+      fs.writeFileSync(aacPath, Buffer.alloc(2048, 3));
+      mockGetCatalogEntry.mockResolvedValue({
+        compressedPath: audioPath,
+        compressedAacPath: aacPath,
+        originalPath: audioPath,
+        isActionable: true,
+      });
+      mockValidatePathAsync.mockImplementation(async (candidate: string) => ({
+        valid: true,
+        resolvedPath: candidate,
+      }));
+    });
+
+    const request = (query: string, init?: ConstructorParameters<typeof NextRequest>[1]) =>
+      getAudio(
+        new NextRequest(
+          `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?${query}`,
+          init,
+        ),
+        { params: Promise.resolve({ id: CATALOG_ID, hash: HASH }) },
+      );
+
+    it("serves the AAC copy as audio/mp4 through the same path checks", async () => {
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      try {
+        const response = await request("format=aac", { headers: { range: "bytes=0-99" } });
+
+        expect(response.status).toBe(206);
+        expect(response.headers.get("Content-Type")).toBe("audio/mp4");
+        expect(response.headers.get("Content-Range")).toBe("bytes 0-99/2048");
+        expect(mockRewritePath).toHaveBeenCalledWith(aacPath);
+        expect(mockValidatePathAsync).toHaveBeenCalledWith(aacPath);
+        const event = findStructuredEvent(infoSpy.mock.calls as unknown[][], "audio_route_response");
+        expect(event).toMatchObject({ reason: "range_stream", format: "aac", servedSource: "archived" });
+        expect(mockLogAudioStreamed).toHaveBeenCalledWith(
+          "user-1",
+          HASH,
+          CATALOG_ID,
+          { start: 0, end: 99, fileSize: 2048 },
+          "aac"
+        );
+        await response.arrayBuffer();
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+
+    it("keeps serving the WebM without format or with format=webm", async () => {
+      for (const query of ["", "format=webm"]) {
+        const response = await request(query);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("Content-Length")).toBe(String(FILE_SIZE));
+        await response.arrayBuffer();
+      }
+      expect(mockValidatePathAsync).not.toHaveBeenCalledWith(aacPath);
+    });
+
+    it("returns 404 instead of the WebM when there is no AAC copy", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        mockGetCatalogEntry.mockResolvedValue({
+          compressedPath: audioPath,
+          originalPath: audioPath,
+          isActionable: true,
+        });
+
+        const response = await request("format=aac");
+
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: "No AAC copy for this recording" });
+        expect(mockValidatePathAsync).not.toHaveBeenCalled();
+        expect(mockLogAudioStreamed).not.toHaveBeenCalled();
+        const event = findStructuredEvent(warnSpy.mock.calls as unknown[][], "audio_route_response");
+        expect(event).toMatchObject({ status: 404, reason: "aac_unavailable" });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    // The access checks come before the format is looked at; these pin that
+    // order, so a later refactor cannot serve the copy to someone the WebM
+    // would be refused to.
+    it("denies the AAC copy when the recording is not accessible", async () => {
+      mockRequireCatalogRecordingAccess.mockResolvedValue(
+        NextResponse.json({ error: "Access denied to this recording" }, { status: 403 })
+      );
+
+      const response = await request("format=aac");
+
+      expect(response.status).toBe(403);
+      expect(mockGetCatalogEntry).not.toHaveBeenCalled();
+      expect(mockValidatePathAsync).not.toHaveBeenCalled();
+    });
+
+    it("denies downloading the AAC copy without the download permission", async () => {
+      mockRequireCatalogRecordingDownload.mockResolvedValue(
+        NextResponse.json({ error: "Download not permitted for this recording" }, { status: 403 })
+      );
+
+      const response = await request("format=aac&download=true");
+
+      expect(response.status).toBe(403);
+      expect(mockGetCatalogEntry).not.toHaveBeenCalled();
+    });
+
+    it("downloads the AAC copy under its own file name and audits the download", async () => {
+      const response = await request("format=aac&download=true");
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("audio/mp4");
+      expect(response.headers.get("Content-Disposition")).toContain('filename="recording.m4a"');
+      expect(mockLogAudioDownloaded).toHaveBeenCalledWith(
+        "user-1",
+        HASH,
+        CATALOG_ID,
+        "archived",
+        "aac"
+      );
+      await response.arrayBuffer();
+    });
+
+    it("rejects format=aac for the original recording", async () => {
+      const response = await request("source=original&format=aac");
+      expect(response.status).toBe(400);
+      expect(mockGetCatalogEntry).not.toHaveBeenCalled();
+    });
+
+    it("rejects an unknown format", async () => {
+      const response = await request("format=flac");
+      expect(response.status).toBe(400);
+    });
+
+    it("serves the listening variant's own AAC copy", async () => {
+      const listeningAac = path.join(tmpDir, "listening.m4a");
+      fs.writeFileSync(listeningAac, Buffer.alloc(512, 4));
+      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
+        variant: "enhanced",
+        listeningArchivedCatalogPath: "/catalogs/listening.csv",
+      });
+      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue({
+        compressedPath: path.join(tmpDir, "listening.webm"),
+        compressedAacPath: listeningAac,
+      });
+
+      const response = await request("source=listening&format=aac");
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Length")).toBe("512");
+      expect(mockValidatePathAsync).toHaveBeenCalledWith(listeningAac);
+      await response.arrayBuffer();
+    });
+
+    it("does not substitute the archived AAC copy for a variant without one", async () => {
+      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
+        variant: "enhanced",
+        listeningArchivedCatalogPath: "/catalogs/listening.csv",
+      });
+      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue({
+        compressedPath: path.join(tmpDir, "listening.webm"),
+        compressedAacPath: null,
+      });
+
+      const response = await request("source=listening&format=aac");
+
+      expect(response.status).toBe(404);
+      expect(mockValidatePathAsync).not.toHaveBeenCalled();
+    });
+
+    it("uses the archived AAC copy when the variant has no row for the recording", async () => {
+      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
+        variant: "enhanced",
+        listeningArchivedCatalogPath: "/catalogs/listening.csv",
+      });
+      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue(null);
+
+      const response = await request("source=listening&format=aac");
+
+      expect(response.status).toBe(200);
+      expect(mockValidatePathAsync).toHaveBeenCalledWith(aacPath);
+      await response.arrayBuffer();
+    });
+
+    it("audits the archived source when a listening download falls back to it", async () => {
+      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
+        variant: "enhanced",
+        listeningArchivedCatalogPath: "/catalogs/listening.csv",
+      });
+      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue(null);
+
+      const response = await request("source=listening&format=aac&download=true");
+
+      expect(response.status).toBe(200);
+      expect(mockLogAudioDownloaded).toHaveBeenCalledWith(
+        "user-1",
+        HASH,
+        CATALOG_ID,
+        "archived",
+        "aac"
+      );
+      await response.arrayBuffer();
+    });
   });
 });

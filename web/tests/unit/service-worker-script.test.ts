@@ -1,13 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AUDIO_CHUNK_SIZE,
   getAudioCacheKey,
   getAudioChunkKey,
   getAudioMetaKey,
+  getAudioCacheLockName,
+  withAudioCacheLock,
 } from '@/lib/offline/audio-cache-format';
+import { MemoryLocks } from './helpers/memory-locks';
 import {
   DOWNLOADS_PATH,
   OFFLINE_CACHE_NAMES,
@@ -27,7 +30,7 @@ type RangeParseResult =
   | { kind: 'full' }
   | { kind: 'invalid' }
   | { kind: 'unsatisfiable' }
-  | { kind: 'range'; start: number; end: number };
+  | { kind: 'range'; start: number; end: number; suffix?: boolean };
 
 interface SwInternals {
   AUDIO_CACHE_NAME: string;
@@ -35,11 +38,13 @@ interface SwInternals {
   STATIC_CACHE_NAME: string;
   STATIC_CACHE_MAX_ENTRIES: number;
   CHUNK_SIZE: number;
+  MAX_RANGE_RESPONSE_BYTES: number;
   DOWNLOADS_PATH: string;
   OFFLINE_RESPONSE_HEADER: string;
   getCacheKey: (url: string) => string;
   getChunkKey: (baseKey: string, index: number) => string;
   getMetaKey: (baseKey: string) => string;
+  getAudioCacheLockName: (baseKey: string) => string;
   isAudioCacheEntryFor: (baseKey: string, entryUrl: string) => boolean;
   isDownloadsPath: (pathname: string) => boolean;
   parseRangeHeader: (
@@ -96,7 +101,7 @@ class MemoryCacheStorage {
   }
 }
 
-function loadScript() {
+function loadScript(options: { locks?: MemoryLocks | null } = {}) {
   const listeners = new Map<string, (event: unknown) => void>();
   const fetchMock = vi
     .fn()
@@ -104,7 +109,9 @@ function loadScript() {
   const cacheStorage = new MemoryCacheStorage();
   const consoleMock = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const clientUrls = new Map<string, string>();
+  const locks = options.locks === undefined ? new MemoryLocks() : options.locks;
   const selfScope: Record<string, unknown> = {
+    navigator: { locks },
     __BESEDY_WEB_VERSION: 'web-v2-test',
     addEventListener: vi.fn(
       (type: string, handler: (event: unknown) => void) => {
@@ -162,6 +169,7 @@ function loadScript() {
     cacheStorage,
     clientUrls,
     fetchMock,
+    locks,
   };
 }
 
@@ -187,7 +195,7 @@ async function respondedWith(event: FetchHandlerEvent): Promise<Response> {
  * "read in flight" state does not depend on undici's timing. Only that one
  * read is gated; later reads (including the test's own) behave normally.
  */
-function gateNextRead(cache: MemoryCache) {
+function gateNextRead(cache: MemoryCache, snapshot = false, key?: string) {
   const original = cache.match;
   let markStarted!: () => void;
   const readStarted = new Promise<void>((resolve) => {
@@ -198,10 +206,12 @@ function gateNextRead(cache: MemoryCache) {
     settle = (error) => (error ? reject(error) : resolve());
   });
   cache.match = async (request) => {
+    if (key !== undefined && request !== key) return original.call(cache, request);
     cache.match = original;
+    const result = snapshot ? await original.call(cache, request) : undefined;
     markStarted();
     await gate;
-    return original.call(cache, request);
+    return snapshot ? result : original.call(cache, request);
   };
   return { readStarted, settle };
 }
@@ -209,7 +219,7 @@ function gateNextRead(cache: MemoryCache) {
 async function seedAudio(
   cacheStorage: MemoryCacheStorage,
   chunks: Uint8Array[],
-  options: { complete?: boolean } = {},
+  options: { complete?: boolean; generation?: string } = {},
 ) {
   const url = `/api/catalogs/cat/recordings/${HASH}/audio`;
   const baseKey = getAudioCacheKey(url, ORIGIN);
@@ -223,6 +233,7 @@ async function seedAudio(
         chunkSizes: chunks.map((chunk) => chunk.byteLength),
         contentType: 'audio/webm',
         complete: options.complete ?? true,
+        ...(options.generation ? { generation: options.generation } : {}),
       }),
     ),
   );
@@ -236,6 +247,8 @@ async function seedAudio(
   );
   return { url, baseKey, cache };
 }
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('service worker version handshake', () => {
   it('reports the version embedded in the waiting worker', () => {
@@ -252,6 +265,21 @@ describe('service worker version handshake', () => {
   });
 });
 
+describe('service worker audio format support', () => {
+  it('tells pages it keys offline audio by format', () => {
+    const { messageHandler } = loadScript();
+    const postMessage = vi.fn();
+    messageHandler({
+      data: { type: 'GET_AUDIO_FORMAT_SUPPORT' },
+      ports: [{ postMessage }],
+    });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'AUDIO_FORMAT_SUPPORT',
+      formatKey: true,
+    });
+  });
+});
+
 describe('service worker constants', () => {
   it('stays in sync with the page-side cache format', () => {
     const { internals } = loadScript();
@@ -262,6 +290,7 @@ describe('service worker constants', () => {
     expect(internals.CHUNK_SIZE).toBe(AUDIO_CHUNK_SIZE);
     expect(internals.DOWNLOADS_PATH).toBe(DOWNLOADS_PATH);
     expect(internals.OFFLINE_RESPONSE_HEADER).toBe(OFFLINE_RESPONSE_HEADER);
+    expect(internals.getAudioCacheLockName('audio')).toBe(getAudioCacheLockName('audio'));
   });
 
   it('derives the same normalized audio keys', () => {
@@ -270,6 +299,9 @@ describe('service worker constants', () => {
       `/api/catalogs/cat/recordings/${HASH}/audio`,
       `/api/catalogs/cat/recordings/${HASH}/audio?source=archived`,
       `/api/catalogs/cat/recordings/${HASH}/audio?source=listening&variant=loud`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?format=aac`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?format=webm`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?source=listening&variant=loud&format=aac&local=1`,
     ]) {
       const key = getAudioCacheKey(url, ORIGIN);
       expect(internals.getCacheKey(url)).toBe(key);
@@ -305,22 +337,119 @@ describe('downloaded audio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('streams an open-ended range instead of concatenating it before responding', async () => {
-    const { fetchHandler, cacheStorage } = loadScript();
-    const { url } = await seedAudio(cacheStorage, [
-      new Uint8Array([0, 1, 2]),
-      new Uint8Array([3, 4, 5]),
-      new Uint8Array([6, 7, 8]),
-    ]);
+  describe('range responses are capped', () => {
+    // Real-size chunks, so the cap bites exactly as it does on a phone.
+    function pattern(length: number, offset = 0) {
+      return Uint8Array.from({ length }, (_, index) => (offset + index) % 251);
+    }
 
-    const event = createEvent(url, { headers: { Range: 'bytes=2-' } });
-    fetchHandler(event);
-    const response = await respondedWith(event);
+    async function request(
+      layout: number[],
+      range: string | null,
+      prepare?: (cache: MemoryCache, baseKey: string) => Promise<void>,
+    ) {
+      const { fetchHandler, cacheStorage, fetchMock } = loadScript();
+      let offset = 0;
+      const chunks = layout.map((length) => {
+        const chunk = pattern(length, offset);
+        offset += length;
+        return chunk;
+      });
+      const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
+      await prepare?.(cache, baseKey);
+      const event = createEvent(url, range ? { headers: { Range: range } } : {});
+      fetchHandler(event);
+      const response = await respondedWith(event);
+      return { response, cache, baseKey, fetchMock, total: offset };
+    }
 
-    expect(response.body).toBeInstanceOf(ReadableStream);
-    expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([
-      2, 3, 4, 5, 6, 7, 8,
-    ]);
+    async function body(response: Response) {
+      return new Uint8Array(await response.arrayBuffer());
+    }
+
+    // toEqual walks a 4 MiB array element by element; compare the bytes.
+    function expectBytes(actual: Uint8Array, length: number, offset: number) {
+      expect(actual.byteLength).toBe(length);
+      expect(Buffer.from(actual).equals(Buffer.from(pattern(length, offset)))).toBe(true);
+    }
+
+    const { CHUNK_SIZE: CHUNK, MAX_RANGE_RESPONSE_BYTES: MAX } = loadScript().internals;
+
+    it('is 4 MiB, two chunks at the default chunk size', () => {
+      expect(MAX).toBe(4 * 1024 * 1024);
+      expect(MAX).toBe(2 * CHUNK);
+    });
+
+    it('answers an open-ended range with at most the cap, as a stream', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], 'bytes=0-');
+      expect(response.status).toBe(206);
+      expect(response.body).toBeInstanceOf(ReadableStream);
+      expect(response.headers.get('content-range')).toBe(`bytes 0-${MAX - 1}/${total}`);
+      expect(response.headers.get('content-length')).toBe(String(MAX));
+      expectBytes(await body(response), MAX, 0);
+    });
+
+    it('slices inside a chunk when the range starts mid-chunk', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], 'bytes=1000-');
+      expect(response.headers.get('content-range')).toBe(
+        `bytes 1000-${1000 + MAX - 1}/${total}`,
+      );
+      expectBytes(await body(response), MAX, 1000);
+    });
+
+    it('caps a recording stored as one large chunk', async () => {
+      // A server that ignored Range leaves the whole file in chunk 0.
+      const { response, total } = await request([3 * CHUNK], 'bytes=0-');
+      expect(response.headers.get('content-range')).toBe(`bytes 0-${MAX - 1}/${total}`);
+      expectBytes(await body(response), MAX, 0);
+    });
+
+    it('shortens an explicit range that asks for more than the cap', async () => {
+      const { response, total } = await request(
+        [CHUNK, CHUNK, CHUNK],
+        `bytes=10-${10 + MAX + 5000}`,
+      );
+      expect(response.headers.get('content-range')).toBe(
+        `bytes 10-${10 + MAX - 1}/${total}`,
+      );
+      expect(response.headers.get('content-length')).toBe(String(MAX));
+    });
+
+    it('keeps the tail of a suffix range', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], `bytes=-${MAX + 100}`);
+      expect(response.headers.get('content-range')).toBe(
+        `bytes ${total - MAX}-${total - 1}/${total}`,
+      );
+      expectBytes(await body(response), MAX, total - MAX);
+    });
+
+    it('serves the rest when the player asks for the next range', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], `bytes=${MAX}-`);
+      expect(response.headers.get('content-range')).toBe(`bytes ${MAX}-${total - 1}/${total}`);
+      expectBytes(await body(response), total - MAX, MAX);
+    });
+
+    it('keeps a request without Range whole, since a 200 cannot be short', async () => {
+      const { response, total } = await request([CHUNK, CHUNK, CHUNK], null);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-range')).toBeNull();
+      expect(response.headers.get('content-length')).toBe(String(total));
+      expect((await body(response)).byteLength).toBe(total);
+    });
+
+    it('finds a gap anywhere in the requested range before serving any of it', async () => {
+      const { response, cache, baseKey, fetchMock } = await request(
+        [CHUNK, CHUNK, CHUNK],
+        'bytes=0-',
+        // Chunk 2 lies beyond the capped response but inside the request.
+        async (cache, baseKey) => {
+          await cache.delete(getAudioChunkKey(baseKey, 2));
+        },
+      );
+      expect(await response.text()).toBe('network');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
+    });
   });
 
   it('does not read a chunk until the player asks for bytes', async () => {
@@ -480,6 +609,176 @@ describe('downloaded audio', () => {
     await expect(response.arrayBuffer()).rejects.toThrow('expected 3');
     expect(await cache.match(getAudioMetaKey(baseKey))).toBeUndefined();
     expect(await cache.match(getAudioChunkKey(baseKey, 0))).toBeUndefined();
+  });
+
+  it.each(['missing', 'wrong-size'])(
+    'keeps a replacement when an old %s chunk read finishes late',
+    async (damage) => {
+      const { fetchHandler, cacheStorage, locks } = loadScript();
+      vi.stubGlobal('navigator', { locks });
+      // Legacy downloads have no generation marker. Their replacement does,
+      // even when its sizes and bytes are otherwise identical.
+      const chunks = [new Uint8Array([0, 1, 2]), new Uint8Array([3, 4, 5])];
+      const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
+      const event = createEvent(url, { headers: { Range: 'bytes=0-' } });
+      fetchHandler(event);
+      const response = await respondedWith(event);
+      if (damage === 'missing') {
+        await cache.delete(getAudioChunkKey(baseKey, 0));
+      } else {
+        await cache.put(getAudioChunkKey(baseKey, 0), new Response(new Uint8Array([0])));
+      }
+      const { readStarted, settle } = gateNextRead(cache, true);
+      const failed = expect(response.arrayBuffer()).rejects.toThrow(
+        damage === 'missing' ? 'Missing audio chunk' : 'expected 3',
+      );
+      await readStarted;
+      await withAudioCacheLock(baseKey, async () => {
+        await seedAudio(cacheStorage, chunks, { generation: 'replacement' });
+      });
+      settle();
+      await failed;
+      expect(await (await cache.match(getAudioMetaKey(baseKey)))!.json())
+        .toMatchObject({ generation: 'replacement', complete: true });
+      expect(await (await cache.match(getAudioChunkKey(baseKey, 0)))!.arrayBuffer())
+        .toEqual(chunks[0].buffer);
+      expect(await cache.match(getAudioChunkKey(baseKey, 1))).toBeDefined();
+    },
+  );
+
+  it('does not let a second failing reader delete a download repaired after the first cleanup', async () => {
+    const { fetchHandler, cacheStorage, locks } = loadScript();
+    vi.stubGlobal('navigator', { locks });
+    const chunks = [new Uint8Array([0, 1, 2])];
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks, { generation: 'old' });
+    const events = [createEvent(url), createEvent(url)];
+    events.forEach(fetchHandler);
+    const [first, second] = await Promise.all(events.map(respondedWith));
+    await cache.put(getAudioChunkKey(baseKey, 0), new Response(new Uint8Array([0])));
+    const firstRead = gateNextRead(cache, true);
+    const firstFailed = expect(first.arrayBuffer()).rejects.toThrow('expected 3');
+    await firstRead.readStarted;
+    const secondRead = gateNextRead(cache, true);
+    const secondFailed = expect(second.arrayBuffer()).rejects.toThrow('expected 3');
+    await secondRead.readStarted;
+    firstRead.settle();
+    await firstFailed;
+    expect(await cache.keys()).toHaveLength(0);
+    await withAudioCacheLock(baseKey, async () => {
+      await seedAudio(cacheStorage, chunks, { generation: 'new' });
+    });
+    secondRead.settle();
+    await secondFailed;
+    expect(await cache.keys()).toHaveLength(2);
+  });
+
+  it('holds the storage lock through cleanup so a replacement cannot be partly deleted', async () => {
+    const { fetchHandler, cacheStorage, locks } = loadScript();
+    vi.stubGlobal('navigator', { locks });
+    const chunks = [new Uint8Array([0, 1, 2])];
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
+    const event = createEvent(url);
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    await cache.delete(getAudioChunkKey(baseKey, 0));
+    let markCleanup!: () => void;
+    let releaseCleanup!: () => void;
+    const cleanupStarted = new Promise<void>((resolve) => { markCleanup = resolve; });
+    const cleanupGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const originalKeys = cache.keys.bind(cache);
+    cache.keys = async () => {
+      markCleanup();
+      await cleanupGate;
+      return originalKeys();
+    };
+    const failed = expect(response.arrayBuffer()).rejects.toThrow('Missing audio chunk');
+    await cleanupStarted;
+    let replacementStarted = false;
+    const replacement = withAudioCacheLock(baseKey, async () => {
+      replacementStarted = true;
+      await seedAudio(cacheStorage, chunks, { generation: 'new' });
+    });
+    try {
+      expect(locks!.isHeld(getAudioCacheLockName(baseKey))).toBe(true);
+      expect(replacementStarted).toBe(false);
+    } finally {
+      releaseCleanup();
+      await Promise.all([failed, replacement]);
+    }
+    expect(await cache.keys()).toHaveLength(2);
+    expect(await (await cache.match(getAudioMetaKey(baseKey)))!.json())
+      .toMatchObject({ generation: 'new' });
+  });
+
+  it.each(['invalid-json', 'invalid-shape', 'inconsistent-sizes'])(
+    'keeps a replacement when an old %s metadata read finishes late',
+    async (damage) => {
+      const { fetchHandler, cacheStorage, locks } = loadScript();
+      vi.stubGlobal('navigator', { locks });
+      const chunks = [new Uint8Array([0, 1, 2])];
+      const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
+      const old = await (await cache.match(getAudioMetaKey(baseKey)))!.json();
+      const damaged = damage === 'invalid-json'
+        ? 'not json'
+        : JSON.stringify({ ...old, totalSize: damage === 'invalid-shape' ? 'invalid' : 4 });
+      await cache.put(getAudioMetaKey(baseKey), new Response(damaged));
+      const { readStarted, settle } = gateNextRead(cache, true);
+      const event = createEvent(url);
+      fetchHandler(event);
+      await readStarted;
+      await withAudioCacheLock(baseKey, async () => {
+        await seedAudio(cacheStorage, chunks, { generation: 'new' });
+      });
+      settle();
+      const response = await respondedWith(event);
+      expect(await response.text()).toBe('network');
+      expect(await cache.keys()).toHaveLength(2);
+    },
+  );
+
+  it('keeps a replacement when an old preflight chunk check reports a missing chunk', async () => {
+    const { fetchHandler, cacheStorage, locks } = loadScript();
+    vi.stubGlobal('navigator', { locks });
+    const chunks = [new Uint8Array([0, 1, 2])];
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
+    const key = getAudioChunkKey(baseKey, 0);
+    await cache.delete(key);
+    const { readStarted, settle } = gateNextRead(cache, true, key);
+    const event = createEvent(url);
+    fetchHandler(event);
+    await readStarted;
+    await withAudioCacheLock(baseKey, async () => {
+      await seedAudio(cacheStorage, chunks, { generation: 'new' });
+    });
+    settle();
+    expect(await (await respondedWith(event)).text()).toBe('network');
+    expect(await cache.keys()).toHaveLength(2);
+  });
+
+  it('fails damaged playback without destructive cleanup when Web Locks are unavailable', async () => {
+    const { fetchHandler, cacheStorage } = loadScript({ locks: null });
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [new Uint8Array([0, 1, 2])]);
+    const event = createEvent(url);
+    fetchHandler(event);
+    const response = await respondedWith(event);
+    await cache.put(getAudioChunkKey(baseKey, 0), new Response(new Uint8Array([0])));
+    await expect(response.arrayBuffer()).rejects.toThrow('expected 3');
+    expect(await cache.keys()).toHaveLength(2);
+  });
+
+  it('uses the network and keeps the download when the metadata body cannot be read', async () => {
+    const { fetchHandler, cacheStorage } = loadScript();
+    const { url, baseKey, cache } = await seedAudio(cacheStorage, [new Uint8Array([0, 1, 2])]);
+    const unreadable = new ReadableStream({
+      pull(controller) {
+        controller.error(new Error('Cache Storage went away'));
+      },
+    });
+    await cache.put(getAudioMetaKey(baseKey), new Response(unreadable));
+    const event = createEvent(url);
+    fetchHandler(event);
+    expect(await (await respondedWith(event)).text()).toBe('network');
+    expect(await cache.keys()).toHaveLength(2);
   });
 
   it('rejects malformed and reversed ranges', () => {

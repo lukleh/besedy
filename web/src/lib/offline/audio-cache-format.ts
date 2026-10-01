@@ -24,18 +24,45 @@ export interface AudioCacheMeta {
   chunkSizes: number[];
   contentType: string;
   complete: boolean;
+  /** Changes on restart/repair so old playback failures cannot delete new bytes. */
+  generation?: string;
 }
 
 /**
- * Normalize an audio URL into its cache key. Only `source` and `variant`
- * change the bytes served, so only they survive; `archived` is the default
- * source and is dropped so `…/audio` and `…/audio?source=archived` share one
- * entry.
+ * A cache key without its `format`: the recording and source it stores.
+ * Used to recognise a download of the same source in the other format.
+ */
+export function withoutAudioFormat(cacheKey: string): string {
+  const parsed = new URL(cacheKey);
+  parsed.searchParams.delete("format");
+  return parsed.toString();
+}
+
+/** Shared with the worker; never hold this lock across a network request. */
+export function getAudioCacheLockName(baseKey: string): string {
+  return `besedy-audio-cache:${baseKey}`;
+}
+
+export async function withAudioCacheLock<T>(
+  baseKey: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  return locks ? locks.request(getAudioCacheLockName(baseKey), work) : work();
+}
+
+/**
+ * Normalize an audio URL into its cache key. Only `source`, `variant` and
+ * `format` change the bytes served, so only they survive. The defaults
+ * (`archived`, `webm`) are dropped so `…/audio` and `…/audio?source=archived`
+ * share one entry, and so WebM packages downloaded before `format` existed
+ * keep their keys; the AAC-in-MP4 copy (#291) gets its own.
  */
 export function getAudioCacheKey(url: string, origin: string): string {
   const parsed = new URL(url, origin);
   const source = parsed.searchParams.get("source") || "archived";
   const variant = parsed.searchParams.get("variant") || "";
+  const format = parsed.searchParams.get("format") || "webm";
 
   parsed.search = "";
   parsed.hash = "";
@@ -44,6 +71,9 @@ export function getAudioCacheKey(url: string, origin: string): string {
   }
   if (variant) {
     parsed.searchParams.set("variant", variant);
+  }
+  if (format !== "webm") {
+    parsed.searchParams.set("format", format);
   }
   return parsed.toString();
 }
@@ -103,12 +133,16 @@ export async function readAudioCacheMeta(
       chunkSizes: parsed.chunkSizes,
       contentType: parsed.contentType,
       complete: parsed.complete === true,
+      ...(typeof parsed.generation === 'string'
+        ? { generation: parsed.generation }
+        : {}),
     };
   } catch {
     return null;
   }
 }
 
+/** Call under withAudioCacheLock when updating a download's stored state. */
 export async function writeAudioCacheMeta(
   cache: Cache,
   baseKey: string,
@@ -218,10 +252,12 @@ export function summarizeAudioCacheMeta(meta: AudioCacheMeta): AudioCacheProgres
 
 /** Remove every chunk and the metadata entry stored for `baseKey`. */
 export async function deleteAudioCacheEntries(cache: Cache, baseKey: string): Promise<void> {
-  const keys = await cache.keys();
-  await Promise.all(
-    keys
-      .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
-      .map((request) => cache.delete(request))
-  );
+  await withAudioCacheLock(baseKey, async () => {
+    const keys = await cache.keys();
+    await Promise.all(
+      keys
+        .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
+        .map((request) => cache.delete(request))
+    );
+  });
 }

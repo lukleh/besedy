@@ -49,6 +49,8 @@ export function useRecordingEntry({
 }: UseRecordingEntryParams) {
   const query = useQuery<CatalogEntryWithPermissions>({
     queryKey: ["catalog-entry", hash, groupKey],
+    // Run the request even offline so its local-package fallback can answer.
+    networkMode: "offlineFirst",
     queryFn: async () =>
       withLocalFallback(
         () =>

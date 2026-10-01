@@ -14,6 +14,7 @@
  * see each other's changes.
  */
 import { createClientLogger } from '@/lib/log/client';
+import { browserPrefersAacAudio } from '@/lib/audio-format';
 import {
   buildAudioSourcePreferenceUrl,
   buildAudioSourcesUrl,
@@ -48,6 +49,7 @@ import {
   isConsistentAudioCacheMeta,
   verifyAudioCache,
   writeAudioCacheMeta,
+  withAudioCacheLock,
   type AudioCacheMeta,
 } from './audio-cache-format';
 import {
@@ -409,37 +411,30 @@ export async function downloadAudioChunks(options: {
 }): Promise<number> {
   const { cache, url, cacheKey, signal, onProgress } = options;
 
-  let meta = await readAudioCacheMeta(cache, cacheKey);
-  if (meta) {
+  // The queue's download lock coordinates pages. This shorter storage lock
+  // also coordinates the worker's damage cleanup, without covering fetches.
+  let meta = await withAudioCacheLock(cacheKey, async () => {
+    const previous = await readAudioCacheMeta(cache, cacheKey);
+    if (!previous) return null;
     // Resume from the longest contiguous prefix of complete chunks. A missing
     // or damaged chunk does not throw away what precedes it.
-    const prefix = await countContiguousChunks(cache, cacheKey, meta);
-    if (prefix === 0) {
-      meta = null;
-    } else {
-      // Metadata that verification would reject must not pass the fast path
-      // below: normalise the completion flag to the bytes actually recorded
-      // and start over when the sizes cannot be trusted.
-      const chunkSizes = meta.chunkSizes.slice(0, prefix);
-      const candidate: AudioCacheMeta = {
-        ...meta,
-        chunkCount: prefix,
-        chunkSizes,
-        complete: audioCacheMetaBytes({ chunkSizes }) === meta.totalSize,
-      };
-      if (!isConsistentAudioCacheMeta(candidate)) {
-        meta = null;
-      } else if (
-        candidate.chunkCount !== meta.chunkCount ||
-        candidate.complete !== meta.complete
-      ) {
-        meta = candidate;
-        await writeAudioCacheMeta(cache, cacheKey, meta);
-      } else {
-        meta = candidate;
-      }
-    }
-  }
+    const prefix = await countContiguousChunks(cache, cacheKey, previous);
+    if (prefix === 0) return null;
+    // Metadata that verification would reject must not pass the fast path
+    // below: normalise the completion flag to the bytes actually recorded
+    // and start over when the sizes cannot be trusted.
+    const chunkSizes = previous.chunkSizes.slice(0, prefix);
+    const candidate: AudioCacheMeta = {
+      ...previous,
+      generation: crypto.randomUUID(),
+      chunkCount: prefix,
+      chunkSizes,
+      complete: audioCacheMetaBytes({ chunkSizes }) === previous.totalSize,
+    };
+    if (!isConsistentAudioCacheMeta(candidate)) return null;
+    await writeAudioCacheMeta(cache, cacheKey, candidate);
+    return candidate;
+  });
   if (!meta) {
     await deleteAudioCacheEntries(cache, cacheKey);
   }
@@ -458,21 +453,25 @@ export async function downloadAudioChunks(options: {
 
   if (!meta) {
     const first = await fetchRangeChunk(url, 0, AUDIO_CHUNK_SIZE - 1, signal);
-    await cache.put(
-      getAudioChunkKey(cacheKey, 0),
-      new Response(first.bytes, {
-        headers: { 'Content-Type': 'application/octet-stream' },
-      }),
-    );
     bytesLoaded = first.bytes.byteLength;
     meta = {
+      generation: crypto.randomUUID(),
       totalSize: first.totalSize,
       chunkCount: 1,
       chunkSizes: [first.bytes.byteLength],
       contentType: first.contentType,
       complete: bytesLoaded >= first.totalSize,
     };
-    await writeAudioCacheMeta(cache, cacheKey, meta);
+    const firstMeta = meta;
+    await withAudioCacheLock(cacheKey, async () => {
+      await cache.put(
+        getAudioChunkKey(cacheKey, 0),
+        new Response(first.bytes, {
+          headers: { 'Content-Type': 'application/octet-stream' },
+        }),
+      );
+      await writeAudioCacheMeta(cache, cacheKey, firstMeta);
+    });
     await onProgress({ bytesLoaded, totalBytes: meta.totalSize });
   }
 
@@ -490,12 +489,6 @@ export async function downloadAudioChunks(options: {
     }
 
     const chunkIndex: number = meta.chunkSizes.length;
-    await cache.put(
-      getAudioChunkKey(cacheKey, chunkIndex),
-      new Response(chunk.bytes, {
-        headers: { 'Content-Type': 'application/octet-stream' },
-      }),
-    );
     bytesLoaded += chunk.bytes.byteLength;
     meta = {
       ...meta,
@@ -503,7 +496,16 @@ export async function downloadAudioChunks(options: {
       chunkSizes: [...meta.chunkSizes, chunk.bytes.byteLength],
       complete: bytesLoaded >= meta.totalSize,
     };
-    await writeAudioCacheMeta(cache, cacheKey, meta);
+    const nextMeta = meta;
+    await withAudioCacheLock(cacheKey, async () => {
+      await cache.put(
+        getAudioChunkKey(cacheKey, chunkIndex),
+        new Response(chunk.bytes, {
+          headers: { 'Content-Type': 'application/octet-stream' },
+        }),
+      );
+      await writeAudioCacheMeta(cache, cacheKey, nextMeta);
+    });
     await onProgress({ bytesLoaded, totalBytes: meta.totalSize });
   }
 
@@ -1532,11 +1534,16 @@ class DownloadManager {
           : null;
       const audioSource =
         preferredSource ?? sources?.defaultSource ?? 'archived';
+      // The same file the page plays: the AAC-in-MP4 copy on WebKit when
+      // this source has one (#291), keyed by format in the audio cache. A
+      // WebM download paused before the copy existed therefore restarts as
+      // the copy rather than finishing a file Safari cannot stream.
       const audioUrl = buildAudioUrl(
         catalogId,
         hash,
         audioSource,
         availableSources,
+        { preferAac: browserPrefersAacAudio() },
       );
       const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
 

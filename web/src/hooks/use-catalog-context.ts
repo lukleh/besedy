@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useActiveGroup } from "@/hooks/use-active-group";
 import { useCatalogs } from "@/hooks/use-catalogs";
 import { useUpdateActiveGroup } from "@/hooks/use-update-active-group";
@@ -29,16 +29,22 @@ export function useCatalogContext(
 
   const syncPreference = useUpdateActiveGroup();
   const { mutate: syncPreferenceMutate, isPending: syncPreferencePending } = syncPreference;
+  // Sync each catalog once per mount. Retrying after a failed save would
+  // re-run this effect as soon as the mutation settles, a request loop that
+  // never backs off (offline, or while the server keeps rejecting it).
+  const syncAttemptedForRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (
       catalogId &&
       !catalogValidationLoading &&
       !catalogNotFound &&
-      !active.isLoading &&
+      active.isSuccess &&
       catalogId !== active.activeGroupId &&
-      !syncPreferencePending
+      !syncPreferencePending &&
+      syncAttemptedForRef.current !== catalogId
     ) {
+      syncAttemptedForRef.current = catalogId;
       syncPreferenceMutate(catalogId);
     }
   }, [
@@ -46,7 +52,7 @@ export function useCatalogContext(
     catalogValidationLoading,
     catalogNotFound,
     active.activeGroupId,
-    active.isLoading,
+    active.isSuccess,
     syncPreferencePending,
     syncPreferenceMutate,
   ]);

@@ -322,7 +322,8 @@ function LocalTransportControl() {
       </div>
       <div className="text-muted-foreground">
         Applies to downloaded recordings on this device only. inline needs the copy this
-        browser stores at download time; without one the Source line shows worker-cache.
+        browser stores at download time, and blob needs the complete chunk cache; without
+        them the Source line shows worker-cache.
       </div>
     </div>
   );

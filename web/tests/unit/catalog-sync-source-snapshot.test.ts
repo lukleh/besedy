@@ -4,7 +4,7 @@ import { buildSourceFingerprint } from '@/lib/catalog-sync/source-snapshot';
 describe('catalog sync source generations', () => {
   it('uses a versioned SHA-256 of the exact parsed bytes', () => {
     expect(buildSourceFingerprint('Hash\nabc\n')).toBe(
-      'v3:sha256:8bed695e60381bf139dc1c4908e95b524c5c64fa795ba06bc045eca765857d52',
+      'v4:sha256:8bed695e60381bf139dc1c4908e95b524c5c64fa795ba06bc045eca765857d52',
     );
   });
 

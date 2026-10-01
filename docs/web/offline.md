@@ -85,7 +85,40 @@ The `besedy-offline` IndexedDB database currently has three stores:
 Audio is written in 2 MiB chunks to Cache Storage (`besedy-audio-v5`). A
 metadata entry records size, MIME type, chunk sizes, and completion state; the
 service worker streams valid byte ranges from complete chunks without joining a
-recording in memory. The remaining caches are intentionally small:
+recording in memory. Each `206` carries at most 4 MiB (`MAX_RANGE_RESPONSE_BYTES`
+in `web/public/sw.js`) however much the request asks for, so the event log and
+network panel show runs of short responses such as `bytes 0-4194303/…` and
+`bytes 4194304-8388607/…`: Safari's media loader on iOS keeps every byte a
+service worker sends it in the GPU process and does not stop reading, so an
+uncapped `bytes=0-` for a multi-hour recording pushed that process past its
+memory limit and WebKit terminated the page. A suffix range keeps its tail; a
+request without `Range` still gets the whole body as a `200`.
+
+Each package is keyed by the URL's `source`, `variant` and `format`
+(`getAudioCacheKey` and the worker's `getCacheKey`, which must agree), with the
+defaults `archived` and `webm` dropped. WebKit browsers (`prefersAacAudio` in
+`web/src/lib/audio-format.ts`: every iOS browser and Safari on macOS) download
+and play the AAC-in-MP4 copy (`format=aac`) when `/audio/sources` lists one for
+the chosen source, because Safari loads a WebM audio file whole into its GPU
+process instead of streaming it (#291). That copy has its own key, so a WebM
+package downloaded earlier on the same device is not touched by the AAC one's
+cleanup, and it still counts as the download of that source: the page keeps
+playing it rather than streaming the copy, which a service worker from before
+the `format` key would otherwise answer with that WebM package in 4 MiB pieces.
+On WebKit the player waits for `/audio/sources` and the saved source preference
+before it starts, so it never begins on the WebM of a recording that has a copy;
+the wait is skipped when a complete download will play, and ends after 3 s, when
+the player starts on the WebM. A WebM download that was paused before the copy
+existed restarts from the beginning as the copy when it is resumed (the key
+differs), on purpose: finishing it would leave a package Safari cannot stream.
+The radio asks for the copy only after the controlling service worker confirms it
+keys audio by `format` (`GET_AUDIO_FORMAT_SUPPORT`); a worker from before that
+key would answer with a downloaded WebM, so until it updates the radio keeps
+the WebM. An AAC track
+that fails moves on to the next track like any other; there is no fallback
+between formats, since a catalogued file is either there or not. The WebKit browsers' offline transport default is unchanged here;
+moving it off the inline copy is #162. The remaining caches are intentionally
+small:
 
 - `besedy-offline-shell-v1` stores the session-free `/downloads` document.
 - `besedy-offline-static-v1` stores up to 96 content-hashed Next.js assets
@@ -95,15 +128,19 @@ Normal application HTML and API JSON are not placed in an offline cache.
 
 ### Diagnosing the local transport on a device
 
-A complete local recording reaches the media element in one of two ways: the
-service worker answers Range requests from the chunked cache (`worker`), or the
+A complete local recording reaches the media element in one of three ways: the
+service worker answers Range requests from the chunked cache (`worker`), the
 player loads a Base64 data URL built from the inline copy stored with the
-download (`inline`). The browser default comes from
+download (`inline`), or the player loads an object URL for one Blob composed
+from the cached chunks (`blob`), with no second copy and no worker in the media
+path. `blob` is a diagnostic option only: no browser defaults to it, and it
+falls back to the worker URL when the chunk set is incomplete. The browser
+default comes from
 `requiresInlineOfflineAudio` (WebKit on iOS and macOS, and Android browsers).
 That default was chosen on emulator evidence only, so the player's debug panel
 (the bug icon under the controls) shows the source kind the element was handed,
 the requested transport, the browser default, whether a worker controls the
-page, and an `auto | worker | inline` override. The two can differ: `inline`
+page, and an `auto | worker | inline | blob` override. The two can differ: `inline`
 requested without a stored inline copy is served from the worker cache, and
 the Source line is the one that tells the truth. Hydration builds the copy for
 the transport resolved at page load (see below), so this happens only when the
@@ -149,6 +186,18 @@ and a BroadcastChannel shares registry changes and abort requests. The manager
 requests persistent storage before the first download. User-paused downloads
 resume on demand; network-paused downloads resume after reconnection; a
 download interrupted by page close returns to `queued` at hydration.
+
+A third, per-recording storage lock (`besedy-audio-cache:<cache key>`) is
+shared with the service worker. The page holds it while it commits a chunk
+and its metadata, or rewrites metadata when a download resumes; network
+fetches happen outside it. Each download attempt writes a fresh `generation`
+marker into the metadata. Before the worker deletes a download it found
+damaged during playback, it takes the same lock and rechecks that the stored
+metadata is still the exact text it read when the request started, so a
+response that discovers damage after another download has already repaired
+the bytes deletes nothing. Without Web Locks the worker fails the damaged
+response but keeps the bytes; a wrong-size chunk then needs a manual remove
+and re-download.
 
 On startup and reconnect, the manager rechecks completed packages for the
 signed-in account. If the account no longer has transcript-download
@@ -358,6 +407,12 @@ and prefers a complete local package even while online: the bytes are identical
 by hash, playback starts without the network, and the online-to-offline
 transition stops being a special case for the player. Presentation components
 never see URLs, manifests, segments, caches, or player engines.
+
+React Query's default `online` network mode would pause such a query before
+its function runs once the browser reports offline, so the fallback would never
+be reached. Every reader that goes through `withLocalFallback` therefore sets
+`networkMode: "offlineFirst"`, and queries that only read IndexedDB (local audio,
+artwork) set `networkMode: "always"`.
 
 The source returns explicit capabilities (for example, `canPlay`,
 `hasTranscript`, and `canManageDownload`) together with the model. The local

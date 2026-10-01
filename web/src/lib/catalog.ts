@@ -60,6 +60,7 @@ export async function getCatalogEntry(
     select: {
       audioHash: true,
       compressedPath: true,
+      compressedAacPath: true,
       filename: true,
       originalPath: true,
       scanRoot: true,
@@ -95,6 +96,7 @@ export async function getCatalogEntriesByHashes(
     select: {
       audioHash: true,
       compressedPath: true,
+      compressedAacPath: true,
       filename: true,
       originalPath: true,
       scanRoot: true,

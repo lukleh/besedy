@@ -64,8 +64,7 @@ jobs:
         with:
           enable-cache: true
           prune-cache: true
-      - run: uv lock --upgrade-package rlmbenchy
-      - run: uv sync --frozen --extra jobs
+      - run: uv sync --locked --extra jobs
       - run: >-
           uv run pytest
           tests/test_prefect_jobs.py
@@ -74,19 +73,57 @@ jobs:
           tests/test_rlm_integration.py
           -q
 
-  web:
-    name: Web type-check + lint + unit
+  web-typecheck:
+    name: Web type-check
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+      - uses: ./.github/actions/setup-web
+      # pretype-check runs prisma generate.
+      - run: npm run type-check
+
+  web-lint:
+    name: Web lint + dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-web
+      - run: npm run audit:dependencies
+      - run: npx prisma generate
+      - run: npm run lint
+
+  web-unit:
+    name: Web unit (${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The shard total comes from strategy.job-total, so editing this list
+        # is enough to change the split without dropping any test files.
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-web
+      - run: npm run test -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  web-build:
+    name: Web production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-web
       - name: Restore Next.js build cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -94,12 +131,6 @@ jobs:
           key: ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/src/**', 'web/public/**', 'web/messages/**', 'web/prisma/**', 'web/package.json', 'web/next.config.ts', 'web/tsconfig.json', 'web/postcss.config.mjs', 'web/prisma.config.ts') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-
-      - run: npm ci
-      - run: npm run audit:dependencies
-      - run: npx prisma generate
-      - run: npm run type-check
-      - run: npm run lint
-      - run: npm run test
       - name: Build production bundle
         run: |
           AUTH_SECRET="$(openssl rand -hex 32)"
@@ -109,6 +140,27 @@ jobs:
           # Build-time placeholders only; production injects real values.
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           BETTER_AUTH_URL: http://localhost:3000
+
+  # The main ruleset requires this check name and no other web check, so it
+  # stays and gates every web job, including the build and the correction
+  # integration run. It passes only when all of them succeeded, and names
+  # each one that did not. It runs even when the run was cancelled: GitHub
+  # counts a skipped required check as passing, so skipping here would let a
+  # cancelled run's PR merge without the web checks.
+  web:
+    name: Web type-check + lint + unit
+    if: always()
+    needs: [web-typecheck, web-lint, web-unit, web-build, correction-integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every web job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          jq -r 'to_entries[] | select(.value.result != "success")
+            | "::error title=\(.key) \(.value.result)::The \(.key) job finished as \(.value.result)"' <<<"$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null
 
   correction-integration:
     name: Transcript correction integration
@@ -133,12 +185,7 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
+      - uses: ./.github/actions/setup-web
       - run: npx prisma generate
       - name: Apply migrations
         run: npx prisma migrate deploy

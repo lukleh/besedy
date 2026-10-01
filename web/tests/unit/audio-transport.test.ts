@@ -65,12 +65,19 @@ describe("resolveOfflineAudioTransport", () => {
     expect(resolveOfflineAudioTransport(IPHONE_UA, "worker")).toBe("worker");
     expect(resolveOfflineAudioTransport(DESKTOP_CHROME_UA, "inline")).toBe("inline");
   });
+
+  it("uses blob only when a device asks for it", () => {
+    expect(resolveOfflineAudioTransport(IPHONE_UA, "blob")).toBe("blob");
+    expect(resolveOfflineAudioTransport(DESKTOP_CHROME_UA, "blob")).toBe("blob");
+    localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "blob");
+    expect(readOfflineAudioTransportOverride()).toBe("blob");
+  });
 });
 
 describe("offline audio transport override storage", () => {
   it("reads auto when nothing or garbage is stored", () => {
     expect(readOfflineAudioTransportOverride()).toBe("auto");
-    localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "blob");
+    localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "segments");
     expect(readOfflineAudioTransportOverride()).toBe("auto");
   });
 
@@ -136,7 +143,7 @@ describe("useOfflineAudioTransport", () => {
 });
 
 describe("describeAudioSource", () => {
-  it("classifies the three sources and never echoes Base64 payloads", () => {
+  it("classifies the sources and never echoes Base64 payloads", () => {
     expect(describeAudioSource("")).toEqual({ kind: "none", summary: "(no source)" });
     expect(describeAudioSource("/api/x/audio?source=listening")).toEqual({
       kind: "network",
@@ -153,5 +160,10 @@ describe("describeAudioSource", () => {
     expect(inline.kind).toBe("inline-data");
     expect(inline.summary).toBe("data:audio/mpeg;base64,… (4 KB)");
     expect(inline.summary).not.toContain(payload.slice(0, 16));
+
+    expect(describeAudioSource("blob:https://besedy.org/3f2a")).toEqual({
+      kind: "blob-url",
+      summary: "blob:https://besedy.org/3f2a",
+    });
   });
 });

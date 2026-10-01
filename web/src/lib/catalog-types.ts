@@ -84,6 +84,8 @@ export interface DuplicateEntry {
 export interface CatalogEntry {
   hash: string;
   compressedPath?: string;
+  /** AAC-in-MP4 copy of the archive (#291); server-side only, like compressedPath. */
+  compressedAacPath?: string;
   filename?: string;
   originalPath?: string;
   scanRoot?: string;

@@ -188,6 +188,26 @@ describe("catalog random event route", () => {
     expect(body.locationName).toBe("Location X");
     // Duration still comes from the recording's catalog entry.
     expect(body.duration).toBe("00:01:00");
+    expect(body.hasAacCopy).toBe(false);
+  });
+
+  it("tells radio when the recording has an AAC copy, without its path", async () => {
+    getCurrentUserId.mockResolvedValue("listener-1");
+    getCatalogCapability.mockResolvedValue({
+      catalogExists: true,
+      hasAccess: true,
+      catalogGrant: grantForRole("listener"),
+    });
+    getPublishedVisibleEventIds.mockResolvedValue([1]);
+    prisma.catalogEvent.findMany.mockResolvedValue([eventRow()]);
+    getCatalogEntriesByHashes.mockResolvedValue([
+      entryRow(HASH_A, { compressedAacPath: "/data/audio/secret/a.m4a" }),
+    ]);
+
+    const body = await (await callRoute()).json();
+
+    expect(body.hasAacCopy).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("/data/audio");
   });
 
   it("restricts the pool to event primaries for owners too", async () => {

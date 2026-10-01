@@ -26,6 +26,13 @@ const KNOWN_CACHE_NAMES = [
 const OWNED_CACHE_PREFIX = 'besedy-';
 
 const CHUNK_SIZE = 2 * 1024 * 1024;
+// A Range response carries at most this many bytes, however much the request
+// asks for and however the recording is chunked. WebKit's media loader keeps
+// every byte it is sent in the GPU process and does not stop reading a
+// service-worker stream, so answering `bytes=0-` with the whole recording
+// pushed that process past its memory limit on iPhone. A short 206 is a valid
+// answer: the player asks for the next range when it needs it.
+const MAX_RANGE_RESPONSE_BYTES = 4 * 1024 * 1024;
 const AUDIO_URL_PATTERN =
   /\/api\/catalogs\/[^/]+\/recordings\/([a-f0-9]{64})\/audio$/;
 const AUTH_NAVIGATION_PREFIXES = ['/api/auth/', '/mock-oauth/'];
@@ -70,6 +77,11 @@ self.addEventListener('message', (event) => {
         type: 'WEB_VERSION',
         version: self.__BESEDY_WEB_VERSION || null,
       });
+      return;
+    case 'GET_AUDIO_FORMAT_SUPPORT':
+      // getCacheKey keeps `format`, so a format=aac request never gets a
+      // downloaded WebM. Pages ask before sending one (#291).
+      event.ports[0]?.postMessage({ type: 'AUDIO_FORMAT_SUPPORT', formatKey: true });
       return;
     case 'SKIP_WAITING':
       self.skipWaiting();
@@ -304,10 +316,13 @@ async function handleAppAssetRequest(request) {
   }
 }
 
+// Must match getAudioCacheKey in src/lib/offline/audio-cache-format.ts: the
+// AAC-in-MP4 copy (`format=aac`, #291) is a different file from the WebM.
 function getCacheKey(url) {
   const parsed = new URL(url, self.location.origin);
   const source = parsed.searchParams.get('source') || 'archived';
   const variant = parsed.searchParams.get('variant') || '';
+  const format = parsed.searchParams.get('format') || 'webm';
 
   parsed.search = '';
   parsed.hash = '';
@@ -316,6 +331,9 @@ function getCacheKey(url) {
   }
   if (variant) {
     parsed.searchParams.set('variant', variant);
+  }
+  if (format !== 'webm') {
+    parsed.searchParams.set('format', format);
   }
   return parsed.toString();
 }
@@ -346,14 +364,29 @@ function isAudioCacheEntryFor(baseKey, entryUrl) {
 // says nothing about the download and must not discard it.
 class DamagedDownloadError extends Error {}
 
-async function deleteAudioCacheEntries(cache, baseKey) {
+function getAudioCacheLockName(baseKey) {
+  return `besedy-audio-cache:${baseKey}`;
+}
+
+async function deleteAudioCacheEntries(cache, baseKey, metaIdentity) {
+  // An identity check alone can race a page's next write. Without a shared
+  // lock, fail the response but retain bytes rather than risk a replacement.
+  const locks = self.navigator?.locks;
+  if (!locks) {
+    console.warn('[SW] Web Locks unavailable; keeping damaged audio cache entries for', baseKey);
+    return;
+  }
   try {
-    const keys = await cache.keys();
-    await Promise.all(
-      keys
-        .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
-        .map((request) => cache.delete(request)),
-    );
+    await locks.request(getAudioCacheLockName(baseKey), async () => {
+      const current = await cache.match(getMetaKey(baseKey));
+      if (!current || (await current.text()) !== metaIdentity) return;
+      const keys = await cache.keys();
+      await Promise.all(
+        keys
+          .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
+          .map((request) => cache.delete(request)),
+      );
+    });
   } catch (error) {
     console.error('[SW] Audio cache cleanup failed:', error);
   }
@@ -379,15 +412,23 @@ async function handleAudioRequest(request) {
   const metaResponse = await cache.match(getMetaKey(cacheKey));
   if (!metaResponse) return fetch(request);
 
+  let metaIdentity;
+  try {
+    metaIdentity = await metaResponse.text();
+  } catch {
+    // A body that cannot be read says nothing about the download: serve the
+    // network and keep the bytes.
+    return fetch(request);
+  }
   let meta;
   try {
-    meta = await metaResponse.json();
+    meta = JSON.parse(metaIdentity);
   } catch {
-    await deleteAudioCacheEntries(cache, cacheKey);
+    await deleteAudioCacheEntries(cache, cacheKey, metaIdentity);
     return fetch(request);
   }
   if (!isWellFormedAudioMeta(meta)) {
-    await deleteAudioCacheEntries(cache, cacheKey);
+    await deleteAudioCacheEntries(cache, cacheKey, metaIdentity);
     return fetch(request);
   }
   // The page-side manager's own Range requests pass through this worker while
@@ -398,6 +439,7 @@ async function handleAudioRequest(request) {
     cache,
     cacheKey,
     meta,
+    metaIdentity,
     request.headers.get('range'),
     request,
   );
@@ -425,6 +467,7 @@ function parseRangeHeader(rangeHeader, totalSize) {
       kind: 'range',
       start: Math.max(0, totalSize - suffixLength),
       end: totalSize - 1,
+      suffix: true,
     };
   }
 
@@ -454,6 +497,7 @@ function createChunkStream(options) {
   const {
     cache,
     baseKey,
+    metaIdentity,
     chunkSizes,
     chunkOffsets,
     startChunk,
@@ -499,7 +543,7 @@ function createChunkStream(options) {
           // Damaged bytes are damage even if the player has already moved on;
           // erroring a cancelled stream is a no-op.
           if (error instanceof DamagedDownloadError) {
-            await deleteAudioCacheEntries(cache, baseKey);
+            await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
           }
           controller.error(error);
         }
@@ -519,6 +563,7 @@ async function handleRangeFromChunks(
   cache,
   baseKey,
   meta,
+  metaIdentity,
   rangeHeader,
   request,
 ) {
@@ -528,7 +573,7 @@ async function handleRangeFromChunks(
     chunkOffsets.push(chunkOffsets[index] + chunkSizes[index]);
   }
   if (chunkOffsets[chunkSizes.length] !== totalSize) {
-    await deleteAudioCacheEntries(cache, baseKey);
+    await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
     return fetch(request);
   }
 
@@ -537,28 +582,45 @@ async function handleRangeFromChunks(
     return unsatisfiableRangeResponse(totalSize);
   }
   const isRangeRequest = parsed.kind === 'range';
-  const start = isRangeRequest ? parsed.start : 0;
-  const end = isRangeRequest ? parsed.end : totalSize - 1;
-
-  let startChunk = -1;
-  let endChunk = -1;
-  for (let index = 0; index < chunkSizes.length; index += 1) {
-    const chunkStart = chunkOffsets[index];
-    const chunkEnd = chunkOffsets[index + 1] - 1;
-    if (startChunk === -1 && start <= chunkEnd) startChunk = index;
-    if (end >= chunkStart && end <= chunkEnd) {
-      endChunk = index;
-      break;
-    }
+  const requestedStart = isRangeRequest ? parsed.start : 0;
+  const requestedEnd = isRangeRequest ? parsed.end : totalSize - 1;
+  // A request without Range must get the whole body as a 200; only a 206 may
+  // be shorter than asked for. A suffix range asks for the tail, so it keeps
+  // its end rather than its start.
+  let start = requestedStart;
+  let end = requestedEnd;
+  if (isRangeRequest && end - start + 1 > MAX_RANGE_RESPONSE_BYTES) {
+    if (parsed.suffix) start = end - MAX_RANGE_RESPONSE_BYTES + 1;
+    else end = start + MAX_RANGE_RESPONSE_BYTES - 1;
   }
-  if (startChunk === -1 || endChunk === -1) {
-    await deleteAudioCacheEntries(cache, baseKey);
+
+  const chunkAt = (offset) => {
+    for (let index = 0; index < chunkSizes.length; index += 1) {
+      if (offset < chunkOffsets[index + 1]) return index;
+    }
+    return -1;
+  };
+  const startChunk = chunkAt(start);
+  const endChunk = chunkAt(end);
+  const firstRequestedChunk = chunkAt(requestedStart);
+  const lastRequestedChunk = chunkAt(requestedEnd);
+  if (
+    startChunk === -1 ||
+    endChunk === -1 ||
+    firstRequestedChunk === -1 ||
+    lastRequestedChunk === -1
+  ) {
+    await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
     return fetch(request);
   }
 
-  for (let index = startChunk; index <= endChunk; index += 1) {
+  // Check every chunk the request asked for, not only the ones this capped
+  // response carries: a gap found now falls back to the network before any
+  // byte is committed, instead of deleting the cache under a playing element
+  // several ranges later.
+  for (let index = firstRequestedChunk; index <= lastRequestedChunk; index += 1) {
     if (!(await cache.match(getChunkKey(baseKey, index)))) {
-      await deleteAudioCacheEntries(cache, baseKey);
+      await deleteAudioCacheEntries(cache, baseKey, metaIdentity);
       return fetch(request);
     }
   }
@@ -566,6 +628,7 @@ async function handleRangeFromChunks(
   const body = createChunkStream({
     cache,
     baseKey,
+    metaIdentity,
     chunkSizes,
     chunkOffsets,
     startChunk,
@@ -593,11 +656,13 @@ self.__BESEDY_SW_INTERNALS = {
   STATIC_CACHE_NAME,
   STATIC_CACHE_MAX_ENTRIES,
   CHUNK_SIZE,
+  MAX_RANGE_RESPONSE_BYTES,
   DOWNLOADS_PATH,
   OFFLINE_RESPONSE_HEADER,
   getCacheKey,
   getChunkKey,
   getMetaKey,
+  getAudioCacheLockName,
   isAudioCacheEntryFor,
   isDownloadsPath,
   parseRangeHeader,

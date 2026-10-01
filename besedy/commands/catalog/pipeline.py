@@ -459,7 +459,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
 
     # Step: Archive (parallel to stage-audio conceptually)
     step_num += 1
-    print_step(step_num, total_steps, "archive", "Compressing to Opus")
+    print_step(step_num, total_steps, "archive", "Compressing to Opus with an AAC copy")
 
     archive_args = ArchiveRequest(
         csv=loudness_csv,  # Same input as stage-audio
@@ -475,6 +475,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
         ffprobe_binary="ffprobe",
         bitrate=None,
         no_symlink=no_symlink,
+        aac_copy=True,  # AAC-in-MP4 copy for iOS Safari, next to each WebM
     )
 
     result = handle_archive(archive_args)

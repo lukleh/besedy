@@ -5,7 +5,7 @@ import {
   resolveCatalogRecordingRouteAccess,
   requireCatalogRecordingAccess,
 } from "@/lib/access/catalog-recording-route-access";
-import { CatalogHashParamSchema } from "@/lib/validation/schemas";
+import { CatalogHashParamSchema, type AudioFormat } from "@/lib/validation/schemas";
 import { validateParams } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -21,12 +21,27 @@ interface AudioSource {
   type: "archived" | "listening";
   variant?: string;
   available: boolean;
+  /**
+   * Files the audio route can serve for this source with `format=`: "webm"
+   * when the WebM is catalogued, "aac" when its AAC-in-MP4 copy is (#291).
+   */
+  formats: AudioFormat[];
+}
+
+function formatsFor(
+  row: { compressedPath: string | null; compressedAacPath: string | null } | null
+): AudioFormat[] {
+  const formats: AudioFormat[] = [];
+  if (row?.compressedPath) formats.push("webm");
+  if (row?.compressedAacPath) formats.push("aac");
+  return formats;
 }
 
 /**
  * GET /api/catalogs/:id/recordings/:hash/audio/sources - List available audio sources
  *
- * Returns list of available audio sources (archived, listening variants)
+ * Returns list of available audio sources (archived, listening variants),
+ * each with the formats it can be served in.
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -49,18 +64,26 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const sources: AudioSource[] = [];
 
-    // Always have archived source
+    const [archived, variants] = await Promise.all([
+      prisma.catalogEntry.findUnique({
+        where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: hash } },
+        select: { compressedPath: true, compressedAacPath: true },
+      }),
+      // Check for variants with listening audio
+      prisma.workflowVariant.findMany({
+        where: { workflowGroupId: catalogId },
+        orderBy: [{ isDefault: "desc" }, { variant: "asc" }],
+      }),
+    ]);
+
+    // Always listed; available when it has a file the audio route can serve.
+    const archivedFormats = formatsFor(archived);
     sources.push({
       id: "archived",
       label: "Archived",
       type: "archived",
-      available: true, // If we got here, archived exists
-    });
-
-    // Check for variants with listening audio
-    const variants = await prisma.workflowVariant.findMany({
-      where: { workflowGroupId: catalogId },
-      orderBy: [{ isDefault: "desc" }, { variant: "asc" }],
+      available: archivedFormats.length > 0,
+      formats: archivedFormats,
     });
 
     const listeningAvailability = await Promise.all(
@@ -75,9 +98,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
                 audioHash: hash,
               },
             },
-            select: { audioHash: true },
+            select: { compressedPath: true, compressedAacPath: true },
           });
-          return { variant, available: !!row };
+          const formats = formatsFor(row);
+          return { variant, available: formats.length > 0, formats };
         })
     );
 
@@ -88,6 +112,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         type: "listening",
         variant: item.variant.variant,
         available: item.available,
+        formats: item.formats,
       });
     }
 

@@ -129,6 +129,7 @@ export function TranscriptViewer({
   const { data: available, isLoading: loadingBackends } =
     useQuery<AvailableTranscripts>({
       queryKey: ["transcript-backends", hash, groupKey],
+      networkMode: "offlineFirst",
       queryFn: async () =>
         withLocalFallback(
           () =>
@@ -169,6 +170,7 @@ export function TranscriptViewer({
 
   const { data: availableFormats } = useQuery<AvailableFormats>({
     queryKey: ["transcript-formats", hash, groupKey, effectiveBackend],
+    networkMode: "offlineFirst",
     queryFn: async () =>
       withLocalFallback(
         () =>
@@ -207,6 +209,7 @@ export function TranscriptViewer({
   const { data: transcript, isLoading: loadingTranscript } =
     useQuery<Transcript>({
       queryKey: ["transcript", hash, groupKey, effectiveBackend],
+      networkMode: "offlineFirst",
       queryFn: async () =>
         withLocalFallback(
           () =>
@@ -268,6 +271,7 @@ export function TranscriptViewer({
 
   const { data: availableDiarizations } = useQuery<AvailableDiarizations>({
     queryKey: ["diarization-backends", hash, groupKey],
+    networkMode: "offlineFirst",
     queryFn: async () => {
       try {
         return await withLocalFallback(
@@ -297,6 +301,7 @@ export function TranscriptViewer({
 
   const { data: diarization } = useQuery<Diarization>({
     queryKey: ["diarization", hash, groupKey, effectiveDiarizationBackend],
+    networkMode: "offlineFirst",
     queryFn: async () =>
       withLocalFallback(
         () =>

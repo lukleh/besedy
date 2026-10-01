@@ -7,8 +7,11 @@ import { requiresInlineOfflineAudio } from "@/lib/offline/audio-cache-format";
  *   answers Range requests from the chunked audio cache.
  * - `inline`: the player loads a Base64 data URL built from the inline copy
  *   stored alongside the download.
+ * - `blob`: the player loads an object URL for one Blob composed from the
+ *   cached chunks, with no second copy and no service worker in the media
+ *   path. Only the debug panel selects it; no browser defaults to it.
  */
-export type OfflineAudioTransport = "worker" | "inline";
+export type OfflineAudioTransport = "worker" | "inline" | "blob";
 
 /** A per-device override of the transport, or `auto` for the browser default. */
 export type OfflineAudioTransportOverride = OfflineAudioTransport | "auto";
@@ -17,6 +20,7 @@ export const OFFLINE_AUDIO_TRANSPORT_OVERRIDES: readonly OfflineAudioTransportOv
   "auto",
   "worker",
   "inline",
+  "blob",
 ];
 
 /**
@@ -76,7 +80,12 @@ export function writeOfflineAudioTransportOverride(
 }
 
 /** What the media element was actually handed, derived from its `src`. */
-export type AudioSourceKind = "none" | "network" | "worker-cache" | "inline-data";
+export type AudioSourceKind =
+  | "none"
+  | "network"
+  | "worker-cache"
+  | "inline-data"
+  | "blob-url";
 
 export interface AudioSourceDescription {
   kind: AudioSourceKind;
@@ -90,6 +99,9 @@ export function describeAudioSource(src: string | null | undefined): AudioSource
     const header = src.slice(0, src.indexOf(",") === -1 ? src.length : src.indexOf(","));
     const kilobytes = Math.round(src.length / 1024);
     return { kind: "inline-data", summary: `${header},… (${kilobytes} KB)` };
+  }
+  if (src.startsWith("blob:")) {
+    return { kind: "blob-url", summary: src };
   }
   if (/[?&]local=1(?:&|$)/.test(src)) {
     return { kind: "worker-cache", summary: src };

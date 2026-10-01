@@ -5,20 +5,26 @@
  * event and recording pages. Pages stay unaware of caches, data URLs and
  * storage formats; they receive a `src` and use it.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
 import { useOfflineAudioTransport } from "@/hooks/use-offline-audio-transport";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { getAudioCacheKey } from "@/lib/offline/audio-cache-format";
+import {
+  getAudioCacheKey,
+  readCompleteAudioBlob,
+  withoutAudioFormat,
+} from "@/lib/offline/audio-cache-format";
+import { OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
 
 /**
  * Encode a stored recording as a data URL.
  *
- * WebKit rejects service-worker and blob-backed media once offline, so those
- * browsers play from an inline copy. This is the transport #163 replaces; it
- * lives here so it can be removed in one place.
+ * Android browsers and WebKit default to this inline copy on the assumption,
+ * from emulator evidence only, that they cannot play service-worker or
+ * blob-backed media offline; #162 tests that on devices. It lives here so it
+ * can be removed in one place.
  */
 export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): string {
   const bytes = new Uint8Array(data);
@@ -42,6 +48,31 @@ export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): stri
  */
 export function localAudioSrc(audioUrl: string): string {
   return `${audioUrl}${audioUrl.includes("?") ? "&" : "?"}local=1`;
+}
+
+/**
+ * An object URL that lives exactly as long as `blob` is the current value.
+ * Created and revoked in an effect so a render React discards (Strict Mode,
+ * an interrupted render) never leaks a URL, and a change of `blob` revokes
+ * the previous one.
+ */
+function useObjectUrl(blob: Blob | null | undefined): string | null {
+  const [entry, setEntry] = useState<{ blob: Blob; url: string } | null>(null);
+  useEffect(() => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    // The URL belongs to the committed blob; it cannot be derived in render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEntry({ blob, url });
+    return () => {
+      URL.revokeObjectURL(url);
+      // Drop the reference so the Blob can be collected once it is unused.
+      setEntry((current) => (current?.url === url ? null : current));
+    };
+  }, [blob]);
+  // Never report a URL for a blob other than the current one, not even for
+  // the render between a change of `blob` and the effect that follows it.
+  return entry && entry.blob === blob ? entry.url : null;
 }
 
 export interface LocalAudioSource {
@@ -69,21 +100,31 @@ export function useLocalAudioSrc(
   const record = useDownloadRecord(catalogId, hash);
   const { isOnline } = useOnlineStatus();
   const complete = record?.status === "complete" && !!record.audioUrl;
+  const recordCacheKey = record?.audioCacheKey;
   const matchesSelection = useMemo(() => {
-    if (!complete || !record?.audioCacheKey || typeof window === "undefined") {
+    if (!complete || !recordCacheKey || typeof window === "undefined") {
       return false;
     }
+    // A download of the same source in the other format still matches: a
+    // WebM package made before the AAC copy existed keeps playing as it did,
+    // rather than the page streaming the copy while a service worker from the
+    // previous release answers that request with the WebM package.
     return (
-      getAudioCacheKey(selectedUrl, window.location.origin) === record.audioCacheKey
+      withoutAudioFormat(getAudioCacheKey(selectedUrl, window.location.origin)) ===
+      withoutAudioFormat(recordCacheKey)
     );
-  }, [complete, record?.audioCacheKey, selectedUrl]);
+  }, [complete, recordCacheKey, selectedUrl]);
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
   // The browser default can be overridden per device from the player's debug
   // panel, so a transport can be tried on a real phone without a release.
-  const needsInline = useOfflineAudioTransport() === "inline";
+  const transport = useOfflineAudioTransport();
+  const needsInline = transport === "inline";
+  const blobEnabled = useLocal && transport === "blob" && !!record?.audioCacheKey;
 
   const inline = useQuery({
     queryKey: ["local-inline-audio", record?.key ?? null],
+    // IndexedDB reads do not need a network connection.
+    networkMode: "always",
     enabled: useLocal && needsInline,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
@@ -96,8 +137,37 @@ export function useLocalAudioSrc(
     },
   });
 
+  // One Blob composed from the cached chunk Blobs rather than one ArrayBuffer.
+  // Whether the browser keeps it as references to the stored parts or reads
+  // them into memory is engine-specific; the debug panel run measures it.
+  const composed = useQuery({
+    queryKey: ["local-blob-audio", record?.key ?? null, record?.audioCacheKey ?? null],
+    networkMode: "always",
+    enabled: blobEnabled,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      if (!record?.audioCacheKey || typeof caches === "undefined") return null;
+      const cache = await caches.open(OFFLINE_CACHE_NAMES.audio);
+      return readCompleteAudioBlob(cache, record.audioCacheKey);
+    },
+  });
+  // Scoped to the transport so switching away in the debug panel releases the
+  // Blob instead of holding it alongside the next transport's copy.
+  const blobUrl = useObjectUrl(transport === "blob" ? composed.data : null);
+
   if (!useLocal || !record?.audioUrl) return { src: null, pending: false };
   const local = localAudioSrc(record.audioUrl);
+  if (transport === "blob") {
+    // Hold the player until the URL exists too, so it is never handed the
+    // worker URL for the one render between the read and the commit.
+    if (blobEnabled && (composed.isPending || (composed.data && !blobUrl))) {
+      return { src: null, pending: true };
+    }
+    // Without a readable chunk set the worker URL still plays the download.
+    return { src: blobUrl ?? local, pending: false };
+  }
   if (!needsInline) return { src: local, pending: false };
   if (inline.isPending) return { src: null, pending: true };
   return { src: inline.data ?? local, pending: false };
@@ -119,6 +189,7 @@ export function useLocalArtworkUrl(
 
   const { data: blob } = useQuery({
     queryKey: ["local-artwork", key, artworkId],
+    networkMode: "always",
     enabled: key !== null && artworkId !== null,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
@@ -132,11 +203,5 @@ export function useLocalArtworkUrl(
     },
   });
 
-  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
-  useEffect(() => {
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [url]);
-  return url;
+  return useObjectUrl(blob);
 }

@@ -188,6 +188,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     dateMonth: event.dateMonth,
     dateDay: event.dateDay,
     locationName: event.locationName,
+    hasAacCopy: Boolean(entry.compressedAacPath),
     total: playableEntries.length,
     historyReset,
   };
