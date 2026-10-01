@@ -241,19 +241,22 @@ Every production deploy, web or jobs, runs from a detached worktree of the
 release commit at `~/worktrees/besedy/prod-deploy-<sha>`:
 
 ```bash
+git fetch origin
 sha=$(git rev-parse --short=8 origin/main)
 git worktree add --detach ~/worktrees/besedy/prod-deploy-$sha $sha
 cd ~/worktrees/besedy/prod-deploy-$sha
 (cd web && npm ci)    # prod-build runs web-check on the host
-just prod-deploy-with-jobs
+just prod-deploy      # or prod-deploy-with-jobs[-codex]; see Release Workflow
+just ingest-worker-deploy "$sha"
 ```
 
 Do not create deploy checkouts inside `~/projects`: everything there is
 snapshotted nightly and synced off-host, and a deploy checkout with installed
-web dependencies adds over a gigabyte to that sync. Compose records the
-checkout as each container's working directory, so web and jobs deployed from
-the same worktree are visibly at the same revision
-(`docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' <container>`).
+web dependencies adds over a gigabyte to that sync. To confirm web and jobs
+run the same commit, compare each container's
+`org.opencontainers.image.revision` label with `/api/version`. The
+`com.docker.compose.project.working_dir` label only shows which checkout last
+created a container, and it keeps pointing there after that checkout is gone.
 
 Prefer `prod-deploy-with-jobs` (or `prod-deploy-with-jobs-codex`, see below)
 whenever jobs code or `uv.lock` changed since the running jobs image's
