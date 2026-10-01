@@ -1,4 +1,4 @@
-"""Runtime helpers for containerized or isolated backend execution."""
+"""Runtime helpers for containerized backend execution."""
 
 from besedy.lib.runtime.backend_runtime import (
     BACKEND_RUNTIME_CHOICES,
