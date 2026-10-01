@@ -40,7 +40,6 @@ test, and prod web environments on the same host.
 | Container | Purpose | Endpoint | Profile |
 |-----------|---------|----------|---------|
 | `besedy-colbert` | Warm ColBERT query server (active retrieval path) | `http://127.0.0.1:8192` | default |
-| `besedy-tei-embeddings` | Dense embeddings (legacy evaluation flows) | `http://127.0.0.1:8190` | `legacy-tei` |
 | `besedy-tei-reranker` | Reranking (optional for ColBERT path) | `http://127.0.0.1:8191` | `legacy-tei` |
 
 Requirements: NVIDIA GPU with CUDA, Docker with NVIDIA Container Toolkit
@@ -101,8 +100,8 @@ reach ColBERT via `RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
 
 ### TEI Services (Optional)
 
-TEI embeddings and reranking are behind the `legacy-tei` Docker Compose profile.
-They are only needed for optional ColBERT reranking and older evaluation flows.
+The TEI reranker is behind the `legacy-tei` Docker Compose profile. It is only
+needed for optional ColBERT reranking.
 
 **Blackwell GPU (RTX 5070 Ti / 5090).** The compose stack builds a local TEI
 image from upstream source (`Dockerfile-cuda-blackwell`). Blackwell support (TEI
@@ -112,7 +111,6 @@ PR #735) landed after v1.8.3, so `main` is required. Set
 **Health checks:**
 
 ```bash
-curl -fsS http://127.0.0.1:8190/health   # embeddings
 curl -fsS http://127.0.0.1:8191/health   # reranker
 ```
 
@@ -323,8 +321,7 @@ just catalog rag-colbert-index \
   --rebuild
 ```
 
-TEI changes do not require a production RAG rebuild unless you are running legacy
-evaluation flows.
+TEI changes do not require a production RAG rebuild.
 
 ---
 

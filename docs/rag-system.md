@@ -16,9 +16,8 @@ The **default** ColBERT retriever, `jinaai/jina-colbert-v2`, is **CC-BY-NC-4.0
 (non-commercial)** -- do not use it in a commercial deployment. For commercial
 use, switch to a permissively-licensed ColBERT model via the `RAG_COLBERT_MODEL`
 environment variable or `--rag-colbert-model` (e.g. `colbert-ir/colbertv2.0`;
-verify its terms on the model card). The default dense embedder (`BAAI/bge-m3`,
-MIT) and reranker / chunk tokenizer (`Alibaba-NLP/gte-multilingual-reranker-base`,
-Apache-2.0) are commercial-friendly. See the [full model and license table in the
+verify its terms on the model card). The reranker / chunk tokenizer
+(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0) is commercial-friendly. See the [full model and license table in the
 README](../README.md#third-party-models--licenses) for the source of truth.
 
 ## Query Flow
@@ -147,13 +146,13 @@ Operational constraints that are not obvious from the code:
 The model-serving stack in `rag-services/docker-compose.yml` runs:
 
 - `colbert` by default.
-- TEI embeddings and reranker only behind the optional `legacy-tei` profile.
+- The TEI reranker only behind the optional `legacy-tei` profile.
 
 ```bash
 just rag-services-up   # default stack (ColBERT path)
 just colbert-up
 just colbert-logs
-just tei-up            # optional legacy TEI services
+just tei-up            # optional TEI reranker
 just tei-down
 ```
 

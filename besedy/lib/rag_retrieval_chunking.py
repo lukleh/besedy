@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -11,7 +10,6 @@ from typing import Any, Protocol
 
 from .rag_retrieval_types import ChunkTokenDistribution, ChunkWindow, SegmentUnit
 
-TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 SHA256_64_RE = re.compile(r"^[a-f0-9]{64}$")
 
 CHUNK_VERSION = "v2"
@@ -124,10 +122,6 @@ def normalize_backend_key(value: str) -> str:
         "or '{workflow}/{model}/{vad}' (normalized to model@vad). "
         f"Got: {value!r}"
     )
-
-
-def _tokenize(text: str) -> list[str]:
-    return [tok.lower() for tok in TOKEN_RE.findall(text)]
 
 
 def _is_full_sha256(value: str) -> bool:
@@ -509,21 +503,6 @@ def measure_chunk_texts(
         max_tokens=max_tokens,
         overflow_single_segment_count=overflow_single_segment_count,
     )
-
-
-def _chunk_id(
-    *,
-    run_id: str,
-    backend_key: str,
-    audio_hash: str,
-    start_sec: float,
-    end_sec: float,
-    chunk_version: str = CHUNK_VERSION,
-) -> str:
-    start_ms = int(round(start_sec * 1000))
-    end_ms = int(round(end_sec * 1000))
-    payload = f"{run_id}|{backend_key}|{audio_hash}|{start_ms}|{end_ms}|{chunk_version}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _discover_backend_transcripts(transcripts_root: Path, backend_key: str) -> list[Path]:
