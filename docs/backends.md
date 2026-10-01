@@ -98,7 +98,7 @@ ColBERT mode does not require the TEI reranker unless
 `RAG_COLBERT_RERANK_ENABLED=true` is explicitly set. All three web environments
 reach ColBERT via `RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
 
-### TEI Services (Optional)
+### TEI Reranker (Optional)
 
 The TEI reranker is behind the `legacy-tei` Docker Compose profile. It is only
 needed for optional ColBERT reranking.

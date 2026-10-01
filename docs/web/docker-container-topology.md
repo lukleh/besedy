@@ -105,7 +105,7 @@ Before deploying, compare the target shape with the environment using the
 | Web | `web/docker-compose.yml` plus overlays | wrapper-controlled `besedy-${BESEDY_COMPOSE_INSTANCE}` | Web app, web DB, optional OAuth mock, optional backup | Yes |
 | Prefect control plane | `jobs-service/docker-compose.prefect.yml` | `besedy-prefect` | Prefect API/UI, services, Prefect DB | Shared singleton |
 | Deep Search runtime | `jobs-service/docker-compose.jobs-{dev,test,prod}.yml` | `besedy-jobs-{dev,test,prod}` | Jobs API and Prefect worker for one web environment | Yes |
-| RAG | `rag-services/docker-compose.yml` | `besedy-rag-services` | ColBERT sidecar and optional legacy TEI services | Shared singleton |
+| RAG | `rag-services/docker-compose.yml` | `besedy-rag-services` | ColBERT sidecar and optional legacy TEI reranker | Shared singleton |
 | Ingest worker | not Docker: `jobs-service/host-worker/besedy-ingest-worker.service` (systemd user unit) | host process | Prefect process worker for `besedy-ingest-<env>`; runs the catalog CLI with host Docker/GPU access | Yes (one pool per env) |
 | ML backends | `backends/docker-compose.yml` | varies | Legacy/auxiliary model backends | Not part of current Deep Search path |
 
