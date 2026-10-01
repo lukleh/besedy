@@ -15,7 +15,7 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"prisma/**/*.{ts,tsx}\" \"scripts/**/*.{ts,tsx,mjs}\" \"*.{json,md}\"",
-    "check": "npm run type-check && eslint src/",
+    "check": "npm run type-check && npm run lint",
     "pretest": "npm run prisma:generate",
     "test": "vitest run",
     "pretest:watch": "npm run prisma:generate",
