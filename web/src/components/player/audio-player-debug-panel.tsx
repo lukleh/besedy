@@ -12,8 +12,8 @@ import {
 import { useOfflineAudioTransportOverride } from "@/hooks/use-offline-audio-transport";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
+  DEFAULT_OFFLINE_AUDIO_TRANSPORT,
   OFFLINE_AUDIO_TRANSPORT_OVERRIDES,
-  defaultOfflineAudioTransport,
   describeAudioSource,
   resolveOfflineAudioTransport,
   writeOfflineAudioTransportOverride,
@@ -265,15 +265,13 @@ export function AudioPlayerDebugPanel({
  * per-device override. The override lives in localStorage and is set only
  * here, so it lets one phone try the other transport without a release and
  * without touching anybody else's playback. What the element actually got is
- * the Source line above: a requested `inline` without a stored copy falls
- * back to the worker URL.
+ * the Source line above: a requested `blob` without a complete chunk cache
+ * falls back to the worker URL.
  */
 function LocalTransportControl() {
   const override = useOfflineAudioTransportOverride();
   const { isOnline } = useOnlineStatus();
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const requested = resolveOfflineAudioTransport(userAgent, override);
-  const browserDefault = defaultOfflineAudioTransport(userAgent);
+  const requested = resolveOfflineAudioTransport(override);
   const controller =
     typeof navigator !== "undefined" && navigator.serviceWorker?.controller
       ? "controlled"
@@ -290,8 +288,8 @@ function LocalTransportControl() {
           {override !== "auto" && <span className="text-orange-500"> (override)</span>}
         </span>
         <span>
-          <span className="text-muted-foreground">Browser default: </span>
-          <span className="text-foreground">{browserDefault}</span>
+          <span className="text-muted-foreground">Default: </span>
+          <span className="text-foreground">{DEFAULT_OFFLINE_AUDIO_TRANSPORT}</span>
         </span>
         <span>
           <span className="text-muted-foreground">Worker: </span>
@@ -321,9 +319,8 @@ function LocalTransportControl() {
         ))}
       </div>
       <div className="text-muted-foreground">
-        Applies to downloaded recordings on this device only. inline needs the copy this
-        browser stores at download time, and blob needs the complete chunk cache; without
-        them the Source line shows worker-cache.
+        Applies to downloaded recordings on this device only. blob needs the complete chunk
+        cache; without it the Source line shows worker-cache.
       </div>
     </div>
   );

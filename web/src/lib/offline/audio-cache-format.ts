@@ -156,18 +156,6 @@ export async function writeAudioCacheMeta(
   );
 }
 
-/**
- * Some mobile media stacks cannot play service-worker or blob-backed audio
- * once the browser is offline. Downloads retain bytes for an inline source on
- * Android browsers and Safari/iOS.
- */
-export function requiresInlineOfflineAudio(userAgent: string): boolean {
-  if (!/AppleWebKit\//.test(userAgent)) return false;
-  if (/Android/.test(userAgent)) return true;
-  if (/(?:iPhone|iPad|iPod)/.test(userAgent)) return true;
-  return /Macintosh/.test(userAgent) && /Version\/[^ ]+.*Safari\//.test(userAgent);
-}
-
 /** Sum of the recorded chunk sizes. */
 export function audioCacheMetaBytes(meta: Pick<AudioCacheMeta, 'chunkSizes'>): number {
   return meta.chunkSizes.reduce((sum, size) => sum + size, 0);

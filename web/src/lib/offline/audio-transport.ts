@@ -1,17 +1,15 @@
-import { requiresInlineOfflineAudio } from "@/lib/offline/audio-cache-format";
-
 /**
  * How a complete local recording reaches the media element.
  *
  * - `worker`: the player loads the recording URL and the service worker
- *   answers Range requests from the chunked audio cache.
- * - `inline`: the player loads a Base64 data URL built from the inline copy
- *   stored alongside the download.
+ *   answers Range requests from the chunked audio cache. Every browser uses
+ *   it (#162): with the AAC copy on WebKit (#291) it plays offline on iOS
+ *   and Android as well as on desktop.
  * - `blob`: the player loads an object URL for one Blob composed from the
- *   cached chunks, with no second copy and no service worker in the media
- *   path. Only the debug panel selects it; no browser defaults to it.
+ *   cached chunks, with no service worker in the media path. Only the debug
+ *   panel selects it, to compare against the worker on a device.
  */
-export type OfflineAudioTransport = "worker" | "inline" | "blob";
+export type OfflineAudioTransport = "worker" | "blob";
 
 /** A per-device override of the transport, or `auto` for the browser default. */
 export type OfflineAudioTransportOverride = OfflineAudioTransport | "auto";
@@ -19,13 +17,14 @@ export type OfflineAudioTransportOverride = OfflineAudioTransport | "auto";
 export const OFFLINE_AUDIO_TRANSPORT_OVERRIDES: readonly OfflineAudioTransportOverride[] = [
   "auto",
   "worker",
-  "inline",
   "blob",
 ];
 
 /**
  * localStorage key of the override. It is set only from the player's debug
- * panel, so it affects nothing but the device where somebody chose it.
+ * panel, so it affects nothing but the device where somebody chose it. A
+ * stored value that is no longer a transport (the removed `inline`) reads as
+ * `auto`.
  */
 export const OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY = "besedy:offline-audio-transport";
 
@@ -41,16 +40,13 @@ export function isOfflineAudioTransportOverride(
   );
 }
 
-/** The transport the browser gets without an override. */
-export function defaultOfflineAudioTransport(userAgent: string): OfflineAudioTransport {
-  return requiresInlineOfflineAudio(userAgent) ? "inline" : "worker";
-}
+/** The transport every browser gets without an override. */
+export const DEFAULT_OFFLINE_AUDIO_TRANSPORT: OfflineAudioTransport = "worker";
 
 export function resolveOfflineAudioTransport(
-  userAgent: string,
   override: OfflineAudioTransportOverride
 ): OfflineAudioTransport {
-  return override === "auto" ? defaultOfflineAudioTransport(userAgent) : override;
+  return override === "auto" ? DEFAULT_OFFLINE_AUDIO_TRANSPORT : override;
 }
 
 export function readOfflineAudioTransportOverride(): OfflineAudioTransportOverride {
@@ -80,26 +76,16 @@ export function writeOfflineAudioTransportOverride(
 }
 
 /** What the media element was actually handed, derived from its `src`. */
-export type AudioSourceKind =
-  | "none"
-  | "network"
-  | "worker-cache"
-  | "inline-data"
-  | "blob-url";
+export type AudioSourceKind = "none" | "network" | "worker-cache" | "blob-url";
 
 export interface AudioSourceDescription {
   kind: AudioSourceKind;
-  /** Short, log-safe rendering of the source: no Base64 payloads. */
+  /** Short, log-safe rendering of the source. */
   summary: string;
 }
 
 export function describeAudioSource(src: string | null | undefined): AudioSourceDescription {
   if (!src) return { kind: "none", summary: "(no source)" };
-  if (src.startsWith("data:")) {
-    const header = src.slice(0, src.indexOf(",") === -1 ? src.length : src.indexOf(","));
-    const kilobytes = Math.round(src.length / 1024);
-    return { kind: "inline-data", summary: `${header},… (${kilobytes} KB)` };
-  }
   if (src.startsWith("blob:")) {
     return { kind: "blob-url", summary: src };
   }

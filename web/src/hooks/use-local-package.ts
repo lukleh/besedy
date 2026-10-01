@@ -2,8 +2,8 @@
 
 /**
  * Hooks that resolve media from a completed download package for the shared
- * event and recording pages. Pages stay unaware of caches, data URLs and
- * storage formats; they receive a `src` and use it.
+ * event and recording pages. Pages stay unaware of caches and storage
+ * formats; they receive a `src` and use it.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -17,28 +17,6 @@ import {
 } from "@/lib/offline/audio-cache-format";
 import { OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
-
-/**
- * Encode a stored recording as a data URL.
- *
- * Android browsers and WebKit default to this inline copy on the assumption,
- * from emulator evidence only, that they cannot play service-worker or
- * blob-backed media offline; #162 tests that on devices. It lives here so it
- * can be removed in one place.
- */
-export function inlineAudioDataUrl(data: ArrayBuffer, contentType: string): string {
-  const bytes = new Uint8Array(data);
-  const encodedChunks: string[] = [];
-  // Keep non-final chunks divisible by three so concatenated base64 has no
-  // interior padding, while avoiding one extra full-size binary string.
-  const chunkSize = 24 * 1024;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    encodedChunks.push(
-      btoa(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)))
-    );
-  }
-  return `data:${contentType};base64,${encodedChunks.join("")}`;
-}
 
 /**
  * The URL the player uses for a complete local recording. It differs from the
@@ -115,27 +93,10 @@ export function useLocalAudioSrc(
     );
   }, [complete, recordCacheKey, selectedUrl]);
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
-  // The browser default can be overridden per device from the player's debug
-  // panel, so a transport can be tried on a real phone without a release.
+  // The worker default can be overridden per device from the player's debug
+  // panel, so the blob transport can be tried on a real phone.
   const transport = useOfflineAudioTransport();
-  const needsInline = transport === "inline";
   const blobEnabled = useLocal && transport === "blob" && !!record?.audioCacheKey;
-
-  const inline = useQuery({
-    queryKey: ["local-inline-audio", record?.key ?? null],
-    // IndexedDB reads do not need a network connection.
-    networkMode: "always",
-    enabled: useLocal && needsInline,
-    staleTime: Number.POSITIVE_INFINITY,
-    gcTime: 0,
-    retry: false,
-    queryFn: async () => {
-      const bundle = record ? await getDownloadBundle(record.key) : undefined;
-      return bundle?.inlineAudio
-        ? inlineAudioDataUrl(bundle.inlineAudio.data, bundle.inlineAudio.contentType)
-        : null;
-    },
-  });
 
   // One Blob composed from the cached chunk Blobs rather than one ArrayBuffer.
   // Whether the browser keeps it as references to the stored parts or reads
@@ -168,9 +129,7 @@ export function useLocalAudioSrc(
     // Without a readable chunk set the worker URL still plays the download.
     return { src: blobUrl ?? local, pending: false };
   }
-  if (!needsInline) return { src: local, pending: false };
-  if (inline.isPending) return { src: null, pending: true };
-  return { src: inline.data ?? local, pending: false };
+  return { src: local, pending: false };
 }
 
 /**

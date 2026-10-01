@@ -186,14 +186,14 @@ test.describe('Offline Mode', () => {
       });
 
       // The completed package must be the media source before playing: the
-      // local marker on the worker-served URL, or the inline copy.
+      // local marker on the worker-served URL.
       const audio = page.locator('audio');
       await expect
         .poll(
           () => audio.evaluate((element: HTMLAudioElement) => element.currentSrc),
           { timeout: 15_000 },
         )
-        .toMatch(/[?&]local=1(&|$)|^data:audio\//);
+        .toMatch(/[?&]local=1(&|$)/);
       await page.getByTestId('audio-play-button').click();
       await expect
         .poll(
@@ -276,16 +276,10 @@ test.describe('Offline Mode', () => {
       await waitForOfflineIndicator(page);
 
       const audio = page.locator('audio');
-      const needsInlineAudio = await page.evaluate(
-        () =>
-          /AppleWebKit\//.test(navigator.userAgent) &&
-          /Android|iPhone|iPad|iPod/.test(navigator.userAgent),
-      );
-      if (needsInlineAudio) {
-        await expect(audio).toHaveAttribute('src', /^data:audio\//, {
-          timeout: 15_000,
-        });
-      }
+      // Every browser plays the package through the worker (#162).
+      await expect(audio).toHaveAttribute('src', /[?&]local=1(?:&|$)/, {
+        timeout: 15_000,
+      });
       await page.getByTestId('audio-play-button').click();
       await expect
         .poll(
@@ -352,12 +346,7 @@ test.describe('Offline Mode', () => {
       );
 
       const audio = page.locator('audio');
-      const isAndroid = await page.evaluate(() =>
-        /Android/.test(navigator.userAgent),
-      );
-      if (isAndroid) {
-        await expect(audio).toHaveAttribute('src', /^data:audio\//);
-      }
+      await expect(audio).toHaveAttribute('src', /[?&]local=1(?:&|$)/);
       await page.getByTestId('audio-play-button').click();
       await expect
         .poll(

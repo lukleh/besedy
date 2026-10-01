@@ -63,30 +63,30 @@ describe("AudioPlayerDebugPanel source section", () => {
     delete (navigator as { userAgent?: string }).userAgent;
   });
 
-  it("shows the source kind without rendering Base64 bytes", () => {
-    const payload = "Q".repeat(2048);
-    render(<AudioPlayerDebugPanel {...baseProps} src={`data:audio/mpeg;base64,${payload}`} />);
+  it("shows the source kind and the worker default on an iPhone", () => {
+    render(<AudioPlayerDebugPanel {...baseProps} src="/api/x/audio?format=aac&local=1" />);
 
-    expect(screen.getByTestId("audio-debug-source-kind")).toHaveTextContent("inline-data");
-    expect(screen.getByTestId("audio-debug-source")).not.toHaveTextContent(payload.slice(0, 32));
-    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("inline");
-    expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("Browser default: inline");
+    expect(screen.getByTestId("audio-debug-source-kind")).toHaveTextContent("worker-cache");
+    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("worker");
+    expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("Default: worker");
     expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("Online: no");
+    // The removed inline transport is no longer offered.
+    expect(screen.queryByRole("button", { name: "inline" })).toBeNull();
   });
 
   it("stores a per-device override and reflects it immediately", () => {
     render(<AudioPlayerDebugPanel {...baseProps} src="/api/x/audio?local=1" />);
     expect(screen.getByTestId("audio-debug-source-kind")).toHaveTextContent("worker-cache");
 
-    fireEvent.click(screen.getByRole("button", { name: "worker" }));
-    expect(localStorage.getItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY)).toBe("worker");
-    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("worker");
+    fireEvent.click(screen.getByRole("button", { name: "blob" }));
+    expect(localStorage.getItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY)).toBe("blob");
+    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("blob");
     expect(screen.getByTestId("audio-debug-transport")).toHaveTextContent("(override)");
-    expect(screen.getByRole("button", { name: "worker" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "blob" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "auto" }));
     expect(localStorage.getItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY)).toBeNull();
-    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("inline");
+    expect(screen.getByTestId("audio-debug-transport-requested")).toHaveTextContent("worker");
     expect(screen.getByTestId("audio-debug-transport")).not.toHaveTextContent("(override)");
   });
 });

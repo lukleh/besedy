@@ -31,7 +31,5 @@ export function useOfflineAudioTransportOverride(): OfflineAudioTransportOverrid
 
 /** The transport local playback uses on this device right now. */
 export function useOfflineAudioTransport(): OfflineAudioTransport {
-  const override = useOfflineAudioTransportOverride();
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  return resolveOfflineAudioTransport(userAgent, override);
+  return resolveOfflineAudioTransport(useOfflineAudioTransportOverride());
 }

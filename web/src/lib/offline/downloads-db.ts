@@ -15,7 +15,7 @@ import type { CatalogEntryWithPermissions } from '@/types/catalog';
 import type { EventDetailResponse } from '@/types/event-detail';
 
 export const DOWNLOADS_DB_NAME = 'besedy-offline';
-const DOWNLOADS_DB_VERSION = 5;
+const DOWNLOADS_DB_VERSION = 6;
 const DOWNLOADS_STORE = 'downloads';
 const DOWNLOAD_BUNDLES_STORE = 'downloadBundles';
 const PLAYBACK_PROGRESS_STORE = 'pendingPlaybackProgress';
@@ -96,11 +96,6 @@ export interface DownloadArtworkPayload {
   artworkId?: string;
 }
 
-export interface DownloadInlineAudioPayload {
-  data: ArrayBuffer;
-  contentType: string;
-}
-
 export interface DownloadBundlePayload {
   /** Same `${catalogId}:${hash}` key as the lightweight registry row. */
   key: string;
@@ -108,8 +103,6 @@ export interface DownloadBundlePayload {
   transcript: Transcript | null;
   diarization: Diarization | null;
   artwork: DownloadArtworkPayload | null;
-  /** WebKit-compatible copy; older bundles and non-WebKit browsers omit it. */
-  inlineAudio?: DownloadInlineAudioPayload | null;
   /**
    * Event detail payload as served when the event was downloaded. The local
    * content source renders the shared event page from it. Absent on bundles
@@ -245,6 +238,48 @@ async function migrateLegacyArtworkFields(
   }
 }
 
+/**
+ * Version 6 removes the Base64 inline audio copy (#162): every browser plays
+ * downloads through the service worker from the cached chunks, so the copy,
+ * as large as the recording itself, is deleted from each bundle. A package
+ * left in the old `inline-audio-unavailable` error had verified chunks, so it
+ * returns to `complete`; hydration verifies the chunks again right after.
+ */
+async function removeInlineAudioCopies(
+  transaction: IDBPTransaction<
+    DownloadsDBSchema,
+    ('downloads' | 'downloadBundles' | 'pendingPlaybackProgress')[],
+    'versionchange'
+  >,
+): Promise<void> {
+  const bundlesStore = transaction.objectStore(DOWNLOAD_BUNDLES_STORE);
+  let bundleCursor = await bundlesStore.openCursor();
+  while (bundleCursor) {
+    const bundle = bundleCursor.value as DownloadBundlePayload & { inlineAudio?: unknown };
+    if (bundle.inlineAudio !== undefined) {
+      delete bundle.inlineAudio;
+      await bundleCursor.update(bundle);
+    }
+    bundleCursor = await bundleCursor.continue();
+  }
+
+  const downloadsStore = transaction.objectStore(DOWNLOADS_STORE);
+  let downloadCursor = await downloadsStore.openCursor();
+  while (downloadCursor) {
+    const record = downloadCursor.value;
+    if (record.status === 'error' && record.error === 'inline-audio-unavailable') {
+      await downloadCursor.update({
+        ...record,
+        status: 'complete',
+        error: null,
+        progress: 100,
+        completedAt: record.updatedAt,
+      });
+    }
+    downloadCursor = await downloadCursor.continue();
+  }
+}
+
 let dbPromise: Promise<IDBPDatabase<DownloadsDBSchema>> | null = null;
 
 export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
@@ -282,6 +317,9 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
           }
           if (oldVersion > 0 && oldVersion < 5) {
             await migrateLegacyArtworkFields(transaction);
+          }
+          if (oldVersion > 0 && oldVersion < 6) {
+            await removeInlineAudioCopies(transaction);
           }
         },
         blocking() {

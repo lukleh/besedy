@@ -25,6 +25,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useAacUpgradeAvailable } from '@/hooks/use-aac-upgrade-available';
 import { useDownloadManager } from '@/hooks/use-downloads';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
 import { formatPartialDate } from '@/lib/date-format';
@@ -32,7 +33,6 @@ import { formatBytes } from '@/lib/format-bytes';
 import {
   downloadManager,
   INCOMPLETE_PACKAGE_ERROR,
-  INLINE_AUDIO_ERROR,
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
 import { cn } from '@/lib/utils';
@@ -218,6 +218,7 @@ interface DownloadCardProps {
 
 function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
   const t = useTranslations('downloads');
+  const aacUpgrade = useAacUpgradeAvailable(record);
   const event = record.event;
   const recording = record.recording;
 
@@ -326,12 +327,15 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
               <span className="text-destructive">
                 {record.error === INCOMPLETE_PACKAGE_ERROR
                   ? t('errorIncompletePackage')
-                  : record.error === INLINE_AUDIO_ERROR
-                    ? t('errorInlineAudio')
-                    : record.error}
+                  : record.error}
               </span>
             )}
           </div>
+          {aacUpgrade && (
+            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid={`download-format-upgrade-${record.hash}`}>
+              {t('formatUpgrade')}
+            </p>
+          )}
           {(record.status === 'downloading' ||
             record.status === 'paused' ||
             record.status === 'queued') && (
@@ -359,6 +363,19 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
                 <Play className="mr-2 h-4 w-4" />
                 {t('open')}
               </a>
+            </Button>
+          )}
+          {aacUpgrade && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void downloadManager.redownload(record.key);
+              }}
+              data-testid={`download-redownload-${record.hash}`}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {t('redownload')}
             </Button>
           )}
           {(record.status === 'downloading' || record.status === 'queued') && (

@@ -56,19 +56,13 @@ afterEach(() => {
 });
 
 describe("resolveOfflineAudioTransport", () => {
-  it("follows the browser default under auto", () => {
-    expect(resolveOfflineAudioTransport(IPHONE_UA, "auto")).toBe("inline");
-    expect(resolveOfflineAudioTransport(DESKTOP_CHROME_UA, "auto")).toBe("worker");
-  });
-
-  it("lets an explicit override win over the browser default", () => {
-    expect(resolveOfflineAudioTransport(IPHONE_UA, "worker")).toBe("worker");
-    expect(resolveOfflineAudioTransport(DESKTOP_CHROME_UA, "inline")).toBe("inline");
+  it("uses the worker under auto on every browser", () => {
+    expect(resolveOfflineAudioTransport("auto")).toBe("worker");
+    expect(resolveOfflineAudioTransport("worker")).toBe("worker");
   });
 
   it("uses blob only when a device asks for it", () => {
-    expect(resolveOfflineAudioTransport(IPHONE_UA, "blob")).toBe("blob");
-    expect(resolveOfflineAudioTransport(DESKTOP_CHROME_UA, "blob")).toBe("blob");
+    expect(resolveOfflineAudioTransport("blob")).toBe("blob");
     localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "blob");
     expect(readOfflineAudioTransportOverride()).toBe("blob");
   });
@@ -79,6 +73,12 @@ describe("offline audio transport override storage", () => {
     expect(readOfflineAudioTransportOverride()).toBe("auto");
     localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "segments");
     expect(readOfflineAudioTransportOverride()).toBe("auto");
+  });
+
+  it("reads the removed inline override as auto, so such a device uses the worker", () => {
+    localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "inline");
+    expect(readOfflineAudioTransportOverride()).toBe("auto");
+    expect(resolveOfflineAudioTransport(readOfflineAudioTransportOverride())).toBe("worker");
   });
 
   it("persists an override, removes it for auto, and notifies the document", () => {
@@ -106,7 +106,7 @@ describe("offline audio transport override storage", () => {
       removeItem: denied,
     });
     expect(readOfflineAudioTransportOverride()).toBe("auto");
-    expect(() => writeOfflineAudioTransportOverride("inline")).not.toThrow();
+    expect(() => writeOfflineAudioTransportOverride("blob")).not.toThrow();
     expect(() => writeOfflineAudioTransportOverride("auto")).not.toThrow();
   });
 });
@@ -118,13 +118,13 @@ describe("useOfflineAudioTransport", () => {
       override: useOfflineAudioTransportOverride(),
       transport: useOfflineAudioTransport(),
     }));
-    expect(result.current).toEqual({ override: "auto", transport: "inline" });
+    expect(result.current).toEqual({ override: "auto", transport: "worker" });
 
-    act(() => writeOfflineAudioTransportOverride("worker"));
-    expect(result.current).toEqual({ override: "worker", transport: "worker" });
+    act(() => writeOfflineAudioTransportOverride("blob"));
+    expect(result.current).toEqual({ override: "blob", transport: "blob" });
 
     act(() => writeOfflineAudioTransportOverride("auto"));
-    expect(result.current).toEqual({ override: "auto", transport: "inline" });
+    expect(result.current).toEqual({ override: "auto", transport: "worker" });
   });
 
   it("picks up a change made in another tab", () => {
@@ -133,17 +133,17 @@ describe("useOfflineAudioTransport", () => {
     expect(result.current).toBe("worker");
 
     act(() => {
-      localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "inline");
+      localStorage.setItem(OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY, "blob");
       window.dispatchEvent(
         new StorageEvent("storage", { key: OFFLINE_AUDIO_TRANSPORT_STORAGE_KEY })
       );
     });
-    expect(result.current).toBe("inline");
+    expect(result.current).toBe("blob");
   });
 });
 
 describe("describeAudioSource", () => {
-  it("classifies the sources and never echoes Base64 payloads", () => {
+  it("classifies the sources", () => {
     expect(describeAudioSource("")).toEqual({ kind: "none", summary: "(no source)" });
     expect(describeAudioSource("/api/x/audio?source=listening")).toEqual({
       kind: "network",
@@ -154,12 +154,6 @@ describe("describeAudioSource", () => {
     );
     expect(describeAudioSource("/api/x/audio?local=1").kind).toBe("worker-cache");
     expect(describeAudioSource("/api/x/audio?local=10").kind).toBe("network");
-
-    const payload = "A".repeat(4096);
-    const inline = describeAudioSource(`data:audio/mpeg;base64,${payload}`);
-    expect(inline.kind).toBe("inline-data");
-    expect(inline.summary).toBe("data:audio/mpeg;base64,… (4 KB)");
-    expect(inline.summary).not.toContain(payload.slice(0, 16));
 
     expect(describeAudioSource("blob:https://besedy.org/3f2a")).toEqual({
       kind: "blob-url",
