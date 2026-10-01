@@ -32,6 +32,11 @@ The normal development, build, type-check, and test commands generate the
 ignored Prisma client automatically from `prisma/schema.prisma`, so a fresh
 checkout does not need to carry generated files.
 
+`npm run type-check` (also run by `just web-check`) first runs `next typegen`,
+which writes the ignored `.next/types/` and `next-env.d.ts`. After a Next.js
+upgrade it can also update the tracked `tsconfig.json`; commit that change,
+because production deploys refuse dirty `web/` sources.
+
 First run: copy `.env.dev.example` to `~/.config/lukleh/besedy/web.env.dev`
 and fill it in, then start the stack, apply migrations, and seed the mock OAuth
 users (see [docs/web/operations.md](../docs/web/operations.md#development-setup)):

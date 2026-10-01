@@ -1,0 +1,23 @@
+// Used by `npm run type-check`. Next.js manages tsconfig.json's include and adds
+// generated types from every dist dir it runs with (.next/dev, the dev
+// container's .cache-next), which go stale when routes are removed.
+{
+  "extends": "./tsconfig.json",
+  // TypeScript wildcards never descend into dot-directories, so these globs
+  // keep .next/dev and .cache-next out. Keep them in sync with tsconfig.json.
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    // Top level only: pretype-check refreshes these files with `next typegen`,
+    // but it never deletes other files here (e.g. pre-Next-16 per-route types).
+    // Files that validator.ts imports are still pulled in.
+    ".next/types/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    // Imports generated types from whichever dist dir ran last; next-types.d.ts
+    // carries its type references instead.
+    "next-env.d.ts"
+  ]
+}
