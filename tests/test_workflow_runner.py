@@ -103,7 +103,6 @@ def test_build_workflows_faster_whisper_docker_runtime_forwards_gpu_and_hf_token
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_FASTER_WHISPER_RUNTIME", "docker")
     monkeypatch.setenv("HF_TOKEN", "secret-token")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
@@ -161,7 +160,6 @@ def test_build_workflows_faster_whisper_cpu_mode_sets_cpu_args(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_FASTER_WHISPER_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -203,7 +201,6 @@ def test_build_workflows_qwen3_asr_docker_runtime_forwards_gpu_and_hf_token(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_QWEN3_ASR_RUNTIME", "docker")
     monkeypatch.setenv("HF_TOKEN", "secret-token")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
@@ -264,7 +261,6 @@ def test_build_workflows_whisperx_docker_runtime_forwards_gpu_and_hf_token(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_WHISPERX_RUNTIME", "docker")
     monkeypatch.setenv("HF_TOKEN", "secret-token")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
@@ -320,51 +316,10 @@ def test_build_workflows_whisperx_docker_runtime_forwards_gpu_and_hf_token(
     assert "BESEDY_WHISPERX_CLI=whisperx" in argv
 
 
-def test_build_workflows_whisperx_rejects_removed_isolated_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("BESEDY_WHISPERX_RUNTIME", "isolated")
-
-    staged_audio = tmp_path / "whisperx.wav"
-    staged_audio.write_bytes(b"x")
-    prepared = [
-        PreparedEntry(
-            sha256="1" * 64,
-            source=staged_audio,
-            staged=staged_audio,
-            action="existing",
-            duration_seconds=1.0,
-        )
-    ]
-    workflow = WorkflowConfig(
-        workflow_id="whisperx",
-        workflow_type="transcription",
-        workflow_label="whisperx",
-        model_name="large-v3",
-        vad_model="silero",
-        align_model="WAV2VEC2_ASR_LARGE_LV60K_960H",
-    )
-
-    with pytest.raises(RuntimeError, match="Docker-only"):
-        build_workflows(
-            prepared,
-            WorkflowRunConfig(output_root=tmp_path / "transcripts"),
-            transcription_jobs=[
-                TranscriptionJob(
-                    config=workflow,
-                    hashes={hash_component_from_sha(prepared[0].sha256)},
-                )
-            ],
-            hashes_for_pyannote_diarization=set(),
-        )
-
-
 def test_build_workflows_nemo_docker_runtime_forwards_gpu_and_nemo_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "docker")
     monkeypatch.setenv("NEMO_LOG_TEXT_NO_WORDS", "1")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
@@ -425,8 +380,6 @@ def test_build_workflows_nemo_beam_align_mounts_staged_audio_for_docker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "docker")
-    monkeypatch.setenv("BESEDY_WHISPERX_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -474,58 +427,10 @@ def test_build_workflows_nemo_beam_align_mounts_staged_audio_for_docker(
     assert f"{staged_audio.parent}:{staged_audio.parent}:ro" in align_argv
 
 
-def test_build_workflows_nemo_beam_align_rejects_removed_whisperx_isolated_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("BESEDY_WHISPERX_RUNTIME", "isolated")
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "docker")
-    monkeypatch.setattr(
-        "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
-    )
-
-    staged_audio = tmp_path / "beam.wav"
-    staged_audio.write_bytes(b"x")
-    prepared = [
-        PreparedEntry(
-            sha256="2" * 64,
-            source=staged_audio,
-            staged=staged_audio,
-            action="existing",
-            duration_seconds=1.0,
-        )
-    ]
-    workflow = WorkflowConfig(
-        workflow_id="canary-nemo",
-        workflow_type="transcription",
-        workflow_label="canary-nemo",
-        model_name="nvidia/canary-1b-v2",
-        vad_model="frame_vad",
-        align_model="comodoro/wav2vec2-xls-r-300m-cs-250",
-        decode_strategy="beam",
-    )
-    hash_component = hash_component_from_sha(prepared[0].sha256)
-
-    with pytest.raises(RuntimeError, match="Docker-only"):
-        build_workflows(
-            prepared,
-            WorkflowRunConfig(output_root=tmp_path / "transcripts", nemo_parallel=1),
-            transcription_jobs=[
-                TranscriptionJob(
-                    config=workflow,
-                    hashes={hash_component},
-                    align_hashes={hash_component},
-                )
-            ],
-            hashes_for_pyannote_diarization=set(),
-        )
-
-
 def test_build_workflows_pyannote_docker_runtime_sets_checkpoint_load_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_PYANNOTE_RUNTIME", "docker")
     monkeypatch.setenv("HF_TOKEN", "secret-token")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"

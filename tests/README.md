@@ -1,7 +1,7 @@
 # Tests
 
 The test suite covers the Python pipeline, workflow orchestration, transcript
-validation, web integration helpers, and a legacy whisper.cpp conversion path.
+validation, and web integration helpers.
 
 ## Quick Start
 
@@ -23,7 +23,6 @@ uv run pytest -m "not slow and not integration and not gpu"
 - `test_workflow_*`, `test_gpu_workflows.py`, `test_real_*`: workflow runners and environment-specific coverage
 - `test_validation_schema.py`, `test_alignment.py`, `test_repetition.py`, `test_subtitles.py`: transcript analysis and validation logic
 - `test_rag_*`, `test_speaker_*`: retrieval and speaker-matching coverage
-- `test_whisper_cpp_*`: legacy whisper.cpp conversion and UTF-8 edge cases
 
 ## Markers
 

@@ -295,7 +295,6 @@ def build_workflows(
 
             if has_align:
                 ready, message = check_python_backend_runtime_ready(
-                    backend_id="whisperx",
                     display_name="WhisperX",
                     docker_service="whisperx",
                 )
@@ -465,7 +464,6 @@ def build_workflows(
     whisperx_available = False
     if whisperx_jobs:
         whisperx_available, whisperx_unavailable_reason = check_python_backend_runtime_ready(
-            backend_id="whisperx",
             display_name="WhisperX",
             docker_service="whisperx",
         )

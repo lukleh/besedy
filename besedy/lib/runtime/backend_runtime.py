@@ -1,10 +1,9 @@
-"""Shared backend runtime selection and process builders."""
+"""Shared Docker process builders for backend workers."""
 
 from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -21,18 +20,6 @@ from besedy.lib.runtime.docker_worker import (
     default_docker_user,
 )
 
-BackendRuntime = Literal["isolated", "docker"]
-BACKEND_RUNTIME_CHOICES: tuple[BackendRuntime, ...] = ("isolated", "docker")
-DOCKER_ONLY_BACKENDS: frozenset[str] = frozenset(
-    {
-        "pyannote",
-        "faster-whisper",
-        "qwen3-asr",
-        "whisperx",
-        "nemo",
-    }
-)
-DOCKER_DEFAULT_BACKENDS = DOCKER_ONLY_BACKENDS
 DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
     {
         "pyannote",
@@ -45,7 +32,7 @@ DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
 
 
 class BackendRuntimeUnavailableError(RuntimeError):
-    """Raised when the runtime selected for a backend is invalid or cannot run here."""
+    """Raised when a backend's Docker runtime cannot run here."""
 
 
 @dataclass(frozen=True)
@@ -54,17 +41,10 @@ class BackendProcessSpec:
 
     argv: tuple[str, ...]
     extra_env: dict[str, str] | None = None
-    runtime: BackendRuntime = "isolated"
 
 
 def _backend_token(backend_id: str) -> str:
     return backend_id.replace("-", "_").upper()
-
-
-def backend_runtime_env_var_name(backend_id: str) -> str:
-    """Return the env var controlling the backend runtime."""
-
-    return f"BESEDY_{_backend_token(backend_id)}_RUNTIME"
 
 
 def backend_cache_env_var_name(backend_id: str) -> str:
@@ -84,71 +64,11 @@ def forward_host_env(*names: str) -> dict[str, str]:
     return forwarded
 
 
-def _supported_backend_runtime_choices(backend_id: str | None) -> tuple[BackendRuntime, ...]:
-    if backend_id in DOCKER_ONLY_BACKENDS:
-        return ("docker",)
-    return BACKEND_RUNTIME_CHOICES
-
-
-def normalize_backend_runtime(
-    raw_value: str,
-    *,
-    source: str,
-    backend_id: str | None = None,
-) -> BackendRuntime:
-    """Validate and normalize a backend runtime selector."""
-
-    normalized = raw_value.strip().lower()
-    choices = _supported_backend_runtime_choices(backend_id)
-    if normalized in choices:
-        return normalized
-    choices_label = ", ".join(repr(choice) for choice in choices)
-    if backend_id in DOCKER_ONLY_BACKENDS:
-        raise BackendRuntimeUnavailableError(
-            f"Unsupported {source} value: {raw_value!r}. "
-            f"The {backend_id} backend is Docker-only. Expected one of {choices_label}."
-        )
-    raise BackendRuntimeUnavailableError(
-        f"Unsupported {source} value: {raw_value!r}. Expected one of {choices_label}."
-    )
-
-
-def resolve_backend_runtime(
-    backend_id: str,
-    *,
-    runtime_override: str | None = None,
-) -> BackendRuntime:
-    """Resolve the active runtime for a backend."""
-
-    if runtime_override is not None:
-        return normalize_backend_runtime(
-            runtime_override,
-            source="backend runtime override",
-            backend_id=backend_id,
-        )
-    env_var = backend_runtime_env_var_name(backend_id)
-    default_runtime = "docker" if backend_id in DOCKER_DEFAULT_BACKENDS else "isolated"
-    raw = os.getenv(env_var, default_runtime)
-    return normalize_backend_runtime(raw, source=env_var, backend_id=backend_id)
-
-
 def _abspath_no_resolve(path: Path | str) -> Path:
     candidate = Path(path).expanduser()
     if candidate.is_absolute():
         return candidate
     return Path.cwd() / candidate
-
-
-def _prepend_env_path(prefix: str, existing: str | None) -> str:
-    if not existing:
-        return prefix
-    if existing.split(os.pathsep)[0] == prefix:
-        return existing
-    return f"{prefix}{os.pathsep}{existing}"
-
-
-def _check_isolated_python_available(env_python: Path) -> bool:
-    return env_python.exists() and env_python.is_file()
 
 
 def resolve_local_model_path(value: str | Path | None) -> Path | None:
@@ -275,42 +195,12 @@ def _docker_runtime_ready(
 
 def check_python_backend_runtime_ready(
     *,
-    backend_id: str,
     display_name: str,
-    isolated_python: Path | None = None,
-    setup_script: str | None = None,
     docker_service: str | None = None,
-    runtime_override: str | None = None,
     compose_file: Path = DEFAULT_BACKENDS_COMPOSE_FILE,
-    required_paths: list[Path] | None = None,
-    isolated_ready_check: Callable[[], object] | None = None,
 ) -> tuple[bool, str | None]:
-    """Check whether the selected runtime is ready for a Python backend."""
+    """Check whether the Docker runtime is ready for a Python backend."""
 
-    runtime = resolve_backend_runtime(backend_id, runtime_override=runtime_override)
-    if runtime == "isolated":
-        if isolated_python is None or setup_script is None:
-            raise RuntimeError(
-                f"{display_name} isolated runtime is not configured for this caller."
-            )
-        if _check_isolated_python_available(isolated_python):
-            if isolated_ready_check is not None:
-                try:
-                    isolated_ready_check()
-                except Exception as exc:
-                    return False, str(exc)
-            missing_paths = [
-                str(path)
-                for path in (required_paths or [])
-                if not _abspath_no_resolve(path).exists()
-            ]
-            if not missing_paths:
-                return True, None
-            return (
-                False,
-                f"{display_name} runtime is missing required files: {', '.join(missing_paths)}",
-            )
-        return False, f"{display_name} environment not set up. Run: ./besedy/scripts/{setup_script}"
     return _docker_runtime_ready(
         display_name=display_name,
         docker_service=docker_service,
@@ -387,12 +277,9 @@ def build_python_backend_process(
     *,
     backend_id: str,
     display_name: str,
-    isolated_python: Path | None = None,
-    setup_script: str | None = None,
     script_path: Path,
     script_args: list[str],
     docker_service: str | None = None,
-    runtime_override: str | None = None,
     extra_env: dict[str, str] | None = None,
     input_paths: list[Path | str] | None = None,
     output_paths: list[Path | str] | None = None,
@@ -404,28 +291,7 @@ def build_python_backend_process(
 ) -> BackendProcessSpec:
     """Build a process spec for a Python backend script."""
 
-    runtime = resolve_backend_runtime(backend_id, runtime_override=runtime_override)
     extra_env = dict(extra_env or {})
-
-    if runtime == "isolated":
-        if isolated_python is None or setup_script is None:
-            raise RuntimeError(
-                f"{display_name} isolated runtime is not configured for this caller."
-            )
-        if not _check_isolated_python_available(isolated_python):
-            raise BackendRuntimeUnavailableError(
-                f"{display_name} environment not set up. Run: ./besedy/scripts/{setup_script}"
-            )
-        env_updates = {
-            "PYTHONPATH": _prepend_env_path(str(PROJECT_ROOT), os.getenv("PYTHONPATH")),
-            "BESEDY_CONFIG": str(resolve_config_path()),
-        }
-        env_updates.update(extra_env)
-        return BackendProcessSpec(
-            argv=(str(isolated_python), str(script_path), *script_args),
-            extra_env=env_updates,
-            runtime=runtime,
-        )
 
     ok, message = _docker_runtime_ready(
         display_name=display_name,
@@ -480,7 +346,6 @@ def build_python_backend_process(
     return BackendProcessSpec(
         argv=tuple(build_compose_run_argv(run_spec)),
         extra_env=None,
-        runtime=runtime,
     )
 
 
@@ -488,10 +353,8 @@ def build_command_backend_process(
     *,
     backend_id: str,
     display_name: str,
-    host_argv: list[str] | None = None,
     docker_argv: list[str],
     docker_service: str | None = None,
-    runtime_override: str | None = None,
     extra_env: dict[str, str] | None = None,
     input_paths: list[Path | str] | None = None,
     output_paths: list[Path | str] | None = None,
@@ -505,19 +368,7 @@ def build_command_backend_process(
 ) -> BackendProcessSpec:
     """Build a process spec for a backend CLI command."""
 
-    runtime = resolve_backend_runtime(backend_id, runtime_override=runtime_override)
     extra_env = dict(extra_env or {})
-
-    if runtime == "isolated":
-        if host_argv is None:
-            raise RuntimeError(
-                f"{display_name} isolated runtime is not configured for this caller."
-            )
-        return BackendProcessSpec(
-            argv=tuple(host_argv),
-            extra_env=extra_env or None,
-            runtime=runtime,
-        )
 
     ok, message = _docker_runtime_ready(
         display_name=display_name,
@@ -557,5 +408,4 @@ def build_command_backend_process(
     return BackendProcessSpec(
         argv=tuple(build_compose_run_argv(run_spec)),
         extra_env=None,
-        runtime=runtime,
     )

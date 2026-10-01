@@ -206,9 +206,9 @@ penalty, temperature schedule). Confidence calibration ~0.88 average.
 for stable word timings. Produces raw output first (`_raw_whisperx` when
 `--keep-raw` is enabled), then auto-converts to canonical format.
 
-> **Legacy note:** Existing whisper.cpp transcripts are retained as historical
-> data, but the active pipeline uses WhisperX. The loader preserves encoding
-> fallback for those older files.
+> **Legacy note:** whisper.cpp is no longer a backend, and its raw-dump
+> converter has been removed. The loader still keeps the latin-1 encoding
+> fallback for older whisper.cpp files.
 
 ---
 
