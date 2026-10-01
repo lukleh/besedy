@@ -68,7 +68,25 @@ describe("useAacUpgradeAvailable", () => {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current).toBe(true));
-    expect(fetchJson).toHaveBeenCalledWith(`/api/catalogs/cat/recordings/${HASH}/audio/sources`);
+    // No sign-in redirect on a 401: the Downloads page works without a session.
+    expect(fetchJson).toHaveBeenCalledWith(`/api/catalogs/cat/recordings/${HASH}/audio/sources`, {
+      skipAuthCheck: true,
+    });
+  });
+
+  it("does not flag when the check fails, for example with an expired session", async () => {
+    vi.mocked(fetchJson).mockRejectedValue(new Error("HTTP 401"));
+    const { result } = renderHook(() => useAacUpgradeAvailable(record(AUDIO)), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(fetchJson).toHaveBeenCalled());
+    expect(result.current).toBe(false);
+  });
+
+  it("asks nothing without a download", () => {
+    const { result } = renderHook(() => useAacUpgradeAvailable(null), { wrapper: wrapper() });
+    expect(result.current).toBe(false);
+    expect(fetchJson).not.toHaveBeenCalled();
   });
 
   it("does not flag when the source has no copy", async () => {
