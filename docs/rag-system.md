@@ -17,7 +17,8 @@ The **default** ColBERT retriever, `jinaai/jina-colbert-v2`, is **CC-BY-NC-4.0
 use, switch to a permissively-licensed ColBERT model via the `RAG_COLBERT_MODEL`
 environment variable or `--rag-colbert-model` (e.g. `colbert-ir/colbertv2.0`;
 verify its terms on the model card). The reranker / chunk tokenizer
-(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0) is commercial-friendly. See the [full model and license table in the
+(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0) is
+commercial-friendly. See the [full model and license table in the
 README](../README.md#third-party-models--licenses) for the source of truth.
 
 ## Query Flow
