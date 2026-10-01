@@ -94,7 +94,7 @@ describe('downloads database', () => {
       'downloads',
       'pendingPlaybackProgress',
     ]);
-    expect(database.version).toBe(5);
+    expect(database.version).toBe(6);
   });
 
   it('rewrites pre-rename poster field names on already-downloaded records', async () => {
@@ -175,6 +175,98 @@ describe('downloads database', () => {
     const bundle = await db.getDownloadBundle(legacyKey);
     expect(bundle?.artwork).toMatchObject({ contentType: 'image/jpeg', variant: 'square', artworkId: 'p1' });
     expect(bundle).not.toHaveProperty('poster');
+  });
+
+  it('deletes stored inline audio copies and recovers packages stuck on the inline error', async () => {
+    const complete = 'cat:' + HASH;
+    const stuck = 'cat:' + 'f'.repeat(64);
+    const withoutCopy = 'cat:' + 'd'.repeat(64);
+    const legacy = indexedDB.open('besedy-offline', 5);
+    const record = (key: string, status: string, error: string | null) => ({
+      key,
+      catalogId: 'cat',
+      catalogLabel: null,
+      hash: key.slice(4),
+      userId: 'u1',
+      eventKey: null,
+      event: null,
+      recording: null,
+      audioUrl: `/api/catalogs/cat/recordings/${key.slice(4)}/audio`,
+      audioCacheKey: `https://besedy.test/api/catalogs/cat/recordings/${key.slice(4)}/audio`,
+      status,
+      progress: status === 'complete' ? 100 : 0,
+      bytesLoaded: 10,
+      totalBytes: 10,
+      error,
+      resumeOnReconnect: false,
+      transcriptBackend: null,
+      hasArtwork: false,
+      createdAt: 0,
+      updatedAt: 42,
+      completedAt: status === 'complete' ? 42 : null,
+    });
+    await new Promise<void>((resolve, reject) => {
+      legacy.onupgradeneeded = () => {
+        const database = legacy.result;
+        const downloads = database.createObjectStore('downloads', { keyPath: 'key' });
+        downloads.createIndex('byCatalog', 'catalogId');
+        downloads.createIndex('byEventKey', 'eventKey');
+        downloads.createIndex('byStatus', 'status');
+        database.createObjectStore('downloadBundles', { keyPath: 'key' });
+        const progress = database.createObjectStore('pendingPlaybackProgress', { keyPath: 'key' });
+        progress.createIndex('byUser', 'userId');
+      };
+      legacy.onsuccess = () => {
+        const database = legacy.result;
+        const tx = database.transaction(['downloads', 'downloadBundles'], 'readwrite');
+        tx.objectStore('downloads').put(record(complete, 'complete', null));
+        tx.objectStore('downloads').put(record(stuck, 'error', 'inline-audio-unavailable'));
+        for (const key of [complete, stuck]) {
+          tx.objectStore('downloadBundles').put({
+            key,
+            transcriptBackend: 'whisperx/large',
+            transcript: null,
+            diarization: null,
+            artwork: null,
+            inlineAudio: { data: new Uint8Array(10).buffer, contentType: 'audio/webm' },
+            updatedAt: 0,
+          });
+        }
+        // A download that needed no copy: the old job stored an explicit null.
+        tx.objectStore('downloadBundles').put({
+          key: withoutCopy,
+          transcriptBackend: null,
+          transcript: null,
+          diarization: null,
+          artwork: null,
+          inlineAudio: null,
+          updatedAt: 0,
+        });
+        tx.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      legacy.onerror = () => reject(legacy.error);
+    });
+
+    const db = await loadDb();
+    for (const key of [complete, stuck]) {
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle).not.toHaveProperty('inlineAudio');
+      expect(bundle?.transcriptBackend).toBe('whisperx/large');
+    }
+    // Left as it was rather than rewritten for nothing.
+    expect(await db.getDownloadBundle(withoutCopy)).toHaveProperty('inlineAudio', null);
+    expect(await db.getDownload(complete)).toMatchObject({ status: 'complete', error: null });
+    // Its chunks verified before; hydration checks them again as for any package.
+    expect(await db.getDownload(stuck)).toMatchObject({
+      status: 'complete',
+      error: null,
+      progress: 100,
+      completedAt: 42,
+    });
   });
 
   it('keeps large payloads separate from lightweight registry rows', async () => {

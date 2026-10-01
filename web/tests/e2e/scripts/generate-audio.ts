@@ -97,6 +97,38 @@ export async function generateCompressedAudio(
 }
 
 /**
+ * Generate the AAC-in-MP4 copy WebKit browsers play (#291), next to the WebM.
+ * ffmpeg's built-in AAC encoder, so hosts without libfdk_aac can build it.
+ */
+export async function generateAacCopy(
+  wavPath: string,
+  outputDir: string,
+  hash: string
+): Promise<string> {
+  const compressedDir = path.join(outputDir, "compressed");
+  await fs.mkdir(compressedDir, { recursive: true });
+
+  const outputPath = path.join(compressedDir, `${hash}.m4a`);
+
+  const args = [
+    "-y",
+    "-i",
+    wavPath,
+    "-c:a",
+    "aac",
+    "-b:a",
+    "64k",
+    "-movflags",
+    "+faststart",
+    outputPath,
+  ];
+
+  execFileSync("ffmpeg", args, { stdio: "ignore" });
+
+  return outputPath;
+}
+
+/**
  * Generate all test audio files
  */
 export async function generateAllAudio(fixturesDir: string): Promise<void> {
@@ -112,6 +144,7 @@ export async function generateAllAudio(fixturesDir: string): Promise<void> {
   for (const spec of TEST_AUDIO_FILES) {
     const wavPath = await generateAudioFile(audioDir, spec);
     await generateCompressedAudio(wavPath, audioDir, spec.hash);
+    await generateAacCopy(wavPath, audioDir, spec.hash);
     console.log(`  Generated: ${spec.filename} (${spec.duration}s @ ${spec.frequency}Hz)`);
   }
 

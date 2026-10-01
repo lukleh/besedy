@@ -2006,7 +2006,8 @@
     "recordingLabel": "Recording",
     "backToCatalog": "Back to catalog",
     "errorIncompletePackage": "Downloaded audio is incomplete on this device. Download it again.",
-    "errorInlineAudio": "This download could not be prepared for offline playback on this device. Download it again.",
+    "formatUpgrade": "Saved in an older format that this browser cannot play to the end offline. Download it again.",
+    "redownload": "Download again",
     "offlineCatalogScope": "Offline. Only downloaded events are shown; other downloads are in Downloads.",
     "unavailableOffline": "Not available offline",
     "unavailableOfflineDescription": "This page needs a connection. Downloaded events open without one."
