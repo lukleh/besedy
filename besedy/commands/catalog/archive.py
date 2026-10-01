@@ -1104,7 +1104,9 @@ def _run_backfill_jobs(
             result = future.result()
         except Exception as exc:  # one broken job must not end the run
             result = AacBackfillResult(
-                row.sha256, None, ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}")
+                row.sha256,
+                None,
+                ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}"),
             )
         if result.values is not None:
             # Record each copy as it finishes: an interrupted run keeps
@@ -1125,7 +1127,9 @@ def _run_backfill_jobs(
             )
         if result.skipped is not None:
             skipped.append(result.skipped)
-            print(f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}")
+            print(
+                f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}"
+            )
 
     if jobs:
         workers = request.parallel or min(max(1, detect_logical_cpus()), len(jobs))
@@ -1311,7 +1315,9 @@ def handle_archive(
 
     # Check encoder availability for M4A and the AAC copy
     write_aac_copy = request.format == "opus" and request.aac_copy
-    use_fdk = select_aac_encoder(ffmpeg_binary) if (request.format == "m4a" or write_aac_copy) else False
+    use_fdk = (
+        select_aac_encoder(ffmpeg_binary) if (request.format == "m4a" or write_aac_copy) else False
+    )
 
     # 7. Filter rows to process (skip already archived unless overwrite)
     if request.overwrite:

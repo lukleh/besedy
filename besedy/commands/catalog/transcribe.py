@@ -228,9 +228,7 @@ def selection_values_matching(config: WorkflowConfig, selection: set[str]) -> se
     related IDs (for example `canary` selecting `canary-nemo-beam`).
     """
     exact = {value for value in selection if value in (config.workflow_id, config.workflow_label)}
-    prefixes = {
-        value for value in selection - exact if config.workflow_id.startswith(f"{value}-")
-    }
+    prefixes = {value for value in selection - exact if config.workflow_id.startswith(f"{value}-")}
     return exact | prefixes
 
 

@@ -193,10 +193,7 @@ class TestDetectMissingOriginals:
         against ``len(missing)`` — if all files shared one parent, the
         set size was 1 and the 50% threshold was never reached.
         """
-        entries = [
-            (f"hash{i}", f"/mnt/missing_volume/audio{i}.wav")
-            for i in range(10)
-        ]
+        entries = [(f"hash{i}", f"/mnt/missing_volume/audio{i}.wav") for i in range(10)]
 
         missing, mount_issue, suspects = detect_missing_originals(entries)
 

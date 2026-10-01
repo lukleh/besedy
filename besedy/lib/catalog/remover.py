@@ -210,7 +210,11 @@ def build_removal_plan(
             plan.archived_files.extend(_existing_paths(rows, "Compressed AAC Path"))
             for webm in _existing_paths(rows, "Compressed Path"):
                 sibling = webm.with_suffix(".m4a")
-                if webm.suffix == ".webm" and sibling.is_file() and sibling not in plan.archived_files:
+                if (
+                    webm.suffix == ".webm"
+                    and sibling.is_file()
+                    and sibling not in plan.archived_files
+                ):
                     plan.archived_files.append(sibling)
 
     plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)

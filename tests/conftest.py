@@ -70,18 +70,6 @@ def require_gpu(gpu_available):
         pytest.skip("GPU not available")
 
 
-@pytest.fixture(scope="session")
-def reference_worktree():
-    """Path to pre-refactor reference worktree.
-
-    Skips test if reference is not available.
-    """
-    ref = Path("worktrees/besedy-reference")
-    if not ref.exists():
-        pytest.skip("Reference worktree not available")
-    return ref
-
-
 # ---------------------------------------------------------------------------
 # Audio file fixtures
 # ---------------------------------------------------------------------------
