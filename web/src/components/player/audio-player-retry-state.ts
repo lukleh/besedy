@@ -37,11 +37,20 @@ export type RetryState =
 
 export type RetryAction =
   | { type: 'RESET' }
-  | { type: 'ERROR_DETECTED'; savedPosition: number; wasPlaying: boolean; scheduleId?: number }
+  | { type: 'ERROR_DETECTED'; savedPosition: number; wasPlaying: boolean; scheduleId: number }
   | { type: 'TIMER_FIRED' }
   | { type: 'SEEK_REQUESTED'; time: number }
   | { type: 'RECOVERED' }
-  | { type: 'RELOAD_FAILED'; scheduleId?: number };
+  | { type: 'RELOAD_FAILED'; scheduleId: number };
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/**
+ * What the player dispatches; its dispatch wrapper stamps each action that
+ * may start a schedule with a fresh `scheduleId`, so none reaches the reducer
+ * without one.
+ */
+export type UnstampedRetryAction = DistributiveOmit<RetryAction, 'scheduleId'>;
 
 export const INITIAL_RETRY_STATE: RetryState = { phase: 'idle' };
 
@@ -63,7 +72,7 @@ export function retryReducer(
         savedPosition: action.savedPosition,
         wasPlaying: action.wasPlaying,
         delayMs: INITIAL_RETRY_DELAY_MS,
-        scheduleId: action.scheduleId ?? 0,
+        scheduleId: action.scheduleId,
       };
 
     case 'TIMER_FIRED':
@@ -99,7 +108,7 @@ export function retryReducer(
           INITIAL_RETRY_DELAY_MS * Math.pow(2, nextAttempt - 1),
           MAX_RETRY_DELAY_MS,
         ),
-        scheduleId: action.scheduleId ?? 0,
+        scheduleId: action.scheduleId,
       };
     }
   }

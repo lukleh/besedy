@@ -1227,13 +1227,13 @@ describe("AudioPlayer external seek", () => {
     await act(async () => {
       fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
     });
-    expect(audio.currentTime).toBe(10);
+    expect(audio.currentTime).toBe(40);
 
     // The page resets the handoff flag after 100 ms. A new callback must not
     // turn that prop update into another request either.
     rerender(playerElement({ ...options, autoPlayOnSeek: false, onTimeUpdate: vi.fn() }));
     await loadMetadata(audio);
-    expect(audio.currentTime).toBe(10);
+    expect(audio.currentTime).toBe(40);
     expect(audio.play).toHaveBeenCalledTimes(1);
   });
 
@@ -1318,7 +1318,7 @@ describe("AudioPlayer external seek", () => {
     audio.currentTime = 0; // Changing src resets the media element.
     rerender(playerElement({ ...options, src: `${src}?local=1`, autoPlayOnSeek: false }));
     await loadMetadata(audio);
-    expect(audio.currentTime).toBe(10);
+    expect(audio.currentTime).toBe(40);
     expect(audio.play).toHaveBeenCalledTimes(1);
   });
 
@@ -1356,10 +1356,12 @@ describe("AudioPlayer external seek", () => {
   });
 
   it.each([
-    { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 10 },
-    { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 0 },
-    { control: "ArrowLeft", testId: undefined, code: "ArrowLeft", target: 0 },
-    { control: "ArrowRight", testId: undefined, code: "ArrowRight", target: 0 },
+    // Relative to the queued 30 s, not to the 0 the element reports without
+    // metadata; ArrowRight is not clamped while the duration is still 0.
+    { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 40 },
+    { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 20 },
+    { control: "ArrowLeft", testId: undefined, code: "ArrowLeft", target: 25 },
+    { control: "ArrowRight", testId: undefined, code: "ArrowRight", target: 35 },
   ])("keeps a $control seek when queued restore metadata arrives", async ({ testId, code, target }) => {
     const onSeek = vi.fn();
     const onTimeUpdate = vi.fn();
@@ -1392,7 +1394,7 @@ describe("AudioPlayer external seek", () => {
     expect(playMock).not.toHaveBeenCalled();
 
     await loadMetadata(audio);
-    expect(audio.currentTime).toBe(10);
+    expect(audio.currentTime).toBe(40);
     expect(playMock).toHaveBeenCalledTimes(1);
   });
 

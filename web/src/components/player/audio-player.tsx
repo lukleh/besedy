@@ -35,6 +35,7 @@ import {
   isRetrying,
   retryReducer,
   type RetryAction,
+  type UnstampedRetryAction,
   type RetryState,
 } from './audio-player-retry-state';
 import type {
@@ -190,7 +191,7 @@ export function AudioPlayer({
   const retrySrcRef = useRef<string | null>(null);
   const retryScheduleCounterRef = useRef(0);
   const dispatchRetry = useCallback(
-    (action: RetryAction) => {
+    (action: UnstampedRetryAction) => {
       // Any action that exits the retry chain must kill a pending timer
       // immediately; otherwise an already-queued callback can still fire and
       // call audio.load() on an element that's recovered or switched src.
@@ -208,7 +209,7 @@ export function AudioPlayer({
         retrySrcRef.current = null;
       }
       // Actions that may start a schedule carry a fresh id; see scheduleId.
-      const stamped =
+      const stamped: RetryAction =
         action.type === 'ERROR_DETECTED' || action.type === 'RELOAD_FAILED'
           ? { ...action, scheduleId: ++retryScheduleCounterRef.current }
           : action;
@@ -897,12 +898,16 @@ export function AudioPlayer({
   // metadata returns. A relative seek in that window starts from where the
   // listener was, which the retry state holds.
   const relativeSeekBase = useCallback((audio: HTMLAudioElement) => {
-    const retry = retryStateRef.current;
-    if (
-      audio.readyState < 1 &&
-      (retry.phase === 'scheduled' || retry.phase === 'reloading')
-    ) {
-      return retry.savedPosition;
+    // Without metadata the element reports 0 wherever the listener is: a
+    // queued seek (saved position, ?seek=, handoff, transport switch) is the
+    // position, and during a retry's reload so is the retry's restore target.
+    if (audio.readyState < 1) {
+      const pending = pendingSeekRef.current;
+      if (pending) return pending.time;
+      const retry = retryStateRef.current;
+      if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
+        return retry.savedPosition;
+      }
     }
     return audio.currentTime;
   }, []);
@@ -980,7 +985,11 @@ export function AudioPlayer({
           break;
         case 'ArrowRight':
           e.preventDefault();
-          seekFromControls(Math.min(duration, relativeSeekBase(audio) + 5));
+          {
+            // Until the duration is known it is 0, as in skipForward.
+            const base = relativeSeekBase(audio);
+            seekFromControls(duration > 0 ? Math.min(duration, base + 5) : base + 5);
+          }
           break;
         case 'ArrowUp':
           e.preventDefault();

@@ -25,11 +25,12 @@ describe('audio retry state', () => {
   it('keeps a user seek through reload failures, including a seek to zero', () => {
     let state = retryReducer(INITIAL_RETRY_STATE, {
       type: 'ERROR_DETECTED', savedPosition: 42, wasPlaying: true,
+      scheduleId: 1,
     });
     state = retryReducer(state, { type: 'SEEK_REQUESTED', time: 10 });
     state = retryReducer(state, { type: 'TIMER_FIRED' });
     state = retryReducer(state, { type: 'SEEK_REQUESTED', time: 0 });
-    state = retryReducer(state, { type: 'RELOAD_FAILED' });
+    state = retryReducer(state, { type: 'RELOAD_FAILED', scheduleId: 2 });
     expect(state).toMatchObject({
       phase: 'scheduled', savedPosition: 0, wasPlaying: true, attempt: 2,
     });
@@ -71,7 +72,7 @@ describe('audio retry state', () => {
 
     for (let attempt = 1; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
       state = retryReducer(state, { type: 'TIMER_FIRED' });
-      state = retryReducer(state, { type: 'RELOAD_FAILED' });
+      state = retryReducer(state, { type: 'RELOAD_FAILED', scheduleId: 2 });
       expect(state).toMatchObject({
         phase: 'scheduled',
         attempt: attempt + 1,
@@ -85,7 +86,7 @@ describe('audio retry state', () => {
     }
 
     state = retryReducer(state, { type: 'TIMER_FIRED' });
-    expect(retryReducer(state, { type: 'RELOAD_FAILED' })).toEqual({
+    expect(retryReducer(state, { type: 'RELOAD_FAILED', scheduleId: 2 })).toEqual({
       phase: 'exhausted',
     });
   });
@@ -95,6 +96,7 @@ describe('audio retry state', () => {
       type: 'ERROR_DETECTED',
       savedPosition: 3,
       wasPlaying: false,
+      scheduleId: 1,
     });
 
     expect(
@@ -102,7 +104,8 @@ describe('audio retry state', () => {
         type: 'ERROR_DETECTED',
         savedPosition: 99,
         wasPlaying: true,
-      }),
+      scheduleId: 1,
+    }),
     ).toBe(scheduled);
     expect(retryReducer(scheduled, { type: 'RESET' })).toBe(
       INITIAL_RETRY_STATE,
