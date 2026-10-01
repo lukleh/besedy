@@ -77,7 +77,7 @@ def normalize_backend_runtime(
     raw_value: str,
     *,
     source: str,
-    backend_id: str | None = None,
+    backend_id: str,
 ) -> BackendRuntime:
     """Validate and normalize a backend runtime selector."""
 
@@ -85,10 +85,9 @@ def normalize_backend_runtime(
     if normalized == "docker":
         return "docker"
     choices_label = ", ".join(repr(choice) for choice in BACKEND_RUNTIME_CHOICES)
-    subject = f"The {backend_id} backend" if backend_id else "This backend"
     raise BackendRuntimeUnavailableError(
         f"Unsupported {source} value: {raw_value!r}. "
-        f"{subject} is Docker-only. Expected one of {choices_label}."
+        f"The {backend_id} backend is Docker-only. Expected one of {choices_label}."
     )
 
 

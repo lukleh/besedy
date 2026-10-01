@@ -35,6 +35,19 @@ def test_resolve_backend_runtime_defaults_to_docker_for_migrated_backends(
         assert resolve_backend_runtime(backend_id) == "docker"
 
 
+def test_resolve_backend_runtime_defaults_to_docker_for_unknown_backends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BESEDY_CUSTOM_BACKEND_RUNTIME", raising=False)
+    assert resolve_backend_runtime("custom-backend") == "docker"
+
+    monkeypatch.setenv("BESEDY_CUSTOM_BACKEND_RUNTIME", "isolated")
+    with pytest.raises(
+        BackendRuntimeUnavailableError, match="custom-backend backend is Docker-only"
+    ):
+        resolve_backend_runtime("custom-backend")
+
+
 def test_resolve_backend_runtime_rejects_isolated_for_migrated_backends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
