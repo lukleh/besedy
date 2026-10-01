@@ -222,9 +222,10 @@ manages workflow-group records themselves.
   `.venv` trees overran that sync in September 2026. Commits stay backed up
   because worktrees share the main repo's object store. Remove a worktree once
   its branch is merged; `web/scripts/worktree-report.sh` lists the removable ones.
-  Production deploys follow the same rule: run them from
-  `~/worktrees/besedy/prod-deploy-<sha>` (see `docs/web/operations.md` →
-  Deploy checkout), never from a checkout like `~/projects/besedy-<topic>-deploy`.
+  Production web and jobs deploys follow the same rule: run them from the
+  fixed, locked worktree `~/worktrees/besedy/prod-deploy` (see
+  `docs/web/operations.md` → Deploy checkout), never from any checkout inside
+  `~/projects`, including the main one.
 - Production web revision is exposed at `GET /api/version`.
 - Fast check command:
   `curl -s https://besedy.org/api/version | jq -r '.commit, .commitShort, .buildTime, .environment'`

@@ -220,7 +220,7 @@ only in an explicit, backed-up maintenance procedure.
 
 ### Release Preflight
 
-- [ ] Deploy from a clean per-commit worktree under `~/worktrees/besedy/`
+- [ ] Deploy the intended commit from `~/worktrees/besedy/prod-deploy`
       (see [Deploy checkout](#deploy-checkout)), never from a checkout inside
       `~/projects`
 - [ ] Keep `CONFIG_FILE` on an absolute path outside the checkout; the deploy
@@ -237,35 +237,52 @@ only in an explicit, backed-up maintenance procedure.
 
 ### Deploy checkout
 
-Every production deploy, web or jobs, runs from a detached worktree of the
-release commit at `~/worktrees/besedy/prod-deploy-<sha>`:
+Production web and jobs deploys run from one fixed, locked, detached worktree,
+`~/worktrees/besedy/prod-deploy`, moved to each release commit. (The host
+ingest worker has its own fixed checkout, `~/worktrees/besedy/prod-ingest`; see
+below. The shared Prefect server stack and ColBERT are not covered here.)
+Create it once from the main repository:
 
 ```bash
-git fetch origin
-sha=$(git rev-parse --short=8 origin/main)
-git worktree add --detach ~/worktrees/besedy/prod-deploy-$sha $sha
-cd ~/worktrees/besedy/prod-deploy-$sha
-(cd web && npm ci)    # prod-build runs web-check on the host
-just prod-deploy      # or prod-deploy-with-jobs[-codex]; see Release Workflow
-just ingest-worker-deploy "$sha"
+git -C ~/projects/besedy worktree add --detach ~/worktrees/besedy/prod-deploy origin/main
+git -C ~/projects/besedy worktree lock --reason "production web/jobs deploys" ~/worktrees/besedy/prod-deploy
 ```
 
-Do not create deploy checkouts inside `~/projects`: everything there is
-snapshotted nightly and synced off-host, and a deploy checkout with installed
-web dependencies adds over a gigabyte to that sync. To confirm web and jobs
-run the same commit, compare each container's
-`org.opencontainers.image.revision` label with `/api/version`. The
-`com.docker.compose.project.working_dir` label only shows which checkout last
-created a container, and it keeps pointing there after that checkout is gone.
+For each release, set `sha` to the full commit you tested, not whatever
+`origin/main` points at by the time you deploy:
 
-Prefer `prod-deploy-with-jobs` (or `prod-deploy-with-jobs-codex`, see below)
-whenever jobs code or `uv.lock` changed since the running jobs image's
-`org.opencontainers.image.revision`. A web-only `prod-deploy` leaves the jobs
-stack on whichever worktree it was last deployed from. Once no container runs
-from an older deploy worktree, remove it; `web/scripts/worktree-report.sh`
-lists it as removable and prints the `git worktree remove` command. The host
-ingest worker has its own fixed checkout, `~/worktrees/besedy/prod-ingest`
-(see below).
+```bash
+sha=<full release commit>
+cd ~/worktrees/besedy/prod-deploy
+git fetch origin &&
+  git checkout --detach "$sha" &&
+  (cd web && npm ci) &&    # prod-build runs web-check on the host
+  just prod-deploy &&      # or prod-deploy-with-jobs[-codex]; see Release Workflow
+  just ingest-worker-deploy "$sha"
+```
+
+The chain stops at the first failure, so the ingest worker only moves once web
+runs the same commit. Re-running it for the same commit (a retry, or an
+env-only change) reuses the worktree. Prefer `prod-deploy-with-jobs` (or
+`prod-deploy-with-jobs-codex`, see below) whenever jobs code or `uv.lock`
+changed since the running jobs image's `org.opencontainers.image.revision`. A
+web-only `prod-deploy` leaves the jobs image on its previous commit.
+
+Do not deploy from a checkout inside `~/projects`, including the main one:
+everything there is snapshotted nightly and synced off-host, and a deploy
+checkout with installed web dependencies adds over a gigabyte to that sync.
+To confirm web and jobs run the same commit, compare each container's
+`org.opencontainers.image.revision` label with `/api/version`. The
+`com.docker.compose.project.working_dir` label only records the checkout that
+created a container. Compose does not recreate an unchanged container, and
+`db` is started with `--no-recreate`, so `db` and `backup` can keep pointing at
+an old or deleted checkout.
+
+Older deploy checkouts (`~/worktrees/besedy/prod-deploy-<sha>`,
+`~/projects/besedy-*-deploy`) can be removed with `git worktree remove` once
+web and jobs run from `~/worktrees/besedy/prod-deploy`. No production container
+bind-mounts its checkout, so a stale `working_dir` label does not keep one in
+use, even though `web/scripts/worktree-report.sh` lists such a checkout as KEEP.
 
 ### Release Workflow
 
