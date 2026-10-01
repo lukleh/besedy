@@ -188,6 +188,7 @@ export function AudioPlayer({
   // (timer fire, canplay recovery) compares this against the current audio.src
   // and bails if they differ, closing that window.
   const retrySrcRef = useRef<string | null>(null);
+  const retryScheduleCounterRef = useRef(0);
   const dispatchRetry = useCallback(
     (action: RetryAction) => {
       // Any action that exits the retry chain must kill a pending timer
@@ -206,8 +207,13 @@ export function AudioPlayer({
       if (action.type === 'RESET' || action.type === 'RECOVERED') {
         retrySrcRef.current = null;
       }
-      retryStateRef.current = retryReducer(retryStateRef.current, action);
-      reactDispatchRetry(action);
+      // Actions that may start a schedule carry a fresh id; see scheduleId.
+      const stamped =
+        action.type === 'ERROR_DETECTED' || action.type === 'RELOAD_FAILED'
+          ? { ...action, scheduleId: ++retryScheduleCounterRef.current }
+          : action;
+      retryStateRef.current = retryReducer(retryStateRef.current, stamped);
+      reactDispatchRetry(stamped);
     },
     [cancelRetryTimer],
   );
@@ -267,9 +273,11 @@ export function AudioPlayer({
   // phase via the ref and bails if it's moved out of "scheduled", which
   // closes the window between a cancel on a different tick and a timer that
   // was already about to fire.
-  // A seek changes the restore target, not the deadline of a scheduled retry.
+  // A seek changes the restore target, not the deadline of a scheduled retry;
+  // a new schedule always has a new scheduleId, so the timer is re-armed.
   const retryAttempt = 'attempt' in retryState ? retryState.attempt : 0;
   const retryDelayMs = retryState.phase === 'scheduled' ? retryState.delayMs : 0;
+  const retryScheduleId = retryState.phase === 'scheduled' ? retryState.scheduleId : 0;
   useEffect(() => {
     let cancelled = false;
 
@@ -318,7 +326,15 @@ export function AudioPlayer({
     return () => {
       cancelled = true;
     };
-  }, [retryState.phase, retryAttempt, retryDelayMs, logDebugEvent, cancelRetryTimer, dispatchRetry]);
+  }, [
+    retryState.phase,
+    retryAttempt,
+    retryDelayMs,
+    retryScheduleId,
+    logDebugEvent,
+    cancelRetryTimer,
+    dispatchRetry,
+  ]);
 
   useEffect(() => {
     const handlePageShow = () => {

@@ -36,11 +36,27 @@ describe('audio retry state', () => {
     expect(retryReducer(INITIAL_RETRY_STATE, { type: 'SEEK_REQUESTED', time: 5 })).toBe(INITIAL_RETRY_STATE);
   });
 
+  it('keeps the schedule id through a seek and takes a new one per schedule', () => {
+    let state = retryReducer(INITIAL_RETRY_STATE, {
+      type: 'ERROR_DETECTED',
+      savedPosition: 42,
+      wasPlaying: true,
+      scheduleId: 1,
+    });
+    state = retryReducer(state, { type: 'SEEK_REQUESTED', time: 100 });
+    expect(state).toMatchObject({ phase: 'scheduled', savedPosition: 100, scheduleId: 1 });
+
+    state = retryReducer(state, { type: 'TIMER_FIRED' });
+    state = retryReducer(state, { type: 'RELOAD_FAILED', scheduleId: 2 });
+    expect(state).toMatchObject({ phase: 'scheduled', attempt: 2, scheduleId: 2 });
+  });
+
   it('preserves resume context while advancing with capped exponential backoff', () => {
     let state = retryReducer(INITIAL_RETRY_STATE, {
       type: 'ERROR_DETECTED',
       savedPosition: 42,
       wasPlaying: true,
+      scheduleId: 7,
     });
 
     expect(state).toEqual({
@@ -49,6 +65,7 @@ describe('audio retry state', () => {
       savedPosition: 42,
       wasPlaying: true,
       delayMs: INITIAL_RETRY_DELAY_MS,
+      scheduleId: 7,
     });
     expect(isRetrying(state)).toBe(true);
 

@@ -518,6 +518,36 @@ describe("AudioPlayer retry logic", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("re-arms the retry when a recovery and a new error land in one batch", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    const loadMock = vi.fn();
+    audio.load = loadMock;
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    const playButton = container.querySelector('button[aria-label="Play"]') as HTMLButtonElement | null;
+    await act(async () => {
+      playButton?.click();
+    });
+
+    setAudioError(audio, 2);
+    act(() => {
+      audio.dispatchEvent(new Event("error"));
+    });
+
+    // While the retry waits, the browser recovers on its own (cancelling the
+    // timer) and fails again before React re-renders: phase, attempt and
+    // delay come out exactly as before, so only the new schedule id re-arms.
+    act(() => {
+      audio.dispatchEvent(new Event("canplay"));
+      audio.dispatchEvent(new Event("error"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(loadMock).toHaveBeenCalledTimes(1);
+  });
+
   it("deduplicates errors while retry is pending and continues retry chain", async () => {
     vi.useFakeTimers();
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");

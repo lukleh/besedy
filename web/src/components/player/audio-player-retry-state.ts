@@ -19,6 +19,13 @@ export type RetryState =
       savedPosition: number;
       wasPlaying: boolean;
       delayMs: number;
+      /**
+       * Identifies this schedule. A seek keeps it (the restore target moves,
+       * the deadline does not), while every new schedule gets a new one, so
+       * the player re-arms its timer even when a recovery and a new error land
+       * in one React batch and phase, attempt and delay come out unchanged.
+       */
+      scheduleId: number;
     }
   | {
       phase: 'reloading';
@@ -30,11 +37,11 @@ export type RetryState =
 
 export type RetryAction =
   | { type: 'RESET' }
-  | { type: 'ERROR_DETECTED'; savedPosition: number; wasPlaying: boolean }
+  | { type: 'ERROR_DETECTED'; savedPosition: number; wasPlaying: boolean; scheduleId?: number }
   | { type: 'TIMER_FIRED' }
   | { type: 'SEEK_REQUESTED'; time: number }
   | { type: 'RECOVERED' }
-  | { type: 'RELOAD_FAILED' };
+  | { type: 'RELOAD_FAILED'; scheduleId?: number };
 
 export const INITIAL_RETRY_STATE: RetryState = { phase: 'idle' };
 
@@ -56,6 +63,7 @@ export function retryReducer(
         savedPosition: action.savedPosition,
         wasPlaying: action.wasPlaying,
         delayMs: INITIAL_RETRY_DELAY_MS,
+        scheduleId: action.scheduleId ?? 0,
       };
 
     case 'TIMER_FIRED':
@@ -91,6 +99,7 @@ export function retryReducer(
           INITIAL_RETRY_DELAY_MS * Math.pow(2, nextAttempt - 1),
           MAX_RETRY_DELAY_MS,
         ),
+        scheduleId: action.scheduleId ?? 0,
       };
     }
   }
