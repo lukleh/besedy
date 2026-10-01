@@ -77,7 +77,9 @@ def test_package_layers_do_not_import_entrypoint_layers() -> None:
         for target in sorted(set(_imports(path))):
             forbidden = False
             if source.startswith("besedy.lib."):
-                forbidden = target.startswith(("besedy.cli", "besedy.commands", "besedy.workflows"))
+                forbidden = target.startswith(
+                    ("besedy.cli", "besedy.commands", "besedy.workflows")
+                )
             elif source.startswith("besedy.workflows."):
                 forbidden = target.startswith(("besedy.cli", "besedy.commands"))
             elif source in FOUNDATIONAL_MODULES:
