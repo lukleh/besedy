@@ -77,8 +77,9 @@ The `besedy-offline` IndexedDB database currently has three stores:
   download status.
 - `downloadBundles` holds large optional payloads: the default transcript and
   diarization when permitted, published artwork, the event-detail and
-  recording-entry payloads the shared pages render from, and a
-  WebKit-compatible inline audio copy where required by that platform fallback.
+  recording-entry payloads the shared pages render from. Audio is never stored
+  here: until version 6 of the database a Base64 inline copy of the recording
+  was, and the upgrade to version 6 deletes it (#162).
 - `pendingPlaybackProgress` retains local playback changes for later account
   synchronisation.
 
@@ -116,9 +117,18 @@ keys audio by `format` (`GET_AUDIO_FORMAT_SUPPORT`); a worker from before that
 key would answer with a downloaded WebM, so until it updates the radio keeps
 the WebM. An AAC track
 that fails moves on to the next track like any other; there is no fallback
-between formats, since a catalogued file is either there or not. The WebKit browsers' offline transport default is unchanged here;
-moving it off the inline copy is #162. The remaining caches are intentionally
-small:
+between formats, since a catalogued file is either there or not.
+
+On WebKit a WebM package downloaded before the copy existed still plays through
+the worker only up to Safari's first capped response, so the Downloads page
+flags it while online once `/audio/sources` lists the copy for that package's
+own source (`useAacUpgradeAvailable`), with a **Download again** action
+(`downloadManager.redownload`). That re-queues the package in place, keeping
+its event, transcript and artwork; the job builds the URL as a new download
+would, so it fetches the copy, and the WebM chunks are deleted when it starts
+because the key changes with the format.
+
+The remaining caches are intentionally small:
 
 - `besedy-offline-shell-v1` stores the session-free `/downloads` document.
 - `besedy-offline-static-v1` stores up to 96 content-hashed Next.js assets
@@ -126,29 +136,26 @@ small:
 
 Normal application HTML and API JSON are not placed in an offline cache.
 
-### Diagnosing the local transport on a device
+### Diagnosing local playback on a device
 
-A complete local recording reaches the media element in one of three ways: the
-service worker answers Range requests from the chunked cache (`worker`), the
-player loads a Base64 data URL built from the inline copy stored with the
-download (`inline`), or the player loads an object URL for one Blob composed
-from the cached chunks (`blob`), with no second copy and no worker in the media
-path. `blob` is a diagnostic option only: no browser defaults to it, and it
-falls back to the worker URL when the chunk set is incomplete. The browser
-default comes from
-`requiresInlineOfflineAudio` (WebKit on iOS and macOS, and Android browsers).
-That default was chosen on emulator evidence only, so the player's debug panel
-(the bug icon under the controls) shows the source kind the element was handed,
-the requested transport, the browser default, whether a worker controls the
-page, and an `auto | worker | inline | blob` override. The two can differ: `inline`
-requested without a stored inline copy is served from the worker cache, and
-the Source line is the one that tells the truth. Hydration builds the copy for
-the transport resolved at page load (see below), so this happens only when the
-override changed after the page loaded. The override is stored in
-`localStorage` under `besedy:offline-audio-transport` on that device alone; no
-other user or device is affected, and `auto` removes it. To test a phone: set
-`worker`, open a downloaded recording, switch to airplane mode, play and seek,
-then read the event log in the same panel.
+A complete local recording reaches the media element one way on every browser:
+the player loads the recording URL with a `local=1` marker and the service
+worker answers Range requests from the chunked cache. Until #162 the WebKit and
+Android browsers used a Base64 data URL built from an inline copy stored with
+the download, and the debug panel could switch a device to it or to an object
+URL composed from the chunks (`blob`). Device runs showed the worker playing
+offline on a Pixel and, with the AAC copy, on an iPhone, while the inline copy
+of a multi-hour recording was too large for Safari to play and the composed
+Blob was read whole into Safari's GPU process, so both are gone, with the
+per-device override. A `besedy:offline-audio-transport` value left in
+`localStorage` from that override is no longer read.
+
+The player's debug panel (the bug icon under the controls) shows the source
+kind the element was handed (`network` or `worker-cache`), whether a worker
+controls the page, and whether the browser reports itself online. To test a
+phone: open a downloaded recording, switch to airplane mode with Wi-Fi off too
+(iOS keeps Wi-Fi on in airplane mode if it was turned back on there before),
+play and seek, then read the event log in the same panel.
 
 ### Download manager and lifecycle
 
@@ -164,18 +171,7 @@ Storage: the metadata entry must be complete and every chunk present. A record
 that fails this check, or cannot be checked because the cache is unreadable,
 is not shown as downloaded; it becomes a retryable error with the message that
 the audio is incomplete on this device, and Retry resumes the download from
-the longest contiguous prefix of chunks that survived. When the transport the
-player resolves (browser default plus device override) is `inline`, the bundle
-must also hold the inline copy. Verification builds a missing copy from the
-verified chunks under the download's lock, online or offline, creating an empty
-bundle when a legacy record has none; only a package whose copy cannot be
-prepared (for example, storage is full) becomes a retryable error that says
-so. Retry then repairs the package on the device, online or offline, from the
-chunks it already holds, without downloading again. Only when those chunks no
-longer verify or assemble does Retry need the network: online it queues the
-download at once, offline the record shows the incomplete-audio error above
-until the next Retry. Downloads use the same resolved transport to decide
-whether to store the copy. Registry state alone never proves
+the longest contiguous prefix of chunks that survived. Registry state alone never proves
 playability. The header's Downloads badge counts only completed packages, i.e.
 what verified as playable when the page loaded; the check is not repeated while
 the page stays open.

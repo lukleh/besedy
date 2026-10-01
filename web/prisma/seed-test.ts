@@ -454,6 +454,7 @@ async function main() {
         },
         update: {
           compressedPath: `/data/audio/compressed/${file.hash}.webm`,
+          compressedAacPath: `/data/audio/compressed/${file.hash}.m4a`,
           originalPath: `/data/audio/${file.filename}`,
           filename: file.filename,
           scanRoot: "/data/audio",
@@ -472,6 +473,7 @@ async function main() {
           workflowGroupId: TEST_WORKFLOW_GROUP.id,
           audioHash: file.hash,
           compressedPath: `/data/audio/compressed/${file.hash}.webm`,
+          compressedAacPath: `/data/audio/compressed/${file.hash}.m4a`,
           originalPath: `/data/audio/${file.filename}`,
           filename: file.filename,
           scanRoot: "/data/audio",

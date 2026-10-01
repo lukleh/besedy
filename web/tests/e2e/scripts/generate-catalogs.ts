@@ -49,12 +49,20 @@ function toCSV(headers: string[], rows: Record<string, string | number | undefin
  * Generate archived catalog CSV
  */
 export async function generateArchivedCatalog(fixturesDir: string): Promise<string> {
-  const headers = ["Hash", "Original Path", "Compressed Path", "Duration", "File Size"];
+  const headers = [
+    "Hash",
+    "Original Path",
+    "Compressed Path",
+    "Compressed AAC Path",
+    "Duration",
+    "File Size",
+  ];
 
   const rows = TEST_AUDIO_FILES.map((file) => ({
     Hash: file.hash,
     "Original Path": `/data/audio/${file.filename}`,
     "Compressed Path": `/data/audio/compressed/${file.hash}.webm`,
+    "Compressed AAC Path": `/data/audio/compressed/${file.hash}.m4a`,
     Duration: formatDuration(file.duration),
     "File Size": String(file.duration * 32000), // Approximate size for 16kHz mono
   }));

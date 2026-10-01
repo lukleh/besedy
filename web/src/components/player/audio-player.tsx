@@ -8,7 +8,7 @@
  *
  * - Source switches for the same recording. The page hands the player a
  *   network URL first and, once a download completes, the local package URL
- *   (or an inline copy on browsers that need it). The switch is a real
+ *   that the service worker serves. The switch is a real
  *   source change; position and play intent carry across it.
  * - Recovery from network errors while streaming a recording that is not
  *   downloaded: exponential retries that reload the element, then restore

@@ -9,14 +9,9 @@ import {
   Radio,
   Wifi,
 } from "lucide-react";
-import { useOfflineAudioTransportOverride } from "@/hooks/use-offline-audio-transport";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
-  OFFLINE_AUDIO_TRANSPORT_OVERRIDES,
-  defaultOfflineAudioTransport,
   describeAudioSource,
-  resolveOfflineAudioTransport,
-  writeOfflineAudioTransportOverride,
 } from "@/lib/offline/audio-transport";
 import type {
   ChunkFetchRecord,
@@ -63,7 +58,7 @@ export function AudioPlayerDebugPanel({
           </span>
         </div>
         <div className="break-all text-[10px] text-muted-foreground">{source.summary}</div>
-        <LocalTransportControl />
+        <LocalPlaybackStatus />
       </div>
 
       <div className="space-y-1">
@@ -261,70 +256,29 @@ export function AudioPlayerDebugPanel({
 }
 
 /**
- * Which transport this device asks for on complete local recordings, with a
- * per-device override. The override lives in localStorage and is set only
- * here, so it lets one phone try the other transport without a release and
- * without touching anybody else's playback. What the element actually got is
- * the Source line above: a requested `inline` without a stored copy falls
- * back to the worker URL.
+ * Whether a service worker controls the page, which every downloaded
+ * recording needs to play (#162), and whether the browser thinks it is online.
  */
-function LocalTransportControl() {
-  const override = useOfflineAudioTransportOverride();
+function LocalPlaybackStatus() {
   const { isOnline } = useOnlineStatus();
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const requested = resolveOfflineAudioTransport(userAgent, override);
-  const browserDefault = defaultOfflineAudioTransport(userAgent);
   const controller =
     typeof navigator !== "undefined" && navigator.serviceWorker?.controller
       ? "controlled"
       : "none";
 
   return (
-    <div className="space-y-1 text-[10px]" data-testid="audio-debug-transport">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-        <span>
-          <span className="text-muted-foreground">Requested transport: </span>
-          <span className="text-foreground" data-testid="audio-debug-transport-requested">
-            {requested}
-          </span>
-          {override !== "auto" && <span className="text-orange-500"> (override)</span>}
-        </span>
-        <span>
-          <span className="text-muted-foreground">Browser default: </span>
-          <span className="text-foreground">{browserDefault}</span>
-        </span>
-        <span>
-          <span className="text-muted-foreground">Worker: </span>
-          <span className="text-foreground">{controller}</span>
-        </span>
-        <span>
-          <span className="text-muted-foreground">Online: </span>
-          <span className="text-foreground">{isOnline ? "yes" : "no"}</span>
-        </span>
-      </div>
-      <div className="flex items-center gap-1" role="group" aria-label="Local transport override">
-        <span className="text-muted-foreground">Use:</span>
-        {OFFLINE_AUDIO_TRANSPORT_OVERRIDES.map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => writeOfflineAudioTransportOverride(option)}
-            aria-pressed={override === option}
-            className={`rounded border px-1.5 py-0.5 ${
-              override === option
-                ? "border-foreground/40 bg-foreground/10 text-foreground"
-                : "border-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-      <div className="text-muted-foreground">
-        Applies to downloaded recordings on this device only. inline needs the copy this
-        browser stores at download time, and blob needs the complete chunk cache; without
-        them the Source line shows worker-cache.
-      </div>
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]"
+      data-testid="audio-debug-transport"
+    >
+      <span>
+        <span className="text-muted-foreground">Worker: </span>
+        <span className="text-foreground">{controller}</span>
+      </span>
+      <span>
+        <span className="text-muted-foreground">Online: </span>
+        <span className="text-foreground">{isOnline ? "yes" : "no"}</span>
+      </span>
     </div>
   );
 }

@@ -2005,7 +2005,8 @@
     "recordingLabel": "Nahrávka",
     "backToCatalog": "Zpět do katalogu",
     "errorIncompletePackage": "Stažené audio je v tomto zařízení neúplné. Stáhněte je znovu.",
-    "errorInlineAudio": "Stažené audio se v tomto zařízení nepodařilo připravit pro přehrávání offline. Stáhněte je znovu.",
+    "formatUpgrade": "Uloženo ve starším formátu, který tento prohlížeč offline nepřehraje celý. Stáhněte je znovu.",
+    "redownload": "Stáhnout znovu",
     "offlineCatalogScope": "Offline. Zobrazeny jsou jen stažené události; ostatní stažené položky najdete ve Stažených.",
     "unavailableOffline": "Offline nedostupné",
     "unavailableOfflineDescription": "Tato stránka potřebuje připojení. Stažené události se otevřou i bez něj."

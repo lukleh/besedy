@@ -53,9 +53,6 @@ vi.mock('@/hooks/use-downloads', () => ({
     hasArtwork: true,
   }),
 }));
-vi.mock('@/hooks/use-offline-audio-transport', () => ({
-  useOfflineAudioTransport: () => 'inline',
-}));
 vi.mock('@/hooks/use-online-status', () => ({
   useOnlineStatus: () => ({ isOnline: false }),
 }));
@@ -146,11 +143,6 @@ beforeEach(() => {
       variant: 'square',
       artworkId: 'artwork-1',
     },
-    inlineAudio: {
-      data: new Uint8Array(key.includes(OTHER_HASH) ? [4, 5, 6] : [1, 2, 3])
-        .buffer,
-      contentType: 'audio/webm',
-    },
     updatedAt: 1,
   }));
 });
@@ -163,20 +155,14 @@ afterEach(() => {
 });
 
 describe('downloaded readers after going offline', () => {
-  it('reads inline audio and switches downloads without reconnecting', async () => {
+  it('plays local audio through the worker and switches downloads without reconnecting', async () => {
     const { result, rerender } = renderHook(
       ({ hash }) => useLocalAudioSrc(CATALOG, hash, `/audio/${hash}`, false),
       { initialProps: { hash: HASH }, wrapper: wrapper() },
     );
-    await waitFor(() =>
-      expect(result.current.src).toBe('data:audio/webm;base64,AQID'),
-    );
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current).toBe(`/audio/${HASH}?local=1`));
     rerender({ hash: OTHER_HASH });
-    await waitFor(() =>
-      expect(result.current.src).toBe('data:audio/webm;base64,BAUG'),
-    );
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current).toBe(`/audio/${OTHER_HASH}?local=1`));
     expect(fetchJson).not.toHaveBeenCalled();
   });
 
