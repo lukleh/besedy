@@ -224,7 +224,6 @@ artifacts, real caches, and host-resolvable paths.
 - Use a scratch config (`cp besedy.toml /tmp/besedy-docker-e2e.toml`) and
   scratch output roots.
 - Use a directory containing exactly one real speech recording.
-- Docker is the default runtime; do not set `BESEDY_*_RUNTIME=docker`.
 - Run every backend twice: once cold, once warm. The warm run proves cache
   reuse.
 

@@ -1,4 +1,4 @@
-"""Shared backend runtime selection and process builders."""
+"""Shared Docker process builders for backend workers."""
 
 from __future__ import annotations
 
@@ -20,8 +20,6 @@ from besedy.lib.runtime.docker_worker import (
     default_docker_user,
 )
 
-BackendRuntime = Literal["docker"]
-BACKEND_RUNTIME_CHOICES: tuple[BackendRuntime, ...] = ("docker",)
 DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
     {
         "pyannote",
@@ -34,7 +32,7 @@ DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
 
 
 class BackendRuntimeUnavailableError(RuntimeError):
-    """Raised when the runtime selected for a backend is invalid or cannot run here."""
+    """Raised when a backend's Docker runtime cannot run here."""
 
 
 @dataclass(frozen=True)
@@ -43,17 +41,10 @@ class BackendProcessSpec:
 
     argv: tuple[str, ...]
     extra_env: dict[str, str] | None = None
-    runtime: BackendRuntime = "docker"
 
 
 def _backend_token(backend_id: str) -> str:
     return backend_id.replace("-", "_").upper()
-
-
-def backend_runtime_env_var_name(backend_id: str) -> str:
-    """Return the env var controlling the backend runtime."""
-
-    return f"BESEDY_{_backend_token(backend_id)}_RUNTIME"
 
 
 def backend_cache_env_var_name(backend_id: str) -> str:
@@ -71,42 +62,6 @@ def forward_host_env(*names: str) -> dict[str, str]:
         if value:
             forwarded[name] = value
     return forwarded
-
-
-def normalize_backend_runtime(
-    raw_value: str,
-    *,
-    source: str,
-    backend_id: str,
-) -> BackendRuntime:
-    """Validate and normalize a backend runtime selector."""
-
-    normalized = raw_value.strip().lower()
-    if normalized == "docker":
-        return "docker"
-    choices_label = ", ".join(repr(choice) for choice in BACKEND_RUNTIME_CHOICES)
-    raise BackendRuntimeUnavailableError(
-        f"Unsupported {source} value: {raw_value!r}. "
-        f"The {backend_id} backend is Docker-only. Expected one of {choices_label}."
-    )
-
-
-def resolve_backend_runtime(
-    backend_id: str,
-    *,
-    runtime_override: str | None = None,
-) -> BackendRuntime:
-    """Resolve the active runtime for a backend."""
-
-    if runtime_override is not None:
-        return normalize_backend_runtime(
-            runtime_override,
-            source="backend runtime override",
-            backend_id=backend_id,
-        )
-    env_var = backend_runtime_env_var_name(backend_id)
-    raw = os.getenv(env_var, "docker")
-    return normalize_backend_runtime(raw, source=env_var, backend_id=backend_id)
 
 
 def _abspath_no_resolve(path: Path | str) -> Path:
@@ -240,15 +195,12 @@ def _docker_runtime_ready(
 
 def check_python_backend_runtime_ready(
     *,
-    backend_id: str,
     display_name: str,
     docker_service: str | None = None,
-    runtime_override: str | None = None,
     compose_file: Path = DEFAULT_BACKENDS_COMPOSE_FILE,
 ) -> tuple[bool, str | None]:
-    """Check whether the selected runtime is ready for a Python backend."""
+    """Check whether the Docker runtime is ready for a Python backend."""
 
-    resolve_backend_runtime(backend_id, runtime_override=runtime_override)
     return _docker_runtime_ready(
         display_name=display_name,
         docker_service=docker_service,
@@ -328,7 +280,6 @@ def build_python_backend_process(
     script_path: Path,
     script_args: list[str],
     docker_service: str | None = None,
-    runtime_override: str | None = None,
     extra_env: dict[str, str] | None = None,
     input_paths: list[Path | str] | None = None,
     output_paths: list[Path | str] | None = None,
@@ -340,7 +291,6 @@ def build_python_backend_process(
 ) -> BackendProcessSpec:
     """Build a process spec for a Python backend script."""
 
-    runtime = resolve_backend_runtime(backend_id, runtime_override=runtime_override)
     extra_env = dict(extra_env or {})
 
     ok, message = _docker_runtime_ready(
@@ -396,7 +346,6 @@ def build_python_backend_process(
     return BackendProcessSpec(
         argv=tuple(build_compose_run_argv(run_spec)),
         extra_env=None,
-        runtime=runtime,
     )
 
 
@@ -406,7 +355,6 @@ def build_command_backend_process(
     display_name: str,
     docker_argv: list[str],
     docker_service: str | None = None,
-    runtime_override: str | None = None,
     extra_env: dict[str, str] | None = None,
     input_paths: list[Path | str] | None = None,
     output_paths: list[Path | str] | None = None,
@@ -420,7 +368,6 @@ def build_command_backend_process(
 ) -> BackendProcessSpec:
     """Build a process spec for a backend CLI command."""
 
-    runtime = resolve_backend_runtime(backend_id, runtime_override=runtime_override)
     extra_env = dict(extra_env or {})
 
     ok, message = _docker_runtime_ready(
@@ -461,5 +408,4 @@ def build_command_backend_process(
     return BackendProcessSpec(
         argv=tuple(build_compose_run_argv(run_spec)),
         extra_env=None,
-        runtime=runtime,
     )

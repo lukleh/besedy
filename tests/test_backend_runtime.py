@@ -7,54 +7,11 @@ import pytest
 from besedy.core.paths import PROJECT_ROOT
 from besedy.lib.runtime.backend_runtime import (
     BackendRuntimeUnavailableError,
-    backend_runtime_env_var_name,
     build_command_backend_process,
     build_python_backend_process,
     forward_host_env,
     resolve_backend_cache_dir,
-    resolve_backend_runtime,
 )
-
-
-def test_backend_runtime_env_var_name_uses_upper_snake_case() -> None:
-    assert backend_runtime_env_var_name("faster-whisper") == "BESEDY_FASTER_WHISPER_RUNTIME"
-
-
-def test_resolve_backend_runtime_defaults_to_docker_for_migrated_backends(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    migrated_backends = [
-        "pyannote",
-        "faster-whisper",
-        "qwen3-asr",
-        "whisperx",
-        "nemo",
-    ]
-    for backend_id in migrated_backends:
-        monkeypatch.delenv(backend_runtime_env_var_name(backend_id), raising=False)
-        assert resolve_backend_runtime(backend_id) == "docker"
-
-
-def test_resolve_backend_runtime_defaults_to_docker_for_unknown_backends(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("BESEDY_CUSTOM_BACKEND_RUNTIME", raising=False)
-    assert resolve_backend_runtime("custom-backend") == "docker"
-
-    monkeypatch.setenv("BESEDY_CUSTOM_BACKEND_RUNTIME", "isolated")
-    with pytest.raises(
-        BackendRuntimeUnavailableError, match="custom-backend backend is Docker-only"
-    ):
-        resolve_backend_runtime("custom-backend")
-
-
-def test_resolve_backend_runtime_rejects_isolated_for_migrated_backends(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "isolated")
-
-    with pytest.raises(RuntimeError, match="Docker-only"):
-        resolve_backend_runtime("nemo")
 
 
 def test_forward_host_env_keeps_only_present_variables(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,7 +25,6 @@ def test_build_python_backend_process_docker_uses_compose_run_and_same_path_moun
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -94,7 +50,6 @@ def test_build_python_backend_process_docker_uses_compose_run_and_same_path_moun
     )
 
     argv = list(process.argv)
-    assert process.runtime == "docker"
     assert argv[:6] == ["docker", "compose", "-f", str(compose_file), "run", "--rm"]
     assert "--user" in argv
     assert any(
@@ -121,7 +76,6 @@ def test_build_python_backend_process_docker_supports_gpu_requests(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_PYANNOTE_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -154,7 +108,6 @@ def test_build_python_backend_process_docker_rejects_cpu_mode_for_gpu_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_PYANNOTE_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -207,7 +160,6 @@ def test_build_command_backend_process_docker_uses_compose_run_and_same_path_mou
         display_name="Legacy Test",
         docker_argv=["legacy-test", str(input_file), "-o", str(output_dir)],
         docker_service="legacy-test",
-        runtime_override="docker",
         extra_env={"DEVICE": "cpu"},
         input_paths=[input_file],
         output_paths=[output_dir],
@@ -215,7 +167,6 @@ def test_build_command_backend_process_docker_uses_compose_run_and_same_path_mou
     )
 
     argv = list(process.argv)
-    assert process.runtime == "docker"
     assert argv[:6] == ["docker", "compose", "-f", str(compose_file), "run", "--rm"]
     assert any(
         item == f"{input_file.parent}:{input_file.parent}:ro"
@@ -239,7 +190,6 @@ def test_build_command_backend_process_docker_supports_gpu_requests(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_PYANNOTE_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -272,7 +222,6 @@ def test_build_command_backend_process_docker_rejects_cpu_mode_for_gpu_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_PYANNOTE_RUNTIME", "docker")
     monkeypatch.setattr(
         "besedy.lib.runtime.backend_runtime.shutil.which", lambda _: "/usr/bin/docker"
     )
@@ -301,7 +250,6 @@ def test_build_python_backend_process_reports_missing_docker_with_backend_name(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "docker")
     monkeypatch.setattr("besedy.lib.runtime.backend_runtime.shutil.which", lambda _: None)
     compose_file = tmp_path / "docker-compose.yml"
     compose_file.write_text("services:\n  nemo:\n    image: test\n")
@@ -332,7 +280,6 @@ def test_build_command_backend_process_reports_missing_docker_with_backend_name(
             display_name="Legacy Test",
             docker_argv=["legacy-test"],
             docker_service="legacy-test",
-            runtime_override="docker",
             compose_file=compose_file,
         )
 
@@ -340,12 +287,3 @@ def test_build_command_backend_process_reports_missing_docker_with_backend_name(
 def test_backend_runtime_unavailable_error_stays_a_runtime_error() -> None:
     # Commands that already catch RuntimeError keep handling it.
     assert issubclass(BackendRuntimeUnavailableError, RuntimeError)
-
-
-def test_resolve_backend_runtime_reports_an_invalid_selector_as_unavailable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("BESEDY_NEMO_RUNTIME", "bogus")
-
-    with pytest.raises(BackendRuntimeUnavailableError, match="BESEDY_NEMO_RUNTIME.*'bogus'"):
-        resolve_backend_runtime("nemo")
