@@ -45,6 +45,19 @@ describe("audio cache format", () => {
     );
   });
 
+  it("keeps the AAC copy under its own key and WebM keys unchanged", () => {
+    const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
+    // A package downloaded before `format` existed keeps its key.
+    expect(getAudioCacheKey(`${AUDIO_PATH}?format=webm&local=1`, ORIGIN)).toBe(base);
+    expect(getAudioCacheKey(`${AUDIO_PATH}?format=aac&local=1`, ORIGIN)).toBe(`${base}?format=aac`);
+    expect(
+      getAudioCacheKey(`${AUDIO_PATH}?format=aac&variant=loud&source=listening`, ORIGIN)
+    ).toBe(`${base}?source=listening&variant=loud&format=aac`);
+    // Cleaning up the WebM package cannot touch the AAC one.
+    expect(isAudioCacheEntryFor(base, `${base}?format=aac&_meta`)).toBe(false);
+    expect(isAudioCacheEntryFor(`${base}?format=aac`, `${base}?format=aac&_chunk=0`)).toBe(true);
+  });
+
   it("builds chunk and meta keys with the right separator", () => {
     expect(getAudioChunkKey("https://x/a", 2)).toBe("https://x/a?_chunk=2");
     expect(getAudioMetaKey("https://x/a?source=listening")).toBe("https://x/a?source=listening&_meta");

@@ -101,12 +101,15 @@ interface FakeServerOptions {
   canViewTranscripts?: boolean;
   canDownloadTranscripts?: boolean;
   artworkStatus?: number;
+  /** `formats` for the archived source in /audio/sources. */
+  archivedFormats?: string[];
 }
 
 function createFakeServer(options: FakeServerOptions = {}) {
   const audio = new Uint8Array(AUDIO_SIZE);
   for (let i = 0; i < audio.length; i += 1) audio[i] = i % 251;
   const rangeRequests: string[] = [];
+  const audioRequests: string[] = [];
   const state: {
     deferAtOffset: number | null;
     failAtOffset: number | null;
@@ -161,6 +164,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
               label: 'Archived',
               type: 'archived',
               available: true,
+              ...(options.archivedFormats ? { formats: options.archivedFormats } : {}),
             },
           ],
           defaultSource: 'archived',
@@ -175,6 +179,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
       if (pathname.endsWith('/audio')) {
         const range = new Headers(init?.headers).get('Range') ?? '';
         rangeRequests.push(range);
+        audioRequests.push(url.search);
         const match = range.match(/bytes=(\d+)-(\d+)/);
         const start = match ? Number(match[1]) : 0;
         const end = match
@@ -191,7 +196,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
         return new Response(audio.slice(start, end + 1), {
           status: 206,
           headers: {
-            'content-type': 'audio/webm',
+            'content-type': url.searchParams.get('format') === 'aac' ? 'audio/mp4' : 'audio/webm',
             'content-range':
               options.invalidRangeAtOffset === start
                 ? `bytes ${start + 1}-${end}/${AUDIO_SIZE}`
@@ -266,7 +271,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
     },
   );
 
-  return { fetchMock, rangeRequests, state, audio };
+  return { fetchMock, rangeRequests, audioRequests, state, audio };
 }
 
 async function loadManager() {
@@ -381,6 +386,42 @@ describe('download manager', () => {
     const bundle = await getDownloadBundle(done.key);
     expect(bundle?.transcriptBackend).toBe('whisperx/large');
     expect(bundle?.transcript?.segments).toEqual([]);
+  });
+
+  it('downloads the AAC copy on WebKit when the source lists one', async () => {
+    const iphone =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1';
+    const userAgent = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(iphone);
+    // An iPhone also gets the inline copy, built from the cached chunk Blobs;
+    // jsdom's Blob cannot read them.
+    vi.stubGlobal('Blob', (await import('node:buffer')).Blob as unknown as typeof Blob);
+    try {
+      const server = createFakeServer({ archivedFormats: ['webm', 'aac'] });
+      vi.stubGlobal('fetch', server.fetchMock);
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+      downloadManager.setUserId('user-1');
+
+      await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+      await waitFor(
+        () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+      );
+
+      const done = downloadManager.getSnapshot().records[0];
+      const aacUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio?format=aac`;
+      expect(done.audioUrl).toBe(aacUrl);
+      expect(done.audioCacheKey).toBe(getAudioCacheKey(aacUrl, window.location.origin));
+      expect(new Set(server.audioRequests)).toEqual(new Set(['?format=aac']));
+      const audioCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+      const meta = await (
+        await audioCache.match(getAudioMetaKey(done.audioCacheKey!))
+      )!.json();
+      expect(meta).toMatchObject({ contentType: 'audio/mp4', complete: true });
+      const { getDownloadBundle } = await import('@/lib/offline/downloads-db');
+      expect((await getDownloadBundle(done.key))?.inlineAudio?.contentType).toBe('audio/mp4');
+    } finally {
+      userAgent.mockRestore();
+    }
   });
 
   it('does not cache transcript data without transcript-download permission', async () => {

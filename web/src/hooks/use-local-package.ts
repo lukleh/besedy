@@ -13,6 +13,7 @@ import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   getAudioCacheKey,
   readCompleteAudioBlob,
+  withoutAudioFormat,
 } from "@/lib/offline/audio-cache-format";
 import { OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
@@ -99,14 +100,20 @@ export function useLocalAudioSrc(
   const record = useDownloadRecord(catalogId, hash);
   const { isOnline } = useOnlineStatus();
   const complete = record?.status === "complete" && !!record.audioUrl;
+  const recordCacheKey = record?.audioCacheKey;
   const matchesSelection = useMemo(() => {
-    if (!complete || !record?.audioCacheKey || typeof window === "undefined") {
+    if (!complete || !recordCacheKey || typeof window === "undefined") {
       return false;
     }
+    // A download of the same source in the other format still matches: a
+    // WebM package made before the AAC copy existed keeps playing as it did,
+    // rather than the page streaming the copy while a service worker from the
+    // previous release answers that request with the WebM package.
     return (
-      getAudioCacheKey(selectedUrl, window.location.origin) === record.audioCacheKey
+      withoutAudioFormat(getAudioCacheKey(selectedUrl, window.location.origin)) ===
+      withoutAudioFormat(recordCacheKey)
     );
-  }, [complete, record?.audioCacheKey, selectedUrl]);
+  }, [complete, recordCacheKey, selectedUrl]);
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
   // The browser default can be overridden per device from the player's debug
   // panel, so a transport can be tried on a real phone without a release.

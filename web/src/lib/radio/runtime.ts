@@ -1,7 +1,9 @@
 "use client";
 
 import { fetchJson } from "@/lib/api/fetch-json";
+import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { createClientLogger } from "@/lib/log/client";
+import { serviceWorkerKeysAudioByFormat } from "@/lib/service-worker/audio-format-support";
 import type { RandomEventResponse } from "@/types/api";
 
 export interface RadioEventTrack {
@@ -14,6 +16,11 @@ export interface RadioEventTrack {
   dateMonth?: number | null;
   dateDay?: number | null;
   locationName?: string | null;
+  /**
+   * Play the recording's AAC-in-MP4 copy (#291): it has one, this is a WebKit
+   * browser, and the service worker keys offline audio by format.
+   */
+  playAac?: boolean;
 }
 
 /** Why the radio last stopped; null while it is playing. */
@@ -70,8 +77,9 @@ function saveHistory(catalogId: string, history: string[]): void {
   }
 }
 
-function getAudioUrl(hash: string, catalogId: string): string {
-  return `/api/catalogs/${catalogId}/recordings/${hash}/audio`;
+function getAudioUrl(track: RadioEventTrack): string {
+  const url = `/api/catalogs/${track.catalogId}/recordings/${track.hash}/audio`;
+  return track.playAac ? `${url}?format=aac` : url;
 }
 
 function createInitialSnapshot(): RadioRuntimeSnapshot {
@@ -163,7 +171,7 @@ export function createRadioRuntime() {
       duration: 0,
     }));
 
-    audio.src = getAudioUrl(track.hash, track.catalogId);
+    audio.src = getAudioUrl(track);
     audio.load();
     audio.play().catch((error: unknown) => {
       logger.error("Failed to play:", error);
@@ -188,6 +196,10 @@ export function createRadioRuntime() {
         params.set("exclude", excludeHashes.join(","));
       }
 
+      // Asked alongside the track so it adds no wait before playback.
+      const aacSafe = browserPrefersAacAudio()
+        ? serviceWorkerKeysAudioByFormat()
+        : Promise.resolve(false);
       const data = await fetchJson<RandomEventResponse>(
         `/api/catalogs/${catalogId}/random-event?${params}`
       );
@@ -216,6 +228,7 @@ export function createRadioRuntime() {
         dateMonth: data.dateMonth,
         dateDay: data.dateDay,
         locationName: data.locationName,
+        playAac: Boolean(data.hasAacCopy) && (await aacSafe),
       };
 
       playHistory.push(data.hash);

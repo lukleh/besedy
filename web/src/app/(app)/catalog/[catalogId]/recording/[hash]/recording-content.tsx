@@ -1,11 +1,12 @@
 "use client";
 
-import { use, type ReactNode } from "react";
+import { use, useEffect, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
+import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
@@ -48,6 +49,7 @@ interface AudioSource {
   type: "archived" | "listening";
   variant?: string;
   available: boolean;
+  formats?: string[];
 }
 
 interface AudioSourcesResponse {
@@ -67,6 +69,7 @@ const audioSourceSchema = z.object({
   type: z.enum(["archived", "listening"]),
   variant: z.string().optional(),
   available: z.boolean(),
+  formats: z.array(z.string()).optional(),
 });
 
 const audioSourcesResponseSchema = z.object({
@@ -79,6 +82,24 @@ const audioSourcePreferenceSchema = z.object({
   hash: z.string(),
   sourceId: z.string().nullable(),
 });
+
+/** Longest the player waits for the audio format before it plays the WebM. */
+export const FORMAT_WAIT_TIMEOUT_MS = 3000;
+
+/**
+ * True while `waiting` is, for at most FORMAT_WAIT_TIMEOUT_MS per `key` (the
+ * recording): a slow sources or preference request then plays the WebM
+ * instead of holding the page, and the next recording gets its own wait.
+ */
+function useBoundedWait(waiting: boolean, key: string): boolean {
+  const [timedOutKey, setTimedOutKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!waiting) return;
+    const timeoutId = window.setTimeout(() => setTimedOutKey(key), FORMAT_WAIT_TIMEOUT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [waiting, key]);
+  return waiting && timedOutKey !== key;
+}
 
 export default function RecordingContent({
   params,
@@ -123,7 +144,7 @@ export default function RecordingContent({
   const backToListUrl = `/catalog/${catalogId}`;
 
   // Fetch saved audio source preference from database
-  const { data: savedPreference } = useQuery<AudioSourcePreference>({
+  const { data: savedPreference, isLoading: preferenceLoading } = useQuery<AudioSourcePreference>({
     queryKey: ["audio-source-preference", hash, groupKey],
     queryFn: async () => {
       try {
@@ -138,7 +159,7 @@ export default function RecordingContent({
   });
 
   // Fetch available audio sources
-  const { data: sourcesData } = useQuery<AudioSourcesResponse>({
+  const { data: sourcesData, isLoading: sourcesLoading } = useQuery<AudioSourcesResponse>({
     queryKey: ["audio-variants", hash, groupKey],
     queryFn: async () => {
       try {
@@ -176,7 +197,10 @@ export default function RecordingContent({
       ? savedPreference.sourceId
       : null;
   const audioSource = preferredSource || sourcesData?.defaultSource || "archived";
-  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources);
+  // WebKit browsers get the AAC-in-MP4 copy when this source has one (#291).
+  const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources, {
+    preferAac: browserPrefersAacAudio(),
+  });
   // A complete local package plays in preference to the network; the page
   // never learns how it is stored.
   const localAudio = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
@@ -198,7 +222,16 @@ export default function RecordingContent({
   // soon as that response resolves.
   const recording = data?.entry ?? (isValidatingAccess ? cachedData?.entry : undefined);
 
-  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending) {
+  // On WebKit the file depends on the selected source and whether it has an AAC
+  // copy (#291); starting the player before both are known would first load
+  // the WebM Safari cannot stream. A local package does not depend on them.
+  const awaitingFormat = useBoundedWait(
+    browserPrefersAacAudio() &&
+      (sourcesLoading === true || preferenceLoading === true) &&
+      !localAudio.src,
+    hash
+  );
+  if (catalogValidationLoading || (isLoading && !recording) || localAudio.pending || awaitingFormat) {
     return (
       <div className="space-y-3">
         <RecordingPageSkeleton />

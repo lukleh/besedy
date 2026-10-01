@@ -86,6 +86,119 @@ describe("createRadioRuntime", () => {
     stop();
   });
 
+  it("asks for the AAC copy on WebKit when the recording has one", async () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    try {
+      const runtime = createRadioRuntime();
+      const stop = runtime.start();
+
+      vi.mocked(fetchJson).mockResolvedValueOnce({
+        hash: "track-1",
+        eventId: 1,
+        title: "Track",
+        hasAacCopy: true,
+        total: 2,
+        historyReset: false,
+      });
+      await runtime.startRadio("catalog-1");
+      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio?format=aac");
+
+      // A recording without a copy keeps the WebM rather than a 404.
+      vi.mocked(fetchJson).mockResolvedValueOnce({
+        hash: "track-2",
+        eventId: 2,
+        title: "Track 2",
+        hasAacCopy: false,
+        total: 2,
+        historyReset: false,
+      });
+      await runtime.startRadio("catalog-1");
+      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-2/audio");
+      stop();
+    } finally {
+      userAgent.mockRestore();
+    }
+  });
+
+  it("moves on to the next track when an AAC copy fails, without a WebM retry", async () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    try {
+      const runtime = createRadioRuntime();
+      const stop = runtime.start();
+      vi.mocked(fetchJson).mockResolvedValueOnce({
+        hash: "track-1",
+        eventId: 1,
+        title: "Track",
+        hasAacCopy: true,
+        total: 2,
+        historyReset: false,
+      });
+      await runtime.startRadio("catalog-1");
+      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio?format=aac");
+
+      vi.mocked(fetchJson).mockResolvedValueOnce({
+        hash: "track-2",
+        eventId: 2,
+        title: "Track 2",
+        hasAacCopy: false,
+        total: 2,
+        historyReset: false,
+      });
+      // Nothing loaded (a missing copy): no retry of the same track as WebM.
+      audio.dispatchEvent(new Event("error"));
+
+      await vi.waitFor(() =>
+        expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-2/audio")
+      );
+      expect(runtime.getSnapshot().currentTrack?.hash).toBe("track-2");
+      stop();
+    } finally {
+      userAgent.mockRestore();
+    }
+  });
+
+  it("keeps the WebM when the service worker does not key audio by format", async () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
+    const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
+    // A worker from before #291 has no answer to the question.
+    const controller = {
+      postMessage: vi.fn((_message: unknown, ports: MessagePort[]) =>
+        ports[0].postMessage({ type: "UNKNOWN" })
+      ),
+    };
+    const serviceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { controller },
+    });
+    try {
+      const runtime = createRadioRuntime();
+      const stop = runtime.start();
+      vi.mocked(fetchJson).mockResolvedValueOnce({
+        hash: "track-1",
+        eventId: 1,
+        title: "Track",
+        hasAacCopy: true,
+        total: 2,
+        historyReset: false,
+      });
+      await runtime.startRadio("catalog-1");
+
+      expect(controller.postMessage).toHaveBeenCalledTimes(1);
+      expect(audio.src).toBe("/api/catalogs/catalog-1/recordings/track-1/audio");
+      stop();
+    } finally {
+      if (serviceWorker) Object.defineProperty(navigator, "serviceWorker", serviceWorker);
+      else delete (navigator as { serviceWorker?: unknown }).serviceWorker;
+      userAgent.mockRestore();
+    }
+  });
+
   it("hands off playback without clearing listening history", async () => {
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === "besedy-radio-history-catalog-1") {

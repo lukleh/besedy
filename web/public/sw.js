@@ -78,6 +78,11 @@ self.addEventListener('message', (event) => {
         version: self.__BESEDY_WEB_VERSION || null,
       });
       return;
+    case 'GET_AUDIO_FORMAT_SUPPORT':
+      // getCacheKey keeps `format`, so a format=aac request never gets a
+      // downloaded WebM. Pages ask before sending one (#291).
+      event.ports[0]?.postMessage({ type: 'AUDIO_FORMAT_SUPPORT', formatKey: true });
+      return;
     case 'SKIP_WAITING':
       self.skipWaiting();
       return;
@@ -311,10 +316,13 @@ async function handleAppAssetRequest(request) {
   }
 }
 
+// Must match getAudioCacheKey in src/lib/offline/audio-cache-format.ts: the
+// AAC-in-MP4 copy (`format=aac`, #291) is a different file from the WebM.
 function getCacheKey(url) {
   const parsed = new URL(url, self.location.origin);
   const source = parsed.searchParams.get('source') || 'archived';
   const variant = parsed.searchParams.get('variant') || '';
+  const format = parsed.searchParams.get('format') || 'webm';
 
   parsed.search = '';
   parsed.hash = '';
@@ -323,6 +331,9 @@ function getCacheKey(url) {
   }
   if (variant) {
     parsed.searchParams.set('variant', variant);
+  }
+  if (format !== 'webm') {
+    parsed.searchParams.set('format', format);
   }
   return parsed.toString();
 }
