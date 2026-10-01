@@ -101,11 +101,6 @@ def resolve_rag_colbert_root() -> Path:
     return resolve_tmp_dir() / "rag_colbert"
 
 
-def resolve_rag_phase1_root() -> Path:
-    """Return the default host root for legacy phase-1 RAG indexes."""
-    return resolve_tmp_dir() / "rag_phase1"
-
-
 def resolve_web_env_path(mode: WebEnvMode, *, must_exist: bool = True) -> Path | None:
     """Resolve a web env file path for one runtime mode."""
     suffix_by_mode = {

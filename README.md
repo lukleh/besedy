@@ -432,10 +432,7 @@ licenses and access terms. Review these before use — especially for
 | `pyannote/speaker-diarization-community-1` | Speaker diarization | CC-BY-4.0 | ✅ | **yes** |
 | `pyannote/embedding` | Speaker embeddings | MIT | ✅ | **yes** |
 | `jinaai/jina-colbert-v2` | **RAG ColBERT retrieval (default)** | **CC-BY-NC-4.0** | **❌ non-commercial** | no |
-| `BAAI/bge-m3` | RAG dense embedder (default) | MIT | ✅ | no |
 | `Alibaba-NLP/gte-multilingual-reranker-base` | RAG reranker + chunk tokenizer | Apache-2.0 | ✅ | no |
-| `Qwen/Qwen3-Embedding-0.6B` | RAG dense embedder (alternate) | Apache-2.0 | ✅ | no |
-| `BAAI/bge-reranker-v2-m3` | RAG reranker (alternate) | Apache-2.0 | ✅ | no |
 
 **⚠️ Only the default RAG retriever is non-commercial.** `jinaai/jina-colbert-v2`
 is CC-BY-NC-4.0 (no commercial use); every other model above is

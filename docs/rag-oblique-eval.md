@@ -9,8 +9,8 @@ evidence before changing production retrieval.
 
 ## Fixture Shape
 
-Both `tests/rag_colbert_eval.py` and the legacy `tests/rag_eval.py` accept the
-same eval record list with either `question` or `query`:
+`tests/rag_colbert_eval.py` accepts an eval record list with either `question`
+or `query`:
 
 ```json
 [

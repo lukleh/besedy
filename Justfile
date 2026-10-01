@@ -134,13 +134,13 @@ rag-services-logs:
     {{ rag_services_compose }} logs -f
 
 tei-up:
-    {{ rag_services_compose }} --profile legacy-tei up -d embeddings reranker
+    {{ rag_services_compose }} --profile legacy-tei up -d reranker
 
 tei-down:
-    {{ rag_services_compose }} stop embeddings reranker
+    {{ rag_services_compose }} stop reranker
 
 tei-logs:
-    {{ rag_services_compose }} logs -f embeddings reranker
+    {{ rag_services_compose }} logs -f reranker
 
 colbert-up: (_guard-shared-colbert "colbert-up") _colbert-state-dir
     {{ rag_services_compose }} up -d --build colbert

@@ -23,7 +23,7 @@ Keep argument parsing in `besedy/cli/` and `besedy/commands/`; use
 | Align words across transcripts | `analysis/alignment.py` | `analyse_word_overlap()` |
 | Build subtitle sidecars | `analysis/subtitles.py` | `render_srt()`, `render_vtt()` |
 | Extract timeline summaries | `analysis/timeline.py` | `extract_segments()`, `summarize_intervals()` |
-| Build and query the local RAG index | `rag_retrieval.py` | `ingest_phase1_index()`, `query_phase1_index()` |
+| Build and query the ColBERT RAG index | `rag_colbert.py` | `build_colbert_index()`, `query_colbert_index()` |
 | Cluster or match speakers across files | `speakers/` | `cache.py`, `embeddings.py`, `matching.py`, `utils.py` |
 
 ## Import Conventions

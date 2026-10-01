@@ -1,4 +1,4 @@
-# Model serving for ColBERT sidecar retrieval plus legacy TEI services.
+# Model serving for ColBERT sidecar retrieval plus the legacy TEI reranker.
 # Shared across dev/test/prod — independent of the web stack.
 #
 # Usage:
@@ -8,7 +8,6 @@
 #
 # Endpoints:
 #   ColBERT:    http://127.0.0.1:8192 (default startup, internal warm-query service)
-#   Embeddings: http://127.0.0.1:8190  (legacy TEI profile only)
 #   Reranker:   http://127.0.0.1:8191  (legacy TEI profile only)
 #
 # NOTE:
@@ -17,9 +16,7 @@
 #
 # Canonical runtime:
 #   ColBERT runs by default.
-#   TEI embeddings/reranking are kept behind the optional "legacy-tei" profile.
-#   Keep Qwen embedding batches small by default and scale up only after
-#   measuring on the target hardware.
+#   TEI reranking is kept behind the optional "legacy-tei" profile.
 #
 # Models are cached in a named volume so they survive container restarts.
 
@@ -37,40 +34,6 @@ x-tei-gpu-image: &tei-gpu-image
     besedy.tei.dockerfile: "${TEI_DOCKERFILE:-Dockerfile-cuda-blackwell}"
 
 services:
-  embeddings:
-    <<: *tei-gpu-image
-    container_name: besedy-tei-embeddings
-    profiles: ["legacy-tei"]
-    gpus: all
-    ports:
-      - "${TEI_HOST_BIND:-0.0.0.0}:${TEI_EMBED_PORT:-8190}:80"
-    volumes:
-      - model_cache:/data
-    command:
-      - --model-id
-      - Qwen/Qwen3-Embedding-0.6B
-      - --dtype
-      - "${TEI_EMBED_DTYPE:-float16}"
-      - --max-concurrent-requests
-      - "${TEI_EMBED_MAX_CONCURRENT_REQUESTS:-1}"
-      - --max-client-batch-size
-      - "${TEI_EMBED_MAX_CLIENT_BATCH_SIZE:-1}"
-      - --max-batch-requests
-      - "${TEI_EMBED_MAX_BATCH_REQUESTS:-1}"
-      - --max-batch-tokens
-      - "${TEI_EMBED_MAX_BATCH_TOKENS:-4096}"
-      - --auto-truncate
-    environment:
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
-      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
-
   reranker:
     <<: *tei-gpu-image
     container_name: besedy-tei-reranker
