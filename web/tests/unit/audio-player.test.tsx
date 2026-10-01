@@ -42,6 +42,7 @@ const messages = {
 
 interface RenderPlayerOptions {
   src?: string;
+  recordingHash?: string;
   seekTo?: number;
   seekKey?: number;
   playbackEnd?: number;
@@ -51,21 +52,22 @@ interface RenderPlayerOptions {
   strictMode?: boolean;
 }
 
-function renderPlayer(options: RenderPlayerOptions = {}) {
+function playerElement(options: RenderPlayerOptions = {}) {
   const {
     src = "https://example.com/audio.mp3",
+    recordingHash,
     seekTo,
     seekKey,
     playbackEnd,
     autoPlayOnSeek,
     onTimeUpdate,
     onSeek,
-    strictMode = false,
   } = options;
-  const utils = render(
+  return (
     <NextIntlClientProvider locale="en" messages={messages}>
       <AudioPlayer
         src={src}
+        recordingHash={recordingHash}
         seekTo={seekTo}
         seekKey={seekKey}
         playbackEnd={playbackEnd}
@@ -73,9 +75,14 @@ function renderPlayer(options: RenderPlayerOptions = {}) {
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
       />
-    </NextIntlClientProvider>,
-    { wrapper: strictMode ? StrictMode : undefined }
+    </NextIntlClientProvider>
   );
+}
+
+function renderPlayer(options: RenderPlayerOptions = {}) {
+  const utils = render(playerElement(options), {
+    wrapper: options.strictMode ? StrictMode : undefined,
+  });
 
   const audio = utils.container.querySelector("audio");
   if (!audio) {
@@ -405,6 +412,140 @@ describe("AudioPlayer retry logic", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    { phase: "scheduled", external: false, target: 50 },
+    { phase: "scheduled", external: true, target: 0 },
+    // The reload empties the element to 0; a skip still starts from the 40 s
+    // the listener was at, not from 0.
+    { phase: "reloading", external: false, target: 50 },
+    { phase: "reloading", external: true, target: 50 },
+    { phase: "reloading", external: true, target: 0 },
+  ])("retains a later seek to $target during $phase recovery (external $external)", async ({ phase, external, target }) => {
+    vi.useFakeTimers();
+    const { audio, container, rerender } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+      audio.dispatchEvent(new Event("play"));
+    });
+    audio.currentTime = 40;
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+
+    if (phase === "reloading") {
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      audio.currentTime = 0;
+      mockReadyState(audio, 0);
+    }
+    if (external) {
+      rerender(playerElement({ seekTo: target, seekKey: 1 }));
+    } else {
+      await act(async () => {
+        fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+      });
+    }
+    await loadMetadata(audio);
+    // Simulate the decoder reporting its old position as recovery completes;
+    // a request to zero must still be restored, not treated as no request.
+    audio.currentTime = 25;
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("skips backward from the interrupted position while reloading", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    audio.currentTime = 40;
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    audio.currentTime = 0;
+    mockReadyState(audio, 0);
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-backward"]')!);
+    });
+    await loadMetadata(audio);
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+    expect(audio.currentTime).toBe(30);
+  });
+
+  it("keeps the existing retry deadline when the user seeks", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.load = vi.fn();
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(audio.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores a seek queued before metadata when recovery completes", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1 });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.load = vi.fn();
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    // The element reports 0 until metadata loads; the error must not save that.
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(audio.load).toHaveBeenCalledTimes(1);
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(30);
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+    expect(audio.currentTime).toBe(30);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("re-arms the retry when a recovery and a new error land in one batch", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    const loadMock = vi.fn();
+    audio.load = loadMock;
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    const playButton = container.querySelector('button[aria-label="Play"]') as HTMLButtonElement | null;
+    await act(async () => {
+      playButton?.click();
+    });
+
+    setAudioError(audio, 2);
+    act(() => {
+      audio.dispatchEvent(new Event("error"));
+    });
+
+    // While the retry waits, the browser recovers on its own (cancelling the
+    // timer) and fails again before React re-renders: phase, attempt and
+    // delay come out exactly as before, so only the new schedule id re-arms.
+    act(() => {
+      audio.dispatchEvent(new Event("canplay"));
+      audio.dispatchEvent(new Event("error"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(loadMock).toHaveBeenCalledTimes(1);
   });
 
   it("deduplicates errors while retry is pending and continues retry chain", async () => {
@@ -1077,11 +1218,150 @@ describe("AudioPlayer progress slider", () => {
 });
 
 describe("AudioPlayer external seek", () => {
+  it.each([1, undefined])("keeps a pending user seek when autoplay resets (key %s)", async (seekKey) => {
+    const onTimeUpdate = vi.fn();
+    const options = { seekTo: 30, seekKey, autoPlayOnSeek: true, onTimeUpdate };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.play = vi.fn().mockResolvedValue(undefined);
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    expect(audio.currentTime).toBe(40);
+
+    // The page resets the handoff flag after 100 ms. A new callback must not
+    // turn that prop update into another request either.
+    rerender(playerElement({ ...options, autoPlayOnSeek: false, onTimeUpdate: vi.fn() }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(40);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay a completed handoff when autoplay resets", async () => {
+    const options = { seekTo: 30, seekKey: 1, autoPlayOnSeek: true };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    const seeks = countSeeks(audio);
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-backward"]')!);
+    });
+    expect(seeks).toEqual([30, 20]);
+
+    rerender(playerElement({ ...options, autoPlayOnSeek: false }));
+    expect(seeks).toEqual([30, 20]);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
-    { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 10 },
-    { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 0 },
-    { control: "ArrowLeft", testId: undefined, code: "ArrowLeft", target: 0 },
-    { control: "ArrowRight", testId: undefined, code: "ArrowRight", target: 0 },
+    { testId: "audio-skip-forward", target: 10 },
+    { testId: "audio-skip-backward", target: 0 },
+  ])("keeps queued autoplay at $target when controls beat the metadata event", async ({ testId, target }) => {
+    const { audio, container } = renderPlayer({ seekTo: 30, seekKey: 1, autoPlayOnSeek: true });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    // readyState changes before the browser dispatches loadedmetadata.
+    mockReadyState(audio, 1);
+    await act(async () => {
+      fireEvent.click(container.querySelector(`[data-testid="${testId}"]`)!);
+    });
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 50])("supersedes a pending target with an immediate external seek to %s", async (target) => {
+    const { audio, rerender } = renderPlayer({ seekTo: 30, seekKey: 1, autoPlayOnSeek: true });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    mockReadyState(audio, 1);
+    // The newer request carries its own play intent, replacing the old one.
+    rerender(playerElement({ seekTo: target, seekKey: 2, autoPlayOnSeek: false }));
+    expect(audio.currentTime).toBe(target);
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(target);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
+  it("allows repeated same-time requests with distinct keys", async () => {
+    const { audio, rerender } = renderPlayer();
+    await loadMetadata(audio);
+    const seeks = countSeeks(audio);
+    rerender(playerElement({ seekTo: 25, seekKey: 1 }));
+    audio.currentTime = 40;
+    rerender(playerElement({ seekTo: 25, seekKey: 2 }));
+    expect(seeks).toEqual([25, 40, 25]);
+  });
+
+  it("accepts target changes and cleared requests without a key", async () => {
+    const { audio, rerender } = renderPlayer();
+    await loadMetadata(audio);
+    const seeks = countSeeks(audio);
+    rerender(playerElement({ seekTo: 25 }));
+    rerender(playerElement({ seekTo: 0 }));
+    rerender(playerElement());
+    rerender(playerElement({ seekTo: 0 }));
+    expect(seeks).toEqual([25, 0, 0]);
+  });
+
+  it("restores the latest user target across a same-recording transport switch", async () => {
+    const hash = "a".repeat(64);
+    const src = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const options = { src, recordingHash: hash, seekTo: 30, seekKey: 1, autoPlayOnSeek: true };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.pause = vi.fn();
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    audio.currentTime = 0; // Changing src resets the media element.
+    rerender(playerElement({ ...options, src: `${src}?local=1`, autoPlayOnSeek: false }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(40);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the current position instead of replaying a consumed request on source switch", async () => {
+    const hash = "a".repeat(64);
+    const src = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const options = { src, recordingHash: hash, seekTo: 30, seekKey: 1 };
+    const { audio, container, rerender } = renderPlayer(options);
+    audio.pause = vi.fn();
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-backward"]')!);
+    });
+    expect(audio.currentTime).toBe(20);
+
+    mockReadyState(audio, 0);
+    audio.currentTime = 0;
+    rerender(playerElement({ ...options, src: `${src}?local=1` }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(20);
+  });
+
+  it("accepts a new recording's request after resetting the previous source", async () => {
+    const first = "a".repeat(64);
+    const second = "b".repeat(64);
+    const { audio, rerender } = renderPlayer({
+      src: `/api/catalogs/cat/recordings/${first}/audio`, seekTo: 30, seekKey: 1,
+    });
+    // Equal time and key are independent requests for different recordings.
+    rerender(playerElement({
+      src: `/api/catalogs/cat/recordings/${second}/audio`, seekTo: 30, seekKey: 1,
+    }));
+    await loadMetadata(audio);
+    expect(audio.currentTime).toBe(30);
+  });
+
+  it.each([
+    // Relative to the queued 30 s, not to the 0 the element reports without
+    // metadata; ArrowRight is not clamped while the duration is still 0.
+    { control: "skip forward", testId: "audio-skip-forward", code: undefined, target: 40 },
+    { control: "skip backward", testId: "audio-skip-backward", code: undefined, target: 20 },
+    { control: "ArrowLeft", testId: undefined, code: "ArrowLeft", target: 25 },
+    { control: "ArrowRight", testId: undefined, code: "ArrowRight", target: 35 },
   ])("keeps a $control seek when queued restore metadata arrives", async ({ testId, code, target }) => {
     const onSeek = vi.fn();
     const onTimeUpdate = vi.fn();
@@ -1114,7 +1394,7 @@ describe("AudioPlayer external seek", () => {
     expect(playMock).not.toHaveBeenCalled();
 
     await loadMetadata(audio);
-    expect(audio.currentTime).toBe(10);
+    expect(audio.currentTime).toBe(40);
     expect(playMock).toHaveBeenCalledTimes(1);
   });
 
