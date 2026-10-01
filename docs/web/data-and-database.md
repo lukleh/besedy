@@ -91,6 +91,15 @@ When serving audio, the app resolves sources in priority order:
 
 Per-recording source preferences are stored in `user_preferences.settings.audioSources`.
 
+Independently of the source, `format` picks the file: `webm` (default), the Opus
+archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,
+#291) for browsers that cannot stream WebM. The route resolves the source first
+(a variant without a row for the recording falls back to archived) and then takes
+that source's AAC copy; when it has none the response is `404` rather than the
+WebM, and `format=aac` with `source=original` is a `400`. `/audio/sources` lists
+the `formats` each source can be served in, so clients only ask for copies that
+exist.
+
 ---
 
 ## Database

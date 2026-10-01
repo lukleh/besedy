@@ -211,12 +211,20 @@ export const AudioSourceSchema = z.enum(["archived", "listening", "original"]);
 export type AudioSource = z.infer<typeof AudioSourceSchema>;
 
 /**
+ * Audio file format: the Opus WebM every recording has, or its AAC-in-MP4
+ * copy for browsers that cannot stream WebM (iOS Safari, #291).
+ */
+export const AudioFormatSchema = z.enum(["webm", "aac"]);
+export type AudioFormat = z.infer<typeof AudioFormatSchema>;
+
+/**
  * Audio route query parameters
  */
 export const AudioQuerySchema = z.object({
   group: z.string().optional(),
   source: AudioSourceSchema.optional().default("archived"),
   variant: z.string().optional(),
+  format: AudioFormatSchema.optional().default("webm"),
   download: z
     .enum(["true", "false"])
     .optional()

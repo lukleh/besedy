@@ -438,7 +438,8 @@ export async function logAudioStreamed(
   userId: string | null,
   audioHash: string,
   groupId: string,
-  range?: AudioStreamRange | null
+  range?: AudioStreamRange | null,
+  format?: string
 ): Promise<void> {
   await logDataAccessEvent({
     userId,
@@ -447,13 +448,15 @@ export async function logAudioStreamed(
     resourceId: audioHash,
     groupId,
     subjectType: "audio",
-    details: range
-      ? {
-          rangeStart: range.start,
-          rangeEnd: range.end,
-          fileSize: range.fileSize,
-        }
-      : null,
+    details:
+      range || format
+        ? {
+            ...(range
+              ? { rangeStart: range.start, rangeEnd: range.end, fileSize: range.fileSize }
+              : {}),
+            ...(format ? { format } : {}),
+          }
+        : null,
   });
 }
 
@@ -464,7 +467,8 @@ export async function logAudioDownloaded(
   userId: string | null,
   audioHash: string,
   groupId: string,
-  source?: string
+  source?: string,
+  format?: string
 ): Promise<void> {
   await logDataAccessEvent({
     userId,
@@ -473,7 +477,10 @@ export async function logAudioDownloaded(
     resourceId: audioHash,
     groupId,
     subjectType: "audio",
-    details: source ? { source } : null,
+    details:
+      source || format
+        ? { ...(source ? { source } : {}), ...(format ? { format } : {}) }
+        : null,
   });
 }
 
