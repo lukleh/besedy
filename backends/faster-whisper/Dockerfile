@@ -1,7 +1,4 @@
-FROM python:3.11-slim-bookworm
-
-ARG FASTER_WHISPER_VERSION=1.2.1
-ARG SILERO_VAD_VERSION=6.2.0
+FROM python:3.11-slim-bookworm@sha256:2333bd330d12de02514770b3585cad313644316047cdee24a7acfdece6de6efb
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -15,20 +12,8 @@ RUN apt-get update \
         libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --upgrade pip setuptools wheel \
-    && python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchvision \
-    && python -m pip install \
-        ctranslate2 \
-        "faster-whisper==${FASTER_WHISPER_VERSION}" \
-        "silero-vad==${SILERO_VAD_VERSION}" \
-        safetensors \
-        numpy \
-        python-dotenv \
-        pyyaml \
-        scipy \
-        sentencepiece \
-        soundfile \
-        transformers \
-        tqdm
+COPY backends/faster-whisper/requirements.lock /tmp/requirements.lock
+RUN python -m pip install --no-deps -r /tmp/requirements.lock \
+    && rm /tmp/requirements.lock
 
 CMD ["python", "-c", "import faster_whisper; from faster_whisper import WhisperModel; from faster_whisper.vad import VadOptions; print(faster_whisper.__version__)"]

@@ -28,6 +28,21 @@ Dependency versions live in build files (`pyproject.toml`, `uv.lock`,
 `backends/docker-compose.yml`, `rag-services/docker-compose.yml`,
 `web/package.json`).
 
+### Locked Worker Images
+
+The faster-whisper, NeMo, WhisperX, pyannote and ColBERT images are locked so
+that a rebuild reproduces the image that produced the existing transcripts and
+indexes. Each Dockerfile pins its base image by digest and installs its
+`requirements.lock` (the image's complete `pip freeze --all`) with
+`pip install --no-deps`, so pip never resolves anything new. Debian/Ubuntu
+packages from `apt-get` (for example ffmpeg) are not locked. qwen3-asr is
+experimental and not locked.
+
+Upgrading an engine is a deliberate change: install the new versions in a
+scratch container, regenerate the lock from it with `pip freeze --all`, and
+compare transcripts from the old and new images on a few fixed recordings
+before replacing the `:local` image.
+
 ---
 
 ## Model Serving Stack
