@@ -2,26 +2,18 @@
 
 > Common errors and debugging strategies for the Besedy pipeline.
 
-## UnicodeDecodeError when loading JSON
+## JSON file is not valid UTF-8
 
-**Symptom:** `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe8 ...`
+**Symptom:** `ValueError: <path> is not valid UTF-8 (byte offset N): ...`
 
-**Cause:** Some legacy whisper.cpp files were written with ISO-8859-1 (latin-1)
-instead of UTF-8.
+**Cause:** The file was written in another encoding (for example ISO-8859-1)
+or is not JSON at all (for example a macOS `._*` resource-fork file).
+`load_json_with_fallback()` reads strict UTF-8 and refuses such files rather
+than dropping the bytes it cannot decode.
 
-**Fix:** Always use `load_json_with_fallback()` instead of `json.load()`:
-
-```python
-# Wrong - fails on legacy files
-data = json.loads(path.read_text(encoding="utf-8"))
-
-# Correct - handles encoding automatically
-from besedy.lib.data.encoding import load_json_with_fallback
-data = load_json_with_fallback(path)
-```
-
-**Debug:** `file -i <path>/transcript.json` — if it shows `charset=iso-8859-1`,
-use the fallback loader.
+**Fix:** Check the file with `file -i <path>`. Regenerate it, or convert it
+once with `iconv -f <encoding> -t UTF-8` if you know its encoding. Delete
+stray `._*` files.
 
 ## Backend 'xxx' not found
 

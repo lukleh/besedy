@@ -193,10 +193,9 @@ cp besedy.toml.example ~/.config/lukleh/besedy/besedy.toml
 ```
 
 Then set `[paths].text_data_dir` (required — it is where catalogs and transcripts
-are written); the other paths have working defaults. Consider setting
-`[paths].audio_artifacts_dir` as well: left empty, staged and archived audio is
-written inside the checkout. To keep the config
-elsewhere, point `BESEDY_CONFIG` at it instead:
+are written) and `[paths].audio_artifacts_dir` (required — it is where staged and
+archived audio is written); the other paths have working defaults. To keep the
+config elsewhere, point `BESEDY_CONFIG` at it instead:
 
 ```bash
 export BESEDY_CONFIG=/path/to/besedy.toml

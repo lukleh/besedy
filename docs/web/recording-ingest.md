@@ -157,8 +157,8 @@ journalctl --user -u besedy-ingest-worker | grep revision
 
 Keep `audio_artifacts_dir` and `text_data_dir` in the host `besedy.toml`
 absolute: a relative value resolves against the checkout the worker runs from,
-and so does an empty `audio_artifacts_dir` (an empty `text_data_dir` is an
-error), so ingest output would land inside `~/worktrees/besedy/prod-ingest`.
+so ingest output would land inside `~/worktrees/besedy/prod-ingest`. An empty
+value for either is an error.
 `uploads_dir` and `corrections_dir` resolve under those two when relative, and
 keys such as `transcripts_dir` are subdirectory names that stay relative.
 

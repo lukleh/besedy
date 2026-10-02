@@ -171,15 +171,19 @@ def resolve_audio_artifacts_root() -> Path:
         candidate = Path(env_value).expanduser()
         return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
 
+    message = (
+        "Audio artifacts root is required. Set [paths].audio_artifacts_dir in besedy.toml "
+        "or BESEDY_AUDIO_ARTIFACTS_ROOT in the environment."
+    )
     try:
         from besedy.config.settings import config
 
         configured = getattr(config.paths, "audio_artifacts_dir", "")
-    except Exception:
-        configured = ""
+    except Exception as exc:
+        raise RuntimeError(message) from exc
 
     if not configured:
-        return PROJECT_ROOT
+        raise RuntimeError(message)
 
     candidate = Path(configured).expanduser()
     return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate

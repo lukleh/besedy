@@ -207,8 +207,7 @@ for stable word timings. Produces raw output first (`_raw_whisperx` when
 `--keep-raw` is enabled), then auto-converts to canonical format.
 
 > **Legacy note:** whisper.cpp is no longer a backend, and its raw-dump
-> converter has been removed. The loader still keeps the latin-1 encoding
-> fallback for older whisper.cpp files.
+> converter has been removed. Transcript JSON is read as strict UTF-8.
 
 ---
 

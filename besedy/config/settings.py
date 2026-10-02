@@ -33,7 +33,8 @@ class PathsConfig:
 
     Attributes:
         audio_artifacts_dir: Base directory for normalized, archived, and joined
-            audio artifacts. Leave empty to write them under the repository root.
+            audio artifacts. Required; an empty value is an error unless
+            BESEDY_AUDIO_ARTIFACTS_ROOT is set.
         joined_audio_dir: Subdirectory under audio_artifacts_dir for joined
             audio files created by `catalog join`. Defaults to "joined_audio".
         original_audio_dir: Directory for backup of original source audio files

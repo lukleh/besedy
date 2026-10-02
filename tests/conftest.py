@@ -15,13 +15,17 @@ os.environ["BESEDY_CONFIG"] = str(Path(__file__).parents[1] / "besedy.toml.examp
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _hermetic_text_data_root(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Give the suite an isolated text-data root.
+def _hermetic_data_roots(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Give the suite isolated text-data and audio-artifact roots.
 
-    The example config leaves [paths].text_data_dir empty, and tests must never
-    write into (or depend on) an operator's real data directories.
+    The example config leaves [paths].text_data_dir and
+    [paths].audio_artifacts_dir empty, and tests must never write into (or
+    depend on) an operator's real data directories.
     """
     os.environ["BESEDY_TEXT_DATA_ROOT"] = str(tmp_path_factory.mktemp("besedy-text-data"))
+    os.environ["BESEDY_AUDIO_ARTIFACTS_ROOT"] = str(
+        tmp_path_factory.mktemp("besedy-audio-artifacts")
+    )
 
 
 # ---------------------------------------------------------------------------

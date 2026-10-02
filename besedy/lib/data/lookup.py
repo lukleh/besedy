@@ -12,7 +12,7 @@ from besedy.lib.data.encoding import load_json_with_fallback
 def load_transcript_json(path: Path) -> dict | None:
     """Load a transcript JSON file, returning None on IO/parse errors.
 
-    Uses encoding fallback to handle legacy transcript files with latin-1 encoding.
+    Files that are not valid UTF-8 count as parse errors.
     """
     try:
         return load_json_with_fallback(path)

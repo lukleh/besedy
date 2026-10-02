@@ -6,10 +6,7 @@ import json
 
 import pytest
 
-from besedy.lib.data.encoding import (
-    load_json_with_encoding_info,
-    load_json_with_fallback,
-)
+from besedy.lib.data.encoding import load_json_with_fallback
 
 
 class TestLoadJsonWithFallback:
@@ -34,16 +31,17 @@ class TestLoadJsonWithFallback:
         assert result["text"] == "Příliš žluťoučký kůň"
         assert result["emoji"] == "🎉"
 
-    def test_load_latin1_fallback(self, tmp_path):
-        """load_json_with_fallback falls back to latin-1 for legacy files."""
+    def test_load_non_utf8_raises(self, tmp_path):
+        """load_json_with_fallback rejects non-UTF-8 bytes instead of dropping them."""
         json_file = tmp_path / "test.json"
-        # Create a file that's valid latin-1 but invalid UTF-8
-        # This simulates legacy whisper.cpp CoreML dumps
-        content = b'{"text": "\xe9"}'  # é in latin-1
-        json_file.write_bytes(content)
+        json_file.write_bytes('{"text": "café"}'.encode("latin-1"))
 
-        result = load_json_with_fallback(json_file)
-        assert "text" in result
+        with pytest.raises(ValueError) as exc_info:
+            load_json_with_fallback(json_file)
+        message = str(exc_info.value)
+        assert str(json_file) in message
+        assert "not valid UTF-8" in message
+        assert "byte offset 13" in message
 
     def test_load_invalid_json_raises(self, tmp_path):
         """load_json_with_fallback raises ValueError for malformed JSON."""
@@ -69,50 +67,6 @@ class TestLoadJsonWithFallback:
         result = load_json_with_fallback(json_file)
         assert len(result["segments"]) == 2
         assert result["metadata"]["duration"] == 2.0
-
-
-class TestLoadJsonWithEncodingInfo:
-    """Tests for load_json_with_encoding_info function."""
-
-    def test_returns_utf8_encoding(self, tmp_path):
-        """load_json_with_encoding_info reports utf-8 for valid UTF-8 files."""
-        json_file = tmp_path / "test.json"
-        data = {"key": "value"}
-        json_file.write_text(json.dumps(data), encoding="utf-8")
-
-        result, encoding = load_json_with_encoding_info(json_file)
-        assert result == data
-        assert encoding == "utf-8"
-
-    def test_returns_latin1_encoding(self, tmp_path):
-        """load_json_with_encoding_info reports latin-1 for legacy files."""
-        json_file = tmp_path / "test.json"
-        # Create a file that triggers latin-1 fallback
-        content = b'{"text": "\xe9"}'
-        json_file.write_bytes(content)
-
-        result, encoding = load_json_with_encoding_info(json_file)
-        assert "text" in result
-        assert encoding == "latin-1"
-
-    def test_returns_tuple(self, tmp_path):
-        """load_json_with_encoding_info always returns (data, encoding) tuple."""
-        json_file = tmp_path / "test.json"
-        json_file.write_text('{"a": 1}', encoding="utf-8")
-
-        result = load_json_with_encoding_info(json_file)
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-
-    def test_unicode_in_utf8(self, tmp_path):
-        """load_json_with_encoding_info handles Czech text in UTF-8."""
-        json_file = tmp_path / "test.json"
-        data = {"text": "Dobrý den, jak se máte?"}
-        json_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-
-        result, encoding = load_json_with_encoding_info(json_file)
-        assert result["text"] == "Dobrý den, jak se máte?"
-        assert encoding == "utf-8"
 
 
 class TestEncodingEdgeCases:

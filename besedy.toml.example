@@ -20,7 +20,9 @@
 #   BESEDY_WEB_ENV_DEV/PROD/TEST Selected web env file for Docker and E2E helpers.
 
 [paths]
-# Base directory for staged and archived audio artifacts. Leave empty to use the repo root.
+# Base directory for staged and archived audio artifacts.
+# Required for staging, archiving, and joining audio: an empty value fails with
+# "Audio artifacts root is required" unless BESEDY_AUDIO_ARTIFACTS_ROOT is set.
 # Example: "/mnt/data/besedy_audio"
 audio_artifacts_dir = ""
 # Directory for joined audio files from `catalog join`.

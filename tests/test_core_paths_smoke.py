@@ -132,7 +132,7 @@ class TestHomeRuntimeRoots:
 class TestResolveAudioArtifactsRoot:
     """Tests for resolve_audio_artifacts_root()."""
 
-    def test_default_is_project_root(self, monkeypatch):
+    def test_empty_setting_raises(self, monkeypatch):
         monkeypatch.delenv("BESEDY_AUDIO_ARTIFACTS_ROOT", raising=False)
         original = get_config()
         try:
@@ -142,7 +142,8 @@ class TestResolveAudioArtifactsRoot:
                     paths=replace(original.paths, audio_artifacts_dir=""),
                 )
             )
-            assert resolve_audio_artifacts_root() == PROJECT_ROOT
+            with pytest.raises(RuntimeError, match=r"\[paths\]\.audio_artifacts_dir"):
+                resolve_audio_artifacts_root()
         finally:
             set_config(original)
 
