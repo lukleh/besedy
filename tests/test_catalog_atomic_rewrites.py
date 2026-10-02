@@ -12,7 +12,8 @@ import argparse
 import csv
 import os
 import stat
-import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -129,20 +130,31 @@ class TestLoudness:
         with catalog.open("a", newline="", encoding="utf-8") as handle:
             csv.DictWriter(handle, fieldnames=["Hash", "Full Path"]).writerows(extra_rows)
         calls: list[Path] = []
+        queue_cancelled = threading.Event()
+
+        class RecordingExecutor(ThreadPoolExecutor):
+            def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+                super().shutdown(wait=wait, cancel_futures=cancel_futures)
+                if cancel_futures:
+                    queue_cancelled.set()
 
         def interrupted_after_first(file_path, *_args):
             calls.append(file_path)
             if len(calls) == 1:
                 raise KeyboardInterrupt
-            time.sleep(0.2)  # give the main thread time to cancel the queue
+            # Hold the single worker until the queue is cancelled, so it cannot
+            # take another file before that, however slow the main thread is.
+            queue_cancelled.wait(timeout=5)
             return None, "no audio stream"
 
+        monkeypatch.setattr(loudness_command, "ThreadPoolExecutor", RecordingExecutor)
         monkeypatch.setattr(loudness_command, "get_loudness_metrics", interrupted_after_first)
 
         with pytest.raises(KeyboardInterrupt):
             handle_loudness(LoudnessRequest(csv=catalog, parallel=1, no_color=True))
 
         # The single worker may already have taken the next file; no more.
+        assert queue_cancelled.is_set()
         assert len(calls) <= 2
 
     def test_completed_run_replaces_file_and_points_symlink(
