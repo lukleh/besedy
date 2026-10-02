@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -12,9 +12,8 @@ RUN apt-get update \
         libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --upgrade pip setuptools wheel \
-    && python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchvision \
-    && python -m pip install whisperx python-dotenv \
-    && python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchvision
+COPY backends/whisperx/requirements.lock /tmp/requirements.lock
+RUN python -m pip install --no-deps -r /tmp/requirements.lock \
+    && rm /tmp/requirements.lock
 
 CMD ["python", "-c", "from importlib.metadata import version; print(version('whisperx'))"]
