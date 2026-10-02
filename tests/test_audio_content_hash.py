@@ -227,16 +227,36 @@ class TestAudioContentSha256sum:
         ("fixture_name", "expected_hash"),
         [
             (
-                "sine_44100hz_stereo.mp3",
-                "f904f402631e9bc341261f2ecf66dd87a5ba7ebce40cf4e186c9a227b041530a",
+                "talk_44100hz_stereo_vbr_cover.mp3",
+                "ae87fc2006610b8413f7d1c5987db4739a523c87e30d3ae3c2ce5becf917c9d4",
             ),
             (
-                "sine_44100hz_mono.m4a",
-                "18bdf8836053a1c1bf54f5a4bae5bf0176c40672cc5aa3ce9c2fc6b2b45c6f3b",
+                "talk_48000hz_mono.mp3",
+                "00f3fdbaa04e22bc2039ac546fabeb0a199d6b7f9c70b1ebdae250756fb05e97",
             ),
             (
-                "sine_48000hz_mono.opus",
-                "c8eda0de513f2d96f6e0167dc080b48ed6ad73f9db7aa2e9a961722d7e2a6d14",
+                "talk_32000hz_stereo.mp3",
+                "4d9fee2b9c85b64e214042fc7a033811b483120b2ea0d2767da3686923066261",
+            ),
+            (
+                "talk_16000hz_stereo.mp3",
+                "83dc5f6715d3ee6f3849bff47bc5fbcbed6ce1d62e09e8689cb2ec0d03be5607",
+            ),
+            (
+                "talk_44100hz_mono.m4a",
+                "5289065e09090ca3841e0806470dee4a8e382ef5c3092c59fdee3695a24530cb",
+            ),
+            (
+                "talk_22050hz_mono.m4a",
+                "4f6a1c2cec1f9c609310518edb8cc1c104fb8fe744f3d778e43ef9ea1efbb049",
+            ),
+            (
+                "talk_48000hz_stereo_video.mp4",
+                "ac07348cf28c1bfa5cf06092a3598e8e91fed6b80831be2ca6fa27cc110b5fc9",
+            ),
+            (
+                "talk_48000hz_stereo_voip.mkv",
+                "ab0f8f404627b7c75af1cad7427b54dd8ab5d3741fd90e76c82735c1f43fe77e",
             ),
         ],
     )

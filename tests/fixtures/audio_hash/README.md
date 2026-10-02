@@ -9,15 +9,48 @@ not must not be used until a new algorithm version exists
 Never regenerate or replace these files: the pinned hashes describe exactly
 these bytes.
 
-| Fixture | Source codec | Covers |
-|---|---|---|
-| `sine_44100hz_stereo.mp3` | MP3, 44.1 kHz stereo | `mp3float` decode, downmix, resample |
-| `sine_44100hz_mono.m4a` | AAC-LC, 44.1 kHz mono | native `aac` decode, resample |
-| `sine_48000hz_mono.opus` | Opus, 48 kHz mono | native `opus` decode, resample |
+## What the fixtures contain
 
-The fixtures were made with ffmpeg 6.1.1-3ubuntu5 from 3-second `lavfi` sine
-sources (440 Hz, plus 660 Hz on the second MP3 channel). The encoders were
-`libmp3lame` at 64k, native `aac` at 64k, and `libopus` at 32k.
+All eight are encoded from one 7.75 s, 44.1 kHz stereo master. Its left and
+right channels differ throughout, so the stereo-to-mono downmix shows up in the
+hash. The master runs through these sections:
+
+| Time (s) | Content | What it exercises |
+|---|---|---|
+| 0.00–4.50 | Czech speech: left dry, right with a room echo | real speech spectra, downmix of unlike channels |
+| 4.50–4.75 | digital silence | zero handling, and Opus/AAC quiet-frame modes |
+| 4.75–5.75 | exponential sweep 30 Hz–21 kHz, left up and right down | the resampler's anti-alias low-pass (the target's Nyquist is 8 kHz) |
+| 5.75–6.25 | seeded pink noise, different per channel | broadband content |
+| 6.25–6.75 | 20 Hz click train, opposite polarity per channel | transients, which force block/window switching |
+| 6.75–7.75 | speech boosted 12 dB | overs that clip in the s16 conversion |
+
+The speech is chapter 2 of the LibriVox recording of *Krysař* by Viktor Dyk,
+read in Czech by Kudrna. It is under the Public Domain Mark 1.0:
+<https://archive.org/details/krysar_2007_librivox>. `generate.sh` records how
+the files were made, using ffmpeg 6.1.1-3ubuntu5 on 2026-10-02. Rerunning it
+writes new bytes and new hashes, so use it only to build a new set.
+
+Each fixture matches a decode and resample path that occurs in the prod catalog
+as of 2026-10-02 (252 recordings):
+
+| Fixture | Prod catalog counterpart |
+|---|---|
+| `talk_44100hz_stereo_vbr_cover.mp3` | MP3 44.1 kHz stereo (71); embedded cover art like 34 of the MP3s (`-vn`) |
+| `talk_48000hz_mono.mp3` | MP3 48 kHz mono (26); 3:1 resample |
+| `talk_32000hz_stereo.mp3` | MP3 32 kHz (4); 2:1 resample |
+| `talk_16000hz_stereo.mp3` | MP3 16 kHz (26); downmix only, no resample |
+| `talk_44100hz_mono.m4a` | AAC-LC 44.1 kHz mono (41); MP4 edit-list priming trim |
+| `talk_22050hz_mono.m4a` | AAC-LC 22.05 kHz (1); odd resample ratio |
+| `talk_48000hz_stereo_video.mp4` | AAC-LC 48 kHz stereo (11); an H.264 track like 4 of the 5 MP4s (`-vn`) |
+| `talk_48000hz_stereo_voip.mkv` | Opus 48 kHz stereo (8: 6 Matroska/WebM, 2 Ogg); low-bitrate speech mode |
+
+The AAC fixtures decode to slightly more than 7.75 s, and the MP3 and Opus
+fixtures to exactly 7.75 s. Encoder-delay and padding trimming has changed
+between ffmpeg versions, so the pinned hashes cover it as well.
+
+ffmpeg git `2790dd6` prints `Error parsing Opus packet header.` after the last
+packet of the MKV fixture. It still exits 0 and produces the same PCM as
+6.1.1. The real prod Opus files don't trigger it.
 
 ## Checking a build
 
