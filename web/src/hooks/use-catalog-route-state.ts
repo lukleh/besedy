@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { buildRecordingPagePath } from "@/lib/api/recording-urls";
-import { BACK_TO_PARAM, resolveBackToPath } from "@/lib/navigation/back-to";
+import { BACK_TO_PARAM, pathnameOf, resolveBackToPath } from "@/lib/navigation/back-to";
+import { resolveLocalRoute } from "@/lib/offline/local-route";
 
 export interface CatalogRouteLabels {
   back: string;
@@ -31,6 +32,11 @@ export interface CatalogRouteStateOptions {
    * opens the library itself, and for a listener who is not signed in.
    */
   downloadsIsHome?: boolean;
+  /**
+   * Offline only the local shell's pages open, so an origin it cannot render
+   * is ignored in favour of the page's parent.
+   */
+  offline?: boolean;
 }
 
 interface BackTarget {
@@ -98,11 +104,13 @@ export function buildCatalogRouteState(
 
   const parent = resolveParent(pathSegments, options?.downloadsIsHome ?? false);
   const origin = parent ? resolveBackToPath(options?.backToPath) : null;
-  const originPathname = origin?.split(/[?#]/, 1)[0];
+  const originPathname = origin ? pathnameOf(origin) : null;
+  const originUsable =
+    originPathname !== null &&
+    originPathname !== normalizedPathname &&
+    !(options?.offline && resolveLocalRoute(originPathname).kind === "unavailable");
   const backTarget: BackTarget | null =
-    origin && originPathname !== normalizedPathname
-      ? { url: origin, label: "back" }
-      : parent;
+    origin && originUsable ? { url: origin, label: "back" } : parent;
 
   return {
     isAuthPage,
@@ -113,7 +121,7 @@ export function buildCatalogRouteState(
 }
 
 export function useCatalogRouteState(
-  options?: Pick<CatalogRouteStateOptions, "downloadsIsHome">
+  options?: Pick<CatalogRouteStateOptions, "downloadsIsHome" | "offline">
 ): CatalogRouteState {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -121,6 +129,7 @@ export function useCatalogRouteState(
   const tRecording = useTranslations("recording");
   const backToPath = searchParams.get(BACK_TO_PARAM);
   const downloadsIsHome = options?.downloadsIsHome ?? false;
+  const offline = options?.offline ?? false;
 
   return useMemo(
     () =>
@@ -132,8 +141,8 @@ export function useCatalogRouteState(
           backToRecording: tRecording("backToRecording"),
           backToEvent: tRecording("backToEvent"),
         },
-        { backToPath, downloadsIsHome }
+        { backToPath, downloadsIsHome, offline }
       ),
-    [backToPath, downloadsIsHome, pathname, tNav, tRecording]
+    [backToPath, downloadsIsHome, offline, pathname, tNav, tRecording]
   );
 }

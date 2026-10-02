@@ -1,4 +1,4 @@
-import { normalizeAppRelativePath } from "@/lib/auth/oauth-routing";
+import { resolveAppPagePath } from "@/lib/auth/oauth-routing";
 import { DOWNLOADS_PATH } from "@/lib/offline/cache-names";
 
 /**
@@ -12,25 +12,35 @@ export const BACK_TO_PARAM = "backTo";
 
 /**
  * Parameters that act once when a page opens: the recording's start position
- * and search passage, the radio handoff, the read-only notice. Returning to
- * the page must not replay them, so the origin leaves them out.
+ * and search passage, the radio handoff, the read-only notice, the admin Add
+ * user dialog. Returning to the page must not replay them, so the origin
+ * leaves them out. Parameters that describe the page (tab, filters) stay.
  */
-const ONE_SHOT_PARAMS = [BACK_TO_PARAM, "seek", "end", "fromSearch", "fromRadio", "readOnly"];
+const ONE_SHOT_PARAMS = [
+  BACK_TO_PARAM,
+  "seek",
+  "end",
+  "fromSearch",
+  "fromRadio",
+  "readOnly",
+  "action",
+];
 
-const DISALLOWED_BACK_NAMESPACES = ["/api", "/auth"];
 const URL_BASE = "http://besedy.local";
 
-/** The app-relative page to return to, or null when the value is unusable. */
+/** The path of an app-relative link, without its query or hash. */
+export function pathnameOf(href: string): string {
+  return href.split(/[?#]/, 1)[0];
+}
+
+/** The app page to return to, or null when the value is unusable. */
 export function resolveBackToPath(value: string | null | undefined): string | null {
-  const normalized = normalizeAppRelativePath(value);
-  if (!normalized) return null;
-  const url = new URL(normalized, URL_BASE);
-  const disallowed = DISALLOWED_BACK_NAMESPACES.some(
-    (namespace) => url.pathname === namespace || url.pathname.startsWith(`${namespace}/`)
-  );
+  const page = resolveAppPagePath(value);
+  if (!page) return null;
   // The warm-up request for the offline shell is not a page to return to.
+  const url = new URL(page, URL_BASE);
   const isShellWarmup = url.pathname === DOWNLOADS_PATH && url.searchParams.has("warm");
-  return disallowed || isShellWarmup ? null : normalized;
+  return isShellWarmup ? null : page;
 }
 
 /** The current page as an origin: its path and the query that describes it. */

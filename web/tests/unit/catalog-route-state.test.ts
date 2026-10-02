@@ -114,6 +114,27 @@ describe("catalog route state helpers", () => {
     expect(opened.backTargetUrl).toBe("/catalog/c1/event/7");
   });
 
+  it("ignores an origin the offline shell cannot open while offline", () => {
+    const settings = buildCatalogRouteState("/downloads", LABELS, {
+      backToPath: "/settings",
+      downloadsIsHome: true,
+      offline: true,
+    });
+    const event = buildCatalogRouteState("/downloads", LABELS, {
+      backToPath: "/catalog/c1/event/7",
+      downloadsIsHome: true,
+      offline: true,
+    });
+    const editor = buildCatalogRouteState("/catalog/c1/recording/hash123", LABELS, {
+      backToPath: "/catalog/c1/event/7/edit",
+      offline: true,
+    });
+
+    expect(settings.backTargetUrl).toBeNull();
+    expect(event.backTargetUrl).toBe("/catalog/c1/event/7");
+    expect(editor.backTargetUrl).toBe("/catalog/c1");
+  });
+
   it.each([
     "https://evil.example/x",
     "//evil.example/x",

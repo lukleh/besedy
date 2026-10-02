@@ -8,7 +8,7 @@ type AuthCompletePathOptions = {
   state?: string | null;
 };
 
-export function normalizeAppRelativePath(path: string | null | undefined): string | null {
+function normalizeAppRelativePath(path: string | null | undefined): string | null {
   const hasControlChars = path ? /[\u0000-\u001f\u007f]/.test(path) : false;
   if (
     !path ||
@@ -36,10 +36,14 @@ export function sanitizeAppRelativePath(path: string | null | undefined): string
   return normalizeAppRelativePath(path) ?? DEFAULT_POST_AUTH_PATH;
 }
 
-export function sanitizePostAuthCallbackPath(path: string | null | undefined): string {
+/**
+ * The app page a path names, or null when it is not a same-app page or lies
+ * under /auth or /api.
+ */
+export function resolveAppPagePath(path: string | null | undefined): string | null {
   const normalized = normalizeAppRelativePath(path);
   if (!normalized) {
-    return DEFAULT_POST_AUTH_PATH;
+    return null;
   }
 
   const normalizedPathname = new URL(normalized, SANITIZER_BASE_URL).pathname;
@@ -49,9 +53,13 @@ export function sanitizePostAuthCallbackPath(path: string | null | undefined): s
         normalizedPathname === namespace || normalizedPathname.startsWith(`${namespace}/`)
     )
   ) {
-    return DEFAULT_POST_AUTH_PATH;
+    return null;
   }
   return normalized;
+}
+
+export function sanitizePostAuthCallbackPath(path: string | null | undefined): string {
+  return resolveAppPagePath(path) ?? DEFAULT_POST_AUTH_PATH;
 }
 
 export function buildAuthCompletePath(

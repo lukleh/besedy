@@ -44,6 +44,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const route = useCatalogRouteState({
     downloadsIsHome:
       !isOnline || (!isSignedIn && !sessionPending && !sessionRecovering),
+    offline: !isOnline,
   });
 
   // Don't show app navigation on auth pages

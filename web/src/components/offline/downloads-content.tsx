@@ -36,6 +36,7 @@ import {
   INCOMPLETE_PACKAGE_ERROR,
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
+import { buildRecordingPagePath } from '@/lib/api/recording-urls';
 import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
 import { withBackTo } from '@/lib/navigation/back-to';
 import { cn } from '@/lib/utils';
@@ -202,7 +203,7 @@ export function recordPageUrl(record: DownloadRecord): string {
   const pageUrl =
     eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0
       ? `/catalog/${record.catalogId}/event/${eventId}`
-      : `/catalog/${record.catalogId}/recording/${record.hash}`;
+      : buildRecordingPagePath(record.catalogId, record.hash);
   return withBackTo(pageUrl, DOWNLOADS_PATH);
 }
 

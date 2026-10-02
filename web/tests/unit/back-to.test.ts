@@ -17,7 +17,7 @@ describe("back-to links", () => {
 
   it("records the origin without its back target or one-shot parameters", () => {
     const params = new URLSearchParams(
-      "seek=3&end=9&fromSearch=1&fromRadio=true&readOnly=events&backTo=%2Fdownloads&tab=events"
+      "seek=3&end=9&fromSearch=1&fromRadio=true&readOnly=events&action=new&backTo=%2Fdownloads&tab=events"
     );
 
     expect(currentOrigin("/catalog/c1/recording/h", params)).toBe(

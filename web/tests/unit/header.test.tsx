@@ -13,13 +13,14 @@ const mocks = vi.hoisted(() => ({
   isOnline: true,
   sessionPending: false,
   pathname: "/catalog/c1",
+  search: "tab=events",
   backTargetUrl: null as string | null,
-  routeOptions: undefined as { downloadsIsHome?: boolean } | undefined,
+  routeOptions: undefined as { downloadsIsHome?: boolean; offline?: boolean } | undefined,
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
-  useSearchParams: () => new URLSearchParams("tab=events"),
+  useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
 vi.mock("next-intl", () => ({
@@ -35,7 +36,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/hooks/use-catalog-route-state", () => ({
-  useCatalogRouteState: (options?: { downloadsIsHome?: boolean }) => {
+  useCatalogRouteState: (options?: { downloadsIsHome?: boolean; offline?: boolean }) => {
     mocks.routeOptions = options;
     return {
       isAuthPage: false,
@@ -94,6 +95,7 @@ describe("Header", () => {
     mocks.isOnline = true;
     mocks.sessionPending = false;
     mocks.pathname = "/catalog/c1";
+    mocks.search = "tab=events";
     mocks.backTargetUrl = null;
     mocks.routeOptions = undefined;
   });
@@ -111,24 +113,24 @@ describe("Header", () => {
 
   it("treats Downloads as home only offline or once the listener is known to be signed out", () => {
     render(<Header />);
-    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false });
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false, offline: false });
 
     mocks.isOnline = false;
     render(<Header />);
-    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true });
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true, offline: true });
 
     mocks.isOnline = true;
     mocks.session = null;
     mocks.sessionPending = true;
     render(<Header />);
-    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false });
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false, offline: false });
 
     render(<Header sessionRecovering />);
-    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false });
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false, offline: false });
 
     mocks.sessionPending = false;
     render(<Header />);
-    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true });
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true, offline: false });
   });
 
   it("hides sign-in and the signed-out toggles while the session request is still pending", () => {
@@ -193,10 +195,23 @@ describe("Header", () => {
 
   it("links Downloads without an origin while Downloads is open", () => {
     mocks.pathname = "/downloads";
+    mocks.search = "";
 
     render(<Header />);
 
     expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
+  });
+
+  it("keeps the open Downloads page's own origin on its shortcut", () => {
+    mocks.pathname = "/downloads";
+    mocks.search = "backTo=%2Fcatalog%2Fc1%2Fevent%2F7";
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute(
+      "href",
+      "/downloads?backTo=%2Fcatalog%2Fc1%2Fevent%2F7",
+    );
   });
 
   it("does not expose the protected shortcut while signed out", () => {
