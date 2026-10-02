@@ -16,7 +16,7 @@ from pathlib import Path
 
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS
 from besedy.lib.audio.types import format_size
-from besedy.lib.data.atomic_io import atomic_write_text
+from besedy.lib.data.atomic_io import atomic_path, atomic_write_text
 from besedy.lib.subprocess_utils import check_binary
 
 # Constants
@@ -786,12 +786,14 @@ def write_merged_csv(
     columns: Sequence[str],
     encoding: str,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.expanduser().open("w", encoding=encoding, newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(columns))
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row.get(column, "") for column in columns})
+    # Replace the file only once every row is written, so a crash part-way
+    # leaves the previous catalog intact instead of a truncated one.
+    with atomic_path(path.expanduser()) as temp:
+        with temp.open("w", encoding=encoding, newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(columns))
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({column: row.get(column, "") for column in columns})
 
 
 def filter_catalog_rows(

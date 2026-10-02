@@ -24,6 +24,7 @@ from besedy.core.paths import (
 )
 from besedy.lib.audio.normalize import stage_audio_files
 from besedy.lib.audio.types import ManifestWriter
+from besedy.lib.data.atomic_io import atomic_path
 
 
 @dataclass
@@ -303,37 +304,42 @@ def handle_stage_audio(
         print(f"Created staging directory: {staging_dir}")
 
     include_analysis = not request.skip_audio_analysis
-    manifest_writer = ManifestWriter(
-        normalized_csv_path,
-        include_analysis=include_analysis,
-    )
 
-    # Create symlinks immediately (point to "current data set")
+    # Create the staging symlink immediately (points to "current data set")
+    if not request.no_symlink and staging_symlink is not None:
+        create_or_update_symlink(staging_symlink, staging_dir, description="staged audio")
+
+    # The manifest is written into a temp file that replaces the previous one
+    # only when staging finishes, so a failed or killed run leaves it intact.
+    try:
+        with atomic_path(normalized_csv_path) as temp_manifest_path:
+            manifest_writer = ManifestWriter(
+                temp_manifest_path,
+                include_analysis=include_analysis,
+            )
+            try:
+                prepared, skipped = stage_audio_files(
+                    rows,
+                    staging_dir,
+                    manifest_writer=manifest_writer,
+                    include_audio_analysis=include_analysis,
+                    analysis_ffmpeg=str(request.ffmpeg_binary),
+                    analysis_ffprobe=str(request.ffprobe_binary),
+                    continue_on_error=request.continue_on_error,
+                    reuse_existing=reuse_existing,
+                    aggressive_normalization=not request.no_aggressive_normalization,
+                    verbose=request.verbose,
+                )
+            finally:
+                manifest_writer.close()
+    except RuntimeError as exc:
+        print(f"Error while staging audio: {exc}", file=sys.stderr)
+        return 1
+
     if need_symlink:
         create_or_update_symlink(
             normalized_symlink, normalized_csv_path, description="normalized catalog"
         )
-    if not request.no_symlink and staging_symlink is not None:
-        create_or_update_symlink(staging_symlink, staging_dir, description="staged audio")
-
-    try:
-        prepared, skipped = stage_audio_files(
-            rows,
-            staging_dir,
-            manifest_writer=manifest_writer,
-            include_audio_analysis=include_analysis,
-            analysis_ffmpeg=str(request.ffmpeg_binary),
-            analysis_ffprobe=str(request.ffprobe_binary),
-            continue_on_error=request.continue_on_error,
-            reuse_existing=reuse_existing,
-            aggressive_normalization=not request.no_aggressive_normalization,
-            verbose=request.verbose,
-        )
-    except RuntimeError as exc:
-        print(f"Error while staging audio: {exc}", file=sys.stderr)
-        return 1
-    finally:
-        manifest_writer.close()
 
     print(f"Wrote staged manifest CSV to {normalized_csv_path}")
     print(f"Staged audio directory: {staging_dir}")

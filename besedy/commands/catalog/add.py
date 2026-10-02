@@ -30,6 +30,7 @@ from besedy.lib.catalog.manager import (
     require_audio_hash_contract,
     resolve_hash_column,
 )
+from besedy.lib.data.atomic_io import atomic_path
 
 
 def register_parser(
@@ -315,33 +316,38 @@ def handle_add(args: argparse.Namespace) -> int:
 
         # Write new duplicates using write_duplicates_report, then merge with existing
         if result.duplicate_records:
-            # Write new duplicates to a temp structure, then combine
-            new_dup_count = write_duplicates_report(
-                result.duplicate_records,
-                result.new_records,
-                hash_to_original_path,
-                duplicates_csv_path,
-            )
+            # Build the new file in a temp file and replace the old one only
+            # once it holds every row, so the web sync never reads a
+            # duplicates CSV that lost the existing rows.
+            with atomic_path(duplicates_csv_path) as temp_dup_path:
+                new_dup_count = write_duplicates_report(
+                    result.duplicate_records,
+                    result.new_records,
+                    hash_to_original_path,
+                    temp_dup_path,
+                )
 
-            # If we had existing rows, we need to prepend them
-            if existing_duplicate_rows and new_dup_count > 0:
-                # Read the newly written rows
-                _, new_rows = load_csv(duplicates_csv_path, encoding=args.encoding)
-                # Combine: existing + new
-                combined_rows = existing_duplicate_rows + new_rows
-                # Use canonical columns (handles legacy 5-column CSVs)
-                dup_columns = list(DUPLICATES_CSV_COLUMNS)
-                # Normalize rows: fill missing columns with empty string
-                normalized_rows = [
-                    {col: row.get(col, "") for col in dup_columns} for row in combined_rows
-                ]
-                with duplicates_csv_path.open("w", newline="", encoding="utf-8") as f:
-                    writer = csv.DictWriter(f, fieldnames=dup_columns, quoting=csv.QUOTE_MINIMAL)
-                    writer.writeheader()
-                    writer.writerows(normalized_rows)
-                dup_count = len(normalized_rows)
-            else:
-                dup_count = new_dup_count
+                # If we had existing rows, we need to prepend them
+                if existing_duplicate_rows and new_dup_count > 0:
+                    # Read the newly written rows
+                    _, new_rows = load_csv(temp_dup_path, encoding=args.encoding)
+                    # Combine: existing + new
+                    combined_rows = existing_duplicate_rows + new_rows
+                    # Use canonical columns (handles legacy 5-column CSVs)
+                    dup_columns = list(DUPLICATES_CSV_COLUMNS)
+                    # Normalize rows: fill missing columns with empty string
+                    normalized_rows = [
+                        {col: row.get(col, "") for col in dup_columns} for row in combined_rows
+                    ]
+                    with temp_dup_path.open("w", newline="", encoding="utf-8") as f:
+                        writer = csv.DictWriter(
+                            f, fieldnames=dup_columns, quoting=csv.QUOTE_MINIMAL
+                        )
+                        writer.writeheader()
+                        writer.writerows(normalized_rows)
+                    dup_count = len(normalized_rows)
+                else:
+                    dup_count = new_dup_count
         elif existing_duplicate_rows:
             # No new duplicates, but we have existing - keep them as-is
             dup_count = len(existing_duplicate_rows)

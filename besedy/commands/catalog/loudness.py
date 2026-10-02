@@ -33,6 +33,7 @@ from besedy.commands.catalog.ui import (
 )
 from besedy.core.paths import extract_timestamp_from_catalog, resolve_catalogs_root
 from besedy.lib.catalog.manager import check_ffmpeg, check_ffprobe, load_csv
+from besedy.lib.data.atomic_io import atomic_path
 
 
 @dataclass
@@ -163,11 +164,13 @@ def handle_loudness(
     Processing Pipeline:
         Phase 1: Input Resolution - resolve catalog, validate timestamp, check binaries
         Phase 2: Incremental Setup - load existing data, prepare work items
-        Phase 3: Parallel Execution - ThreadPoolExecutor with immediate CSV writes
+        Phase 3: Parallel Execution - ThreadPoolExecutor writing rows to a temp file
         Phase 4: Backfill - write rows that weren't in work_items (preserves catalog)
 
-    WHY incremental writes: Loudness analysis is slow (~real-time). If interrupted,
-    we keep partial results. The symlink is created early so partial data is accessible.
+    WHY a temp file: the loudness CSV is replaced only once it is complete, so an
+    interrupted run keeps the previous file and all its loudness rows; a rerun then
+    analyzes only the files that are still missing. The symlink is updated after
+    the replacement.
     """
     request = LoudnessRequest.from_args(args)
 
@@ -330,16 +333,15 @@ def handle_loudness(
     write_lock = threading.Lock()
     analyzed_count = 0
 
-    # Open CSV for incremental writes
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", newline="", encoding="utf-8") as handle:
+    # Write into a temp file that replaces the loudness CSV only once every row
+    # is in it: a crash or Ctrl-C part-way leaves the previous file, with all
+    # its loudness rows, intact.
+    with (
+        atomic_path(output_path) as temp_path,
+        temp_path.open("w", newline="", encoding="utf-8") as handle,
+    ):
         writer = csv.DictWriter(handle, fieldnames=output_columns, quoting=csv.QUOTE_MINIMAL)
         writer.writeheader()
-        handle.flush()
-
-        # Create symlink immediately so partial results are accessible
-        if need_symlink:
-            create_or_update_symlink(symlink_path, output_path, description="loudness catalog")
 
         with Progress(
             SpinnerColumn(),
@@ -407,7 +409,6 @@ def handle_loudness(
                     # Write immediately with lock for thread safety
                     with write_lock:
                         writer.writerow(result_row)
-                        handle.flush()
                         processed_indices.add(idx)
                         if metrics:
                             analyzed_count += 1
@@ -426,7 +427,9 @@ def handle_loudness(
                     writer.writerow(existing_loudness[row_hash])
                 else:
                     writer.writerow(row)
-        handle.flush()
+
+    if need_symlink:
+        create_or_update_symlink(symlink_path, output_path, description="loudness catalog")
 
     print()
     print(color_text("Loudness analysis saved to:", Ansi.CYAN, use_color), output_path)
