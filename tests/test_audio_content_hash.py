@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import resource
 import shutil
 import subprocess
 import time
@@ -278,3 +280,23 @@ class TestAudioContentSha256sumTimeout:
         result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=1)
 
         assert result == hashlib.sha256(b"chunk" * 4).hexdigest()
+
+    def test_pipe_fd_above_1024(self, tmp_path):
+        """Waiting on the pipe works when the process already holds 1024+ fds."""
+        soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft_limit < 1200:
+            pytest.skip(f"RLIMIT_NOFILE soft limit {soft_limit} is too low")
+        stub = tmp_path / "ffmpeg"
+        stub.write_text("#!/bin/sh\nprintf 'chunk'\n")
+        stub.chmod(0o755)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"")
+
+        held = [os.open(os.devnull, os.O_RDONLY) for _ in range(1100)]
+        try:
+            result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=5)
+        finally:
+            for fd in held:
+                os.close(fd)
+
+        assert result == hashlib.sha256(b"chunk").hexdigest()

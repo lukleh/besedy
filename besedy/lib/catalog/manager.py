@@ -261,10 +261,12 @@ def audio_content_sha256sum(
         assert proc.stdout is not None
         stdout_fd = proc.stdout.fileno()
         idle_timeout = timeout or 120
+        # poll() rather than select(), which rejects fd numbers >= 1024.
+        poller = select.poll()
+        poller.register(stdout_fd, select.POLLIN)
         digest = hashlib.sha256()
         while True:
-            ready, _, _ = select.select([stdout_fd], [], [], idle_timeout)
-            if not ready:
+            if not poller.poll(idle_timeout * 1000):
                 raise subprocess.TimeoutExpired(cmd, idle_timeout)
             chunk = os.read(stdout_fd, chunk_size)
             if not chunk:
