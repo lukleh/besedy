@@ -154,11 +154,13 @@ catalog pipeline.
 flow, always decode with the first `ffmpeg` on `PATH`, using ffmpeg's default
 resampler and default audio-stream choice. Check which build that is with
 `command -v ffmpeg` and `ffmpeg -version`. `tests/test_audio_content_hash.py`
-pins the hashes of small MP3 and Opus fixtures in `tests/fixtures/audio_hash/`. If those tests fail
-after an ffmpeg upgrade, that build decodes or resamples differently, and it must
-not hash catalog audio until a new algorithm version exists. A decoder that
-produces no output for 120 seconds is killed, and the file is reported as
-undecodable.
+pins the hashes of small MP3, AAC and Opus fixtures in
+`tests/fixtures/audio_hash/`. If those tests fail after an ffmpeg upgrade, that
+build decodes or resamples differently, and it must not hash catalog audio until
+a new algorithm version exists. The fixtures' README lists known-good builds with
+their full `ffmpeg -version` output, including a reproducible apt fallback;
+append a build there once it passes. A decoder that produces no output for 120
+seconds is killed, and the file is reported as undecodable.
 
 ### 2. Two-Stage Pipeline (Stage then Process)
 

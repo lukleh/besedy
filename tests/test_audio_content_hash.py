@@ -231,6 +231,10 @@ class TestAudioContentSha256sum:
                 "f904f402631e9bc341261f2ecf66dd87a5ba7ebce40cf4e186c9a227b041530a",
             ),
             (
+                "sine_44100hz_mono.m4a",
+                "18bdf8836053a1c1bf54f5a4bae5bf0176c40672cc5aa3ce9c2fc6b2b45c6f3b",
+            ),
+            (
                 "sine_48000hz_mono.opus",
                 "c8eda0de513f2d96f6e0167dc080b48ed6ad73f9db7aa2e9a961722d7e2a6d14",
             ),
@@ -240,9 +244,17 @@ class TestAudioContentSha256sum:
         """Decoding, downmixing and resampling still yield the pinned hashes.
 
         A failure means this ffmpeg build decodes or resamples differently,
-        which needs a new audio-hash algorithm version (docs/architecture.md).
+        which needs a new audio-hash algorithm version. Known-good builds are
+        listed in tests/fixtures/audio_hash/README.md.
         """
-        assert audio_content_sha256sum(FIXTURES_DIR / fixture_name) == expected_hash
+        ffmpeg_path = shutil.which("ffmpeg")
+        version = subprocess.run(
+            ["ffmpeg", "-version"], capture_output=True, text=True
+        ).stdout.splitlines()[:1]
+        assert audio_content_sha256sum(FIXTURES_DIR / fixture_name) == expected_hash, (
+            f"{ffmpeg_path} ({version[0] if version else 'unknown version'}) does not "
+            "reproduce the pinned hash; see tests/fixtures/audio_hash/README.md"
+        )
 
 
 class TestAudioContentSha256sumTimeout:
