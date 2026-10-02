@@ -29,9 +29,7 @@ def test_test_functions_have_executable_bodies() -> None:
             if not node.name.startswith("test_"):
                 continue
             if all(_is_non_executable_statement(statement) for statement in node.body):
-                placeholders.append(
-                    f"{test_path.relative_to(tests_root)}:{node.lineno}:{node.name}"
-                )
+                placeholders.append(f"{test_path.relative_to(tests_root)}:{node.lineno}:{node.name}")
 
     assert not placeholders, "Placeholder tests must be implemented or removed:\n" + "\n".join(
         placeholders

@@ -510,13 +510,7 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
     audio_hash = "e" * 64
     backend = "faster-whisper/large-v3@silero_vad_v6"
     transcripts_root = tmp_path / f"transcripts_{catalog_id}"
-    machine_path = (
-        transcripts_root
-        / "faster-whisper"
-        / "large-v3@silero_vad_v6"
-        / audio_hash
-        / "transcript.json"
-    )
+    machine_path = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6" / audio_hash / "transcript.json"
     _write_transcript(machine_path, [{"start": 0.0, "end": 1.0, "text": "machine words"}])
     bundle_dir = tmp_path / "bundle"
     corrections_root = tmp_path / "corrections"
@@ -529,14 +523,7 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
         index_dir=bundle_dir,
     )
 
-    corrected = (
-        corrections_root
-        / f"corrections_{catalog_id}"
-        / "workspace"
-        / "publications"
-        / "publication"
-        / "transcript.json"
-    )
+    corrected = corrections_root / f"corrections_{catalog_id}" / "workspace" / "publications" / "publication" / "transcript.json"
     _write_transcript(corrected, [{"start": 0.0, "end": 1.0, "text": "corrected words"}])
     pointer_dir = corrections_root / f"corrections_{catalog_id}" / "index-sources"
     pointer_dir.mkdir(parents=True)
@@ -589,12 +576,8 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
         result = future.result(timeout=30)
 
     assert result.hashes_unchanged == 1
-    assert read_source_state(bundle_dir / "source_state.sqlite")[audio_hash].transcript_path == str(
-        machine_path
-    )
-    assert [chunk.text for chunk in list_chunks(path=bundle_dir / "chunk_store.sqlite")] == [
-        "machine words"
-    ]
+    assert read_source_state(bundle_dir / "source_state.sqlite")[audio_hash].transcript_path == str(machine_path)
+    assert [chunk.text for chunk in list_chunks(path=bundle_dir / "chunk_store.sqlite")] == ["machine words"]
 
 
 def test_classify_target_hash_outside_scope_removes_its_stale_row() -> None:

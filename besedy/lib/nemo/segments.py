@@ -62,7 +62,11 @@ def build_chunking_params(
     defaults, including the canonical 30-second max segment length.
     """
 
-    if chunk_length is None and chunk_min_silence_ms is None and chunk_silence_threshold is None:
+    if (
+        chunk_length is None
+        and chunk_min_silence_ms is None
+        and chunk_silence_threshold is None
+    ):
         return None
 
     silence_threshold = (
