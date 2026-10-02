@@ -10,7 +10,8 @@ import { useAdminStatus } from "@/hooks/use-admin-status";
 import { useActiveGroup } from "@/hooks/use-active-group";
 import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
-import { useDownloadsHref } from "@/hooks/use-downloads-href";
+import { useReturnHref } from "@/hooks/use-return-href";
+import { DOWNLOADS_PATH } from "@/lib/offline/cache-names";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -41,6 +42,7 @@ function MobileOnlyCatalogSettings({
 }) {
   const t = useTranslations();
   const { renderMode } = useResponsiveMenu();
+  const catalogSettingsHref = useReturnHref(`/catalog/${effectiveGroupId}/settings`);
 
   // Only show on mobile
   if (renderMode !== "mobile" || !effectiveGroupId || !canManageAccess) {
@@ -51,7 +53,7 @@ function MobileOnlyCatalogSettings({
     <>
       <ResponsiveMenuSeparator />
       <ResponsiveMenuItem asChild>
-        <Link href={`/catalog/${effectiveGroupId}/settings`} className="flex items-center gap-2 cursor-pointer">
+        <Link href={catalogSettingsHref} className="flex items-center gap-2 cursor-pointer">
           <Wrench className="h-4 w-4 shrink-0" />
           {t("nav.catalogSettings")}
         </Link>
@@ -66,7 +68,8 @@ export function UserMenu() {
   const adminStatus = useAdminStatus();
   const { updateAvailable, wasDismissed, applyState, applyUpdate } = useServiceWorker();
   const route = useCatalogRouteState();
-  const downloadsHref = useDownloadsHref();
+  const downloadsHref = useReturnHref(DOWNLOADS_PATH);
+  const settingsHref = useReturnHref("/settings");
 
   // Don't show anything on auth pages
   const isAuthPage = route.isAuthPage;
@@ -202,7 +205,7 @@ export function UserMenu() {
           </Link>
         </ResponsiveMenuItem>
         <ResponsiveMenuItem asChild>
-          <Link href="/settings" className="flex items-center gap-2 cursor-pointer">
+          <Link href={settingsHref} className="flex items-center gap-2 cursor-pointer">
             <Settings className="h-4 w-4 shrink-0" />
             {t("nav.settings")}
           </Link>

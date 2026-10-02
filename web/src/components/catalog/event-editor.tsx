@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2, Star, StarOff, Pencil } from "lucide-react";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildRecordingPagePath } from "@/lib/api/recording-urls";
 import { withBackTo } from "@/lib/navigation/back-to";
 import { formatPartialDate } from "@/lib/date-format";
 import { useToast } from "@/hooks/use-toast";
@@ -82,7 +83,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
   // A recording opened from the editor returns to the editor.
   const recordingHref = (audioHash: string) =>
     withBackTo(
-      `/catalog/${catalogId}/recording/${audioHash}`,
+      buildRecordingPagePath(catalogId, audioHash),
       `/catalog/${catalogId}/event/${eventId}/edit`
     );
   const locale = useLocale();

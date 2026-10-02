@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   isOnline: true,
   sessionPending: false,
   pathname: "/catalog/c1",
+  backTargetUrl: null as string | null,
+  routeOptions: undefined as { downloadsIsHome?: boolean } | undefined,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -33,13 +35,15 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/hooks/use-catalog-route-state", () => ({
-  useCatalogRouteState: () => ({
-    isAuthPage: false,
-    isDetailRoute: false,
-    routeGroupId: null,
-    backTargetUrl: null,
-    backTargetLabel: "Back",
-  }),
+  useCatalogRouteState: (options?: { downloadsIsHome?: boolean }) => {
+    mocks.routeOptions = options;
+    return {
+      isAuthPage: false,
+      routeGroupId: null,
+      backTargetUrl: mocks.backTargetUrl,
+      backTargetLabel: "Back",
+    };
+  },
 }));
 
 vi.mock("@/hooks/use-catalogs", () => ({
@@ -90,6 +94,41 @@ describe("Header", () => {
     mocks.isOnline = true;
     mocks.sessionPending = false;
     mocks.pathname = "/catalog/c1";
+    mocks.backTargetUrl = null;
+    mocks.routeOptions = undefined;
+  });
+
+  it("shows the back control in place of the logo when the page has a back target", () => {
+    const { rerender } = render(<Header />);
+    expect(screen.getByRole("link", { name: "Besedy home" })).toBeInTheDocument();
+    expect(screen.queryByTestId("header-back")).not.toBeInTheDocument();
+
+    mocks.backTargetUrl = "/downloads";
+    rerender(<Header />);
+    expect(screen.getByTestId("header-back")).toHaveAttribute("href", "/downloads");
+    expect(screen.queryByRole("link", { name: "Besedy home" })).not.toBeInTheDocument();
+  });
+
+  it("treats Downloads as home only offline or once the listener is known to be signed out", () => {
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false });
+
+    mocks.isOnline = false;
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true });
+
+    mocks.isOnline = true;
+    mocks.session = null;
+    mocks.sessionPending = true;
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false });
+
+    render(<Header sessionRecovering />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false });
+
+    mocks.sessionPending = false;
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true });
   });
 
   it("hides sign-in and the signed-out toggles while the session request is still pending", () => {

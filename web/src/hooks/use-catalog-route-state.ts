@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { buildRecordingPagePath } from "@/lib/api/recording-urls";
 import { BACK_TO_PARAM, resolveBackToPath } from "@/lib/navigation/back-to";
 
 export interface CatalogRouteLabels {
@@ -13,17 +14,8 @@ export interface CatalogRouteLabels {
 }
 
 export interface CatalogRouteState {
-  pathname: string | null;
-  pathSegments: string[];
   isAuthPage: boolean;
   routeGroupId: string | null;
-  isRecordingRoute: boolean;
-  isEventRoute: boolean;
-  isDetailRoute: boolean;
-  recordingHash: string | null;
-  eventId: string | null;
-  isRecordingSubpage: boolean;
-  isEventSubpage: boolean;
   /**
    * Where the header back control leads, or null on a home page (the catalog
    * list and the pages above it, admin and auth pages), which show the logo.
@@ -70,7 +62,7 @@ function resolveParent(
     case "recording":
       if (!id) return null;
       return segments.length > 4
-        ? { url: `${catalogUrl}/recording/${id}`, label: "backToRecording" }
+        ? { url: buildRecordingPagePath(catalogId, id), label: "backToRecording" }
         : { url: catalogUrl, label: "backToCatalog" };
     case "event":
       if (!id) return null;
@@ -103,19 +95,6 @@ export function buildCatalogRouteState(
     pathSegments.length >= 2 && pathSegments[0] === "catalog"
       ? pathSegments[1]
       : null;
-  const isRecordingRoute =
-    pathSegments.length >= 3 &&
-    pathSegments[0] === "catalog" &&
-    pathSegments[2] === "recording";
-  const isEventRoute =
-    pathSegments.length >= 3 &&
-    pathSegments[0] === "catalog" &&
-    pathSegments[2] === "event";
-  const isDetailRoute = isRecordingRoute || isEventRoute;
-  const recordingHash = isRecordingRoute && pathSegments.length >= 4 ? pathSegments[3] : null;
-  const eventId = isEventRoute && pathSegments.length >= 4 ? pathSegments[3] : null;
-  const isRecordingSubpage = isRecordingRoute && pathSegments.length > 4;
-  const isEventSubpage = isEventRoute && pathSegments.length > 4;
 
   const parent = resolveParent(pathSegments, options?.downloadsIsHome ?? false);
   const origin = parent ? resolveBackToPath(options?.backToPath) : null;
@@ -126,17 +105,8 @@ export function buildCatalogRouteState(
       : parent;
 
   return {
-    pathname: normalizedPathname,
-    pathSegments,
     isAuthPage,
     routeGroupId,
-    isRecordingRoute,
-    isEventRoute,
-    isDetailRoute,
-    recordingHash,
-    eventId,
-    isRecordingSubpage,
-    isEventSubpage,
     backTargetUrl: backTarget?.url ?? null,
     backTargetLabel: labels[backTarget?.label ?? "back"],
   };

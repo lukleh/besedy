@@ -6,6 +6,8 @@ import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildRecordingPagePath } from "@/lib/api/recording-urls";
+import { withBackTo } from "@/lib/navigation/back-to";
 import { useToast } from "@/hooks/use-toast";
 import { CatalogPagination } from "@/components/catalog/catalog-list/components/pagination";
 import { type PaginationInfo } from "@/components/catalog/catalog-list/types";
@@ -223,12 +225,12 @@ export function EventUnassignedRecordingsPage({
         entries={data?.entries ?? []}
         actionLabel={t("createFrom")}
         emptyLabel={t("empty")}
-        getRecordingHref={(entry) => {
-          const params = new URLSearchParams({
-            backTo: `/catalog/${catalogId}/events/unassigned`,
-          });
-          return `/catalog/${catalogId}/recording/${entry.audioHash}?${params.toString()}`;
-        }}
+        getRecordingHref={(entry) =>
+          withBackTo(
+            buildRecordingPagePath(catalogId, entry.audioHash),
+            `/catalog/${catalogId}/events/unassigned`,
+          )
+        }
         isBusy={createMutation.isPending || attachMutation.isPending}
         isActionPending={(entry) =>
           createMutation.isPending &&

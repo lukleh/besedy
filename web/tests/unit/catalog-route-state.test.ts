@@ -17,9 +17,6 @@ describe("catalog route state helpers", () => {
     );
 
     expect(result.routeGroupId).toBe("20260101_120000");
-    expect(result.isRecordingRoute).toBe(true);
-    expect(result.isRecordingSubpage).toBe(true);
-    expect(result.recordingHash).toBe("hash123");
     expect(result.backTargetUrl).toBe("/catalog/20260101_120000/recording/hash123");
     expect(result.backTargetLabel).toBe("Back to recording");
   });
@@ -31,9 +28,6 @@ describe("catalog route state helpers", () => {
     );
 
     expect(result.routeGroupId).toBe("20260101_120000");
-    expect(result.isEventRoute).toBe(true);
-    expect(result.isDetailRoute).toBe(true);
-    expect(result.eventId).toBe("event-1");
     expect(result.backTargetUrl).toBe("/catalog/20260101_120000?tab=events");
     expect(result.backTargetLabel).toBe("Back to catalog");
   });
@@ -45,8 +39,6 @@ describe("catalog route state helpers", () => {
       { backToPath: "/catalog/20260101_120000/events/unassigned" }
     );
 
-    expect(result.isRecordingRoute).toBe(true);
-    expect(result.isRecordingSubpage).toBe(false);
     expect(result.backTargetUrl).toBe("/catalog/20260101_120000/events/unassigned");
     expect(result.backTargetLabel).toBe("Back");
   });
@@ -83,6 +75,17 @@ describe("catalog route state helpers", () => {
     expect(result.backTargetUrl).toBe(parent);
   });
 
+  it.each(["/settings", "/catalog/c1/settings"])(
+    "returns from %s to the page it was opened from",
+    (pathname) => {
+      const result = buildCatalogRouteState(pathname, LABELS, {
+        backToPath: "/catalog/c1/event/7",
+      });
+
+      expect(result.backTargetUrl).toBe("/catalog/c1/event/7");
+    }
+  );
+
   it("returns from Downloads to the page it was opened from", () => {
     const result = buildCatalogRouteState("/downloads", LABELS, {
       backToPath: "/catalog/c1/recording/hash123?seek=12",
@@ -111,7 +114,14 @@ describe("catalog route state helpers", () => {
     expect(opened.backTargetUrl).toBe("/catalog/c1/event/7");
   });
 
-  it.each(["https://evil.example/x", "//evil.example/x", "/api/catalogs", "/auth/signin", "/downloads"])(
+  it.each([
+    "https://evil.example/x",
+    "//evil.example/x",
+    "/api/catalogs",
+    "/auth/signin",
+    "/downloads",
+    "/downloads?warm=1",
+  ])(
     "ignores the unusable origin %s",
     (backToPath) => {
       const result = buildCatalogRouteState("/downloads", LABELS, { backToPath });

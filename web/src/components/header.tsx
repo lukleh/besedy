@@ -11,7 +11,7 @@ import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { useDownloadManager } from "@/hooks/use-downloads";
-import { useDownloadsHref } from "@/hooks/use-downloads-href";
+import { useReturnHref } from "@/hooks/use-return-href";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TextSizeToggle } from "@/components/text-size-toggle";
@@ -23,6 +23,7 @@ import { UpdateIndicator } from "@/components/update-indicator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CircularBackLink } from "@/components/navigation/circular-back-control";
+import { DOWNLOADS_PATH } from "@/lib/offline/cache-names";
 
 interface HeaderProps {
   /**
@@ -65,7 +66,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
     downloadCount > 0
       ? `${t("nav.downloads")} (${downloadCountLabel})`
       : t("nav.downloads");
-  const downloadsHref = useDownloadsHref();
+  const downloadsHref = useReturnHref(DOWNLOADS_PATH);
 
   // Fetch catalogs and preferences (skip on auth pages)
   const { data: groups } = useCatalogs({ enabled: !isAuthPage });
@@ -81,6 +82,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const { data: catalogAccess } = useCatalogAccessSummary(effectiveCatalogId, {
     enabled: !isAuthPage,
   });
+  const catalogSettingsHref = useReturnHref(`/catalog/${effectiveCatalogId}/settings`);
 
   return (
     <>
@@ -109,7 +111,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
               asChild
               className="hidden md:flex landscape-mobile:hidden gap-1.5"
             >
-              <Link href={`/catalog/${effectiveCatalogId}/settings`}>
+              <Link href={catalogSettingsHref}>
                 {t("nav.catalogSettings")}
                 <Wrench className="h-4 w-4" />
               </Link>
