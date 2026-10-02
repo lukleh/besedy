@@ -44,6 +44,9 @@ Upgrading an engine is a deliberate change: update the base image digest in
 `FROM` if needed, install the new versions in a scratch container, regenerate
 the lock from it with `pip freeze --all`, and compare transcripts from the old
 and new images on a few fixed recordings before replacing the `:local` image.
+Keep the lock's comment header and its `--extra-index-url` line: `pip freeze`
+writes neither, and without the index the `+cu128` torch pins cannot install.
+The header lists the image's top-level requirements to install.
 For NeMo, uninstall `nvidia-resiliency-ext` before freezing; the comment in
 `backends/nemo/Dockerfile` explains why the lock leaves it out.
 

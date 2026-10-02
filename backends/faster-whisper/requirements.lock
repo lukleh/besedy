@@ -1,5 +1,8 @@
 # Exact package set of the besedy/faster-whisper:local image built on 2026-06-14
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
+# Top-level: torch torchaudio torchvision (cu128 index); faster-whisper==1.2.1
+# silero-vad==6.2.0 ctranslate2 safetensors numpy python-dotenv pyyaml scipy
+# sentencepiece soundfile transformers tqdm
 --extra-index-url https://download.pytorch.org/whl/cu128
 annotated-doc==0.0.4
 anyio==4.13.0

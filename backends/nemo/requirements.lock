@@ -1,6 +1,9 @@
 # Exact package set of the besedy/nemo:local image built on 2026-06-13
 # (pip freeze --all), without nvidia-resiliency-ext (see backends/nemo/Dockerfile).
 # Installed with --no-deps; see docs/backends.md.
+# Top-level: torch torchaudio torchvision (cu128 index);
+# nemo-toolkit[asr,nlp]==2.6.1 omegaconf numpy<2.4 pyyaml python-dotenv scipy
+# soundfile tqdm
 --extra-index-url https://download.pytorch.org/whl/cu128
 absl-py==2.4.0
 accelerate==1.14.0

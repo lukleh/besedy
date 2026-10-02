@@ -1,5 +1,7 @@
 # Exact package set of the besedy/whisperx:local image built on 2026-06-14
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
+# Top-level: whisperx python-dotenv. whisperx 3.8.6 requires torch~=2.8, so
+# torch comes from PyPI and this lock needs no PyTorch index.
 aiohappyeyeballs==2.6.2
 aiohttp==3.14.1
 aiosignal==1.4.0
