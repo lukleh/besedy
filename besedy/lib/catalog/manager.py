@@ -276,7 +276,13 @@ def audio_content_sha256sum(
         if proc.returncode != 0:
             return None
         return digest.hexdigest()
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            logging.warning(
+                "Killed ffmpeg after %ss without output while hashing %s",
+                exc.timeout,
+                path,
+            )
         if "proc" in locals():
             proc.kill()
             proc.wait()

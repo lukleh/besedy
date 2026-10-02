@@ -152,16 +152,20 @@ catalog pipeline.
 
 **Decoder build:** `catalog create`, `add` and `hash`, and the recording-ingest
 flow, always decode with the first `ffmpeg` on `PATH`, using ffmpeg's default
-resampler and default audio-stream choice. Check which build that is with
-`command -v ffmpeg` and `ffmpeg -version`. `tests/test_audio_content_hash.py`
-pins the hashes of eight fixtures in `tests/fixtures/audio_hash/`. They contain
-public-domain Czech speech plus a sweep, noise, clicks and clipping, encoded in
-the codec, sample-rate and container combinations found in the prod catalog. If those tests fail after an ffmpeg upgrade, that
-build decodes or resamples differently, and it must not hash catalog audio until
-a new algorithm version exists. The fixtures' README lists known-good builds with
-their full `ffmpeg -version` output, including a reproducible apt fallback;
-append a build there once it passes. A decoder that produces no output for 120
-seconds is killed, and the file is reported as undecodable.
+resampler and default audio-stream choice. `catalog join` instead hashes with
+its `--ffmpeg-binary` (default `ffmpeg`) and matches those hashes against
+catalog rows, so a binary passed there must be a known-good build too. Check
+which build `PATH` resolves to with `command -v ffmpeg` and `ffmpeg -version`.
+`tests/test_audio_content_hash.py` pins the hashes of eight fixtures in
+`tests/fixtures/audio_hash/`. They contain public-domain Czech speech plus a
+sweep, noise, clicks and clipping, encoded in the codec, sample-rate and
+container combinations found in the prod catalog. If those tests fail after an
+ffmpeg upgrade, that build decodes or resamples differently, and it must not
+hash catalog audio until a new algorithm version exists. The fixtures' README
+lists known-good builds with their full `ffmpeg -version` output, including a
+reproducible apt fallback; append a build there once it passes. A decoder that
+produces no output for 120 seconds is killed with a logged warning, and the
+file is reported as undecodable.
 
 ### 2. Two-Stage Pipeline (Stage then Process)
 

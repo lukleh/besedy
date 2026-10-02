@@ -18,6 +18,14 @@ from besedy.lib.catalog.manager import audio_content_sha256sum
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "audio_hash"
 
 
+def _ffmpeg_build() -> str:
+    """Describe the ffmpeg on PATH for golden-test failure messages."""
+    path = shutil.which("ffmpeg")
+    version = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+    first_line = version.stdout.splitlines()[:1]
+    return f"{path} ({first_line[0] if first_line else 'unknown version'})"
+
+
 def _has_ffmpeg() -> bool:
     """Check if ffmpeg is available."""
     return shutil.which("ffmpeg") is not None
@@ -267,13 +275,9 @@ class TestAudioContentSha256sum:
         which needs a new audio-hash algorithm version. Known-good builds are
         listed in tests/fixtures/audio_hash/README.md.
         """
-        ffmpeg_path = shutil.which("ffmpeg")
-        version = subprocess.run(
-            ["ffmpeg", "-version"], capture_output=True, text=True
-        ).stdout.splitlines()[:1]
         assert audio_content_sha256sum(FIXTURES_DIR / fixture_name) == expected_hash, (
-            f"{ffmpeg_path} ({version[0] if version else 'unknown version'}) does not "
-            "reproduce the pinned hash; see tests/fixtures/audio_hash/README.md"
+            f"{_ffmpeg_build()} does not reproduce the pinned hash; "
+            "see tests/fixtures/audio_hash/README.md"
         )
 
 
@@ -288,7 +292,7 @@ class TestAudioContentSha256sumTimeout:
         ],
         ids=["silent", "stalls-after-output"],
     )
-    def test_stalled_decoder_returns_none(self, tmp_path, script):
+    def test_stalled_decoder_returns_none(self, tmp_path, caplog, script):
         stub = tmp_path / "ffmpeg"
         stub.write_text(f"#!/bin/sh\n{script}\n")
         stub.chmod(0o755)
@@ -300,6 +304,7 @@ class TestAudioContentSha256sumTimeout:
 
         assert result is None
         assert time.monotonic() - started < 10
+        assert "Killed ffmpeg after 1s without output" in caplog.text
 
     def test_steady_output_outlasts_timeout(self, tmp_path):
         """A decode longer than the timeout succeeds while output keeps flowing."""
@@ -315,9 +320,11 @@ class TestAudioContentSha256sumTimeout:
 
     def test_pipe_fd_above_1024(self, tmp_path):
         """Waiting on the pipe works when the process already holds 1024+ fds."""
-        soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
-        if soft_limit < 1200:
-            pytest.skip(f"RLIMIT_NOFILE soft limit {soft_limit} is too low")
+        soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if hard_limit != resource.RLIM_INFINITY and hard_limit < 1200:
+            pytest.skip(f"RLIMIT_NOFILE hard limit {hard_limit} is too low")
+        if soft_limit != resource.RLIM_INFINITY and soft_limit < 1200:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (1200, hard_limit))
         stub = tmp_path / "ffmpeg"
         stub.write_text("#!/bin/sh\nprintf 'chunk'\n")
         stub.chmod(0o755)
@@ -330,5 +337,6 @@ class TestAudioContentSha256sumTimeout:
         finally:
             for fd in held:
                 os.close(fd)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
 
         assert result == hashlib.sha256(b"chunk").hexdigest()
