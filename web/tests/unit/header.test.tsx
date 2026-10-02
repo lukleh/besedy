@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   },
   isOnline: true,
   sessionPending: false,
+  pathname: "/catalog/c1",
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => mocks.pathname,
+  useSearchParams: () => new URLSearchParams("tab=events"),
 }));
 
 vi.mock("next-intl", () => ({
@@ -31,7 +37,7 @@ vi.mock("@/hooks/use-catalog-route-state", () => ({
     isAuthPage: false,
     isDetailRoute: false,
     routeGroupId: null,
-    backTargetUrl: "/catalog",
+    backTargetUrl: null,
     backTargetLabel: "Back",
   }),
 }));
@@ -75,12 +81,15 @@ vi.mock("@/components/notifications/notification-bell", () => ({
 vi.mock("@/components/update-indicator", () => ({ UpdateIndicator: () => null }));
 vi.mock("@/lib/support-email", () => ({ openSupportEmail: vi.fn() }));
 
+const DOWNLOADS_FROM_CATALOG = "/downloads?backTo=%2Fcatalog%2Fc1%3Ftab%3Devents";
+
 describe("Header", () => {
   beforeEach(() => {
     mocks.session = { user: { id: "user-1", name: "Listener" } };
     mocks.downloadSnapshot = { hydrated: true, records: [] };
     mocks.isOnline = true;
     mocks.sessionPending = false;
+    mocks.pathname = "/catalog/c1";
   });
 
   it("hides sign-in and the signed-out toggles while the session request is still pending", () => {
@@ -100,7 +109,7 @@ describe("Header", () => {
     mocks.isOnline = false;
     rerender(<Header />);
     const indicator = screen.getByTestId("offline-indicator");
-    expect(indicator).toHaveAttribute("href", "/downloads");
+    expect(indicator).toHaveAttribute("href", DOWNLOADS_FROM_CATALOG);
     expect(indicator).toHaveAccessibleName("offline.offlineMode");
     expect(indicator.querySelector(".lucide-wifi-off")).toBeInTheDocument();
   });
@@ -131,16 +140,24 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", DOWNLOADS_FROM_CATALOG);
   });
 
   it("provides signed-in users a direct Downloads shortcut", () => {
     render(<Header />);
 
     const shortcut = screen.getByTestId("header-downloads");
-    expect(shortcut).toHaveAttribute("href", "/downloads");
+    expect(shortcut).toHaveAttribute("href", DOWNLOADS_FROM_CATALOG);
     expect(shortcut).toHaveAccessibleName("nav.downloads");
     expect(shortcut.querySelector(".lucide-download")).toBeInTheDocument();
+  });
+
+  it("links Downloads without an origin while Downloads is open", () => {
+    mocks.pathname = "/downloads";
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
   });
 
   it("does not expose the protected shortcut while signed out", () => {

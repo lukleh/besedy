@@ -8,7 +8,7 @@ type AuthCompletePathOptions = {
   state?: string | null;
 };
 
-function normalizeAppRelativePath(path: string | null | undefined): string | null {
+export function normalizeAppRelativePath(path: string | null | undefined): string | null {
   const hasControlChars = path ? /[\u0000-\u001f\u007f]/.test(path) : false;
   if (
     !path ||

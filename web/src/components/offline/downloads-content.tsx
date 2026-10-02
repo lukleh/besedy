@@ -36,8 +36,9 @@ import {
   INCOMPLETE_PACKAGE_ERROR,
   type DownloadRecord,
 } from '@/lib/offline/download-manager';
+import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
+import { withBackTo } from '@/lib/navigation/back-to';
 import { cn } from '@/lib/utils';
-import { CircularBackLink } from '@/components/navigation/circular-back-control';
 import { SessionOrdinalBadge } from '@/components/catalog/session-ordinal-badge';
 
 export function DownloadsContent() {
@@ -73,20 +74,12 @@ export function DownloadsContent() {
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      <header className="flex items-start gap-3">
-        <CircularBackLink
-          href="/catalog"
-          label={t('backToCatalog')}
-          className="mt-0.5"
-          testId="downloads-catalog-back"
-        />
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <Download className="h-6 w-6" aria-hidden="true" />
-            {t('title')}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t('description')}</p>
-        </div>
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <Download className="h-6 w-6" aria-hidden="true" />
+          {t('title')}
+        </h1>
+        <p className="text-sm text-muted-foreground">{t('description')}</p>
       </header>
 
       {hydrated && !supported && (
@@ -198,15 +191,19 @@ export function DownloadsContent() {
   );
 }
 
-/** The normal page for a download: the event page, or the recording page. */
+/**
+ * The normal page for a download: the event page, or the recording page. Its
+ * back control returns here rather than to the catalog list.
+ */
 export function recordPageUrl(record: DownloadRecord): string {
   const eventId = record.eventKey
     ? Number(record.eventKey.slice(record.catalogId.length + 1))
     : record.event?.id;
-  if (eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0) {
-    return `/catalog/${record.catalogId}/event/${eventId}`;
-  }
-  return `/catalog/${record.catalogId}/recording/${record.hash}`;
+  const pageUrl =
+    eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0
+      ? `/catalog/${record.catalogId}/event/${eventId}`
+      : `/catalog/${record.catalogId}/recording/${record.hash}`;
+  return withBackTo(pageUrl, DOWNLOADS_PATH);
 }
 
 interface DownloadCardProps {

@@ -10,6 +10,7 @@ import { useAdminStatus } from "@/hooks/use-admin-status";
 import { useActiveGroup } from "@/hooks/use-active-group";
 import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
+import { useDownloadsHref } from "@/hooks/use-downloads-href";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -65,6 +66,7 @@ export function UserMenu() {
   const adminStatus = useAdminStatus();
   const { updateAvailable, wasDismissed, applyState, applyUpdate } = useServiceWorker();
   const route = useCatalogRouteState();
+  const downloadsHref = useDownloadsHref();
 
   // Don't show anything on auth pages
   const isAuthPage = route.isAuthPage;
@@ -191,7 +193,7 @@ export function UserMenu() {
         <ResponsiveMenuSeparator />
         <ResponsiveMenuItem asChild>
           <Link
-            href="/downloads"
+            href={downloadsHref}
             className="flex items-center gap-2 cursor-pointer"
             data-testid="user-menu-downloads"
           >
