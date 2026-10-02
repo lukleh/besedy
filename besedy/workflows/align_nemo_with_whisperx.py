@@ -29,6 +29,7 @@ from besedy.core.paths import (  # noqa: E402
     resolve_project_path,
     resolve_transcripts_root,
 )
+from besedy.lib.data.atomic_io import atomic_write_json  # noqa: E402
 
 DEFAULT_ALIGNED_OUTPUT_NAME = "nemo_beam_aligned.json"
 
@@ -255,7 +256,7 @@ def _collect_segments_paths(
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(path, payload, ensure_ascii=False, indent=2)
 
 
 def _sanitize_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:

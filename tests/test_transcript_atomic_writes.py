@@ -93,8 +93,11 @@ def test_convert_stable_ts_writes_transcript_atomically(tmp_path: Path, monkeypa
 
 WORKFLOWS_DIR = Path(faster_whisper_module.__file__).parent
 
-# Every transcription backend that publishes a transcript.json bundle.
-TRANSCRIPTION_WORKFLOWS = [
+# Every workflow script that publishes transcript.json, its intermediates, or
+# diarization output.
+PUBLISHING_WORKFLOWS = [
+    "align_nemo_with_whisperx.py",
+    "diarize_pyannote.py",
     "transcribe_faster_whisper.py",
     "transcribe_nemo.py",
     "transcribe_qwen3_asr.py",
@@ -237,7 +240,7 @@ def _publishing_calls(tree: ast.AST) -> list[str]:
     return offenders
 
 
-@pytest.mark.parametrize("module_name", TRANSCRIPTION_WORKFLOWS)
+@pytest.mark.parametrize("module_name", PUBLISHING_WORKFLOWS)
 def test_workflow_publishes_only_through_atomic_io(module_name: str) -> None:
     """Guard against a backend regressing to a non-atomic write."""
     source = (WORKFLOWS_DIR / module_name).read_text(encoding="utf-8")

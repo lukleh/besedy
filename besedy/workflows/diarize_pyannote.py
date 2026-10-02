@@ -9,7 +9,6 @@ speaker_diarization/{model}/{hash}/speakers.json
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import traceback
@@ -26,6 +25,7 @@ import torch
 from huggingface_hub import get_token
 
 from besedy.core.paths import resolve_transcripts_root
+from besedy.lib.data.atomic_io import atomic_write_json
 from besedy.lib.speakers.compat import (
     load_audio_with_soundfile,
     suppress_pyannote_torchcodec_warning,
@@ -121,8 +121,7 @@ def run_diarization(
 
     # Save to speakers.json
     output_file = output_dir / "speakers.json"
-    with output_file.open("w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
+    atomic_write_json(output_file, result, indent=2, ensure_ascii=False)
 
     print(f"Saved diarization to: {output_file}")
     print(f"Detected {result['num_speakers']} speaker(s), {len(speakers)} segment(s)")
