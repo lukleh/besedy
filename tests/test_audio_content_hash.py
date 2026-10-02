@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import resource
 import shutil
 import subprocess
+import time
+import wave
 from pathlib import Path
 
 import pytest
 
 from besedy.lib.catalog.manager import audio_content_sha256sum
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "audio_hash"
+
+
+def _ffmpeg_build() -> str:
+    """Describe the ffmpeg on PATH for golden-test failure messages."""
+    path = shutil.which("ffmpeg")
+    version = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+    first_line = version.stdout.splitlines()[:1]
+    return f"{path} ({first_line[0] if first_line else 'unknown version'})"
 
 
 def _has_ffmpeg() -> bool:
@@ -203,3 +218,125 @@ class TestAudioContentSha256sum:
         hash_val = audio_content_sha256sum(wav_file, ffmpeg_binary=ffmpeg_path)
         assert hash_val is not None
         assert len(hash_val) == 64
+
+    def test_target_format_hash_is_sha256_of_raw_samples(self, tmp_path):
+        """16 kHz mono s16le input passes through unchanged into the hash."""
+        samples = bytes(range(256)) * 125  # 16000 samples of 16-bit PCM
+        wav_file = tmp_path / "target.wav"
+        with wave.open(str(wav_file), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(samples)
+
+        assert audio_content_sha256sum(wav_file) == hashlib.sha256(samples).hexdigest()
+
+    @pytest.mark.parametrize(
+        ("fixture_name", "expected_hash"),
+        [
+            (
+                "talk_44100hz_stereo_vbr_cover.mp3",
+                "ae87fc2006610b8413f7d1c5987db4739a523c87e30d3ae3c2ce5becf917c9d4",
+            ),
+            (
+                "talk_48000hz_mono.mp3",
+                "00f3fdbaa04e22bc2039ac546fabeb0a199d6b7f9c70b1ebdae250756fb05e97",
+            ),
+            (
+                "talk_32000hz_stereo.mp3",
+                "4d9fee2b9c85b64e214042fc7a033811b483120b2ea0d2767da3686923066261",
+            ),
+            (
+                "talk_16000hz_stereo.mp3",
+                "83dc5f6715d3ee6f3849bff47bc5fbcbed6ce1d62e09e8689cb2ec0d03be5607",
+            ),
+            (
+                "talk_44100hz_mono.m4a",
+                "5289065e09090ca3841e0806470dee4a8e382ef5c3092c59fdee3695a24530cb",
+            ),
+            (
+                "talk_22050hz_mono.m4a",
+                "4f6a1c2cec1f9c609310518edb8cc1c104fb8fe744f3d778e43ef9ea1efbb049",
+            ),
+            (
+                "talk_48000hz_stereo_video.mp4",
+                "ac07348cf28c1bfa5cf06092a3598e8e91fed6b80831be2ca6fa27cc110b5fc9",
+            ),
+            (
+                "talk_48000hz_stereo_voip.mkv",
+                "ab0f8f404627b7c75af1cad7427b54dd8ab5d3741fd90e76c82735c1f43fe77e",
+            ),
+        ],
+    )
+    def test_decoded_hash_matches_pinned_value(self, fixture_name, expected_hash):
+        """Decoding, downmixing and resampling still yield the pinned hashes.
+
+        A failure means this ffmpeg build decodes or resamples differently,
+        which needs a new audio-hash algorithm version. Known-good builds are
+        listed in tests/fixtures/audio_hash/README.md.
+        """
+        assert audio_content_sha256sum(FIXTURES_DIR / fixture_name) == expected_hash, (
+            f"{_ffmpeg_build()} does not reproduce the pinned hash; "
+            "see tests/fixtures/audio_hash/README.md"
+        )
+
+
+class TestAudioContentSha256sumTimeout:
+    """The timeout bounds how long ffmpeg may go without producing output."""
+
+    @pytest.mark.parametrize(
+        "script",
+        [
+            "exec sleep 30",
+            "printf 'partial'; exec sleep 30",
+        ],
+        ids=["silent", "stalls-after-output"],
+    )
+    def test_stalled_decoder_returns_none(self, tmp_path, caplog, script):
+        stub = tmp_path / "ffmpeg"
+        stub.write_text(f"#!/bin/sh\n{script}\n")
+        stub.chmod(0o755)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"")
+
+        started = time.monotonic()
+        result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=1)
+
+        assert result is None
+        assert time.monotonic() - started < 10
+        assert "Killed ffmpeg after 1s without output" in caplog.text
+
+    def test_steady_output_outlasts_timeout(self, tmp_path):
+        """A decode longer than the timeout succeeds while output keeps flowing."""
+        stub = tmp_path / "ffmpeg"
+        stub.write_text("#!/bin/sh\nfor i in 1 2 3 4; do printf 'chunk'; sleep 0.4; done\n")
+        stub.chmod(0o755)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"")
+
+        result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=1)
+
+        assert result == hashlib.sha256(b"chunk" * 4).hexdigest()
+
+    def test_pipe_fd_above_1024(self, tmp_path):
+        """Waiting on the pipe works when the process already holds 1024+ fds."""
+        soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if hard_limit != resource.RLIM_INFINITY and hard_limit < 1200:
+            pytest.skip(f"RLIMIT_NOFILE hard limit {hard_limit} is too low")
+        if soft_limit != resource.RLIM_INFINITY and soft_limit < 1200:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (1200, hard_limit))
+        stub = tmp_path / "ffmpeg"
+        stub.write_text("#!/bin/sh\nprintf 'chunk'\n")
+        stub.chmod(0o755)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"")
+
+        held = [os.open(os.devnull, os.O_RDONLY) for _ in range(1100)]
+        try:
+            result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=5)
+        finally:
+            for fd in held:
+                os.close(fd)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
+
+        assert result == hashlib.sha256(b"chunk").hexdigest()
