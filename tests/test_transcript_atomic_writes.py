@@ -93,8 +93,9 @@ def test_convert_stable_ts_writes_transcript_atomically(tmp_path: Path, monkeypa
 
 WORKFLOWS_DIR = Path(faster_whisper_module.__file__).parent
 
-# Every transcription backend that publishes a transcript.json bundle.
+# Every workflow script that publishes transcript.json or its intermediates.
 TRANSCRIPTION_WORKFLOWS = [
+    "align_nemo_with_whisperx.py",
     "transcribe_faster_whisper.py",
     "transcribe_nemo.py",
     "transcribe_qwen3_asr.py",
