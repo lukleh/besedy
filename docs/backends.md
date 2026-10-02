@@ -1,6 +1,6 @@
 # ML Backends
 
-> **Last Updated:** 2026-04-04
+> **Last Updated:** 2026-10-02
 
 How Besedy's ML backends are deployed and configured.
 
@@ -25,23 +25,27 @@ Containers are launched by the CLI with per-invocation bind mounts,
 `BESEDY_CONFIG` propagation, persistent cache mounts, and the calling UID/GID.
 
 Dependency versions live in build files (`pyproject.toml`, `uv.lock`,
-`backends/docker-compose.yml`, `rag-services/docker-compose.yml`,
-`web/package.json`).
+`backends/*/Dockerfile` and `requirements.lock`,
+`rag-services/colbert/Dockerfile` and `requirements.lock`,
+`rag-services/docker-compose.yml`, `web/package.json`).
 
 ### Locked Worker Images
 
 The faster-whisper, NeMo, WhisperX, pyannote and ColBERT images are locked so
 that a rebuild reproduces the image that produced the existing transcripts and
 indexes. Each Dockerfile pins its base image by digest and installs its
-`requirements.lock` (the image's complete `pip freeze --all`) with
-`pip install --no-deps`, so pip never resolves anything new. Debian/Ubuntu
-packages from `apt-get` (for example ffmpeg) are not locked. qwen3-asr is
+`requirements.lock` (the image's `pip freeze --all`) with
+`pip install --no-deps`, so pip installs exactly the locked versions.
+Debian/Ubuntu packages from `apt-get` (for example ffmpeg) and the build tools
+pip fetches for the few source-only packages are not locked. qwen3-asr is
 experimental and not locked.
 
-Upgrading an engine is a deliberate change: install the new versions in a
-scratch container, regenerate the lock from it with `pip freeze --all`, and
-compare transcripts from the old and new images on a few fixed recordings
-before replacing the `:local` image.
+Upgrading an engine is a deliberate change: update the base image digest in
+`FROM` if needed, install the new versions in a scratch container, regenerate
+the lock from it with `pip freeze --all`, and compare transcripts from the old
+and new images on a few fixed recordings before replacing the `:local` image.
+For NeMo, uninstall `nvidia-resiliency-ext` before freezing; the comment in
+`backends/nemo/Dockerfile` explains why the lock leaves it out.
 
 ---
 
