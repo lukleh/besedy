@@ -575,6 +575,20 @@ def handle_join(args: argparse.Namespace) -> int:
         print("\nDry run - no files created.")
         return 0
 
+    # Resolve the move targets before anything is written: failing after the
+    # join would leave the joined file (and moved originals) without a catalog
+    # entry.
+    backup_root: Path | None = None
+    joined_root: Path | None = None
+    if not args.no_move_originals:
+        try:
+            backup_root = resolve_original_audio_root()
+            if backup_root:
+                joined_root = resolve_joined_audio_root()
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
     # Check output exists
     if output_path.exists() and not args.yes:
         response = input(f"Output {output_path} exists. Overwrite? [y/N] ")
@@ -674,7 +688,6 @@ def handle_join(args: argparse.Namespace) -> int:
     total_duration = sum(f.duration_seconds for f in files)
 
     if not args.no_move_originals:
-        backup_root = resolve_original_audio_root()
         if not backup_root:
             print(
                 "Warning: originals backup directory is not configured; "
@@ -761,7 +774,6 @@ def handle_join(args: argparse.Namespace) -> int:
                 else:
                     print("No duplicate paths to move for joined sources.")
             else:
-                joined_root = resolve_joined_audio_root()
                 skip_paths = {_normalize_path_nfc(str(f.path)) for f in files}
                 print(f"Moving duplicate files to backup: {backup_root / 'duplicates'}")
                 moved_dupes, skipped_missing, skipped_existing, skipped_joined, errors = (

@@ -41,9 +41,10 @@ class PathsConfig:
             after joining. If empty, originals are left in place. If relative,
             resolves under audio_artifacts_dir.
         text_data_dir: Base directory for text artifacts (catalog CSVs,
-            transcripts, parquet exports, speaker clusters). Leave empty to
-            write text artifacts under the repository root. When set, creates
-            catalogs/, transcripts/, and transcripts_parquet/ subdirectories.
+            transcripts, parquet exports, speaker clusters). Required; an
+            empty value is an error unless BESEDY_TEXT_DATA_ROOT is set.
+            Creates catalogs/, transcripts/, and transcripts_parquet/
+            subdirectories.
         sources_dir: Directory for recording sources (URLs/files) managed by
             the web app. Defaults to text_data_dir when empty.
         uploads_dir: Directory where the web app stores admin-uploaded
