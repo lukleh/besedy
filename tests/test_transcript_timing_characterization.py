@@ -1,9 +1,9 @@
 """Characterization tests for word/segment timing in the clamping writers.
 
-faster-whisper, the WhisperX converter and the stable-ts converter share the
-same timing code: overlapping segments are pushed forward, words are clamped to
-their segment and then made monotonic. These tests pin what that code does
-today, including results that look wrong (a word after its segment's end
+faster-whisper, the WhisperX converter and the stable-ts converter implement
+the same timing rules, duplicated in three places: overlapping segments are
+pushed forward, words are clamped to their segment and then made monotonic.
+These tests pin what each copy does today, including results that look wrong (a word after its segment's end
 comes out with end < start). They describe current behaviour, not a contract:
 model output is messy by nature, and any change here must be deliberate and
 backed by a study of real transcripts.
