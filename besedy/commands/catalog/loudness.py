@@ -6,7 +6,9 @@ import argparse
 import csv
 import sys
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,6 +84,21 @@ LOUDNESS_COLUMNS = [
     "target_offset",
     "needs_normalization",
 ]
+
+
+@contextmanager
+def _cancel_queued_on_error(executor: ThreadPoolExecutor) -> Iterator[None]:
+    """Drop analyses not yet started when the run fails or is interrupted.
+
+    The executor's own exit waits for every submitted file, and an interrupted
+    run discards the results, so without this Ctrl-C would still measure the
+    whole remaining catalog.
+    """
+    try:
+        yield
+    except BaseException:
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
 
 
 def register_parser(
@@ -355,7 +372,10 @@ def handle_loudness(
         ) as progress:
             task = progress.add_task("Analyzing loudness", total=len(work_items))
 
-            with ThreadPoolExecutor(max_workers=workers) as executor:
+            with (
+                ThreadPoolExecutor(max_workers=workers) as executor,
+                _cancel_queued_on_error(executor),
+            ):
                 futures = {
                     executor.submit(
                         get_loudness_metrics,

@@ -310,36 +310,41 @@ def handle_stage_audio(
         create_or_update_symlink(staging_symlink, staging_dir, description="staged audio")
 
     # The manifest is written into a temp file that replaces the previous one
-    # only when staging finishes, so a failed or killed run leaves it intact.
-    try:
-        with atomic_path(normalized_csv_path) as temp_manifest_path:
-            manifest_writer = ManifestWriter(
-                temp_manifest_path,
-                include_analysis=include_analysis,
+    # when staging ends, so a killed run leaves the previous manifest intact.
+    # A failed run still publishes the rows it staged: with --overwrite it has
+    # already deleted the staged files the previous manifest lists.
+    staging_error: RuntimeError | None = None
+    with atomic_path(normalized_csv_path) as temp_manifest_path:
+        manifest_writer = ManifestWriter(
+            temp_manifest_path,
+            include_analysis=include_analysis,
+        )
+        try:
+            prepared, skipped = stage_audio_files(
+                rows,
+                staging_dir,
+                manifest_writer=manifest_writer,
+                include_audio_analysis=include_analysis,
+                analysis_ffmpeg=str(request.ffmpeg_binary),
+                analysis_ffprobe=str(request.ffprobe_binary),
+                continue_on_error=request.continue_on_error,
+                reuse_existing=reuse_existing,
+                aggressive_normalization=not request.no_aggressive_normalization,
+                verbose=request.verbose,
             )
-            try:
-                prepared, skipped = stage_audio_files(
-                    rows,
-                    staging_dir,
-                    manifest_writer=manifest_writer,
-                    include_audio_analysis=include_analysis,
-                    analysis_ffmpeg=str(request.ffmpeg_binary),
-                    analysis_ffprobe=str(request.ffprobe_binary),
-                    continue_on_error=request.continue_on_error,
-                    reuse_existing=reuse_existing,
-                    aggressive_normalization=not request.no_aggressive_normalization,
-                    verbose=request.verbose,
-                )
-            finally:
-                manifest_writer.close()
-    except RuntimeError as exc:
-        print(f"Error while staging audio: {exc}", file=sys.stderr)
-        return 1
+        except RuntimeError as exc:
+            staging_error = exc
+        finally:
+            manifest_writer.close()
 
     if need_symlink:
         create_or_update_symlink(
             normalized_symlink, normalized_csv_path, description="normalized catalog"
         )
+
+    if staging_error is not None:
+        print(f"Error while staging audio: {staging_error}", file=sys.stderr)
+        return 1
 
     print(f"Wrote staged manifest CSV to {normalized_csv_path}")
     print(f"Staged audio directory: {staging_dir}")

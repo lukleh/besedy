@@ -12,6 +12,7 @@ import argparse
 import csv
 import os
 import stat
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -117,6 +118,33 @@ class TestLoudness:
         assert _temp_files(catalog.parent) == []
         assert not (catalog.parent / "audio_catalog_loudness.csv").is_symlink()
 
+    def test_interrupt_skips_analyses_not_yet_started(
+        self, catalog: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        extra_rows = []
+        for index in range(6):
+            audio = catalog.parent / f"extra{index}.wav"
+            audio.write_bytes(b"x")
+            extra_rows.append({"Hash": f"{index}" * 64, "Full Path": str(audio)})
+        with catalog.open("a", newline="", encoding="utf-8") as handle:
+            csv.DictWriter(handle, fieldnames=["Hash", "Full Path"]).writerows(extra_rows)
+        calls: list[Path] = []
+
+        def interrupted_after_first(file_path, *_args):
+            calls.append(file_path)
+            if len(calls) == 1:
+                raise KeyboardInterrupt
+            time.sleep(0.2)  # give the main thread time to cancel the queue
+            return None, "no audio stream"
+
+        monkeypatch.setattr(loudness_command, "get_loudness_metrics", interrupted_after_first)
+
+        with pytest.raises(KeyboardInterrupt):
+            handle_loudness(LoudnessRequest(csv=catalog, parallel=1, no_color=True))
+
+        # The single worker may already have taken the next file; no more.
+        assert len(calls) <= 2
+
     def test_completed_run_replaces_file_and_points_symlink(
         self, catalog: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -151,35 +179,56 @@ class TestStageAudioManifest:
         return path
 
     @staticmethod
-    def _staging(*, fail: bool):
+    def _staging(*, error: BaseException | None):
         def stage_audio_files(_rows, _staging_dir, *, manifest_writer, **_kwargs):
             manifest_writer.write_entry(
                 SimpleNamespace(sha256=HASH_B, staged=Path("/staged/b.wav")), size_bytes=1
             )
-            if fail:
-                raise RuntimeError("ffmpeg failed")
+            if error is not None:
+                raise error
             return [], []
 
         return stage_audio_files
 
-    def test_failed_staging_keeps_previous_manifest(
+    def test_killed_staging_keeps_previous_manifest(
         self, loudness_csv: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         manifest = loudness_csv.with_name(f"audio_catalog_{TS}_loudness_normalized.csv")
         before = manifest.read_bytes()
-        monkeypatch.setattr(stage_command, "stage_audio_files", self._staging(fail=True))
+        monkeypatch.setattr(
+            stage_command, "stage_audio_files", self._staging(error=KeyboardInterrupt())
+        )
 
         request = StageAudioRequest(csv=loudness_csv, output_dir=tmp_path / "staged")
-        assert handle_stage_audio(request) == 1
+        with pytest.raises(KeyboardInterrupt):
+            handle_stage_audio(request)
 
         assert manifest.read_bytes() == before
+        assert _temp_files(tmp_path) == []
+
+    def test_failed_staging_publishes_rows_staged_so_far(
+        self, loudness_csv: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # With --overwrite the failed run has already deleted the staged files
+        # the previous manifest lists, so that manifest must not survive.
+        manifest = loudness_csv.with_name(f"audio_catalog_{TS}_loudness_normalized.csv")
+        monkeypatch.setattr(
+            stage_command, "stage_audio_files", self._staging(error=RuntimeError("ffmpeg failed"))
+        )
+
+        request = StageAudioRequest(
+            csv=loudness_csv, output_dir=tmp_path / "staged", overwrite=True
+        )
+        assert handle_stage_audio(request) == 1
+
+        assert [row["Hash"] for row in _read_rows(manifest)] == [HASH_B]
         assert _temp_files(tmp_path) == []
 
     def test_completed_staging_replaces_manifest(
         self, loudness_csv: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         manifest = loudness_csv.with_name(f"audio_catalog_{TS}_loudness_normalized.csv")
-        monkeypatch.setattr(stage_command, "stage_audio_files", self._staging(fail=False))
+        monkeypatch.setattr(stage_command, "stage_audio_files", self._staging(error=None))
 
         request = StageAudioRequest(
             csv=loudness_csv, output_dir=tmp_path / "staged", skip_audio_analysis=True
