@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Copy, Loader2, Plus, Search, Share2, Timer } from 'lucide-react';
+import { Copy, Loader2, Plus, Search, Share2, Timer } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -129,12 +129,6 @@ export function DeepSearchListClient({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <Button variant="ghost" size="sm" asChild className="-ml-2">
-            <Link href={`/catalog/${catalogId}`}>
-              <ArrowLeft className="h-4 w-4" />
-              {t('title')}
-            </Link>
-          </Button>
           <div>
             <h1 className="text-2xl font-semibold tracking-normal">
               {t('deepSearch.label')}

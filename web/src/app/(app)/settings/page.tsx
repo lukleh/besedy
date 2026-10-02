@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, Bell, BellOff, FlaskConical, Loader2, Palette, Languages, ALargeSmall } from "lucide-react";
+import { Bell, BellOff, FlaskConical, Loader2, Palette, Languages, ALargeSmall } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useToast } from "@/hooks/use-toast";
 import { useLabs } from "@/hooks/use-labs";
@@ -110,14 +109,6 @@ export default function SettingsPage() {
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {t("backToCatalog")}
-      </Link>
-
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">{t("settingsTitle")}</h1>
         <p className="text-muted-foreground">{t("settingsDescription")}</p>

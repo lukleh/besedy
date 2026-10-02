@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DownloadsContent } from "@/components/offline/downloads-content";
+import { DownloadsContent, recordPageUrl } from "@/components/offline/downloads-content";
 import type { DownloadRecord } from "@/lib/offline/downloads-db";
 
 const HASH = "a".repeat(64);
@@ -68,5 +68,17 @@ describe("DownloadsContent", () => {
 
     expect(screen.queryByTestId("format-upgrade-notice")).toBeNull();
     expect(screen.queryByRole("button", { name: /redownload/ })).toBeNull();
+  });
+});
+
+describe("recordPageUrl", () => {
+  it("opens the recording page, which leads back to Downloads", () => {
+    expect(recordPageUrl(record)).toBe(`/catalog/cat/recording/${HASH}?backTo=%2Fdownloads`);
+  });
+
+  it("opens the event page for an event download, which leads back to Downloads", () => {
+    expect(recordPageUrl({ ...record, eventKey: "cat:7" })).toBe(
+      "/catalog/cat/event/7?backTo=%2Fdownloads",
+    );
   });
 });

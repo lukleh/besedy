@@ -1,14 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   AlertTriangle,
-  ArrowLeft,
   Ban,
   Check,
   Copy,
@@ -140,12 +138,6 @@ export function DeepSearchDetailClient({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <Button variant="ghost" size="sm" asChild className="-ml-2">
-            <Link href={`/catalog/${catalogId}/deep-search`}>
-              <ArrowLeft className="h-4 w-4" />
-              {t('deepSearch.label')}
-            </Link>
-          </Button>
           <div>
             <h1 className="text-2xl font-semibold tracking-normal">
               {job?.payload.query || t('deepSearch.jobFallback')}

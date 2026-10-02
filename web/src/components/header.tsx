@@ -11,6 +11,7 @@ import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { useDownloadManager } from "@/hooks/use-downloads";
+import { useReturnHref } from "@/hooks/use-return-href";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TextSizeToggle } from "@/components/text-size-toggle";
@@ -22,6 +23,7 @@ import { UpdateIndicator } from "@/components/update-indicator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CircularBackLink } from "@/components/navigation/circular-back-control";
+import { DOWNLOADS_PATH } from "@/lib/offline/cache-names";
 
 interface HeaderProps {
   /**
@@ -36,11 +38,17 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const { session, isPending: sessionPending } = useSession();
   const { hydrated: downloadsHydrated, records: downloads } = useDownloadManager();
   const { isOnline } = useOnlineStatus();
-  const route = useCatalogRouteState();
+  const isSignedIn = !!session?.user;
+  // Offline the catalog list opens the Downloads library itself, and a
+  // signed-out listener has nothing else, so there Downloads is home.
+  const route = useCatalogRouteState({
+    downloadsIsHome:
+      !isOnline || (!isSignedIn && !sessionPending && !sessionRecovering),
+    offline: !isOnline,
+  });
 
   // Don't show app navigation on auth pages
   const isAuthPage = route.isAuthPage;
-  const isSignedIn = !!session?.user;
   // The session-free local shell cannot learn who is signed in while offline,
   // and no page knows it while the client session request is still pending.
   // Offering sign-in and the signed-out appearance toggles in either state
@@ -59,6 +67,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
     downloadCount > 0
       ? `${t("nav.downloads")} (${downloadCountLabel})`
       : t("nav.downloads");
+  const downloadsHref = useReturnHref(DOWNLOADS_PATH);
 
   // Fetch catalogs and preferences (skip on auth pages)
   const { data: groups } = useCatalogs({ enabled: !isAuthPage });
@@ -74,17 +83,19 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const { data: catalogAccess } = useCatalogAccessSummary(effectiveCatalogId, {
     enabled: !isAuthPage,
   });
+  const catalogSettingsHref = useReturnHref(`/catalog/${effectiveCatalogId}/settings`);
 
   return (
     <>
       <header data-app-header className="fixed top-0 left-0 right-0 z-50 w-full border-b border-foreground/35 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 safe-top">
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-14 items-center overflow-hidden">
           {/* Logo */}
-          {route.isDetailRoute ? (
+          {route.backTargetUrl ? (
             <CircularBackLink
               href={route.backTargetUrl}
               label={route.backTargetLabel}
               className="mr-3 sm:mr-6"
+              testId="header-back"
             />
           ) : (
             <Link href="/" className="mr-3 sm:mr-6 flex items-center space-x-2 shrink-0" aria-label="Besedy home">
@@ -101,7 +112,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
               asChild
               className="hidden md:flex landscape-mobile:hidden gap-1.5"
             >
-              <Link href={`/catalog/${effectiveCatalogId}/settings`}>
+              <Link href={catalogSettingsHref}>
                 {t("nav.catalogSettings")}
                 <Wrench className="h-4 w-4" />
               </Link>
@@ -122,7 +133,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
             {!isOnline && (
               <Button variant="ghost" size="icon" asChild>
                 <Link
-                  href="/downloads"
+                  href={downloadsHref}
                   title={t("offline.offlineMode")}
                   aria-label={t("offline.offlineMode")}
                   data-testid="offline-indicator"
@@ -136,7 +147,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
             {!isAuthPage && (isSignedIn || hasDownloads) && (
               <Button variant="ghost" size="icon" asChild>
                 <Link
-                  href="/downloads"
+                  href={downloadsHref}
                   className="relative"
                   title={downloadsLabel}
                   aria-label={downloadsLabel}

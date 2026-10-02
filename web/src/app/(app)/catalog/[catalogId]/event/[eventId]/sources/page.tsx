@@ -1,10 +1,9 @@
 "use client";
 
 import { use, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, File, FileAudio, FileImage, FileText, FileVideo, Globe, Loader2, Trash2 } from "lucide-react";
+import { ExternalLink, File, FileAudio, FileImage, FileText, FileVideo, Globe, Loader2, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -166,12 +165,6 @@ export default function EventSourcesPage({ params }: EventSourcesPageProps) {
   return (
     <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       <div className="space-y-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/catalog/${catalogId}/event/${parsedEventId}`}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            {t("recording.backToEvent")}
-          </Link>
-        </Button>
         <h1 className="text-xl sm:text-2xl font-semibold">{t("recording.sourcesTitle")}</h1>
         <p className="text-sm text-muted-foreground">
           {eventData.title ?? t("events.editor.eventFallbackTitle", { id: eventData.id })}

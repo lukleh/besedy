@@ -82,7 +82,8 @@ test.describe('Offline Mode', () => {
 
       await setOffline(context, true);
       await waitForOfflineIndicator(page);
-      await expect(indicator).toHaveAttribute('href', '/downloads');
+      // Downloads returns to the page it was opened from.
+      await expect(indicator).toHaveAttribute('href', /^\/downloads\?backTo=%2Fcatalog/);
       await expect(indicator).toHaveAccessibleName(/offline/i);
 
       await setOffline(context, false);
@@ -352,8 +353,13 @@ test.describe('Offline Mode', () => {
       // Downloads delegates to the normal event page, served offline by the
       // worker at its own URL.
       await expect(page).toHaveURL(
-        new RegExp(`/catalog/${TEST_CATALOG_ID}/event/${eventId}$`),
+        new RegExp(`/catalog/${TEST_CATALOG_ID}/event/${eventId}\\?backTo=%2Fdownloads$`),
         { timeout: 15_000 },
+      );
+      // Its back control returns to Downloads, not the events list.
+      await expect(page.getByTestId('header-back')).toHaveAttribute(
+        'href',
+        '/downloads',
       );
 
       const audio = page.locator('audio');
@@ -472,7 +478,9 @@ test.describe('Offline Mode', () => {
       await card.getByRole('link', { name: /open|otevřít/i }).click();
 
       await expect(page).toHaveURL(
-        new RegExp(`/catalog/${TEST_CATALOG_ID}/recording/${FIRST_RECORDING.hash}$`),
+        new RegExp(
+          `/catalog/${TEST_CATALOG_ID}/recording/${FIRST_RECORDING.hash}\\?backTo=%2Fdownloads$`,
+        ),
         { timeout: 15_000 },
       );
       await expect(page.getByTestId('audio-play-button')).toBeVisible({

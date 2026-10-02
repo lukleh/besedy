@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
@@ -562,15 +561,6 @@ export default function CatalogSettingsContent({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={`/catalog/${catalogId}`}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("buttons.backToCatalog")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
           <div>
             <div className="flex items-center gap-2">
               <Settings className="h-5 w-5" />

@@ -19,6 +19,7 @@
     "and": "a"
   },
   "nav": {
+    "back": "Zpět",
     "catalog": "Katalog",
     "settings": "Nastavení",
     "downloads": "Stažené",
@@ -1498,7 +1499,6 @@
     },
     "artwork": {
       "title": "Obálka události",
-      "back": "Zpět na událost",
       "eventFallback": "Událost {id}",
       "createTitle": "Vytvořit návrh obálky",
       "createDescription": "Nahrajte jeden čtvercový a jeden širokoúhlý obrázek. Vytvořením návrhu se nezmění to, co vidí posluchači.",
@@ -1710,7 +1710,6 @@
       "title": "Nepřiřazené nahrávky",
       "description": "Projděte katalogové nahrávky, které ještě nejsou připojené k žádné události.",
       "metadataNotice": "Na samostatnou událost lze z této stránky převést jen nahrávky s vyplněným místem a rokem.",
-      "backToEvents": "Zpět na události",
       "count": "{count, plural, one {{count, number} nepřiřazená nahrávka} few {{count, number} nepřiřazené nahrávky} other {{count, number} nepřiřazených nahrávek}}",
       "createFrom": "Vytvořit událost z",
       "missingMetadataHint": "Před vytvořením události je potřeba doplnit místo a rok.",
@@ -1811,7 +1810,6 @@
       "saveChanges": "Uložit změny",
       "revokeAccess": "Odebrat přístup",
       "removeUser": "Odebrat uživatele",
-      "backToCatalog": "Zpět do katalogu",
       "removePendingUser": "Odebrat čekajícího uživatele",
       "editPendingUser": "Upravit čekajícího uživatele",
       "restore": "Obnovit",
@@ -2003,7 +2001,6 @@
     "unknownTitle": "Nahrávka bez názvu",
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
-    "backToCatalog": "Zpět do katalogu",
     "errorIncompletePackage": "Stažené audio je v tomto zařízení neúplné. Stáhněte je znovu.",
     "formatUpgrade": "Uloženo ve starším formátu, který tento prohlížeč offline nepřehraje celý. Stáhněte je znovu.",
     "redownload": "Stáhnout znovu",
