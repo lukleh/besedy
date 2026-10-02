@@ -24,39 +24,9 @@ import { EventDetail } from '@/components/catalog/event-detail';
 import { Button } from '@/components/ui/button';
 import { useIsHydrated } from '@/hooks/use-is-hydrated';
 import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
+import { resolveLocalRoute } from '@/lib/offline/local-route';
 import { DownloadsContent } from './downloads-content';
 import { LocalEventList } from './local-event-list';
-
-type LocalRoute =
-  | { kind: 'downloads' }
-  | { kind: 'catalog'; catalogId: string }
-  | { kind: 'event'; catalogId: string; eventId: number }
-  | { kind: 'recording'; catalogId: string; hash: string }
-  | { kind: 'unavailable' };
-
-const RECORDING_HASH = /^[a-f0-9]{64}$/;
-
-export function resolveLocalRoute(pathname: string): LocalRoute {
-  const segments = pathname.split('/').filter(Boolean);
-  if (segments.length === 0 || pathname === DOWNLOADS_PATH) {
-    return { kind: 'downloads' };
-  }
-  if (segments[0] !== 'catalog') return { kind: 'unavailable' };
-  if (segments.length === 1) return { kind: 'downloads' };
-  const catalogId = decodeURIComponent(segments[1]);
-  if (segments.length === 2) return { kind: 'catalog', catalogId };
-  if (segments.length === 4 && segments[2] === 'event') {
-    const eventId = Number(segments[3]);
-    if (Number.isSafeInteger(eventId) && eventId > 0) {
-      return { kind: 'event', catalogId, eventId };
-    }
-  }
-  if (segments.length === 4 && segments[2] === 'recording') {
-    const hash = segments[3].toLowerCase();
-    if (RECORDING_HASH.test(hash)) return { kind: 'recording', catalogId, hash };
-  }
-  return { kind: 'unavailable' };
-}
 
 /**
  * A worker from before the URL-preserving shell answers a failed navigation

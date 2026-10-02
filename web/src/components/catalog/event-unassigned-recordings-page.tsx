@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildRecordingPagePath } from "@/lib/api/recording-urls";
+import { withBackTo } from "@/lib/navigation/back-to";
 import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
 import { CatalogPagination } from "@/components/catalog/catalog-list/components/pagination";
 import { type PaginationInfo } from "@/components/catalog/catalog-list/types";
 import { EventCreationConflictDialog } from "@/components/catalog/event-creation-conflict-dialog";
@@ -207,12 +207,6 @@ export function EventUnassignedRecordingsPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/catalog/${catalogId}?tab=events`}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              {t("backToEvents")}
-            </Link>
-          </Button>
           <div>
             <h1 className="text-2xl font-semibold">{t("title")}</h1>
             <p className="text-sm text-muted-foreground">{t("description")}</p>
@@ -231,12 +225,12 @@ export function EventUnassignedRecordingsPage({
         entries={data?.entries ?? []}
         actionLabel={t("createFrom")}
         emptyLabel={t("empty")}
-        getRecordingHref={(entry) => {
-          const params = new URLSearchParams({
-            backTo: `/catalog/${catalogId}/events/unassigned`,
-          });
-          return `/catalog/${catalogId}/recording/${entry.audioHash}?${params.toString()}`;
-        }}
+        getRecordingHref={(entry) =>
+          withBackTo(
+            buildRecordingPagePath(catalogId, entry.audioHash),
+            `/catalog/${catalogId}/events/unassigned`,
+          )
+        }
         isBusy={createMutation.isPending || attachMutation.isPending}
         isActionPending={(entry) =>
           createMutation.isPending &&

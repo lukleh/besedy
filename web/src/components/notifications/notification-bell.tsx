@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { AlertCircle, Bell, Check, ExternalLink } from "lucide-react";
 import { useNotifications } from "@/hooks/use-notifications";
 import { useIsDesktop } from "@/hooks/use-media-query";
+import { useReturnHref } from "@/hooks/use-return-href";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -131,6 +132,7 @@ export function NotificationBell() {
   const t = useTranslations("notifications");
   const [open, setOpen] = useState(false);
   const isDesktop = useIsDesktop();
+  const settingsHref = useReturnHref("/settings#notifications");
   const {
     notifications,
     unreadCount,
@@ -181,7 +183,7 @@ export function NotificationBell() {
 
   const settingsLink = (
     <div className="p-2 border-t">
-      <Link href="/settings#notifications" onClick={() => setOpen(false)}>
+      <Link href={settingsHref} onClick={() => setOpen(false)}>
         <Button variant="ghost" size="sm" className="w-full text-xs">
           {t("settings")}
           <ExternalLink className="h-3 w-3 ml-1" />

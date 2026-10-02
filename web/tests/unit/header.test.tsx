@@ -12,6 +12,15 @@ const mocks = vi.hoisted(() => ({
   },
   isOnline: true,
   sessionPending: false,
+  pathname: "/catalog/c1",
+  search: "tab=events",
+  backTargetUrl: null as string | null,
+  routeOptions: undefined as { downloadsIsHome?: boolean; offline?: boolean } | undefined,
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => mocks.pathname,
+  useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
 vi.mock("next-intl", () => ({
@@ -27,13 +36,15 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/hooks/use-catalog-route-state", () => ({
-  useCatalogRouteState: () => ({
-    isAuthPage: false,
-    isDetailRoute: false,
-    routeGroupId: null,
-    backTargetUrl: "/catalog",
-    backTargetLabel: "Back",
-  }),
+  useCatalogRouteState: (options?: { downloadsIsHome?: boolean; offline?: boolean }) => {
+    mocks.routeOptions = options;
+    return {
+      isAuthPage: false,
+      routeGroupId: null,
+      backTargetUrl: mocks.backTargetUrl,
+      backTargetLabel: "Back",
+    };
+  },
 }));
 
 vi.mock("@/hooks/use-catalogs", () => ({
@@ -75,12 +86,51 @@ vi.mock("@/components/notifications/notification-bell", () => ({
 vi.mock("@/components/update-indicator", () => ({ UpdateIndicator: () => null }));
 vi.mock("@/lib/support-email", () => ({ openSupportEmail: vi.fn() }));
 
+const DOWNLOADS_FROM_CATALOG = "/downloads?backTo=%2Fcatalog%2Fc1%3Ftab%3Devents";
+
 describe("Header", () => {
   beforeEach(() => {
     mocks.session = { user: { id: "user-1", name: "Listener" } };
     mocks.downloadSnapshot = { hydrated: true, records: [] };
     mocks.isOnline = true;
     mocks.sessionPending = false;
+    mocks.pathname = "/catalog/c1";
+    mocks.search = "tab=events";
+    mocks.backTargetUrl = null;
+    mocks.routeOptions = undefined;
+  });
+
+  it("shows the back control in place of the logo when the page has a back target", () => {
+    const { rerender } = render(<Header />);
+    expect(screen.getByRole("link", { name: "Besedy home" })).toBeInTheDocument();
+    expect(screen.queryByTestId("header-back")).not.toBeInTheDocument();
+
+    mocks.backTargetUrl = "/downloads";
+    rerender(<Header />);
+    expect(screen.getByTestId("header-back")).toHaveAttribute("href", "/downloads");
+    expect(screen.queryByRole("link", { name: "Besedy home" })).not.toBeInTheDocument();
+  });
+
+  it("treats Downloads as home only offline or once the listener is known to be signed out", () => {
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false, offline: false });
+
+    mocks.isOnline = false;
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true, offline: true });
+
+    mocks.isOnline = true;
+    mocks.session = null;
+    mocks.sessionPending = true;
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false, offline: false });
+
+    render(<Header sessionRecovering />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: false, offline: false });
+
+    mocks.sessionPending = false;
+    render(<Header />);
+    expect(mocks.routeOptions).toEqual({ downloadsIsHome: true, offline: false });
   });
 
   it("hides sign-in and the signed-out toggles while the session request is still pending", () => {
@@ -100,7 +150,7 @@ describe("Header", () => {
     mocks.isOnline = false;
     rerender(<Header />);
     const indicator = screen.getByTestId("offline-indicator");
-    expect(indicator).toHaveAttribute("href", "/downloads");
+    expect(indicator).toHaveAttribute("href", DOWNLOADS_FROM_CATALOG);
     expect(indicator).toHaveAccessibleName("offline.offlineMode");
     expect(indicator.querySelector(".lucide-wifi-off")).toBeInTheDocument();
   });
@@ -131,16 +181,37 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", DOWNLOADS_FROM_CATALOG);
   });
 
   it("provides signed-in users a direct Downloads shortcut", () => {
     render(<Header />);
 
     const shortcut = screen.getByTestId("header-downloads");
-    expect(shortcut).toHaveAttribute("href", "/downloads");
+    expect(shortcut).toHaveAttribute("href", DOWNLOADS_FROM_CATALOG);
     expect(shortcut).toHaveAccessibleName("nav.downloads");
     expect(shortcut.querySelector(".lucide-download")).toBeInTheDocument();
+  });
+
+  it("links Downloads without an origin while Downloads is open", () => {
+    mocks.pathname = "/downloads";
+    mocks.search = "";
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute("href", "/downloads");
+  });
+
+  it("keeps the open Downloads page's own origin on its shortcut", () => {
+    mocks.pathname = "/downloads";
+    mocks.search = "backTo=%2Fcatalog%2Fc1%2Fevent%2F7";
+
+    render(<Header />);
+
+    expect(screen.getByTestId("header-downloads")).toHaveAttribute(
+      "href",
+      "/downloads?backTo=%2Fcatalog%2Fc1%2Fevent%2F7",
+    );
   });
 
   it("does not expose the protected shortcut while signed out", () => {

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
+import { Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -173,12 +173,6 @@ export function CorrectionWorkspace({
     <div className="container mx-auto space-y-6 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="sm" className="gap-2">
-            <Link href={buildRecordingPagePath(catalogId, hash)}>
-              <ArrowLeft className="h-4 w-4" />
-              {t("backToRecording")}
-            </Link>
-          </Button>
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t("pageTitle")}

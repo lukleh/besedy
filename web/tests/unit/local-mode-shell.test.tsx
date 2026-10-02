@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LocalModeShell,
   legacyRedirectTarget,
-  resolveLocalRoute,
 } from '@/components/offline/local-mode-shell';
+import { resolveLocalRoute } from '@/lib/offline/local-route';
 
 const mocks = vi.hoisted(() => ({
   pathname: '/downloads',

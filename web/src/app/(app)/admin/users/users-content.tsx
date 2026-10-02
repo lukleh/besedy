@@ -86,6 +86,18 @@ export default function UsersPageContent() {
   const [createDialogOpen, setCreateDialogOpen] = useState(
     searchParams.get("action") === "new"
   );
+
+  // The Add user link opens the dialog once. Drop the marker so a reload, or a
+  // return to this page, does not open it again.
+  useEffect(() => {
+    if (searchParams.get("action") !== "new") return;
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("action");
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `/admin/users?${nextQuery}` : "/admin/users", {
+      scroll: false,
+    });
+  }, [router, searchParams]);
   const [newEmail, setNewEmail] = useState("");
   const [selectedCatalog, setSelectedCatalog] = useState<string>("");
   const [selectedRole, setSelectedRole] = useState<CatalogRole | "">("");

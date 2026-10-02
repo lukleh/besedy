@@ -19,6 +19,7 @@
     "and": "and"
   },
   "nav": {
+    "back": "Back",
     "catalog": "Catalog",
     "settings": "Settings",
     "downloads": "Downloads",
@@ -1499,7 +1500,6 @@
     },
     "artwork": {
       "title": "Event artwork",
-      "back": "Back to event",
       "eventFallback": "Event {id}",
       "createTitle": "Create an artwork candidate",
       "createDescription": "Upload one square and one landscape image. Creating a candidate does not change what listeners see.",
@@ -1711,7 +1711,6 @@
       "title": "Unassigned Recordings",
       "description": "Review catalog recordings that are not attached to any event yet.",
       "metadataNotice": "Only recordings with location and year metadata can be turned into standalone events from this page.",
-      "backToEvents": "Back to Events",
       "count": "{count, plural, one {{count, number} unassigned recording} other {{count, number} unassigned recordings}}",
       "createFrom": "Create Event From",
       "missingMetadataHint": "Location and year metadata are required before creating an event.",
@@ -1812,7 +1811,6 @@
       "saveChanges": "Save Changes",
       "revokeAccess": "Revoke Access",
       "removeUser": "Remove User",
-      "backToCatalog": "Back to catalog",
       "removePendingUser": "Remove pending user",
       "editPendingUser": "Edit pending user",
       "restore": "Restore",
@@ -2004,7 +2002,6 @@
     "unknownTitle": "Untitled recording",
     "eventLabel": "Event",
     "recordingLabel": "Recording",
-    "backToCatalog": "Back to catalog",
     "errorIncompletePackage": "Downloaded audio is incomplete on this device. Download it again.",
     "formatUpgrade": "Saved in an older format that this browser cannot play to the end offline. Download it again.",
     "redownload": "Download again",

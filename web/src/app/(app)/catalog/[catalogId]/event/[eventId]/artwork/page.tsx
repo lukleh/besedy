@@ -1,10 +1,9 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Send, Trash2, Undo2 } from "lucide-react";
+import { Loader2, Send, Trash2, Undo2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -236,12 +235,6 @@ export default function EventArtworkPage({ params }: EventArtworkPageProps) {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       <header className="space-y-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/catalog/${catalogId}/event/${parsedEventId}`}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            {t("back")}
-          </Link>
-        </Button>
         <h1 className="text-2xl font-semibold">{t("title")}</h1>
         <p className="text-sm text-muted-foreground">
           {detailQuery.data.title ?? t("eventFallback", { id: parsedEventId })}

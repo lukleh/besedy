@@ -7,6 +7,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2, Star, StarOff, Pencil } from "lucide-react";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildRecordingPagePath } from "@/lib/api/recording-urls";
+import { withBackTo } from "@/lib/navigation/back-to";
 import { formatPartialDate } from "@/lib/date-format";
 import { useToast } from "@/hooks/use-toast";
 import { useReloadBlocker } from "@/contexts/reload-safety-context";
@@ -78,6 +80,12 @@ interface LocationItem {
 }
 
 export function EventEditor({ catalogId, eventId }: EventDetailProps) {
+  // A recording opened from the editor returns to the editor.
+  const recordingHref = (audioHash: string) =>
+    withBackTo(
+      buildRecordingPagePath(catalogId, audioHash),
+      `/catalog/${catalogId}/event/${eventId}/edit`
+    );
   const locale = useLocale();
   const t = useTranslations("events.editor");
   const tRoot = useTranslations();
@@ -347,7 +355,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
     ) {
       return;
     }
-    router.push(`/catalog/${catalogId}/recording/${audioHash}`);
+    router.push(recordingHref(audioHash));
   };
 
   const formatDateForRow = useCallback(
@@ -454,7 +462,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
             <span className="text-muted-foreground">{primaryRecording.recorder?.name ?? t("unknownRecorder")}</span>
             <span className="font-mono text-xs">{primaryRecording.audioHash}</span>
             <Button asChild size="sm" variant="outline">
-              <Link href={`/catalog/${catalogId}/recording/${primaryRecording.audioHash}`}>
+              <Link href={recordingHref(primaryRecording.audioHash)}>
                 {t("openRecording")}
               </Link>
             </Button>
@@ -497,7 +505,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
                 <TableCell>{recording.recorder?.name ?? t("unknownRecorder")}</TableCell>
                 <TableCell>
                   <Link
-                    href={`/catalog/${catalogId}/recording/${recording.audioHash}`}
+                    href={recordingHref(recording.audioHash)}
                     className="font-mono text-xs underline-offset-2 hover:underline"
                     onClick={(event) => event.stopPropagation()}
                   >
