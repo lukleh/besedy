@@ -191,8 +191,6 @@ def resolve_audio_artifacts_root() -> Path:
 
 def resolve_joined_audio_root() -> Path:
     """Resolve the directory for joined audio files."""
-    artifacts_root = resolve_audio_artifacts_root()
-
     try:
         from besedy.config.settings import config
 
@@ -200,13 +198,12 @@ def resolve_joined_audio_root() -> Path:
     except Exception:
         subdir = "joined_audio"
 
-    return artifacts_root / subdir
+    candidate = Path(subdir).expanduser()
+    return candidate if candidate.is_absolute() else resolve_audio_artifacts_root() / candidate
 
 
 def resolve_original_audio_root() -> Path | None:
     """Resolve the directory for original audio backups created by `catalog join`."""
-    artifacts_root = resolve_audio_artifacts_root()
-
     try:
         from besedy.config.settings import config
 
@@ -218,7 +215,7 @@ def resolve_original_audio_root() -> Path | None:
         return None
 
     candidate = Path(subdir).expanduser()
-    return candidate if candidate.is_absolute() else artifacts_root / candidate
+    return candidate if candidate.is_absolute() else resolve_audio_artifacts_root() / candidate
 
 
 def resolve_uploads_root() -> Path:

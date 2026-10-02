@@ -21,8 +21,10 @@ from besedy.core.paths import (
     require_valid_hash_stem,
     resolve_audio_artifacts_root,
     resolve_config_home,
+    resolve_joined_audio_root,
     resolve_logs_dir,
     resolve_models_dir,
+    resolve_original_audio_root,
     resolve_project_path,
     resolve_share_home,
     resolve_state_home,
@@ -172,6 +174,7 @@ class TestResolveAudioArtifactsRoot:
                 )
             )
             assert resolve_audio_artifacts_root() == PROJECT_ROOT / "tmp/audio_artifacts"
+            assert resolve_joined_audio_root() == PROJECT_ROOT / "tmp/audio_artifacts/joined_audio"
         finally:
             set_config(original)
 
@@ -186,6 +189,34 @@ class TestResolveAudioArtifactsRoot:
             )
             monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(tmp_path))
             assert resolve_audio_artifacts_root() == tmp_path
+        finally:
+            set_config(original)
+
+    def test_join_dirs_need_no_artifacts_root_unless_relative(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("BESEDY_AUDIO_ARTIFACTS_ROOT", raising=False)
+        original = get_config()
+
+        def configure(**paths):
+            set_config(
+                replace(
+                    original,
+                    paths=replace(original.paths, audio_artifacts_dir="", **paths),
+                )
+            )
+
+        try:
+            configure(joined_audio_dir=str(tmp_path / "joined"), original_audio_dir="")
+            assert resolve_joined_audio_root() == tmp_path / "joined"
+            assert resolve_original_audio_root() is None
+
+            configure(original_audio_dir=str(tmp_path / "originals"))
+            assert resolve_original_audio_root() == tmp_path / "originals"
+
+            configure(joined_audio_dir="joined_audio", original_audio_dir="originals")
+            with pytest.raises(RuntimeError, match="Audio artifacts root is required"):
+                resolve_joined_audio_root()
+            with pytest.raises(RuntimeError, match="Audio artifacts root is required"):
+                resolve_original_audio_root()
         finally:
             set_config(original)
 

@@ -32,7 +32,7 @@ DEFAULT_BACKENDS = _ensure_default_backends
 
 
 def load_json(path: Path) -> dict | None:
-    """Load JSON file with encoding fallback for legacy outputs."""
+    """Load a UTF-8 JSON file, returning None if it is missing or unreadable."""
     try:
         return load_json_with_fallback(path)
     except (ValueError, FileNotFoundError):

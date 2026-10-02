@@ -268,6 +268,27 @@ def test_run_pipeline_owns_speaker_clustering(
     assert len(cluster_calls) == expected_cluster_calls
 
 
+def test_run_pipeline_requires_audio_artifacts_root_before_loudness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    csv_path = tmp_path / "audio_catalog_20260102_030405.csv"
+    csv_path.write_text("Hash,Full Path\n", encoding="utf-8")
+    loudness_calls = []
+
+    def missing_root():
+        raise RuntimeError("Audio artifacts root is required.")
+
+    monkeypatch.setattr(pipeline, "resolve_catalog_csv", lambda *_args, **_kwargs: csv_path)
+    monkeypatch.setattr(pipeline, "resolve_audio_artifacts_root", missing_root)
+    monkeypatch.setattr(pipeline, "handle_loudness", lambda args: loudness_calls.append(args) or 0)
+
+    assert handle_run_pipeline(_pipeline_args(continue_on_error=True)) == 1
+    assert loudness_calls == []
+    assert "Error: Audio artifacts root is required." in capsys.readouterr().err
+
+
 class TestPipelineRagIndexing:
     """Tests for RAG indexing integration in run-pipeline."""
 

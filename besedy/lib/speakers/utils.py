@@ -75,7 +75,7 @@ def compute_segments_checksum(segments: list[dict]) -> str:
 def load_diarization_json(json_path: Path) -> dict:
     """Load speaker diarization results from JSON file.
 
-    Uses encoding fallback to handle legacy outputs.
+    The file must be UTF-8.
 
     Args:
         json_path: Path to the speakers.json file.

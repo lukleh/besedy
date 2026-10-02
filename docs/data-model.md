@@ -584,7 +584,7 @@ for cross-recording speaker identification.
 | Backend ID definitions | `besedy/lib/backend_ids.py` |
 | Transcript path iteration | `besedy/core/paths.py` |
 | Transcript file lookup | `besedy/lib/data/lookup.py` |
-| JSON loading with encoding fallback | `besedy/lib/data/encoding.py` |
+| JSON loading (strict UTF-8) | `besedy/lib/data/encoding.py` |
 | Transcript schema validation | `besedy/lib/validation/schema.py` |
 | Machine-readable JSON schema | `docs/schemas/transcript.schema.json` |
 | CLI analysis dispatcher | `besedy/cli/analyze.py` |
