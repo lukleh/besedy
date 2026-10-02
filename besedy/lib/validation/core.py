@@ -19,7 +19,7 @@ from besedy.lib.data.encoding import load_json_with_fallback
 
 
 def load_json(path: Path) -> dict[str, Any]:
-    """Load JSON file with an encoding fallback for legacy outputs."""
+    """Load a UTF-8 JSON file; raises ValueError if it is undecodable or malformed."""
     return load_json_with_fallback(path)
 
 

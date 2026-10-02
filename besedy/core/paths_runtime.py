@@ -171,15 +171,19 @@ def resolve_audio_artifacts_root() -> Path:
         candidate = Path(env_value).expanduser()
         return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
 
+    message = (
+        "Audio artifacts root is required. Set [paths].audio_artifacts_dir in besedy.toml "
+        "or BESEDY_AUDIO_ARTIFACTS_ROOT in the environment."
+    )
     try:
         from besedy.config.settings import config
 
         configured = getattr(config.paths, "audio_artifacts_dir", "")
-    except Exception:
-        configured = ""
+    except Exception as exc:
+        raise RuntimeError(message) from exc
 
     if not configured:
-        return PROJECT_ROOT
+        raise RuntimeError(message)
 
     candidate = Path(configured).expanduser()
     return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
@@ -187,8 +191,6 @@ def resolve_audio_artifacts_root() -> Path:
 
 def resolve_joined_audio_root() -> Path:
     """Resolve the directory for joined audio files."""
-    artifacts_root = resolve_audio_artifacts_root()
-
     try:
         from besedy.config.settings import config
 
@@ -196,13 +198,12 @@ def resolve_joined_audio_root() -> Path:
     except Exception:
         subdir = "joined_audio"
 
-    return artifacts_root / subdir
+    candidate = Path(subdir).expanduser()
+    return candidate if candidate.is_absolute() else resolve_audio_artifacts_root() / candidate
 
 
 def resolve_original_audio_root() -> Path | None:
     """Resolve the directory for original audio backups created by `catalog join`."""
-    artifacts_root = resolve_audio_artifacts_root()
-
     try:
         from besedy.config.settings import config
 
@@ -214,7 +215,7 @@ def resolve_original_audio_root() -> Path | None:
         return None
 
     candidate = Path(subdir).expanduser()
-    return candidate if candidate.is_absolute() else artifacts_root / candidate
+    return candidate if candidate.is_absolute() else resolve_audio_artifacts_root() / candidate
 
 
 def resolve_uploads_root() -> Path:

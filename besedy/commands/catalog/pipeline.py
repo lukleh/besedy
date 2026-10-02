@@ -32,6 +32,7 @@ from besedy.core.paths import (
     PYANNOTE_DIARIZATION_MODEL_NAME,
     PYANNOTE_DIARIZATION_WORKFLOW_LABEL,
     extract_timestamp_from_catalog,
+    resolve_audio_artifacts_root,
     resolve_catalogs_root,
     resolve_transcripts_parent,
     sanitize_component,
@@ -322,6 +323,14 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
         )
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    # Staging and archiving need the audio artifacts root; check it before the
+    # loudness pass instead of failing after it.
+    try:
+        resolve_audio_artifacts_root()
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     continue_on_error = args.continue_on_error

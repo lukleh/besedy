@@ -8,7 +8,7 @@ Keep argument parsing in `besedy/cli/` and `besedy/commands/`; use
 
 | Task | Module | Key entry points |
 |------|--------|------------------|
-| Load transcript JSON with encoding fallback | `data/encoding.py` | `load_json_with_fallback()` |
+| Load transcript JSON (strict UTF-8) | `data/encoding.py` | `load_json_with_fallback()` |
 | Find transcript files for a hash | `data/lookup.py` | `load_transcript_json()`, `find_transcripts_for_hash()` |
 | Validate canonical transcript schema | `validation/schema.py` | `validate_canonical_schema()` |
 | Run shared transcript or diarization validation | `validation/core.py` | `validate_single_file()`, `validate_diarization_file()` |

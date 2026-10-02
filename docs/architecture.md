@@ -96,7 +96,7 @@ overview of the current component and pipeline structure.
 │  ──────────────                                                     │
 │                                                                     │
 │  core/paths.py              Path constants, audio-hash utilities   │
-│  lib/data/encoding.py       JSON loading with encoding fallback    │
+│  lib/data/encoding.py       Strict UTF-8 JSON loading              │
 │  lib/data/lookup.py         Transcript file discovery              │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘

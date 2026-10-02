@@ -55,12 +55,12 @@ validation failures.
 
 `issues = validate_meta(meta)  # [] means valid`
 
-### Encoding Fallback
+### Strict JSON Loading
 
 Always use `load_json_with_fallback()` from `besedy.lib.data.encoding`, never
-bare `json.load()` or `json.loads(path.read_text())`. Legacy files may have
-latin-1 encoding. The fallback loader tries UTF-8 first, then recovers
-latin-1-encoded UTF-8 bytes, and converts parse errors to `ValueError`.
+bare `json.load()` or `json.loads(path.read_text())`. The loader reads strict
+UTF-8 and raises `ValueError` naming the file for both undecodable bytes and
+malformed JSON. It does not repair other encodings; the name is historical.
 
 Anti-pattern: `data = json.loads(path.read_text(encoding="utf-8"))`
 
@@ -223,9 +223,9 @@ member, viewer, listener, noaccess, pending, blocked.
 
 ### Encoding: Never Use Bare json.load
 
-Always `load_json_with_fallback(path)`. Legacy files will cause
-`UnicodeDecodeError` with bare `json.loads(path.read_text())`. This is the
-single most common pipeline error.
+Always `load_json_with_fallback(path)`. Bare `json.loads(path.read_text())`
+raises `UnicodeDecodeError` or `json.JSONDecodeError` without naming the file;
+the loader raises one `ValueError` that does.
 
 ### Backend Identifiers: Use Canonical IDs
 

@@ -1,22 +1,23 @@
-"""Canonical JSON loading utilities with encoding fallback.
+"""Canonical JSON loading for transcript and diarization files.
 
 IMPORTANT: This module provides THE canonical way to load JSON files in besedy.
 Always use load_json_with_fallback() instead of json.load() or json.loads()
 when reading transcript or diarization JSON files.
 
 Why this exists:
-    Legacy whisper.cpp CoreML outputs were written with ISO-8859-1 (latin-1)
-    encoding instead of UTF-8. Naive json.load() fails with UnicodeDecodeError
-    on these files. The load_json_with_fallback() function transparently handles
-    this by first trying UTF-8, then falling back to latin-1 decoding.
+    Transcript JSON must be UTF-8. load_json_with_fallback() reads it strictly
+    and turns both undecodable bytes and malformed JSON into a ValueError that
+    names the file, so callers handle one exception type and never get silently
+    altered text. The name is historical: it once fell back to latin-1, which
+    dropped every byte that was not valid UTF-8.
 
 Usage:
     from besedy.lib.data.encoding import load_json_with_fallback
 
     # Instead of:
-    #   data = json.loads(path.read_text(encoding="utf-8"))  # BAD: may fail
+    #   data = json.loads(path.read_text(encoding="utf-8"))  # BAD: raw errors
     # Use:
-    data = load_json_with_fallback(path)  # GOOD: handles encoding issues
+    data = load_json_with_fallback(path)  # GOOD: ValueError naming the file
 
 When returning None on failure (e.g., for optional files):
     try:
@@ -37,16 +38,11 @@ from typing import Any
 
 __all__ = [
     "load_json_with_fallback",
-    "load_json_with_encoding_info",
 ]
 
 
 def load_json_with_fallback(path: Path) -> dict[str, Any]:
-    """Load JSON file with encoding fallback for legacy outputs.
-
-    Handles legacy whisper.cpp CoreML dumps where UTF-8 text was incorrectly
-    written as latin-1 bytes. Recovers by re-encoding latin-1 back to bytes
-    and decoding as UTF-8.
+    """Load a UTF-8 JSON file.
 
     Args:
         path: Path to JSON file.
@@ -55,39 +51,13 @@ def load_json_with_fallback(path: Path) -> dict[str, Any]:
         Parsed JSON data as dictionary.
 
     Raises:
-        ValueError: If JSON is malformed or unreadable.
+        ValueError: If the file is not valid UTF-8 or the JSON is malformed.
     """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except UnicodeDecodeError:
-        # Legacy whisper.cpp files have UTF-8 bytes stored as latin-1 chars.
-        # Re-encode to bytes, then decode as UTF-8 to recover the original text.
-        text = path.read_text(encoding="latin-1")
-        fixed_text = text.encode("latin-1").decode("utf-8", errors="ignore")
-        return json.loads(fixed_text)
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{path} is not valid UTF-8 (byte offset {exc.start}): {exc.reason}"
+        ) from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
-
-
-def load_json_with_encoding_info(path: Path) -> tuple[dict[str, Any], str]:
-    """Load JSON file, returning both data and encoding used.
-
-    Args:
-        path: Path to JSON file.
-
-    Returns:
-        Tuple of (data, encoding_used) where encoding is "utf-8" or "latin-1".
-
-    Raises:
-        json.JSONDecodeError: If JSON is malformed.
-    """
-    try:
-        with path.open(encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data, "utf-8"
-    except UnicodeDecodeError:
-        # Legacy whisper.cpp files have UTF-8 bytes stored as latin-1 chars.
-        # Re-encode to bytes, then decode as UTF-8 to recover the original text.
-        text = path.read_text(encoding="latin-1")
-        fixed_text = text.encode("latin-1").decode("utf-8", errors="ignore")
-        return json.loads(fixed_text), "latin-1"
