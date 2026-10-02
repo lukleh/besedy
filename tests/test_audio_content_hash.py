@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
+import time
+import wave
 from pathlib import Path
 
 import pytest
 
 from besedy.lib.catalog.manager import audio_content_sha256sum
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "audio_hash"
 
 
 def _has_ffmpeg() -> bool:
@@ -203,3 +208,73 @@ class TestAudioContentSha256sum:
         hash_val = audio_content_sha256sum(wav_file, ffmpeg_binary=ffmpeg_path)
         assert hash_val is not None
         assert len(hash_val) == 64
+
+    def test_target_format_hash_is_sha256_of_raw_samples(self, tmp_path):
+        """16 kHz mono s16le input passes through unchanged into the hash."""
+        samples = bytes(range(256)) * 125  # 16000 samples of 16-bit PCM
+        wav_file = tmp_path / "target.wav"
+        with wave.open(str(wav_file), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(samples)
+
+        assert audio_content_sha256sum(wav_file) == hashlib.sha256(samples).hexdigest()
+
+    @pytest.mark.parametrize(
+        ("fixture_name", "expected_hash"),
+        [
+            (
+                "sine_44100hz_stereo.mp3",
+                "f904f402631e9bc341261f2ecf66dd87a5ba7ebce40cf4e186c9a227b041530a",
+            ),
+            (
+                "sine_48000hz_mono.opus",
+                "c8eda0de513f2d96f6e0167dc080b48ed6ad73f9db7aa2e9a961722d7e2a6d14",
+            ),
+        ],
+    )
+    def test_decoded_hash_matches_pinned_value(self, fixture_name, expected_hash):
+        """Decoding, downmixing and resampling still yield the pinned hashes.
+
+        A failure means this ffmpeg build decodes or resamples differently,
+        which needs a new audio-hash algorithm version (docs/architecture.md).
+        """
+        assert audio_content_sha256sum(FIXTURES_DIR / fixture_name) == expected_hash
+
+
+class TestAudioContentSha256sumTimeout:
+    """The timeout bounds how long ffmpeg may go without producing output."""
+
+    @pytest.mark.parametrize(
+        "script",
+        [
+            "exec sleep 30",
+            "printf 'partial'; exec sleep 30",
+        ],
+        ids=["silent", "stalls-after-output"],
+    )
+    def test_stalled_decoder_returns_none(self, tmp_path, script):
+        stub = tmp_path / "ffmpeg"
+        stub.write_text(f"#!/bin/sh\n{script}\n")
+        stub.chmod(0o755)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"")
+
+        started = time.monotonic()
+        result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=1)
+
+        assert result is None
+        assert time.monotonic() - started < 10
+
+    def test_steady_output_outlasts_timeout(self, tmp_path):
+        """A decode longer than the timeout succeeds while output keeps flowing."""
+        stub = tmp_path / "ffmpeg"
+        stub.write_text("#!/bin/sh\nfor i in 1 2 3 4; do printf 'chunk'; sleep 0.4; done\n")
+        stub.chmod(0o755)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"")
+
+        result = audio_content_sha256sum(audio, ffmpeg_binary=str(stub), timeout=1)
+
+        assert result == hashlib.sha256(b"chunk" * 4).hexdigest()

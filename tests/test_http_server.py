@@ -73,7 +73,9 @@ def echo_server() -> Generator[tuple[ThreadingHTTPServer, str]]:
         thread.join(timeout=5)
 
 
-def test_json_api_handler_reads_and_writes_json(echo_server: tuple[ThreadingHTTPServer, str]) -> None:
+def test_json_api_handler_reads_and_writes_json(
+    echo_server: tuple[ThreadingHTTPServer, str],
+) -> None:
     _server, base_url = echo_server
 
     status, payload = _request(

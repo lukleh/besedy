@@ -449,9 +449,21 @@ class TestAacQuality:
 def _tone(path: Path, seconds: int = 6) -> Path:
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
-            "-i", f"sine=frequency=440:duration={seconds}:sample_rate=44100",
-            "-ac", "1", "-c:a", "libmp3lame", "-b:a", "128k", str(path),
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration={seconds}:sample_rate=44100",
+            "-ac",
+            "1",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            str(path),
         ],
         check=True,
     )
@@ -461,8 +473,14 @@ def _tone(path: Path, seconds: int = 6) -> Path:
 def _probe(path: Path) -> dict[str, str]:
     out = subprocess.run(
         [
-            "ffprobe", "-v", "error", "-show_entries", "format=duration,format_name:stream=codec_name",
-            "-of", "json", str(path),
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration,format_name:stream=codec_name",
+            "-of",
+            "json",
+            str(path),
         ],
         check=True,
         capture_output=True,
@@ -571,7 +589,9 @@ class TestAacCopyEncoding:
     def test_a_failed_copy_keeps_the_opus_archive(self, tmp_path, require_ffmpeg, monkeypatch):
         source = _tone(tmp_path / "talk.mp3", seconds=2)
         output = tmp_path / "out" / "talk.webm"
-        monkeypatch.setattr(archive_module, "_encode_m4a", lambda *a, **k: (3, "ffmpeg failed: boom"))
+        monkeypatch.setattr(
+            archive_module, "_encode_m4a", lambda *a, **k: (3, "ffmpeg failed: boom")
+        )
 
         result = compress_audio_file(
             self._row(source),
@@ -660,8 +680,18 @@ class TestBackfillSafety:
         ]
         manifest_rows = [
             # A resumed --overwrite run can list a hash twice.
-            {"Hash": "a" * 64, "Compressed Path": str(webm), "Format": "opus", "Bitrate (kbps)": "40"},
-            {"Hash": "a" * 64, "Compressed Path": str(webm), "Format": "opus", "Bitrate (kbps)": "40"},
+            {
+                "Hash": "a" * 64,
+                "Compressed Path": str(webm),
+                "Format": "opus",
+                "Bitrate (kbps)": "40",
+            },
+            {
+                "Hash": "a" * 64,
+                "Compressed Path": str(webm),
+                "Format": "opus",
+                "Bitrate (kbps)": "40",
+            },
             # Blank Format but an .m4a archive: never replaced by a copy.
             {"Hash": "b" * 64, "Compressed Path": str(m4a_archive), "Format": ""},
         ]
@@ -695,7 +725,10 @@ class TestBackfillSafety:
         rows = [CsvAudioRow(sha256=n * 64, full_path=str(tmp_path / f"{n}.mp3")) for n in "ab"]
         manifest = self._manifest(
             tmp_path,
-            [{"Hash": n * 64, "Compressed Path": str(w), "Format": "opus"} for n, w in zip("ab", webms)],
+            [
+                {"Hash": n * 64, "Compressed Path": str(w), "Format": "opus"}
+                for n, w in zip("ab", webms)
+            ],
         )
         monkeypatch.setattr(
             archive_module,
@@ -799,9 +832,7 @@ class TestBackfillSafety:
         self, tmp_path, require_ffmpeg, monkeypatch, capsys
     ):
         manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64])
-        monkeypatch.setattr(
-            archive_module, "backfill_aac_copy", self._fake_copy(fail={"a" * 64})
-        )
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", self._fake_copy(fail={"a" * 64}))
 
         archive_module.run_aac_backfill(ArchiveRequest(), rows, manifest)
 
@@ -816,9 +847,7 @@ class TestBackfillSafety:
     ):
         manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64, "c" * 64])
         calls: list[str] = []
-        monkeypatch.setattr(
-            archive_module, "backfill_aac_copy", self._fake_copy(calls, delay=0.3)
-        )
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", self._fake_copy(calls, delay=0.3))
         real_update = archive_module.update_manifest_rows
         interrupted = []
 

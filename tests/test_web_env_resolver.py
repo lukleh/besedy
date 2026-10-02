@@ -272,9 +272,7 @@ def compose_config(
 ) -> dict[str, object]:
     instance = mode
     volume_name = (
-        "besedy_production_postgres"
-        if mode == "production"
-        else f"besedy_{instance}_postgres"
+        "besedy_production_postgres" if mode == "production" else f"besedy_{instance}_postgres"
     )
     web_environment: dict[str, str] = {"APP_ENV": mode, "CONFIG_FILE": config_file}
     if jobs_api_base_url is not None:
@@ -313,7 +311,9 @@ def compose_config(
     }
 
 
-def validate_compose_config(config: dict[str, object], mode: str) -> subprocess.CompletedProcess[str]:
+def validate_compose_config(
+    config: dict[str, object], mode: str
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(COMPOSE_VALIDATOR), mode, mode, "besedy-internal"],
         cwd=REPO_ROOT,
@@ -325,9 +325,7 @@ def validate_compose_config(config: dict[str, object], mode: str) -> subprocess.
 
 
 def test_compose_validator_allows_production_text_in_non_resource_paths() -> None:
-    config = compose_config(
-        "test", config_file="/tmp/besedy-production-fixtures/config.toml"
-    )
+    config = compose_config("test", config_file="/tmp/besedy-production-fixtures/config.toml")
 
     result = validate_compose_config(config, "test")
 
@@ -344,9 +342,7 @@ def test_compose_validator_allows_production_text_in_non_resource_paths() -> Non
         ),
         (
             "test",
-            compose_config(
-                "test", db_networks={"besedy_internal": None, "default": None}
-            ),
+            compose_config("test", db_networks={"besedy_internal": None, "default": None}),
             "database must only join the project default network",
         ),
     ],
@@ -409,11 +405,23 @@ def _bind_config(mode: str, root: Path) -> dict[str, object]:
                         "source": str(root / "checkout/missing-file.toml"),
                         "target": "/app/missing-file.toml",
                     },
-                    {"type": "bind", "source": str(root / "cache/.next"), "target": "/app/.cache-next"},
-                    {"type": "bind", "source": str(root / "state/logs"), "target": "/var/log/besedy"},
+                    {
+                        "type": "bind",
+                        "source": str(root / "cache/.next"),
+                        "target": "/app/.cache-next",
+                    },
+                    {
+                        "type": "bind",
+                        "source": str(root / "state/logs"),
+                        "target": "/var/log/besedy",
+                    },
                     {"type": "bind", "source": str(root / "fixtures"), "target": "/data/text"},
                     {"type": "bind", "source": str(root / "uploads"), "target": "/data/uploads"},
-                    {"type": "bind", "source": str(root / "corrections"), "target": "/data/corrections"},
+                    {
+                        "type": "bind",
+                        "source": str(root / "corrections"),
+                        "target": "/data/corrections",
+                    },
                     {
                         "type": "bind",
                         "source": str(root / "missing.toml"),
@@ -898,7 +906,9 @@ def _compose_available() -> bool:
     if shutil.which("docker") is None:
         return False
     return (
-        subprocess.run(["docker", "compose", "version"], capture_output=True, check=False).returncode
+        subprocess.run(
+            ["docker", "compose", "version"], capture_output=True, check=False
+        ).returncode
         == 0
     )
 

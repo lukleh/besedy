@@ -176,14 +176,9 @@ class TestStepNumberingCalculation:
         """Total steps includes all workflows and derived steps."""
         transcription_workflows, diarization_workflow_ids = resolve_pipeline_workflows()
         total = (
-            3
-            + len(transcription_workflows)
-            + len(diarization_workflow_ids)
-            + len(DERIVED_STEPS)
+            3 + len(transcription_workflows) + len(diarization_workflow_ids) + len(DERIVED_STEPS)
         )
-        assert total == (
-            3 + len(transcription_workflows) + len(diarization_workflow_ids) + 2
-        )
+        assert total == (3 + len(transcription_workflows) + len(diarization_workflow_ids) + 2)
 
     def test_total_steps_without_derived(self):
         """Total steps without derived is fewer."""
@@ -884,9 +879,7 @@ class TestPipelineRagIndexing:
             lambda _args: default_pipeline_rag_backend_key(),
         )
 
-        assert (
-            handle_run_pipeline(_pipeline_args(rag_colbert_runtime="docker-indexer")) == 0
-        )
+        assert handle_run_pipeline(_pipeline_args(rag_colbert_runtime="docker-indexer")) == 0
         assert len(colbert_calls) == 1
         assert colbert_calls[0].runtime == "docker-indexer"
 

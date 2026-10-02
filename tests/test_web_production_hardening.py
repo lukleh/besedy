@@ -93,7 +93,7 @@ def test_production_builds_and_restore_keep_exact_rollback_artifacts() -> None:
     assert 'docker image tag "$jobs_image" "besedy-jobs:$GIT_COMMIT"' in justfile
     assert "skipping its rollback snapshot" in justfile
     assert "LABEL org.opencontainers.image.revision=${GIT_COMMIT}" in dockerfile
-    assert 'image: ${BESEDY_WEB_IMAGE:-besedy-web:prod}' in production_compose
+    assert "image: ${BESEDY_WEB_IMAGE:-besedy-web:prod}" in production_compose
     assert "GIT_COMMIT WEB_VERSION BUILD_TIME BESEDY_WEB_IMAGE" in compose_wrapper
     assert 'CONFIRM_PROD_RESTORE="$backup"' in justfile
     assert 'dropdb --if-exists --force "$PGDATABASE"' in justfile
@@ -106,9 +106,9 @@ def test_prod_apply_refuses_an_image_from_a_different_checkout_before_downtime()
         "\n# Full production web deployment", maxsplit=1
     )[0]
 
-    label = 'org.opencontainers.image.revision'
+    label = "org.opencontainers.image.revision"
     assert label in apply_recipe
-    assert 'resolve_web_env_file.sh production' in apply_recipe
+    assert "resolve_web_env_file.sh production" in apply_recipe
     assert 'if [ "$image_commit" != "$git_commit" ]' in apply_recipe
     assert "Run just prod-build from this checkout before applying it." in apply_recipe
     assert apply_recipe.index(label) < apply_recipe.index("stop web backup")
@@ -133,14 +133,14 @@ def test_fresh_host_can_build_web_before_the_coordinated_jobs_build() -> None:
     build_recipe = justfile.split("\nprod-build:", maxsplit=1)[1].split(
         "\n# Stop the web writer", maxsplit=1
     )[0]
-    coordinated_recipe = justfile.split("prod-deploy-with-jobs:", maxsplit=1)[
-        1
-    ].split("\n# The same coordinated", maxsplit=1)[0]
+    coordinated_recipe = justfile.split("prod-deploy-with-jobs:", maxsplit=1)[1].split(
+        "\n# The same coordinated", maxsplit=1
+    )[0]
 
     assert 'if docker image inspect "$jobs_image"' in build_recipe
-    assert "exit 1" not in build_recipe.split(
-        'if docker image inspect "$jobs_image"', maxsplit=1
-    )[1]
+    assert (
+        "exit 1" not in build_recipe.split('if docker image inspect "$jobs_image"', maxsplit=1)[1]
+    )
     assert coordinated_recipe.index("just prod-build") < coordinated_recipe.index(
         "just jobs-prod-build"
     )

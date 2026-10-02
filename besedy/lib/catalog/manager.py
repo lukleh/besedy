@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import re
+import select
 import subprocess
 import unicodedata
 from collections.abc import Iterable, Sequence
@@ -223,7 +224,9 @@ def audio_content_sha256sum(
     Args:
         path: Path to audio file.
         ffmpeg_binary: Path to ffmpeg executable.
-        timeout: Optional timeout in seconds for the ffmpeg process.
+        timeout: Seconds ffmpeg may go without producing output before it
+            is killed (default 120). This is a no-progress deadline, not a
+            limit on total decode time, so long recordings are unaffected.
         chunk_size: Size of chunks to read from ffmpeg output (default 1MB).
 
     Returns:
@@ -256,13 +259,18 @@ def audio_content_sha256sum(
             stderr=subprocess.DEVNULL,
         )
         assert proc.stdout is not None
+        stdout_fd = proc.stdout.fileno()
+        idle_timeout = timeout or 120
         digest = hashlib.sha256()
         while True:
-            chunk = proc.stdout.read(chunk_size)
+            ready, _, _ = select.select([stdout_fd], [], [], idle_timeout)
+            if not ready:
+                raise subprocess.TimeoutExpired(cmd, idle_timeout)
+            chunk = os.read(stdout_fd, chunk_size)
             if not chunk:
                 break
             digest.update(chunk)
-        proc.wait(timeout=timeout or 120)
+        proc.wait(timeout=idle_timeout)
         if proc.returncode != 0:
             return None
         return digest.hexdigest()

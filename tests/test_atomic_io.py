@@ -95,6 +95,7 @@ class TestAtomicWriteText:
     def test_new_file_gets_umask_permissions(self, tmp_path):
         """New files use 0o666 & ~umask, not mkstemp's 0o600."""
         import besedy.lib.data.atomic_io as mod
+
         target = tmp_path / "new.txt"
         atomic_write_text(target, "content")
         mode = stat.S_IMODE(target.stat().st_mode)

@@ -150,6 +150,16 @@ or resampling-contract change requires a new algorithm version and an explicit
 transition plan. Undecodable sources must be repaired or handled outside the normal
 catalog pipeline.
 
+**Decoder build:** `catalog create`/`add` decode with the first `ffmpeg` on
+`PATH` (they do not use `--ffmpeg-binary`), with ffmpeg's default resampler and
+default audio-stream choice. Check which build that is with `command -v ffmpeg`
+and `ffmpeg -version`. `tests/test_audio_content_hash.py` pins the hashes of
+small MP3 and Opus fixtures in `tests/fixtures/audio_hash/`. If those tests fail
+after an ffmpeg upgrade, that build decodes or resamples differently, and it must
+not hash catalog audio until a new algorithm version exists. A decoder that
+produces no output for 120 seconds is killed, and the file is reported as
+undecodable.
+
 ### 2. Two-Stage Pipeline (Stage then Process)
 
 Audio normalization (staging) is a separate step from transcription/diarization.

@@ -193,7 +193,11 @@ def test_plan_removes_an_aac_copy_the_manifest_did_not_record(layout: Layout) ->
         archived_csv,
         ["Hash", "Full Path", "Compressed Path"],
         [
-            {"Hash": h, "Full Path": str(layout.sources[h]), "Compressed Path": str(layout.archived[h])}
+            {
+                "Hash": h,
+                "Full Path": str(layout.sources[h]),
+                "Compressed Path": str(layout.archived[h]),
+            }
             for h in (KEEP, GONE)
         ],
     )
