@@ -20,7 +20,11 @@ import {
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
 import { useRecordingBookmarks } from "@/hooks/use-recording-bookmarks";
 import { useSession } from "@/contexts/session-context";
-import { RecordingBookmarks, type TranscriptLine } from "@/components/bookmarks/recording-bookmarks";
+import {
+  RecordingBookmarks,
+  useBookmarkDraft,
+  type TranscriptLine,
+} from "@/components/bookmarks/recording-bookmarks";
 import type { Transcript } from "@/components/transcript/transcript-viewer";
 import {
   RecordingAudioSection,
@@ -149,11 +153,13 @@ export default function RecordingContent({
 
   // Bookmarks belong to a signed-in user; the session-free offline shell has none.
   const { session } = useSession();
+  const signedIn = !!session?.user?.id;
   const bookmarks = useRecordingBookmarks(
     catalogId,
     hash,
-    !!session?.user?.id && !catalogNotFound && !catalogValidationLoading
+    signedIn && !catalogNotFound && !catalogValidationLoading
   );
+  const bookmarkDraft = useBookmarkDraft(currentTime, signedIn);
   const bookmarkMarkers = useMemo(
     () => bookmarks.bookmarks.map((bookmark) => bookmark.positionSec),
     [bookmarks.bookmarks]
@@ -334,11 +340,12 @@ export default function RecordingContent({
         audioUrl={audioUrl}
         autoPlayOnSeek={autoPlayOnSeek}
         bookmarkMarkers={bookmarkMarkers}
+        onBookmark={signedIn ? bookmarkDraft.startDraft : undefined}
         bookmarksPanel={
-          session?.user?.id ? (
+          signedIn ? (
             <RecordingBookmarks
               bookmarks={bookmarks}
-              currentTime={currentTime}
+              draft={bookmarkDraft}
               onSeek={handleSeek}
               transcriptLines={transcriptLines}
             />

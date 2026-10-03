@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { BookmarkPlus, List } from "lucide-react";
+import { List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useReturnHref } from "@/hooks/use-return-href";
@@ -50,25 +50,23 @@ function isOwnedByOtherControl(target: EventTarget | null): boolean {
   );
 }
 
-interface RecordingBookmarksProps {
-  bookmarks: ReturnType<typeof useRecordingBookmarks>;
-  currentTime: number;
-  onSeek: (time: number) => void;
-  transcriptLines: readonly TranscriptLine[];
+export interface BookmarkDraft {
+  /** The moment of the bookmark being written, or null when none is. */
+  draftTime: number | null;
+  /** The bookmark whose comment is being edited. */
+  editingId: string | null;
+  startDraft: () => void;
+  cancelDraft: () => void;
+  startEdit: (id: string) => void;
+  stopEdit: () => void;
 }
 
-/** The listener's own bookmarks in this recording, under the player. */
-export function RecordingBookmarks({
-  bookmarks,
-  currentTime,
-  onSeek,
-  transcriptLines,
-}: RecordingBookmarksProps) {
-  const t = useTranslations("bookmarks");
-  const { toast } = useToast();
-  const allBookmarksHref = useReturnHref("/bookmarks");
-  // The moment is taken when the listener asks for the bookmark, not when the
-  // comment is saved; playback carries on while they type.
+/**
+ * Writing a bookmark. The moment is taken when the listener asks for the
+ * bookmark (the player's button or the B key), not when the comment is saved;
+ * playback carries on while they type. One form is open at a time.
+ */
+export function useBookmarkDraft(currentTime: number, enabled: boolean): BookmarkDraft {
   const [draftTime, setDraftTime] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const currentTimeRef = useRef(currentTime);
@@ -76,13 +74,20 @@ export function RecordingBookmarks({
     currentTimeRef.current = currentTime;
   }, [currentTime]);
 
-  const startDraft = () => {
+  const startDraft = useCallback(() => {
     setEditingId(null);
     setDraftTime(currentTimeRef.current);
-  };
+  }, []);
+  const cancelDraft = useCallback(() => setDraftTime(null), []);
+  const startEdit = useCallback((id: string) => {
+    setDraftTime(null);
+    setEditingId(id);
+  }, []);
+  const stopEdit = useCallback(() => setEditingId(null), []);
 
   // B adds a bookmark, like the player's own shortcuts outside text fields.
   useEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.code !== "KeyB" ||
@@ -96,12 +101,37 @@ export function RecordingBookmarks({
         return;
       }
       event.preventDefault();
-      setEditingId(null);
-      setDraftTime(currentTimeRef.current);
+      startDraft();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [enabled, startDraft]);
+
+  return { draftTime, editingId, startDraft, cancelDraft, startEdit, stopEdit };
+}
+
+interface RecordingBookmarksProps {
+  bookmarks: ReturnType<typeof useRecordingBookmarks>;
+  draft: BookmarkDraft;
+  onSeek: (time: number) => void;
+  transcriptLines: readonly TranscriptLine[];
+}
+
+/**
+ * The listener's own bookmarks in this recording, under the player. Nothing is
+ * shown until there is a bookmark or one is being written; the player's
+ * bookmark button starts one.
+ */
+export function RecordingBookmarks({
+  bookmarks,
+  draft,
+  onSeek,
+  transcriptLines,
+}: RecordingBookmarksProps) {
+  const t = useTranslations("bookmarks");
+  const { toast } = useToast();
+  const allBookmarksHref = useReturnHref("/bookmarks");
+  const { draftTime, editingId } = draft;
 
   const showError = () => toast({ title: t("saveFailed"), variant: "destructive" });
 
@@ -113,14 +143,14 @@ export function RecordingBookmarks({
         comment,
         excerpt: findTranscriptExcerpt(transcriptLines, draftTime),
       },
-      { onSuccess: () => setDraftTime(null), onError: showError },
+      { onSuccess: draft.cancelDraft, onError: showError },
     );
   };
 
   const saveEdit = (bookmark: RecordingBookmark, comment: string) => {
     bookmarks.update.mutate(
       { id: bookmark.id, comment },
-      { onSuccess: () => setEditingId(null), onError: showError },
+      { onSuccess: draft.stopEdit, onError: showError },
     );
   };
 
@@ -129,6 +159,8 @@ export function RecordingBookmarks({
       onError: () => toast({ title: t("deleteFailed"), variant: "destructive" }),
     });
   };
+
+  if (bookmarks.bookmarks.length === 0 && draftTime === null) return null;
 
   return (
     <section className="space-y-3 rounded-lg border p-4" aria-labelledby="recording-bookmarks-heading" data-testid="recording-bookmarks">
@@ -139,24 +171,12 @@ export function RecordingBookmarks({
             <span className="ml-2 text-sm font-normal text-muted-foreground">{bookmarks.bookmarks.length}</span>
           )}
         </h2>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={allBookmarksHref}>
-              <List className="mr-2 h-4 w-4" />
-              {t("all")}
-            </Link>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={startDraft}
-            title={t("addShortcut")}
-            data-testid="bookmark-add"
-          >
-            <BookmarkPlus className="mr-2 h-4 w-4" />
-            {t("add")}
-          </Button>
-        </div>
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={allBookmarksHref}>
+            <List className="mr-2 h-4 w-4" />
+            {t("all")}
+          </Link>
+        </Button>
       </div>
 
       {draftTime !== null && (
@@ -165,16 +185,10 @@ export function RecordingBookmarks({
           <BookmarkCommentForm
             label={t("comment")}
             isSaving={bookmarks.create.isPending}
-            onCancel={() => setDraftTime(null)}
+            onCancel={draft.cancelDraft}
             onSave={saveDraft}
           />
         </div>
-      )}
-
-      {bookmarks.bookmarks.length === 0 && draftTime === null && !bookmarks.isLoading && (
-        <p className="text-sm text-muted-foreground">
-          {bookmarks.isError ? t("loadFailed") : t("emptyRecording")}
-        </p>
       )}
 
       {bookmarks.bookmarks.length > 0 && (
@@ -198,11 +212,8 @@ export function RecordingBookmarks({
               isEditing={editingId === bookmark.id}
               isSaving={bookmarks.update.isPending}
               isDeleting={bookmarks.remove.isPending}
-              onEdit={() => {
-                setDraftTime(null);
-                setEditingId(bookmark.id);
-              }}
-              onCancelEdit={() => setEditingId(null)}
+              onEdit={() => draft.startEdit(bookmark.id)}
+              onCancelEdit={draft.stopEdit}
               onSave={(comment) => saveEdit(bookmark, comment)}
               onDelete={() => deleteBookmark(bookmark)}
             />

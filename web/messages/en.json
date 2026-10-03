@@ -349,15 +349,12 @@
   "bookmarks": {
     "title": "Bookmarks",
     "description": "Moments you bookmarked in recordings. Open one to play from that point.",
-    "add": "Add bookmark",
-    "addShortcut": "Bookmark the current moment (B)",
     "all": "All bookmarks",
     "newAt": "New bookmark at {time}",
     "comment": "Bookmark comment",
     "commentPlaceholder": "Comment (optional)",
     "editComment": "Edit comment",
     "playFrom": "Play from here",
-    "emptyRecording": "No bookmarks in this recording yet. Press B or Add bookmark to mark the current moment.",
     "empty": "No bookmarks yet. Bookmark a moment while listening to a recording and it shows up here.",
     "filterPlaceholder": "Filter bookmarks",
     "noMatches": "No bookmarks match the filter.",
@@ -379,6 +376,8 @@
     "volume": "Volume",
     "waveform": "Toggle waveform",
     "keyboardHints": "Space: play/pause · ←→: seek 5s · ↑↓: volume · M: mute",
+    "keyboardHintBookmark": "B: bookmark",
+    "bookmark": "Bookmark this moment (B)",
     "reconnecting": "Reconnecting..."
   },
   "radio": {

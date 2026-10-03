@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
+  BookmarkPlus,
   Bug,
   Loader2,
   Pause,
@@ -37,6 +38,7 @@ interface AudioPlayerChromeProps {
   isPlaying: boolean;
   isReconnecting: boolean;
   markers?: readonly number[];
+  onBookmark?: () => void;
   onSeek: (value: number[]) => void;
   onSkipBackward: () => void;
   onSkipForward: () => void;
@@ -61,6 +63,7 @@ export function AudioPlayerChrome({
   isPlaying,
   isReconnecting,
   markers,
+  onBookmark,
   onSeek,
   onSkipBackward,
   onSkipForward,
@@ -93,6 +96,19 @@ export function AudioPlayerChrome({
         <DownloadButton catalogId={catalogId} hash={hash} size="player" />
       )
     ) : null;
+  const bookmarkControl = onBookmark ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onBookmark}
+      title={t("bookmark")}
+      aria-label={t("bookmark")}
+      className="h-12 w-12"
+      data-testid="audio-bookmark"
+    >
+      <BookmarkPlus className="size-6" />
+    </Button>
+  ) : null;
 
   return (
     <>
@@ -154,6 +170,7 @@ export function AudioPlayerChrome({
               isReconnecting={isReconnecting}
               isCached={isDownloaded}
             />
+            {bookmarkControl}
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
@@ -242,7 +259,11 @@ export function AudioPlayerChrome({
           >
             <Bug className="h-3.5 w-3.5" />
           </button>
-          <div className="grid w-[14.25rem] grid-cols-3 items-center justify-items-center gap-3">
+          <div
+            className={`grid w-[14.25rem] items-center justify-items-center gap-3 ${
+              bookmarkControl ? "grid-cols-4" : "grid-cols-3"
+            }`}
+          >
             <div className="flex h-12 items-center justify-center">
               {downloadControl}
             </div>
@@ -256,6 +277,7 @@ export function AudioPlayerChrome({
                 isCached={isDownloaded}
               />
             </div>
+            {bookmarkControl}
             <Button
               variant="ghost"
               size="icon"
@@ -288,7 +310,7 @@ export function AudioPlayerChrome({
           <Bug className="h-3.5 w-3.5" />
         </button>
         <div className="hidden flex-1 text-center text-xs text-muted-foreground sm:block">
-          {t("keyboardHints")}
+          {onBookmark ? `${t("keyboardHints")} · ${t("keyboardHintBookmark")}` : t("keyboardHints")}
         </div>
         <div className="hidden w-8 sm:block" />
       </div>

@@ -5,6 +5,7 @@ import messages from "../../messages/en.json";
 import {
   RecordingBookmarks,
   findTranscriptExcerpt,
+  useBookmarkDraft,
 } from "@/components/bookmarks/recording-bookmarks";
 import type { useRecordingBookmarks } from "@/hooks/use-recording-bookmarks";
 
@@ -49,40 +50,68 @@ describe("findTranscriptExcerpt", () => {
   });
 });
 
-function renderPanel(currentTime: number, { isPending = false } = {}) {
+const SAVED = {
+  id: "b1",
+  positionSec: 125,
+  comment: "Key question",
+  excerpt: "Proč?",
+  createdAt: "2026-10-03T12:00:00.000Z",
+  updatedAt: "2026-10-03T12:00:00.000Z",
+};
+
+type Bookmarks = ReturnType<typeof useRecordingBookmarks>;
+
+/** The panel as the recording page wires it: the draft hook, with the player's button standing in. */
+function Harness({
+  bookmarks,
+  currentTime,
+  onSeek,
+}: {
+  bookmarks: Bookmarks;
+  currentTime: number;
+  onSeek: (time: number) => void;
+}) {
+  const draft = useBookmarkDraft(currentTime, true);
+  return (
+    <>
+      <button type="button" data-testid="audio-bookmark" onClick={draft.startDraft} />
+      <RecordingBookmarks bookmarks={bookmarks} draft={draft} onSeek={onSeek} transcriptLines={LINES} />
+    </>
+  );
+}
+
+function renderPanel(currentTime: number, { isPending = false, saved = [SAVED] } = {}) {
   const mutate = vi.fn();
   const onSeek = vi.fn();
   const bookmarks = {
-    bookmarks: [
-      {
-        id: "b1",
-        positionSec: 125,
-        comment: "Key question",
-        excerpt: "Proč?",
-        createdAt: "2026-10-03T12:00:00.000Z",
-        updatedAt: "2026-10-03T12:00:00.000Z",
-      },
-    ],
+    bookmarks: saved,
     isLoading: false,
     isError: false,
     create: { mutate, isPending },
     update: { mutate: vi.fn(), isPending: false },
     remove: { mutate: vi.fn(), isPending: false },
-  } as unknown as ReturnType<typeof useRecordingBookmarks>;
+  } as unknown as Bookmarks;
   render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <RecordingBookmarks
-        bookmarks={bookmarks}
-        currentTime={currentTime}
-        onSeek={onSeek}
-        transcriptLines={LINES}
-      />
+      <Harness bookmarks={bookmarks} currentTime={currentTime} onSeek={onSeek} />
     </NextIntlClientProvider>,
   );
   return { mutate, onSeek };
 }
 
 describe("RecordingBookmarks", () => {
+  it("shows nothing until the recording has a bookmark or one is being written", () => {
+    renderPanel(42, { saved: [] });
+    expect(screen.queryByTestId("recording-bookmarks")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("audio-bookmark"));
+
+    expect(screen.getByTestId("recording-bookmarks")).toBeTruthy();
+    expect(screen.getByText("New bookmark at 00:00:42")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("recording-bookmarks")).toBeNull();
+  });
+
   it("bookmarks the moment B was pressed, with the line spoken there", () => {
     const { mutate } = renderPanel(7.4);
 
@@ -129,7 +158,7 @@ describe("RecordingBookmarks", () => {
   it("saves once while a save is in flight, however often Ctrl+Enter is pressed", () => {
     const { mutate } = renderPanel(7, { isPending: true });
 
-    fireEvent.click(screen.getByTestId("bookmark-add"));
+    fireEvent.click(screen.getByTestId("audio-bookmark"));
     const input = screen.getByTestId("bookmark-comment-input");
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });

@@ -76,6 +76,8 @@ interface RecordingAudioSectionProps {
   /** Shown under the player's own controls. */
   bookmarksPanel?: ReactNode;
   bookmarkMarkers?: readonly number[];
+  /** Shows the player's bookmark button. */
+  onBookmark?: () => void;
   catalogId: string;
   downloadEventId?: number;
   currentTimeSetter: (time: number) => void;
@@ -249,6 +251,7 @@ export function RecordingAudioSection({
   autoPlayOnSeek,
   bookmarksPanel,
   bookmarkMarkers,
+  onBookmark,
   catalogId,
   downloadEventId,
   currentTimeSetter,
@@ -312,6 +315,7 @@ export function RecordingAudioSection({
         playbackEnd={seekRequest?.end}
         autoPlayOnSeek={autoPlayOnSeek}
         markers={bookmarkMarkers}
+        onBookmark={onBookmark}
         mediaMetadata={{
           title: headingText,
           artist: recording.curatedArtist ?? recording.artist ?? undefined,

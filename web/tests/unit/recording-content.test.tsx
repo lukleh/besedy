@@ -95,8 +95,10 @@ vi.mock("@/hooks/use-recording-bookmarks", () => ({
   useRecordingBookmarks: (...args: unknown[]) => useRecordingBookmarksMock(...args),
 }));
 
+const startBookmarkDraft = vi.fn();
 vi.mock("@/components/bookmarks/recording-bookmarks", () => ({
   RecordingBookmarks: () => <div data-testid="recording-bookmarks" />,
+  useBookmarkDraft: () => ({ draftTime: null, editingId: null, startDraft: startBookmarkDraft }),
 }));
 
 vi.mock("@/components/player/audio-player", () => ({
@@ -324,7 +326,7 @@ describe("RecordingContent transcript toggle", () => {
     expect(screen.getByTestId("recording-bookmarks")).toBeTruthy();
     expect(useRecordingBookmarksMock).toHaveBeenCalledWith(CATALOG_ID, HASH, true);
     expect(audioPlayerMock).toHaveBeenCalledWith(
-      expect.objectContaining({ markers: [30, 95.5] })
+      expect.objectContaining({ markers: [30, 95.5], onBookmark: startBookmarkDraft })
     );
   });
 
@@ -336,6 +338,9 @@ describe("RecordingContent transcript toggle", () => {
 
     expect(screen.queryByTestId("recording-bookmarks")).toBeNull();
     expect(useRecordingBookmarksMock).toHaveBeenCalledWith(CATALOG_ID, HASH, false);
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ onBookmark: undefined })
+    );
   });
 
   it("uses a completed download's exact audio URL while offline", () => {

@@ -87,6 +87,7 @@ export function AudioPlayer({
   autoPlayOnSeek,
   mediaMetadata,
   markers,
+  onBookmark,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1047,6 +1048,7 @@ export function AudioPlayer({
         isPlaying={isPlaying}
         isReconnecting={isReconnecting}
         markers={markers}
+        onBookmark={onBookmark}
         onSeek={handleSeek}
         onSkipBackward={skipBackward}
         onSkipForward={skipForward}
