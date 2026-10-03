@@ -249,10 +249,11 @@ npm run test:coverage     # With coverage
 ```
 
 `.test.ts` files run in the `node` environment and `.test.tsx` component tests
-in `jsdom` (see `vitest.config.ts`). A `.ts` test that needs `document`,
-`window`, `localStorage` or similar starts with a
-`/** @vitest-environment jsdom */` docblock; without it, it fails with
-`window is not defined`.
+in `jsdom` (see `vitest.config.ts`). A `.ts` test of browser behaviour (DOM,
+`window`, `localStorage`, `navigator`, hooks) starts with a
+`/** @vitest-environment jsdom */` docblock. Without it most DOM use throws
+(`document is not defined`), but code guarded by `typeof window` silently takes
+its server branch, so do not rely on the error to tell you.
 
 ### E2E Tests (Playwright)
 

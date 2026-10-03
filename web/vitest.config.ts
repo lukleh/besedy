@@ -10,9 +10,11 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     exclude: ["tests/e2e/**"],
     // Booting jsdom per test file dominated the run, so only component tests
-    // (.tsx) get it by default. A .ts test that needs the DOM opts in with a
-    // `@vitest-environment jsdom` docblock; without it, `document` and `window`
-    // are undefined and the test fails loudly.
+    // (.tsx) get it by default. A .ts test of browser behaviour opts in with a
+    // `@vitest-environment jsdom` docblock. Without it `document`, `window` and
+    // `localStorage` are undefined: most DOM use throws, but code that checks
+    // `typeof window` quietly takes its server branch, so add the docblock
+    // whenever the test is about the browser path.
     projects: [
       {
         extends: true,
