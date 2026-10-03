@@ -1,6 +1,6 @@
 # ADR 0006: Human transcript correction
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-15
 - **Revised:** 2026-09-22
 - **Canonical references:** [Data model](../data-model.md), [RAG system](../rag-system.md), [ADR 0002](0002-artifact-generations.md), [ADR 0003](0003-web-catalog-projection.md), [ADR 0004](0004-system-boundaries.md), [ADR 0005](0005-catalog-permission-model.md)

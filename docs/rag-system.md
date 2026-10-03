@@ -130,9 +130,13 @@ Operational constraints that are not obvious from the code:
   a GPU container; query happens in a CPU container. FastPLAID segfaulted during
   index creation in a mixed CPU-only image; the clean GPU-build / CPU-query
   split is what works reliably.
-- **Pin a concrete model revision.** The `jina-colbert-v2` remote-code path
-  pulls floating Hugging Face files at startup. Production images should pin a
-  model revision rather than rely on live remote-code updates.
+- **The ColBERT model revision is not pinned.** `jina-colbert-v2` loads with
+  `trust_remote_code=True` and no `revision` (`besedy/lib/rag_pylate.py`), so the
+  remote-code and weight files come from the floating Hugging Face `main`
+  branch the first time the model cache is filled. The locked image fixes the
+  Python packages, not those files; the `besedy_colbert_model_cache` volume is
+  what keeps them stable between restarts. Pinning a revision is a code change
+  that has not been made.
 - **FlashAttention-4 is not used; native attention only.** An FA4 spike
   (`beta7`) failed to run on the reference Blackwell / CUDA 12.8 / Torch 2.11 /
   Transformers 4.46 image: the kernel raised a `_trait` error on both the cu128

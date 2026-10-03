@@ -59,15 +59,18 @@ session row.
 3. API semantics are strict: `401` = unauthenticated, `403` = unauthorized.
 4. `/api/catalogs` is strictly authenticated.
 
-### Signed Cookie Verification
+### Session Cookie Verification
 
 Next.js 16 renamed the `middleware` file convention to `proxy`. In this repo,
 the auth gate lives in `web/src/proxy.ts`; do not add a new `middleware.ts` or
 reintroduce `middleware*` config keys in `web/next.config.ts`.
 
-The auth proxy performs HMAC-SHA256 verification of session cookies
-(format: `value.signature`) using `AUTH_SECRET` before trusting them. Invalid
-or missing signatures are rejected.
+The proxy does not check cookie signatures itself. It passes the session cookie
+to Better Auth (`auth.api.getSession` in `web/src/lib/auth/request-auth.ts`,
+called with `disableCookieCache` and `disableRefresh`), which verifies the
+cookie against `BETTER_AUTH_SECRET` (or `AUTH_SECRET`) and looks the session up in
+the database. A
+missing, unsigned, unknown or expired session counts as signed out.
 
 ### Session Redirect Loop Incident (2026-02-08)
 
@@ -599,6 +602,25 @@ Optional defense-in-depth: verify `cf-ray` header in middleware to reject
 requests not arriving via Cloudflare. Note: an attacker with their own
 Cloudflare account could still set this header, so this is not a complete
 solution. For edge MFA, consider Cloudflare Access (Zero Trust).
+
+### ColBERT Is Intentionally Reachable on the LAN
+
+The ColBERT search sidecar (`besedy-colbert`, `rag-services/docker-compose.yml`)
+binds `0.0.0.0:8192` (`COLBERT_HOST_BIND` and `COLBERT_HOST_PORT` change it),
+answers without authentication, and takes the index directory from the caller.
+This is a decision, not an oversight: the maintainer runs Besedy on a trusted
+home LAN (plus tailnet) and uses the service for testing and data mining
+outside Besedy.
+
+- The home LAN and tailnet are a trusted zone. Catalog ACLs scope web and MCP
+  users; they do not guard services on the host's own network.
+- The web app reaches the sidecar through `RAG_COLBERT_URL`, normally
+  `http://host.docker.internal:8192/query`, and applies catalog ACLs to every
+  result it returns.
+- Revisit the decision if an untrusted peer can reach the LAN or tailnet, or
+  the host gets a public interface: then bind `COLBERT_HOST_BIND=127.0.0.1`
+  (the web container still reaches it through `host.docker.internal`) or put
+  authentication in front of it.
 
 ### LAN Egress Isolation
 

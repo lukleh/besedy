@@ -7,8 +7,8 @@ supports it. The product model below is implemented on the page side: normal
 pages render downloaded events from local packages, the session-free shell
 serves them at their normal URLs, and the header carries the single
 connectivity indicator. The audio transport underneath is the legacy chunk
-store described under Current implementation; its replacement is specified by
-#163.
+store described under Current implementation; its replacement is tracked in
+#162 (#163, the segmented-playback design, was closed as superseded).
 
 The [current implementation](#current-implementation) section records what
 is in production today as an operational fact. The remaining sections are the
@@ -431,7 +431,9 @@ This seam is also the migration boundary:
    detail renderer and the fixed offline banner.
 
 Transport, media-engine selection, package versioning, and their rollout are
-specified by [#163](https://github.com/lukleh/besedy/issues/163). This document
+tracked in [#162](https://github.com/lukleh/besedy/issues/162); the segmented
+design of [#163](https://github.com/lukleh/besedy/issues/163) was closed as
+superseded and is the one to reopen only if device measurements require it. This document
 requires only that every supported transport serve the same source-neutral
 models and visible player, without deepening dependencies on the temporary
 offline-detail page.
