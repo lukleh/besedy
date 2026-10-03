@@ -154,6 +154,8 @@ model User {
   deepSearchSharesCreated      DeepSearchJobShare[]             @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
+  /// Timestamps this user bookmarked in recordings
+  recordingBookmarks           RecordingBookmark[]
   /// Recording uploads this user submitted for ingest
   recordingIntakes             RecordingIntake[]                @relation("RecordingIntakeRequestedBy")
   /// Correction workspaces this user started or archived
@@ -602,6 +604,8 @@ model WorkflowGroup {
   albums                   Album[]
   /// Admin uploads being ingested into this catalog
   recordingIntakes         RecordingIntake[]
+  /// Listener bookmarks in recordings of this catalog
+  recordingBookmarks       RecordingBookmark[]
 
   @@map("workflow_group")
 }
@@ -959,6 +963,28 @@ model RecordingPlaybackProgress {
   @@id([userId, audioHash])
   @@index([userId, updatedAt])
   @@map("recording_playback_progress")
+}
+
+/// A private, user-owned timestamp in one recording of one catalog. There is
+/// no relation to catalog_entry: sync rebuilds that table, and access is
+/// checked again whenever bookmarks are listed.
+model RecordingBookmark {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  audioHash       String   @map("audio_hash") @db.VarChar(64)
+  positionSec     Float    @map("position_sec")
+  comment         String?
+  /// The transcript line at the position when the bookmark was made
+  excerpt         String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workflowGroupId, audioHash])
+  @@map("recording_bookmark")
 }
 
 /// Admin-configured ordering for transcript backends

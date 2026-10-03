@@ -3,7 +3,7 @@
 import { signOutAndRedirect } from "@/lib/auth/client";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Download, LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react";
+import { Bookmark, Download, LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react";
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 import { useAdminStatus } from "@/hooks/use-admin-status";
@@ -70,6 +70,7 @@ export function UserMenu() {
   const route = useCatalogRouteState();
   const downloadsHref = useReturnHref(DOWNLOADS_PATH);
   const settingsHref = useReturnHref("/settings");
+  const bookmarksHref = useReturnHref("/bookmarks");
 
   // Don't show anything on auth pages
   const isAuthPage = route.isAuthPage;
@@ -192,8 +193,18 @@ export function UserMenu() {
         <LanguageMenuItem />
         <TextSizeMenuItem />
 
-        {/* Downloads & Settings */}
+        {/* Bookmarks, Downloads & Settings */}
         <ResponsiveMenuSeparator />
+        <ResponsiveMenuItem asChild>
+          <Link
+            href={bookmarksHref}
+            className="flex items-center gap-2 cursor-pointer"
+            data-testid="user-menu-bookmarks"
+          >
+            <Bookmark className="h-4 w-4 shrink-0" />
+            {t("nav.bookmarks")}
+          </Link>
+        </ResponsiveMenuItem>
         <ResponsiveMenuItem asChild>
           <Link
             href={downloadsHref}

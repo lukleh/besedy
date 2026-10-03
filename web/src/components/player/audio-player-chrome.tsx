@@ -36,6 +36,7 @@ interface AudioPlayerChromeProps {
   isMuted: boolean;
   isPlaying: boolean;
   isReconnecting: boolean;
+  markers?: readonly number[];
   onSeek: (value: number[]) => void;
   onSkipBackward: () => void;
   onSkipForward: () => void;
@@ -59,6 +60,7 @@ export function AudioPlayerChrome({
   isMuted,
   isPlaying,
   isReconnecting,
+  markers,
   onSeek,
   onSkipBackward,
   onSkipForward,
@@ -94,7 +96,7 @@ export function AudioPlayerChrome({
 
   return (
     <>
-      <div className="mb-4">
+      <div className="relative mb-4">
         <Slider
           // Until the duration is known the thumb stays at the start, but a
           // drag still has to register as a change for it to commit a seek.
@@ -124,6 +126,16 @@ export function AudioPlayerChrome({
           className="min-h-11 cursor-pointer [&_[data-slot=slider-thumb]]:size-6"
           aria-label={t("progress")}
         />
+        {duration > 0 &&
+          markers?.map((position, index) => (
+            <span
+              key={index}
+              aria-hidden="true"
+              data-testid="audio-progress-marker"
+              className="pointer-events-none absolute top-[1.375rem] h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500"
+              style={{ left: `${(Math.min(position, duration) / duration) * 100}%` }}
+            />
+          ))}
         <div className="mt-1 flex justify-between text-xs text-muted-foreground">
           <span>{formatAudioTime(shownTime)}</span>
           <span>{formatAudioTime(duration)}</span>

@@ -15,6 +15,8 @@ const useOnlineStatusMock = vi.fn();
 const useRecordingPlaybackMock = vi.fn();
 const useDownloadRecordMock = vi.fn();
 const audioPlayerMock = vi.fn();
+const useSessionMock = vi.fn();
+const useRecordingBookmarksMock = vi.fn();
 
 const HASH = "a".repeat(64);
 const CATALOG_ID = "20260101_120000";
@@ -85,6 +87,18 @@ vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback
   useRecordingPlayback: (...args: unknown[]) => useRecordingPlaybackMock(...args),
 }));
 
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => useSessionMock(),
+}));
+
+vi.mock("@/hooks/use-recording-bookmarks", () => ({
+  useRecordingBookmarks: (...args: unknown[]) => useRecordingBookmarksMock(...args),
+}));
+
+vi.mock("@/components/bookmarks/recording-bookmarks", () => ({
+  RecordingBookmarks: () => <div data-testid="recording-bookmarks" />,
+}));
+
 vi.mock("@/components/player/audio-player", () => ({
   AudioPlayer: (props: unknown) => {
     audioPlayerMock(props);
@@ -144,6 +158,8 @@ describe("RecordingContent transcript toggle", () => {
       setCurrentTime: vi.fn(),
     });
     useDownloadRecordMock.mockReturnValue(null);
+    useSessionMock.mockReturnValue({ session: { user: { id: "user-1" } } });
+    useRecordingBookmarksMock.mockReturnValue({ bookmarks: [] });
     useRecordingEntryMock.mockReturnValue({
       data: {
         entry: {
@@ -295,6 +311,31 @@ describe("RecordingContent transcript toggle", () => {
     expect(audioPlayerMock).toHaveBeenCalledWith(
       expect.objectContaining({ downloadEventId: 42 })
     );
+  });
+
+  it("shows the listener's bookmarks under the player and marks them on it", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useRecordingBookmarksMock.mockReturnValue({
+      bookmarks: [{ id: "b1", positionSec: 30 }, { id: "b2", positionSec: 95.5 }],
+    });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(screen.getByTestId("recording-bookmarks")).toBeTruthy();
+    expect(useRecordingBookmarksMock).toHaveBeenCalledWith(CATALOG_ID, HASH, true);
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ markers: [30, 95.5] })
+    );
+  });
+
+  it("has no bookmarks in the session-free offline shell", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useSessionMock.mockReturnValue({ session: null });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(screen.queryByTestId("recording-bookmarks")).toBeNull();
+    expect(useRecordingBookmarksMock).toHaveBeenCalledWith(CATALOG_ID, HASH, false);
   });
 
   it("uses a completed download's exact audio URL while offline", () => {

@@ -22,6 +22,7 @@
     "back": "Zpět",
     "catalog": "Katalog",
     "settings": "Nastavení",
+    "bookmarks": "Záložky",
     "downloads": "Stažené",
     "admin": "Administrace",
     "enums": "Číselníky katalogu",
@@ -344,6 +345,27 @@
       "month": "MM",
       "day": "DD"
     }
+  },
+  "bookmarks": {
+    "title": "Záložky",
+    "description": "Místa, která jste si v nahrávkách označili. Otevřením záložky se přehrávání spustí od daného místa.",
+    "add": "Přidat záložku",
+    "addShortcut": "Označit aktuální místo (B)",
+    "all": "Všechny záložky",
+    "newAt": "Nová záložka v čase {time}",
+    "comment": "Poznámka k záložce",
+    "commentPlaceholder": "Poznámka (nepovinná)",
+    "editComment": "Upravit poznámku",
+    "playFrom": "Přehrát odsud",
+    "emptyRecording": "V této nahrávce zatím nemáte žádné záložky. Aktuální místo označíte klávesou B nebo tlačítkem Přidat záložku.",
+    "empty": "Zatím nemáte žádné záložky. Při poslechu nahrávky si označte místo a objeví se tady.",
+    "filterPlaceholder": "Hledat v záložkách",
+    "noMatches": "Hledání neodpovídá žádná záložka.",
+    "loadFailed": "Záložky se nepodařilo načíst.",
+    "saveFailed": "Záložku se nepodařilo uložit.",
+    "deleteFailed": "Záložku se nepodařilo smazat.",
+    "deleteTitle": "Smazat záložku?",
+    "deleteDescription": "Záložka i s poznámkou bude smazána. Tuto akci nelze vrátit."
   },
   "player": {
     "play": "Přehrát",
