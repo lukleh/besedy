@@ -7,10 +7,10 @@
 #
 # Existing names are left alone: production has applied them under those names.
 #
-# Usage: check-migration-names.sh <base-ref>
+# Usage: check_migration_names.sh <base-ref>
 set -euo pipefail
 
-base_ref="${1:?usage: check-migration-names.sh <base-ref>}"
+base_ref="${1:?usage: check_migration_names.sh <base-ref>}"
 migrations_dir=web/prisma/migrations
 
 cd "$(git rev-parse --show-toplevel)"

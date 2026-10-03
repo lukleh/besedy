@@ -211,10 +211,23 @@ jobs:
         run: npx prisma migrate deploy
         env:
           DATABASE_URL: postgresql://besedy_migrator:migrator@localhost:5432/besedy_correction_ci
-      # Some objects exist only in migration SQL (partial unique indexes,
-      # triggers, a view, CHECK constraints), so a schema.prisma edit without
-      # a migration, or a migration that disagrees with the schema, is easy to
-      # miss. Exit code 2 means the migrated database and the schema differ.
+      # The grants `just prod-migrate` applies after migrating; keep in step.
+      - name: Apply the production app grants
+        run: >-
+          psql -v ON_ERROR_STOP=1
+          -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO besedy_app;"
+          -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO besedy_app;"
+          -c "REVOKE DELETE ON TABLE public.audit_log FROM besedy_app;"
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: besedy_correction_ci
+      # Fails when a schema.prisma edit has no migration, or a migration
+      # disagrees with the schema. It compares what Prisma models (tables,
+      # columns, indexes, foreign keys); objects that exist only in migration
+      # SQL, such as triggers, the view and CHECK constraints, are outside it.
+      # Exit code 2 means the migrated database and the schema differ.
       - name: Check migrations match schema.prisma
         run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
         env:

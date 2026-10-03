@@ -135,8 +135,9 @@ Production runs with least-privilege `besedy_app` for the web process; only the 
 Development and the E2E test stack connect as the database superuser. CI's
 migration job (`correction-integration` in `.github/workflows/ci.yml`) creates
 both roles with `web/init-db-users.sh`, applies the migrations as
-`besedy_migrator` and runs the correction smoke check as `besedy_app`, so a
-privilege problem fails there rather than at deploy.
+`besedy_migrator`, applies the same `besedy_app` grants as `just prod-migrate`
+(including the `audit_log` DELETE revoke) and runs the correction smoke check
+as `besedy_app`, so a privilege problem fails there rather than at deploy.
 
 ### Safety Rules
 
@@ -162,7 +163,7 @@ privilege problem fails there rather than at deploy.
 
 Additional constraints:
 
-- Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (exit code 2 means the database and the schema differ). CI runs it on a freshly migrated database.
+- Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (exit code 2 means the database and the schema differ). CI runs it on a freshly migrated database. It covers what Prisma models; triggers, views and CHECK constraints that exist only in migration SQL are outside it.
 - If "relation does not exist" errors appear, run `npx prisma migrate deploy` against the target environment
 - Backups: daily `besedy_YYYYMMDD_HHMMSS.sql.gz` into `BACKUP_DIR` via the backup service
 
