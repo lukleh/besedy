@@ -208,7 +208,7 @@ class TestCatalogValidateIntegration:
         root.mkdir()
 
         # Create a valid transcript structure
-        backend_dir = root / "faster-whisper" / "large-v3@silero_vad_v6" / "abc123def456"
+        backend_dir = root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / "abc123def456"
         backend_dir.mkdir(parents=True)
 
         transcript = create_transcript_with_words(

@@ -76,7 +76,7 @@ class TestPipelineDataFlow:
             assert file_hash is not None
 
             # Faster-Whisper backend
-            fw_dir = transcripts_dir / "faster-whisper" / "large-v3@silero_vad_v6" / file_hash
+            fw_dir = transcripts_dir / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / file_hash
             fw_dir.mkdir(parents=True)
             transcript = create_transcript_with_words(
                 words=["This", "is", "a", "test", "recording"],
@@ -158,7 +158,7 @@ class TestPipelineDataFlow:
             fw_transcript = (
                 transcripts_dir
                 / "faster-whisper"
-                / "large-v3@silero_vad_v6"
+                / "large-v3@silero_vad_v6@lang-cs"
                 / file_hash
                 / "transcript.json"
             )
@@ -236,7 +236,7 @@ class TestAnalysisPipelineData:
 
         for hash_prefix, conf in zip(hashes, confidences):
             backend_dir = (
-                transcripts_dir / "faster-whisper" / "large-v3@silero_vad_v6" / hash_prefix
+                transcripts_dir / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / hash_prefix
             )
             backend_dir.mkdir(parents=True)
 
@@ -353,7 +353,7 @@ class TestTimestampAlignment:
         # Transcripts directory
         transcripts = tmp_path / f"transcripts_{timestamp}"
         transcripts.mkdir()
-        (transcripts / "faster-whisper" / "large-v3@silero_vad_v6" / "abc123").mkdir(parents=True)
+        (transcripts / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / "abc123").mkdir(parents=True)
 
         return {
             "timestamp": timestamp,

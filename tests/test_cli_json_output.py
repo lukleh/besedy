@@ -28,7 +28,7 @@ def test_catalog_check_json_is_enveloped(capsys) -> None:
     assert payload["result"]["error"] == "catalog_csv_missing"
 
 
-CATALOG_CHECK_BACKEND = "faster-whisper/large-v3@silero_vad_v6"
+CATALOG_CHECK_BACKEND = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 
 
 def _patch_catalog_check(
@@ -358,7 +358,7 @@ def test_analyze_validate_json_is_enveloped(tmp_path) -> None:
     transcript_path = (
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
+        / "large-v3@silero_vad_v6@lang-cs"
         / "abc123def456"
         / "transcript.json"
     )

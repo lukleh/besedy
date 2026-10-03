@@ -56,7 +56,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120000"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     transcript1 = backend_dir / ("a" * 64) / "transcript.json"
     transcript2 = backend_dir / ("b" * 64) / "transcript.json"
     _write_transcript(
@@ -76,7 +76,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -87,7 +87,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
         transcript_path=transcript1,
         transcripts_root=transcripts_root,
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         run_id="20260206_120000",
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -97,7 +97,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
         transcript_path=transcript2,
         transcripts_root=transcripts_root,
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         run_id="20260206_120000",
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -128,7 +128,7 @@ def test_build_chunk_corpus_reports_distribution(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120001"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("c" * 64) / "transcript.json",
         [
@@ -146,7 +146,7 @@ def test_build_chunk_corpus_reports_distribution(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-124",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -170,7 +170,7 @@ def test_build_chunk_corpus_assigns_chunk_ordinals_per_audio_hash(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120005"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("e" * 64) / "transcript.json",
         [
@@ -190,7 +190,7 @@ def test_build_chunk_corpus_assigns_chunk_ordinals_per_audio_hash(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-126",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=2,
         max_chunk_tokens=4,
@@ -216,7 +216,7 @@ def test_build_chunk_corpus_resolves_explicit_transcripts_container(
     transcripts_container = tmp_path / "text-data" / "transcripts"
     transcripts_container.mkdir(parents=True)
     run_root = transcripts_container / "transcripts_20260206_120010"
-    backend_dir = run_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = run_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("e" * 64) / "transcript.json",
         [
@@ -228,7 +228,7 @@ def test_build_chunk_corpus_resolves_explicit_transcripts_container(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-125",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_container,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -253,7 +253,7 @@ def test_build_chunk_corpus_uses_explicit_chunk_tokenizer_model(
     monkeypatch.setattr(rag_chunk_corpus, "get_chunk_token_counter", fake_get_chunk_token_counter)
 
     transcripts_root = tmp_path / "transcripts_20260206_120011"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("f" * 64) / "transcript.json",
         [
@@ -264,7 +264,7 @@ def test_build_chunk_corpus_uses_explicit_chunk_tokenizer_model(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-127",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -285,7 +285,7 @@ def test_discover_transcript_sources_rejects_duplicate_canonical_audio_hashes(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120012"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     canonical_audio_hash = "a" * 64
     common_meta = {
         "audio_hash": canonical_audio_hash,
@@ -305,7 +305,7 @@ def test_discover_transcript_sources_rejects_duplicate_canonical_audio_hashes(
     with pytest.raises(ValueError, match="same canonical audio hash"):
         discover_transcript_sources(
             workflow_group_id="wg-128",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             transcripts_root=transcripts_root,
         )
 
@@ -319,7 +319,7 @@ def test_build_chunk_corpus_rejects_duplicate_canonical_audio_hashes(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120013"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     canonical_audio_hash = "b" * 64
     common_meta = {
         "audio_hash": canonical_audio_hash,
@@ -339,7 +339,7 @@ def test_build_chunk_corpus_rejects_duplicate_canonical_audio_hashes(
     with pytest.raises(ValueError, match="same canonical audio hash"):
         build_chunk_corpus(
             workflow_group_id="wg-129",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             transcripts_root=transcripts_root,
             min_chunk_tokens=2,
             max_chunk_tokens=4,

@@ -235,7 +235,7 @@ class TestWorkflowConfigPatterns:
         """Workflow outputs follow expected directory structure."""
         # Expected: transcripts/<backend>/<model>/<hash>/transcript.json
         backend = "faster-whisper"
-        model = "large-v3@silero_vad_v6"
+        model = "large-v3@silero_vad_v6@lang-cs"
         audio_hash = "abc123def456"
 
         output_dir = tmp_path / backend / model / audio_hash
