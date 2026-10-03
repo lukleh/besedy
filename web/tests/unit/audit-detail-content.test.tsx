@@ -108,7 +108,11 @@ describe("AuditDetailContent", () => {
       details: {
         email: "old@example.com",
         pendingGrantCount: 1,
-        grants: [{ catalogId: "20260105_000000", accessLevel: "LISTENER" }],
+        // The same catalog twice, as a re-grant would list it.
+        grants: [
+          { catalogId: "20260105_000000", accessLevel: "LISTENER" },
+          { catalogId: "20260105_000000", accessLevel: "EDITOR" },
+        ],
       },
       ipAddress: null,
       userAgent: null,
@@ -120,7 +124,7 @@ describe("AuditDetailContent", () => {
     renderAuditDetail();
 
     expect(await screen.findByText("Claimed catalog grants")).toBeInTheDocument();
-    expect(screen.getByText("20260105_000000")).toBeInTheDocument();
+    expect(screen.getAllByText("20260105_000000")).toHaveLength(2);
     // The old level is no longer a headline label; it stays in the raw payload.
     expect(screen.queryByText("LISTENER", { selector: "[data-slot='badge']" })).not.toBeInTheDocument();
   });

@@ -150,9 +150,9 @@ export function AuditGrantDetailsSummary({
               <Badge variant="secondary">{section.grants.length}</Badge>
             </div>
             <div className="space-y-2">
-              {section.grants.map((grant) => (
+              {section.grants.map((grant, index) => (
                 <div
-                  key={`${section.key}:${grant.catalogId}:${grant.label ?? ""}`}
+                  key={`${section.key}:${index}:${grant.catalogId}`}
                   className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
                 >
                   <span className="font-mono text-xs sm:text-sm">

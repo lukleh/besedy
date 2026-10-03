@@ -25,6 +25,12 @@ describe("buildAuditSummary grant roles", () => {
     );
   });
 
+  it("prefers the role when a payload carries both", () => {
+    expect(summary("CATALOG_ACCESS_GRANTED", { accessLevel: "EDITOR", role: "curator" })).toBe(
+      "curator access granted to pat@example.com for 20260101_000000"
+    );
+  });
+
   it("does not headline the retired access level of an old record", () => {
     // Records from before the role rework are history and are not rewritten.
     expect(summary("CATALOG_ACCESS_GRANTED", { accessLevel: "EDITOR" })).toBe(
