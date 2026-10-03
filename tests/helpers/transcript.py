@@ -172,11 +172,15 @@ def write_transcript_json(
     return path
 
 
+# A full 64-character audio hash: the leaf directory of every transcript.
+SAMPLE_AUDIO_HASH = "abc123def456" * 5 + "abcd"
+
+
 def create_transcript_directory_structure(
     root: Path,
     timestamp: str = "20251128_120000",
     backends: list[str] | None = None,
-    audio_hash: str = "abc123def456",
+    audio_hash: str = SAMPLE_AUDIO_HASH,
 ) -> Path:
     """Create a complete transcript directory structure for testing.
 
