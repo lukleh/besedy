@@ -649,8 +649,16 @@ through the development runtime.
   pin in `pyproject.toml`, which the jobs images and the host ingest worker
   install from `uv.lock`. `tests/test_web_production_hardening.py` enforces
   this. Leave `PREFECT_IMAGE` unset in `jobs.env.prefect`: a copied value
-  silently pins the old server at the next bump. `just prefect-status` prints
-  the client pin and the running server version.
+  silently pins the old server at the next bump. `just prefect-up` and
+  `just prefect-status` run `scripts/check_prefect_server_version.sh`, which
+  resolves the image through `docker compose config` and fails with both
+  versions when it differs from the pin; `prefect-status` also compares the
+  running server and shows the real error when the container cannot be queried.
+  An image without a comparable `X.Y.Z[-pythonN.N]` tag (a digest, a mirror
+  tag, a prerelease) counts as drift too. Export
+  `BESEDY_ALLOW_PREFECT_VERSION_DRIFT=1` in the shell to run a deliberately
+  different server (the mismatch is then only a warning); every `just` recipe
+  that calls `prefect-up` needs it.
 - **Upgrading.** The server is shared, so first make sure no flow run of any
   deployment is running or pending (Prefect UI, or the `flow_runs/filter` API);
   `just jobs-prod-check-idle` covers only the production Deep Search
