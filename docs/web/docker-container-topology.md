@@ -342,7 +342,7 @@ The ColBERT service currently runs as:
 
 - container: `besedy-colbert`
 - compose project: `besedy-rag-services`
-- host endpoint: `http://127.0.0.1:8192`
+- host endpoint: `http://<host>:8192`; the port binds `0.0.0.0` on purpose (LAN-reachable, no authentication; see [security.md](security.md#colbert-is-intentionally-reachable-on-the-lan))
 - common web setting: `RAG_COLBERT_URL=http://host.docker.internal:8192/query`
 - state bind: `${BESEDY_STATE_HOME}/tmp/rag_colbert:/data/state/rag_colbert`
 - model cache volumes:
