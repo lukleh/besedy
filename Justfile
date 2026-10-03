@@ -389,7 +389,7 @@ ingest-worker-deploy rev:
         exit 1
     fi
     if [ ! -x "$worktree/.venv/bin/python" ]; then
-        (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+        (cd "$worktree" && uv sync --locked --extra jobs --extra ml)
     fi
 
     # Checked after the checkout exists, so installing the unit never points
@@ -401,6 +401,19 @@ ingest-worker-deploy rev:
         echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
         exit 1
     fi
+
+    # A lock that does not match its pyproject.toml would fail `uv sync --locked`
+    # below, after the worker is already stopped; check the revision's own pair
+    # first. The check is offline and needs only these two files.
+    lock_dir="$(mktemp -d)"
+    git archive "$sha" pyproject.toml uv.lock | tar -x -C "$lock_dir"
+    if ! lock_error="$(cd "$lock_dir" && uv lock --check 2>&1)"; then
+        rm -rf "$lock_dir"
+        echo "Refusing to deploy ${sha:0:12}: its uv.lock does not match its pyproject.toml." >&2
+        echo "$lock_error" >&2
+        exit 1
+    fi
+    rm -rf "$lock_dir"
 
     # Only a running worker can lose work to the stop. Skipping the check for a
     # stopped worker keeps a failed deploy redeployable: queued uploads or a
@@ -426,7 +439,7 @@ ingest-worker-deploy rev:
     systemctl --user stop "$unit"
     trap 'echo "Deploy failed with $unit stopped. Redeploy the previous revision: just ingest-worker-deploy $current" >&2' ERR
     git -C "$worktree" checkout --quiet --detach "$sha"
-    (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    (cd "$worktree" && uv sync --locked --extra jobs --extra ml)
     systemctl --user start "$unit"
     sleep 10
     if ! systemctl --user is-active --quiet "$unit"; then
