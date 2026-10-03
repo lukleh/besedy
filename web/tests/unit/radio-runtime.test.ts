@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRadioRuntime } from "@/lib/radio/runtime";
 import { fetchJson } from "@/lib/api/fetch-json";

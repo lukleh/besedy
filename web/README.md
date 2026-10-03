@@ -248,6 +248,12 @@ npm run test:watch        # Watch mode
 npm run test:coverage     # With coverage
 ```
 
+`.test.ts` files run in the `node` environment and `.test.tsx` component tests
+in `jsdom` (see `vitest.config.ts`). A `.ts` test that needs `document`,
+`window`, `localStorage` or similar starts with a
+`/** @vitest-environment jsdom */` docblock; without it, it fails with
+`window is not defined`.
+
 ### E2E Tests (Playwright)
 
 E2E tests run against a production build in an isolated Docker environment on port 3002.
