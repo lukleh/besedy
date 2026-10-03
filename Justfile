@@ -354,7 +354,7 @@ ingest-worker-run:
 # The systemd unit runs from the fixed, locked checkout
 # ~/worktrees/besedy/prod-ingest, never the dev checkout. Refuses while the
 # running worker has work, asks before stopping it, then checks out <rev>,
-# syncs the frozen venv and starts it again. Uploads made meanwhile wait in the
+# syncs the locked venv and starts it again. Uploads made meanwhile wait in the
 # Prefect queue.
 ingest-worker-deploy rev:
     #!/usr/bin/env bash
@@ -379,6 +379,9 @@ ingest-worker-deploy rev:
     # so an offline rollback to an earlier deploy still works.
     git fetch --quiet origin || echo "Warning: git fetch failed; resolving '$1' from local refs." >&2
     sha="$(git rev-parse --verify "$1^{commit}")"
+    # A lock that does not match its pyproject.toml would fail `uv sync --locked`
+    # below; refuse it before the checkout is created or the worker is stopped.
+    bash scripts/check_uv_lock_at_rev.sh "$sha"
     if [ ! -e "$worktree" ]; then
         # Locked so worktree cleanup (`git worktree remove`, worktree-report.sh)
         # never removes the checkout the unit runs from.
@@ -401,19 +404,6 @@ ingest-worker-deploy rev:
         echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
         exit 1
     fi
-
-    # A lock that does not match its pyproject.toml would fail `uv sync --locked`
-    # below, after the worker is already stopped; check the revision's own pair
-    # first. The check is offline and needs only these two files.
-    lock_dir="$(mktemp -d)"
-    git archive "$sha" pyproject.toml uv.lock | tar -x -C "$lock_dir"
-    if ! lock_error="$(cd "$lock_dir" && uv lock --check 2>&1)"; then
-        rm -rf "$lock_dir"
-        echo "Refusing to deploy ${sha:0:12}: its uv.lock does not match its pyproject.toml." >&2
-        echo "$lock_error" >&2
-        exit 1
-    fi
-    rm -rf "$lock_dir"
 
     # Only a running worker can lose work to the stop. Skipping the check for a
     # stopped worker keeps a failed deploy redeployable: queued uploads or a
