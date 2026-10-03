@@ -231,8 +231,8 @@ manages workflow-group records themselves.
   CLI surface is `besedy/cli/catalog.py`, command-name coverage is
   `tests/test_cli_parser.py`, seeded web auth users are `web/prisma/test-data.ts`,
   and web E2E auth helpers are `web/tests/e2e/helpers/auth.ts`.
-- Claude Code hooks, commands, skills, and subagents live in `.claude/` and are
-  documented in `.claude/README.md`.
+- Claude Code commands and subagents live in `.claude/` and describe themselves
+  in their frontmatter `description`; hooks are in `.claude/settings.json`.
 
 ## Important Constraints
 
