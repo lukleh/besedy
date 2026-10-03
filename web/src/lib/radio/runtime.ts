@@ -112,8 +112,9 @@ export function createRadioRuntime() {
   let fetchRetryCount = 0;
   let cancelSleepFade: (() => void) | null = null;
   // The sleep timer's fade was cut short by the track ending: stay on that
-  // track instead of starting the next one.
-  let holdAtTrackEnd = false;
+  // track ("pending" until it has ended, then "holding") instead of starting
+  // the next one, which the next play starts.
+  let trackEndHold: "pending" | "holding" | null = null;
 
   const listeners = new Set<RadioRuntimeListener>();
 
@@ -137,6 +138,7 @@ export function createRadioRuntime() {
   function stopAudioAndClearSource() {
     if (!audio) return;
     cancelSleepFade?.();
+    trackEndHold = null;
 
     if (errorHandler) {
       audio.removeEventListener("error", errorHandler);
@@ -169,6 +171,7 @@ export function createRadioRuntime() {
   function playEventTrack(track: RadioEventTrack) {
     if (!audio) return;
     cancelSleepFade?.();
+    trackEndHold = null;
 
     setSnapshot((current) => ({
       ...current,
@@ -303,8 +306,8 @@ export function createRadioRuntime() {
 
     const handleEnded = () => {
       setSnapshot((current) => ({ ...current, isPlaying: false }));
-      if (holdAtTrackEnd) {
-        holdAtTrackEnd = false;
+      if (trackEndHold === "pending") {
+        trackEndHold = "holding";
         return;
       }
       playNextEventTrack();
@@ -460,7 +463,8 @@ export function createRadioRuntime() {
 
     resume() {
       // Held at the end of a track by the sleep timer: go on to the next one.
-      if (audio?.ended && snapshot.isActive) {
+      if (trackEndHold === "holding") {
+        trackEndHold = null;
         playNextEventTrack();
         return;
       }
@@ -496,16 +500,21 @@ export function createRadioRuntime() {
       return { time, wasPlaying };
     },
 
-    /** The sleep timer ran out: fade the current track out and pause. */
-    fadeOutAndPause() {
-      if (!audio || audio.paused) return;
+    /**
+     * The sleep timer ran out: fade the current track out and pause. Returns
+     * a function that cancels the fade.
+     */
+    fadeOutAndPause(): () => void {
+      if (!audio || audio.paused) return () => {};
       cancelSleepFade?.();
-      cancelSleepFade = fadeOutAndPause(audio, {
+      const cancel = fadeOutAndPause(audio, {
         onFinish: (outcome) => {
-          cancelSleepFade = null;
-          holdAtTrackEnd = outcome === "ended";
+          if (cancelSleepFade === cancel) cancelSleepFade = null;
+          if (outcome === "ended") trackEndHold = "pending";
         },
       });
+      cancelSleepFade = cancel;
+      return cancel;
     },
 
     setVolume(nextVolume: number) {

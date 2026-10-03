@@ -2,12 +2,14 @@
  * Sleep timer countdown.
  *
  * The countdown only runs while audio plays: pausing, buffering and the gap
- * between radio tracks do not use it up. Time is measured on the wall clock
- * between calls, so a throttled background tab still counts every second it
- * played; a late tick catches up instead of losing time.
+ * between radio tracks do not use it up. Elapsed time is measured between
+ * calls, so a throttled background tab still counts every second it played;
+ * a late tick catches up instead of losing time.
  *
- * It runs out once and then switches itself off; only a new `start` sets it
- * again.
+ * It runs out once, on a tick while audio plays, and then switches itself
+ * off; only a new `start` sets it again. Reaching zero as playback stops
+ * leaves it at zero, so whatever plays next — radio's next track, a network
+ * recovery — runs it out on the next tick.
  */
 
 export const SLEEP_TIMER_MINUTES = [15, 30, 45, 60] as const;
@@ -28,7 +30,7 @@ export interface SleepCountdown {
 }
 
 export function createSleepCountdown(
-  now: () => number = () => Date.now(),
+  now: () => number = () => performance.now(),
 ): SleepCountdown {
   let remaining: number | null = null;
   let running = false;
@@ -57,8 +59,6 @@ export function createSleepCountdown(
       if (nextRunning === running) return;
       count();
       running = nextRunning;
-      // Running out in the moment playback stopped leaves nothing to pause.
-      if (remaining === 0) remaining = null;
       countedUntil = running && remaining !== null ? now() : null;
     },
 

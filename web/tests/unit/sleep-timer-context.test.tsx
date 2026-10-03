@@ -9,7 +9,13 @@ import {
 
 type Timer = NonNullable<ReturnType<typeof useSleepTimer>>;
 
-function Target({ playing, onFade }: { playing: boolean; onFade: () => void }) {
+function Target({
+  playing,
+  onFade,
+}: {
+  playing: boolean;
+  onFade: () => () => void;
+}) {
   useSleepTimerTarget(playing, onFade);
   return null;
 }
@@ -21,8 +27,9 @@ function Probe({ timerRef }: { timerRef: { current: Timer | null } }) {
 
 function setup() {
   const timerRef: { current: Timer | null } = { current: null };
-  const radioFade = vi.fn();
-  const playerFade = vi.fn();
+  const cancelRadioFade = vi.fn();
+  const radioFade = vi.fn(() => cancelRadioFade);
+  const playerFade = vi.fn(() => () => {});
   const tree = (radioPlaying: boolean, player: boolean | null) => (
     <StrictMode>
       <SleepTimerProvider>
@@ -36,6 +43,7 @@ function setup() {
   return {
     timer: () => timerRef.current!,
     radioFade,
+    cancelRadioFade,
     playerFade,
     rerender: (radioPlaying: boolean, player: boolean | null) =>
       view.rerender(tree(radioPlaying, player)),
@@ -112,6 +120,25 @@ describe("SleepTimerProvider", () => {
     rerender(false, null);
     act(() => vi.advanceTimersByTime(30 * 60_000));
     expect(timer().remainingMs).toBe(10 * 60_000);
+  });
+
+  it("stops a running fade when the listener sets the timer again or turns it off", () => {
+    const { timer, radioFade, cancelRadioFade, rerender } = setup();
+    rerender(true, null);
+    act(() => timer().start(15));
+    act(() => vi.advanceTimersByTime(15 * 60_000));
+    expect(radioFade).toHaveBeenCalledTimes(1);
+
+    act(() => timer().start(30));
+    expect(cancelRadioFade).toHaveBeenCalledTimes(1);
+
+    act(() => vi.advanceTimersByTime(30 * 60_000));
+    expect(radioFade).toHaveBeenCalledTimes(2);
+    act(() => timer().cancel());
+    expect(cancelRadioFade).toHaveBeenCalledTimes(2);
+    // Each fade is cancelled once.
+    act(() => timer().cancel());
+    expect(cancelRadioFade).toHaveBeenCalledTimes(2);
   });
 
   it("can be cancelled", () => {

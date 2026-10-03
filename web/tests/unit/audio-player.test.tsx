@@ -1780,6 +1780,13 @@ describe("AudioPlayer sleep timer", () => {
         .click();
     });
 
+    // Buffering before the audio is heard does not count.
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(timer().remainingMs).toBe(15 * 60_000);
+    act(() => {
+      audio.dispatchEvent(new Event("playing"));
+    });
+
     act(() => vi.advanceTimersByTime(5 * 60_000));
     expect(
       container.querySelector('[data-testid="sleep-timer-remaining"]')?.textContent,
@@ -1805,6 +1812,9 @@ describe("AudioPlayer sleep timer", () => {
       container
         .querySelector<HTMLButtonElement>('[data-testid="audio-play-button"]')!
         .click();
+    });
+    act(() => {
+      audio.dispatchEvent(new Event("playing"));
     });
 
     act(() => vi.advanceTimersByTime(15 * 60_000 + 2_000));

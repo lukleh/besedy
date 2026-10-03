@@ -27,7 +27,7 @@ export function fadeOutAndPause(
   if (audio.paused) return () => {};
 
   const startVolume = audio.volume;
-  const startedAt = Date.now();
+  const startedAt = performance.now();
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const finish = (outcome: FadeOutcome) => {
@@ -51,7 +51,7 @@ export function fadeOutAndPause(
   }
 
   const step = () => {
-    const progress = (Date.now() - startedAt) / durationMs;
+    const progress = (performance.now() - startedAt) / durationMs;
     if (progress >= 1) {
       pauseNow();
       return;

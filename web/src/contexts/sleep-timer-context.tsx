@@ -34,8 +34,11 @@ interface SleepTimerContextValue {
   cancel: () => void;
 }
 
+/** Starts a player's fade-out; returns a function that cancels it. */
+type FadeOutAndPause = () => () => void;
+
 interface SleepTimerRegistry {
-  register: (id: string, fadeOutAndPause: () => void) => () => void;
+  register: (id: string, fadeOutAndPause: FadeOutAndPause) => () => void;
   setPlaying: (id: string, playing: boolean) => void;
 }
 
@@ -48,7 +51,14 @@ export function SleepTimerProvider({ children }: { children: ReactNode }) {
   const [minutes, setMinutes] = useState<number | null>(null);
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
   const [anyPlaying, setAnyPlaying] = useState(false);
-  const targetsRef = useRef(new Map<string, () => void>());
+  const targetsRef = useRef(new Map<string, FadeOutAndPause>());
+  // Fades started when the timer last ran out. Setting the timer again or
+  // turning it off during the fade means the listener is awake: stop them.
+  const fadesRef = useRef<Array<() => void>>([]);
+  const cancelFades = useCallback(() => {
+    fadesRef.current.forEach((cancelFade) => cancelFade());
+    fadesRef.current = [];
+  }, []);
   const playingRef = useRef(new Set<string>());
 
   const sync = useCallback(() => {
@@ -89,7 +99,9 @@ export function SleepTimerProvider({ children }: { children: ReactNode }) {
       const expired = countdown.tick();
       sync();
       if (expired) {
-        targetsRef.current.forEach((fadeOutAndPause) => fadeOutAndPause());
+        fadesRef.current = [...targetsRef.current.values()].map(
+          (fadeOutAndPause) => fadeOutAndPause(),
+        );
       }
     }, TICK_MS);
     return () => clearInterval(interval);
@@ -97,17 +109,19 @@ export function SleepTimerProvider({ children }: { children: ReactNode }) {
 
   const start = useCallback(
     (nextMinutes: number) => {
+      cancelFades();
       countdown.start(nextMinutes * 60_000);
       setMinutes(nextMinutes);
       sync();
     },
-    [countdown, sync],
+    [countdown, sync, cancelFades],
   );
 
   const cancel = useCallback(() => {
+    cancelFades();
     countdown.cancel();
     sync();
-  }, [countdown, sync]);
+  }, [countdown, sync, cancelFades]);
 
   const value = useMemo<SleepTimerContextValue>(
     () => ({ minutes, remainingMs, start, cancel }),
@@ -129,13 +143,13 @@ export function useSleepTimer(): SleepTimerContextValue | null {
 }
 
 /**
- * Registers a player with the sleep timer: the countdown runs while it plays,
- * and `fadeOutAndPause` is called when the timer runs out. Does nothing
- * outside a SleepTimerProvider.
+ * Registers a player with the sleep timer: the countdown runs while it plays
+ * audio (not while it buffers), and `fadeOutAndPause` is called when the
+ * timer runs out. Does nothing outside a SleepTimerProvider.
  */
 export function useSleepTimerTarget(
   isPlaying: boolean,
-  fadeOutAndPause: () => void,
+  fadeOutAndPause: FadeOutAndPause,
 ): void {
   const registry = useContext(SleepTimerRegistryContext);
   const id = useId();

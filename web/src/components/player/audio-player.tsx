@@ -172,17 +172,21 @@ export function AudioPlayer({
   }, []);
   const sleepFadeOutAndPause = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || audio.paused) return;
+    if (!audio || audio.paused) return () => {};
     cancelSleepFade();
-    cancelSleepFadeRef.current = fadeOutAndPause(audio, {
+    const cancel = fadeOutAndPause(audio, {
       onFinish: (outcome) => {
-        cancelSleepFadeRef.current = null;
+        if (cancelSleepFadeRef.current === cancel) {
+          cancelSleepFadeRef.current = null;
+        }
         if (outcome !== 'paused') return;
         // A deliberate stop, not an interrupted play.
         playIntentRef.current = false;
         logDebugEvent('pause', 'Sleep timer paused playback');
       },
     });
+    cancelSleepFadeRef.current = cancel;
+    return cancel;
   }, [cancelSleepFade, logDebugEvent]);
 
   // Tracks whether metadata has loaded successfully for the current src.
@@ -1057,7 +1061,7 @@ export function AudioPlayer({
   }, [handleKeyDown]);
 
   // Last among the hooks: the refs the fade touches are still written above.
-  useSleepTimerTarget(isPlaying, sleepFadeOutAndPause);
+  useSleepTimerTarget(isPlaying && !isBuffering, sleepFadeOutAndPause);
 
   return (
     <div

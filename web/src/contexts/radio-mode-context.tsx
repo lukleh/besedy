@@ -25,7 +25,7 @@ interface RadioModeContextValue extends RadioRuntimeSnapshot {
   handOffPlayback: () => { time: number; wasPlaying: boolean };
   setVolume: (volume: number) => void;
   toggleMute: () => void;
-  fadeOutAndPause: () => void;
+  fadeOutAndPause: () => () => void;
 }
 
 const RadioModeContext = createContext<RadioModeContextValue | undefined>(undefined);

@@ -70,17 +70,21 @@ describe("createSleepCountdown", () => {
     expect(countdown.remainingMs()).toBeNull();
   });
 
-  it("switches off when it runs out as playback stops", () => {
+  it("runs out when playback resumes after reaching zero as it stopped", () => {
+    // A radio track ends just after the timer reaches zero; the next track
+    // must still be paused.
     const { countdown, advance } = setup();
     countdown.setRunning(true);
     countdown.start(10_000);
-    advance(10_000);
+    advance(10_500);
     countdown.setRunning(false);
 
-    expect(countdown.remainingMs()).toBeNull();
+    expect(countdown.remainingMs()).toBe(0);
+    expect(countdown.tick()).toBe(false);
     countdown.setRunning(true);
     advance(1_000);
-    expect(countdown.tick()).toBe(false);
+    expect(countdown.tick()).toBe(true);
+    expect(countdown.remainingMs()).toBeNull();
   });
 
   it("starts over and cancels", () => {

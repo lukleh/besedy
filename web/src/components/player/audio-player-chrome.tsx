@@ -232,7 +232,7 @@ export function AudioPlayerChrome({
           >
             <Bug className="h-3.5 w-3.5" />
           </button>
-          <div className="grid w-[14.25rem] grid-cols-3 items-center justify-items-center gap-3">
+          <div className="grid w-[14.25rem] grid-cols-4 items-center justify-items-center gap-3">
             <div className="flex h-12 items-center justify-center">
               {downloadControl}
             </div>
@@ -260,9 +260,6 @@ export function AudioPlayerChrome({
                 <Volume2 className="size-6" />
               )}
             </Button>
-          </div>
-          {/* Outside the grid, which lines up with the playback buttons. */}
-          <div className="absolute top-1/2 right-0 -translate-y-1/2">
             <SleepTimerButton variant="player" />
           </div>
         </div>

@@ -331,6 +331,21 @@ describe("createRadioRuntime", () => {
       stop();
     });
 
+    it("plays on after a normal track end instead of fetching again", async () => {
+      const { runtime, stop } = await playingRadio();
+      // The next track's fetch fails and a retry is scheduled.
+      vi.mocked(fetchJson).mockRejectedValueOnce(new Error("offline"));
+      Object.assign(audio, { paused: true, ended: true });
+      audio.dispatchEvent(new Event("ended"));
+      await vi.waitFor(() => expect(fetchJson).toHaveBeenCalledTimes(2));
+
+      runtime.resume();
+      expect(fetchJson).toHaveBeenCalledTimes(2);
+      expect(audio.play).toHaveBeenCalledTimes(2);
+
+      stop();
+    });
+
     it("ends the fade when the listener changes the volume", async () => {
       const { runtime, stop } = await playingRadio();
       runtime.fadeOutAndPause();

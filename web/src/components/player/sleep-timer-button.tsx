@@ -55,8 +55,6 @@ export function SleepTimerButton({ variant }: SleepTimerButtonProps) {
   const { minutes, remainingMs, start, cancel } = timer;
   const remaining =
     remainingMs !== null ? formatSleepRemaining(remainingMs) : null;
-  const label =
-    remaining !== null ? t("activeLabel", { time: remaining }) : t("label");
 
   return (
     <ResponsiveMenu>
@@ -64,8 +62,10 @@ export function SleepTimerButton({ variant }: SleepTimerButtonProps) {
         <Button
           variant="ghost"
           size="icon"
-          title={label}
-          aria-label={label}
+          // The name stays fixed so screen readers do not re-read it every
+          // second; the time left is in the visible text and the tooltip.
+          title={remaining !== null ? t("activeLabel", { time: remaining }) : t("label")}
+          aria-label={t("label")}
           data-testid="sleep-timer-button"
           className={cn(
             "flex-col gap-0",
