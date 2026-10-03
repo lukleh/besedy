@@ -1,6 +1,6 @@
 # Docker Container Topology
 
-> **Last Updated:** 2026-04-26
+> **Last Updated:** 2026-10-03
 > **Status:** Operational map and cleanup target.
 
 This document maps the Docker containers around the Besedy web app, RAG service,

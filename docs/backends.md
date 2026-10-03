@@ -1,6 +1,6 @@
 # ML Backends
 
-> **Last Updated:** 2026-10-02
+> **Last Updated:** 2026-10-03
 
 How Besedy's ML backends are deployed and configured.
 
