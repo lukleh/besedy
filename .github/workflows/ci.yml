@@ -33,12 +33,6 @@ jobs:
       - run: uv sync --locked
       - run: just ruff
       - run: just ty
-      # The faster-whisper and pyannote backend images run this checkout under
-      # Python 3.11, while the package declares >=3.12 and ruff targets py313,
-      # so 3.12+ syntax could otherwise reach them unnoticed. Syntax only:
-      # nothing is imported. The cache prefix keeps the checkout clean.
-      - name: Check the package parses under Python 3.11
-        run: uv run --no-project --python 3.11 python -X pycache_prefix=/tmp/py311-pyc -m compileall -q besedy
       # Run every test that does not declare a heavyweight optional runtime or
       # external integration requirement. Marker selection is intentional: a
       # file allowlist would silently miss newly added unit tests. Pytest imports
@@ -60,6 +54,19 @@ jobs:
             --disable-pip \
             --ignore-vuln PYSEC-2026-2447 \
             -r /tmp/requirements.txt
+
+  python-311-syntax:
+    name: Python 3.11 syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      # The faster-whisper and pyannote backend images run this checkout under
+      # Python 3.11, while the package declares >=3.12 and ruff targets py313,
+      # so 3.12+ syntax could otherwise reach them unnoticed. Syntax only:
+      # nothing is imported, so 3.12-only library calls are not caught. The
+      # cache prefix keeps the checkout clean.
+      - run: uv run --no-project --python 3.11 python -X pycache_prefix=/tmp/py311-pyc -m compileall -q besedy
 
   compose-render:
     name: Compose render (every stack)

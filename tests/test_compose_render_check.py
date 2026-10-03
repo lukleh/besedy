@@ -33,13 +33,8 @@ def test_every_compose_file_is_rendered_by_the_check() -> None:
     ]
     assert compose_files, "no compose files found"
 
-    # Web files are rendered together through run_web_compose.sh, which names
-    # them by their basename relative to web/.
-    missing = [
-        name
-        for name in compose_files
-        if name not in script and not (name.startswith("web/") and name[len("web/") :] in script)
-    ]
+    # Every check names its files by their repository path.
+    missing = [name for name in compose_files if name not in script]
 
     assert not missing, f"scripts/check_compose_renders.sh does not render: {missing}"
 

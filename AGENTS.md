@@ -56,7 +56,9 @@ copying command tables or test-user matrices into provider-specific files.
 - CI also parses `besedy/` under Python 3.11
   (`uv run --no-project --python 3.11 python -m compileall -q besedy`): the
   faster-whisper and pyannote images run the checkout under 3.11, so avoid
-  3.12-only syntax (`type X = …`, PEP 695 generics) in code they import.
+  3.12-only syntax (`type X = …`, PEP 695 generics) in code they import. It
+  checks syntax only; 3.12-only library calls (for example
+  `itertools.batched`) still fail at run time in those images.
 - `just web-check`: TypeScript + ESLint + web unit tests
 - Always run Python code via `uv run python ...` (instead of plain `python ...`) unless using a `just` wrapper.
 - Optional pre-commit (Ruff): `uv tool install pre-commit && pre-commit install` (config in `ruff.toml`)

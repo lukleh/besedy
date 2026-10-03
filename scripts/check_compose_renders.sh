@@ -14,6 +14,13 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 cd "$repo_root"
 
+for tool in "docker compose" jq; do
+  if ! $tool version >/dev/null 2>&1 && ! $tool --version >/dev/null 2>&1; then
+    echo "$tool is required to render the Compose stacks" >&2
+    exit 2
+  fi
+done
+
 failures=()
 
 # check <name> <command...>: run quietly, print Compose's output only on failure.
@@ -38,11 +45,11 @@ web_example() {
   # <mode> <env var> <example file>
   env "$2=$repo_root/web/$3" bash scripts/run_web_compose.sh "$1" --profile '*' config -q
 }
-check "web development (web/docker-compose.yml, docker-compose.dev.yml)" \
+check "web development (web/docker-compose.yml, web/docker-compose.dev.yml)" \
   web_example development BESEDY_WEB_ENV_DEV .env.dev.example
-check "web test (web/docker-compose.yml, docker-compose.secure.yml)" \
+check "web test (web/docker-compose.yml, web/docker-compose.secure.yml)" \
   web_example test BESEDY_WEB_ENV_TEST .env.test.example
-check "web production (web/docker-compose.yml, docker-compose.secure.yml, docker-compose.production.yml)" \
+check "web production (web/docker-compose.yml, web/docker-compose.secure.yml, web/docker-compose.production.yml)" \
   web_example production BESEDY_WEB_ENV_PROD .env.prod.example
 
 # Jobs and Prefect: the example env files are the documented starting point.
@@ -52,7 +59,7 @@ jobs_example() {
   shift
   local args=()
   for file in "$@"; do
-      args+=(-f "$file")
+    args+=(-f "$file")
   done
   docker compose --env-file "jobs-service/$example" "${args[@]}" --profile '*' config -q
 }
@@ -67,7 +74,7 @@ check "jobs production (jobs-service/docker-compose.jobs-prod.yml)" \
 # The Codex overlay requires an auth file path; the render does not read it.
 check "jobs production with the Codex overlay (jobs-service/docker-compose.jobs-codex-auth.yml)" \
   env CODEX_HOST_AUTH_FILE=/nonexistent/auth.json bash -c \
-  'docker compose --env-file jobs-service/.env.prod.example -f jobs-service/docker-compose.jobs-prod.yml -f jobs-service/docker-compose.jobs-codex-auth.yml config -q'
+  "$(declare -f jobs_example); jobs_example .env.prod.example jobs-service/docker-compose.jobs-prod.yml jobs-service/docker-compose.jobs-codex-auth.yml"
 
 # Model serving: no env file, defaults only.
 check "rag services (rag-services/docker-compose.yml)" \
