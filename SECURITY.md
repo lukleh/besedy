@@ -50,7 +50,7 @@ branches. Only the current `main` receives security fixes; there are no backport
 
 ## Accepted Dependency Advisories
 
-Two upstream advisories are currently accepted with narrow threat models:
+Three upstream advisories are currently accepted with narrow threat models:
 
 - **`brace-expansion` — `GHSA-mh99-v99m-4gvg` (high).** This denial-of-service
   advisory is reachable only through development-time ESLint dependencies.
@@ -59,6 +59,16 @@ Two upstream advisories are currently accepted with narrow threat models:
   only this advisory on dev-only paths and continues to reject every other high
   or critical npm advisory. Remove the exception when the ESLint plugin chain
   supports a patched minimatch major.
+- **`braces` — `GHSA-vfj7-8cjw-p6xm` (high).** A stack-exhaustion
+  denial of service on deeply nested brace patterns. `braces` reaches the web
+  app through `micromatch`, from ESLint's `fast-glob` (dev-only) and from
+  `@parcel/watcher` under `next-intl`, a production dependency.
+  Both expand only developer-written globs: ESLint config, and the next-intl
+  message-extractor watcher, whose ignore patterns are constants and which
+  this app does not enable. No request input reaches it. No patched `braces`
+  release exists. CI allows this advisory on any path, because the
+  `next-intl` path is not dev-only. Remove the exception when upstream
+  publishes a fix.
 - **`diskcache` — `GHSA-w8v5-vhqr-4h9v` (moderate).** DSPy uses DiskCache only
   as a worker-owned cache. Production places it on an ephemeral, non-root
   `/tmp` filesystem, so replacing its pickle files already requires control of

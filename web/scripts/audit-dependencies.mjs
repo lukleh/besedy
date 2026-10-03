@@ -1,11 +1,29 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-const ALLOWED_DEV_ADVISORY = {
-  source: 1124334,
-  id: 'GHSA-mh99-v99m-4gvg',
-  package: 'brace-expansion',
-};
+// Each exception is documented in SECURITY.md. A devOnly exception holds only
+// while every affected path is a dev dependency.
+const ALLOWED_ADVISORIES = [
+  {
+    source: 1124334,
+    id: 'GHSA-mh99-v99m-4gvg',
+    package: 'brace-expansion',
+    devOnly: true,
+    reason:
+      "The current ESLint plugins require minimatch 3's callable CommonJS API; " +
+      'remove this exception when those plugins support a patched minimatch major.',
+  },
+  {
+    source: 1240992,
+    id: 'GHSA-vfj7-8cjw-p6xm',
+    package: 'braces',
+    devOnly: false,
+    reason:
+      'No patched braces release exists. It expands only developer-written globs ' +
+      '(ESLint config, and the next-intl extractor watcher, which is not enabled), ' +
+      'never request input; remove this exception when braces publishes a fix.',
+  },
+];
 
 const audit = spawnSync('npm', ['audit', '--json'], {
   encoding: 'utf8',
@@ -67,8 +85,12 @@ function isDevOnly(vulnerability) {
   );
 }
 
+function allowanceFor(source) {
+  return ALLOWED_ADVISORIES.find((advisory) => advisory.source === source);
+}
+
 const failures = [];
-const allowed = [];
+const allowed = new Map();
 
 for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
   if (!['high', 'critical'].includes(vulnerability.severity)) {
@@ -76,25 +98,28 @@ for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
   }
 
   const sources = advisorySources(name);
+  const allowances = [...sources].map(allowanceFor);
   const isAllowed =
-    sources.size === 1 &&
-    sources.has(ALLOWED_DEV_ADVISORY.source) &&
-    isDevOnly(vulnerability);
+    allowances.length > 0 &&
+    allowances.every(
+      (allowance) => allowance && (!allowance.devOnly || isDevOnly(vulnerability)),
+    );
 
   if (isAllowed) {
-    allowed.push(name);
+    for (const allowance of allowances) {
+      allowed.set(allowance, [...(allowed.get(allowance) ?? []), name]);
+    }
   } else {
     failures.push({ name, severity: vulnerability.severity, sources });
   }
 }
 
-if (allowed.length > 0) {
+for (const [allowance, names] of allowed) {
   console.warn(
     [
-      `Allowed dev-only ${ALLOWED_DEV_ADVISORY.id} in ${ALLOWED_DEV_ADVISORY.package}.`,
-      `Affected audit paths: ${allowed.sort().join(', ')}.`,
-      "The current ESLint plugins require minimatch 3's callable CommonJS API;",
-      'remove this exception when those plugins support a patched minimatch major.',
+      `Allowed ${allowance.devOnly ? 'dev-only ' : ''}${allowance.id} in ${allowance.package}.`,
+      `Affected audit paths: ${names.sort().join(', ')}.`,
+      allowance.reason,
     ].join(' '),
   );
 }
