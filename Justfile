@@ -335,19 +335,7 @@ jobs-prod-deploy:
 # the GPU backends, ffmpeg and the host besedy.toml; see
 # jobs-service/host-worker/ingest-worker.env.example for the required env.
 ingest-worker-run:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    env_file="${BESEDY_INGEST_WORKER_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/lukleh/besedy/ingest-worker.env}"
-    if [ -f "$env_file" ]; then
-        set -a
-        . "$env_file"
-        set +a
-    else
-        echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
-    fi
-    exec uv run --extra jobs --extra ml prefect worker start \
-        --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
-        --type process --limit 1 --install-policy never
+    bash jobs-service/host-worker/run-worker.sh --dev
 
 # Deploy the production host ingest worker at <rev>; use the commit production
 # web runs (`curl -s http://localhost:3000/api/version | jq -r .commit`).

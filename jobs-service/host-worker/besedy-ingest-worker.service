@@ -30,14 +30,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Deployed checkout that owns the `besedy` package and the `uv` environment.
-# `--frozen` keeps the venv on the committed lock. The `ml` extra supplies the
-# tokenizer that `rag-colbert-index` needs for the ingest and correction-index
-# flows.
 WorkingDirectory=%h/worktrees/besedy/prod-ingest
 EnvironmentFile=%h/.config/lukleh/besedy/ingest-worker.env
-# The checkout path is fixed, so the start line records the revision; a failed
-# flow run in the journal can then be tied to the revision that was live.
-ExecStart=/usr/bin/env bash -lc 'echo "besedy-ingest-worker: revision $(git rev-parse HEAD) in $(pwd)"; exec uv run --frozen --extra jobs --extra ml prefect worker start --pool "${PREFECT_INGEST_WORK_POOL}" --type process --limit 1 --install-policy never'
+# The start command (extras, flags, revision line) lives in run-worker.sh inside
+# the checkout, so `just ingest-worker-deploy` updates it with the code and the
+# installed copy of this unit never needs to change for it.
+ExecStart=/usr/bin/env bash -lc 'exec jobs-service/host-worker/run-worker.sh'
 Restart=on-failure
 RestartSec=10
 KillMode=mixed
