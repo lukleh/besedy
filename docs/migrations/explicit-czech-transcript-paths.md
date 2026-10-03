@@ -64,11 +64,17 @@ SELECT count(*) FROM transcript_publication;
    use, run `scripts/rename_transcript_backend_key.sql` as described in
    [Renaming a transcript backend key](renaming-a-transcript-backend-key.md);
    it also rewrites `transcript_workspace.source_backend` and
-   `transcript_publication.previous_source_ref`. If only backend-priority rows
-   exist, this transaction updates just those:
+   `transcript_publication.previous_source_ref`. With no correction rows, this
+   transaction updates just the priority rows and refuses to run otherwise:
 
 ```sql
 BEGIN;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM transcript_workspace)
+     OR EXISTS (SELECT 1 FROM transcript_publication) THEN
+    RAISE EXCEPTION 'Correction data exists: use scripts/rename_transcript_backend_key.sql';
+  END IF;
+END $$;
 UPDATE transcript_backend_priority
 SET backend = backend || '@lang-cs', updated_at = NOW()
 WHERE split_part(backend, '/', 1) IN
@@ -118,7 +124,11 @@ during cutover, and `--rollback --apply`. This also restores the merged
 `slots.json` model labels. Restore the previous pipeline and host-worker code
 revision before resuming transcription; the new revision always writes
 `@lang-cs` paths. The old ColBERT scope remains available. A rollback dry run
-omits `--apply`. To reverse only the priority-row change, use:
+omits `--apply`. If correction rows exist, reverse the stored keys with
+`scripts/rename_transcript_backend_key.sql`, swapping `old_key` and `new_key`
+for every key renamed in cutover step 2 (see
+[Renaming a transcript backend key](renaming-a-transcript-backend-key.md)).
+To reverse only the priority-row change, use:
 
 ```sql
 BEGIN;

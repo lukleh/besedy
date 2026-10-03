@@ -26,7 +26,10 @@ not moving correction data. The audit log keeps the old key, as history.
 
 1. Do the directory move, the index rebuild and the env changes of the rename
    as in the Czech paths migration (pause writers, back up, move the
-   transcript directories, rebuild the search scope under the new key).
+   transcript directories, rebuild the search scope under the new key). Before
+   the database step, confirm no correction publication is `PENDING`,
+   `ACTIVATING` or `ROLLING_BACK`: one that completes between the rewrite and
+   the env change would be judged against the wrong key.
 2. In the same maintenance window, rewrite the stored keys with one
    transaction, as the application role. It updates all three columns, refuses
    an identical pair of keys, and refuses when the priority table already has a
@@ -40,8 +43,10 @@ bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d bese
   -f - < scripts/rename_transcript_backend_key.sql
 ```
 
-   Run it once per key. It prints the row count of each `UPDATE`; a second run
-   updates nothing. Run the development database the same way
+   Run it once per key; each run is its own transaction. It prints the row
+   count of each `UPDATE`; a second run updates nothing, so if one key of
+   several fails (for example on the priority-conflict check), fix the cause
+   and run the failed key again. Without both variables it exits with an error. Run the development database the same way
    (`development` instead of `production`).
 3. Set `RAG_BACKEND_KEY` to the new key in the web and worker env files, as in
    the migration, and restart.

@@ -30,7 +30,11 @@ def test_the_script_covers_every_backend_key_column() -> None:
     columns = _backend_columns() | EXTRA_COLUMNS
 
     assert {"backend", "source_backend"} <= columns
-    missing = sorted(column for column in columns if f"{column} =" not in script)
+    # An UPDATE assigns the column: `SET <column> = ...`, not a mention in a
+    # comment or a WHERE clause.
+    missing = sorted(
+        column for column in columns if not re.search(rf"\bSET\s+{column}\s*=", script)
+    )
 
     assert not missing, f"scripts/rename_transcript_backend_key.sql does not rewrite: {missing}"
 

@@ -19,15 +19,17 @@
 -- index pointer files, which is informational (the index resolves a correction by
 -- audio hash, not by that field).
 
+\set ON_ERROR_STOP on
+
+-- A missing variable is an error (non-zero exit), not a message: automation must
+-- not read an unapplied rename as done.
 \if :{?old_key}
 \else
-  \echo 'Set -v old_key=... and -v new_key=...'
-  \quit
+  \set old_key ''
 \endif
 \if :{?new_key}
 \else
-  \echo 'Set -v old_key=... and -v new_key=...'
-  \quit
+  \set new_key ''
 \endif
 
 BEGIN;
@@ -36,6 +38,12 @@ SELECT set_config('besedy.old_key', :'old_key', true), set_config('besedy.new_ke
 
 DO $$
 BEGIN
+  IF current_setting('besedy.old_key') = '' OR current_setting('besedy.new_key') = '' THEN
+    RAISE EXCEPTION 'Set both -v old_key=... and -v new_key=...';
+  END IF;
+  IF length(current_setting('besedy.old_key')) > 255 OR length(current_setting('besedy.new_key')) > 255 THEN
+    RAISE EXCEPTION 'Backend keys are at most 255 characters';
+  END IF;
   IF current_setting('besedy.old_key') = current_setting('besedy.new_key') THEN
     RAISE EXCEPTION 'old_key and new_key are the same';
   END IF;

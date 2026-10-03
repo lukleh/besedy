@@ -808,13 +808,13 @@ export async function completeIndexSync(
         resolvePublicationFilePath(previous.workflowGroupId, previous.workspaceId, previous.id, "json")
       );
   } else {
-    // previousSourceRef is a backend key stored as text, so a key rename has to
-    // rewrite it with the env value (docs/migrations/renaming-a-transcript-backend-key.md);
-    // a stale key here reads as "not the active scope".
     // A fallback machine backend may be absent from the active search scope.
     // When the frozen machine backend *is* that scope, an absent row means the
     // sync removed the correction without restoring its replacement. Keep the
     // rollback resumable instead of declaring that missing text a success.
+    // previousSourceRef is a backend key stored as text: a key rename must rewrite
+    // it together with RAG_BACKEND_KEY, or it reads as "not the active scope"
+    // (docs/migrations/renaming-a-transcript-backend-key.md).
     const machineShouldBeIndexed =
       publication.previousSourceKind === "machine" &&
       publication.previousSourceRef === getRagBackendKey();
