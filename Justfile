@@ -920,6 +920,27 @@ _prod-rollback jobs_start commit backup:
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-deploy
     echo "Rollback complete. Verify web, jobs, and permissions before reopening maintenance."
 
+# Remove old production web/jobs image tags, keeping the newest <keep> deployed commits (asks first)
+prod-prune-images keep="5":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Keeps the besedy-web:<commit> and besedy-jobs:<commit> tags of the newest
+    # <keep> distinct commits in web_deploy_log (what prod-rollback can still
+    # reach), the :prod tags and any image a container uses. It lists the tags
+    # and asks first; GPU backend images and every other repository are untouched.
+    keep="$1"
+    if [[ ! "$keep" =~ ^[1-9][0-9]*$ ]]; then
+        echo "keep must be a positive integer (the rollback window), got: $keep" >&2
+        exit 2
+    fi
+    commits="$(bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d besedy -At -v ON_ERROR_STOP=1 -v keep="$keep" <<< "SELECT git_commit FROM web_deploy_log WHERE git_commit ~ '^[0-9a-f]{40}\$' GROUP BY git_commit ORDER BY max(deployed_at) DESC LIMIT :keep;")"
+    if [ -z "$commits" ]; then
+        echo "web_deploy_log has no deploys; refusing to prune without a rollback window." >&2
+        exit 1
+    fi
+    mapfile -t commit_list <<< "$commits"
+    bash scripts/prune_prod_images.sh "${commit_list[@]}"
+
 # Roll back a standard OpenRouter/NVIDIA production jobs deployment.
 prod-rollback commit backup:
     just _prod-rollback jobs-prod-start "$1" "$2"
