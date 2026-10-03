@@ -198,6 +198,15 @@ export async function generateAllTranscripts(fixturesDir: string): Promise<void>
   const transcriptsDir = path.join(fixturesDir, TEST_TRANSCRIPTS_SUBDIR);
   const completeMarker = path.join(fixturesDir, TEST_TRANSCRIPTS_COMPLETE_MARKER);
 
+  // Earlier checkouts have a local symlink `transcripts -> transcripts_test`.
+  // Remove the link itself first: removing `transcriptsDir` below would follow
+  // it, and `mkdir` would then fail on the dangling link with ENOTDIR.
+  const transcriptsRoot = path.join(fixturesDir, path.dirname(TEST_TRANSCRIPTS_SUBDIR));
+  const rootStat = await fs.lstat(transcriptsRoot).catch(() => null);
+  if (rootStat?.isSymbolicLink()) {
+    await fs.unlink(transcriptsRoot);
+  }
+
   // Start clean so hashes or backends no longer generated don't linger.
   // Earlier versions wrote to transcripts_test, where the web app never looked.
   await fs.rm(completeMarker, { force: true });
