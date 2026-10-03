@@ -49,8 +49,7 @@ function isPromiseParams(
 interface AudioSource {
   id: string;
   label: string;
-  type: "archived" | "listening";
-  variant?: string;
+  type: "archived";
   available: boolean;
   formats?: string[];
 }
@@ -69,8 +68,7 @@ interface AudioSourcePreference {
 const audioSourceSchema = z.object({
   id: z.string(),
   label: z.string(),
-  type: z.enum(["archived", "listening"]),
-  variant: z.string().optional(),
+  type: z.literal("archived"),
   available: z.boolean(),
   formats: z.array(z.string()).optional(),
 });

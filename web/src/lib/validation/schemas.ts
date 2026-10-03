@@ -207,7 +207,7 @@ export const TranscriptBackendPriorityPayloadSchema = z.object({
 /**
  * Audio source selection
  */
-export const AudioSourceSchema = z.enum(["archived", "listening", "original"]);
+export const AudioSourceSchema = z.enum(["archived", "original"]);
 export type AudioSource = z.infer<typeof AudioSourceSchema>;
 
 /**
@@ -222,8 +222,13 @@ export type AudioFormat = z.infer<typeof AudioFormatSchema>;
  */
 export const AudioQuerySchema = z.object({
   group: z.string().optional(),
-  source: AudioSourceSchema.optional().default("archived"),
-  variant: z.string().optional(),
+  // The retired "listening" source (and its `variant` param) can still come
+  // from an installed PWA or a cached page; serve those requests as archived.
+  source: z
+    .enum([...AudioSourceSchema.options, "listening"])
+    .optional()
+    .default("archived")
+    .transform((source): AudioSource => (source === "listening" ? "archived" : source)),
   format: AudioFormatSchema.optional().default("webm"),
   download: z
     .enum(["true", "false"])
@@ -339,29 +344,6 @@ export const AddUserSchema = z
   );
 
 // =============================================================================
-// Catalog Variants
-// =============================================================================
-
-/**
- * Create variant
- */
-export const CreateVariantSchema = z.object({
-  variant: z.string().min(1).max(50),
-  label: z.string().max(100).optional(),
-  listeningArchivedCatalogPath: z.string().max(500).optional(),
-  isDefault: z.boolean().optional(),
-});
-
-/**
- * Update variant
- */
-export const UpdateVariantSchema = z.object({
-  label: z.string().max(100).optional(),
-  listeningArchivedCatalogPath: z.string().max(500).optional(),
-  isDefault: z.boolean().optional(),
-});
-
-// =============================================================================
 // Catalog Management
 // =============================================================================
 
@@ -450,7 +432,6 @@ export const UpdatePreferencesSchema = z.object({
  */
 export const UpdateAudioSourceSchema = z.object({
   audioSource: AudioSourceSchema,
-  variant: z.string().max(50).optional().nullable(),
 });
 
 // =============================================================================

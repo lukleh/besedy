@@ -1749,12 +1749,7 @@
       "duplicatesPath": "Duplicates catalog path",
       "transcriptsPath": "Transcripts path",
       "active": "Active",
-      "defaultCatalog": "Default catalog",
-      "variants": "Variants",
-      "noLabel": "No label",
-      "noListeningPath": "No listening archive path",
-      "noVariants": "No variants configured.",
-      "default": "Default"
+      "defaultCatalog": "Default catalog"
     },
     "transcriptExports": {
       "title": "Transcript exports",

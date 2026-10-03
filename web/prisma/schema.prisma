@@ -572,7 +572,6 @@ model WorkflowGroup {
   preferences              UserPreferences[]
   catalogAccess            CatalogAccess[]
   pendingCatalogGrants     PendingCatalogGrant[]
-  variants                 WorkflowVariant[]
   /// Scan state for detecting new ready recordings
   readyScanState           ReadyScanState?
   /// Notifications for recordings in this catalog
@@ -583,8 +582,6 @@ model WorkflowGroup {
   catalogEntries           CatalogEntry[]
   /// Duplicate rows derived from duplicates CSV
   catalogDuplicates        CatalogDuplicate[]
-  /// Listening availability rows per variant
-  catalogListeningEntries  CatalogListeningEntry[]
   /// Per-source sync state and fingerprints
   catalogSyncStates        CatalogSyncState[]
   /// Event catalog rows
@@ -663,27 +660,6 @@ model DeepSearchJobShare {
   @@map("deep_search_job_shares")
 }
 
-/// Workflow variant for different processing configurations
-model WorkflowVariant {
-  id                           Int      @id @default(autoincrement())
-  workflowGroupId              String   @map("workflow_group_id") @db.VarChar(15)
-  /// Variant identifier (e.g., "default", "enhanced")
-  variant                      String   @db.VarChar(50)
-  /// User-friendly label
-  label                        String?
-  /// Whether this is the default variant
-  isDefault                    Boolean  @default(false) @map("is_default")
-  /// Path to listening audio catalog (enhanced audio for playback)
-  listeningArchivedCatalogPath String?  @map("listening_archived_catalog_path")
-  createdAt                    DateTime @default(now()) @map("created_at")
-
-  workflowGroup           WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  catalogListeningEntries CatalogListeningEntry[]
-
-  @@unique([workflowGroupId, variant])
-  @@map("workflow_variant")
-}
-
 // ============================================================================
 // Catalog Serving Tables (CSV ingest -> DB serving)
 // ============================================================================
@@ -741,25 +717,6 @@ model CatalogDuplicate {
   @@id([workflowGroupId, audioHash, duplicatePath])
   @@index([workflowGroupId, audioHash])
   @@map("catalog_duplicate")
-}
-
-/// Hash availability in each listening variant catalog
-model CatalogListeningEntry {
-  workflowGroupId   String   @map("workflow_group_id") @db.VarChar(15)
-  variant           String   @db.VarChar(50)
-  audioHash         String   @map("audio_hash") @db.VarChar(64)
-  compressedPath    String   @map("compressed_path")
-  /// AAC-in-MP4 copy of this variant's archive, when the variant catalog has one (#291)
-  compressedAacPath String?  @map("compressed_aac_path")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-
-  workflowGroup   WorkflowGroup   @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  workflowVariant WorkflowVariant @relation(fields: [workflowGroupId, variant], references: [workflowGroupId, variant], onDelete: Cascade)
-
-  @@id([workflowGroupId, variant, audioHash])
-  @@index([workflowGroupId, audioHash])
-  @@map("catalog_listening_entry")
 }
 
 /// Per-source sync fingerprint and status

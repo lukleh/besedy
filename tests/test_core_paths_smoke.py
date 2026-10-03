@@ -357,10 +357,10 @@ class TestTimestampExtraction:
         assert extract_timestamp_from_transcripts_root(path) == "20251128_120000"
         assert extract_run_id_from_transcripts_root(path) == "20251128_120000_dfn3-v1"
 
-    def test_extract_from_enhanced_transcripts_root(self):
+    def test_extract_rejects_the_retired_enhanced_root(self):
         path = Path("transcripts_enhanced_20251128_120000_dfn3-v1")
-        assert extract_timestamp_from_transcripts_root(path) == "20251128_120000"
-        assert extract_run_id_from_transcripts_root(path) == "20251128_120000_dfn3-v1"
+        assert extract_timestamp_from_transcripts_root(path) is None
+        assert extract_run_id_from_transcripts_root(path) is None
 
     def test_extract_handles_trailing_slash(self):
         path = Path("transcripts_20251128_120000/")

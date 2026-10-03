@@ -7,8 +7,7 @@
 
 export interface AudioSourceOption {
   id: string;
-  type: "archived" | "listening";
-  variant?: string;
+  type: "archived";
   /** Files the audio route can serve for this source (`/audio/sources`). */
   formats?: readonly string[];
 }
@@ -45,10 +44,6 @@ export function buildAudioUrl(
 ): string {
   const selectedSource = sources.find((source) => source.id === audioSource);
   const params = new URLSearchParams();
-  if (selectedSource?.type === "listening" && selectedSource.variant) {
-    params.set("source", "listening");
-    params.set("variant", selectedSource.variant);
-  }
   if (options.preferAac && selectedSource?.formats?.includes("aac")) {
     params.set("format", "aac");
   }
