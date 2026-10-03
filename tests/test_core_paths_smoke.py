@@ -106,9 +106,30 @@ class TestHomeRuntimeRoots:
 
     def test_models_dir_is_under_the_share_home(self, monkeypatch, tmp_path):
         monkeypatch.setenv("BESEDY_SHARE_HOME", str(tmp_path / "share-home"))
-        home_models_dir = tmp_path / "share-home" / "models"
-        home_models_dir.mkdir(parents=True)
-        assert resolve_models_dir() == home_models_dir
+        assert resolve_models_dir() == tmp_path / "share-home" / "models"
+
+    def test_frame_vad_model_path_is_under_the_share_home(self, tmp_path):
+        # The constant is computed at import, so check it in a fresh interpreter.
+        import os
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from besedy.core.paths import FRAME_VAD_LOCAL_MODEL_PATH; "
+                "print(FRAME_VAD_LOCAL_MODEL_PATH)",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "BESEDY_SHARE_HOME": str(tmp_path / "share-home")},
+        )
+
+        assert Path(result.stdout.strip()) == (
+            tmp_path / "share-home" / "models" / "frame_vad_multilingual_marblenet_v2.0.nemo"
+        )
 
     def test_model_dirs_ignore_models_kept_in_a_checkout(self, monkeypatch, tmp_path):
         # Models in the repository used to win when the share home had none.
