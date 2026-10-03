@@ -1034,6 +1034,9 @@ describe("AudioPlayer retry logic", () => {
     currentSrc = "https://example.com/other.mp3";
     audio.currentTime = 0;
     setPaused(true);
+    // Loading the new source cleared the error, so only the src guard stands
+    // between this canplay and the old recording's resume state.
+    clearAudioError(audio);
 
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));
