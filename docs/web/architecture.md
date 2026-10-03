@@ -262,7 +262,7 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 
 ### Common Query Params
 
-- `group`: catalog ID override (defaults to active group from preferences/latest accessible).
+- `group`: catalog ID override (defaults to the saved active group, then the default catalog, then the latest accessible one). Reading never changes the saved active group; the client saves it with `PATCH /api/preferences` when the catalog list, a recording or the catalog settings open.
 - `page`, `limit`: pagination. `sort`, `dir`: sorting.
 
 ### Error Responses

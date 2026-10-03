@@ -18,7 +18,7 @@ import { trackMcpToolInvocation } from '@/lib/mcp/usage';
 import {
   searchesPrimaryRecordingsOnly,
   type SearchMetadataFilters,
-} from '@/app/api/catalogs/[id]/search/search-route-helpers';
+} from '@/lib/search/search-helpers';
 
 const DEFAULT_LOOKUP_PAGE_SIZE = 50;
 const MAX_LOOKUP_PAGE_SIZE = 100;

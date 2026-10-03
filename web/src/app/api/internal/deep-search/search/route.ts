@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { notFound, validateRequestBody } from "@/lib/api";
-import { executeCatalogSearch } from "@/app/api/catalogs/[id]/search/search-service";
+import { executeCatalogSearch } from "@/lib/search/search-service";
 import {
   applyTimingHeaders,
   elapsedMs,
@@ -9,7 +9,7 @@ import {
   RagServiceError,
   SearchRequestSchema,
   type SearchTimings,
-} from "@/app/api/catalogs/[id]/search/search-route-helpers";
+} from "@/lib/search/search-helpers";
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,

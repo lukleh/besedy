@@ -10,8 +10,8 @@ import {
   lookupColbertNeighbors,
   RagServiceError,
   type SearchTimings,
-} from "@/app/api/catalogs/[id]/search/search-route-helpers";
-import { resolveCatalogColbertIndexDir } from "@/app/api/catalogs/[id]/search/search-service";
+} from "@/lib/search/search-helpers";
+import { resolveCatalogColbertIndexDir } from "@/lib/search/search-service";
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,

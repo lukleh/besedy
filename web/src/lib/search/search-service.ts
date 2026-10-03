@@ -26,7 +26,7 @@ import {
   type LexicalMatchMode,
   type SearchMetadataFilters,
   type SearchTimings,
-} from "./search-route-helpers";
+} from "./search-helpers";
 
 type SearchConfig = ReturnType<typeof getSearchConfig>;
 
