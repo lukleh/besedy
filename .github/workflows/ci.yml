@@ -97,6 +97,14 @@ jobs:
       - run: npm run audit:dependencies
       - run: npx prisma generate
       - run: npm run lint
+      # Prisma applies pending migrations in name order, so a migration named
+      # earlier than one production already applied would run in a different
+      # order on a fresh database. Only directories this PR adds are checked.
+      - name: Check new migration names
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          bash ../scripts/check_migration_names.sh FETCH_HEAD
 
   web-unit:
     name: Web unit (${{ matrix.shard }}/${{ strategy.job-total }})
@@ -163,7 +171,7 @@ jobs:
           jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null
 
   correction-integration:
-    name: Transcript correction integration
+    name: Migrations + transcript correction integration
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -187,19 +195,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-web
       - run: npx prisma generate
-      - name: Apply migrations
+      # The same roles production uses: migrations run as besedy_migrator and
+      # the app as besedy_app, so a migration or query that needs more
+      # privileges than production grants fails here instead of at deploy.
+      - name: Create the migrator and app roles
+        run: bash init-db-users.sh
+        env:
+          PGHOST: localhost
+          PGPASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: besedy_correction_ci
+          MIGRATE_PASSWORD: migrator
+          APP_PASSWORD: app
+      - name: Apply migrations as besedy_migrator
         run: npx prisma migrate deploy
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
+          DATABASE_URL: postgresql://besedy_migrator:migrator@localhost:5432/besedy_correction_ci
+      # Some objects exist only in migration SQL (partial unique indexes,
+      # triggers, a view, CHECK constraints), so a schema.prisma edit without
+      # a migration, or a migration that disagrees with the schema, is easy to
+      # miss. Exit code 2 means the migrated database and the schema differ.
+      - name: Check migrations match schema.prisma
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+        env:
+          DATABASE_URL: postgresql://besedy_migrator:migrator@localhost:5432/besedy_correction_ci
       # The unit suite mocks the database and the filesystem away, which is
       # exactly where correction's invariants live: the partial unique indexes,
       # the workspace lock, the frozen source on disk, the rendered artifacts
       # and the pointer file the Python indexer reads. This is the job that
       # exercises them.
-      - name: Correction smoke check
+      - name: Correction smoke check as besedy_app
         run: npm run test:correction-smoke
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
+          DATABASE_URL: postgresql://besedy_app:app@localhost:5432/besedy_correction_ci
 
   secrets:
     name: Secret scan

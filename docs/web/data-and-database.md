@@ -116,6 +116,13 @@ npx prisma migrate dev --name descriptive_name
 
 Run from inside the web container. Commit the new migration directory.
 
+Prisma applies pending migrations in name order, so a new migration's
+timestamp must be later than every migration on `main`. If `main` gained a
+later migration while your branch was open, rename your migration directory to
+a current timestamp before merging. CI enforces this for directories a pull
+request adds (`scripts/check_migration_names.sh`); existing names stay as they
+are, because production has applied them.
+
 **Apply migrations:**
 
 | Environment | Command                                                     |
@@ -125,6 +132,11 @@ Run from inside the web container. Commit the new migration directory.
 | Production  | `just prod-migrate` (uses dedicated `besedy_migrator` user) |
 
 Production runs with least-privilege `besedy_app` for the web process; only the migrator role applies schema changes.
+Development and the E2E test stack connect as the database superuser. CI's
+migration job (`correction-integration` in `.github/workflows/ci.yml`) creates
+both roles with `web/init-db-users.sh`, applies the migrations as
+`besedy_migrator` and runs the correction smoke check as `besedy_app`, so a
+privilege problem fails there rather than at deploy.
 
 ### Safety Rules
 
@@ -150,7 +162,7 @@ Production runs with least-privilege `besedy_app` for the web process; only the 
 
 Additional constraints:
 
-- Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma`
+- Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (exit code 2 means the database and the schema differ). CI runs it on a freshly migrated database.
 - If "relation does not exist" errors appear, run `npx prisma migrate deploy` against the target environment
 - Backups: daily `besedy_YYYYMMDD_HHMMSS.sql.gz` into `BACKUP_DIR` via the backup service
 
