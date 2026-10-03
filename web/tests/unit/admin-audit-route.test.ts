@@ -101,7 +101,7 @@ describe("admin audit route", () => {
       expect.objectContaining({
         where: {
           AND: [
-              { domain: { not: null } },
+            { domain: { not: null } },
           ],
         },
       })

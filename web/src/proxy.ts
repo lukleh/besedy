@@ -11,7 +11,6 @@ import { validateMutationSource } from "./lib/api/csrf";
 import { AUTH_COOKIE_PREFIX } from "./lib/auth/constants";
 import { applyAuthCleanup } from "./lib/auth/response-cleanup";
 import {
-  buildAuthCompletePath,
   getAllowlistRejectionParam,
   sanitizeAppRelativePath,
   sanitizePostAuthCallbackPath,
@@ -427,7 +426,6 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const error = req.nextUrl.searchParams.get("error");
   const errorDescription = req.nextUrl.searchParams.get("error_description");
-  const state = req.nextUrl.searchParams.get("state");
   const allowlistRejection = getAllowlistRejectionParam(error, errorDescription);
   const callbackUrl = sanitizePostAuthCallbackPath(
     req.nextUrl.searchParams.get("callbackUrl")
