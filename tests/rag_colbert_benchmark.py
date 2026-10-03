@@ -44,7 +44,9 @@ def benchmark_colbert_queries(
         for record in records:
             question = str(record["question"]).strip()
             started_at = time.perf_counter()
-            result = query_colbert_index(query=question, index_dir=index_dir, k=k)
+            result = query_colbert_index(
+                query=question, index_dir=index_dir, k=k
+            )
             duration_ms = (time.perf_counter() - started_at) * 1000
             samples.append(
                 {

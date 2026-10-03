@@ -249,7 +249,9 @@ def _audit_tokens(*, texts: Iterable[str], colbert_model: str, doc_maxlen: int) 
     import numpy as np
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(colbert_model, use_fast=True, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        colbert_model, use_fast=True, trust_remote_code=True
+    )
     if not callable(tokenizer):
         raise RuntimeError(f"Tokenizer for {colbert_model} is not callable.")
     token_counts: list[int] = []

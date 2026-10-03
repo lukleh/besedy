@@ -376,6 +376,8 @@ def test_add_to_index_uses_pylate_incremental_api(
                 }
             ],
             "index_bsize": 16,
+            # A caller from before the option was removed still sends it.
+            "use_faiss": True,
         }
     )
 
