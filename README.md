@@ -269,7 +269,7 @@ recovery, and targeted reruns without restarting the whole pipeline.
 
 ```bash
 # Quick health check
-uv run python besedy/cli/catalog.py validate --input-path transcripts/ --batch --limit 50
+uv run python besedy/cli/catalog.py validate --input-path transcripts/ --limit 50
 uv run python besedy/cli/analyze.py validate
 
 # Compare models for one recording

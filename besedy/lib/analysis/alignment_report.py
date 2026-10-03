@@ -5,32 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
-from besedy.core.paths import resolve_transcripts_root
-from besedy.lib.workflow.paths import get_transcript_backend_paths
-
-
-def _get_default_alignment_pipelines() -> dict[str, Path]:
-    """Discover alignment pipelines from on-disk workflow/model directories."""
-    transcripts_root = resolve_transcripts_root()
-    paths = get_transcript_backend_paths(transcripts_root)
-    return {backend_key: transcripts_root / rel_path for backend_key, rel_path in paths.items()}
-
-
-# Lazy-initialized module-level default (for backward compatibility)
-_DEFAULT_ALIGNMENT_PIPELINES: dict[str, Path] | None = None
-
-
-def _ensure_default_pipelines() -> dict[str, Path]:
-    """Ensure DEFAULT_ALIGNMENT_PIPELINES is populated and return it."""
-    global _DEFAULT_ALIGNMENT_PIPELINES
-    if _DEFAULT_ALIGNMENT_PIPELINES is None:
-        _DEFAULT_ALIGNMENT_PIPELINES = _get_default_alignment_pipelines()
-    return _DEFAULT_ALIGNMENT_PIPELINES
-
-
-# Backward compatibility: expose as callable for lazy loading
-DEFAULT_ALIGNMENT_PIPELINES = _ensure_default_pipelines
-
 
 def discover_shared_audio_ids(pipelines: dict[str, Path]) -> list[str]:
     sets = []
@@ -102,7 +76,6 @@ def render_alignment_text(report: dict[str, object]) -> str:
 
 
 __all__ = [
-    "DEFAULT_ALIGNMENT_PIPELINES",
     "discover_shared_audio_ids",
     "render_alignment_text",
 ]

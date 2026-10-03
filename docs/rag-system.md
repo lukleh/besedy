@@ -77,20 +77,11 @@ Optional:
 bundle builds populate it automatically. SQLite triggers keep the index aligned
 with chunk inserts, updates, and deletes during incremental sync.
 
-Bundles created before the FTS5 schema was introduced need a one-time backfill.
-Run the idempotent maintenance command against the active index path before
-enabling lexical retrieval for a legacy bundle:
-
-```bash
-uv run python scripts/backfill_rag_chunk_store_fts.py \
-  tmp/rag_colbert/<catalog>/<backend>/<chunk-version>/<model>/index
-```
-
-Pass the active `index` symlink (or its exact `chunk_store.sqlite`), not the RAG
-root; the command deliberately refuses recursive historical-bundle backfills.
-The backfill also happens automatically when the chunk-store schema is
-initialized, including on the first staged chunk mutation. A full
-`rag-colbert-index --rebuild` creates a populated FTS index as well.
+A bundle created before the FTS5 schema was introduced is backfilled
+automatically when its chunk-store schema is initialized, including on the first
+staged chunk mutation (`ensure_chunk_store_fts` in `besedy/lib/rag_chunk_store.py`).
+A full `rag-colbert-index --rebuild` creates a populated FTS index as well. The
+one-time backfill script was removed once every production bundle had its index.
 
 ### Active bundle selection
 

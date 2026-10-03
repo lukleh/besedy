@@ -8,16 +8,8 @@ import json
 from pathlib import Path
 
 from besedy.lib.audio.probe import measure_audio_duration_seconds
-from besedy.lib.data import whisperx_conversion as _conversion
 from besedy.lib.data.atomic_io import atomic_write_text
-
-# Historical imports from this CLI module remain valid while reusable code uses
-# besedy.lib.data.whisperx_conversion directly.
-WhisperXConversionError = _conversion.WhisperXConversionError
-_build_segments = _conversion._build_segments
-_ensure_list = _conversion._ensure_list
-_ensure_number = _conversion._ensure_number
-convert_whisperx = _conversion.convert_whisperx
+from besedy.lib.data.whisperx_conversion import convert_whisperx
 
 DEFAULT_MODEL = "large-v3"
 
