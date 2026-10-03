@@ -50,6 +50,22 @@ Sync triggers:
 
 `--force` bypasses fingerprint checks and rebuilds all tracked sources for the scope.
 
+### CSV Contract With the Python Writers
+
+The columns the sync reads from each CSV kind are listed in
+`contracts/catalog-csv.json`, together with the decoded-audio hash contract
+(`Hash Algorithm`). `tests/test_catalog_csv_contract.py` checks that the real
+Python writers emit them, and `web/tests/unit/catalog-csv-contract.test.ts`
+checks that the sync reads exactly them, so renaming a column on either side
+fails a test. Change the JSON together with both sides.
+
+A metadata row whose `Hash Algorithm` is missing or not
+`pcm-s16le-16000hz-mono-sha256-v1` still syncs. The sync that parses the
+changed CSV carries the count as `unrecognizedHashAlgorithmRows` in its result
+and logs a warning; the catalog settings sync toast shows it when that sync was
+started from the settings page. The count is not stored, so a later sync of
+unchanged CSVs (`skipped`) does not repeat it.
+
 `GET /api/health` reports the startup projection state (`ready`, `degraded`,
 `running`, `disabled`, or `not-started`). By default a sync error is reported as
 degraded while the last successful projection remains available. Set
@@ -268,9 +284,10 @@ override it with `BESEDY_CORRECTIONS_ROOT`.
 BESEDY_PATH_MAPPINGS=/mnt/data/audio=/data/original,/mnt/data/text=/data/text
 ```
 
-Each entry is `<host_prefix>=<container_prefix>`, comma-separated. The app applies these rewrites before path validation. Rules:
+Each entry is `<host_prefix>=<container_prefix>`, comma-separated, split on the first `=` (a container path may contain one). The app applies these rewrites before path validation. Rules:
 
 - Use full path-prefix boundaries (not fragments that could match unrelated paths)
+- The longest matching prefix wins, whatever the order of the entries
 - Keep mappings aligned with Docker volume mounts
 - `BESEDY_ALLOWED_PATHS` can extend the set of container paths that pass validation
 
