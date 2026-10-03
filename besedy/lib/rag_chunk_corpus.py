@@ -24,7 +24,7 @@ from besedy.lib.rag_retrieval_chunking import (
     CHUNK_MAX_SEGMENT_TOKENS,
     CHUNK_VERSION,
     # Shared chunk-corpus code intentionally reuses the canonical transcript discovery
-    # and audio-hash inference helpers so DB and sidecar retrievers stay identical.
+    # and chunking helpers so DB and sidecar retrievers stay identical.
     _discover_backend_transcripts,
     _is_full_sha256,
     _segments_from_transcript,
@@ -233,6 +233,15 @@ def build_transcript_source(
     with the correction workspace.
     """
 
+    # The recording is named before the file is read: a transcript directory
+    # that is not a full audio hash is rejected without parsing it.
+    audio_hash = _resolve_source_audio_hash(
+        transcript_path=transcript_path,
+        transcripts_root=transcripts_root,
+        backend_key=backend_key,
+        resolved_audio_hash=resolved_audio_hash,
+    )
+
     chunk_token_counter = token_counter or _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
@@ -240,13 +249,6 @@ def build_transcript_source(
     data = load_json_with_fallback(transcript_path)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
-
-    audio_hash = _resolve_source_audio_hash(
-        transcript_path=transcript_path,
-        transcripts_root=transcripts_root,
-        backend_key=backend_key,
-        resolved_audio_hash=resolved_audio_hash,
-    )
 
     segments = _segments_from_transcript(data, token_counter=chunk_token_counter)
     transcript_fingerprint = _stable_fingerprint(
@@ -362,6 +364,15 @@ def build_chunks_for_transcript(
     Only the text differs, which is the whole point.
     """
 
+    # The recording is named before the file is read: a transcript directory
+    # that is not a full audio hash is rejected without parsing it.
+    audio_hash = _resolve_source_audio_hash(
+        transcript_path=transcript_path,
+        transcripts_root=transcripts_root,
+        backend_key=backend_key,
+        resolved_audio_hash=resolved_audio_hash,
+    )
+
     chunk_token_counter = token_counter or _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
@@ -369,13 +380,6 @@ def build_chunks_for_transcript(
     data = load_json_with_fallback(transcript_path)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
-
-    audio_hash = _resolve_source_audio_hash(
-        transcript_path=transcript_path,
-        transcripts_root=transcripts_root,
-        backend_key=backend_key,
-        resolved_audio_hash=resolved_audio_hash,
-    )
 
     segments = _segments_from_transcript(data, token_counter=chunk_token_counter)
     prepared_segments = split_segments_for_chunking(

@@ -345,3 +345,59 @@ def test_build_chunk_corpus_skips_directories_that_are_not_a_full_hash(
 
     assert {chunk.audio_hash for chunk in corpus.chunks} == {audio_hash}
     assert corpus.transcripts_skipped == 1
+
+
+def test_per_file_builders_reject_a_transcript_directory_that_is_not_a_full_hash(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120014"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    # No usable metadata either: there is nothing to infer from, and nothing is tried.
+    short = backend_dir / "abc123" / "transcript.json"
+    _write_transcript(short, [{"start": 0.0, "end": 1.0, "text": "alpha beta gamma"}])
+
+    with pytest.raises(ValueError, match="not a full audio hash"):
+        rag_chunk_corpus.build_transcript_source(
+            transcript_path=short,
+            transcripts_root=transcripts_root,
+            backend_key="faster-whisper/large-v3@silero_vad_v6",
+        )
+    with pytest.raises(ValueError, match="not a full audio hash"):
+        rag_chunk_corpus.build_chunks_for_transcript(
+            transcript_path=short,
+            transcripts_root=transcripts_root,
+            workflow_group_id="wg-130",
+            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            run_id="run-1",
+            min_chunk_tokens=2,
+            max_chunk_tokens=4,
+            overlap_tokens=1,
+        )
+
+
+def test_an_uppercase_hex_leaf_is_indexed_under_its_lowercase_hash(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120015"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    _write_transcript(
+        backend_dir / ("AB12" * 16) / "transcript.json",
+        [{"start": 0.0, "end": 1.0, "text": "alpha beta gamma"}],
+    )
+
+    build = discover_transcript_sources(
+        workflow_group_id="wg-131",
+        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        transcripts_root=transcripts_root,
+    )
+
+    assert [source.audio_hash for source in build.sources] == ["ab12" * 16]
+    assert build.transcripts_skipped == 0
