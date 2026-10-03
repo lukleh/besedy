@@ -92,7 +92,6 @@ describe("admin audit route", () => {
     expect(prisma.auditLog.count).toHaveBeenCalledWith({
       where: {
         AND: [
-          { resource: { not: "invitation" } },
           { domain: { not: null } },
         ],
       },
@@ -102,8 +101,7 @@ describe("admin audit route", () => {
       expect.objectContaining({
         where: {
           AND: [
-            { resource: { not: "invitation" } },
-            { domain: { not: null } },
+              { domain: { not: null } },
           ],
         },
       })
