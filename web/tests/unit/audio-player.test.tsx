@@ -36,6 +36,8 @@ const messages = {
     volume: "Volume",
     waveform: "Toggle waveform",
     keyboardHints: "Hints",
+    keyboardHintBookmark: "B: bookmark",
+    bookmark: "Bookmark this moment (B)",
     reconnecting: "Reconnecting...",
   },
 };
@@ -49,6 +51,7 @@ interface RenderPlayerOptions {
   autoPlayOnSeek?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
+  onBookmark?: () => void;
   strictMode?: boolean;
 }
 
@@ -62,6 +65,7 @@ function playerElement(options: RenderPlayerOptions = {}) {
     autoPlayOnSeek,
     onTimeUpdate,
     onSeek,
+    onBookmark,
   } = options;
   return (
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -74,6 +78,7 @@ function playerElement(options: RenderPlayerOptions = {}) {
         autoPlayOnSeek={autoPlayOnSeek}
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
+        onBookmark={onBookmark}
       />
     </NextIntlClientProvider>
   );
@@ -231,6 +236,28 @@ describe("AudioPlayer play/pause controls", () => {
     });
 
     expect(playButton.getAttribute("aria-label")).toBe("Play");
+  });
+});
+
+describe("AudioPlayer bookmark button", () => {
+  it("has no bookmark button or hint where bookmarks are not offered", () => {
+    const { queryAllByTestId, getByText } = renderPlayer();
+
+    expect(queryAllByTestId("audio-bookmark")).toHaveLength(0);
+    expect(getByText("Hints")).toBeTruthy();
+  });
+
+  it("bookmarks the current moment from its button, on phone and desktop layouts", () => {
+    const onBookmark = vi.fn();
+    const { getAllByTestId, getByText } = renderPlayer({ onBookmark });
+
+    // One button in the desktop row and one in the phone row; CSS shows one of them.
+    const buttons = getAllByTestId("audio-bookmark");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveAccessibleName("Bookmark this moment (B)");
+    fireEvent.click(buttons[1]);
+    expect(onBookmark).toHaveBeenCalledTimes(1);
+    expect(getByText("Hints · B: bookmark")).toBeTruthy();
   });
 });
 

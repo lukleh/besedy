@@ -9,6 +9,7 @@ export interface RecordingWebStateRemoval {
   progressDeleted: number;
   progressRetained: boolean;
   notificationsDeleted: number;
+  bookmarksDeleted: number;
 }
 
 /**
@@ -16,7 +17,7 @@ export interface RecordingWebStateRemoval {
  * worker removed it from the catalog: event assignment (promoting the event's
  * next playable recording when this one was primary, or unreleasing the event
  * when none is left, so listeners never see an event without audio), curated
- * metadata, playback progress and notifications. The projection
+ * metadata, playback progress, notifications and listeners' bookmarks. The projection
  * tables are rebuilt by the following catalog sync.
  */
 export async function removeRecordingWebState(
@@ -76,6 +77,9 @@ export async function removeRecordingWebState(
     const notifications = await tx.recordingNotification.deleteMany({
       where: { catalogId, audioHash },
     });
+    const bookmarks = await tx.recordingBookmark.deleteMany({
+      where: { workflowGroupId: catalogId, audioHash },
+    });
 
     await tx.workflowGroup.update({
       where: { id: catalogId },
@@ -90,6 +94,7 @@ export async function removeRecordingWebState(
       progressDeleted: progress.count,
       progressRetained: remainingCatalogRefs > 0,
       notificationsDeleted: notifications.count,
+      bookmarksDeleted: bookmarks.count,
     };
   });
 }
