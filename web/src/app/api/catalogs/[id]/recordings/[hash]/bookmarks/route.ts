@@ -12,6 +12,7 @@ import {
   validateRequestBody,
 } from '@/lib/api';
 import {
+  bookmarkSelect,
   createBookmarkBodySchema,
   serializeBookmark,
 } from '@/lib/bookmarks/schemas';
@@ -22,15 +23,6 @@ export const dynamic = 'force-dynamic';
 interface RouteParams {
   params: Promise<{ id: string; hash: string }>;
 }
-
-const bookmarkSelect = {
-  id: true,
-  positionSec: true,
-  comment: true,
-  excerpt: true,
-  createdAt: true,
-  updatedAt: true,
-} as const;
 
 async function resolveAccess(
   params: RouteParams['params'],

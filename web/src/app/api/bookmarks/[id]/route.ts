@@ -10,6 +10,7 @@ import {
 import { requireAuth } from '@/lib/auth/permissions';
 import {
   BookmarkIdParamSchema,
+  bookmarkSelect,
   serializeBookmark,
   updateBookmarkBodySchema,
 } from '@/lib/bookmarks/schemas';
@@ -37,24 +38,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     );
     if (!bodyResult.success) return bodyResult.response;
 
-    const { id } = paramsResult.data;
-    const updated = await prisma.recordingBookmark.updateMany({
-      where: { id, userId },
+    // Another user's bookmark matches nothing, and Prisma's not-found error
+    // answers 404 through handlePrismaError.
+    const bookmark = await prisma.recordingBookmark.update({
+      where: { id: paramsResult.data.id, userId },
       data: { comment: bodyResult.data.comment },
+      select: bookmarkSelect,
     });
-    if (updated.count === 0) return notFound('bookmark');
-    const bookmark = await prisma.recordingBookmark.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        positionSec: true,
-        comment: true,
-        excerpt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-    if (!bookmark) return notFound('bookmark');
 
     return NextResponse.json({ bookmark: serializeBookmark(bookmark) });
   } catch (error) {

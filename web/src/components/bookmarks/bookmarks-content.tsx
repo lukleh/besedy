@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bookmark, Pencil, Play, Search } from "lucide-react";
+import { Bookmark, Play, Search } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +28,7 @@ import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import { withBackTo } from "@/lib/navigation/back-to";
 import { formatAudioTime } from "@/components/player/audio-player-utils";
 import { z } from "zod";
-import { BookmarkCommentForm } from "./bookmark-comment-form";
-import { DeleteBookmarkButton } from "./delete-bookmark-button";
+import { BookmarkListItem } from "./bookmark-list-item";
 
 const BOOKMARKS_PATH = "/bookmarks";
 const USER_BOOKMARKS_URL = "/api/bookmarks";
@@ -217,59 +216,29 @@ export function BookmarksContent() {
                 </div>
                 <ul className="divide-y">
                   {group.bookmarks.map((bookmark) => (
-                    <li key={bookmark.id} className="flex items-start gap-2 py-2" data-testid="bookmark-item">
-                      <Button variant="secondary" size="sm" className="shrink-0 font-mono tabular-nums" asChild>
-                        <Link
-                          href={withBackTo(buildBookmarkHref(bookmark.recording, bookmark.positionSec), BOOKMARKS_PATH)}
-                          title={t("playFrom")}
-                          data-testid="bookmark-open"
-                        >
-                          <Play className="mr-1 h-3.5 w-3.5" />
-                          {formatAudioTime(bookmark.positionSec)}
-                        </Link>
-                      </Button>
-                      <div className="min-w-0 flex-1 space-y-1 pt-1">
-                        {editingId === bookmark.id ? (
-                          <BookmarkCommentForm
-                            label={t("comment")}
-                            initialComment={bookmark.comment ?? ""}
-                            isSaving={update.isPending}
-                            onCancel={() => setEditingId(null)}
-                            onSave={(comment) => update.mutate({ bookmark, comment })}
-                          />
-                        ) : (
-                          <>
-                            {bookmark.comment && (
-                              <p className="whitespace-pre-wrap break-words text-sm">{bookmark.comment}</p>
-                            )}
-                            {bookmark.excerpt && (
-                              <p className="line-clamp-2 text-sm italic text-muted-foreground">
-                                „{bookmark.excerpt}“
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      {editingId !== bookmark.id && (
-                        <div className="flex shrink-0 items-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9"
-                            onClick={() => setEditingId(bookmark.id)}
-                            title={t("editComment")}
-                            aria-label={t("editComment")}
-                            data-testid="bookmark-edit"
+                    <BookmarkListItem
+                      key={bookmark.id}
+                      bookmark={bookmark}
+                      timeControl={
+                        <Button variant="secondary" size="sm" className="shrink-0 font-mono tabular-nums" asChild>
+                          <Link
+                            href={withBackTo(buildBookmarkHref(bookmark.recording, bookmark.positionSec), BOOKMARKS_PATH)}
+                            title={t("playFrom")}
+                            data-testid="bookmark-open"
                           >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <DeleteBookmarkButton
-                            disabled={remove.isPending}
-                            onDelete={() => remove.mutate(bookmark)}
-                          />
-                        </div>
-                      )}
-                    </li>
+                            <Play className="mr-1 h-3.5 w-3.5" />
+                            {formatAudioTime(bookmark.positionSec)}
+                          </Link>
+                        </Button>
+                      }
+                      isEditing={editingId === bookmark.id}
+                      isSaving={update.isPending}
+                      isDeleting={remove.isPending}
+                      onEdit={() => setEditingId(bookmark.id)}
+                      onCancelEdit={() => setEditingId(null)}
+                      onSave={(comment) => update.mutate({ bookmark, comment })}
+                      onDelete={() => remove.mutate(bookmark)}
+                    />
                   ))}
                 </ul>
               </CardContent>

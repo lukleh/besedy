@@ -4,18 +4,16 @@ import { DELETE, PATCH } from "@/app/api/bookmarks/[id]/route";
 import { AuthError } from "@/lib/auth/permissions";
 
 const mocks = vi.hoisted(() => ({
-  updateMany: vi.fn(),
+  update: vi.fn(),
   deleteMany: vi.fn(),
-  findUnique: vi.fn(),
   requireAuth: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   default: {
     recordingBookmark: {
-      updateMany: mocks.updateMany,
+      update: mocks.update,
       deleteMany: mocks.deleteMany,
-      findUnique: mocks.findUnique,
     },
   },
 }));
@@ -45,8 +43,7 @@ describe("bookmark route", () => {
   });
 
   it("changes the comment of the user's own bookmark", async () => {
-    mocks.updateMany.mockResolvedValue({ count: 1 });
-    mocks.findUnique.mockResolvedValue({
+    mocks.update.mockResolvedValue({
       id: ID,
       positionSec: 30,
       comment: "Second thought",
@@ -58,20 +55,21 @@ describe("bookmark route", () => {
     const response = await PATCH(request("PATCH", { comment: " Second thought " }), { params });
 
     expect(response.status).toBe(200);
-    expect(mocks.updateMany).toHaveBeenCalledWith({
+    expect(mocks.update).toHaveBeenCalledWith({
       where: { id: ID, userId: "user-1" },
       data: { comment: "Second thought" },
+      select: expect.any(Object),
     });
     expect(await response.json()).toMatchObject({ bookmark: { id: ID, comment: "Second thought" } });
   });
 
   it("answers another user's bookmark as missing", async () => {
-    mocks.updateMany.mockResolvedValue({ count: 0 });
+    // What Prisma throws when the owner-scoped where matches no row.
+    mocks.update.mockRejectedValue(Object.assign(new Error("Record not found"), { code: "P2025" }));
     mocks.deleteMany.mockResolvedValue({ count: 0 });
 
     expect((await PATCH(request("PATCH", { comment: "x" }), { params })).status).toBe(404);
     expect((await DELETE(request("DELETE"), { params })).status).toBe(404);
-    expect(mocks.findUnique).not.toHaveBeenCalled();
   });
 
   it("deletes the user's own bookmark", async () => {

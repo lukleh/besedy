@@ -9,6 +9,9 @@ import {
 import type { useRecordingBookmarks } from "@/hooks/use-recording-bookmarks";
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-return-href", () => ({
+  useReturnHref: (target: string) => `${target}?backTo=%2Fcatalog%2Fc1%2Fevent%2F7`,
+}));
 
 const LINES = [
   { start: 0, end: 4, text: "Dobrý večer." },
@@ -26,13 +29,27 @@ describe("findTranscriptExcerpt", () => {
     expect(findTranscriptExcerpt(LINES, time)).toBe(expected);
   });
 
+  it("finds the line in unsorted and overlapping model output", () => {
+    const messy = [
+      { start: 10, end: 12, text: "Later" },
+      { start: 0, end: 5, text: "First" },
+      { start: 3, end: 8, text: "Overlap" },
+    ];
+    // Spoken: the first line in transcript order that covers the time, as the viewer highlights it.
+    expect(findTranscriptExcerpt(messy, 4)).toBe("First");
+    expect(findTranscriptExcerpt(messy, 6)).toBe("Overlap");
+    // In a pause: the latest line to start before it, wherever it sits in the list.
+    expect(findTranscriptExcerpt(messy, 9)).toBe("Overlap");
+    expect(findTranscriptExcerpt(messy, 30)).toBe("Later");
+  });
+
   it("is empty before the first line and without a transcript", () => {
     expect(findTranscriptExcerpt([{ start: 3, end: 4, text: "x" }], 1)).toBeNull();
     expect(findTranscriptExcerpt([], 1)).toBeNull();
   });
 });
 
-function renderPanel(currentTime: number) {
+function renderPanel(currentTime: number, { isPending = false } = {}) {
   const mutate = vi.fn();
   const onSeek = vi.fn();
   const bookmarks = {
@@ -48,7 +65,7 @@ function renderPanel(currentTime: number) {
     ],
     isLoading: false,
     isError: false,
-    create: { mutate, isPending: false },
+    create: { mutate, isPending },
     update: { mutate: vi.fn(), isPending: false },
     remove: { mutate: vi.fn(), isPending: false },
   } as unknown as ReturnType<typeof useRecordingBookmarks>;
@@ -91,6 +108,42 @@ describe("RecordingBookmarks", () => {
 
     expect(screen.queryByTestId("bookmark-draft")).toBeNull();
     input.remove();
+  });
+
+  it("does not take B pressed inside a dialog, menu or slider as the shortcut", () => {
+    renderPanel(3);
+    for (const role of ["dialog", "alertdialog", "menu", "listbox", "slider"]) {
+      const container = document.createElement("div");
+      container.setAttribute("role", role);
+      const button = document.createElement("button");
+      container.appendChild(button);
+      document.body.appendChild(container);
+
+      fireEvent.keyDown(button, { code: "KeyB", key: "b" });
+
+      expect(screen.queryByTestId("bookmark-draft")).toBeNull();
+      container.remove();
+    }
+  });
+
+  it("saves once while a save is in flight, however often Ctrl+Enter is pressed", () => {
+    const { mutate } = renderPanel(7, { isPending: true });
+
+    fireEvent.click(screen.getByTestId("bookmark-add"));
+    const input = screen.getByTestId("bookmark-comment-input");
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("links to all bookmarks with a way back to this page", () => {
+    renderPanel(0);
+
+    expect(screen.getByRole("link", { name: "All bookmarks" })).toHaveAttribute(
+      "href",
+      "/bookmarks?backTo=%2Fcatalog%2Fc1%2Fevent%2F7",
+    );
   });
 
   it("plays from a bookmark and shows its comment and excerpt", () => {

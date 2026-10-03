@@ -17,6 +17,9 @@ CREATE TABLE "recording_bookmark" (
 CREATE INDEX "recording_bookmark_user_id_workflow_group_id_audio_hash_idx"
 ON "recording_bookmark"("user_id", "workflow_group_id", "audio_hash");
 
+CREATE INDEX "recording_bookmark_workflow_group_id_audio_hash_idx"
+ON "recording_bookmark"("workflow_group_id", "audio_hash");
+
 ALTER TABLE "recording_bookmark"
 ADD CONSTRAINT "recording_bookmark_user_id_fkey"
 FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

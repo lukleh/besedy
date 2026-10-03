@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { BookmarkPlus, List, Pencil } from "lucide-react";
+import { BookmarkPlus, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useReturnHref } from "@/hooks/use-return-href";
 import type { useRecordingBookmarks } from "@/hooks/use-recording-bookmarks";
 import { BOOKMARK_EXCERPT_MAX_LENGTH, type RecordingBookmark } from "@/lib/bookmarks/schemas";
 import { formatAudioTime } from "@/components/player/audio-player-utils";
 import { BookmarkCommentForm } from "./bookmark-comment-form";
-import { DeleteBookmarkButton } from "./delete-bookmark-button";
+import { BookmarkListItem } from "./bookmark-list-item";
 
 export interface TranscriptLine {
   start: number;
@@ -19,27 +20,33 @@ export interface TranscriptLine {
 }
 
 /**
- * The transcript line being spoken at `time`, or the last one before it when
- * `time` falls in a pause, so the bookmark remembers what was said there.
+ * The transcript line being spoken at `time` (the one the transcript viewer
+ * highlights), or the latest one to start before it when `time` falls in a
+ * pause, so the bookmark remembers what was said there. Model output is not
+ * guaranteed to be sorted or free of overlaps, so every line is checked.
  */
 export function findTranscriptExcerpt(lines: readonly TranscriptLine[], time: number): string | null {
-  let match: TranscriptLine | null = null;
+  const spoken = lines.find((line) => time >= line.start && time < line.end);
+  let before: TranscriptLine | null = null;
   for (const line of lines) {
-    if (line.start > time) break;
-    match = line;
-    if (time < line.end) break;
+    if (line.start <= time && (!before || line.start > before.start)) before = line;
   }
-  const text = match?.text.trim();
+  const text = (spoken ?? before)?.text.trim();
   return text ? text.slice(0, BOOKMARK_EXCERPT_MAX_LENGTH) : null;
 }
 
-function isTypingTarget(target: EventTarget | null): boolean {
+/**
+ * Keys meant for something else: text fields, and the dialogs, menus, lists
+ * and sliders that use letters or arrows themselves.
+ */
+function isOwnedByOtherControl(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return (
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
     target.tagName === "SELECT" ||
-    target.isContentEditable
+    target.isContentEditable ||
+    target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="slider"]') !== null
   );
 }
 
@@ -59,6 +66,7 @@ export function RecordingBookmarks({
 }: RecordingBookmarksProps) {
   const t = useTranslations("bookmarks");
   const { toast } = useToast();
+  const allBookmarksHref = useReturnHref("/bookmarks");
   // The moment is taken when the listener asks for the bookmark, not when the
   // comment is saved; playback carries on while they type.
   const [draftTime, setDraftTime] = useState<number | null>(null);
@@ -83,7 +91,7 @@ export function RecordingBookmarks({
         event.ctrlKey ||
         event.metaKey ||
         event.altKey ||
-        isTypingTarget(event.target)
+        isOwnedByOtherControl(event.target)
       ) {
         return;
       }
@@ -133,7 +141,7 @@ export function RecordingBookmarks({
         </h2>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/bookmarks">
+            <Link href={allBookmarksHref}>
               <List className="mr-2 h-4 w-4" />
               {t("all")}
             </Link>
@@ -172,60 +180,32 @@ export function RecordingBookmarks({
       {bookmarks.bookmarks.length > 0 && (
         <ul className="divide-y">
           {bookmarks.bookmarks.map((bookmark) => (
-            <li key={bookmark.id} className="flex items-start gap-2 py-2" data-testid="bookmark-item">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="shrink-0 font-mono tabular-nums"
-                onClick={() => onSeek(bookmark.positionSec)}
-                title={t("playFrom")}
-                data-testid="bookmark-seek"
-              >
-                {formatAudioTime(bookmark.positionSec)}
-              </Button>
-              <div className="min-w-0 flex-1 space-y-1 pt-1">
-                {editingId === bookmark.id ? (
-                  <BookmarkCommentForm
-                    label={t("comment")}
-                    initialComment={bookmark.comment ?? ""}
-                    isSaving={bookmarks.update.isPending}
-                    onCancel={() => setEditingId(null)}
-                    onSave={(comment) => saveEdit(bookmark, comment)}
-                  />
-                ) : (
-                  <>
-                    {bookmark.comment && (
-                      <p className="whitespace-pre-wrap break-words text-sm">{bookmark.comment}</p>
-                    )}
-                    {bookmark.excerpt && (
-                      <p className="line-clamp-2 text-sm italic text-muted-foreground">„{bookmark.excerpt}“</p>
-                    )}
-                  </>
-                )}
-              </div>
-              {editingId !== bookmark.id && (
-                <div className="flex shrink-0 items-center">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9"
-                    onClick={() => {
-                      setDraftTime(null);
-                      setEditingId(bookmark.id);
-                    }}
-                    title={t("editComment")}
-                    aria-label={t("editComment")}
-                    data-testid="bookmark-edit"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <DeleteBookmarkButton
-                    disabled={bookmarks.remove.isPending}
-                    onDelete={() => deleteBookmark(bookmark)}
-                  />
-                </div>
-              )}
-            </li>
+            <BookmarkListItem
+              key={bookmark.id}
+              bookmark={bookmark}
+              timeControl={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0 font-mono tabular-nums"
+                  onClick={() => onSeek(bookmark.positionSec)}
+                  title={t("playFrom")}
+                  data-testid="bookmark-seek"
+                >
+                  {formatAudioTime(bookmark.positionSec)}
+                </Button>
+              }
+              isEditing={editingId === bookmark.id}
+              isSaving={bookmarks.update.isPending}
+              isDeleting={bookmarks.remove.isPending}
+              onEdit={() => {
+                setDraftTime(null);
+                setEditingId(bookmark.id);
+              }}
+              onCancelEdit={() => setEditingId(null)}
+              onSave={(comment) => saveEdit(bookmark, comment)}
+              onDelete={() => deleteBookmark(bookmark)}
+            />
           ))}
         </ul>
       )}

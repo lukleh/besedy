@@ -75,6 +75,16 @@ export const userBookmarksResponseSchema = z.object({
   bookmarks: z.array(userBookmarkSchema),
 });
 
+/** The columns a bookmark is read with; `serializeBookmark` turns them into the API shape. */
+export const bookmarkSelect = {
+  id: true,
+  positionSec: true,
+  comment: true,
+  excerpt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 interface BookmarkRow {
   id: string;
   positionSec: number;

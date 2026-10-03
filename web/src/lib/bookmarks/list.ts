@@ -11,6 +11,7 @@ import {
 } from "@/lib/features/capabilities";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
+  bookmarkSelect,
   serializeBookmark,
   type BookmarkRecording,
   type UserBookmark,
@@ -141,14 +142,9 @@ export async function listUserBookmarks(userId: string): Promise<UserBookmark[]>
     where: { userId },
     orderBy: { createdAt: "desc" },
     select: {
-      id: true,
+      ...bookmarkSelect,
       workflowGroupId: true,
       audioHash: true,
-      positionSec: true,
-      comment: true,
-      excerpt: true,
-      createdAt: true,
-      updatedAt: true,
       workflowGroup: { select: { label: true } },
     },
   });

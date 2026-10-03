@@ -984,6 +984,8 @@ model RecordingBookmark {
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
 
   @@index([userId, workflowGroupId, audioHash])
+  /// Ingest removal and catalog deletion find a recording's bookmarks by catalog and hash.
+  @@index([workflowGroupId, audioHash])
   @@map("recording_bookmark")
 }
 

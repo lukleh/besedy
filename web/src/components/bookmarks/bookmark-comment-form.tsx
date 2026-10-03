@@ -26,13 +26,18 @@ export function BookmarkCommentForm({
   const t = useTranslations("bookmarks");
   const tCommon = useTranslations("common");
   const [comment, setComment] = useState(initialComment);
+  // The button is disabled while saving; the keyboard and submit paths must
+  // not send a second request either.
+  const save = () => {
+    if (!isSaving) onSave(comment);
+  };
 
   return (
     <form
       className="space-y-2"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave(comment);
+        save();
       }}
     >
       <Textarea
@@ -45,7 +50,7 @@ export function BookmarkCommentForm({
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
             event.preventDefault();
-            onSave(comment);
+            save();
           } else if (event.key === "Escape") {
             event.preventDefault();
             onCancel();
