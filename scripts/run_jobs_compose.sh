@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
 # Run docker compose for one environment's jobs runtime (the jobs-api and
-# prefect-worker containers). Before any command, the rendered project is
+# prefect-worker containers). Before a command that creates or starts
+# containers (up, create, run, start, restart, scale), the rendered project is
 # checked against that environment (validate_jobs_compose_config.sh), so a
 # wrong value in the jobs env file cannot silently point one environment's
-# jobs at another environment's web, work pool or output directory.
+# jobs at another environment's web, work pool or output directory. Commands
+# that stop, inspect or build (down, stop, logs, ps, ...) always run: a
+# mis-wired stack has to stay stoppable.
 
 set -euo pipefail
 
@@ -62,9 +65,17 @@ if (( $# == 0 )); then
   exit 1
 fi
 
+# The project, files and profiles come from this wrapper and the env file only.
+unset COMPOSE_FILE COMPOSE_ENV_FILES COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_PATH_SEPARATOR
+
 env_file="$("$script_dir/resolve_jobs_env_file.sh" "$mode")"
 cd "$repo_root"
 compose_command=(docker compose --env-file "$env_file" "${compose_files[@]}")
+
+case "$1" in
+  up | create | run | start | restart | scale) ;;
+  *) exec "${compose_command[@]}" "$@" ;;
+esac
 
 compose_status=0
 rendered_config="$("${compose_command[@]}" config --format json)" || compose_status=$?

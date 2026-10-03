@@ -69,11 +69,23 @@ done
 
 require_suffix jobs-api PREFECT_INGEST_WORK_POOL
 
+# Deployments are registered and run by name: another environment's names would
+# overwrite its deployments, or submit runs to them.
+for key in \
+  PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME \
+  PREFECT_INGEST_DEPLOYMENT_NAME PREFECT_INGEST_FULL_DEPLOYMENT_NAME \
+  PREFECT_INGEST_REMOVE_DEPLOYMENT_NAME PREFECT_INGEST_REMOVE_FULL_DEPLOYMENT_NAME \
+  PREFECT_CORRECTION_INDEX_DEPLOYMENT_NAME PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME; do
+  require_suffix jobs-api "$key"
+done
+
 # The worker serves the pool named on its command line, not the variable.
 worker_pool="$(jq -r '
-  .services["prefect-worker"].command as $command
+  (.services["prefect-worker"].command // []) as $command
   | ($command | index("--pool")) as $i
-  | if $i == null then "" else $command[$i + 1] // "" end
+  | if $i != null then $command[$i + 1] // ""
+    else ([$command[] | select(startswith("--pool="))] | first // "") | ltrimstr("--pool=")
+    end
 ' <<<"$config")"
 [[ "$worker_pool" == *"-$suffix" ]] \
   || fail "prefect-worker pool is '$worker_pool', expected a name ending in '-$suffix'"

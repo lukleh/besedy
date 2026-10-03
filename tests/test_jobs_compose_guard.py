@@ -33,6 +33,14 @@ def rendered(mode: str) -> dict[str, object]:
                     "PREFECT_INGEST_WORK_POOL": f"besedy-ingest-{suffix}",
                     "DEEP_SEARCH_OUTPUT_ENV": suffix,
                     "DEEP_SEARCH_OUTPUT_DIR": output_dir,
+                    "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME": f"deep-search-{suffix}",
+                    "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME": f"deep_search_flow/deep-search-{suffix}",
+                    "PREFECT_INGEST_DEPLOYMENT_NAME": f"ingest-{suffix}",
+                    "PREFECT_INGEST_FULL_DEPLOYMENT_NAME": f"ingest_recording_flow/ingest-{suffix}",
+                    "PREFECT_INGEST_REMOVE_DEPLOYMENT_NAME": f"ingest-remove-{suffix}",
+                    "PREFECT_INGEST_REMOVE_FULL_DEPLOYMENT_NAME": f"remove_recording_flow/ingest-remove-{suffix}",
+                    "PREFECT_CORRECTION_INDEX_DEPLOYMENT_NAME": f"correction-index-{suffix}",
+                    "PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME": f"sync_correction_index_flow/correction-index-{suffix}",
                 },
             },
             "prefect-worker": {
@@ -127,6 +135,13 @@ def test_validator_accepts_a_correctly_wired_project(mode: str) -> None:
         (
             "production",
             "jobs-api",
+            "environment.PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
+            "ingest_recording_flow/ingest-dev",
+            "PREFECT_INGEST_FULL_DEPLOYMENT_NAME is 'ingest_recording_flow/ingest-dev'",
+        ),
+        (
+            "production",
+            "jobs-api",
             "environment.DEEP_SEARCH_OUTPUT_ENV",
             "dev",
             "DEEP_SEARCH_OUTPUT_ENV is 'dev', expected 'prod'",
@@ -156,6 +171,20 @@ def test_validator_refuses_values_of_another_environment(
     assert message in result.stderr
     # Each failure names the env file to fix.
     assert "/env/jobs.env" in result.stderr
+
+
+def test_validator_reads_the_pool_from_the_equals_form_too() -> None:
+    config = mutated(
+        "production", "prefect-worker", "command", ["prefect", "worker", "start", "--pool=besedy-deep-search-prod"]
+    )
+    assert validate(config, "production").returncode == 0
+
+    config = mutated(
+        "production", "prefect-worker", "command", ["prefect", "worker", "start", "--pool=besedy-deep-search-dev"]
+    )
+    result = validate(config, "production")
+    assert result.returncode == 1
+    assert "prefect-worker pool is 'besedy-deep-search-dev'" in result.stderr
 
 
 def test_validator_refuses_a_project_of_another_environment() -> None:
@@ -231,14 +260,14 @@ def run_wrapper(
 def test_wrapper_runs_the_command_with_this_modes_files_after_validating(
     tmp_path: Path, mode: str
 ) -> None:
-    result, calls = run_wrapper(tmp_path, mode, rendered(mode), "ps", "--services")
+    result, calls = run_wrapper(tmp_path, mode, rendered(mode), "up", "-d", "--no-build")
 
     assert result.returncode == 0, result.stderr
     assert len(calls) == 2
     env_file = tmp_path / f"jobs.env.{mode}"
     compose_file = f"jobs-service/docker-compose.jobs-{SUFFIX[mode]}.yml"
     assert calls[0] == f"compose --env-file {env_file} -f {compose_file} config --format json"
-    assert calls[1] == f"compose --env-file {env_file} -f {compose_file} ps --services"
+    assert calls[1] == f"compose --env-file {env_file} -f {compose_file} up -d --no-build"
 
 
 def test_wrapper_refuses_before_running_any_command_when_a_value_names_another_environment(
@@ -261,8 +290,41 @@ def test_wrapper_refuses_before_running_any_command_when_a_value_names_another_e
     assert calls[0].endswith("config --format json")
 
 
+@pytest.mark.parametrize("command", [["down"], ["stop", "jobs-api"], ["logs", "-f"], ["ps"], ["build", "jobs-api"]])
+def test_wrapper_runs_stopping_and_inspecting_commands_even_for_a_mis_wired_project(
+    tmp_path: Path, command: list[str]
+) -> None:
+    config = mutated(
+        "production",
+        "prefect-worker",
+        "environment.BESEDY_INTERNAL_BASE_URL",
+        "http://besedy-development-web:3000",
+    )
+
+    result, calls = run_wrapper(tmp_path, "production", config, *command)
+
+    assert result.returncode == 0, result.stderr
+    # No render and no validation: a wrong stack has to stay stoppable.
+    assert len(calls) == 1
+    assert calls[0].endswith(" ".join(command))
+
+
+@pytest.mark.parametrize("command", ["up", "create", "run", "start", "restart", "scale"])
+def test_wrapper_validates_every_command_that_creates_or_starts_containers(
+    tmp_path: Path, command: str
+) -> None:
+    config = mutated(
+        "production", "jobs-api", "environment.DEEP_SEARCH_OUTPUT_ENV", "dev"
+    )
+
+    result, calls = run_wrapper(tmp_path, "production", config, command, "jobs-api")
+
+    assert result.returncode == 1
+    assert len(calls) == 1
+
+
 def test_wrapper_reports_a_render_failure_with_the_env_file(tmp_path: Path) -> None:
-    result, calls = run_wrapper(tmp_path, "production", None, "ps")
+    result, calls = run_wrapper(tmp_path, "production", None, "up")
 
     assert result.returncode == 1
     assert "env var required but not set" in result.stderr
@@ -271,7 +333,7 @@ def test_wrapper_reports_a_render_failure_with_the_env_file(tmp_path: Path) -> N
 
 
 def test_wrapper_adds_the_codex_overlay_for_production_only(tmp_path: Path) -> None:
-    result, calls = run_wrapper(tmp_path, "production", rendered("production"), "--codex-auth", "ps")
+    result, calls = run_wrapper(tmp_path, "production", rendered("production"), "--codex-auth", "up")
 
     assert result.returncode == 0, result.stderr
     assert all(
@@ -280,7 +342,7 @@ def test_wrapper_adds_the_codex_overlay_for_production_only(tmp_path: Path) -> N
         for call in calls
     )
 
-    result, _ = run_wrapper(tmp_path / "dev", "development", rendered("development"), "--codex-auth", "ps")
+    result, _ = run_wrapper(tmp_path / "dev", "development", rendered("development"), "--codex-auth", "up")
     assert result.returncode == 1
     assert "--codex-auth is only valid for production" in result.stderr
 
@@ -330,10 +392,21 @@ def test_the_wrapper_and_validator_are_executable_in_git() -> None:
         check=True,
     ).stdout.splitlines()
     modes = {line.split("\t")[1]: line.split()[0] for line in listed}
+    if not modes:
+        pytest.skip("the scripts are not tracked by git here")
 
     assert modes == {
         "scripts/run_jobs_compose.sh": "100755",
         "scripts/validate_jobs_compose_config.sh": "100755",
+    }
+
+
+def _clean_env() -> dict[str, str]:
+    """The environment without values that would change what Compose renders."""
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(("COMPOSE_", "PREFECT_", "DEEP_SEARCH_", "BESEDY_"))
     }
 
 
@@ -368,6 +441,7 @@ def test_the_checked_in_compose_files_render_a_project_the_validator_accepts(
             "json",
         ],
         cwd=REPO_ROOT,
+        env=_clean_env(),
         capture_output=True,
         text=True,
         check=True,
@@ -387,11 +461,27 @@ def test_a_production_env_file_naming_the_development_web_is_refused(tmp_path: P
         "DEEP_SEARCH_OUTPUT_ENV=dev\n",
         encoding="utf-8",
     )
-    env = os.environ.copy()
+    # Real `docker compose config`, but nothing else reaches Docker: a wrapper
+    # that wrongly let `up` through must not start containers on this host.
+    real_docker = shutil.which("docker")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = bin_dir / "calls.log"
+    shim = bin_dir / "docker"
+    shim.write_text(
+        f"""#!/usr/bin/env bash
+if [[ " $* " == *" config "* ]]; then exec {real_docker} "$@"; fi
+printf '%s\\n' "$*" >> {calls}
+""",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    env = _clean_env()
     env["BESEDY_JOBS_ENV_PROD"] = str(env_file)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
 
     result = subprocess.run(
-        ["bash", str(WRAPPER), "production", "ps"],
+        ["bash", str(WRAPPER), "production", "up", "-d"],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -402,3 +492,4 @@ def test_a_production_env_file_naming_the_development_web_is_refused(tmp_path: P
     assert result.returncode == 1
     assert "Unsafe jobs Compose configuration for production" in result.stderr
     assert str(env_file) in result.stderr
+    assert not calls.exists()

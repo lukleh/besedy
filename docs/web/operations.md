@@ -150,11 +150,13 @@ steps before it. Paths below use the default config home
 
    Every `just jobs-*` and jobs-related `prod-*` recipe runs the jobs stack
    through `scripts/run_jobs_compose.sh <development|test|production>`. Before
-   the Compose command, it renders the project and refuses to continue when it
-   points at another environment: `BESEDY_INTERNAL_BASE_URL` must name this
+   a command that creates or starts containers (`up`, `create`, `run`, `start`,
+   `restart`, `scale`), it renders the project and refuses to continue when it
+   points at another environment (`down`, `stop`, `logs`, `ps` and `build`
+   always run, so a mis-wired stack stays stoppable): `BESEDY_INTERNAL_BASE_URL` must name this
    environment's web container (`besedy-<development|test|production>-web`),
-   the deep-search and ingest work pools and the worker's `--pool` must end in
-   `-dev`, `-test` or `-prod`, `DEEP_SEARCH_OUTPUT_ENV` and the last component of
+   the deep-search and ingest work pools, the worker's `--pool` and the Prefect
+   deployment names must end in `-dev`, `-test` or `-prod`, `DEEP_SEARCH_OUTPUT_ENV` and the last component of
    `DEEP_SEARCH_OUTPUT_DIR` must be the same suffix, and the container names
    and project must carry it too. The error names the variable, its value and
    the env file to fix. The `docker-compose.jobs-*.yml` defaults already satisfy
