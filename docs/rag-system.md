@@ -186,7 +186,7 @@ Bundle-local SQLite tracking one row per `audio_hash`:
 | `transcript_path` | Source file path |
 | `transcript_fingerprint` | SHA-256 over canonical parsed transcript payload used for chunking |
 | `chunking_fingerprint` | SHA-256 over normalized chunking config (chunk version, min/max tokens, overlap, token-counter identity) |
-| `bundle_fingerprint` | SHA-256 over normalized index-wide ColBERT config (`colbert_model`, `doc_maxlen`, `use_faiss`, future build settings) |
+| `bundle_fingerprint` | SHA-256 over normalized index-wide ColBERT config (`colbert_model`, `doc_maxlen`, `index_bsize`, the PLAID backend, the retrieval engine name and the index format version) |
 | `chunk_count` | Number of chunks for this hash |
 | `updated_at` | Last sync timestamp |
 | `last_run_id` | Sync run identity |
