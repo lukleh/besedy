@@ -1,4 +1,4 @@
-"""Utilities for alignment CLI formatting and defaults."""
+"""Utilities for alignment CLI formatting."""
 
 from __future__ import annotations
 

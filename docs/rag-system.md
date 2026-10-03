@@ -77,10 +77,11 @@ Optional:
 bundle builds populate it automatically. SQLite triggers keep the index aligned
 with chunk inserts, updates, and deletes during incremental sync.
 
-A bundle created before the FTS5 schema was introduced is backfilled
-automatically when its chunk-store schema is initialized, including on the first
-staged chunk mutation (`ensure_chunk_store_fts` in `besedy/lib/rag_chunk_store.py`).
-A full `rag-colbert-index --rebuild` creates a populated FTS index as well. The
+A bundle created before the FTS5 schema was introduced has no such index, and
+lexical queries against it fail until it is added. The index is created when the
+chunk-store schema is initialized (the first staged chunk mutation, or an explicit
+`ensure_chunk_store_fts(path=...)` from `besedy/lib/rag_chunk_store.py`, which also
+backfills an existing store) and by a full `rag-colbert-index --rebuild`. The
 one-time backfill script was removed once every production bundle had its index.
 
 ### Active bundle selection
