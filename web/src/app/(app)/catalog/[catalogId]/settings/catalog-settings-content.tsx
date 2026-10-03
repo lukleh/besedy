@@ -130,7 +130,6 @@ export default function CatalogSettingsContent({
         }
       },
       enabled: cards.access && !catalogNotFound && !catalogValidationLoading,
-      retry: false, // Don't retry on error (403 is expected for unauthorized users)
       ...AUTH_SENSITIVE_QUERY_OPTIONS,
     });
 

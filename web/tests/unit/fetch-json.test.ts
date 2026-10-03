@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { ApiError, SchemaValidationError, fetchJson } from "@/lib/api/fetch-json";
+import {
+  ApiError,
+  SchemaValidationError,
+  fetchJson,
+  isFinalClientError,
+  isNetworkFailure,
+} from "@/lib/api/fetch-json";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -128,5 +134,24 @@ describe("fetchJson auth redirect behavior", () => {
 
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+});
+
+describe("error predicates", () => {
+  it("treats a 4xx answer as final except timeouts and rate limits", () => {
+    for (const status of [400, 401, 403, 404, 410, 422]) {
+      expect(isFinalClientError(new ApiError("x", status))).toBe(true);
+    }
+    for (const status of [408, 429, 500, 502, 503]) {
+      expect(isFinalClientError(new ApiError("x", status))).toBe(false);
+    }
+    expect(isFinalClientError(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isFinalClientError(null)).toBe(false);
+  });
+
+  it("calls only a rejected fetch a network failure", () => {
+    expect(isNetworkFailure(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isNetworkFailure(new ApiError("Internal error", 500))).toBe(false);
+    expect(isNetworkFailure(new Error("boom"))).toBe(false);
   });
 });

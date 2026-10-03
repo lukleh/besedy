@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
-import { ApiError, fetchJson } from "@/lib/api/fetch-json";
+import { fetchJson, isNetworkFailure } from "@/lib/api/fetch-json";
+import { isAccessDeniedError } from "@/lib/query/auth-sensitive";
 import { buildEventDetailUrl } from "@/lib/api/recording-urls";
 import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
@@ -27,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
 import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture";
 import {
@@ -122,17 +124,23 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   }
 
   if (error || !data) {
-    // A hidden event answers 403 or 404; either way there is nothing to retry.
-    const isNotFound = error instanceof ApiError && (error.status === 404 || error.status === 403);
+    // A hidden event answers 401, 403 or 404; either way there is nothing to retry.
+    const isNotFound = isAccessDeniedError(error);
+    // No network and no downloaded package: not a server fault.
+    const isOffline = !isNotFound && isNetworkFailure(error);
     return (
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <CalendarX className="h-12 w-12 text-muted-foreground mb-4" />
-          <h1 className="text-lg font-semibold">{isNotFound ? t("notFoundTitle") : t("loadErrorTitle")}</h1>
-          <p className="text-sm text-muted-foreground mt-2 max-w-md">
-            {isNotFound ? t("notFoundDescription") : tRoot("errors.serverErrorDescription")}
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+      <EmptyState
+        icon={CalendarX}
+        title={isNotFound ? t("notFoundTitle") : t("loadErrorTitle")}
+        description={
+          isNotFound
+            ? t("notFoundDescription")
+            : isOffline
+              ? tRoot("errors.offlineDescription")
+              : tRoot("errors.serverErrorDescription")
+        }
+        actions={
+          <>
             <Button asChild variant={isNotFound ? "default" : "outline"}>
               <Link href={`/catalog/${catalogId}?tab=events`}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
@@ -145,9 +153,9 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
                 {t("retry")}
               </Button>
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
     );
   }
 

@@ -159,6 +159,24 @@ describe("EventDetail load failures", () => {
     expect(screen.queryByRole("button", { name: /retry/ })).not.toBeInTheDocument();
   });
 
+  it("treats an event hidden with 401 as not found too", () => {
+    renderEventDetailError(new ApiError("Unauthorized", 401));
+
+    expect(screen.getByRole("heading", { name: "notFoundTitle" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/ })).not.toBeInTheDocument();
+  });
+
+  it("says the device is offline, not that the server failed, when the request could not be made", () => {
+    const refetch = vi.fn();
+    renderEventDetailError(new TypeError("Failed to fetch"), refetch);
+
+    expect(screen.getByRole("heading", { name: "loadErrorTitle" })).toBeInTheDocument();
+    expect(screen.getByText("errors.offlineDescription")).toBeInTheDocument();
+    expect(screen.queryByText("errors.serverErrorDescription")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /retry/ }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it("offers a retry for other failures without showing the raw error", () => {
     const refetch = vi.fn();
     renderEventDetailError(new ApiError("Internal error", 500), refetch);

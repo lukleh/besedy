@@ -121,6 +121,16 @@ describe("proxy security controls", () => {
     expect(response.status).toBe(200);
   });
 
+  it("lets the bare /api path through to the API catch-all instead of the sign-in redirect", async () => {
+    const { proxy } = await import("@/proxy");
+
+    const response = await proxy(new NextRequest("http://localhost/api"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("Cache-Control")).toBeNull();
+  });
+
   it("treats /robots.txt as a public route", async () => {
     const { proxy } = await import("@/proxy");
 

@@ -63,7 +63,6 @@ export function useRecordingEntry({
         () => readLocalRecordingEntry(catalogId, hash)
       ),
     enabled,
-    retry: false,
     ...AUTH_SENSITIVE_QUERY_OPTIONS,
   });
 
