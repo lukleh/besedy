@@ -194,7 +194,7 @@ def test_main_transcribes_with_mocked_faster_whisper_runtime(
         resolve_model_reference=lambda model_name: f"resolved:{model_name}",
         WhisperModel=DummyModel,
         BatchedInferencePipeline=DummyPipeline,
-        extract_vad_segments=lambda _path, min_silence_duration_ms=None, sampling_rate=None: [
+        extract_vad_segments=lambda _path, sampling_rate=None: [
             {"start": 0.0, "end": 1.2}
         ],
         build_payload=build_payload,

@@ -34,7 +34,6 @@ from besedy.lib.workflow.paths import sanitize_model_identifier
 
 def extract_vad_segments(
     audio_path: Path,
-    min_silence_duration_ms: int | None = None,
     sampling_rate: int | None = None,
 ) -> list[dict[str, float]]:
     """Extract VAD speech segments from audio file.
@@ -44,14 +43,11 @@ def extract_vad_segments(
 
     Args:
         audio_path: Path to audio file (WAV preferred)
-        min_silence_duration_ms: Minimum silence duration to split segments
         sampling_rate: Audio sampling rate (default 16kHz)
 
     Returns:
         List of dicts with 'start' and 'end' keys in seconds
     """
-    # Keep parameter for compatibility, but rely on faster-whisper defaults.
-    _ = min_silence_duration_ms
     if sampling_rate is None:
         sampling_rate = config.audio.sample_rate
 
@@ -410,10 +406,7 @@ def main() -> int:
         # Extract VAD segments for precise silence boundaries
         logging.info("Extracting VAD segments from %s", audio_path.name)
         min_silence_ms = config.vad.min_silence_ms
-        vad_segments = extract_vad_segments(
-            audio_path,
-            min_silence_duration_ms=min_silence_ms,
-        )
+        vad_segments = extract_vad_segments(audio_path)
         logging.info("Found %d VAD speech segments", len(vad_segments))
 
         vad_parameters = None
