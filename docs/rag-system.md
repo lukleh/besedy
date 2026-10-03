@@ -1,13 +1,13 @@
 # RAG System
 
-> **Last Updated:** 2026-09-01
+> **Last Updated:** 2026-10-03
 
 ## Decision Summary
 
 - ColBERT is the primary semantic retrieval path. The sidecar also exposes exact lexical retrieval through the bundle-local FTS5 index.
 - Chunk hydration and neighbor lookup come from the ColBERT bundle, not PostgreSQL.
 - PostgreSQL is used only for ACL filtering, catalog visibility, and recording metadata. No chunk-level RAG state lives in Postgres.
-- TEI is optional and only used for ColBERT reranking when `RAG_COLBERT_RERANK_ENABLED=true` (default: `false`).
+- There is no reranking stage: results keep the ColBERT order and scores.
 - The engine layer is PyLate/FastPLAID. Besedy does not rely on live in-place mutation of serving bundles because the library runtime does not provide transactional cutover.
 
 ## Model Licensing
@@ -16,9 +16,9 @@ The **default** ColBERT retriever, `jinaai/jina-colbert-v2`, is **CC-BY-NC-4.0
 (non-commercial)** -- do not use it in a commercial deployment. For commercial
 use, switch to a permissively-licensed ColBERT model via the `RAG_COLBERT_MODEL`
 environment variable or `--rag-colbert-model` (e.g. `colbert-ir/colbertv2.0`;
-verify its terms on the model card). The reranker / chunk tokenizer
-(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0) is
-commercial-friendly. See the [full model and license table in the
+verify its terms on the model card). The chunk tokenizer
+(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0; only its tokenizer
+is used) is commercial-friendly. See the [full model and license table in the
 README](../README.md#third-party-models--licenses) for the source of truth.
 
 ## Query Flow
@@ -29,7 +29,6 @@ Search entrypoint: `POST /api/catalogs/:id/search`.
 2. The route queries the sidecar with that bundle.
 3. Candidate `audio_hash` values are filtered through PostgreSQL using recording visibility, linked-event visibility and date/location, and any remaining recording-specific constraints.
 4. Surviving chunks and their neighbors are hydrated from the sidecar bundle's `chunk_store.sqlite`.
-5. Results are optionally reranked with TEI if `RAG_COLBERT_RERANK_ENABLED=true`.
 
 Behavioral defaults:
 
@@ -146,15 +145,12 @@ Operational constraints that are not obvious from the code:
 
 The model-serving stack in `rag-services/docker-compose.yml` runs:
 
-- `colbert` by default.
-- The TEI reranker only behind the optional `legacy-tei` profile.
+- `colbert`.
 
 ```bash
 just rag-services-up   # default stack (ColBERT path)
 just colbert-up
 just colbert-logs
-just tei-up            # optional TEI reranker
-just tei-down
 ```
 
 `besedy-colbert` is one container with a fixed name that production,
