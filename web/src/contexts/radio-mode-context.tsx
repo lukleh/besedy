@@ -25,6 +25,7 @@ interface RadioModeContextValue extends RadioRuntimeSnapshot {
   handOffPlayback: () => { time: number; wasPlaying: boolean };
   setVolume: (volume: number) => void;
   toggleMute: () => void;
+  fadeOutAndPause: () => void;
 }
 
 const RadioModeContext = createContext<RadioModeContextValue | undefined>(undefined);
@@ -63,6 +64,10 @@ export function RadioModeProvider({ children }: { children: ReactNode }) {
     [runtime]
   );
   const toggleMute = useCallback(() => runtime.toggleMute(), [runtime]);
+  const fadeOutAndPause = useCallback(
+    () => runtime.fadeOutAndPause(),
+    [runtime]
+  );
 
   // Memoize the provider value — state changes still re-render consumers (as
   // intended), but at least the action identities stay stable across ticks.
@@ -78,6 +83,7 @@ export function RadioModeProvider({ children }: { children: ReactNode }) {
       handOffPlayback,
       setVolume,
       toggleMute,
+      fadeOutAndPause,
     }),
     [
       state,
@@ -90,6 +96,7 @@ export function RadioModeProvider({ children }: { children: ReactNode }) {
       handOffPlayback,
       setVolume,
       toggleMute,
+      fadeOutAndPause,
     ]
   );
 

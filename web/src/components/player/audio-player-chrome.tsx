@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { BufferIndicator } from "./buffer-indicator";
 import { DownloadButton } from "@/components/offline/download-button";
+import { SleepTimerButton } from "./sleep-timer-button";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { formatAudioTime } from "./audio-player-utils";
@@ -192,6 +193,7 @@ export function AudioPlayerChrome({
           </div>
 
           <div className="absolute right-0 hidden items-center justify-end gap-2 sm:flex">
+            <SleepTimerButton variant="player" />
             <Button
               variant="ghost"
               size="icon"
@@ -258,6 +260,10 @@ export function AudioPlayerChrome({
                 <Volume2 className="size-6" />
               )}
             </Button>
+          </div>
+          {/* Outside the grid, which lines up with the playback buttons. */}
+          <div className="absolute top-1/2 right-0 -translate-y-1/2">
+            <SleepTimerButton variant="player" />
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { render, act, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
+import { SleepTimerProvider, useSleepTimer } from "@/contexts/sleep-timer-context";
 
 // Mock the service worker context
 vi.mock("@/contexts/service-worker-context", () => ({
@@ -1716,5 +1717,103 @@ describe("AudioPlayer unmount", () => {
     // The real unmount still releases it.
     unmount();
     expect(audio.hasAttribute("src")).toBe(false);
+  });
+});
+
+describe("AudioPlayer sleep timer", () => {
+  type Timer = NonNullable<ReturnType<typeof useSleepTimer>>;
+
+  function SleepTimerProbe({ timerRef }: { timerRef: { current: Timer | null } }) {
+    timerRef.current = useSleepTimer();
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderWithSleepTimer() {
+    const timerRef: { current: Timer | null } = { current: null };
+    const utils = render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={{
+          ...messages,
+          sleepTimer: {
+            label: "Sleep timer",
+            activeLabel: "Sleep timer: {time} left",
+            off: "Off",
+            minutes: "{count} min",
+          },
+        }}
+      >
+        <SleepTimerProvider>
+          <SleepTimerProbe timerRef={timerRef} />
+          <AudioPlayer src="https://example.com/audio.mp3" />
+        </SleepTimerProvider>
+      </NextIntlClientProvider>,
+    );
+    const audio = utils.container.querySelector("audio")!;
+    const setPaused = mockPaused(audio, true);
+    audio.play = vi.fn(() => {
+      setPaused(false);
+      audio.dispatchEvent(new Event("play"));
+      return Promise.resolve();
+    });
+    audio.pause = vi.fn(() => {
+      setPaused(true);
+      audio.dispatchEvent(new Event("pause"));
+    });
+    return { ...utils, audio, timer: () => timerRef.current! };
+  }
+
+  it("shows the time left and fades the recording out when it runs out", async () => {
+    const { audio, container, timer } = renderWithSleepTimer();
+    act(() => timer().start(15));
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="audio-play-button"]')!
+        .click();
+    });
+
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    expect(
+      container.querySelector('[data-testid="sleep-timer-remaining"]')?.textContent,
+    ).toBe("10:00");
+
+    act(() => vi.advanceTimersByTime(10 * 60_000 + 2_500));
+    expect(audio.pause).not.toHaveBeenCalled();
+    expect(audio.volume).toBeCloseTo(0.5, 1);
+
+    act(() => vi.advanceTimersByTime(2_500));
+    expect(audio.pause).toHaveBeenCalledTimes(1);
+    expect(audio.volume).toBe(1);
+    expect(timer().remainingMs).toBeNull();
+    expect(
+      container.querySelector('[data-testid="sleep-timer-remaining"]'),
+    ).toBeNull();
+  });
+
+  it("ends the fade without pausing when the listener changes the volume", async () => {
+    const { audio, container, timer } = renderWithSleepTimer();
+    act(() => timer().start(15));
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="audio-play-button"]')!
+        .click();
+    });
+
+    act(() => vi.advanceTimersByTime(15 * 60_000 + 2_000));
+    act(() => {
+      fireEvent.keyDown(document.body, { code: "ArrowDown" });
+    });
+    act(() => vi.advanceTimersByTime(10_000));
+
+    expect(audio.pause).not.toHaveBeenCalled();
+    expect(audio.volume).toBeCloseTo(0.9);
   });
 });

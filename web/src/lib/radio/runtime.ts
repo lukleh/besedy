@@ -4,6 +4,7 @@ import { fetchJson } from "@/lib/api/fetch-json";
 import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { createClientLogger } from "@/lib/log/client";
 import { serviceWorkerKeysAudioByFormat } from "@/lib/service-worker/audio-format-support";
+import { fadeOutAndPause } from "@/lib/sleep-timer/fade-out";
 import type { RandomEventResponse } from "@/types/api";
 
 export interface RadioEventTrack {
@@ -109,6 +110,10 @@ export function createRadioRuntime() {
   let errorHandler: ((event: Event) => void) | null = null;
   let isFetchingNext = false;
   let fetchRetryCount = 0;
+  let cancelSleepFade: (() => void) | null = null;
+  // The sleep timer's fade was cut short by the track ending: stay on that
+  // track instead of starting the next one.
+  let holdAtTrackEnd = false;
 
   const listeners = new Set<RadioRuntimeListener>();
 
@@ -131,6 +136,7 @@ export function createRadioRuntime() {
 
   function stopAudioAndClearSource() {
     if (!audio) return;
+    cancelSleepFade?.();
 
     if (errorHandler) {
       audio.removeEventListener("error", errorHandler);
@@ -162,6 +168,7 @@ export function createRadioRuntime() {
 
   function playEventTrack(track: RadioEventTrack) {
     if (!audio) return;
+    cancelSleepFade?.();
 
     setSnapshot((current) => ({
       ...current,
@@ -296,6 +303,10 @@ export function createRadioRuntime() {
 
     const handleEnded = () => {
       setSnapshot((current) => ({ ...current, isPlaying: false }));
+      if (holdAtTrackEnd) {
+        holdAtTrackEnd = false;
+        return;
+      }
       playNextEventTrack();
     };
 
@@ -448,6 +459,11 @@ export function createRadioRuntime() {
     },
 
     resume() {
+      // Held at the end of a track by the sleep timer: go on to the next one.
+      if (audio?.ended && snapshot.isActive) {
+        playNextEventTrack();
+        return;
+      }
       audio?.play().catch((error: unknown) => {
         logger.error("Failed to resume:", error);
       });
@@ -480,8 +496,21 @@ export function createRadioRuntime() {
       return { time, wasPlaying };
     },
 
+    /** The sleep timer ran out: fade the current track out and pause. */
+    fadeOutAndPause() {
+      if (!audio || audio.paused) return;
+      cancelSleepFade?.();
+      cancelSleepFade = fadeOutAndPause(audio, {
+        onFinish: (outcome) => {
+          cancelSleepFade = null;
+          holdAtTrackEnd = outcome === "ended";
+        },
+      });
+    },
+
     setVolume(nextVolume: number) {
       if (!audio) return;
+      cancelSleepFade?.();
 
       const clampedVolume = Math.max(0, Math.min(1, nextVolume));
       audio.volume = clampedVolume;
@@ -494,6 +523,7 @@ export function createRadioRuntime() {
 
     toggleMute() {
       if (!audio) return;
+      cancelSleepFade?.();
 
       if (snapshot.isMuted) {
         audio.volume = snapshot.volume || 1;
