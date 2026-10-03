@@ -1431,7 +1431,7 @@ def test_run_colbert_worker_requires_running_docker_service(
 
     with pytest.raises(
         RuntimeError,
-        match="docker compose -f rag-services/docker-compose.yml up -d --build colbert",
+        match="just colbert-up",
     ):
         rag_colbert._run_colbert_worker(
             command="audit-tokens", payload={"texts": ["a"], "colbert_model": "m", "doc_maxlen": 1}
