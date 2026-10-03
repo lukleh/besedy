@@ -43,9 +43,8 @@ disclose material coverage limits.
 Searches return each event's primary recording only; the other recordings of an
 event are parallel captures of the same session. When a passage reads badly,
 open the event's other recordings (`get_event` lists them) before relying on it.
-Preserve
-differences and tensions between distinct discussions instead of flattening them
-into false consensus. When an important passage appears badly transcribed,
+Preserve differences and tensions between distinct discussions instead of
+flattening them into false consensus. When an important passage appears badly transcribed,
 qualify the quotation or rely on other independently verified evidence.
 
 Transcripts carry no speaker labels, and these recordings are discussions.

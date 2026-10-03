@@ -24,8 +24,8 @@ overview of the current component and pipeline structure.
 │          ▼                                                          │
 │  ┌────────────────┐                                                 │
 │  │  run-pipeline  │  Orchestrates loudness, staging, archive       │
-│  │ (stage-audio)  │  (Opus + AAC), ASR, ColBERT index,             │
-│  │                │  diarization, and exports                      │
+│  │ (stage-audio)  │  (Opus + AAC), ASR, and, when enabled, the     │
+│  │                │  ColBERT index, diarization, and exports       │
 │  └───────┬────────┘                                                 │
 │          │                                                          │
 │          ├────────────────┬────────────────┬───────────────────┐   │

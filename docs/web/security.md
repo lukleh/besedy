@@ -618,8 +618,10 @@ outside Besedy.
   `http://host.docker.internal:8192/query`, and applies catalog ACLs to every
   result it returns.
 - Revisit the decision if an untrusted peer can reach the LAN or tailnet, or
-  the host gets a public interface: then bind `COLBERT_HOST_BIND=127.0.0.1`
-  (the web container still reaches it through `host.docker.internal`) or put
+  the host gets a public interface. Binding `COLBERT_HOST_BIND=127.0.0.1` alone
+  would break the web app: `host.docker.internal` maps to the Docker bridge
+  gateway (`host-gateway`), not to host loopback, so the web container could no
+  longer reach the sidecar. Bind to the bridge gateway address instead, or put
   authentication in front of it.
 
 ### LAN Egress Isolation
