@@ -71,13 +71,15 @@ ensure_prefect_volume := "docker volume inspect \"${BESEDY_PREFECT_POSTGRES_VOLU
 
 prefect_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh prefect)\" -f jobs-service/docker-compose.prefect.yml"
 
-jobs_dev_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh development)\" -f jobs-service/docker-compose.jobs-dev.yml"
+# The jobs stacks run through scripts/run_jobs_compose.sh, which refuses a rendered
+# project that points at another environment (see docs/web/operations.md).
+jobs_dev_compose := "bash scripts/run_jobs_compose.sh development"
 
-jobs_test_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh test)\" -f jobs-service/docker-compose.jobs-test.yml"
+jobs_test_compose := "bash scripts/run_jobs_compose.sh test"
 
-jobs_prod_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh production)\" -f jobs-service/docker-compose.jobs-prod.yml"
+jobs_prod_compose := "bash scripts/run_jobs_compose.sh production"
 
-jobs_prod_codex_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh production)\" -f jobs-service/docker-compose.jobs-prod.yml -f jobs-service/docker-compose.jobs-codex-auth.yml"
+jobs_prod_codex_compose := "bash scripts/run_jobs_compose.sh production --codex-auth"
 
 # The ColBERT state bind source, created as the invoking user; Docker would create it as root.
 _colbert-state-dir:
