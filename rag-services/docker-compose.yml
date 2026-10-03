@@ -2,9 +2,12 @@
 # Shared across dev/test/prod — independent of the web stack.
 #
 # Usage:
-#   docker compose -f rag-services/docker-compose.yml up -d
-#   docker compose -f rag-services/docker-compose.yml --profile legacy-tei up -d
-#   docker compose -f rag-services/docker-compose.yml --profile colbert-indexer run --rm --no-deps colbert-indexer build-index
+#   just colbert-up    (or: bash scripts/run_rag_services_compose.sh up -d)
+#   bash scripts/run_rag_services_compose.sh --profile legacy-tei up -d
+#   bash scripts/run_rag_services_compose.sh --profile colbert-indexer run --rm --no-deps colbert-indexer build-index
+#
+# Use the wrapper rather than raw `docker compose`: it passes the host env file
+# that holds COLBERT_PRELOAD_INDEX_DIR (template: rag-services/.env.example).
 #
 # Endpoints:
 #   ColBERT:    http://127.0.0.1:8192 (default startup, internal warm-query service)

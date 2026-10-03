@@ -251,6 +251,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"Skipping ColBERT preload because the index path is missing: {exc}",
                 flush=True,
             )
+        except Exception as exc:  # noqa: BLE001 - a bad preload must not crash-loop the sidecar
+            # E.g. the `index` symlink points at a bundle that is still being
+            # written: serve cold instead of restarting under `unless-stopped`.
+            print(
+                f"Skipping ColBERT preload because the index is not loadable: {exc!r}",
+                flush=True,
+            )
 
     serve_threading_http_server(
         host=args.host,

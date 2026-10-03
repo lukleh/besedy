@@ -87,6 +87,9 @@ configured. The value lives in `~/.config/lukleh/besedy/rag-services.env` (or
 the file `BESEDY_RAG_SERVICES_ENV` names; template `rag-services/.env.example`),
 which every `just colbert-up` / `rag-services-up` passes to Compose through
 `scripts/run_rag_services_compose.sh`, so recreating the container keeps it.
+Use the wrapper (or the recipes) instead of raw `docker compose`; the file sets
+the preload only, and the host path overrides stay shell variables because the
+Python ColBERT runtime also calls Compose directly.
 Point it at the `index` symlink
 (`/data/state/rag_colbert/<wg_id>/<backend_slug>/<chunk_ver>/<model_slug>/index/colbert_index`),
 not at an `index_<timestamp>/` folder: every index update, including the

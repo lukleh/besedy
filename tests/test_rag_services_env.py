@@ -21,11 +21,13 @@ printf '%s\\n' "$@"
 
 
 def _env_assignments(path: Path) -> dict[str, str]:
+    """Assignments in the template, counting commented-out ones as examples."""
+
     assignments: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line and not line.startswith("#") and "=" in line:
-            name, _, value = line.partition("=")
-            assignments[name] = value
+        match = re.match(r"#?\s*([A-Z][A-Z0-9_]*)=(\S+)$", line)
+        if match:
+            assignments[match.group(1)] = match.group(2)
     return assignments
 
 
@@ -98,7 +100,7 @@ def test_wrapper_rejects_a_missing_override_file(tmp_path: Path) -> None:
     assert result.stdout == ""
 
 
-def test_wrapper_without_a_file_warns_that_colbert_starts_cold(tmp_path: Path) -> None:
+def test_wrapper_without_a_file_warns_when_it_can_recreate_the_sidecar(tmp_path: Path) -> None:
     result = _run(tmp_path, "up", "-d", "colbert")
 
     assert result.returncode == 0, result.stderr
@@ -106,8 +108,18 @@ def test_wrapper_without_a_file_warns_that_colbert_starts_cold(tmp_path: Path) -
     assert "starts without a preloaded index" in result.stderr
 
 
+@pytest.mark.parametrize("args", [("ps",), ("logs", "-f"), ("stop", "colbert"), ("down",)])
+def test_wrapper_does_not_warn_for_commands_that_never_start_the_sidecar(
+    tmp_path: Path, args: tuple[str, ...]
+) -> None:
+    result = _run(tmp_path, *args)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+
+
 def test_wrapper_stays_quiet_when_the_preload_comes_from_the_shell(tmp_path: Path) -> None:
-    result = _run(tmp_path, "ps", COLBERT_PRELOAD_INDEX_DIR="/data/x")
+    result = _run(tmp_path, "up", "-d", COLBERT_PRELOAD_INDEX_DIR="/data/x")
 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
@@ -122,6 +134,9 @@ def test_justfile_runs_every_rag_services_command_through_the_wrapper() -> None:
 
 def test_template_sets_only_compose_variables_and_preloads_the_symlink() -> None:
     template = _env_assignments(TEMPLATE)
+    # A copied template must not carry a placeholder path as a live value.
+    live = [line for line in TEMPLATE.read_text(encoding="utf-8").splitlines() if line[:1].isupper()]
+    assert live == []
     compose_variables = set(re.findall(r"\$\{(\w+)", COMPOSE.read_text(encoding="utf-8")))
 
     assert template.keys() <= compose_variables
