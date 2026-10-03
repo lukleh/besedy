@@ -198,6 +198,9 @@ export async function generateAllTranscripts(fixturesDir: string): Promise<void>
   const transcriptsDir = path.join(fixturesDir, TEST_TRANSCRIPTS_SUBDIR);
   const completeMarker = path.join(fixturesDir, TEST_TRANSCRIPTS_COMPLETE_MARKER);
 
+  // The marker goes first: if anything below fails, the next run regenerates.
+  await fs.rm(completeMarker, { force: true });
+
   // Earlier checkouts have a local symlink `transcripts -> transcripts_test`.
   // Remove the link itself first: removing `transcriptsDir` below would follow
   // it, and `mkdir` would then fail on the dangling link with ENOTDIR.
@@ -209,7 +212,6 @@ export async function generateAllTranscripts(fixturesDir: string): Promise<void>
 
   // Start clean so hashes or backends no longer generated don't linger.
   // Earlier versions wrote to transcripts_test, where the web app never looked.
-  await fs.rm(completeMarker, { force: true });
   await fs.rm(transcriptsDir, { recursive: true, force: true });
   await fs.rm(path.join(fixturesDir, "transcripts_test"), { recursive: true, force: true });
   await fs.mkdir(transcriptsDir, { recursive: true });

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   TEST_AUDIO_FILES,
   TEST_TRANSCRIPTS_COMPLETE_MARKER,
@@ -13,19 +13,35 @@ let fixturesDir: string;
 
 beforeEach(async () => {
   fixturesDir = await fs.mkdtemp(path.join(os.tmpdir(), "besedy-e2e-fixtures-"));
+  vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(fixturesDir, { recursive: true, force: true });
 });
 
 async function expectGeneratedTree(): Promise<void> {
   const catalogDir = path.join(fixturesDir, TEST_TRANSCRIPTS_SUBDIR);
-  const first = TEST_AUDIO_FILES[0];
-  await expect(
-    fs.stat(path.join(catalogDir, "faster-whisper", "large-v3@silero_vad_v6@lang-cs", first.hash, "transcript.json"))
-  ).resolves.toBeDefined();
-  await expect(fs.stat(path.join(fixturesDir, TEST_TRANSCRIPTS_COMPLETE_MARKER))).resolves.toBeDefined();
+  for (const file of TEST_AUDIO_FILES) {
+    // Every backend writes a transcript for every test recording...
+    const backends = await fs.readdir(catalogDir);
+    expect(backends).toContain("faster-whisper");
+    for (const backend of backends.filter((name) => name !== "speaker_diarization")) {
+      const [component] = await fs.readdir(path.join(catalogDir, backend));
+      const raw = await fs.readFile(path.join(catalogDir, backend, component, file.hash, "transcript.json"), "utf-8");
+      expect(Object.keys(JSON.parse(raw)).length).toBeGreaterThan(0);
+    }
+  }
+  for (const file of TEST_AUDIO_FILES) {
+    const speakers = await fs.readFile(
+      path.join(catalogDir, "speaker_diarization", "pyannote_3.1", file.hash, "speakers.json"),
+      "utf-8"
+    );
+    expect(JSON.parse(speakers).hash).toBe(file.hash);
+  }
+  // ...and the run is marked complete.
+  expect((await fs.stat(path.join(fixturesDir, TEST_TRANSCRIPTS_COMPLETE_MARKER))).isFile()).toBe(true);
   // `transcripts` is a real directory, whatever it was before.
   expect((await fs.lstat(path.join(fixturesDir, "transcripts"))).isDirectory()).toBe(true);
 }
