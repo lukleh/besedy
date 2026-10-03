@@ -38,22 +38,30 @@ fi
 env_file="$(bash scripts/resolve_jobs_env_file.sh prefect)"
 compose=(docker compose --env-file "$env_file" -f jobs-service/docker-compose.prefect.yml)
 
-images="$("${compose[@]}" config --images)"
-image="$(printf '%s\n' "$images" | grep -E '(^|/)prefect:' | head -n 1 || true)"
+# The image of the prefect-server service as compose resolves it, so a
+# PREFECT_IMAGE override (any registry, tag or digest) is what gets checked.
+image="$("${compose[@]}" config | awk '
+  /^  prefect-server:/ { in_service = 1; next }
+  in_service && /^  [^ ]/ { in_service = 0 }
+  in_service && $1 == "image:" { print $2; exit }
+')"
 if [[ -z "$image" ]]; then
-  echo "No Prefect server image found in the resolved compose config" >&2
+  echo "No prefect-server image found in the resolved compose config" >&2
   exit 1
 fi
-# prefecthq/prefect:3.8.7-python3.13 -> 3.8.7
-image_version="${image##*:}"
-image_version="${image_version%%-*}"
+# prefecthq/prefect:3.8.7-python3.13 -> 3.8.7. Anything else (a digest, a
+# prerelease or custom tag, `latest`) has no version we can compare.
+image_version=""
+if [[ "${image##*:}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-python[0-9.]+)?$ ]]; then
+  image_version="${BASH_REMATCH[1]}"
+fi
 
 echo "Prefect client pin (pyproject.toml): $pin"
 echo "Prefect server image (resolved):     $image"
 
 status=0
 if [[ "$image_version" != "$pin" ]]; then
-  echo "MISMATCH: resolved server image $image does not match client pin $pin." >&2
+  echo "MISMATCH: resolved server image $image is not client pin $pin (X.Y.Z or X.Y.Z-pythonN.N)." >&2
   echo "  Unset PREFECT_IMAGE in $env_file to use the compose default." >&2
   status=1
 fi

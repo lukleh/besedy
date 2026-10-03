@@ -654,8 +654,11 @@ through the development runtime.
   resolves the image through `docker compose config` and fails with both
   versions when it differs from the pin; `prefect-status` also compares the
   running server and shows the real error when the container cannot be queried.
-  Set `BESEDY_ALLOW_PREFECT_VERSION_DRIFT=1` to run a deliberately different
-  server (the mismatch is then only a warning).
+  An image without a comparable `X.Y.Z[-pythonN.N]` tag (a digest, a mirror
+  tag, a prerelease) counts as drift too. Export
+  `BESEDY_ALLOW_PREFECT_VERSION_DRIFT=1` in the shell to run a deliberately
+  different server (the mismatch is then only a warning); every `just` recipe
+  that calls `prefect-up` needs it.
 - **Upgrading.** The server is shared, so first make sure no flow run of any
   deployment is running or pending (Prefect UI, or the `flow_runs/filter` API);
   `just jobs-prod-check-idle` covers only the production Deep Search

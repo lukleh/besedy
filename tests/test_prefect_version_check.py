@@ -17,11 +17,16 @@ _PIN_MATCH = re.search(
 assert _PIN_MATCH is not None
 PIN = _PIN_MATCH.group(1)
 
-# `docker compose ... config --images` prints FAKE_IMAGES; `... exec ...` prints
+# `docker compose ... config` prints a minimal config whose prefect-server image
+# is FAKE_SERVER_IMAGE (no image line when empty); `... exec ...` prints
 # FAKE_RUNNING or fails with FAKE_EXEC_ERROR, as a stopped container does.
 DOCKER_STUB = """#!/usr/bin/env bash
 case " $* " in
-  *" config --images "*) printf '%s\\n' "$FAKE_IMAGES" ;;
+  *" config "*)
+    printf 'services:\\n  prefect-postgres:\\n    image: postgres:17-alpine\\n  prefect-server:\\n'
+    [[ -z "$FAKE_SERVER_IMAGE" ]] || printf '    image: %s\\n' "$FAKE_SERVER_IMAGE"
+    printf '    command:\\n      - prefect\\n  prefect-services:\\n    image: other:1\\n'
+    ;;
   *" exec "*)
     if [[ -n "${FAKE_EXEC_ERROR:-}" ]]; then
       echo "$FAKE_EXEC_ERROR" >&2
@@ -43,10 +48,10 @@ def _run(tmp_path: Path, *args: str, **env: str) -> subprocess.CompletedProcess[
     env_file = tmp_path / "jobs.env.prefect"
     env_file.write_text("", encoding="utf-8")
     full_env = {
-        **{k: v for k, v in os.environ.items() if not k.startswith("BESEDY_")},
+        **{k: v for k, v in os.environ.items() if not k.startswith(("BESEDY_", "PREFECT_"))},
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "BESEDY_JOBS_ENV_PREFECT": str(env_file),
-        "FAKE_IMAGES": f"postgres:17-alpine\nprefecthq/prefect:{PIN}-python3.13",
+        "FAKE_SERVER_IMAGE": f"prefecthq/prefect:{PIN}-python3.13",
         "FAKE_RUNNING": PIN,
         **env,
     }
@@ -68,7 +73,7 @@ def test_matching_image_passes(tmp_path: Path) -> None:
 
 
 def test_overridden_image_fails_and_names_both_versions(tmp_path: Path) -> None:
-    result = _run(tmp_path, FAKE_IMAGES="postgres:17-alpine\nprefecthq/prefect:3.6.21-python3.13")
+    result = _run(tmp_path, FAKE_SERVER_IMAGE="prefecthq/prefect:3.6.21-python3.13")
 
     assert result.returncode == 1
     assert "MISMATCH" in result.stderr
@@ -77,16 +82,52 @@ def test_overridden_image_fails_and_names_both_versions(tmp_path: Path) -> None:
 
 
 def test_non_version_tag_is_a_mismatch(tmp_path: Path) -> None:
-    result = _run(tmp_path, FAKE_IMAGES="prefecthq/prefect:3-latest")
+    result = _run(tmp_path, FAKE_SERVER_IMAGE="prefecthq/prefect:3-latest")
 
     assert result.returncode == 1
     assert "MISMATCH" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"registry.local/prefect:{PIN}-python3.13@sha256:" + "0" * 64,
+        f"prefecthq/prefect:{PIN}-rc1-python3.13",
+        f"prefecthq/prefect:{PIN}-custom",
+    ],
+)
+def test_image_without_a_comparable_version_is_a_mismatch(tmp_path: Path, image: str) -> None:
+    result = _run(tmp_path, FAKE_SERVER_IMAGE=image)
+
+    assert result.returncode == 1
+    assert "MISMATCH" in result.stderr
+
+
+def test_opt_out_accepts_a_mirrored_digest_image(tmp_path: Path) -> None:
+    result = _run(
+        tmp_path,
+        FAKE_SERVER_IMAGE="registry.local/prefecthq-prefect@sha256:" + "0" * 64,
+        BESEDY_ALLOW_PREFECT_VERSION_DRIFT="1",
+    )
+
+    assert result.returncode == 0
+    assert "WARNING" in result.stderr
+
+
+def test_script_and_justfile_use_the_same_compose_file() -> None:
+    justfile = (PROJECT_ROOT / "Justfile").read_text(encoding="utf-8")
+    prefect_compose = re.search(r"^prefect_compose := (.*)$", justfile, re.MULTILINE)
+
+    assert prefect_compose is not None
+    compose_files = re.findall(r"-f (\S+?)\\?\"?(?:\s|$)", prefect_compose.group(1))
+    assert compose_files == ["jobs-service/docker-compose.prefect.yml"]
+    assert "-f jobs-service/docker-compose.prefect.yml" in SCRIPT.read_text(encoding="utf-8")
+
+
 def test_opt_out_downgrades_drift_to_a_warning(tmp_path: Path) -> None:
     result = _run(
         tmp_path,
-        FAKE_IMAGES="prefecthq/prefect:3.6.21-python3.13",
+        FAKE_SERVER_IMAGE="prefecthq/prefect:3.6.21-python3.13",
         BESEDY_ALLOW_PREFECT_VERSION_DRIFT="1",
     )
 
@@ -96,10 +137,10 @@ def test_opt_out_downgrades_drift_to_a_warning(tmp_path: Path) -> None:
 
 
 def test_missing_server_image_is_an_error(tmp_path: Path) -> None:
-    result = _run(tmp_path, FAKE_IMAGES="postgres:17-alpine")
+    result = _run(tmp_path, FAKE_SERVER_IMAGE="")
 
     assert result.returncode == 1
-    assert "No Prefect server image" in result.stderr
+    assert "No prefect-server image" in result.stderr
 
 
 def test_running_server_matching_the_pin_passes(tmp_path: Path) -> None:
@@ -131,7 +172,17 @@ def test_unknown_argument_is_rejected(tmp_path: Path) -> None:
     assert "Usage" in result.stderr
 
 
-@pytest.mark.skipif(shutil.which("docker") is None, reason="requires docker compose")
+def _has_docker_compose() -> bool:
+    return (
+        shutil.which("docker") is not None
+        and subprocess.run(
+            ["docker", "compose", "version"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
+
+
+@pytest.mark.skipif(not _has_docker_compose(), reason="requires docker compose")
 def test_real_compose_config_resolves_a_host_override(tmp_path: Path) -> None:
     env_file = tmp_path / "jobs.env.prefect"
     env_file.write_text("PREFECT_IMAGE=prefecthq/prefect:3.6.21-python3.13\n", encoding="utf-8")
@@ -139,7 +190,11 @@ def test_real_compose_config_resolves_a_host_override(tmp_path: Path) -> None:
         ["bash", str(SCRIPT)],
         cwd=PROJECT_ROOT,
         env={
-            **{k: v for k, v in os.environ.items() if not k.startswith("BESEDY_")},
+            **{
+                k: v
+                for k, v in os.environ.items()
+                if not k.startswith(("BESEDY_", "PREFECT_"))
+            },
             "BESEDY_JOBS_ENV_PREFECT": str(env_file),
         },
         capture_output=True,

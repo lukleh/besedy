@@ -328,7 +328,7 @@ def test_prefect_server_image_matches_client_pin() -> None:
     jobs_python = set(re.findall(r"^FROM python:(\d+\.\d+)-slim", dockerfile, re.MULTILINE))
 
     assert client is not None
-    assert len(jobs_python) == 1
+    assert len(jobs_python) == 1, "jobs-service/Dockerfile needs one `FROM python:X.Y-slim` version"
     # The server image must also run the Python the jobs image installs the client on.
     assert server_tags == {(client.group(1), next(iter(jobs_python)))}
 
