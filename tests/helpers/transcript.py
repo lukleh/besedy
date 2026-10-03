@@ -200,11 +200,11 @@ def create_transcript_directory_structure(
 
     for backend in backends:
         if backend == "faster-whisper":
-            model = "large-v3@silero_vad_v6"
+            model = "large-v3@silero_vad_v6@lang-cs"
         elif backend == "canary-nemo":
-            model = "nvidia_canary-1b-v2[greedy]@frame_vad"
+            model = "nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs"
         else:
-            model = "default_model"
+            model = "default_model@lang-cs"
 
         transcript_dir = transcripts_root / backend / model / audio_hash
         transcript_dir.mkdir(parents=True)
