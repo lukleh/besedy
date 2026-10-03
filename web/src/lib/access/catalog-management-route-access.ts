@@ -7,10 +7,7 @@ import {
   resolveCatalogActorContext,
   type CatalogActorContext,
 } from "@/lib/policy/actor";
-import {
-  hasCatalogManagementAuthority,
-  type CatalogPolicyContext,
-} from "@/lib/policy/catalog";
+import type { CatalogPolicyContext } from "@/lib/policy/catalog";
 
 export interface CatalogManagementRouteAccessContext {
   ok: true;
@@ -38,7 +35,7 @@ interface CatalogManagementAccessOptions {
   deniedMessage: string;
   deniedReason: string;
   auditMetadata?: Record<string, unknown>;
-  authorize?: (context: CatalogPolicyContext) => boolean;
+  authorize: (context: CatalogPolicyContext) => boolean;
 }
 
 function createCatalogPolicyContext(actor: CatalogActorContext): CatalogPolicyContext {
@@ -115,10 +112,7 @@ export async function requireCatalogManagementAccess(
     };
   }
 
-  const authorize =
-    options.authorize ?? hasCatalogManagementAuthority;
-
-  if (!authorize(policyContext)) {
+  if (!options.authorize(policyContext)) {
     await logAccessDenied(userId, options.auditResource, options.auditResourceId, {
       catalogId,
       reason: options.deniedReason,

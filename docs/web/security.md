@@ -99,23 +99,31 @@ cookies disagree and send the user through a clean sign-in path.
 
 ## Route Protection
 
-The auth proxy (`src/proxy.ts`) enforces authentication for all routes
-except:
+The auth proxy (`src/proxy.ts`) enforces authentication for pages, except the
+public pages listed in its `publicRoutes` (sign-in and the other `/auth/...`
+status pages, `/mock-oauth`, `/robots.txt`, `/.well-known/...`) and static
+assets. Unauthenticated page requests are redirected to `/auth/signin`, except
+admin pages (`/admin/*`), which redirect to `/`.
 
-- `/auth/*`, `/api/auth/*`
-- `/api/version`, `/api/csp-report`
-- Static assets
-
-Unauthenticated requests are redirected to `/auth/signin`.
+API routes (`/api/*`) are not authenticated by the proxy. It answers
+`/api/health`, `/api/version`, `/api/auth/*` and `/api/csp-report*` without
+further checks, rate-limiting the last two. Every other API mutation gets the
+mutation-source check, except bearer-authorized `/api/internal/*` calls and
+`POST /api/mcp` while MCP is enabled. Each route handler calls its own guard
+and returns 401/403. `tests/unit/api-route-guards.test.ts` fails when a
+`route.ts` calls none of the known guards, unless the route is listed there
+with a reason: public, delegating to a guarded module, or refusing by hand. A
+guard there refuses at least a signed-out caller; what a signed-in caller may
+do is checked in each route and is not covered by that test.
 
 ### Rate Limiting
 
-| Setting  | Value                                          |
-| -------- | ---------------------------------------------- |
-| Limit    | 30 requests per IP                             |
-| Window   | 60 seconds                                     |
-| Scope    | `/api/auth/*` routes                           |
-| Response | `429 Too Many Requests` with `Retry-After: 60` |
+| Setting  | Value                                                     |
+| -------- | --------------------------------------------------------- |
+| Limit    | 30 requests per IP                                        |
+| Window   | 60 seconds                                                |
+| Scope    | `/api/auth/*` and `/api/csp-report*`, each its own bucket |
+| Response | `429 Too Many Requests` with `Retry-After: 60`            |
 
 Rate limiting is bypassed in dev/test environments.
 

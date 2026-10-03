@@ -3,7 +3,10 @@ import {
   requireCatalogManagementAccess,
   resolveCatalogManagementActor,
 } from "@/lib/access/catalog-management-route-access";
-import { canAttemptCatalogManagement } from "@/lib/policy/catalog";
+import {
+  canAttemptCatalogManagement,
+  canManageCatalogConfiguration,
+} from "@/lib/policy/catalog";
 import { canPublishRecording } from "@/lib/policy/recording";
 import { canManageEventSources } from "@/lib/policy/event";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
@@ -55,6 +58,7 @@ describe("catalog management route access", () => {
       auditResourceId: "hash-1",
       deniedMessage: "Publish-recording permission required to change recording publication state",
       deniedReason: "Publish-recording permission required to change recording publication state",
+      authorize: canPublishRecording,
     });
 
     expect(result.ok).toBe(false);
@@ -82,6 +86,7 @@ describe("catalog management route access", () => {
       auditResourceId: "catalog-1",
       deniedMessage: "Admin access required to view catalog settings",
       deniedReason: "Admin access required to view catalog settings",
+      authorize: canManageCatalogConfiguration,
     });
 
     expect(result.ok).toBe(false);
@@ -167,9 +172,9 @@ describe("catalog management route access", () => {
     );
   });
 
-  // Sources went the other way round: the default predicate let the host
-  // through and refused the curator. Both directions against the helper, so
-  // neither role can drift back onto the default.
+  // Sources went the other way round: the old default predicate, manage_access,
+  // let the host through and refused the curator. Both directions against the
+  // helper, so neither role can drift back onto manage_access.
   it("refuses a host at the sources gate despite manage_access", async () => {
     requireAuth.mockResolvedValue("host-1");
     resolveCatalogActorContext.mockResolvedValue({
