@@ -55,6 +55,28 @@ jobs:
             --ignore-vuln PYSEC-2026-2447 \
             -r /tmp/requirements.txt
 
+  python-311-syntax:
+    name: Python 3.11 syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      # The faster-whisper and pyannote backend images run this checkout under
+      # Python 3.11, while the package declares >=3.12 and ruff targets py313,
+      # so 3.12+ syntax could otherwise reach them unnoticed. Syntax only:
+      # nothing is imported, so 3.12-only library calls are not caught. The
+      # cache prefix keeps the checkout clean.
+      - run: uv run --no-project --python 3.11 python -X pycache_prefix=/tmp/py311-pyc -m compileall -q besedy
+
+  compose-render:
+    name: Compose render (every stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Renders web (dev/test/prod through run_web_compose.sh), jobs, Prefect,
+      # RAG and backends from their example env files; nothing is built.
+      - run: bash scripts/check_compose_renders.sh
+
   python-jobs:
     name: Python jobs integration
     runs-on: ubuntu-latest
