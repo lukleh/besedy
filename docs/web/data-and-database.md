@@ -116,6 +116,18 @@ npx prisma migrate dev --name descriptive_name
 
 Run from inside the web container. Commit the new migration directory.
 
+Prisma applies pending migrations in name order, so a new migration's
+timestamp must be later than every migration on `main`. If `main` gained a
+later migration while your branch was open, rename your migration directory to
+a current timestamp before merging. Rename it before applying it to the dev
+database if you can. If the dev database already applied it, it would run the
+SQL again under the new name: mark the new name applied with
+`npx prisma migrate resolve --applied <new name>` and delete the old name's row
+from `_prisma_migrations`. CI enforces this for directories a pull request adds
+(`scripts/check_migration_names.sh`). Migrations already on `main` must not be
+renamed or deleted, because production has applied them under those names; CI
+fails on that too.
+
 **Apply migrations:**
 
 | Environment | Command                                                     |
@@ -125,6 +137,12 @@ Run from inside the web container. Commit the new migration directory.
 | Production  | `just prod-migrate` (uses dedicated `besedy_migrator` user) |
 
 Production runs with least-privilege `besedy_app` for the web process; only the migrator role applies schema changes.
+Development and the E2E test stack connect as the database superuser. CI's
+migration job (`correction-integration` in `.github/workflows/ci.yml`) creates
+both roles with `web/init-db-users.sh`, applies the migrations as
+`besedy_migrator`, applies the same `besedy_app` grants as `just prod-migrate`
+(including the `audit_log` DELETE revoke) and runs the correction smoke check
+as `besedy_app`, so a privilege problem fails there rather than at deploy.
 
 ### Safety Rules
 
@@ -150,7 +168,7 @@ Production runs with least-privilege `besedy_app` for the web process; only the 
 
 Additional constraints:
 
-- Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma`
+- Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (exit code 2 means the database and the schema differ). CI runs it on a freshly migrated database. It covers what Prisma models; triggers, views and CHECK constraints that exist only in migration SQL are outside it.
 - If "relation does not exist" errors appear, run `npx prisma migrate deploy` against the target environment
 - Backups: daily `besedy_YYYYMMDD_HHMMSS.sql.gz` into `BACKUP_DIR` via the backup service
 

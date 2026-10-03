@@ -93,6 +93,15 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Prisma applies pending migrations in name order, so a migration named
+      # earlier than one production already applied would run in a different
+      # order on a fresh database, and a renamed one would run again. It needs
+      # no Node, so it runs first and an audit or lint failure cannot hide it.
+      - name: Check new migration names
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          bash ../scripts/check_migration_names.sh FETCH_HEAD
       - uses: ./.github/actions/setup-web
       - run: npm run audit:dependencies
       - run: npx prisma generate
@@ -163,7 +172,7 @@ jobs:
           jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null
 
   correction-integration:
-    name: Transcript correction integration
+    name: Migrations + transcript correction integration
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -187,19 +196,52 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-web
       - run: npx prisma generate
-      - name: Apply migrations
+      # The same roles production uses: migrations run as besedy_migrator and
+      # the app as besedy_app, so a migration or query that needs more
+      # privileges than production grants fails here instead of at deploy.
+      - name: Create the migrator and app roles
+        run: bash init-db-users.sh
+        env:
+          PGHOST: localhost
+          PGPASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: besedy_correction_ci
+          MIGRATE_PASSWORD: migrator
+          APP_PASSWORD: app
+      - name: Apply migrations as besedy_migrator
         run: npx prisma migrate deploy
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
+          DATABASE_URL: postgresql://besedy_migrator:migrator@localhost:5432/besedy_correction_ci
+      # The grants `just prod-migrate` applies after migrating; keep in step.
+      - name: Apply the production app grants
+        run: >-
+          psql -v ON_ERROR_STOP=1
+          -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO besedy_app;"
+          -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO besedy_app;"
+          -c "REVOKE DELETE ON TABLE public.audit_log FROM besedy_app;"
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: besedy_correction_ci
+      # Fails when a schema.prisma edit has no migration, or a migration
+      # disagrees with the schema. It compares what Prisma models (tables,
+      # columns, indexes, foreign keys); objects that exist only in migration
+      # SQL, such as triggers, the view and CHECK constraints, are outside it.
+      # Exit code 2 means the migrated database and the schema differ.
+      - name: Check migrations match schema.prisma
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+        env:
+          DATABASE_URL: postgresql://besedy_migrator:migrator@localhost:5432/besedy_correction_ci
       # The unit suite mocks the database and the filesystem away, which is
       # exactly where correction's invariants live: the partial unique indexes,
       # the workspace lock, the frozen source on disk, the rendered artifacts
       # and the pointer file the Python indexer reads. This is the job that
       # exercises them.
-      - name: Correction smoke check
+      - name: Correction smoke check as besedy_app
         run: npm run test:correction-smoke
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/besedy_correction_ci
+          DATABASE_URL: postgresql://besedy_app:app@localhost:5432/besedy_correction_ci
 
   secrets:
     name: Secret scan
