@@ -34,8 +34,10 @@ WorkingDirectory=%h/worktrees/besedy/prod-ingest
 EnvironmentFile=%h/.config/lukleh/besedy/ingest-worker.env
 # The start command (extras, flags, revision line) lives in run-worker.sh inside
 # the checkout, so `just ingest-worker-deploy` updates it with the code and the
-# installed copy of this unit never needs to change for it.
-ExecStart=/usr/bin/env bash -lc 'exec jobs-service/host-worker/run-worker.sh'
+# installed copy of this unit never needs to change for it. A revision that
+# predates run-worker.sh cannot be started by this unit; ingest-worker-deploy
+# refuses such a rollback.
+ExecStart=/usr/bin/env bash -lc 'exec bash jobs-service/host-worker/run-worker.sh'
 Restart=on-failure
 RestartSec=10
 KillMode=mixed

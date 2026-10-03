@@ -43,7 +43,8 @@ fi
 
 # The checkout path is fixed in production, so the start line records the
 # revision; a failed flow run in the journal can then be tied to it.
-echo "besedy-ingest-worker: revision $(git rev-parse HEAD) in $(pwd)"
+revision="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+echo "besedy-ingest-worker: revision $revision in $(pwd)"
 
 # `--frozen` keeps the venv on the committed lock. The `ml` extra supplies the
 # tokenizer that `rag-colbert-index` needs for the ingest and correction-index

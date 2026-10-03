@@ -52,6 +52,8 @@ def test_unit_and_recipe_call_the_script_and_do_not_repeat_the_command() -> None
 
     assert re.search(r"^ExecStart=.*jobs-service/host-worker/run-worker\.sh", unit, re.MULTILINE)
     assert "bash jobs-service/host-worker/run-worker.sh --dev" in justfile
+    # The deploy recipe refuses a rollback to a revision that lacks the script.
+    assert '$sha:$script"' in justfile
     for path in (UNIT, JUSTFILE):
         assert "worker start" not in path.read_text(encoding="utf-8"), path
 
@@ -79,7 +81,7 @@ def test_script_pins_frozen_lock_and_both_extras(tmp_path: Path) -> None:
         "--install-policy",
         "never",
     ]
-    assert re.search(r"besedy-ingest-worker: revision [0-9a-f]{40} in ", result.stdout)
+    assert re.search(r"besedy-ingest-worker: revision \S+ in ", result.stdout)
 
 
 def test_production_mode_requires_the_pool_from_the_caller(tmp_path: Path) -> None:

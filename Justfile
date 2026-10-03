@@ -390,6 +390,17 @@ ingest-worker-deploy rev:
         exit 1
     fi
 
+    # An installed unit that starts run-worker.sh cannot run a revision that
+    # predates the script (a rollback past it); refuse before stopping anything.
+    script="jobs-service/host-worker/run-worker.sh"
+    if systemctl --user show -P ExecStart "$unit" | grep -q "run-worker.sh" \
+        && ! git cat-file -e "$sha:$script" 2>/dev/null; then
+        echo "Refusing to deploy ${sha:0:12}: the installed $unit unit starts $script, which that revision does not have." >&2
+        echo "Install that revision's unit first, then run this again:" >&2
+        echo "  git show $sha:jobs-service/host-worker/$unit.service > ~/.config/systemd/user/$unit.service && systemctl --user daemon-reload" >&2
+        exit 1
+    fi
+
     # Only a running worker can lose work to the stop. Skipping the check for a
     # stopped worker keeps a failed deploy redeployable: queued uploads or a
     # half-synced venv would otherwise block it. Prefect comes from the

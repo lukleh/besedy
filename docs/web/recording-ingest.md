@@ -132,7 +132,8 @@ have `maintenance.py --work-pool`, while `<rev>` itself may be older. The recipe
 
 1. creates the checkout on first use, or refuses if it has local changes;
 2. refuses unless the installed unit runs from `~/worktrees/besedy/prod-ingest`
-   (after changing the unit, copy it again and `systemctl --user daemon-reload`);
+   (after changing the unit, copy it again and `systemctl --user daemon-reload`),
+   and refuses a revision without `run-worker.sh` while the installed unit starts it;
 3. while the worker is running, refuses if any flow run on
    `PREFECT_INGEST_WORK_POOL` is scheduled, pending, running, paused or
    cancelling (`python -m besedy.lib.prefect_jobs.maintenance --work-pool
@@ -176,7 +177,11 @@ a change to the extras or flags reaches production with
 `just ingest-worker-deploy`, without re-copying the unit. A unit installed
 before this script existed still carries the old inline command: deploy a
 revision that contains `run-worker.sh` first, then copy the unit and
-`systemctl --user daemon-reload` once.
+`systemctl --user daemon-reload` once. After that, the recipe refuses a
+rollback to a revision without the script (it prints the `git show` command
+that installs that revision's unit). The development recipe uses the same
+locked command, so it also runs with `--frozen`: run `uv lock` after changing
+`pyproject.toml`.
 
 Register the pool and deployment together with deep search:
 
