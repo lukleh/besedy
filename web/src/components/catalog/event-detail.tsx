@@ -19,6 +19,7 @@ import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/r
 import { formatPartialDate } from "@/lib/date-format";
 import { fetchJson, isNetworkFailure } from "@/lib/api/fetch-json";
 import { isAccessDeniedError } from "@/lib/query/auth-sensitive";
+import { clearLastRoute } from "@/lib/pwa/last-route";
 import { buildEventDetailUrl } from "@/lib/api/recording-urls";
 import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
@@ -71,6 +72,12 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         () => readLocalEventDetail(catalogId, eventId)
       ),
   });
+  // A hidden event is not worth resuming on at the next launch; the route was
+  // recorded before this client-side answer arrived.
+  const isHidden = isAccessDeniedError(error);
+  useEffect(() => {
+    if (isHidden) clearLastRoute();
+  }, [isHidden]);
   const localArtworkUrl = useLocalArtworkUrl(catalogId, eventId, data?.publishedArtwork?.id ?? null);
 
   const defaultSelectedHash = useMemo(
@@ -125,9 +132,15 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
 
   if (error || !data) {
     // A hidden event answers 401, 403 or 404; either way there is nothing to retry.
-    const isNotFound = isAccessDeniedError(error);
-    // No network and no downloaded package: not a server fault.
-    const isOffline = !isNotFound && isNetworkFailure(error);
+    const isNotFound = isHidden;
+    // The request could not be made, the browser says it is offline, and no
+    // download answers it: not a server fault. Online, the same TypeError means
+    // the server is unreachable and reads as a failed load.
+    const isOffline =
+      !isNotFound &&
+      isNetworkFailure(error) &&
+      typeof navigator !== "undefined" &&
+      navigator.onLine === false;
     return (
       <EmptyState
         icon={CalendarX}

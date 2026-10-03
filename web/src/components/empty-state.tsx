@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
-interface EmptyStateProps extends Omit<ComponentProps<"div">, "title"> {
+interface EmptyStateProps extends Omit<ComponentProps<"div">, "title" | "children" | "className"> {
   icon: LucideIcon;
   title: ReactNode;
   description?: ReactNode;
