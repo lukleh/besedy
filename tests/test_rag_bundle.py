@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from besedy.commands.catalog.symlink import create_or_update_symlink
+from besedy.core.symlinks import create_or_update_symlink
 from besedy.lib.rag_bundle import (
     default_colbert_bundle_root,
     resolve_colbert_scope_bundle,

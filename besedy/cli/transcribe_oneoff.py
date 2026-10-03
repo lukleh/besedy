@@ -414,7 +414,7 @@ def _docker_extra_env() -> tuple[bool, dict[str, str]]:
 
     extra_env = {
         "PYTHONPATH": "/workspace/besedy",
-        **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+        **forward_host_env("HF_TOKEN"),
     }
     try:
         resolve_config_path()
