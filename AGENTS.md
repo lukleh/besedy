@@ -21,6 +21,7 @@ copying command tables or test-user matrices into provider-specific files.
   - `lib/`: core library (audio, data loading, validation, workflow orchestration)
   - `core/`: shared utilities and path/output conventions
 - `tests/`: pytest suite (helpers in `tests/helpers/`)
+- `contracts/`: data shared by the Python pipeline and the web app, checked by tests on both sides (see `docs/web/data-and-database.md`)
 - `docs/`: architecture, data contracts, patterns, and web docs (start with `docs/README.md`)
 - `web/`: web app (Prisma + PostgreSQL + Docker)
 - Generated artifacts are typically gitignored: `transcripts_*`, `tmp/`, `logs/`
