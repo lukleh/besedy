@@ -9,8 +9,6 @@ import { mapAuditLogToDetailViewModel } from "@/lib/audit/model";
 
 export const dynamic = "force-dynamic";
 
-const LEGACY_AUDIT_RESOURCE = "invitation";
-
 // Types for related entities
 interface RelatedEntity {
   type:
@@ -422,7 +420,6 @@ export async function GET(
     const log = await prisma.auditLog.findFirst({
       where: {
         id,
-        resource: { not: LEGACY_AUDIT_RESOURCE },
         domain: { not: null },
       },
       include: {

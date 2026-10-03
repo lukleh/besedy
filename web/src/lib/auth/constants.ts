@@ -7,11 +7,9 @@ export function getSessionExpiresAt(from: Date = new Date()): Date {
 }
 
 export function getAuthSecret(): string {
-  const secret = process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET;
+  const secret = process.env.AUTH_SECRET;
   if (!secret) {
-    throw new Error(
-      "AUTH_SECRET is required. Set AUTH_SECRET or BETTER_AUTH_SECRET."
-    );
+    throw new Error("AUTH_SECRET is required.");
   }
   return secret;
 }
