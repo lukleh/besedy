@@ -260,7 +260,6 @@ export default function CatalogSettingsContent({
           description: t("toasts.catalogSyncedHashAlgorithmDesc", {
             count: result.unrecognizedHashAlgorithmRows,
           }),
-          variant: "destructive",
         });
         return;
       }

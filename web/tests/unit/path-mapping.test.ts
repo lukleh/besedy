@@ -26,6 +26,11 @@ describe("rewritePath", () => {
     expect(rewritePath("/mnt/data")).toBe("/data/original");
   });
 
+  it("rewrites a path that ends in a slash", () => {
+    mapWith("/mnt/data=/data/original");
+    expect(rewritePath("/mnt/data/")).toBe("/data/original/");
+  });
+
   it("matches whole path components only", () => {
     mapWith("/data=/mapped");
     expect(rewritePath("/data2/a.wav")).toBe("/data2/a.wav");

@@ -60,9 +60,11 @@ checks that the sync reads exactly them, so renaming a column on either side
 fails a test. Change the JSON together with both sides.
 
 A metadata row whose `Hash Algorithm` is missing or not
-`pcm-s16le-16000hz-mono-sha256-v1` still syncs. The sync result carries the
-count as `unrecognizedHashAlgorithmRows`, the server logs a warning, and the
-catalog settings sync toast shows it.
+`pcm-s16le-16000hz-mono-sha256-v1` still syncs. The sync that parses the
+changed CSV carries the count as `unrecognizedHashAlgorithmRows` in its result
+and logs a warning; the catalog settings sync toast shows it when that sync was
+started from the settings page. The count is not stored, so a later sync of
+unchanged CSVs (`skipped`) does not repeat it.
 
 `GET /api/health` reports the startup projection state (`ready`, `degraded`,
 `running`, `disabled`, or `not-started`). By default a sync error is reported as
