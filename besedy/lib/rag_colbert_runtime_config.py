@@ -35,9 +35,7 @@ COLBERT_RUNTIME_CHOICES = (
     COLBERT_RUNTIME_DOCKER,
     COLBERT_RUNTIME_DOCKER_INDEXER,
 )
-COLBERT_DOCKER_UP_COMMAND = (
-    "docker compose -f rag-services/docker-compose.yml up -d --build colbert"
-)
+COLBERT_DOCKER_UP_COMMAND = "just colbert-up"
 COLBERT_DOCKER_INDEXER_RUN_COMMAND = (
     "docker compose -f rag-services/docker-compose.yml --profile colbert-indexer "
     "run --rm --no-deps colbert-indexer build-index"

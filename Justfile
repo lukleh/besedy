@@ -63,7 +63,7 @@ ruff-format *args:
 # RAG Services (Docker)
 # ============================================================================
 
-rag_services_compose := "docker compose -f rag-services/docker-compose.yml"
+rag_services_compose := "bash scripts/run_rag_services_compose.sh"
 
 ensure_internal_network := "docker network inspect \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null"
 ensure_prefect_network := "docker network inspect \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null"
