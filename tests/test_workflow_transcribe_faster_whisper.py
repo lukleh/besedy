@@ -140,7 +140,6 @@ def test_main_maps_auto_language_to_none_for_inference(
         "BatchedInferencePipeline",
         lambda *, model: pipeline,
     )
-    monkeypatch.setattr(transcribe_module, "extract_vad_segments", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(transcribe_module, "build_payload", fake_build_payload)
 
     argv = ["prog", "--audio", str(audio_path), "--device", "cpu"]
@@ -259,42 +258,6 @@ class TestResolveBundleRoot:
 
         result = resolve_bundle_root(custom_dir, "large-v3", language="cs")
         assert str(custom_dir) in str(result) or result.exists()
-
-
-class TestExtractVadSegments:
-    """Tests for VAD segment extraction.
-
-    These tests require the faster-whisper isolated environment.
-    """
-
-    @pytest.mark.integration
-    @pytest.mark.skip(reason="Requires faster-whisper isolated environment")
-    def test_vad_segments_structure(self, wav_16k_mono):
-        """Test VAD segments have correct structure."""
-        from besedy.workflows.transcribe_faster_whisper import extract_vad_segments
-
-        segments = extract_vad_segments(wav_16k_mono)
-
-        # For silent audio, may return empty list
-        assert isinstance(segments, list)
-        for seg in segments:
-            assert "start" in seg
-            assert "end" in seg
-            assert isinstance(seg["start"], float)
-            assert isinstance(seg["end"], float)
-            assert seg["end"] >= seg["start"]
-
-    @pytest.mark.integration
-    @pytest.mark.skip(reason="Requires faster-whisper isolated environment")
-    def test_vad_with_tone(self, wav_with_tone):
-        """Test VAD detects speech-like audio."""
-        from besedy.workflows.transcribe_faster_whisper import extract_vad_segments
-
-        segments = extract_vad_segments(wav_with_tone)
-
-        # Tone should be detected as speech
-        assert isinstance(segments, list)
-        # Note: Tone may or may not trigger VAD depending on threshold
 
 
 class TestBuildPayload:
@@ -417,8 +380,8 @@ class TestBuildPayload:
         assert "word" in word
         assert "confidence" in word
 
-    def test_vad_segments_included_when_provided(self, tmp_path):
-        """Test VAD segments are included in payload."""
+    def test_payload_has_no_vad_segments(self, tmp_path):
+        """The batched pipeline decodes its own VAD regions, so no separate list is written."""
         audio_path = tmp_path / "test.wav"
         audio_path.touch()
 
@@ -436,11 +399,6 @@ class TestBuildPayload:
         mock_info.duration_after_vad = None
         mock_info.transcription_options = None
 
-        vad_segments = [
-            {"start": 0.1, "end": 2.4},
-            {"start": 3.0, "end": 5.0},
-        ]
-
         with patch(
             "besedy.workflows.transcribe_faster_whisper.measure_audio_duration_seconds",
             return_value=5.5,
@@ -457,11 +415,48 @@ class TestBuildPayload:
                 word_timestamps=True,
                 info=mock_info,
                 segments=[mock_segment],
-                vad_segments=vad_segments,
             )
 
-        assert "vad_segments" in payload
-        assert payload["vad_segments"] == vad_segments
+        assert "vad_segments" not in payload
+
+    def test_decoded_vad_regions_are_recorded_in_generation_params(self, tmp_path):
+        """clip_timestamps is where the decoded regions live now that vad_segments is gone."""
+        audio_path = tmp_path / "test.wav"
+        audio_path.touch()
+
+        mock_info = MagicMock()
+        mock_info.language = "cs"
+        mock_info.language_probability = 0.99
+        mock_info.duration = 5.5
+        mock_info.duration_after_vad = 3.0
+        mock_info.transcription_options = {
+            "clip_timestamps": [{"start": 2816, "end": 21504}, {"start": 21504, "end": 48896}]
+        }
+
+        with patch(
+            "besedy.workflows.transcribe_faster_whisper.measure_audio_duration_seconds",
+            return_value=5.5,
+        ):
+            payload = build_payload(
+                audio_path,
+                model_name="large-v3",
+                device="cuda",
+                compute_type="float16",
+                language="cs",
+                batch_size=8,
+                vad_filter=True,
+                min_silence_ms=None,
+                word_timestamps=True,
+                info=mock_info,
+                segments=[],
+            )
+
+        params = payload["meta"]["generation_params"]
+        assert params["transcription_options"]["clip_timestamps"][0] == {
+            "start": 2816,
+            "end": 21504,
+        }
+        assert params["duration_after_vad"] == 3.0
 
     def test_empty_text_handling(self, tmp_path):
         """Test handling of segments with empty text."""

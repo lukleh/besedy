@@ -11,8 +11,7 @@ from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from faster_whisper import BatchedInferencePipeline, WhisperModel, decode_audio
-from faster_whisper.vad import get_speech_timestamps
+from faster_whisper import BatchedInferencePipeline, WhisperModel
 from tqdm.auto import tqdm
 
 from besedy.config.settings import config
@@ -30,42 +29,6 @@ from besedy.lib.workflow.language import (
     resolve_language_setting,
 )
 from besedy.lib.workflow.paths import sanitize_model_identifier
-
-
-def extract_vad_segments(
-    audio_path: Path,
-    sampling_rate: int | None = None,
-) -> list[dict[str, float]]:
-    """Extract VAD speech segments from audio file.
-
-    Uses faster-whisper's built-in VAD (Silero-based) to detect speech
-    boundaries, returning precise start/end times for each speech segment.
-
-    Args:
-        audio_path: Path to audio file (WAV preferred)
-        sampling_rate: Audio sampling rate (default 16kHz)
-
-    Returns:
-        List of dicts with 'start' and 'end' keys in seconds
-    """
-    if sampling_rate is None:
-        sampling_rate = config.audio.sample_rate
-
-    audio = decode_audio(str(audio_path), sampling_rate=sampling_rate)
-
-    # get_speech_timestamps returns frame indices; rely on defaults for VadOptions.
-    speech_chunks = get_speech_timestamps(audio, sampling_rate=sampling_rate)
-
-    # Convert frame indices to seconds
-    vad_segments = [
-        {
-            "start": round(chunk["start"] / sampling_rate, 6),
-            "end": round(chunk["end"] / sampling_rate, 6),
-        }
-        for chunk in speech_chunks
-    ]
-
-    return vad_segments
 
 
 class TqdmLoggingHandler(logging.Handler):
@@ -208,7 +171,6 @@ def build_payload(
     vad_model: str | None = None,
     info,
     segments,
-    vad_segments: list[dict[str, float]] | None = None,
 ) -> dict:
     segments_payload: list[dict[str, Any]] = []
     transcript_parts: list[str] = []
@@ -344,10 +306,6 @@ def build_payload(
         "segments": segments_payload,
     }
 
-    # Include VAD segments if available (for merge sectioning)
-    if vad_segments is not None:
-        result["vad_segments"] = vad_segments
-
     return result
 
 
@@ -403,16 +361,13 @@ def main() -> int:
         progress.set_postfix_str(audio_path.name)
         logging.info("Transcribing %s", audio_path)
 
-        # Extract VAD segments for precise silence boundaries
-        logging.info("Extracting VAD segments from %s", audio_path.name)
         min_silence_ms = config.vad.min_silence_ms
-        vad_segments = extract_vad_segments(audio_path)
-        logging.info("Found %d VAD speech segments", len(vad_segments))
-
         vad_parameters = None
         if min_silence_ms is not None:
             vad_parameters = dict(min_silence_duration_ms=min_silence_ms)
 
+        # The batched pipeline runs its own VAD pass while decoding; the regions
+        # it decodes are recorded in generation_params.transcription_options.
         segments_iter, info = pipeline.transcribe(
             str(audio_path),
             batch_size=args.batch_size,
@@ -425,6 +380,14 @@ def main() -> int:
             repetition_penalty=1.1,  # Optional: additional repetition prevention
         )
         segments = list(segments_iter)
+        duration_after_vad = getattr(info, "duration_after_vad", None)
+        if duration_after_vad is not None:
+            logging.info(
+                "VAD kept %.1f s of %.1f s for %s",
+                duration_after_vad,
+                getattr(info, "duration", 0.0) or 0.0,
+                audio_path.name,
+            )
         payload = build_payload(
             audio_path,
             model_name=model_name,
@@ -438,7 +401,6 @@ def main() -> int:
             vad_model=vad_model_label,
             info=info,
             segments=segments,
-            vad_segments=vad_segments,
         )
 
         hash_component = require_valid_hash_stem(audio_path)
