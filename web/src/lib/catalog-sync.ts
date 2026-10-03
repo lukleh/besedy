@@ -8,14 +8,13 @@ import { rewritePath } from '@/lib/security/path-validation';
 
 type CsvRow = Record<string, string | undefined>;
 
-type SourceKind = 'metadata' | 'archived' | 'duplicates' | 'listening';
+type SourceKind = 'metadata' | 'archived' | 'duplicates';
 
 interface SourceDescriptor {
   kind: SourceKind;
   sourceKey: string;
   filePath: string | null;
   required: boolean;
-  variant?: string;
 }
 
 interface SourceRuntimeState {
@@ -340,10 +339,6 @@ function buildSourceDescriptors(group: {
   metadataCatalogPath: string;
   archivedCatalogPath: string;
   duplicatesCatalogPath: string | null;
-  variants: Array<{
-    variant: string;
-    listeningArchivedCatalogPath: string | null;
-  }>;
 }): SourceDescriptor[] {
   return [
     {
@@ -364,13 +359,6 @@ function buildSourceDescriptors(group: {
       filePath: group.duplicatesCatalogPath,
       required: false,
     },
-    ...group.variants.map((variant) => ({
-      kind: 'listening' as const,
-      sourceKey: `listening:${variant.variant}`,
-      filePath: variant.listeningArchivedCatalogPath,
-      required: false,
-      variant: variant.variant,
-    })),
   ];
 }
 
@@ -386,8 +374,7 @@ function descriptorsMatch(
         descriptor.kind === other.kind &&
         descriptor.sourceKey === other.sourceKey &&
         descriptor.filePath === other.filePath &&
-        descriptor.required === other.required &&
-        descriptor.variant === other.variant
+        descriptor.required === other.required
       );
     })
   );
@@ -555,11 +542,6 @@ async function syncCatalogGroupAttempt(
     // so its fingerprint always identifies exactly the content that is parsed.
     const sourceGroup = await prisma.workflowGroup.findUnique({
       where: { id: groupId },
-      include: {
-        variants: {
-          orderBy: { variant: 'asc' },
-        },
-      },
     });
 
     if (!sourceGroup) {
@@ -592,11 +574,6 @@ async function syncCatalogGroupAttempt(
 
         const group = await tx.workflowGroup.findUnique({
           where: { id: groupId },
-          include: {
-            variants: {
-              orderBy: { variant: 'asc' },
-            },
-          },
         });
 
         if (!group) {
@@ -654,9 +631,6 @@ async function syncCatalogGroupAttempt(
         );
         const duplicatesState = runtimeStates.find(
           (state) => state.descriptor.kind === 'duplicates',
-        );
-        const listeningStates = runtimeStates.filter(
-          (state) => state.descriptor.kind === 'listening',
         );
 
         const baseChanged = Boolean(
@@ -756,62 +730,6 @@ async function syncCatalogGroupAttempt(
 
           rowCounts[duplicatesState!.descriptor.sourceKey] =
             duplicateRows.length;
-        }
-
-        const listeningRowsByVariant = new Map<
-          string,
-          Array<{
-            workflowGroupId: string;
-            variant: string;
-            audioHash: string;
-            compressedPath: string;
-            compressedAacPath: string | null;
-          }>
-        >();
-
-        for (const listeningState of listeningStates) {
-          if (!listeningState.changed) continue;
-
-          const variant = listeningState.descriptor.variant;
-          if (!variant) continue;
-
-          if (!listeningState.resolvedFilePath) {
-            listeningRowsByVariant.set(variant, []);
-            rowCounts[listeningState.descriptor.sourceKey] = 0;
-            continue;
-          }
-
-          const rows = await parseCsvRows(listeningState.content!);
-          const listeningRows = rows
-            .map((row) => {
-              const audioHash = normalizeHash(
-                getRowValue(row, ['sha256', 'hash', 'Hash']),
-              );
-              const compressedPath = getRowValue(row, [
-                'compressed path',
-                'compressed_path',
-                'path',
-                'Compressed Path',
-              ])?.trim();
-              if (!audioHash || !compressedPath) return null;
-              return {
-                workflowGroupId: groupId,
-                variant,
-                audioHash,
-                compressedPath,
-                compressedAacPath: optionalPath(
-                  getRowValue(row, [
-                    'compressed aac path',
-                    'compressed_aac_path',
-                    'Compressed AAC Path',
-                  ]),
-                ),
-              };
-            })
-            .filter((row): row is NonNullable<typeof row> => row !== null);
-
-          listeningRowsByVariant.set(variant, listeningRows);
-          rowCounts[listeningState.descriptor.sourceKey] = listeningRows.length;
         }
 
         let existingDuplicateCounts = new Map<string, number>();
@@ -966,21 +884,6 @@ async function syncCatalogGroupAttempt(
                 data: { duplicateCount },
               });
             }
-          }
-        }
-
-        for (const listeningState of listeningStates) {
-          if (!listeningState.changed || !listeningState.descriptor.variant)
-            continue;
-
-          const variant = listeningState.descriptor.variant;
-          await tx.catalogListeningEntry.deleteMany({
-            where: { workflowGroupId: groupId, variant },
-          });
-
-          const listeningRows = listeningRowsByVariant.get(variant) ?? [];
-          if (listeningRows.length > 0) {
-            await tx.catalogListeningEntry.createMany({ data: listeningRows });
           }
         }
 

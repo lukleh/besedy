@@ -125,7 +125,6 @@ describe("catalog config route", () => {
     prisma.workflowGroup.findUnique.mockResolvedValue({
       id: catalogId,
       label: "Test Catalog",
-      variants: [],
     });
 
     const response = await GET(
@@ -137,7 +136,6 @@ describe("catalog config route", () => {
     await expect(response.json()).resolves.toMatchObject({
       id: catalogId,
       label: "Test Catalog",
-      variants: [],
     });
   });
 
@@ -157,7 +155,6 @@ describe("catalog config route", () => {
     prisma.workflowGroup.update.mockResolvedValue({
       id: catalogId,
       label: "New Catalog",
-      variants: [],
     });
 
     const response = await PUT(

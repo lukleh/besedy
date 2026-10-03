@@ -265,8 +265,7 @@ def handle_cluster_speakers(
                 print(
                     "Error: Unable to infer transcripts run id from --input-dir. "
                     "Provide --output or point --input-dir inside "
-                    "transcripts_<YYYYMMDD_HHMMSS>[_<variant>] or "
-                    "transcripts_enhanced_<YYYYMMDD_HHMMSS>_<variant>.",
+                    "transcripts_<YYYYMMDD_HHMMSS>[_<variant>].",
                     file=sys.stderr,
                 )
                 return 1

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import prisma from "@/lib/db";
 import { getCatalogEntry } from "@/lib/catalog";
 import { AuthError } from "@/lib/auth/permissions";
 import {
@@ -56,7 +55,6 @@ interface AudioRouteLogContext {
   hash: string;
   requestedSource: string | null;
   servedSource: string | null;
-  variant: string | null;
   format: string | null;
   download: boolean | null;
   rangeHeader: string | null;
@@ -77,7 +75,6 @@ function buildAudioRouteLogContext(
     hash: string;
     requestedSource: string | null;
     servedSource: string | null;
-    variant: string | null;
     format: string | null;
     download: boolean | null;
     rangeHeader: string | null;
@@ -90,7 +87,6 @@ function buildAudioRouteLogContext(
     hash: params.hash,
     requestedSource: params.requestedSource,
     servedSource: params.servedSource,
-    variant: params.variant,
     format: params.format,
     download: params.download,
     rangeHeader: params.rangeHeader,
@@ -202,8 +198,9 @@ function createAudioStreamResponse(
  *
  * Supports HTTP Range requests for seeking.
  * Query params:
- * - source: Audio source - "archived" (default) or "listening"
- * - variant: Variant name when source=listening (uses default variant if not specified)
+ * - source: Audio source - "archived" (default) or "original". The retired
+ *   "listening" source and the `variant` param from old clients are served
+ *   as archived.
  * - format: "webm" (default) or "aac", the AAC-in-MP4 copy of the resolved
  *   source. There is no fallback to WebM: iOS Safari cannot stream it, so a
  *   missing copy is a 404 and the client picks another source or format.
@@ -220,7 +217,6 @@ export async function GET(
   let hash = "unknown";
   let requestedSource: string | null = searchParams.get("source");
   let servedSource: string | null = requestedSource;
-  let variantName: string | null = searchParams.get("variant");
   let audioFormat: string | null = searchParams.get("format");
   let forceDownload: boolean | null =
     searchParams.get("download") === "true"
@@ -234,7 +230,6 @@ export async function GET(
       hash,
       requestedSource,
       servedSource,
-      variant: variantName,
       format: audioFormat,
       download: forceDownload,
       rangeHeader,
@@ -287,7 +282,6 @@ export async function GET(
     // Validate query parameters
     const queryResult = AudioQuerySchema.safeParse({
       source: searchParams.get("source") ?? undefined,
-      variant: searchParams.get("variant") ?? undefined,
       format: searchParams.get("format") ?? undefined,
       download: searchParams.get("download") ?? undefined,
     });
@@ -303,7 +297,6 @@ export async function GET(
     const audioSource = queryResult.data.source;
     const audioSourceParam = audioSource;
     requestedSource = audioSource;
-    variantName = queryResult.data.variant ?? null;
     forceDownload = queryResult.data.download;
     servedSource = requestedSource;
     const wantsAac = queryResult.data.format === "aac";
@@ -390,26 +383,13 @@ export async function GET(
       // Original audio file download
       audioPath = entry.originalPath;
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
-    } else if (audioSource === "listening") {
-      // Get variant for listening source
-      const variant = await resolveVariant(catalogId, variantName);
-      variantName = variant?.variant ?? variantName;
-      const listening = variant?.listeningArchivedCatalogPath
-        ? // Check DB-backed listening availability and resolve path
-          await getListeningAudioPaths(catalogId, variant.variant, hash)
-        : undefined;
-      // Fall back to archived if listening not available
-      servedSource = listening ? "listening" : "archived";
-      audioPath = pickFormat(listening ?? entry, wantsAac);
-      downloadFilename = audioPath ? path.basename(audioPath) : undefined;
     } else {
       // Default: use archived path
       audioPath = pickFormat(entry, wantsAac);
       downloadFilename = audioPath ? path.basename(audioPath) : undefined;
     }
 
-    // Audit records keep their old shape for the default WebM, and name the
-    // source that was served (a listening request can fall back to archived).
+    // Audit records keep their old shape for the default WebM.
     const auditFormat = wantsAac ? "aac" : undefined;
 
     if (!audioPath && wantsAac) {
@@ -641,59 +621,10 @@ export async function GET(
   }
 }
 
-/**
- * Resolve variant for listening audio
- */
-async function resolveVariant(groupId: string, variantName?: string | null) {
-  if (variantName) {
-    return prisma.workflowVariant.findFirst({
-      where: { workflowGroupId: groupId, variant: variantName },
-    });
-  }
-
-  // Get default variant
-  const defaultVariant = await prisma.workflowVariant.findFirst({
-    where: { workflowGroupId: groupId, isDefault: true },
-  });
-  if (defaultVariant) return defaultVariant;
-
-  // Get any variant
-  return prisma.workflowVariant.findFirst({
-    where: { workflowGroupId: groupId },
-    orderBy: { variant: "asc" },
-  });
-}
-
 /** The file for the requested format: the AAC-in-MP4 copy or the WebM. */
 function pickFormat(
   paths: { compressedPath?: string | null; compressedAacPath?: string | null },
   wantsAac: boolean
 ): string | undefined {
   return (wantsAac ? paths.compressedAacPath : paths.compressedPath) ?? undefined;
-}
-
-/**
- * Get the variant's audio paths from the DB-backed listening catalog table,
- * or undefined when the variant has no row for this recording.
- */
-async function getListeningAudioPaths(
-  groupId: string,
-  variant: string,
-  hash: string
-): Promise<{ compressedPath: string; compressedAacPath: string | undefined } | undefined> {
-  const row = await prisma.catalogListeningEntry.findUnique({
-    where: {
-      workflowGroupId_variant_audioHash: {
-        workflowGroupId: groupId,
-        variant,
-        audioHash: hash,
-      },
-    },
-    select: { compressedPath: true, compressedAacPath: true },
-  });
-  if (!row?.compressedPath) return undefined;
-  return {
-    compressedPath: row.compressedPath,
-    compressedAacPath: row.compressedAacPath ?? undefined,
-  };
 }
