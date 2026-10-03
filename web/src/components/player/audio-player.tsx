@@ -575,16 +575,21 @@ export function AudioPlayer({
     }
   }, [dispatchRetry, isPlaying, onPlayingChange, logDebugEvent]);
 
-  // Handle `canplay` events mid-retry. This covers both:
-  //   - "reloading": our scheduled retry's audio.load() finished successfully.
-  //   - "scheduled": the browser/network auto-recovered before our timer even
-  //     fired. Treat that as success too instead of waiting it out.
+  // Handle `canplay` events mid-retry:
+  //   - "reloading": our scheduled retry's audio.load() finished successfully
+  //     (load() cleared the element's error).
+  //   - "scheduled": only if the element's error has cleared on its own. While
+  //     it is still set the connection is still down, and a `canplay` is just
+  //     a seek into data that was already buffered; counting that as recovery
+  //     would cancel the pending retry and restart the backoff at attempt 1
+  //     when the stream stalls at the end of the buffer.
   const handleCanPlayAfterError = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const phase = retryStateRef.current;
     if (phase.phase !== 'scheduled' && phase.phase !== 'reloading') return;
+    if (phase.phase === 'scheduled' && audio.error) return;
 
     // Stale-canplay guard: after src changes, the browser emits canplay for
     // the new recording. If retry state still carries the previous src (the
