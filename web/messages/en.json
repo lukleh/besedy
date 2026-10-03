@@ -2016,7 +2016,8 @@
     "unauthorized": "Unauthorized",
     "unauthorizedDescription": "You don't have permission to access this page.",
     "serverError": "Server error",
-    "serverErrorDescription": "Something went wrong. Please try again later."
+    "serverErrorDescription": "Something went wrong. Please try again later.",
+    "offlineDescription": "You appear to be offline and this page is not downloaded. Reconnect and try again, or open a downloaded event from Downloads."
   },
   "googleTranslate": {
     "warningMessage": "Browser translation detected. Please use the language selector instead for the best experience.",

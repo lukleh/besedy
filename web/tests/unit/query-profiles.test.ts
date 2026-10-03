@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError, SchemaValidationError } from "@/lib/api/fetch-json";
 import {
   ADMIN_STATUS_QUERY_PROFILE,
@@ -64,6 +64,17 @@ describe("default query retry", () => {
     expect(
       shouldRetryQuery(0, new SchemaValidationError("Invalid response payload", null, []))
     ).toBe(false);
+  });
+
+  it("does not retry a request that could not be made while the browser is offline", () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      expect(shouldRetryQuery(0, new TypeError("Failed to fetch"))).toBe(false);
+      // A server answer still follows the normal rule, offline flag or not.
+      expect(shouldRetryQuery(0, new ApiError("Internal error", 500))).toBe(true);
+    } finally {
+      onLine.mockRestore();
+    }
   });
 
   it("retries temporary failures up to three times", () => {
