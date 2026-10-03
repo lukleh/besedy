@@ -93,18 +93,19 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-web
-      - run: npm run audit:dependencies
-      - run: npx prisma generate
-      - run: npm run lint
       # Prisma applies pending migrations in name order, so a migration named
       # earlier than one production already applied would run in a different
-      # order on a fresh database. Only directories this PR adds are checked.
+      # order on a fresh database, and a renamed one would run again. It needs
+      # no Node, so it runs first and an audit or lint failure cannot hide it.
       - name: Check new migration names
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           bash ../scripts/check_migration_names.sh FETCH_HEAD
+      - uses: ./.github/actions/setup-web
+      - run: npm run audit:dependencies
+      - run: npx prisma generate
+      - run: npm run lint
 
   web-unit:
     name: Web unit (${{ matrix.shard }}/${{ strategy.job-total }})

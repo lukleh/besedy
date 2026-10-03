@@ -119,9 +119,14 @@ Run from inside the web container. Commit the new migration directory.
 Prisma applies pending migrations in name order, so a new migration's
 timestamp must be later than every migration on `main`. If `main` gained a
 later migration while your branch was open, rename your migration directory to
-a current timestamp before merging. CI enforces this for directories a pull
-request adds (`scripts/check_migration_names.sh`); existing names stay as they
-are, because production has applied them.
+a current timestamp before merging. Rename it before applying it to the dev
+database if you can. If the dev database already applied it, it would run the
+SQL again under the new name: mark the new name applied with
+`npx prisma migrate resolve --applied <new name>` and delete the old name's row
+from `_prisma_migrations`. CI enforces this for directories a pull request adds
+(`scripts/check_migration_names.sh`). Migrations already on `main` must not be
+renamed or deleted, because production has applied them under those names; CI
+fails on that too.
 
 **Apply migrations:**
 
