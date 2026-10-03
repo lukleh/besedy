@@ -15,7 +15,7 @@ import {
   resolveRerankCandidateLimit,
   searchesPrimaryRecordingsOnly,
   shouldOverfetchColbertResults,
-} from "@/app/api/catalogs/[id]/search/search-route-helpers";
+} from "@/lib/search/search-helpers";
 
 const originalEnv = process.env;
 
