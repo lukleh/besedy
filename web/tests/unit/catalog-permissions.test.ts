@@ -89,6 +89,74 @@ describe("roles", () => {
     }
   });
 
+  it("gives each role exactly the permissions the ADR table lists", () => {
+    // Written out rather than derived from ROLE_PERMISSIONS, so a permission
+    // added to a role by mistake fails here. The artwork permissions are the
+    // ADR's event-poster ones, renamed in #147.
+    const reader: CatalogPermission[] = [...READER_PERMISSIONS];
+    const expected: Record<CatalogRole, CatalogPermission[]> = {
+      listener: ["stream_audio"],
+      reader,
+      corrector: [...reader, "correct_transcripts"],
+      host: [...reader, "manage_access"],
+      curator: [
+        ...reader,
+        "see_unreleased",
+        "browse_recordings",
+        "correct_transcripts",
+        "publish_transcript",
+        "edit_metadata",
+        "batch_edit_metadata",
+        "manage_lookups",
+        "publish_recording",
+        "manage_events",
+        "release_events",
+        "manage_event_artwork",
+        "publish_event_artwork",
+        "manage_event_sources",
+        "use_deep_search",
+        "download_audio",
+        "download_transcripts",
+        "download_original_transcript",
+        "bulk_export_transcripts",
+      ],
+      catalog_admin: [
+        "stream_audio",
+        "browse_recordings",
+        "see_unreleased",
+        "read_transcripts",
+        "search_transcripts",
+        "download_audio",
+        "bulk_export_transcripts",
+        "edit_metadata",
+        "manage_lookups",
+        "batch_edit_metadata",
+        "publish_recording",
+        "manage_events",
+        "release_events",
+        "manage_event_artwork",
+        "publish_event_artwork",
+        "manage_event_sources",
+        "use_deep_search",
+        "manage_access",
+        "manage_catalog_config",
+        "correct_transcripts",
+        "publish_transcript",
+        "see_transcript_variants",
+        "see_speakers",
+        "download_transcripts",
+        "download_original_audio",
+        "download_original_transcript",
+      ],
+    };
+
+    for (const role of CATALOG_ROLES) {
+      expect([...permissionsForRole(role)].sort(), role).toEqual(
+        [...expected[role]].sort()
+      );
+    }
+  });
+
   it("gives an absent role nothing", () => {
     expect(permissionsForRole(null).size).toBe(0);
     expect(permissionsForRole(undefined).size).toBe(0);
