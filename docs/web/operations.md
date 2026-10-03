@@ -351,13 +351,19 @@ remain unpublished.
 
 ### Maintenance-run releases
 
-The catalog permissions rework (September 2026) shipped as a coordinated
-web/jobs maintenance release followed by a separate destructive migration
-(`20260921170000_drop_legacy_access_level`). The step-by-step runbook was
-removed once that rollout finished; ADR 0005 records the decisions and the
-role mapping. Use the same shape for any future change that cannot be applied
-additively: deploy it with `just prod-deploy-with-jobs` (or the `-codex`
-variant) so no old worker runs against the new schema.
+The catalog permissions rework (September 2026) shipped as two migration
+steps: the lookup-ownership scoping (`20260916090000_scope_metadata_lookups_to_catalog`,
+[ADR 0007](../adr/0007-per-catalog-lookups.md)) and a coordinated web/jobs
+maintenance release for the role cutover, followed by a separate destructive
+migration (`20260921170000_drop_legacy_access_level`,
+[ADR 0005](../adr/0005-catalog-permission-model.md)). The step-by-step runbook
+was removed once that rollout finished. Use the same shape for any future
+change that cannot be applied additively: deploy it with
+`just prod-deploy-with-jobs` (or the `-codex` variant) so no old worker runs
+against the new schema. A migration that drops a column has no reverse
+migration, and the previous image alone cannot run against the migrated
+schema, so recover with the guarded `prod-rollback` recipe below, which
+restores the retained pre-migration backup together with the image.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating
