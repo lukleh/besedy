@@ -21,9 +21,9 @@ type WorkflowGroup = NonNullable<
  *
  * This is a read: it never writes the user's preferences, so a request for one
  * catalog cannot change what a later request without a group resolves to. The
- * saved active group is written only by an explicit `PUT /api/preferences`,
- * which the client sends when the user opens a catalog
- * (`useCatalogContext`).
+ * saved active group is written only by an explicit `PATCH /api/preferences`,
+ * which `useCatalogContext` sends when the catalog list, a recording or the
+ * catalog settings open.
  *
  * Note: This function returns the resolved group but downstream routes must still
  * check access permissions. The group override is returned even without access,

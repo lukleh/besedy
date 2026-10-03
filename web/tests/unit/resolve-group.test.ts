@@ -4,7 +4,13 @@ const { prismaMock, getAdminCapability, getCatalogCapability, getCatalogDiscover
   vi.hoisted(() => ({
     prismaMock: {
       workflowGroup: { findFirst: vi.fn() },
-      userPreferences: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() },
+      userPreferences: {
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+        create: vi.fn(),
+      },
     },
     getAdminCapability: vi.fn(),
     getCatalogCapability: vi.fn(),
@@ -23,6 +29,14 @@ import { resolveActiveGroup, resolveActiveGroupWithAccess } from "@/lib/catalog/
 const CATALOG_A = "20250101_120000";
 const CATALOG_B = "20250202_120000";
 
+/** Reading must not write preferences by any Prisma call. */
+function expectNoPreferencesWrite(): void {
+  for (const [method, mock] of Object.entries(prismaMock.userPreferences)) {
+    if (method === "findUnique") continue;
+    expect(mock, method).not.toHaveBeenCalled();
+  }
+}
+
 describe("resolveActiveGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,8 +52,7 @@ describe("resolveActiveGroup", () => {
     const group = await resolveActiveGroup(CATALOG_B, "user-1");
 
     expect(group).toEqual({ id: CATALOG_B, isActive: true });
-    expect(prismaMock.userPreferences.upsert).not.toHaveBeenCalled();
-    expect(prismaMock.userPreferences.update).not.toHaveBeenCalled();
+    expectNoPreferencesWrite();
   });
 
   it("returns the explicit group even without access, for an access-denied answer", async () => {
@@ -50,7 +63,7 @@ describe("resolveActiveGroup", () => {
       group: { id: CATALOG_B, isActive: true },
       hasAccess: false,
     });
-    expect(prismaMock.userPreferences.upsert).not.toHaveBeenCalled();
+    expectNoPreferencesWrite();
   });
 
   it("still resolves the saved active group when no group is given", async () => {
@@ -62,7 +75,7 @@ describe("resolveActiveGroup", () => {
 
     expect(group).toEqual({ id: CATALOG_A, isActive: true });
     expect(prismaMock.workflowGroup.findFirst).not.toHaveBeenCalled();
-    expect(prismaMock.userPreferences.upsert).not.toHaveBeenCalled();
+    expectNoPreferencesWrite();
   });
 
   it("falls back to the default catalog when nothing is saved", async () => {
@@ -71,6 +84,6 @@ describe("resolveActiveGroup", () => {
     const group = await resolveActiveGroup(undefined, "user-1");
 
     expect(group).toEqual({ id: CATALOG_A, isDefault: true });
-    expect(prismaMock.userPreferences.upsert).not.toHaveBeenCalled();
+    expectNoPreferencesWrite();
   });
 });
