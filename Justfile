@@ -354,7 +354,7 @@ ingest-worker-run:
 # The systemd unit runs from the fixed, locked checkout
 # ~/worktrees/besedy/prod-ingest, never the dev checkout. Refuses while the
 # running worker has work, asks before stopping it, then checks out <rev>,
-# syncs the frozen venv and starts it again. Uploads made meanwhile wait in the
+# syncs the locked venv and starts it again. Uploads made meanwhile wait in the
 # Prefect queue.
 ingest-worker-deploy rev:
     #!/usr/bin/env bash
@@ -379,6 +379,9 @@ ingest-worker-deploy rev:
     # so an offline rollback to an earlier deploy still works.
     git fetch --quiet origin || echo "Warning: git fetch failed; resolving '$1' from local refs." >&2
     sha="$(git rev-parse --verify "$1^{commit}")"
+    # A lock that does not match its pyproject.toml would fail `uv sync --locked`
+    # below; refuse it before the checkout is created or the worker is stopped.
+    bash scripts/check_uv_lock_at_rev.sh "$sha"
     if [ ! -e "$worktree" ]; then
         # Locked so worktree cleanup (`git worktree remove`, worktree-report.sh)
         # never removes the checkout the unit runs from.
@@ -389,7 +392,7 @@ ingest-worker-deploy rev:
         exit 1
     fi
     if [ ! -x "$worktree/.venv/bin/python" ]; then
-        (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+        (cd "$worktree" && uv sync --locked --extra jobs --extra ml)
     fi
 
     # Checked after the checkout exists, so installing the unit never points
@@ -426,7 +429,7 @@ ingest-worker-deploy rev:
     systemctl --user stop "$unit"
     trap 'echo "Deploy failed with $unit stopped. Redeploy the previous revision: just ingest-worker-deploy $current" >&2' ERR
     git -C "$worktree" checkout --quiet --detach "$sha"
-    (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    (cd "$worktree" && uv sync --locked --extra jobs --extra ml)
     systemctl --user start "$unit"
     sleep 10
     if ! systemctl --user is-active --quiet "$unit"; then
