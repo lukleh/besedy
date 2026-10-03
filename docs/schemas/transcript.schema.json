@@ -32,6 +32,7 @@
       "items": { "$ref": "#/$defs/segment" }
     },
     "vad_segments": {
+      "description": "Speech regions found before decoding, for backends that segment audio first (qwen3-asr). faster-whisper does not write it: its batched pipeline segments internally, and the decoded regions are in meta.generation_params.transcription_options.clip_timestamps.",
       "type": "array",
       "items": { "$ref": "#/$defs/time_range" }
     }
