@@ -723,7 +723,6 @@ export async function queryColbertService(
         colbert_index_dir: colbertIndexDir,
         query,
         k,
-        force_fast: false,
       }),
     },
     timeoutMs,

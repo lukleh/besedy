@@ -41,12 +41,15 @@ def default_colbert_index_dir(
     colbert_model: str,
 ) -> Path:
     """Return the stable symlink path for the default ColBERT sidecar index."""
-    return default_colbert_bundle_root(
-        workflow_group_id=workflow_group_id,
-        backend_key=backend_key,
-        chunk_version=chunk_version,
-        colbert_model=colbert_model,
-    ) / "index"
+    return (
+        default_colbert_bundle_root(
+            workflow_group_id=workflow_group_id,
+            backend_key=backend_key,
+            chunk_version=chunk_version,
+            colbert_model=colbert_model,
+        )
+        / "index"
+    )
 
 
 def _zero_token_audit(
@@ -149,7 +152,6 @@ def _write_index_meta(
     colbert_model: str,
     doc_maxlen: int,
     index_bsize: int,
-    use_faiss: bool,
     retrieval_engine_version: str,
     plaid_backend: str,
     chunk_count: int,
@@ -177,7 +179,6 @@ def _write_index_meta(
         "doc_maxlen": doc_maxlen,
         "index_bsize": index_bsize,
         "split_documents": False,
-        "use_faiss": use_faiss,
         "retrieval_engine": PYLATE_RETRIEVAL_ENGINE,
         "retrieval_engine_version": retrieval_engine_version,
         "index_format_version": PYLATE_INDEX_FORMAT_VERSION,
@@ -298,22 +299,31 @@ def _coerce_index_result_from_meta(
         doc_maxlen=int(meta["doc_maxlen"]),
         index_bsize=int(meta.get("index_bsize", default_index_bsize)),
         split_documents=bool(meta.get("split_documents", False)),
-        use_faiss=bool(meta.get("use_faiss", False)),
         chunk_count=int(meta.get("chunk_count", 0)),
         token_audit=token_audit,
-        retrieval_engine=str(meta["retrieval_engine"]) if meta.get("retrieval_engine") is not None else None,
+        retrieval_engine=str(meta["retrieval_engine"])
+        if meta.get("retrieval_engine") is not None
+        else None,
         retrieval_engine_version=(
-            str(meta["retrieval_engine_version"]) if meta.get("retrieval_engine_version") is not None else None
+            str(meta["retrieval_engine_version"])
+            if meta.get("retrieval_engine_version") is not None
+            else None
         ),
         index_format_version=(
-            str(meta["index_format_version"]) if meta.get("index_format_version") is not None else None
+            str(meta["index_format_version"])
+            if meta.get("index_format_version") is not None
+            else None
         ),
         plaid_backend=str(meta["plaid_backend"]) if meta.get("plaid_backend") is not None else None,
         chunk_tokenizer_model=(
-            str(meta["chunk_tokenizer_model"]) if meta.get("chunk_tokenizer_model") is not None else None
+            str(meta["chunk_tokenizer_model"])
+            if meta.get("chunk_tokenizer_model") is not None
+            else None
         ),
         chunking_fingerprint=(
-            str(meta["chunking_fingerprint"]) if meta.get("chunking_fingerprint") is not None else None
+            str(meta["chunking_fingerprint"])
+            if meta.get("chunking_fingerprint") is not None
+            else None
         ),
         bundle_fingerprint=(
             str(meta["bundle_fingerprint"]) if meta.get("bundle_fingerprint") is not None else None
@@ -425,5 +435,7 @@ def _coerce_rag_chunk(payload: dict[str, Any]) -> RagChunk:
         end=float(payload["end_sec"]),
         token_count=int(payload["token_count"]),
         text=str(payload["text"]),
-        chunk_ordinal=int(payload["chunk_ordinal"]) if payload.get("chunk_ordinal") is not None else None,
+        chunk_ordinal=int(payload["chunk_ordinal"])
+        if payload.get("chunk_ordinal") is not None
+        else None,
     )

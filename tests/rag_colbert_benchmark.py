@@ -18,7 +18,6 @@ def benchmark_colbert_queries(
     questions_path: Path | str,
     index_dir: Path | str,
     k: int = 10,
-    force_fast: bool = False,
     runs: int = 1,
     warmup_runs: int = 0,
 ) -> dict[str, Any]:
@@ -38,7 +37,6 @@ def benchmark_colbert_queries(
                 query=str(record["question"]).strip(),
                 index_dir=index_dir,
                 k=k,
-                force_fast=force_fast,
             )
 
     samples: list[dict[str, Any]] = []
@@ -46,9 +44,7 @@ def benchmark_colbert_queries(
         for record in records:
             question = str(record["question"]).strip()
             started_at = time.perf_counter()
-            result = query_colbert_index(
-                query=question, index_dir=index_dir, k=k, force_fast=force_fast
-            )
+            result = query_colbert_index(query=question, index_dir=index_dir, k=k)
             duration_ms = (time.perf_counter() - started_at) * 1000
             samples.append(
                 {
@@ -88,7 +84,6 @@ def benchmark_colbert_queries(
         "warmup_runs": warmup_runs,
         "total_calls": len(samples),
         "k": k,
-        "force_fast": force_fast,
         "summary": duration_stats(durations),
         "per_question": per_question,
         "samples": samples,
@@ -103,9 +98,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--k", type=int, default=10, help="Result cutoff.")
     parser.add_argument(
-        "--force-fast", action="store_true", help="Forward force_fast to ColBERT search."
-    )
-    parser.add_argument(
         "--runs", type=int, default=1, help="Number of timed passes over the question set."
     )
     parser.add_argument(
@@ -118,7 +110,6 @@ def main(argv: list[str] | None = None) -> int:
         questions_path=args.questions,
         index_dir=args.index_dir,
         k=args.k,
-        force_fast=args.force_fast,
         runs=args.runs,
         warmup_runs=args.warmup_runs,
     )
@@ -132,7 +123,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  questions: {result['question_count']}")
         print(f"  runs: {result['runs']}")
         print(f"  total_calls: {result['total_calls']}")
-        print(f"  force_fast: {result['force_fast']}")
         print(f"  mean_ms: {summary['mean_ms']:.2f}")
         print(f"  median_ms: {summary['median_ms']:.2f}")
         print(f"  p95_ms: {summary['p95_ms']:.2f}")
