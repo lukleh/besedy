@@ -349,69 +349,15 @@ SELECT count(*) AS published_artwork
 The result must be zero when the deployment policy requires every artwork to
 remain unpublished.
 
-### Permissions rework rollout
+### Maintenance-run releases
 
-Deploy the lookup ownership change separately from the role cutover:
-
-1. Merge through migration `20260916090000_scope_metadata_lookups_to_catalog`
-   together with the lookup-route changes that write `workflow_group_id`, then
-   run `just prod-deploy`. Do not apply this migration while older lookup code
-   can create rows without a catalog.
-2. Verify every lookup has a catalog and every reference points to a lookup in
-   the same catalog:
-
-   ```sql
-   SELECT 'recorders' AS kind, count(*) FROM recorders WHERE workflow_group_id IS NULL
-   UNION ALL SELECT 'locations', count(*) FROM locations WHERE workflow_group_id IS NULL
-   UNION ALL SELECT 'albums', count(*) FROM albums WHERE workflow_group_id IS NULL;
-
-   SELECT count(*) AS mismatched_lookup_references
-   FROM (
-     SELECT 1 FROM audio_metadata m JOIN recorders r ON r.id = m.recorder_id
-       WHERE r.workflow_group_id <> m.workflow_group_id
-     UNION ALL
-     SELECT 1 FROM audio_metadata m JOIN locations l ON l.id = m.location_id
-       WHERE l.workflow_group_id <> m.workflow_group_id
-     UNION ALL
-     SELECT 1 FROM audio_metadata m JOIN albums a ON a.id = m.album_id
-       WHERE a.workflow_group_id <> m.workflow_group_id
-     UNION ALL
-     SELECT 1 FROM catalog_event e JOIN locations l ON l.id = e.location_id
-       WHERE l.workflow_group_id <> e.workflow_group_id
-   ) mismatches;
-   ```
-
-   Every count must be zero before continuing.
-
-3. Merge the remaining permission stack and deploy it as one coordinated
-   web/jobs maintenance release with `just prod-deploy-with-jobs` (or the
-   `-codex` variant). This applies the additive role columns and then assigns
-   every active and pending grant a role while no old worker is running.
-4. Verify the role backfill before accepting traffic as healthy:
-
-   ```sql
-   SELECT count(*) AS grants_without_role FROM catalog_access WHERE role IS NULL;
-   SELECT count(*) AS pending_without_role FROM pending_catalog_grant WHERE role IS NULL;
-   SELECT access_level, role, extra_permissions, count(*)
-     FROM catalog_access
-    GROUP BY access_level, role, extra_permissions
-    ORDER BY access_level, role;
-   ```
-
-   The first two counts must be zero. Compare the grouped mapping with the
-   preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
-   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`. This
-   check must run before step 5: once `access_level` is dropped, only the two
-   `role IS NULL` counts remain meaningful.
-5. Once the role-native web release (#151) is live and nothing reads
-   `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
-   plain `just prod-deploy`. It refuses to run while any grant lacks a role,
-   then makes `role` NOT NULL and drops `access_level` and the `AccessLevel`
-   enum. There is no reverse migration, and the previous image alone cannot
-   run against the migrated schema: its claim path still selects
-   `access_level`, so first sign-in for invited users would fail. Roll back
-   with the guarded `prod-rollback` recipe (see Rollback below), which
-   restores the retained pre-migration backup together with the image.
+The catalog permissions rework (September 2026) shipped as a coordinated
+web/jobs maintenance release followed by a separate destructive migration
+(`20260921170000_drop_legacy_access_level`). The step-by-step runbook was
+removed once that rollout finished; ADR 0005 records the decisions and the
+role mapping. Use the same shape for any future change that cannot be applied
+additively: deploy it with `just prod-deploy-with-jobs` (or the `-codex`
+variant) so no old worker runs against the new schema.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating
