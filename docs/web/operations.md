@@ -557,16 +557,22 @@ Remove old `BACKUP_DIR/deploy/` archives and `besedy-web:<commit>` /
 `besedy-jobs:<commit>` images only after the release is accepted.
 
 Every build adds a `besedy-web:<commit>` and a `besedy-jobs:<commit>` tag and
-nothing removes them. `just prod-prune-images [keep=5]` trims them: it keeps the
-tags of the newest `keep` distinct commits in `web_deploy_log` (the rollbacks
-`prod-rollback` can still reach, so keep at least the release you may return
-to), the `:prod` tags, and any image a container was created from, running or
-stopped. It lists the other `besedy-web:<40-hex>` and `besedy-jobs:<40-hex>` tags and asks before
-removing them. It never touches other repositories (the GPU backend images
-`run-pipeline` starts on demand included), volumes or deploy backups. A rollback
-to a commit outside the window fails at the image check in `prod-rollback`.
-Removing a tag frees disk only when no other tag points at the same image, which
-is common for jobs images.
+nothing removes them. `just prod-prune-images [keep=5]` trims them. It needs the
+production `db` container, because it reads `web_deploy_log`, and keeps:
+
+- the tags of the newest `keep` distinct full commits in `web_deploy_log` (the
+  rollbacks `prod-rollback` can still reach, so keep at least the release you
+  may return to);
+- any tag whose image a `:prod` tag points at, so a build that is not logged
+  yet survives;
+- any tag whose image a container was created from, running or stopped.
+
+It lists the remaining `besedy-web:<40-hex>` and `besedy-jobs:<40-hex>` tags and
+asks before removing them. It never touches other repositories (the GPU backend
+images `run-pipeline` starts on demand included), volumes or deploy backups. A
+rollback to a commit outside the window fails at the image check in
+`prod-rollback`. Removing a tag frees disk only when no other tag points at the
+same image, which is common for jobs images.
 
 ---
 

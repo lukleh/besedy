@@ -933,7 +933,7 @@ prod-prune-images keep="5":
         echo "keep must be a positive integer (the rollback window), got: $keep" >&2
         exit 2
     fi
-    commits="$(bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d besedy -At -v ON_ERROR_STOP=1 -v keep="$keep" <<< "SELECT git_commit FROM web_deploy_log GROUP BY git_commit ORDER BY max(deployed_at) DESC LIMIT :keep;")"
+    commits="$(bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d besedy -At -v ON_ERROR_STOP=1 -v keep="$keep" <<< "SELECT git_commit FROM web_deploy_log WHERE git_commit ~ '^[0-9a-f]{40}\$' GROUP BY git_commit ORDER BY max(deployed_at) DESC LIMIT :keep;")"
     if [ -z "$commits" ]; then
         echo "web_deploy_log has no deploys; refusing to prune without a rollback window." >&2
         exit 1
