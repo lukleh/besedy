@@ -172,9 +172,9 @@ describe("catalog management route access", () => {
     );
   });
 
-  // Sources went the other way round: the default predicate let the host
-  // through and refused the curator. Both directions against the helper, so
-  // neither role can drift back onto the default.
+  // Sources went the other way round: the old default predicate, manage_access,
+  // let the host through and refused the curator. Both directions against the
+  // helper, so neither role can drift back onto manage_access.
   it("refuses a host at the sources gate despite manage_access", async () => {
     requireAuth.mockResolvedValue("host-1");
     resolveCatalogActorContext.mockResolvedValue({

@@ -120,6 +120,8 @@ describe("roles", () => {
         "download_original_transcript",
         "bulk_export_transcripts",
       ],
+      // The code keeps this role a wildcard; it is listed here anyway, so a new
+      // permission reaching the catalog administrator is stated here too.
       catalog_admin: [
         "stream_audio",
         "browse_recordings",

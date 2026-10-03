@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-// The proxy lets every non-auth API request through to its handler, so the
-// handler's own guard is the only one. This keeps a route from shipping without
+// The proxy does not authenticate API requests, so the handler's own guard is
+// the only one. This keeps a route from shipping without
 // one. It checks each route file as a whole, not each exported method.
 const srcDir = path.join(__dirname, "..", "..", "src");
 const apiDir = path.join(srcDir, "app", "api");
@@ -11,7 +11,6 @@ const apiDir = path.join(srcDir, "app", "api");
 const GUARDS = [
   "requireAuth",
   "requireAdminCapability",
-  "getCatalogCapability",
   "requireCatalogManagementAccess",
   "resolveCatalogManagementActor",
   "requireCatalogEventsAccess",
@@ -39,6 +38,13 @@ const DELEGATED: Record<string, string> = {
   "metadata/locations/[id]": "lib/api/crud-factory.ts",
   "metadata/recorders": "lib/api/crud-factory.ts",
   "metadata/recorders/[id]": "lib/api/crud-factory.ts",
+};
+
+// Routes that refuse by hand rather than through a guard helper.
+// `getCatalogCapability` is not a guard: it reports access and refuses nobody.
+const CHECKED_IN_HANDLER: Record<string, string> = {
+  "catalogs/[id]/status": "checks getCurrentUserId and capability.hasAccess",
+  "catalogs/[id]/random-event": "checks getCurrentUserId and capability.hasAccess",
 };
 
 // Routes that are open on purpose.
@@ -79,13 +85,15 @@ describe("API route guards", () => {
     expect(routes.length).toBeGreaterThan(50);
   });
 
-  it("guards every route that is not public or delegated", () => {
+  it("guards every route that is not listed", () => {
     const unguarded = routes
-      .filter(({ name }) => !(name in PUBLIC) && !(name in DELEGATED))
+      .filter(
+        ({ name }) => !(name in PUBLIC) && !(name in DELEGATED) && !(name in CHECKED_IN_HANDLER)
+      )
       .filter(({ source }) => !callsGuard(source))
       .map(({ name }) => name);
 
-    // Call a guard from the new route, or list it in PUBLIC or DELEGATED with a reason.
+    // Call a guard from the new route, or list it above with a reason.
     expect(unguarded).toEqual([]);
   });
 
@@ -107,7 +115,11 @@ describe("API route guards", () => {
 
   it("lists only routes that exist", () => {
     const names = new Set(routes.map(({ name }) => name));
-    const stale = [...Object.keys(PUBLIC), ...Object.keys(DELEGATED)].filter(
+    const stale = [
+      ...Object.keys(PUBLIC),
+      ...Object.keys(DELEGATED),
+      ...Object.keys(CHECKED_IN_HANDLER),
+    ].filter(
       (name) => !names.has(name)
     );
 

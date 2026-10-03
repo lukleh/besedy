@@ -99,15 +99,18 @@ cookies disagree and send the user through a clean sign-in path.
 
 ## Route Protection
 
-The auth proxy (`src/proxy.ts`) enforces authentication for pages, except
-`/auth/*`, the other public pages it lists, and static assets. Unauthenticated
-page requests are redirected to `/auth/signin`.
+The auth proxy (`src/proxy.ts`) enforces authentication for pages, except the
+public pages listed in its `publicRoutes` (sign-in and the other `/auth/...`
+status pages, `/robots.txt`, `/.well-known/...`) and static assets.
+Unauthenticated page requests are redirected to `/auth/signin`.
 
-API routes (`/api/*`) are not authenticated by the proxy; it only applies rate
-limits and the mutation-source check. Each route handler calls its own guard
-and returns 401/403. `tests/unit/api-route-guards.test.ts` fails when a
-`route.ts` calls none of the known guards, unless the route is listed there as
-public or as delegating to a guarded module, with a reason.
+API routes (`/api/*`) are not authenticated by the proxy. It rate-limits
+`/api/auth/*` and `/api/csp-report*`, and applies the mutation-source check to
+API mutations except bearer-authorized `/api/internal/*` calls and the MCP
+`POST /api/mcp`. Each route handler calls its own guard and returns 401/403.
+`tests/unit/api-route-guards.test.ts` fails when a `route.ts` calls none of the
+known guards, unless the route is listed there with a reason: public,
+delegating to a guarded module, or refusing by hand.
 
 ### Rate Limiting
 
