@@ -419,6 +419,45 @@ class TestBuildPayload:
 
         assert "vad_segments" not in payload
 
+    def test_decoded_vad_regions_are_recorded_in_generation_params(self, tmp_path):
+        """clip_timestamps is where the decoded regions live now that vad_segments is gone."""
+        audio_path = tmp_path / "test.wav"
+        audio_path.touch()
+
+        mock_info = MagicMock()
+        mock_info.language = "cs"
+        mock_info.language_probability = 0.99
+        mock_info.duration = 5.5
+        mock_info.duration_after_vad = 3.0
+        mock_info.transcription_options = {
+            "clip_timestamps": [{"start": 2816, "end": 21504}, {"start": 21504, "end": 48896}]
+        }
+
+        with patch(
+            "besedy.workflows.transcribe_faster_whisper.measure_audio_duration_seconds",
+            return_value=5.5,
+        ):
+            payload = build_payload(
+                audio_path,
+                model_name="large-v3",
+                device="cuda",
+                compute_type="float16",
+                language="cs",
+                batch_size=8,
+                vad_filter=True,
+                min_silence_ms=None,
+                word_timestamps=True,
+                info=mock_info,
+                segments=[],
+            )
+
+        params = payload["meta"]["generation_params"]
+        assert params["transcription_options"]["clip_timestamps"][0] == {
+            "start": 2816,
+            "end": 21504,
+        }
+        assert params["duration_after_vad"] == 3.0
+
     def test_empty_text_handling(self, tmp_path):
         """Test handling of segments with empty text."""
         audio_path = tmp_path / "test.wav"

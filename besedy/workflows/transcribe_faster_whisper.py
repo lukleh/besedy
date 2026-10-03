@@ -361,13 +361,13 @@ def main() -> int:
         progress.set_postfix_str(audio_path.name)
         logging.info("Transcribing %s", audio_path)
 
-        # The batched pipeline runs its own VAD pass while decoding; the regions
-        # it decodes are recorded in generation_params.transcription_options.
         min_silence_ms = config.vad.min_silence_ms
         vad_parameters = None
         if min_silence_ms is not None:
             vad_parameters = dict(min_silence_duration_ms=min_silence_ms)
 
+        # The batched pipeline runs its own VAD pass while decoding; the regions
+        # it decodes are recorded in generation_params.transcription_options.
         segments_iter, info = pipeline.transcribe(
             str(audio_path),
             batch_size=args.batch_size,
@@ -380,6 +380,14 @@ def main() -> int:
             repetition_penalty=1.1,  # Optional: additional repetition prevention
         )
         segments = list(segments_iter)
+        duration_after_vad = getattr(info, "duration_after_vad", None)
+        if duration_after_vad is not None:
+            logging.info(
+                "VAD kept %.1f s of %.1f s for %s",
+                duration_after_vad,
+                getattr(info, "duration", 0.0) or 0.0,
+                audio_path.name,
+            )
         payload = build_payload(
             audio_path,
             model_name=model_name,
