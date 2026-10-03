@@ -17,6 +17,7 @@ import json
 import pytest
 
 from tests.helpers.audio import create_speech_like_wav
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
 @pytest.fixture
@@ -369,7 +370,7 @@ class TestWorkflowOutputPaths:
         # Expected: transcripts/<backend>/<model>/<hash>/transcript.json
         backend = "faster-whisper"
         model = "large-v3@silero_vad_v6@lang-cs"
-        audio_hash = "abc123def456"
+        audio_hash = SAMPLE_AUDIO_HASH
 
         output_dir = tmp_path / backend / model / audio_hash
         output_dir.mkdir(parents=True)
@@ -390,7 +391,7 @@ class TestWorkflowOutputPaths:
         """Diarization output follows expected structure."""
         # Expected: transcripts/speaker_diarization/<model>/<hash>/speakers.json
         model = "pyannote_speaker-diarization-community-1"
-        audio_hash = "abc123def456"
+        audio_hash = SAMPLE_AUDIO_HASH
 
         output_dir = tmp_path / "speaker_diarization" / model / audio_hash
         output_dir.mkdir(parents=True)

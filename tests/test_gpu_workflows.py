@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from tests.helpers.audio import create_tone_wav
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
 @pytest.fixture
@@ -236,7 +237,7 @@ class TestWorkflowConfigPatterns:
         # Expected: transcripts/<backend>/<model>/<hash>/transcript.json
         backend = "faster-whisper"
         model = "large-v3@silero_vad_v6@lang-cs"
-        audio_hash = "abc123def456"
+        audio_hash = SAMPLE_AUDIO_HASH
 
         output_dir = tmp_path / backend / model / audio_hash
         output_dir.mkdir(parents=True)

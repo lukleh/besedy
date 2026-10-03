@@ -76,7 +76,9 @@ class TestPipelineDataFlow:
             assert file_hash is not None
 
             # Faster-Whisper backend
-            fw_dir = transcripts_dir / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / file_hash
+            fw_dir = (
+                transcripts_dir / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / file_hash
+            )
             fw_dir.mkdir(parents=True)
             transcript = create_transcript_with_words(
                 words=["This", "is", "a", "test", "recording"],
@@ -88,7 +90,7 @@ class TestPipelineDataFlow:
             nemo_dir = (
                 transcripts_dir
                 / "canary-nemo"
-                / "nvidia_canary-1b-v2[greedy]@frame_vad"
+                / "nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs"
                 / file_hash
             )
             nemo_dir.mkdir(parents=True)
@@ -168,7 +170,7 @@ class TestPipelineDataFlow:
             nemo_transcript = (
                 transcripts_dir
                 / "canary-nemo"
-                / "nvidia_canary-1b-v2[greedy]@frame_vad"
+                / "nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs"
                 / file_hash
                 / "transcript.json"
             )
@@ -353,7 +355,9 @@ class TestTimestampAlignment:
         # Transcripts directory
         transcripts = tmp_path / f"transcripts_{timestamp}"
         transcripts.mkdir()
-        (transcripts / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / "abc123").mkdir(parents=True)
+        (transcripts / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / "abc123").mkdir(
+            parents=True
+        )
 
         return {
             "timestamp": timestamp,
