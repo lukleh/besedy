@@ -49,6 +49,8 @@ Current defaults (from the April 3, 2026 tuning pass):
 
 These are the current supported settings. All four participate in the `chunking_fingerprint` used by incremental sync (see below).
 
+The scope builders take the recording's audio hash from the transcript's leaf directory, which must be the full 64-character hash. A directory with any other name is skipped with a warning and counted in `transcripts_skipped`; the hash is never inferred from the file's metadata.
+
 ## Bundle Layout
 
 Bundles live under:
