@@ -1,6 +1,6 @@
 # ML Backends
 
-> **Last Updated:** 2026-10-02
+> **Last Updated:** 2026-10-03
 
 How Besedy's ML backends are deployed and configured.
 
@@ -62,10 +62,9 @@ test, and prod web environments on the same host.
 | Container | Purpose | Endpoint | Profile |
 |-----------|---------|----------|---------|
 | `besedy-colbert` | Warm ColBERT query server (active retrieval path) | `http://127.0.0.1:8192` | default |
-| `besedy-tei-reranker` | Reranking (optional for ColBERT path) | `http://127.0.0.1:8191` | `legacy-tei` |
 
 Requirements: NVIDIA GPU with CUDA, Docker with NVIDIA Container Toolkit
-(`nvidia-ctk`), BuildKit/Buildx (for TEI image build).
+(`nvidia-ctk`), BuildKit/Buildx.
 
 ### ColBERT Sidecar Architecture
 
@@ -129,25 +128,8 @@ bundle:
 - `index_meta.json`
 - `chunk_store.sqlite`
 
-ColBERT mode does not require the TEI reranker unless
-`RAG_COLBERT_RERANK_ENABLED=true` is explicitly set. All three web environments
-reach ColBERT via `RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
-
-### TEI Reranker (Optional)
-
-The TEI reranker is behind the `legacy-tei` Docker Compose profile. It is only
-needed for optional ColBERT reranking.
-
-**Blackwell GPU (RTX 5070 Ti / 5090).** The compose stack builds a local TEI
-image from upstream source (`Dockerfile-cuda-blackwell`). Blackwell support (TEI
-PR #735) landed after v1.8.3, so `main` is required. Set
-`TEI_BUILD_CONTEXT=...#v1.8.3` for strict release pinning on older GPUs.
-
-**Health checks:**
-
-```bash
-curl -fsS http://127.0.0.1:8191/health   # reranker
-```
+All three web environments reach ColBERT via
+`RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
 
 ### Web Environment Integration
 
@@ -157,7 +139,7 @@ stack resolves and serves them. Key env vars:
 
 - `RAG_COLBERT_URL=http://host.docker.internal:8192/query`
 - `RAG_COLBERT_ROOT_DIR=/workspace/besedy/tmp/rag_colbert`
-- `RAG_COLBERT_RERANK_ENABLED=false` (set `true` to enable TEI reranker)
+- `RAG_COLBERT_TIMEOUT_MS=8000` (timeout for each request to the sidecar)
 
 ### Retrieval Flow
 
@@ -167,7 +149,6 @@ Indexing                              Query
 Documents -> chunk -> ColBERT build   Query -> ColBERT sidecar /query
          -> bundle on disk                   -> bundle lookup / neighbors
                                              -> PostgreSQL ACL + metadata filter
-                                             -> optional POST /rerank
                                              -> top snippets
 ```
 
@@ -358,19 +339,17 @@ just catalog rag-colbert-index \
   --rebuild
 ```
 
-TEI changes do not require a production RAG rebuild.
-
 ---
 
 ## Troubleshooting
 
 **Container exits with "compute cap not compatible":** GPU architecture
 mismatch. Check `nvidia-smi` and ensure the image supports your compute
-capability. See the Blackwell build note above.
+capability.
 
 **Model download stalls:** Check network inside the container. Delete the
 model cache volume to force re-download:
-`docker volume rm besedy_tei_model_cache besedy_colbert_model_cache`
+`docker volume rm besedy_colbert_model_cache`
 
 **ColBERT CLI says Docker service not running:** Start with
 `just colbert-up`. For

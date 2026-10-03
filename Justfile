@@ -133,15 +133,6 @@ rag-services-down: (_guard-shared-colbert "rag-services-down")
 rag-services-logs:
     {{ rag_services_compose }} logs -f
 
-tei-up:
-    {{ rag_services_compose }} --profile legacy-tei up -d reranker
-
-tei-down:
-    {{ rag_services_compose }} stop reranker
-
-tei-logs:
-    {{ rag_services_compose }} logs -f reranker
-
 colbert-up: (_guard-shared-colbert "colbert-up") _colbert-state-dir
     {{ rag_services_compose }} up -d --build colbert
 
@@ -1190,7 +1181,6 @@ mcp-smoke:
     export BESEDY_MCP_ENABLED=true
     export RAG_COLBERT_URL="http://$rag_container:18192/query"
     export RAG_COLBERT_INDEX_DIR=
-    export RAG_COLBERT_RERANK_ENABLED=false
     just test-up
     mcp_web_port="$(resolve_mcp_port web 3000)"
     mcp_db_port="$(resolve_mcp_port db 5432)"
