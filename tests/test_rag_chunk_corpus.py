@@ -276,9 +276,10 @@ def test_build_chunk_corpus_uses_explicit_chunk_tokenizer_model(
     assert corpus.chunk_distribution.tokenizer_model == "test-whitespace"
 
 
-def test_discover_transcript_sources_rejects_duplicate_canonical_audio_hashes(
+def test_discover_transcript_sources_skips_directories_that_are_not_a_full_hash(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(
         rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
@@ -286,31 +287,33 @@ def test_discover_transcript_sources_rejects_duplicate_canonical_audio_hashes(
 
     transcripts_root = tmp_path / "transcripts_20260206_120012"
     backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
-    canonical_audio_hash = "a" * 64
-    common_meta = {
-        "audio_hash": canonical_audio_hash,
-        "audio_filepath": f"/tmp/{canonical_audio_hash}.wav",
-    }
+    audio_hash = "a" * 64
+    # The leaf is the audio hash. A short name is skipped even when the file's
+    # metadata carries the full hash.
     _write_transcript(
-        backend_dir / "legacy-a" / "transcript.json",
+        backend_dir / audio_hash / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "alpha beta gamma"}],
-        meta_overrides=common_meta,
     )
     _write_transcript(
-        backend_dir / "legacy-b" / "transcript.json",
+        backend_dir / "aaaaaaaaaaaa" / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "delta epsilon zeta"}],
-        meta_overrides=common_meta,
+        meta_overrides={"audio_hash": audio_hash, "audio_filepath": f"/tmp/{audio_hash}.wav"},
     )
 
-    with pytest.raises(ValueError, match="same canonical audio hash"):
-        discover_transcript_sources(
+    with caplog.at_level("WARNING", logger="besedy.lib.rag_chunk_corpus"):
+        build = discover_transcript_sources(
             workflow_group_id="wg-128",
             backend_key="faster-whisper/large-v3@silero_vad_v6",
             transcripts_root=transcripts_root,
         )
 
+    assert [source.audio_hash for source in build.sources] == [audio_hash]
+    assert build.transcripts_skipped == 1
+    assert "aaaaaaaaaaaa" in caplog.text
+    assert "not a full 64-character audio hash" in caplog.text
 
-def test_build_chunk_corpus_rejects_duplicate_canonical_audio_hashes(
+
+def test_build_chunk_corpus_skips_directories_that_are_not_a_full_hash(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -320,28 +323,25 @@ def test_build_chunk_corpus_rejects_duplicate_canonical_audio_hashes(
 
     transcripts_root = tmp_path / "transcripts_20260206_120013"
     backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
-    canonical_audio_hash = "b" * 64
-    common_meta = {
-        "audio_hash": canonical_audio_hash,
-        "audio_filepath": f"/tmp/{canonical_audio_hash}.wav",
-    }
+    audio_hash = "b" * 64
     _write_transcript(
-        backend_dir / "legacy-c" / "transcript.json",
+        backend_dir / audio_hash / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "jedna dve tri"}],
-        meta_overrides=common_meta,
     )
     _write_transcript(
-        backend_dir / "legacy-d" / "transcript.json",
+        backend_dir / "bbbbbbbbbbbb" / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "ctyri pet sest"}],
-        meta_overrides=common_meta,
+        meta_overrides={"audio_hash": audio_hash, "audio_filepath": f"/tmp/{audio_hash}.wav"},
     )
 
-    with pytest.raises(ValueError, match="same canonical audio hash"):
-        build_chunk_corpus(
-            workflow_group_id="wg-129",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
-            transcripts_root=transcripts_root,
-            min_chunk_tokens=2,
-            max_chunk_tokens=4,
-            overlap_tokens=1,
-        )
+    corpus = build_chunk_corpus(
+        workflow_group_id="wg-129",
+        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        transcripts_root=transcripts_root,
+        min_chunk_tokens=2,
+        max_chunk_tokens=4,
+        overlap_tokens=1,
+    )
+
+    assert {chunk.audio_hash for chunk in corpus.chunks} == {audio_hash}
+    assert corpus.transcripts_skipped == 1
