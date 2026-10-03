@@ -35,7 +35,6 @@ from besedy.lib.workflow.language import (
 
 FALLBACK_MODEL = "large-v3"
 FALLBACK_VAD_MODEL = "silero_vad_v6"
-DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_OUTPUT_SUFFIX = ".transcript"
 
 
@@ -285,14 +284,6 @@ def transcribe_audio(
     word_timestamps: bool,
     vad_model: str | None,
 ) -> dict[str, Any]:
-    logging.info("Extracting VAD segments from %s", audio_path.name)
-    vad_segments = helpers.extract_vad_segments(
-        audio_path,
-        min_silence_duration_ms=min_silence_ms,
-        sampling_rate=DEFAULT_SAMPLE_RATE,
-    )
-    logging.info("Found %d VAD speech segment(s)", len(vad_segments))
-
     vad_parameters = None
     if min_silence_ms is not None:
         vad_parameters = {"min_silence_duration_ms": min_silence_ms}
@@ -322,7 +313,6 @@ def transcribe_audio(
         vad_model=_vad_model_label(vad_model),
         info=info,
         segments=segments,
-        vad_segments=vad_segments,
     )
 
 
