@@ -431,7 +431,7 @@ licenses and access terms. Review these before use — especially for
 | `pyannote/speaker-diarization-community-1` | Speaker diarization | CC-BY-4.0 | ✅ | **yes** |
 | `pyannote/embedding` | Speaker embeddings | MIT | ✅ | **yes** |
 | `jinaai/jina-colbert-v2` | **RAG ColBERT retrieval (default)** | **CC-BY-NC-4.0** | **❌ non-commercial** | no |
-| `Alibaba-NLP/gte-multilingual-reranker-base` | RAG reranker + chunk tokenizer | Apache-2.0 | ✅ | no |
+| `Alibaba-NLP/gte-multilingual-reranker-base` | RAG chunk tokenizer (tokenizer only) | Apache-2.0 | ✅ | no |
 
 **⚠️ Only the default RAG retriever is non-commercial.** `jinaai/jina-colbert-v2`
 is CC-BY-NC-4.0 (no commercial use); every other model above is
@@ -450,4 +450,4 @@ upstream copyright/license notices.
 Licenses were verified from each model card; always re-check the card for the
 authoritative, current terms. Not every model runs in every pipeline — the
 transcription backends (faster-whisper / Canary / Qwen3-ASR) are alternatives,
-and RAG reranking is opt-in — so a given install pulls only a subset.
+so a given install pulls only a subset.
