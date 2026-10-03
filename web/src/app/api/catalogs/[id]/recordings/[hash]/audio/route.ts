@@ -295,7 +295,6 @@ export async function GET(
       return response;
     }
     const audioSource = queryResult.data.source;
-    const audioSourceParam = audioSource;
     requestedSource = audioSource;
     forceDownload = queryResult.data.download;
     servedSource = requestedSource;
@@ -343,7 +342,7 @@ export async function GET(
     // the catalog administrator holding every permission -- and it is asked
     // whether or not the request forces a download, because serving the master
     // inline would deliver the same bytes.
-    if (audioSourceParam === "original" && !access.capability.canDownloadOriginalAudio) {
+    if (audioSource === "original" && !access.capability.canDownloadOriginalAudio) {
       const denied = await requireCatalogRecordingOriginalAudio(access, {
         auditResource: "audio",
         deniedMessage: "The original recording is not available for this account",
