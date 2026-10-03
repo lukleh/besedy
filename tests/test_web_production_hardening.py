@@ -321,12 +321,16 @@ def test_prefect_template_configures_only_the_control_plane() -> None:
 def test_prefect_server_image_matches_client_pin() -> None:
     compose = (JOBS_SERVICE / "docker-compose.prefect.yml").read_text(encoding="utf-8")
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    dockerfile = (JOBS_SERVICE / "Dockerfile").read_text(encoding="utf-8")
 
-    server_versions = set(re.findall(r"prefecthq/prefect:(\d+\.\d+\.\d+)-python", compose))
-    client = re.search(r'"prefect==(\d+\.\d+\.\d+)"', pyproject)
+    server_tags = set(re.findall(r"prefecthq/prefect:(\d+\.\d+\.\d+)-python(\d+\.\d+)\b", compose))
+    client = re.search(r'"prefect(?:\[[^\]"]*\])?==(\d+\.\d+\.\d+)"', pyproject)
+    jobs_python = set(re.findall(r"^FROM python:(\d+\.\d+)-slim", dockerfile, re.MULTILINE))
 
     assert client is not None
-    assert server_versions == {client.group(1)}
+    assert len(jobs_python) == 1
+    # The server image must also run the Python the jobs image installs the client on.
+    assert server_tags == {(client.group(1), next(iter(jobs_python)))}
 
 
 @pytest.mark.parametrize(
