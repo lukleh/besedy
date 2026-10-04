@@ -583,6 +583,13 @@
           "status": "Status",
           "actions": "Actions",
           "result": "Result"
+        },
+        "progress": {
+          "step": "Step {step}/{total} · {label}",
+          "elapsed": "{step} (total {total})",
+          "took": "Took {duration}",
+          "minutes": "{minutes} min",
+          "hoursMinutes": "{hours} h {minutes} min"
         }
       },
       "status": {

@@ -46,6 +46,15 @@ export type IntakeRow = Prisma.RecordingIntakeGetPayload<{
   include: typeof INTAKE_INCLUDE;
 }>;
 
+/** Progress fields reset when a row starts a new worker run. */
+export const CLEARED_PROGRESS = {
+  startedAt: null,
+  progressStep: null,
+  progressTotal: null,
+  progressLabel: null,
+  progressStepStartedAt: null,
+} satisfies Prisma.RecordingIntakeUpdateManyMutationInput;
+
 function positiveIntFromEnv(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -253,6 +262,13 @@ export function serializeIntake(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+    startedAt: row.startedAt ? row.startedAt.toISOString() : null,
+    progressStep: row.progressStep,
+    progressTotal: row.progressTotal,
+    progressLabel: row.progressLabel,
+    progressStepStartedAt: row.progressStepStartedAt
+      ? row.progressStepStartedAt.toISOString()
+      : null,
     prefectStateName: extra?.prefectStateName ?? null,
   };
 }

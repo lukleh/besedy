@@ -49,6 +49,7 @@ import {
   type RecordingIntakeStatus,
 } from "@/lib/ingest/types";
 import { finalizeUpload, uploadRecording } from "@/lib/ingest/upload-client";
+import { IntakeProgress } from "./intake-progress";
 
 const INTAKES_QUERY_KEY = ["admin-ingest-intakes"];
 const ACTIVE_POLL_INTERVAL_MS = 5000;
@@ -423,12 +424,7 @@ export default function IngestContent() {
                         <Badge variant={statusVariant(intake.status)}>
                           {t(`status.${intake.status}`)}
                         </Badge>
-                        {intake.prefectStateName &&
-                          isActiveIntakeStatus(intake.status) && (
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {intake.prefectStateName}
-                            </div>
-                          )}
+                        <IntakeProgress intake={intake} />
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="space-y-1">

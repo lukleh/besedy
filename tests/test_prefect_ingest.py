@@ -22,6 +22,7 @@ from besedy.lib.internal_ingest_client import (  # noqa: E402
     IngestClientError,
     IngestCompletionReport,
     IngestCompletionStatus,
+    IngestProgressReport,
 )
 from besedy.lib.prefect_jobs.api import PrefectJobsApiService  # noqa: E402
 from besedy.lib.prefect_jobs.flows import ingest_recording as ingest_module  # noqa: E402
@@ -299,12 +300,77 @@ def test_catalog_cli_command_uses_module_entrypoint() -> None:
     ]
 
 
+PIPELINE_OUTPUT = """Pipeline for catalog
+[1/9] loudness (Analyzing audio loudness)...
+============================================================
+  Already analyzed: 253 files
+[4/9] transcribe (canary-nemo@lang-cs)...
+[9/9] cluster-speakers...
+[10/9] not a header
+"""
+
+
+def test_parse_pipeline_step_reads_run_pipeline_headers() -> None:
+    steps = [ingest_module.parse_pipeline_step(line) for line in PIPELINE_OUTPUT.splitlines()]
+
+    assert [step for step in steps if step is not None] == [
+        IngestProgressReport(label="loudness (Analyzing audio loudness)", step=1, total=9),
+        IngestProgressReport(label="transcribe (canary-nemo@lang-cs)", step=4, total=9),
+        IngestProgressReport(label="cluster-speakers", step=9, total=9),
+    ]
+
+
+def test_run_catalog_cli_reports_steps_and_runs_the_child_unbuffered(
+    monkeypatch, tmp_path: Path
+) -> None:
+    script = (
+        "import os, sys\n"
+        f"sys.stdout.write({PIPELINE_OUTPUT!r})\n"
+        "print('unbuffered=' + os.environ.get('PYTHONUNBUFFERED', ''))\n"
+    )
+    monkeypatch.setattr(ingest_module, "catalog_cli_command", lambda args: [sys.executable, *args])
+    monkeypatch.delenv("PYTHONUNBUFFERED", raising=False)
+    lines: list[str] = []
+    steps: list[IngestProgressReport] = []
+
+    ingest_module.run_catalog_cli(
+        ["-c", script],
+        stage="run_pipeline",
+        cwd=tmp_path,
+        log=lines.append,
+        progress=steps.append,
+    )
+
+    assert [step.step for step in steps] == [1, 4, 9]
+    assert "[run_pipeline] unbuffered=1" in lines
+
+
+def test_progress_reporter_never_raises(monkeypatch) -> None:
+    def failing_report(**_kwargs: object) -> None:
+        raise IngestClientError("Not found", status_code=404)
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_besedy_ingest_client_from_env",
+        lambda: SimpleNamespace(report_progress=failing_report),
+    )
+    logged: list[str] = []
+
+    ingest_module.progress_reporter(INTAKE_ID, log=logged.append)(
+        IngestProgressReport(label="catalog add")
+    )
+
+    assert len(logged) == 1
+    assert "catalog add" in logged[0] and "Not found" in logged[0]
+
+
 # --- flow ---------------------------------------------------------------------
 
 
-def _run_flow(monkeypatch, paths: ingest_module.IngestPaths, *, audio_hash: str):  # type: ignore[no-untyped-def]
+def _run_flow(monkeypatch, paths: ingest_module.IngestPaths, *, audio_hash: str, progress=None):  # type: ignore[no-untyped-def]
     cli_calls: list[list[str]] = []
     reports: list[tuple[str, dict[str, object]]] = []
+    progress = [] if progress is None else progress
 
     monkeypatch.setattr(ingest_module, "resolve_ingest_paths", lambda *_a, **_k: paths)
     monkeypatch.setattr(ingest_module, "audio_content_sha256sum", lambda _path: audio_hash)
@@ -319,7 +385,8 @@ def _run_flow(monkeypatch, paths: ingest_module.IngestPaths, *, audio_hash: str)
         lambda: SimpleNamespace(
             report_completion=lambda *, intake_id, report: (
                 reports.append((intake_id, report.to_payload())) or {"ok": True}
-            )
+            ),
+            report_progress=lambda *, intake_id, report: progress.append((intake_id, report.label)),
         ),
     )
     result = ingest_module.ingest_recording_flow(
@@ -407,6 +474,15 @@ def test_flow_accepts_new_recording_and_runs_cli(monkeypatch, tmp_path: Path) ->
         ["run_pipeline", "run-pipeline", "--csv", str(paths.catalog_csv), "--no-symlink"],
     ]
     assert reports == [(INTAKE_ID, result)]
+
+
+def test_flow_reports_its_stages_before_the_pipeline(monkeypatch, tmp_path: Path) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    progress: list[tuple[str, str]] = []
+
+    _run_flow(monkeypatch, paths, audio_hash=NEW_HASH, progress=progress)
+
+    assert progress == [(INTAKE_ID, "duplicate check"), (INTAKE_ID, "catalog add")]
 
 
 def test_flow_reports_failure_before_reraising(monkeypatch, tmp_path: Path) -> None:

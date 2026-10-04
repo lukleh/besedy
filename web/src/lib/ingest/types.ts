@@ -35,6 +35,11 @@ export const recordingIntakeSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   finishedAt: z.string().nullable(),
+  startedAt: z.string().nullable().optional(),
+  progressStep: z.number().int().nullable().optional(),
+  progressTotal: z.number().int().nullable().optional(),
+  progressLabel: z.string().nullable().optional(),
+  progressStepStartedAt: z.string().nullable().optional(),
   prefectStateName: z.string().nullable().optional(),
 });
 

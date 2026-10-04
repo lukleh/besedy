@@ -583,6 +583,13 @@
           "status": "Stav",
           "actions": "Akce",
           "result": "Výsledek"
+        },
+        "progress": {
+          "step": "Krok {step}/{total} · {label}",
+          "elapsed": "{step} (celkem {total})",
+          "took": "Trvalo {duration}",
+          "minutes": "{minutes} min",
+          "hoursMinutes": "{hours} h {minutes} min"
         }
       },
       "status": {

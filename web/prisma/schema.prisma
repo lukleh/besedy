@@ -609,25 +609,32 @@ model WorkflowGroup {
 /// Admin-uploaded recording tracked from upload through the host ingest worker.
 /// The audio hash is only known once the worker has decoded the file.
 model RecordingIntake {
-  id                String                @id @default(cuid())
-  workflowGroupId   String                @map("workflow_group_id") @db.VarChar(15)
-  requestedById     String?               @map("requested_by_id")
-  originalFilename  String                @map("original_filename")
+  id                    String                @id @default(cuid())
+  workflowGroupId       String                @map("workflow_group_id") @db.VarChar(15)
+  requestedById         String?               @map("requested_by_id")
+  originalFilename      String                @map("original_filename")
   /// File name inside <uploads>/<catalog>/incoming/<id>/ (extension only, no user input)
-  storedFilename    String                @map("stored_filename")
-  mimeType          String?               @map("mime_type")
-  expectedSizeBytes BigInt                @map("expected_size_bytes")
-  receivedBytes     BigInt                @default(0) @map("received_bytes")
-  receivedChunks    Int                   @default(0) @map("received_chunks")
-  status            RecordingIntakeStatus @default(UPLOADING)
+  storedFilename        String                @map("stored_filename")
+  mimeType              String?               @map("mime_type")
+  expectedSizeBytes     BigInt                @map("expected_size_bytes")
+  receivedBytes         BigInt                @default(0) @map("received_bytes")
+  receivedChunks        Int                   @default(0) @map("received_chunks")
+  status                RecordingIntakeStatus @default(UPLOADING)
   /// Prefect flow-run id returned by the jobs API
-  jobId             String?               @unique @map("job_id") @db.Uuid
-  audioHash         String?               @map("audio_hash") @db.VarChar(64)
-  errorCode         String?               @map("error_code")
-  errorMessage      String?               @map("error_message")
-  createdAt         DateTime              @default(now()) @map("created_at")
-  updatedAt         DateTime              @updatedAt @map("updated_at")
-  finishedAt        DateTime?             @map("finished_at")
+  jobId                 String?               @unique @map("job_id") @db.Uuid
+  audioHash             String?               @map("audio_hash") @db.VarChar(64)
+  errorCode             String?               @map("error_code")
+  errorMessage          String?               @map("error_message")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  finishedAt            DateTime?             @map("finished_at")
+  /// Set by the worker's first progress report of the current run
+  startedAt             DateTime?             @map("started_at")
+  /// `run-pipeline` step the worker reached; null for the flow's own stages
+  progressStep          Int?                  @map("progress_step")
+  progressTotal         Int?                  @map("progress_total")
+  progressLabel         String?               @map("progress_label")
+  progressStepStartedAt DateTime?             @map("progress_step_started_at")
 
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   requestedBy   User?         @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)

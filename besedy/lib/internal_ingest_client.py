@@ -51,6 +51,22 @@ class IngestCompletionReport:
         }
 
 
+@dataclass(slots=True, frozen=True)
+class IngestProgressReport:
+    """The step a running ingest or removal job has reached.
+
+    ``step``/``total`` come from ``run-pipeline``'s ``[N/M]`` headers; the
+    flow's own stages before the pipeline report only a ``label``.
+    """
+
+    label: str
+    step: int | None = None
+    total: int | None = None
+
+    def to_payload(self) -> JsonDict:
+        return {"step": self.step, "total": self.total, "label": self.label}
+
+
 class CorrectionIndexSyncStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
@@ -114,6 +130,10 @@ class BesedyIngestClient:
 
     def report_completion(self, *, intake_id: str, report: IngestCompletionReport) -> JsonDict:
         path = f"/api/internal/ingest/{urllib_parse.quote(intake_id, safe='')}/complete"
+        return self._post_json(path, report.to_payload())
+
+    def report_progress(self, *, intake_id: str, report: IngestProgressReport) -> JsonDict:
+        path = f"/api/internal/ingest/{urllib_parse.quote(intake_id, safe='')}/progress"
         return self._post_json(path, report.to_payload())
 
     def report_correction_index_sync(self, *, report: CorrectionIndexSyncReport) -> JsonDict:
