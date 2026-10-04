@@ -263,7 +263,9 @@ def handle_add(args: argparse.Namespace) -> int:
             ffprobe_timeout=args.ffprobe_timeout,
             skip_enrich=args.skip_enrich,
             use_color=sys.stdout.isatty(),
-            scan_root=str(scan_path),
+            # Stored resolved, like Full Path, so later readers (archive placement,
+            # re-scans) never depend on the working directory of this run.
+            scan_root=str(Path(scan_path).expanduser().resolve()),
         )
 
         # Aggregate results
