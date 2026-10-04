@@ -6,6 +6,9 @@ import {
   fetchJson,
   redirectToSignIn,
 } from "@/lib/api/fetch-json";
+import { createClientLogger } from "@/lib/log/client";
+import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";
+import { selectObservedWebVersion } from "@/lib/service-worker/version";
 import {
   type ChunkUploadResponse,
   chunkUploadResponseSchema,
@@ -21,6 +24,8 @@ export interface UploadRecordingOptions {
 }
 
 const CHUNK_RETRY_LIMIT = 1;
+
+const logger = createClientLogger("uploadRecording");
 
 function isRetryable(error: unknown): boolean {
   if (error instanceof ApiError) {
@@ -58,6 +63,7 @@ function parseJsonBody(text: string): unknown {
  * PUT one chunk with XMLHttpRequest, because fetch reports no upload progress.
  * Errors mirror fetchJson: non-2xx responses become ApiError (with the parsed
  * payload, so 409 skip-ahead works) and network failures become TypeError.
+ * Responses also report the deployed web version, as fetchJson's do.
  */
 function putChunk(
   intakeId: string,
@@ -75,8 +81,20 @@ function putChunk(
     xhr.upload.onprogress = (event) => onSent(event.loaded);
     xhr.onerror = () => reject(new TypeError("Network request failed"));
     xhr.onabort = () => reject(new TypeError("Network request aborted"));
-    xhr.ontimeout = () => reject(new TypeError("Network request timed out"));
     xhr.onload = () => {
+      try {
+        const webVersion = selectObservedWebVersion(
+          xhr.getResponseHeader("X-Web-Version"),
+          xhr.getResponseHeader("X-App-Commit"),
+          process.env.NEXT_PUBLIC_WEB_VERSION
+        );
+        if (webVersion) {
+          notifyWebVersionObserver(webVersion);
+        }
+      } catch (error) {
+        // Observing the deployed web version must never break an upload.
+        logger.warn("Failed to notify web-version observer", { error });
+      }
       const payload = parseJsonBody(xhr.responseText);
       if (xhr.status < 200 || xhr.status >= 300) {
         if (xhr.status === 401) {
@@ -178,7 +196,7 @@ export async function uploadRecording({
             throw error;
           }
           attempt += 1;
-          // The retry resends the whole chunk; never show more than is stored.
+          // The retry resends the whole chunk, so restart the bar at its start.
           reportProgress(offset);
         }
       }

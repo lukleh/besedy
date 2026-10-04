@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { uploadRecording } from "@/lib/ingest/upload-client";
+import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";
+
+vi.mock("@/lib/service-worker/runtime", () => ({
+  notifyWebVersionObserver: vi.fn(),
+}));
 
 const INTAKE_ID = "cmf9abcdefghijklmnopqrstu";
 
@@ -51,6 +56,9 @@ type ChunkHandler = (xhr: FakeXhr, index: number, body: Blob) => void | Promise<
 let chunkHandler: ChunkHandler = () => {
   throw new Error("no chunk handler");
 };
+// Errors thrown by a handler (including failed expectations) are kept here and
+// rethrown after the upload, so a retry can never hide them.
+let handlerErrors: unknown[] = [];
 
 class FakeXhr {
   method = "";
@@ -59,6 +67,7 @@ class FakeXhr {
   statusText = "";
   responseText = "";
   requestHeaders: Record<string, string> = {};
+  responseHeaders: Record<string, string> = {};
   upload: { onprogress: ((event: { loaded: number }) => void) | null } = {
     onprogress: null,
   };
@@ -82,10 +91,13 @@ class FakeXhr {
     void Promise.resolve()
       .then(() => chunkHandler(this, Number(match[1]), body))
       .catch((error: unknown) => {
-        this.status = 599;
-        this.responseText = JSON.stringify({ error: String(error) });
-        this.onload?.();
+        handlerErrors.push(error);
+        this.fail();
       });
+  }
+
+  getResponseHeader(name: string): string | null {
+    return this.responseHeaders[name] ?? null;
   }
 
   progress(loaded: number) {
@@ -116,6 +128,8 @@ describe("uploadRecording", () => {
     createBodies = [];
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("XMLHttpRequest", FakeXhr);
+    vi.mocked(notifyWebVersionObserver).mockClear();
+    handlerErrors = [];
   });
 
   afterEach(() => {
@@ -123,6 +137,9 @@ describe("uploadRecording", () => {
     chunkHandler = () => {
       throw new Error("no chunk handler");
     };
+    const errors = handlerErrors;
+    handlerErrors = [];
+    if (errors.length > 0) throw errors[0];
   });
 
   function mockFetch(chunkSizeBytes: number, finalized = intakeDto()) {
@@ -293,5 +310,18 @@ describe("uploadRecording", () => {
     await expect(uploadRecording({ catalogId: "20260201_120000", file })).rejects.toMatchObject({
       name: "SchemaValidationError",
     });
+  });
+
+  it("reports the deployed web version from chunk responses", async () => {
+    const file = new File(["abc"], "talk.mp3", { type: "audio/mpeg" });
+
+    mockFetch(10, intakeDto({ sizeBytes: 3, receivedBytes: 3 }));
+    chunkHandler = (xhr, index) => {
+      xhr.responseHeaders["X-Web-Version"] = "web-vnext";
+      xhr.respond(chunkAccepted(index, 3));
+    };
+
+    await uploadRecording({ catalogId: "20260201_120000", file });
+    expect(notifyWebVersionObserver).toHaveBeenCalledWith("web-vnext");
   });
 });
