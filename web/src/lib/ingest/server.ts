@@ -13,20 +13,11 @@ import {
 } from '@/lib/jobs-api/server';
 import { HashSchema } from '@/lib/validation/schemas';
 import { removeRecordingWebState } from './removal';
-import type { RecordingIntakeDto, RecordingIntakeStatus } from './types';
-
-export const INGEST_ALLOWED_EXTENSIONS = new Set([
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.m4a',
-  '.aac',
-  '.ogg',
-  '.opus',
-  '.webm',
-  '.mp4',
-  '.mkv',
-]);
+import {
+  INGEST_ALLOWED_EXTENSIONS,
+  type RecordingIntakeDto,
+  type RecordingIntakeStatus,
+} from './types';
 
 const DEFAULT_CHUNK_BYTES = 50 * 1000 * 1000;
 const DEFAULT_MAX_UPLOAD_BYTES = 4 * 1000 * 1000 * 1000;
