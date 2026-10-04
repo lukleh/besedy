@@ -14,6 +14,10 @@ from urllib import request as urllib_request
 
 JsonDict = dict[str, Any]
 
+# Progress is display only and is reported from the loop that reads the
+# pipeline's output, so a slow web app must not hold the pipeline up for long.
+PROGRESS_TIMEOUT_SECONDS = 5.0
+
 
 class IngestCompletionStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
@@ -134,12 +138,18 @@ class BesedyIngestClient:
 
     def report_progress(self, *, intake_id: str, report: IngestProgressReport) -> JsonDict:
         path = f"/api/internal/ingest/{urllib_parse.quote(intake_id, safe='')}/progress"
-        return self._post_json(path, report.to_payload())
+        return self._post_json(
+            path,
+            report.to_payload(),
+            timeout_seconds=min(self._timeout_seconds, PROGRESS_TIMEOUT_SECONDS),
+        )
 
     def report_correction_index_sync(self, *, report: CorrectionIndexSyncReport) -> JsonDict:
         return self._post_json("/api/internal/correction/index-sync/complete", report.to_payload())
 
-    def _post_json(self, path: str, payload: JsonDict) -> JsonDict:
+    def _post_json(
+        self, path: str, payload: JsonDict, *, timeout_seconds: float | None = None
+    ) -> JsonDict:
         url = urllib_parse.urljoin(f"{self._base_url}/", path.lstrip("/"))
         request = urllib_request.Request(
             url,
@@ -151,7 +161,8 @@ class BesedyIngestClient:
             method="POST",
         )
         try:
-            with urllib_request.urlopen(request, timeout=self._timeout_seconds) as response:
+            timeout = self._timeout_seconds if timeout_seconds is None else timeout_seconds
+            with urllib_request.urlopen(request, timeout=timeout) as response:
                 raw_body = response.read().decode("utf-8")
                 parsed = json.loads(raw_body) if raw_body else {}
                 if not isinstance(parsed, dict):

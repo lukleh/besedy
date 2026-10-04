@@ -42,7 +42,7 @@ describe("internal ingest progress route", () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv, BESEDY_JOB_SERVICE_SECRET: "job-secret" };
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
-    prisma.recordingIntake.findUnique.mockResolvedValue({ startedAt: null });
+    prisma.recordingIntake.findUnique.mockResolvedValue({ id: INTAKE_ID });
     prisma.recordingIntake.updateMany.mockResolvedValue({ count: 1 });
   });
 
@@ -57,37 +57,38 @@ describe("internal ingest progress route", () => {
     expect(prisma.recordingIntake.updateMany).not.toHaveBeenCalled();
   });
 
-  it("records the step on an active intake and starts the run clock once", async () => {
+  it("records the step on an active intake and starts the run clock only when unset", async () => {
     const response = await call({ step: 4, total: 9, label: "transcribe (canary-nemo@lang-cs)" });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, applied: true });
-    const args = prisma.recordingIntake.updateMany.mock.calls[0][0];
-    expect(args.where).toEqual({
-      id: INTAKE_ID,
-      status: { in: ["QUEUED", "RUNNING", "REMOVING"] },
-    });
-    expect(args.data).toMatchObject({
+    const active = { id: INTAKE_ID, status: { in: ["QUEUED", "RUNNING", "REMOVING"] } };
+    const [start, step] = prisma.recordingIntake.updateMany.mock.calls.map((call) => call[0]);
+    expect(start.where).toEqual({ ...active, startedAt: null });
+    expect(start.data).toEqual({ startedAt: expect.any(Date) });
+    expect(step.where).toEqual(active);
+    expect(step.data).toMatchObject({
       progressStep: 4,
       progressTotal: 9,
       progressLabel: "transcribe (canary-nemo@lang-cs)",
     });
-    expect(args.data.progressStepStartedAt).toBeInstanceOf(Date);
-    expect(args.data.startedAt).toBe(args.data.progressStepStartedAt);
+    expect(step.data.progressStepStartedAt).toBe(start.data.startedAt);
     // Progress is display only: the status is never written.
-    expect(args.data).not.toHaveProperty("status");
+    expect(start.data).not.toHaveProperty("status");
+    expect(step.data).not.toHaveProperty("status");
+    expect(step.data).not.toHaveProperty("startedAt");
+    expect(prisma.recordingIntake.findUnique).not.toHaveBeenCalled();
   });
 
-  it("keeps the run start of an earlier report", async () => {
-    prisma.recordingIntake.findUnique.mockResolvedValue({
-      startedAt: new Date("2026-10-04T10:55:00Z"),
-    });
-
+  it("reports a flow stage without a step number", async () => {
     await call({ label: "catalog add" });
 
-    const args = prisma.recordingIntake.updateMany.mock.calls[0][0];
-    expect(args.data).not.toHaveProperty("startedAt");
-    expect(args.data).toMatchObject({ progressStep: null, progressTotal: null });
+    const step = prisma.recordingIntake.updateMany.mock.calls[1][0];
+    expect(step.data).toMatchObject({
+      progressStep: null,
+      progressTotal: null,
+      progressLabel: "catalog add",
+    });
   });
 
   it("acknowledges but ignores reports for an intake that is no longer active", async () => {
@@ -99,19 +100,20 @@ describe("internal ingest progress route", () => {
     expect(await response.json()).toEqual({ ok: true, applied: false });
   });
 
-  it("caps long labels", async () => {
-    await call({ label: "x".repeat(500) });
+  it("caps a very long label instead of rejecting it", async () => {
+    const response = await call({ label: "x".repeat(10_000) });
 
-    const args = prisma.recordingIntake.updateMany.mock.calls[0][0];
-    expect(args.data.progressLabel).toHaveLength(200);
+    expect(response.status).toBe(200);
+    const step = prisma.recordingIntake.updateMany.mock.calls[1][0];
+    expect(step.data.progressLabel).toHaveLength(200);
   });
 
   it("returns 404 for an unknown intake", async () => {
+    prisma.recordingIntake.updateMany.mockResolvedValue({ count: 0 });
     prisma.recordingIntake.findUnique.mockResolvedValue(null);
 
     const response = await call({ label: "catalog add" });
 
     expect(response.status).toBe(404);
-    expect(prisma.recordingIntake.updateMany).not.toHaveBeenCalled();
   });
 });

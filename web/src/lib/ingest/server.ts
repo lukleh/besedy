@@ -278,6 +278,8 @@ interface TerminalUpdate {
   audioHash?: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+  /** When the worker run ended (jobs API `finished_at`); defaults to now. */
+  finishedAt?: string | null;
 }
 
 /**
@@ -308,8 +310,13 @@ function terminalData(
     ...(update.audioHash !== undefined ? { audioHash: update.audioHash } : {}),
     errorCode: update.errorCode,
     errorMessage: update.errorMessage,
-    finishedAt: new Date(),
+    finishedAt: parseFinishedAt(update.finishedAt),
   };
+}
+
+function parseFinishedAt(value: string | null | undefined): Date {
+  const parsed = value ? new Date(value) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
 }
 
 /**
@@ -390,6 +397,9 @@ async function applyJobState(
   job: IngestJob,
 ): Promise<IntakeRow> {
   const removing = row.status === 'REMOVING';
+  // A poll can end a run long after it stopped; keep the run's own end time
+  // so the row's duration is the run's, not the time until someone looked.
+  const finishedAt = job.finished_at ?? null;
   if (job.status === 'RUNNING') {
     return row.status === 'QUEUED'
       ? transitionIntake(row, { status: 'RUNNING' })
@@ -405,13 +415,14 @@ async function applyJobState(
         status: 'CANCELLED',
         errorCode: 'worker_cancelled',
         errorMessage: job.error_message ?? null,
+        finishedAt,
       }),
     );
   }
   if (job.status === 'FAILED') {
     const undelivered = parseUndeliveredOutcome(job.error_message);
     if (undelivered) {
-      return applyOutcome(row, undelivered);
+      return applyOutcome(row, { ...undelivered, finishedAt });
     }
     return transitionIntake(
       row,
@@ -419,6 +430,7 @@ async function applyJobState(
         status: 'FAILED',
         errorCode: removing ? 'remove_failed' : 'worker_failed',
         errorMessage: job.error_message ?? null,
+        finishedAt,
       }),
     );
   }
@@ -431,6 +443,7 @@ async function applyJobState(
     errorCode: 'completion_missing',
     errorMessage:
       'The worker finished but its completion report never arrived; the catalog was re-synced.',
+    finishedAt,
   });
 }
 

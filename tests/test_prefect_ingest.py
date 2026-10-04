@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import sys
 import threading
+from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +17,7 @@ import pytest
 pytestmark = pytest.mark.optional_dependency
 pytest.importorskip("prefect", reason="requires the optional jobs extra")
 
+from besedy.commands.catalog.pipeline import print_step  # noqa: E402
 from besedy.lib import internal_ingest_client as ingest_client_module  # noqa: E402
 from besedy.lib.internal_ingest_client import (  # noqa: E402
     BesedyIngestClient,
@@ -300,14 +303,20 @@ def test_catalog_cli_command_uses_module_entrypoint() -> None:
     ]
 
 
-PIPELINE_OUTPUT = """Pipeline for catalog
-[1/9] loudness (Analyzing audio loudness)...
-============================================================
-  Already analyzed: 253 files
-[4/9] transcribe (canary-nemo@lang-cs)...
-[9/9] cluster-speakers...
-[10/9] not a header
-"""
+def _run_pipeline_output() -> str:
+    """Step headers exactly as `run-pipeline` prints them, between other output."""
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        print("Pipeline for catalog")
+        print_step(1, 9, "loudness", "Analyzing audio loudness")
+        print("  Already analyzed: 253 files")
+        print_step(4, 9, "transcribe", "canary-nemo@lang-cs")
+        print("[10/9] not a header")
+        print_step(9, 9, "cluster-speakers")
+    return buffer.getvalue()
+
+
+PIPELINE_OUTPUT = _run_pipeline_output()
 
 
 def test_parse_pipeline_step_reads_run_pipeline_headers() -> None:
@@ -362,6 +371,19 @@ def test_progress_reporter_never_raises(monkeypatch) -> None:
 
     assert len(logged) == 1
     assert "catalog add" in logged[0] and "Not found" in logged[0]
+
+
+def test_progress_reporter_turns_off_without_client_configuration(monkeypatch) -> None:
+    monkeypatch.delenv("BESEDY_INTERNAL_BASE_URL", raising=False)
+    monkeypatch.delenv("BESEDY_JOB_SERVICE_SECRET", raising=False)
+    logged: list[str] = []
+    report = ingest_module.progress_reporter(INTAKE_ID, log=logged.append)
+
+    report(IngestProgressReport(label="loudness", step=1, total=9))
+    report(IngestProgressReport(label="stage-audio", step=2, total=9))
+
+    assert len(logged) == 1
+    assert "BESEDY_INTERNAL_BASE_URL" in logged[0]
 
 
 # --- flow ---------------------------------------------------------------------
@@ -669,6 +691,7 @@ def _run_removal_flow(monkeypatch, paths, *, refresh_error: str | None = None): 
 
     cli_calls: list[list[str]] = []
     reports: list[dict[str, object]] = []
+    progress: list[str] = []
 
     def fake_cli(args, *, stage, **_k):  # type: ignore[no-untyped-def]
         cli_calls.append([stage, *args])
@@ -683,12 +706,14 @@ def _run_removal_flow(monkeypatch, paths, *, refresh_error: str | None = None): 
         lambda: SimpleNamespace(
             report_completion=lambda *, intake_id, report: (
                 reports.append(report.to_payload()) or {"ok": True}
-            )
+            ),
+            report_progress=lambda *, intake_id, report: progress.append(report.label),
         ),
     )
     result = remove_module.remove_recording_flow(
         catalog_id=CATALOG_ID, intake_id=INTAKE_ID, audio_hash=NEW_HASH.upper()
     )
+    assert progress == ["catalog remove"]
     return result, cli_calls, reports
 
 

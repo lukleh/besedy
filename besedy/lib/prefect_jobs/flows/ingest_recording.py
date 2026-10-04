@@ -162,12 +162,24 @@ def progress_reporter(intake_id: str, *, log: Callable[[str], None] = print) -> 
     """Send step reports to the web app; best effort, never raises.
 
     Progress is only a display: a report that cannot be delivered is logged and
-    dropped, so it never fails, retries or slows down the run beyond one request.
+    dropped, so it never fails or retries the run, and each request is capped at
+    a few seconds. Without client configuration, reports are off after one warning.
     """
+    client: BesedyIngestClient | None = None
+    disabled = False
 
     def report(progress: IngestProgressReport) -> None:
+        nonlocal client, disabled
+        if disabled:
+            return
+        if client is None:
+            try:
+                client = build_besedy_ingest_client_from_env()
+            except Exception as exc:
+                disabled = True
+                log(f"Progress reports for intake {intake_id} are off: {exc}")
+                return
         try:
-            client = build_besedy_ingest_client_from_env()
             client.report_progress(intake_id=intake_id, report=progress)
         except Exception as exc:
             log(f"Progress report '{progress.label}' for intake {intake_id} failed: {exc}")

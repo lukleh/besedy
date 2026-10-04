@@ -21,7 +21,11 @@ const IntakeParamSchema = z.object({ intakeId: CuidSchema });
 const ProgressSchema = z.object({
   step: z.number().int().min(0).max(1000).nullable().optional(),
   total: z.number().int().min(0).max(1000).nullable().optional(),
-  label: z.string().trim().min(1).max(4000),
+  label: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((label) => label.slice(0, MAX_PROGRESS_LABEL_LENGTH)),
 });
 
 interface RouteParams {
@@ -47,24 +51,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!bodyResult.success) return bodyResult.response;
     const { step, total, label } = bodyResult.data;
 
-    const intake = await prisma.recordingIntake.findUnique({
-      where: { id: intakeId },
-      select: { startedAt: true },
-    });
-    if (!intake) return notFound('intake');
-
     const now = new Date();
+    const active = { id: intakeId, status: { in: [...ACTIVE_INTAKE_STATUSES] } };
+    // The run's clock starts with its first report; the guard keeps the write
+    // atomic, so a concurrent report never moves an existing start.
+    await prisma.recordingIntake.updateMany({
+      where: { ...active, startedAt: null },
+      data: { startedAt: now },
+    });
     const result = await prisma.recordingIntake.updateMany({
-      where: { id: intakeId, status: { in: [...ACTIVE_INTAKE_STATUSES] } },
+      where: active,
       data: {
         progressStep: step ?? null,
         progressTotal: total ?? null,
-        progressLabel: label.slice(0, MAX_PROGRESS_LABEL_LENGTH),
+        progressLabel: label,
         progressStepStartedAt: now,
-        ...(intake.startedAt ? {} : { startedAt: now }),
       },
     });
 
+    if (result.count === 0) {
+      const exists = await prisma.recordingIntake.findUnique({
+        where: { id: intakeId },
+        select: { id: true },
+      });
+      if (!exists) return notFound('intake');
+    }
     return NextResponse.json({ ok: true, applied: result.count > 0 });
   } catch (error) {
     return handlePrismaError(error, 'recording ingest progress', 'update');
