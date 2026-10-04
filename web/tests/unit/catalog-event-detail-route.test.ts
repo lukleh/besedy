@@ -127,6 +127,7 @@ describe("catalog event detail route", () => {
     getCatalogCapability.mockResolvedValue({
       canManageAccess: true,
       canManageEventSources: false,
+      canEditMetadata: true,
       canViewArtworkCandidates: false,
       canManageArtwork: false,
       canPublishArtwork: false,
@@ -182,6 +183,7 @@ describe("catalog event detail route", () => {
     expect(body.canPublishArtwork).toBe(false);
     expect(body.publishedArtwork).toBeNull();
     expect(body.canManageSources).toBe(false);
+    expect(body.canEditMetadata).toBe(true);
     // The curator carries release_events, so the editor is told it may release.
     expect(body.canRelease).toBe(true);
     expect(isPublishedVisibleEvent).not.toHaveBeenCalled();

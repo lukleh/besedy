@@ -5,16 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  CalendarX,
-  ChevronDown,
-  FolderOpen,
-  Image as ImageIcon,
-  Mic,
-  Pencil,
-  RefreshCw,
-} from "lucide-react";
+import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw } from "lucide-react";
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
@@ -22,13 +13,13 @@ import { buildEventDetailUrl } from "@/lib/api/recording-urls";
 import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
 import type { EventDetailResponse } from "@/types/event-detail";
-import { DownloadButton } from "@/components/offline/download-button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
 import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture";
+import { EventEditMenu } from "@/components/catalog/event-edit-menu";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -151,9 +142,6 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     );
   }
 
-  const recordingCountLabel = t("recordingCount", {
-    count: data.recordings.length,
-  });
   const showRecorderMenu = data.recordings.length > 1;
   const selectedRecorderName = selectedRecording?.recorder?.name ?? t("unknownRecorder");
   const canViewArtworkCandidates = data.canViewArtworkCandidates ?? false;
@@ -162,19 +150,17 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const artworkStatus = data.artworkStatus ?? "none";
   const latestDraftCandidate = data.latestDraftCandidate ?? null;
 
-  // The draft preview below already labels itself, so the badge only needs to
+  // The draft preview below already labels itself, so the hint only needs to
   // cover the cases where there is nothing to show as an image.
-  const artworkStatusBadge = !canViewArtworkCandidates ? null : publishedArtwork ? (
-    artworkStatus === "published-with-newer-drafts" ? (
-      <Badge variant="secondary" className="self-start">
-        {t("newerDraftAvailable")}
-      </Badge>
-    ) : null
-  ) : latestDraftCandidate ? null : (
-    <Badge variant="outline" className="self-start">
-      {tRoot("recording.noArtwork")}
-    </Badge>
-  );
+  const artworkHint = !canViewArtworkCandidates
+    ? null
+    : publishedArtwork
+      ? artworkStatus === "published-with-newer-drafts"
+        ? t("newerDraftAvailable")
+        : null
+      : latestDraftCandidate
+        ? null
+        : tRoot("recording.noArtwork");
 
   const artworkAlt = data.title ?? t("eventFallbackTitle", { id: data.id });
   const artworkPicture = publishedArtwork ? (
@@ -200,23 +186,35 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     </div>
   ) : null;
 
-  const eventHeaderActions = (
+  // Released is the usual state, so only its absence is worth a badge.
+  const eventBadges = (
     <>
-      {data.recordings.length > 0 && <DownloadButton catalogId={catalogId} eventId={eventId} size="default" />}
-      {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
+      {!data.released && <Badge variant="secondary">{t("unreleased")}</Badge>}
       <SessionOrdinalBadge
         sessionOrdinal={data.sessionOrdinal}
         sessionCount={data.sessionCount}
       />
-      <Badge variant="outline">{recordingCountLabel}</Badge>
-      {canEdit && (
-        <Button asChild variant="outline" size="sm">
-          <Link href={`/catalog/${catalogId}/event/${eventId}/edit`}>
-            <Pencil className="mr-2 h-4 w-4" />
-            {t("editEvent")}
-          </Link>
-        </Button>
-      )}
+    </>
+  );
+
+  const editMenu = (
+    <EventEditMenu
+      catalogId={catalogId}
+      eventId={eventId}
+      canEditEvent={canEdit}
+      metadataHash={data.canEditMetadata && selectedRecording ? selectedRecording.audioHash : null}
+      metadataRecorderName={showRecorderMenu ? selectedRecorderName : null}
+      canEditArtwork={canViewArtworkCandidates}
+      artworkHint={artworkHint}
+      canManageSources={canManageSources}
+    />
+  );
+
+  // Saving the event for offline listening is the player's own control.
+  const eventHeaderActions = (
+    <>
+      {eventBadges}
+      {editMenu}
     </>
   );
 
@@ -259,33 +257,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   ) : null;
 
   // The event title is derived from its date and location, which the recording heading already shows.
-  const detailExtras =
-    canViewArtworkCandidates || canManageSources || data.description ? (
-      <div className="space-y-3">
-        {artworkStatusBadge}
-        {(canViewArtworkCandidates || canManageSources) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {canViewArtworkCandidates && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/catalog/${catalogId}/event/${eventId}/artwork`}>
-                  <ImageIcon className="h-4 w-4 mr-2" />
-                  {tRoot("recording.editArtwork")}
-                </Link>
-              </Button>
-            )}
-            {canManageSources && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/catalog/${catalogId}/event/${eventId}/sources`}>
-                  <FolderOpen className="h-4 w-4 mr-2" />
-                  {tRoot("recording.sourcesTitle")}
-                </Link>
-              </Button>
-            )}
-          </div>
-        )}
-        {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
-      </div>
-    ) : null;
+  const description = data.description ? <p className="text-sm text-muted-foreground">{data.description}</p> : null;
 
   const eventNavigation = (
     <EventSequenceNavigation
@@ -311,13 +283,14 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         headerActions={eventHeaderActions}
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
+        hideMetadataEdit
         // The event route already validated catalog access on the server.
         skipCatalogValidation
         beforeAudioPlayer={artworkPicture}
         afterAudioPlayer={
           <div className="space-y-4">
             {eventNavigation}
-            {detailExtras}
+            {description}
           </div>
         }
       />
@@ -335,50 +308,16 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
             <h1 className="text-2xl font-semibold">
               {formattedDate} · {locationName}
             </h1>
-            {data.released ? <Badge>{t("released")}</Badge> : <Badge variant="secondary">{t("unreleased")}</Badge>}
-            <SessionOrdinalBadge
-              sessionOrdinal={data.sessionOrdinal}
-              sessionCount={data.sessionCount}
-            />
-            <Badge variant="outline">{recordingCountLabel}</Badge>
+            {eventBadges}
           </div>
-          {canEdit && (
-            <Button asChild variant="outline" size="sm" className="shrink-0">
-              <Link href={`/catalog/${catalogId}/event/${eventId}/edit`}>
-                <Pencil className="mr-2 h-4 w-4" />
-                {t("editEvent")}
-              </Link>
-            </Button>
-          )}
+          <div className="shrink-0">{editMenu}</div>
         </div>
 
         {data.title && <p className="text-sm text-muted-foreground">{data.title}</p>}
 
-        {data.description && <p className="text-sm text-muted-foreground">{data.description}</p>}
-
-        {(canViewArtworkCandidates || canManageSources) && (
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {canViewArtworkCandidates && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/catalog/${catalogId}/event/${eventId}/artwork`}>
-                  <ImageIcon className="h-4 w-4 mr-2" />
-                  {tRoot("recording.editArtwork")}
-                </Link>
-              </Button>
-            )}
-            {canManageSources && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/catalog/${catalogId}/event/${eventId}/sources`}>
-                  <FolderOpen className="h-4 w-4 mr-2" />
-                  {tRoot("recording.sourcesTitle")}
-                </Link>
-              </Button>
-            )}
-          </div>
-        )}
+        {description}
       </div>
 
-      {artworkStatusBadge}
       {artworkPicture}
       <div className="rounded-md border p-6 text-sm text-muted-foreground">{t("noRecordings")}</div>
       {eventNavigation}
