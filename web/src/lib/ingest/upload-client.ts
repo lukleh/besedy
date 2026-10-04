@@ -1,7 +1,13 @@
 "use client";
 
-import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import {
+  ApiError,
+  SchemaValidationError,
+  fetchJson,
+  redirectToSignIn,
+} from "@/lib/api/fetch-json";
+import {
+  type ChunkUploadResponse,
   chunkUploadResponseSchema,
   createUploadResponseSchema,
   finalizeUploadResponseSchema,
@@ -39,16 +45,61 @@ function expectedIndexFromConflict(error: unknown): number | null {
   return null;
 }
 
-async function putChunk(intakeId: string, index: number, blob: Blob) {
-  return fetchJson(
-    `/api/admin/ingest/uploads/${encodeURIComponent(intakeId)}/chunks/${index}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: blob,
-      schema: chunkUploadResponseSchema,
-    }
-  );
+function parseJsonBody(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * PUT one chunk with XMLHttpRequest, because fetch reports no upload progress.
+ * Errors mirror fetchJson: non-2xx responses become ApiError (with the parsed
+ * payload, so 409 skip-ahead works) and network failures become TypeError.
+ */
+function putChunk(
+  intakeId: string,
+  index: number,
+  blob: Blob,
+  onSent: (loadedBytes: number) => void
+): Promise<ChunkUploadResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      "PUT",
+      `/api/admin/ingest/uploads/${encodeURIComponent(intakeId)}/chunks/${index}`
+    );
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (event) => onSent(event.loaded);
+    xhr.onerror = () => reject(new TypeError("Network request failed"));
+    xhr.onabort = () => reject(new TypeError("Network request aborted"));
+    xhr.ontimeout = () => reject(new TypeError("Network request timed out"));
+    xhr.onload = () => {
+      const payload = parseJsonBody(xhr.responseText);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        if (xhr.status === 401) {
+          redirectToSignIn();
+        }
+        const message =
+          (payload as { error?: string } | null)?.error ||
+          xhr.statusText ||
+          "Request failed";
+        reject(new ApiError(message, xhr.status, payload));
+        return;
+      }
+      const parsed = chunkUploadResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        reject(
+          new SchemaValidationError("Invalid response payload", payload, parsed.error.issues)
+        );
+        return;
+      }
+      resolve(parsed.data);
+    };
+    xhr.send(blob);
+  });
 }
 
 async function abortUpload(intakeId: string): Promise<void> {
@@ -98,7 +149,9 @@ export async function uploadRecording({
 
   const { intakeId, chunkSizeBytes } = created;
   const totalChunks = Math.ceil(file.size / chunkSizeBytes);
-  onProgress?.(0, file.size);
+  const reportProgress = (sentBytes: number) =>
+    onProgress?.(Math.min(sentBytes, file.size), file.size);
+  reportProgress(0);
 
   let index = 0;
   try {
@@ -108,7 +161,10 @@ export async function uploadRecording({
       let attempt = 0;
       for (;;) {
         try {
-          await putChunk(intakeId, index, blob);
+          // Bytes the browser has sent, not bytes the server has stored yet.
+          await putChunk(intakeId, index, blob, (loaded) =>
+            reportProgress(offset + Math.min(loaded, blob.size))
+          );
           index += 1;
           break;
         } catch (error) {
@@ -122,9 +178,11 @@ export async function uploadRecording({
             throw error;
           }
           attempt += 1;
+          // The retry resends the whole chunk; never show more than is stored.
+          reportProgress(offset);
         }
       }
-      onProgress?.(Math.min(index * chunkSizeBytes, file.size), file.size);
+      reportProgress(index * chunkSizeBytes);
     }
 
     return await finalizeUpload(intakeId);
