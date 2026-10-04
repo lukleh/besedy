@@ -258,6 +258,7 @@ export default function RecordingContent({
         catalogId={catalogId}
         backToListUrl={backToListUrl}
         afterAudioPlayer={afterAudioPlayer}
+        headerActions={headerActions}
       />
     );
   }
@@ -269,6 +270,7 @@ export default function RecordingContent({
         catalogId={catalogId}
         backToListUrl={backToListUrl}
         afterAudioPlayer={afterAudioPlayer}
+        headerActions={headerActions}
       />
     );
   }
@@ -280,6 +282,7 @@ export default function RecordingContent({
         catalogId={catalogId}
         backToListUrl={backToListUrl}
         afterAudioPlayer={afterAudioPlayer}
+        headerActions={headerActions}
       />
     );
   }
@@ -326,7 +329,8 @@ export default function RecordingContent({
         onPlayingChange={handlePlayingChange}
         onSeek={handlePlayerSeek}
         onSourceChange={handleSourceChange}
-        permissions={hideMetadataEdit ? { ...data, canEditMetadata: false } : (data ?? {})}
+        permissions={data ?? {}}
+        hideMetadataEdit={hideMetadataEdit}
         recording={recording}
         savedSourceId={savedPreference?.sourceId ?? null}
         seekRequest={seekRequest}
