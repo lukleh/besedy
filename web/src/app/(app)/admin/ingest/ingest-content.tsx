@@ -42,7 +42,7 @@ import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { cn, formatBytes } from "@/lib/utils";
 import {
   finalizeUploadResponseSchema,
-  hasAllowedIngestExtension,
+  getAllowedIngestExtension,
   isActiveIntakeStatus,
   isRemovableIntakeStatus,
   recordingIntakeListSchema,
@@ -260,10 +260,13 @@ export default function IngestContent() {
     event.preventDefault();
     setIsDragOver(false);
     // Unlike the picker, a drop ignores the input's `accept` filter, so apply
-    // the upload API's extension rule here. Folders fail it as well.
-    const dropped = Array.from(event.dataTransfer.files);
-    const accepted = dropped.filter((file) => hasAllowedIngestExtension(file.name));
-    const skipped = dropped.filter((file) => !hasAllowedIngestExtension(file.name));
+    // the upload API's extension rule here. Most folders fail it too, but one
+    // named like a media file gets through and fails when it is uploaded.
+    const accepted: File[] = [];
+    const skipped: File[] = [];
+    for (const file of Array.from(event.dataTransfer.files)) {
+      (getAllowedIngestExtension(file.name) ? accepted : skipped).push(file);
+    }
     if (skipped.length > 0) {
       toast({
         title: t("upload.skipped", { count: skipped.length }),

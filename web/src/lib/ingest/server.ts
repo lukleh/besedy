@@ -13,11 +13,7 @@ import {
 } from '@/lib/jobs-api/server';
 import { HashSchema } from '@/lib/validation/schemas';
 import { removeRecordingWebState } from './removal';
-import {
-  INGEST_ALLOWED_EXTENSIONS,
-  type RecordingIntakeDto,
-  type RecordingIntakeStatus,
-} from './types';
+import type { RecordingIntakeDto, RecordingIntakeStatus } from './types';
 
 const DEFAULT_CHUNK_BYTES = 50 * 1000 * 1000;
 const DEFAULT_MAX_UPLOAD_BYTES = 4 * 1000 * 1000 * 1000;
@@ -53,11 +49,6 @@ export function getIngestMaxUploadBytes(): number {
     'INGEST_MAX_UPLOAD_BYTES',
     DEFAULT_MAX_UPLOAD_BYTES,
   );
-}
-
-export function getSafeAudioExtension(filename: string): string | null {
-  const ext = path.extname(filename).toLowerCase();
-  return INGEST_ALLOWED_EXTENSIONS.has(ext) ? ext : null;
 }
 
 export function resolveIntakeIncomingDir(

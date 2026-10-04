@@ -18,10 +18,18 @@ export const INGEST_ALLOWED_EXTENSIONS: ReadonlySet<string> = new Set([
   ".mkv",
 ]);
 
-/** Whether the upload API accepts this filename's extension (case-insensitive). */
-export function hasAllowedIngestExtension(filename: string): boolean {
-  const dot = filename.lastIndexOf(".");
-  return dot > 0 && INGEST_ALLOWED_EXTENSIONS.has(filename.slice(dot).toLowerCase());
+/**
+ * The lower-cased extension of `filename` if the upload API accepts it, else
+ * null. Shared by the upload route and the page's drop filter so both apply
+ * the same rule; the filename is trimmed like the route's request schema does.
+ */
+export function getAllowedIngestExtension(filename: string): string | null {
+  const name = filename.trim();
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const extension = base.slice(dot).toLowerCase();
+  return INGEST_ALLOWED_EXTENSIONS.has(extension) ? extension : null;
 }
 
 /** Statuses the worker can still advance; only these are worth polling for. */
