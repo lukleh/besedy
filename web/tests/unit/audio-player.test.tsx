@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { render, act, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
+import { SleepTimerProvider, useSleepTimer } from "@/contexts/sleep-timer-context";
 
 // Mock the service worker context
 vi.mock("@/contexts/service-worker-context", () => ({
@@ -36,6 +37,8 @@ const messages = {
     volume: "Volume",
     waveform: "Toggle waveform",
     keyboardHints: "Hints",
+    keyboardHintBookmark: "B: bookmark",
+    bookmark: "Bookmark this moment (B)",
     reconnecting: "Reconnecting...",
   },
 };
@@ -49,6 +52,7 @@ interface RenderPlayerOptions {
   autoPlayOnSeek?: boolean;
   onTimeUpdate?: (time: number) => void;
   onSeek?: (time: number) => void;
+  onBookmark?: () => void;
   strictMode?: boolean;
 }
 
@@ -62,6 +66,7 @@ function playerElement(options: RenderPlayerOptions = {}) {
     autoPlayOnSeek,
     onTimeUpdate,
     onSeek,
+    onBookmark,
   } = options;
   return (
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -74,6 +79,7 @@ function playerElement(options: RenderPlayerOptions = {}) {
         autoPlayOnSeek={autoPlayOnSeek}
         onTimeUpdate={onTimeUpdate}
         onSeek={onSeek}
+        onBookmark={onBookmark}
       />
     </NextIntlClientProvider>
   );
@@ -236,6 +242,28 @@ describe("AudioPlayer play/pause controls", () => {
     });
 
     expect(playButton.getAttribute("aria-label")).toBe("Play");
+  });
+});
+
+describe("AudioPlayer bookmark button", () => {
+  it("has no bookmark button or hint where bookmarks are not offered", () => {
+    const { queryAllByTestId, getByText } = renderPlayer();
+
+    expect(queryAllByTestId("audio-bookmark")).toHaveLength(0);
+    expect(getByText("Hints")).toBeTruthy();
+  });
+
+  it("bookmarks the current moment from its button, on phone and desktop layouts", () => {
+    const onBookmark = vi.fn();
+    const { getAllByTestId, getByText } = renderPlayer({ onBookmark });
+
+    // One button in the desktop row and one in the phone row; CSS shows one of them.
+    const buttons = getAllByTestId("audio-bookmark");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveAccessibleName("Bookmark this moment (B)");
+    fireEvent.click(buttons[1]);
+    expect(onBookmark).toHaveBeenCalledTimes(1);
+    expect(getByText("Hints · B: bookmark")).toBeTruthy();
   });
 });
 
@@ -1777,5 +1805,113 @@ describe("AudioPlayer unmount", () => {
     // The real unmount still releases it.
     unmount();
     expect(audio.hasAttribute("src")).toBe(false);
+  });
+});
+
+describe("AudioPlayer sleep timer", () => {
+  type Timer = NonNullable<ReturnType<typeof useSleepTimer>>;
+
+  function SleepTimerProbe({ timerRef }: { timerRef: { current: Timer | null } }) {
+    timerRef.current = useSleepTimer();
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderWithSleepTimer() {
+    const timerRef: { current: Timer | null } = { current: null };
+    const utils = render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={{
+          ...messages,
+          sleepTimer: {
+            label: "Sleep timer",
+            activeLabel: "Sleep timer: {time} left",
+            off: "Off",
+            minutes: "{count} min",
+          },
+        }}
+      >
+        <SleepTimerProvider>
+          <SleepTimerProbe timerRef={timerRef} />
+          <AudioPlayer src="https://example.com/audio.mp3" />
+        </SleepTimerProvider>
+      </NextIntlClientProvider>,
+    );
+    const audio = utils.container.querySelector("audio")!;
+    const setPaused = mockPaused(audio, true);
+    audio.play = vi.fn(() => {
+      setPaused(false);
+      audio.dispatchEvent(new Event("play"));
+      return Promise.resolve();
+    });
+    audio.pause = vi.fn(() => {
+      setPaused(true);
+      audio.dispatchEvent(new Event("pause"));
+    });
+    return { ...utils, audio, timer: () => timerRef.current! };
+  }
+
+  it("shows the time left and fades the recording out when it runs out", async () => {
+    const { audio, container, timer } = renderWithSleepTimer();
+    act(() => timer().start(15));
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="audio-play-button"]')!
+        .click();
+    });
+
+    // Buffering before the audio is heard does not count.
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(timer().remainingMs).toBe(15 * 60_000);
+    act(() => {
+      audio.dispatchEvent(new Event("playing"));
+    });
+
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    expect(
+      container.querySelector('[data-testid="sleep-timer-remaining"]')?.textContent,
+    ).toBe("10:00");
+
+    act(() => vi.advanceTimersByTime(10 * 60_000 + 2_500));
+    expect(audio.pause).not.toHaveBeenCalled();
+    expect(audio.volume).toBeCloseTo(0.5, 1);
+
+    act(() => vi.advanceTimersByTime(2_500));
+    expect(audio.pause).toHaveBeenCalledTimes(1);
+    expect(audio.volume).toBe(1);
+    expect(timer().remainingMs).toBeNull();
+    expect(
+      container.querySelector('[data-testid="sleep-timer-remaining"]'),
+    ).toBeNull();
+  });
+
+  it("ends the fade without pausing when the listener changes the volume", async () => {
+    const { audio, container, timer } = renderWithSleepTimer();
+    act(() => timer().start(15));
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="audio-play-button"]')!
+        .click();
+    });
+    act(() => {
+      audio.dispatchEvent(new Event("playing"));
+    });
+
+    act(() => vi.advanceTimersByTime(15 * 60_000 + 2_000));
+    act(() => {
+      fireEvent.keyDown(document.body, { code: "ArrowDown" });
+    });
+    act(() => vi.advanceTimersByTime(10_000));
+
+    expect(audio.pause).not.toHaveBeenCalled();
+    expect(audio.volume).toBeCloseTo(0.9);
   });
 });

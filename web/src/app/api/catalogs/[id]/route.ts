@@ -39,11 +39,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const group = await prisma.workflowGroup.findUnique({
       where: { id },
-      include: {
-        variants: {
-          orderBy: { variant: "asc" },
-        },
-      },
     });
 
     if (!group) {
@@ -123,11 +118,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(transcriptsPath !== undefined && { transcriptsPath }),
         ...(isDefault !== undefined && { isDefault }),
         ...(isActive !== undefined && { isActive }),
-      },
-      include: {
-        variants: {
-          orderBy: { variant: "asc" },
-        },
       },
     });
 

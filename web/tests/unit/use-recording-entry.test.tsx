@@ -20,6 +20,7 @@ vi.mock("@/lib/api/fetch-json", () => ({
     }
   },
   fetchJson: vi.fn(),
+  isNetworkFailure: () => false,
 }));
 
 function createQueryClient() {

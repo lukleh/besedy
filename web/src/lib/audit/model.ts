@@ -161,20 +161,13 @@ function getCatalogId(
 }
 
 /**
- * The level or role a grant event should headline, oldest record shape first.
- *
- * `accessLevel`/`newAccessLevel`/`previousAccessLevel` are the retired
- * scale, present only in payloads written before the role-based rework; new
- * records carry `role` instead. Both are read so old and new audit rows
- * render the same way.
+ * The role a grant event should headline. Records written before the
+ * role-based rework carry the retired `accessLevel` instead; they are history
+ * and are not rewritten, so they headline no role (their raw payload still
+ * shows the old value).
  */
-function getAccessLevel(payload: Record<string, unknown> | null, action: string): string | null {
-  return (
-    getString(payload?.accessLevel) ??
-    getString(payload?.newAccessLevel) ??
-    (action === "CATALOG_ACCESS_REVOKED" ? getString(payload?.previousAccessLevel) : null) ??
-    getString(payload?.role)
-  );
+function getGrantRole(payload: Record<string, unknown> | null): string | null {
+  return getString(payload?.role);
 }
 
 function humanizeAction(action: string): string {
@@ -347,8 +340,8 @@ export function buildAuditSummary({
   subjectSnapshot,
 }: AuditSummaryInput): string {
   const subjectLabel = pickSubjectLabel(payload, subjectSnapshot, resourceId) ?? "target";
-  const accessLevel = getAccessLevel(payload, action);
-  const accessPrefix = accessLevel ? `${accessLevel} access` : "Catalog access";
+  const grantRole = getGrantRole(payload);
+  const accessPrefix = grantRole ? `${grantRole} access` : "Catalog access";
   const catalogInfo = catalogSuffix(payload, subjectSnapshot);
   const actorLabel =
     actorSnapshot?.name ?? actorSnapshot?.email ?? (actorSnapshot?.type === "system" ? "System" : null);
@@ -371,7 +364,7 @@ export function buildAuditSummary({
     case "PORTAL_ADMISSION_RESET":
       return `Portal admission reset for ${subjectLabel}`;
     case "PENDING_CATALOG_GRANT_CREATED":
-      return `Pending ${accessLevel ?? "catalog"} grant created for ${subjectLabel}${catalogInfo}`;
+      return `Pending ${grantRole ?? "catalog"} grant created for ${subjectLabel}${catalogInfo}`;
     case "PENDING_CATALOG_GRANT_UPDATED":
       return `Pending catalog grant updated for ${subjectLabel}${catalogInfo}`;
     case "PENDING_CATALOG_GRANT_REVOKED":

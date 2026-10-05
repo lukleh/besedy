@@ -12,12 +12,12 @@ from besedy.commands.catalog.file_processing import (
     add_files_to_catalog,
     write_duplicates_report,
 )
-from besedy.commands.catalog.symlink import (
+from besedy.commands.catalog.ui import DUPLICATES_CSV_COLUMNS
+from besedy.core.paths import resolve_catalogs_root
+from besedy.core.symlinks import (
     create_or_update_symlink,
     validate_symlink_can_be_created,
 )
-from besedy.commands.catalog.ui import DUPLICATES_CSV_COLUMNS
-from besedy.core.paths import resolve_catalogs_root
 from besedy.lib.catalog.manager import (
     append_csv,
     check_ffmpeg,
@@ -263,7 +263,9 @@ def handle_add(args: argparse.Namespace) -> int:
             ffprobe_timeout=args.ffprobe_timeout,
             skip_enrich=args.skip_enrich,
             use_color=sys.stdout.isatty(),
-            scan_root=str(scan_path),
+            # Stored resolved, like Full Path, so later readers (archive placement,
+            # re-scans) never depend on the working directory of this run.
+            scan_root=str(Path(scan_path).expanduser().resolve()),
         )
 
         # Aggregate results

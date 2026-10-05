@@ -15,19 +15,6 @@ import { HashSchema } from '@/lib/validation/schemas';
 import { removeRecordingWebState } from './removal';
 import type { RecordingIntakeDto, RecordingIntakeStatus } from './types';
 
-export const INGEST_ALLOWED_EXTENSIONS = new Set([
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.m4a',
-  '.aac',
-  '.ogg',
-  '.opus',
-  '.webm',
-  '.mp4',
-  '.mkv',
-]);
-
 const DEFAULT_CHUNK_BYTES = 50 * 1000 * 1000;
 const DEFAULT_MAX_UPLOAD_BYTES = 4 * 1000 * 1000 * 1000;
 const MAX_RECONCILED_JOBS = 10;
@@ -46,6 +33,15 @@ export type IntakeRow = Prisma.RecordingIntakeGetPayload<{
   include: typeof INTAKE_INCLUDE;
 }>;
 
+/** Progress fields reset when a row starts a new worker run. */
+export const CLEARED_PROGRESS = {
+  startedAt: null,
+  progressStep: null,
+  progressTotal: null,
+  progressLabel: null,
+  progressStepStartedAt: null,
+} satisfies Prisma.RecordingIntakeUpdateManyMutationInput;
+
 function positiveIntFromEnv(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -62,11 +58,6 @@ export function getIngestMaxUploadBytes(): number {
     'INGEST_MAX_UPLOAD_BYTES',
     DEFAULT_MAX_UPLOAD_BYTES,
   );
-}
-
-export function getSafeAudioExtension(filename: string): string | null {
-  const ext = path.extname(filename).toLowerCase();
-  return INGEST_ALLOWED_EXTENSIONS.has(ext) ? ext : null;
 }
 
 export function resolveIntakeIncomingDir(
@@ -253,6 +244,13 @@ export function serializeIntake(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+    startedAt: row.startedAt ? row.startedAt.toISOString() : null,
+    progressStep: row.progressStep,
+    progressTotal: row.progressTotal,
+    progressLabel: row.progressLabel,
+    progressStepStartedAt: row.progressStepStartedAt
+      ? row.progressStepStartedAt.toISOString()
+      : null,
     prefectStateName: extra?.prefectStateName ?? null,
   };
 }
@@ -262,6 +260,8 @@ interface TerminalUpdate {
   audioHash?: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+  /** When the worker run ended (jobs API `finished_at`); defaults to now. */
+  finishedAt?: string | null;
 }
 
 /**
@@ -292,8 +292,13 @@ function terminalData(
     ...(update.audioHash !== undefined ? { audioHash: update.audioHash } : {}),
     errorCode: update.errorCode,
     errorMessage: update.errorMessage,
-    finishedAt: new Date(),
+    finishedAt: parseFinishedAt(update.finishedAt),
   };
+}
+
+function parseFinishedAt(value: string | null | undefined): Date {
+  const parsed = value ? new Date(value) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
 }
 
 /**
@@ -374,6 +379,9 @@ async function applyJobState(
   job: IngestJob,
 ): Promise<IntakeRow> {
   const removing = row.status === 'REMOVING';
+  // A poll can end a run long after it stopped; keep the run's own end time
+  // so the row's duration is the run's, not the time until someone looked.
+  const finishedAt = job.finished_at ?? null;
   if (job.status === 'RUNNING') {
     return row.status === 'QUEUED'
       ? transitionIntake(row, { status: 'RUNNING' })
@@ -389,13 +397,14 @@ async function applyJobState(
         status: 'CANCELLED',
         errorCode: 'worker_cancelled',
         errorMessage: job.error_message ?? null,
+        finishedAt,
       }),
     );
   }
   if (job.status === 'FAILED') {
     const undelivered = parseUndeliveredOutcome(job.error_message);
     if (undelivered) {
-      return applyOutcome(row, undelivered);
+      return applyOutcome(row, { ...undelivered, finishedAt });
     }
     return transitionIntake(
       row,
@@ -403,6 +412,7 @@ async function applyJobState(
         status: 'FAILED',
         errorCode: removing ? 'remove_failed' : 'worker_failed',
         errorMessage: job.error_message ?? null,
+        finishedAt,
       }),
     );
   }
@@ -415,6 +425,7 @@ async function applyJobState(
     errorCode: 'completion_missing',
     errorMessage:
       'The worker finished but its completion report never arrived; the catalog was re-synced.',
+    finishedAt,
   });
 }
 

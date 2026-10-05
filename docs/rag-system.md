@@ -1,13 +1,13 @@
 # RAG System
 
-> **Last Updated:** 2026-09-01
+> **Last Updated:** 2026-10-03
 
 ## Decision Summary
 
 - ColBERT is the primary semantic retrieval path. The sidecar also exposes exact lexical retrieval through the bundle-local FTS5 index.
 - Chunk hydration and neighbor lookup come from the ColBERT bundle, not PostgreSQL.
 - PostgreSQL is used only for ACL filtering, catalog visibility, and recording metadata. No chunk-level RAG state lives in Postgres.
-- TEI is optional and only used for ColBERT reranking when `RAG_COLBERT_RERANK_ENABLED=true` (default: `false`).
+- There is no reranking stage: results keep the ColBERT order and scores.
 - The engine layer is PyLate/FastPLAID. Besedy does not rely on live in-place mutation of serving bundles because the library runtime does not provide transactional cutover.
 
 ## Model Licensing
@@ -16,9 +16,9 @@ The **default** ColBERT retriever, `jinaai/jina-colbert-v2`, is **CC-BY-NC-4.0
 (non-commercial)** -- do not use it in a commercial deployment. For commercial
 use, switch to a permissively-licensed ColBERT model via the `RAG_COLBERT_MODEL`
 environment variable or `--rag-colbert-model` (e.g. `colbert-ir/colbertv2.0`;
-verify its terms on the model card). The reranker / chunk tokenizer
-(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0) is
-commercial-friendly. See the [full model and license table in the
+verify its terms on the model card). The chunk tokenizer
+(`Alibaba-NLP/gte-multilingual-reranker-base`, Apache-2.0; only its tokenizer
+is used) is commercial-friendly. See the [full model and license table in the
 README](../README.md#third-party-models--licenses) for the source of truth.
 
 ## Query Flow
@@ -29,7 +29,6 @@ Search entrypoint: `POST /api/catalogs/:id/search`.
 2. The route queries the sidecar with that bundle.
 3. Candidate `audio_hash` values are filtered through PostgreSQL using recording visibility, linked-event visibility and date/location, and any remaining recording-specific constraints.
 4. Surviving chunks and their neighbors are hydrated from the sidecar bundle's `chunk_store.sqlite`.
-5. Results are optionally reranked with TEI if `RAG_COLBERT_RERANK_ENABLED=true`.
 
 Behavioral defaults:
 
@@ -48,6 +47,8 @@ Current defaults (from the April 3, 2026 tuning pass):
 | `doc_maxlen` | 384 | ColBERT token budget per passage |
 
 These are the current supported settings. All four participate in the `chunking_fingerprint` used by incremental sync (see below).
+
+The scope builders take the recording's audio hash from the transcript's leaf directory, which must be the full 64-character hash. A directory with any other name is skipped with a warning and counted in `transcripts_skipped`; the hash is never inferred from the file's metadata.
 
 ## Bundle Layout
 
@@ -77,20 +78,12 @@ Optional:
 bundle builds populate it automatically. SQLite triggers keep the index aligned
 with chunk inserts, updates, and deletes during incremental sync.
 
-Bundles created before the FTS5 schema was introduced need a one-time backfill.
-Run the idempotent maintenance command against the active index path before
-enabling lexical retrieval for a legacy bundle:
-
-```bash
-uv run python scripts/backfill_rag_chunk_store_fts.py \
-  tmp/rag_colbert/<catalog>/<backend>/<chunk-version>/<model>/index
-```
-
-Pass the active `index` symlink (or its exact `chunk_store.sqlite`), not the RAG
-root; the command deliberately refuses recursive historical-bundle backfills.
-The backfill also happens automatically when the chunk-store schema is
-initialized, including on the first staged chunk mutation. A full
-`rag-colbert-index --rebuild` creates a populated FTS index as well.
+A bundle created before the FTS5 schema was introduced has no such index, and
+lexical queries against it fail until it is added. The index is created when the
+chunk-store schema is initialized (the first staged chunk mutation, or an explicit
+`ensure_chunk_store_fts(path=...)` from `besedy/lib/rag_chunk_store.py`, which also
+backfills an existing store) and by a full `rag-colbert-index --rebuild`. The
+one-time backfill script was removed once every production bundle had its index.
 
 ### Active bundle selection
 
@@ -130,9 +123,13 @@ Operational constraints that are not obvious from the code:
   a GPU container; query happens in a CPU container. FastPLAID segfaulted during
   index creation in a mixed CPU-only image; the clean GPU-build / CPU-query
   split is what works reliably.
-- **Pin a concrete model revision.** The `jina-colbert-v2` remote-code path
-  pulls floating Hugging Face files at startup. Production images should pin a
-  model revision rather than rely on live remote-code updates.
+- **The ColBERT model revision is not pinned.** `jina-colbert-v2` loads with
+  `trust_remote_code=True` and no `revision` (`besedy/lib/rag_pylate.py`), so the
+  remote-code and weight files come from the floating Hugging Face `main`
+  branch the first time the model cache is filled. The locked image fixes the
+  Python packages, not those files; the `besedy_colbert_model_cache` volume is
+  what keeps them stable between restarts. Pinning a revision is a code change
+  that has not been made.
 - **FlashAttention-4 is not used; native attention only.** An FA4 spike
   (`beta7`) failed to run on the reference Blackwell / CUDA 12.8 / Torch 2.11 /
   Transformers 4.46 image: the kernel raised a `_trait` error on both the cu128
@@ -146,15 +143,12 @@ Operational constraints that are not obvious from the code:
 
 The model-serving stack in `rag-services/docker-compose.yml` runs:
 
-- `colbert` by default.
-- The TEI reranker only behind the optional `legacy-tei` profile.
+- `colbert`.
 
 ```bash
 just rag-services-up   # default stack (ColBERT path)
 just colbert-up
 just colbert-logs
-just tei-up            # optional TEI reranker
-just tei-down
 ```
 
 `besedy-colbert` is one container with a fixed name that production,
@@ -186,7 +180,7 @@ Bundle-local SQLite tracking one row per `audio_hash`:
 | `transcript_path` | Source file path |
 | `transcript_fingerprint` | SHA-256 over canonical parsed transcript payload used for chunking |
 | `chunking_fingerprint` | SHA-256 over normalized chunking config (chunk version, min/max tokens, overlap, token-counter identity) |
-| `bundle_fingerprint` | SHA-256 over normalized index-wide ColBERT config (`colbert_model`, `doc_maxlen`, `use_faiss`, future build settings) |
+| `bundle_fingerprint` | SHA-256 over normalized index-wide ColBERT config (`colbert_model`, `doc_maxlen`, `index_bsize`, the PLAID backend, the retrieval engine name and the index format version) |
 | `chunk_count` | Number of chunks for this hash |
 | `updated_at` | Last sync timestamp |
 | `last_run_id` | Sync run identity |

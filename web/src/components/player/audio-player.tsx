@@ -52,6 +52,8 @@ import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
 import { useMediaSession } from './use-media-session';
 import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
+import { fadeOutAndPause } from '@/lib/sleep-timer/fade-out';
+import { useSleepTimerTarget } from '@/contexts/sleep-timer-context';
 
 function resolvePlaybackEnd(value: number | undefined): number | null {
   return value !== undefined && Number.isFinite(value) && value >= 0
@@ -86,6 +88,8 @@ export function AudioPlayer({
   playbackEnd,
   autoPlayOnSeek,
   mediaMetadata,
+  markers,
+  onBookmark,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -162,6 +166,31 @@ export function AudioPlayer({
   // before it reports a media error, so `audio.paused` alone cannot tell an
   // interrupted play from a deliberate pause when deciding to resume.
   const playIntentRef = useRef(false);
+  // The sleep timer's fade in progress. Any volume change from the listener
+  // ends it: they are awake.
+  const cancelSleepFadeRef = useRef<(() => void) | null>(null);
+  const cancelSleepFade = useCallback(() => {
+    cancelSleepFadeRef.current?.();
+  }, []);
+  const sleepFadeOutAndPause = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || audio.paused) return () => {};
+    cancelSleepFade();
+    const cancel = fadeOutAndPause(audio, {
+      onFinish: (outcome) => {
+        if (cancelSleepFadeRef.current === cancel) {
+          cancelSleepFadeRef.current = null;
+        }
+        if (outcome !== 'paused') return;
+        // A deliberate stop, not an interrupted play.
+        playIntentRef.current = false;
+        logDebugEvent('pause', 'Sleep timer paused playback');
+      },
+    });
+    cancelSleepFadeRef.current = cancel;
+    return cancel;
+  }, [cancelSleepFade, logDebugEvent]);
+
   // Tracks whether metadata has loaded successfully for the current src.
   // Used to avoid retry-looping on MEDIA_ERR_SRC_NOT_SUPPORTED when the format
   // is genuinely unplayable (vs. a network blip mid-stream).
@@ -380,6 +409,7 @@ export function AudioPlayer({
 
     // Reset user interaction tracking
     userInitiatedRef.current = false;
+    cancelSleepFade();
 
     // Reset retry machine. The retry-driving effect watches for this and
     // cancels any in-flight setTimeout via its cleanup.
@@ -429,7 +459,7 @@ export function AudioPlayer({
       setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
       onPlayingChange?.(false);
     });
-  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics]);
+  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade]);
 
   // Consume each external request once. Callback changes and the page clearing
   // autoPlayOnSeek must not replay an old handoff over a later user seek. The
@@ -830,6 +860,7 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     return () => {
+      cancelSleepFadeRef.current?.();
       if (audio.isConnected) return;
       audio.removeAttribute('src');
       audio.load();
@@ -881,6 +912,7 @@ export function AudioPlayer({
     if (!audio) return;
 
     const newVolume = value[0];
+    cancelSleepFade();
     audio.volume = newVolume;
     setVolume(newVolume);
     setIsMuted(newVolume === 0);
@@ -889,6 +921,7 @@ export function AudioPlayer({
   const toggleMute = () => {
     const audio = audioRef.current;
     if (!audio) return;
+    cancelSleepFade();
 
     if (isMuted) {
       audio.volume = volume || 1;
@@ -998,18 +1031,21 @@ export function AudioPlayer({
           break;
         case 'ArrowUp':
           e.preventDefault();
+          cancelSleepFade();
           audio.volume = Math.min(1, audio.volume + 0.1);
           setVolume(audio.volume);
           setIsMuted(false);
           break;
         case 'ArrowDown':
           e.preventDefault();
+          cancelSleepFade();
           audio.volume = Math.max(0, audio.volume - 0.1);
           setVolume(audio.volume);
           if (audio.volume === 0) setIsMuted(true);
           break;
         case 'KeyM':
           e.preventDefault();
+          cancelSleepFade();
           if (isMuted) {
             audio.volume = volume || 1;
             setIsMuted(false);
@@ -1020,7 +1056,7 @@ export function AudioPlayer({
           break;
       }
     },
-    [isPlaying, duration, volume, isMuted, logDebugEvent, seekFromControls, relativeSeekBase],
+    [isPlaying, duration, volume, isMuted, logDebugEvent, seekFromControls, relativeSeekBase, cancelSleepFade],
   );
 
   // Register keyboard shortcuts
@@ -1030,6 +1066,9 @@ export function AudioPlayer({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [handleKeyDown]);
+
+  // Last among the hooks: the refs the fade touches are still written above.
+  useSleepTimerTarget(isPlaying && !isBuffering, sleepFadeOutAndPause);
 
   return (
     <div
@@ -1050,6 +1089,8 @@ export function AudioPlayer({
         isMuted={isMuted}
         isPlaying={isPlaying}
         isReconnecting={isReconnecting}
+        markers={markers}
+        onBookmark={onBookmark}
         onSeek={handleSeek}
         onSkipBackward={skipBackward}
         onSkipForward={skipForward}
