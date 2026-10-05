@@ -567,6 +567,7 @@ describe('admin ingest routes', () => {
       payload: {},
       error_message: 'Crashed',
       prefectStateName: 'Crashed',
+      finished_at: '2026-10-04T01:00:00.000Z',
     });
 
     const response = await listIntakes(
@@ -596,6 +597,8 @@ describe('admin ingest routes', () => {
         data: expect.objectContaining({
           status: 'FAILED',
           errorCode: 'worker_failed',
+          // The run's own end, not the time of this poll.
+          finishedAt: new Date('2026-10-04T01:00:00.000Z'),
         }),
       }),
     );

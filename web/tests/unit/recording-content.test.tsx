@@ -15,6 +15,8 @@ const useOnlineStatusMock = vi.fn();
 const useRecordingPlaybackMock = vi.fn();
 const useDownloadRecordMock = vi.fn();
 const audioPlayerMock = vi.fn();
+const useSessionMock = vi.fn();
+const useRecordingBookmarksMock = vi.fn();
 
 const HASH = "a".repeat(64);
 const CATALOG_ID = "20260101_120000";
@@ -85,6 +87,20 @@ vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback
   useRecordingPlayback: (...args: unknown[]) => useRecordingPlaybackMock(...args),
 }));
 
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => useSessionMock(),
+}));
+
+vi.mock("@/hooks/use-recording-bookmarks", () => ({
+  useRecordingBookmarks: (...args: unknown[]) => useRecordingBookmarksMock(...args),
+}));
+
+const startBookmarkDraft = vi.fn();
+vi.mock("@/components/bookmarks/recording-bookmarks", () => ({
+  RecordingBookmarks: () => <div data-testid="recording-bookmarks" />,
+  useBookmarkDraft: () => ({ draftTime: null, editingId: null, startDraft: startBookmarkDraft }),
+}));
+
 vi.mock("@/components/player/audio-player", () => ({
   AudioPlayer: (props: unknown) => {
     audioPlayerMock(props);
@@ -144,6 +160,8 @@ describe("RecordingContent transcript toggle", () => {
       setCurrentTime: vi.fn(),
     });
     useDownloadRecordMock.mockReturnValue(null);
+    useSessionMock.mockReturnValue({ session: { user: { id: "user-1" } } });
+    useRecordingBookmarksMock.mockReturnValue({ bookmarks: [] });
     useRecordingEntryMock.mockReturnValue({
       data: {
         entry: {
@@ -297,6 +315,34 @@ describe("RecordingContent transcript toggle", () => {
     );
   });
 
+  it("shows the listener's bookmarks under the player and marks them on it", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useRecordingBookmarksMock.mockReturnValue({
+      bookmarks: [{ id: "b1", positionSec: 30 }, { id: "b2", positionSec: 95.5 }],
+    });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(screen.getByTestId("recording-bookmarks")).toBeTruthy();
+    expect(useRecordingBookmarksMock).toHaveBeenCalledWith(CATALOG_ID, HASH, true);
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ markers: [30, 95.5], onBookmark: startBookmarkDraft })
+    );
+  });
+
+  it("has no bookmarks in the session-free offline shell", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useSessionMock.mockReturnValue({ session: null });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+
+    expect(screen.queryByTestId("recording-bookmarks")).toBeNull();
+    expect(useRecordingBookmarksMock).toHaveBeenCalledWith(CATALOG_ID, HASH, false);
+    expect(audioPlayerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ onBookmark: undefined })
+    );
+  });
+
   it("uses a completed download's exact audio URL while offline", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useOnlineStatusMock.mockReturnValue({ isOnline: false });
@@ -376,7 +422,7 @@ describe("RecordingContent transcript toggle", () => {
 
   it("plays a completed download while online when it matches the selected source", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
-    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;
+    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
     useDownloadRecordMock.mockReturnValue({
       status: "complete",
       audioUrl: url,
@@ -387,22 +433,16 @@ describe("RecordingContent transcript toggle", () => {
       ({ queryKey }: { queryKey?: unknown[] } = {}) => {
         const key = queryKey?.[0];
         if (key === "audio-source-preference") {
-          return { data: { hash: HASH, sourceId: "mobile" } };
+          return { data: { hash: HASH, sourceId: "archived" } };
         }
         if (key === "audio-variants") {
           return {
             data: {
               hash: HASH,
               sources: [
-                {
-                  id: "mobile",
-                  label: "Mobile",
-                  type: "listening",
-                  variant: "mobile",
-                  available: true,
-                },
+                { id: "archived", label: "Archived", type: "archived", available: true },
               ],
-              defaultSource: "mobile",
+              defaultSource: "archived",
             },
           };
         }
@@ -413,7 +453,7 @@ describe("RecordingContent transcript toggle", () => {
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
     expect(audioPlayerMock).toHaveBeenCalledWith(
-      expect.objectContaining({ src: `${url}&local=1` })
+      expect.objectContaining({ src: `${url}?local=1` })
     );
   });
 
@@ -647,55 +687,6 @@ describe("RecordingContent transcript toggle", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it("honors the selected audio source while online after a different variant was downloaded", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
-    useDownloadRecordMock.mockReturnValue({
-      status: "complete",
-      audioUrl: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
-    });
-    useQueryMock.mockImplementation(
-      ({ queryKey }: { queryKey?: unknown[] } = {}) => {
-        const key = queryKey?.[0];
-        if (key === "audio-source-preference") {
-          return { data: { hash: HASH, sourceId: "studio" } };
-        }
-        if (key === "audio-variants") {
-          return {
-            data: {
-              hash: HASH,
-              sources: [
-                {
-                  id: "mobile",
-                  label: "Mobile",
-                  type: "listening",
-                  variant: "mobile",
-                  available: true,
-                },
-                {
-                  id: "studio",
-                  label: "Studio",
-                  type: "listening",
-                  variant: "studio",
-                  available: true,
-                },
-              ],
-              defaultSource: "mobile",
-            },
-          };
-        }
-        return { data: undefined };
-      }
-    );
-
-    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-
-    expect(audioPlayerMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=studio`,
-      })
-    );
   });
 
   // The stream view is every machine transcript side by side, so it belongs to

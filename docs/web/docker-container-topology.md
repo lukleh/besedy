@@ -1,6 +1,6 @@
 # Docker Container Topology
 
-> **Last Updated:** 2026-04-26
+> **Last Updated:** 2026-10-03
 > **Status:** Operational map and cleanup target.
 
 This document maps the Docker containers around the Besedy web app, RAG service,
@@ -105,7 +105,7 @@ Before deploying, compare the target shape with the environment using the
 | Web | `web/docker-compose.yml` plus overlays | wrapper-controlled `besedy-${BESEDY_COMPOSE_INSTANCE}` | Web app, web DB, optional OAuth mock, optional backup | Yes |
 | Prefect control plane | `jobs-service/docker-compose.prefect.yml` | `besedy-prefect` | Prefect API/UI, services, Prefect DB | Shared singleton |
 | Deep Search runtime | `jobs-service/docker-compose.jobs-{dev,test,prod}.yml` | `besedy-jobs-{dev,test,prod}` | Jobs API and Prefect worker for one web environment | Yes |
-| RAG | `rag-services/docker-compose.yml` | `besedy-rag-services` | ColBERT sidecar and optional legacy TEI reranker | Shared singleton |
+| RAG | `rag-services/docker-compose.yml` | `besedy-rag-services` | ColBERT sidecar | Shared singleton |
 | Ingest worker | not Docker: `jobs-service/host-worker/besedy-ingest-worker.service` (systemd user unit) | host process | Prefect process worker for `besedy-ingest-<env>`; runs the catalog CLI with host Docker/GPU access | Yes (one pool per env) |
 | ML backends | `backends/docker-compose.yml` | varies | Legacy/auxiliary model backends | Not part of current Deep Search path |
 
@@ -342,7 +342,7 @@ The ColBERT service currently runs as:
 
 - container: `besedy-colbert`
 - compose project: `besedy-rag-services`
-- host endpoint: `http://127.0.0.1:8192`
+- host endpoint: `http://<host>:8192`; the port binds `0.0.0.0` on purpose (LAN-reachable, no authentication; see [security.md](security.md#colbert-is-intentionally-reachable-on-the-lan))
 - common web setting: `RAG_COLBERT_URL=http://host.docker.internal:8192/query`
 - state bind: `${BESEDY_STATE_HOME}/tmp/rag_colbert:/data/state/rag_colbert`
 - model cache volumes:

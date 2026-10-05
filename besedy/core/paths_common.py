@@ -67,10 +67,3 @@ def resolve_xdg_root(
     xdg_root = os.getenv(xdg_env, "").strip()
     base = Path(xdg_root).expanduser() if xdg_root else default_root
     return base / "lukleh" / "besedy"
-
-
-def prefer_home_or_existing_legacy(home_path: Path, legacy_path: Path) -> Path:
-    """Prefer the home/XDG location unless only the legacy path exists."""
-    if home_path.exists() or not legacy_path.exists():
-        return home_path
-    return legacy_path

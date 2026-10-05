@@ -148,6 +148,21 @@ steps before it. Paths below use the default config home
    `prod-build` reads `jobs.env.prod` even for a web-only deploy so a custom
    `BESEDY_JOBS_IMAGE` is honored.
 
+   Every `just jobs-*` and jobs-related `prod-*` recipe runs the jobs stack
+   through `scripts/run_jobs_compose.sh <development|test|production>`. Before
+   a command that creates or starts containers (`up`, `create`, `run`, `start`,
+   `restart`, `scale`), it renders the project and refuses to continue when it
+   points at another environment (`down`, `stop`, `logs`, `ps` and `build`
+   always run, so a mis-wired stack stays stoppable): `BESEDY_INTERNAL_BASE_URL` must name this
+   environment's web container (`besedy-<development|test|production>-web`),
+   the deep-search and ingest work pools, the worker's `--pool` and the Prefect
+   deployment names must end in `-dev`, `-test` or `-prod`, `DEEP_SEARCH_OUTPUT_ENV` and the last component of
+   `DEEP_SEARCH_OUTPUT_DIR` must be the same suffix, and the container names
+   and project must carry it too. The error names the variable, its value and
+   the env file to fix. The `docker-compose.jobs-*.yml` defaults already satisfy
+   these rules, so a minimal env file passes; only an override can fail.
+   `--codex-auth` adds the Codex overlay (production only).
+
 3. **Host directories:** create every data directory named in `web.env.prod`.
    `WEB_LOGS_DIR` must be writable by container UID 1001. Prepare `ARTWORK_DIR`
    and `UPLOADS_DIR` with group `UPLOADS_GID` and mode `2770`, and make

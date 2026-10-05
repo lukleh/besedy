@@ -9,6 +9,7 @@ import pytest
 from besedy.lib.workflow.common import (
     CsvAudioRow,
     WorkflowCommand,
+    iter_audio_csv_rows,
     parse_duration_to_seconds,
     resolve_unicode_path,
 )
@@ -148,6 +149,25 @@ class TestCsvAudioRow:
         row = CsvAudioRow(sha256="abc", full_path="/test")
         with pytest.raises(AttributeError):
             row.sha256 = "changed"
+
+
+class TestIterAudioCsvRowsScanRoot:
+    """Scan Root is carried on each row when the CSV has the column."""
+
+    def test_reads_scan_root_per_row(self, tmp_path):
+        csv_path = tmp_path / "catalog.csv"
+        csv_path.write_text(
+            "Hash,Full Path,Scan Root\naaa,/data/a.mp3,/data\nbbb,/uploads/b.m4a,\n",
+            encoding="utf-8",
+        )
+        rows = list(iter_audio_csv_rows(csv_path))
+        assert [row.scan_root for row in rows] == ["/data", None]
+
+    def test_missing_column_gives_none(self, tmp_path):
+        csv_path = tmp_path / "catalog.csv"
+        csv_path.write_text("Hash,Full Path\naaa,/data/a.mp3\n", encoding="utf-8")
+        rows = list(iter_audio_csv_rows(csv_path))
+        assert rows[0].scan_root is None
 
 
 class TestWorkflowCommand:
