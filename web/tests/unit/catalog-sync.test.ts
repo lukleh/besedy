@@ -42,10 +42,6 @@ const mockTx: any = {
     createMany: vi.fn(),
     groupBy: vi.fn(),
   },
-  catalogListeningEntry: {
-    deleteMany: vi.fn(),
-    createMany: vi.fn(),
-  },
 };
 
 const mockPrisma: any = {
@@ -105,27 +101,20 @@ describe('catalog-sync', () => {
     mockTx.catalogSyncState.upsert.mockResolvedValue({});
     mockTx.catalogDuplicate.deleteMany.mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.createMany.mockResolvedValue({ count: 0 });
-    mockTx.catalogListeningEntry.deleteMany.mockResolvedValue({ count: 1 });
-    mockTx.catalogListeningEntry.createMany.mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.groupBy.mockResolvedValue([]);
     mockTx.$queryRaw.mockResolvedValue([]);
   });
 
-  it('uses tx-scoped advisory lock and purges stale listening rows when variant path is removed', async () => {
+  it('uses tx-scoped advisory lock and skips sources whose bytes are unchanged', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
       id: '20251222_144441',
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [
-        {
-          variant: 'enhanced',
-          listeningArchivedCatalogPath: null,
-        },
-      ],
     });
 
-    // Base sources unchanged, but listening source existed before and is now missing.
+    // Base sources unchanged; the optional duplicates source is already
+    // persisted as missing.
     mockTx.catalogSyncState.findMany.mockResolvedValue([
       {
         sourceKey: 'metadata',
@@ -139,95 +128,6 @@ describe('catalog-sync', () => {
       },
       {
         sourceKey: 'duplicates',
-        filePath: '',
-        fingerprint: '<missing>',
-      },
-      {
-        sourceKey: 'listening:enhanced',
-        filePath: '/data/old-listening.csv',
-        fingerprint: '200:2000',
-      },
-    ]);
-
-    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
-
-    expect(result.status).toBe('success');
-    expect(result.changedSources).toEqual(['listening:enhanced']);
-    expect(result.rowCounts).toEqual({ 'listening:enhanced': 0 });
-
-    // Lock is now transaction-scoped and acquired on tx handle.
-    expect(mockTx.$executeRaw).toHaveBeenCalledTimes(1);
-    // A listening-only change must not run the event-recording cleanup.
-    expect(mockTx.$queryRaw).not.toHaveBeenCalled();
-    expect(mockReadFile.mock.invocationCallOrder.at(-1)).toBeLessThan(
-      mockTx.$executeRaw.mock.invocationCallOrder[0],
-    );
-
-    expect(mockTx.catalogListeningEntry.deleteMany).toHaveBeenCalledWith({
-      where: {
-        workflowGroupId: '20251222_144441',
-        variant: 'enhanced',
-      },
-    });
-    expect(mockTx.catalogListeningEntry.createMany).not.toHaveBeenCalled();
-
-    expect(mockTx.catalogSyncState.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          workflowGroupId_sourceKey: {
-            workflowGroupId: '20251222_144441',
-            sourceKey: 'listening:enhanced',
-          },
-        },
-        update: expect.objectContaining({
-          status: 'SUCCESS',
-          rowCount: 0,
-          filePath: '',
-          fingerprint: '<missing>',
-        }),
-      }),
-    );
-
-    // Required sources are hashed on every reconciliation, but unchanged bytes
-    // are not parsed or written.
-    expect(mockParse).not.toHaveBeenCalled();
-    expect(mockReadFile).toHaveBeenCalledTimes(2);
-  });
-
-  it('stabilizes to skipped when optional source is already in missing state', async () => {
-    mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
-      metadataCatalogPath: '/data/meta.csv',
-      archivedCatalogPath: '/data/archived.csv',
-      duplicatesCatalogPath: null,
-      variants: [
-        {
-          variant: 'enhanced',
-          listeningArchivedCatalogPath: null,
-        },
-      ],
-    });
-
-    // Base sources unchanged; listening source already persisted as missing.
-    mockTx.catalogSyncState.findMany.mockResolvedValue([
-      {
-        sourceKey: 'metadata',
-        filePath: '/data/meta.csv',
-        fingerprint: emptyCsvFingerprint,
-      },
-      {
-        sourceKey: 'archived',
-        filePath: '/data/archived.csv',
-        fingerprint: emptyCsvFingerprint,
-      },
-      {
-        sourceKey: 'duplicates',
-        filePath: '',
-        fingerprint: '<missing>',
-      },
-      {
-        sourceKey: 'listening:enhanced',
         filePath: '',
         fingerprint: '<missing>',
       },
@@ -240,10 +140,15 @@ describe('catalog-sync', () => {
     expect(result.changedSources).toEqual([]);
     expect(result.rowCounts).toEqual({});
 
+    // Lock is transaction-scoped and acquired on the tx handle, after the
+    // files were read and hashed outside the transaction.
     expect(mockTx.$executeRaw).toHaveBeenCalledTimes(1);
-    expect(mockTx.catalogListeningEntry.deleteMany).not.toHaveBeenCalled();
-    expect(mockTx.catalogListeningEntry.createMany).not.toHaveBeenCalled();
+    expect(mockReadFile.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mockTx.$executeRaw.mock.invocationCallOrder[0],
+    );
     expect(mockTx.catalogSyncState.upsert).not.toHaveBeenCalled();
+    // Required sources are hashed on every reconciliation, but unchanged bytes
+    // are not parsed or written.
     expect(mockParse).not.toHaveBeenCalled();
     expect(mockReadFile).toHaveBeenCalledTimes(2);
   });
@@ -254,7 +159,6 @@ describe('catalog-sync', () => {
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [],
     });
 
     const oldStates = [
@@ -301,7 +205,6 @@ describe('catalog-sync', () => {
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [],
     });
 
     const statesFor = (fingerprint: string) => [
@@ -349,7 +252,6 @@ describe('catalog-sync', () => {
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [],
     });
 
     // Changed base sources trigger rebuild path.
@@ -439,25 +341,20 @@ describe('catalog-sync', () => {
     }
   });
 
-  it('stores the AAC copy path from the archived and listening catalogs, or null', async () => {
+  it('stores the AAC copy path from the archived catalog, or null', async () => {
     const withCopy = 'a'.repeat(64);
     const blankCopy = 'b'.repeat(64);
-    const noColumn = 'c'.repeat(64);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
       id: '20251222_144441',
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [
-        { variant: 'enhanced', listeningArchivedCatalogPath: '/data/listening.csv' },
-      ],
     });
     // Every source has a stale fingerprint, so all of them are rebuilt.
     mockTx.catalogSyncState.findMany.mockResolvedValue([
       { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: 'old' },
       { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: 'old' },
       { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
-      { sourceKey: 'listening:enhanced', filePath: '/data/listening.csv', fingerprint: 'old' },
     ]);
     const rowsByFile: Record<string, Array<Record<string, string>>> = {
       '/data/meta.csv': [withCopy, blankCopy].map((hash) => ({ Hash: hash })),
@@ -473,16 +370,6 @@ describe('catalog-sync', () => {
           Hash: blankCopy,
           'Compressed Path': '/data/audio/b_bbbbbbbb.webm',
           'Compressed AAC Path': '  ',
-        },
-      ],
-      // A variant catalog written before the column existed.
-      '/data/listening.csv': [
-        { Hash: noColumn, 'Compressed Path': '/data/audio/listen/c.webm' },
-        // Listening catalogs may use the snake_case column names.
-        {
-          Hash: withCopy,
-          compressed_path: '/data/audio/listen/a.webm',
-          compressed_aac_path: '/data/audio/listen/a.m4a',
         },
       ],
     };
@@ -524,18 +411,6 @@ describe('catalog-sync', () => {
       compressedAacSizeBytes: '1234',
       compressedAacBitrateKbps: '68',
     });
-    const listening = mockTx.catalogListeningEntry.createMany.mock.calls[0][0].data;
-    expect(
-      Object.fromEntries(
-        listening.map((row: { audioHash: string; compressedAacPath: string | null }) => [
-          row.audioHash,
-          row.compressedAacPath,
-        ]),
-      ),
-    ).toEqual({
-      [noColumn]: null,
-      [withCopy]: '/data/audio/listen/a.m4a',
-    });
   });
 
   it('rebuilds unchanged sources once after the fingerprint version changes', async () => {
@@ -547,7 +422,6 @@ describe('catalog-sync', () => {
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [],
     });
     mockTx.catalogSyncState.findMany.mockResolvedValue([
       { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
@@ -578,7 +452,6 @@ describe('catalog-sync', () => {
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [],
     });
 
     mockTx.catalogSyncState.findMany.mockResolvedValue([
@@ -634,7 +507,6 @@ describe('catalog-sync', () => {
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
-      variants: [],
     });
     // Stored fingerprints differ from the current file, so base sources change.
     // rowCount records the previously-synced baseline the drop guard compares to.
@@ -709,5 +581,64 @@ describe('catalog-sync', () => {
     });
 
     expect(result.status).toBe('success');
+  });
+
+  it('syncs rows with a missing or unknown hash algorithm and reports how many', async () => {
+    const known = 'a'.repeat(64);
+    const unknown = 'b'.repeat(64);
+    const missing = 'c'.repeat(64);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: null,
+      variants: [],
+    });
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: 'old' },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: 'old' },
+      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
+    ]);
+    const rowsByFile: Record<string, Array<Record<string, string>>> = {
+      '/data/meta.csv': [
+        { Hash: known, 'Hash Algorithm': 'pcm-s16le-16000hz-mono-sha256-v1' },
+        { Hash: unknown, 'Hash Algorithm': 'sha256-of-file' },
+        { Hash: missing },
+      ],
+      '/data/archived.csv': [known, unknown, missing].map((hash) => ({
+        Hash: hash,
+        'Compressed Path': `/data/audio/${hash.slice(0, 8)}.webm`,
+      })),
+    };
+    mockReadFile.mockImplementation(async (file: string) => `content:${file}`);
+    mockParse.mockImplementation(
+      (
+        content: string,
+        options: {
+          complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void;
+        },
+      ) => {
+        options.complete({
+          data: rowsByFile[content.replace(/^content:/, '')] ?? [],
+          errors: [],
+        });
+      },
+    );
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      const result = await syncCatalogGroup('20251222_144441');
+
+      expect(result.status).toBe('success');
+      expect(result.unrecognizedHashAlgorithmRows).toBe(2);
+      // Nothing is dropped.
+      expect(mockTx.catalogEntry.createMany.mock.calls[0][0].data).toHaveLength(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('2 metadata rows have a missing or unknown Hash Algorithm'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

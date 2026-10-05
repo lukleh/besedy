@@ -56,7 +56,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120000"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     transcript1 = backend_dir / ("a" * 64) / "transcript.json"
     transcript2 = backend_dir / ("b" * 64) / "transcript.json"
     _write_transcript(
@@ -76,7 +76,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -87,7 +87,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
         transcript_path=transcript1,
         transcripts_root=transcripts_root,
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         run_id="20260206_120000",
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -97,7 +97,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
         transcript_path=transcript2,
         transcripts_root=transcripts_root,
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         run_id="20260206_120000",
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -128,7 +128,7 @@ def test_build_chunk_corpus_reports_distribution(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120001"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("c" * 64) / "transcript.json",
         [
@@ -146,7 +146,7 @@ def test_build_chunk_corpus_reports_distribution(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-124",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -170,7 +170,7 @@ def test_build_chunk_corpus_assigns_chunk_ordinals_per_audio_hash(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120005"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("e" * 64) / "transcript.json",
         [
@@ -190,7 +190,7 @@ def test_build_chunk_corpus_assigns_chunk_ordinals_per_audio_hash(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-126",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=2,
         max_chunk_tokens=4,
@@ -216,7 +216,7 @@ def test_build_chunk_corpus_resolves_explicit_transcripts_container(
     transcripts_container = tmp_path / "text-data" / "transcripts"
     transcripts_container.mkdir(parents=True)
     run_root = transcripts_container / "transcripts_20260206_120010"
-    backend_dir = run_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = run_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("e" * 64) / "transcript.json",
         [
@@ -228,7 +228,7 @@ def test_build_chunk_corpus_resolves_explicit_transcripts_container(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-125",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_container,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -253,7 +253,7 @@ def test_build_chunk_corpus_uses_explicit_chunk_tokenizer_model(
     monkeypatch.setattr(rag_chunk_corpus, "get_chunk_token_counter", fake_get_chunk_token_counter)
 
     transcripts_root = tmp_path / "transcripts_20260206_120011"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("f" * 64) / "transcript.json",
         [
@@ -264,7 +264,7 @@ def test_build_chunk_corpus_uses_explicit_chunk_tokenizer_model(
 
     corpus = build_chunk_corpus(
         workflow_group_id="wg-127",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         min_chunk_tokens=4,
         max_chunk_tokens=8,
@@ -276,41 +276,44 @@ def test_build_chunk_corpus_uses_explicit_chunk_tokenizer_model(
     assert corpus.chunk_distribution.tokenizer_model == "test-whitespace"
 
 
-def test_discover_transcript_sources_rejects_duplicate_canonical_audio_hashes(
+def test_discover_transcript_sources_skips_directories_that_are_not_a_full_hash(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(
         rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120012"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
-    canonical_audio_hash = "a" * 64
-    common_meta = {
-        "audio_hash": canonical_audio_hash,
-        "audio_filepath": f"/tmp/{canonical_audio_hash}.wav",
-    }
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
+    audio_hash = "a" * 64
+    # The leaf is the audio hash. A short name is skipped even when the file's
+    # metadata carries the full hash.
     _write_transcript(
-        backend_dir / "legacy-a" / "transcript.json",
+        backend_dir / audio_hash / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "alpha beta gamma"}],
-        meta_overrides=common_meta,
     )
     _write_transcript(
-        backend_dir / "legacy-b" / "transcript.json",
+        backend_dir / "aaaaaaaaaaaa" / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "delta epsilon zeta"}],
-        meta_overrides=common_meta,
+        meta_overrides={"audio_hash": audio_hash, "audio_filepath": f"/tmp/{audio_hash}.wav"},
     )
 
-    with pytest.raises(ValueError, match="same canonical audio hash"):
-        discover_transcript_sources(
+    with caplog.at_level("WARNING", logger="besedy.lib.rag_chunk_corpus"):
+        build = discover_transcript_sources(
             workflow_group_id="wg-128",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             transcripts_root=transcripts_root,
         )
 
+    assert [source.audio_hash for source in build.sources] == [audio_hash]
+    assert build.transcripts_skipped == 1
+    assert "aaaaaaaaaaaa" in caplog.text
+    assert "not a full 64-character audio hash" in caplog.text
 
-def test_build_chunk_corpus_rejects_duplicate_canonical_audio_hashes(
+
+def test_build_chunk_corpus_skips_directories_that_are_not_a_full_hash(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -319,29 +322,82 @@ def test_build_chunk_corpus_rejects_duplicate_canonical_audio_hashes(
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120013"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
-    canonical_audio_hash = "b" * 64
-    common_meta = {
-        "audio_hash": canonical_audio_hash,
-        "audio_filepath": f"/tmp/{canonical_audio_hash}.wav",
-    }
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
+    audio_hash = "b" * 64
     _write_transcript(
-        backend_dir / "legacy-c" / "transcript.json",
+        backend_dir / audio_hash / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "jedna dve tri"}],
-        meta_overrides=common_meta,
     )
     _write_transcript(
-        backend_dir / "legacy-d" / "transcript.json",
+        backend_dir / "bbbbbbbbbbbb" / "transcript.json",
         [{"start": 0.0, "end": 1.0, "text": "ctyri pet sest"}],
-        meta_overrides=common_meta,
+        meta_overrides={"audio_hash": audio_hash, "audio_filepath": f"/tmp/{audio_hash}.wav"},
     )
 
-    with pytest.raises(ValueError, match="same canonical audio hash"):
-        build_chunk_corpus(
-            workflow_group_id="wg-129",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+    corpus = build_chunk_corpus(
+        workflow_group_id="wg-129",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
+        transcripts_root=transcripts_root,
+        min_chunk_tokens=2,
+        max_chunk_tokens=4,
+        overlap_tokens=1,
+    )
+
+    assert {chunk.audio_hash for chunk in corpus.chunks} == {audio_hash}
+    assert corpus.transcripts_skipped == 1
+
+
+def test_per_file_builders_reject_a_transcript_directory_that_is_not_a_full_hash(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120014"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
+    # No usable metadata either: there is nothing to infer from, and nothing is tried.
+    short = backend_dir / "abc123" / "transcript.json"
+    _write_transcript(short, [{"start": 0.0, "end": 1.0, "text": "alpha beta gamma"}])
+
+    with pytest.raises(ValueError, match="not a full audio hash"):
+        rag_chunk_corpus.build_transcript_source(
+            transcript_path=short,
             transcripts_root=transcripts_root,
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
+        )
+    with pytest.raises(ValueError, match="not a full audio hash"):
+        rag_chunk_corpus.build_chunks_for_transcript(
+            transcript_path=short,
+            transcripts_root=transcripts_root,
+            workflow_group_id="wg-130",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
+            run_id="run-1",
             min_chunk_tokens=2,
             max_chunk_tokens=4,
             overlap_tokens=1,
         )
+
+
+def test_an_uppercase_hex_leaf_is_indexed_under_its_lowercase_hash(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120015"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
+    _write_transcript(
+        backend_dir / ("AB12" * 16) / "transcript.json",
+        [{"start": 0.0, "end": 1.0, "text": "alpha beta gamma"}],
+    )
+
+    build = discover_transcript_sources(
+        workflow_group_id="wg-131",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
+        transcripts_root=transcripts_root,
+    )
+
+    assert [source.audio_hash for source in build.sources] == ["ab12" * 16]
+    assert build.transcripts_skipped == 0

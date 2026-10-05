@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { localEventRows } from '@/components/offline/local-event-list';
 import type { DownloadRecord } from '@/lib/offline/downloads-db';

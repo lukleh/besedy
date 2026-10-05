@@ -108,7 +108,7 @@ def test_sync_colbert_index_bootstraps_bundle_and_writes_source_state(
     _write_transcript(
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
+        / "large-v3@silero_vad_v6@lang-cs"
         / audio_hash
         / "transcript.json",
         [
@@ -120,7 +120,7 @@ def test_sync_colbert_index_bootstraps_bundle_and_writes_source_state(
     bundle_dir = tmp_path / "bundle"
     result = sync_colbert_index(
         workflow_group_id="wg-bootstrap",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -141,7 +141,7 @@ def test_sync_colbert_index_skips_unchanged_scope_without_worker_mutations(
     transcript_path = (
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
+        / "large-v3@silero_vad_v6@lang-cs"
         / audio_hash
         / "transcript.json"
     )
@@ -153,7 +153,7 @@ def test_sync_colbert_index_skips_unchanged_scope_without_worker_mutations(
     bundle_dir = tmp_path / "bundle"
     sync_colbert_index(
         workflow_group_id="wg-unchanged",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -161,7 +161,7 @@ def test_sync_colbert_index_skips_unchanged_scope_without_worker_mutations(
 
     result = sync_colbert_index(
         workflow_group_id="wg-unchanged",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -180,7 +180,7 @@ def test_sync_colbert_index_updates_one_audio_hash_incrementally(
     transcript_path = (
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
+        / "large-v3@silero_vad_v6@lang-cs"
         / audio_hash
         / "transcript.json"
     )
@@ -192,7 +192,7 @@ def test_sync_colbert_index_updates_one_audio_hash_incrementally(
     bundle_dir = tmp_path / "bundle"
     sync_colbert_index(
         workflow_group_id="wg-update",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -206,7 +206,7 @@ def test_sync_colbert_index_updates_one_audio_hash_incrementally(
 
     result = sync_colbert_index(
         workflow_group_id="wg-update",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
         target_audio_hash=audio_hash,
@@ -232,7 +232,7 @@ def test_sync_colbert_index_addition_backfills_fts_for_legacy_bundle(
     fake_colbert_worker,
 ) -> None:
     transcripts_root = tmp_path / "transcripts_20260206_120005"
-    backend_root = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_root = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     first_audio_hash = "f" * 64
     second_audio_hash = "1" * 64
     _write_transcript(
@@ -243,7 +243,7 @@ def test_sync_colbert_index_addition_backfills_fts_for_legacy_bundle(
     bundle_dir = tmp_path / "bundle"
     sync_colbert_index(
         workflow_group_id="wg-legacy-fts",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -258,7 +258,7 @@ def test_sync_colbert_index_addition_backfills_fts_for_legacy_bundle(
 
     result = sync_colbert_index(
         workflow_group_id="wg-legacy-fts",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -331,7 +331,7 @@ def test_sync_colbert_index_passes_runtime_override_to_final_token_audit(
     transcript_path = (
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
+        / "large-v3@silero_vad_v6@lang-cs"
         / audio_hash
         / "transcript.json"
     )
@@ -343,7 +343,7 @@ def test_sync_colbert_index_passes_runtime_override_to_final_token_audit(
     bundle_dir = tmp_path / "bundle"
     sync_colbert_index(
         workflow_group_id="wg-runtime",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
     )
@@ -356,7 +356,7 @@ def test_sync_colbert_index_passes_runtime_override_to_final_token_audit(
 
     sync_colbert_index(
         workflow_group_id="wg-runtime",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=bundle_dir,
         runtime="docker-indexer",
@@ -383,7 +383,7 @@ def test_sync_colbert_index_updates_symlink_and_active_pointer_for_default_bundl
     transcript_path = (
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
+        / "large-v3@silero_vad_v6@lang-cs"
         / audio_hash
         / "transcript.json"
     )
@@ -394,7 +394,7 @@ def test_sync_colbert_index_updates_symlink_and_active_pointer_for_default_bundl
 
     first_result = sync_colbert_index(
         workflow_group_id="wg-default",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
     )
     first_bundle_dir = Path(first_result.index_dir).resolve()
@@ -406,7 +406,7 @@ def test_sync_colbert_index_updates_symlink_and_active_pointer_for_default_bundl
     )
     second_result = sync_colbert_index(
         workflow_group_id="wg-default",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         target_audio_hash=audio_hash,
     )
@@ -416,7 +416,7 @@ def test_sync_colbert_index_updates_symlink_and_active_pointer_for_default_bundl
 
     pointer_path = default_colbert_active_pointer_path(
         workflow_group_id="wg-default",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         colbert_model="jinaai/jina-colbert-v2",
     )
     payload = json.loads(pointer_path.read_text(encoding="utf-8"))
@@ -436,7 +436,7 @@ def test_sync_colbert_index_carries_a_published_correction_into_the_bundle(
     catalog_id = "20260206_120003"
     transcripts_root = tmp_path / f"transcripts_{catalog_id}"
     audio_hash = "d" * 64
-    backend = "faster-whisper/large-v3@silero_vad_v6"
+    backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
     workflow, model = backend.split("/")
     _write_transcript(
         transcripts_root / workflow / model / audio_hash / "transcript.json",
@@ -508,9 +508,9 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
 
     catalog_id = "20260206_120004"
     audio_hash = "e" * 64
-    backend = "faster-whisper/large-v3@silero_vad_v6"
+    backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
     transcripts_root = tmp_path / f"transcripts_{catalog_id}"
-    machine_path = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6" / audio_hash / "transcript.json"
+    machine_path = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / audio_hash / "transcript.json"
     _write_transcript(machine_path, [{"start": 0.0, "end": 1.0, "text": "machine words"}])
     bundle_dir = tmp_path / "bundle"
     corrections_root = tmp_path / "corrections"

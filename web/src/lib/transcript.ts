@@ -405,14 +405,6 @@ export async function readTranscriptFile(
 }
 
 /**
- * Format transcript text as plain text (kept for backward compatibility)
- * @deprecated Use readTranscriptFile with format="txt" instead
- */
-export function formatTranscriptText(transcript: ASRTranscript): string {
-  return transcript.segments.map((s) => s.text).join(" ");
-}
-
-/**
  * Speaker segment from diarization
  */
 export interface SpeakerSegment {

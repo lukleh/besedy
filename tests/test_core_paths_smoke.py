@@ -111,7 +111,7 @@ class TestHomeRuntimeRoots:
     def test_web_env_path_honors_explicit_override(self, monkeypatch, tmp_path):
         env_file = tmp_path / "web.env.prod"
         env_file.write_text(
-            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6\n", encoding="utf-8"
+            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs\n", encoding="utf-8"
         )
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(env_file))
         assert resolve_web_env_path("production") == env_file
@@ -121,7 +121,7 @@ class TestHomeRuntimeRoots:
         canonical_path = tmp_path / "xdg-config" / "lukleh" / "besedy" / "web.env.prod"
         canonical_path.parent.mkdir(parents=True)
         canonical_path.write_text(
-            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6\n", encoding="utf-8"
+            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs\n", encoding="utf-8"
         )
 
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(override_path))
@@ -357,10 +357,10 @@ class TestTimestampExtraction:
         assert extract_timestamp_from_transcripts_root(path) == "20251128_120000"
         assert extract_run_id_from_transcripts_root(path) == "20251128_120000_dfn3-v1"
 
-    def test_extract_from_enhanced_transcripts_root(self):
+    def test_extract_rejects_the_retired_enhanced_root(self):
         path = Path("transcripts_enhanced_20251128_120000_dfn3-v1")
-        assert extract_timestamp_from_transcripts_root(path) == "20251128_120000"
-        assert extract_run_id_from_transcripts_root(path) == "20251128_120000_dfn3-v1"
+        assert extract_timestamp_from_transcripts_root(path) is None
+        assert extract_run_id_from_transcripts_root(path) is None
 
     def test_extract_handles_trailing_slash(self):
         path = Path("transcripts_20251128_120000/")

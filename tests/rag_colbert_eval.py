@@ -28,7 +28,6 @@ def evaluate_colbert_recall(
     index_dir: Path | str,
     k: int = 10,
     cutoffs: Sequence[int] | None = None,
-    force_fast: bool = False,
     include_hit_details: bool = False,
 ) -> dict[str, Any]:
     """Evaluate recall@k for a ColBERT sidecar index."""
@@ -63,7 +62,6 @@ def evaluate_colbert_recall(
             query=question,
             index_dir=index_dir,
             k=query_k,
-            force_fast=force_fast,
         )
 
         target_match = _first_matching_hit(
@@ -140,7 +138,6 @@ def evaluate_colbert_recall(
         "doc_maxlen": int(meta["doc_maxlen"]),
         "chunk_version": str(meta["chunk_version"]),
         "run_id": str(meta["run_id"]),
-        "force_fast": force_fast,
         "k": primary_cutoff,
         "cutoffs": list(recall_cutoffs),
         "total": total,
@@ -246,9 +243,6 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
-        "--force-fast", action="store_true", help="Forward force_fast to ColBERT search."
-    )
-    parser.add_argument(
         "--include-hit-details",
         action="store_true",
         help="Include full returned hit text and scores in JSON details.",
@@ -266,7 +260,6 @@ def main(argv: list[str] | None = None) -> int:
         index_dir=args.index_dir,
         k=args.k,
         cutoffs=args.cutoffs,
-        force_fast=args.force_fast,
         include_hit_details=args.include_hit_details,
     )
     if args.details_path is not None:

@@ -44,15 +44,6 @@ export interface CatalogAccessResponse {
   grantableExtraPermissions?: GrantableExtraPermission[];
 }
 
-export interface WorkflowVariant {
-  id: number;
-  variant: string;
-  label: string | null;
-  isDefault: boolean;
-  listeningArchivedCatalogPath: string | null;
-  createdAt: string;
-}
-
 export interface CatalogConfig {
   id: string;
   label: string | null;
@@ -63,7 +54,6 @@ export interface CatalogConfig {
   isDefault: boolean;
   isActive: boolean;
   createdAt: string;
-  variants: WorkflowVariant[];
 }
 
 export interface CatalogConfigDraft {
@@ -113,6 +103,7 @@ export interface CatalogSyncResult {
   groupId: string;
   status: "success" | "skipped" | "error";
   changedSources: string[];
+  unrecognizedHashAlgorithmRows?: number;
   error?: string;
 }
 
@@ -167,15 +158,6 @@ export const catalogAccessResponseSchema = z.object({
     .optional(),
 });
 
-export const workflowVariantSchema = z.object({
-  id: z.number(),
-  variant: z.string(),
-  label: z.string().nullable(),
-  isDefault: z.boolean(),
-  listeningArchivedCatalogPath: z.string().nullable(),
-  createdAt: z.string(),
-});
-
 export const catalogConfigSchema = z.object({
   id: z.string(),
   label: z.string().nullable(),
@@ -186,7 +168,6 @@ export const catalogConfigSchema = z.object({
   isDefault: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string(),
-  variants: z.array(workflowVariantSchema),
 });
 
 export const pendingCatalogGrantSchema = z.object({
@@ -219,6 +200,7 @@ export const catalogSyncResultSchema = z.object({
   groupId: z.string(),
   status: z.enum(["success", "skipped", "error"]),
   changedSources: z.array(z.string()),
+  unrecognizedHashAlgorithmRows: z.number().optional(),
   error: z.string().optional(),
 });
 
