@@ -10,7 +10,6 @@ from besedy.core.paths_common import (
     PROJECT_ROOT,
     WebEnvMode,
     normalize_runtime_root,
-    prefer_home_or_existing_legacy,
     resolve_project_path,
     resolve_xdg_root,
 )
@@ -73,17 +72,13 @@ def resolve_external_root() -> Path:
 
 
 def resolve_models_dir() -> Path:
-    """Return the preferred root for local model artifacts."""
-    home_models_dir = resolve_share_home() / "models"
-    legacy_models_dir = PROJECT_ROOT / "models"
-    return prefer_home_or_existing_legacy(home_models_dir, legacy_models_dir)
+    """Return the root for local model artifacts, under the share home."""
+    return resolve_share_home() / "models"
 
 
 def resolve_pretrained_models_dir() -> Path:
-    """Return the preferred root for pretrained model assets."""
-    home_models_dir = resolve_share_home() / "pretrained_models"
-    legacy_models_dir = PROJECT_ROOT / "pretrained_models"
-    return prefer_home_or_existing_legacy(home_models_dir, legacy_models_dir)
+    """Return the root for pretrained model assets, under the share home."""
+    return resolve_share_home() / "pretrained_models"
 
 
 def resolve_web_state_dir(*parts: str) -> Path:
@@ -158,10 +153,7 @@ def iter_existing_web_env_paths(
 LOGS_DIR = resolve_logs_dir()
 FFMPEG_LOG_DIR = LOGS_DIR / "ffmpeg"
 DIARIZATION_FALLBACK_LOG_PATH = LOGS_DIR / "diarization_fallbacks.jsonl"
-FRAME_VAD_LOCAL_MODEL_PATH = prefer_home_or_existing_legacy(
-    resolve_share_home() / "models" / "frame_vad_multilingual_marblenet_v2.0.nemo",
-    PROJECT_ROOT / "models" / "frame_vad_multilingual_marblenet_v2.0.nemo",
-)
+FRAME_VAD_LOCAL_MODEL_PATH = resolve_models_dir() / "frame_vad_multilingual_marblenet_v2.0.nemo"
 
 
 def resolve_audio_artifacts_root() -> Path:
