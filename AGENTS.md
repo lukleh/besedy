@@ -21,6 +21,7 @@ copying command tables or test-user matrices into provider-specific files.
   - `lib/`: core library (audio, data loading, validation, workflow orchestration)
   - `core/`: shared utilities and path/output conventions
 - `tests/`: pytest suite (helpers in `tests/helpers/`)
+- `contracts/`: data shared by the Python pipeline and the web app, checked by tests on both sides (see `docs/web/data-and-database.md`)
 - `docs/`: architecture, data contracts, patterns, and web docs (start with `docs/README.md`)
 - `web/`: web app (Prisma + PostgreSQL + Docker)
 - Generated artifacts are typically gitignored: `transcripts_*`, `tmp/`, `logs/`
@@ -44,7 +45,7 @@ copying command tables or test-user matrices into provider-specific files.
 - `just ingest-worker-run`: run the host-side Prefect worker for admin recording
   uploads in the foreground (see `docs/web/recording-ingest.md`).
 - `just analyze <command>`: analysis CLI wrapper (e.g. `just analyze validate`)
-- `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/ --batch`)
+- `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/`)
 - `just test` (or `uv run --locked --all-extras pytest`): run the full test suite
 - `just bump-rlmbenchy`: move the `rlmbenchy` pin in `uv.lock` to its latest
   default-branch commit and run the jobs tests; commit the lock change through a PR
@@ -94,7 +95,7 @@ copying command tables or test-user matrices into provider-specific files.
 
 - 4-space indentation; keep functions small and composable.
 - Naming: `snake_case` for functions/variables, `PascalCase` for classes, constants in `UPPER_SNAKE_CASE`.
-- Keep CLI modules thin: argument parsing in `besedy/cli/*`, business logic in `besedy/commands/*` and `besedy/lib/*`.
+- Keep CLI modules thin: subcommand parsers are registered in `besedy/commands/*` (`register_parser`) and `besedy/cli/*` only assembles them; business logic lives in `besedy/commands/*` and `besedy/lib/*`.
 - Prefer structured logging and clear error messages over ad-hoc prints.
 - Use `load_json_with_fallback()` from `besedy/lib/data/encoding.py` for transcript JSON.
 - Resolve config/XDG paths only via the canonical resolvers — `resolve_config_path()` / `_resolve_preferred_config_home()` in `besedy/config/settings.py` and `resolve_xdg_root()` in `besedy/core/paths_common.py`. Don't hardcode or re-derive `~/.config/lukleh/besedy` (or the `lukleh` namespace) anywhere else in the `besedy` Python package; `tests/test_config_guardrail.py` enforces this for `besedy/**/*.py`. (The web app has its own resolver, `web/src/lib/runtime-paths.ts`, and the shell/compose env resolvers are separate single-source points, not covered by this test.)
@@ -158,13 +159,11 @@ manages workflow-group records themselves.
 
 - Timestamp format: `YYYYMMDD_HHMMSS`.
 - Output dirs follow `{base_name}_{timestamp}/` (see `docs/patterns.md`).
-- Historical `transcripts_enhanced_*` directory names remain readable for
-  compatibility, but no active workflow generates enhanced-audio artifacts.
 - Always create/update a symlink `{base_name}/` pointing to the latest timestamped dir.
 - Extract timestamps from upstream artifacts (catalog CSV or transcripts dir).
 - `export-transcripts` is the exception: it writes sidecars next to `transcript.json`
   and does **not** create a new timestamped output directory.
-- Use helpers in `besedy/core/paths.py` and `besedy/commands/catalog/symlink.py`.
+- Use helpers in `besedy/core/paths.py` and `besedy/core/symlinks.py`.
 
 ## Database Migrations (CRITICAL)
 
@@ -175,7 +174,7 @@ manages workflow-group records themselves.
 
 ## Production DB & Catalog Paths (Reference)
 
-- **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, `duplicates_catalog_path`, `transcripts_path`; `workflow_variant` holds `listening_archived_catalog_path`. Source of truth: `web/prisma/schema.prisma`.
+- **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, `duplicates_catalog_path`, `transcripts_path`. Source of truth: `web/prisma/schema.prisma`.
 - **Where container path roots are defined:** the resolved production env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`; see template in `web/.env.prod.example`) defines `TEXT_DATA_DIR`, `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`, `UPLOADS_DIR` (admin recording uploads, shared with the host ingest worker), and optional `BESEDY_PATH_MAPPINGS` for host↔container path rewrites.
 - **Existing path-mapping logic:** helpers that read production path mappings now use `BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`.
 - **How to connect to prod DB (local host → prod container):**
@@ -189,8 +188,6 @@ manages workflow-group records themselves.
 
 - List catalogs and CSV paths:
   - `SELECT id, label, metadata_catalog_path, archived_catalog_path, duplicates_catalog_path, transcripts_path FROM workflow_group ORDER BY id DESC;`
-- List variants and listening catalogs:
-  - `SELECT workflow_group_id, variant, listening_archived_catalog_path FROM workflow_variant ORDER BY workflow_group_id, variant;`
 - Metadata rows for a catalog:
   - `SELECT audio_hash, date_year, date_month, date_day, title, artist, part FROM audio_metadata WHERE workflow_group_id = '<catalog_id>' ORDER BY date_year, date_month, date_day;`
 

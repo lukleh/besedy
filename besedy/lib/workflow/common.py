@@ -27,6 +27,7 @@ class CsvAudioRow:
         sha256: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
                 Field name kept for backward compatibility.
         full_path: Full path to the audio file.
+        scan_root: The catalog's ``Scan Root`` for this file, if the CSV has one.
     """
 
     sha256: str  # Actually audio content hash (kept for backward compat)
@@ -39,6 +40,7 @@ class CsvAudioRow:
     loudness_range_lu: str | None = None
     input_thresh: str | None = None
     target_offset: str | None = None
+    scan_root: str | None = None
 
 
 def _normalize_fieldnames(fieldnames: Sequence[str]) -> dict[str, str]:
@@ -146,6 +148,7 @@ def iter_audio_csv_rows(
 
         # Optional columns
         added_at_col = normalized.get("added_at")
+        scan_root_col = normalized.get("scan root")
         norm_cols = {
             "integrated_loudness_lufs": normalized.get("integrated_loudness_lufs"),
             "true_peak_db": normalized.get("true_peak_db"),
@@ -175,6 +178,10 @@ def iter_audio_csv_rows(
             if added_at_col is not None:
                 added_at_value = (row.get(added_at_col) or "").strip() or None
 
+            scan_root_value: str | None = None
+            if scan_root_col is not None:
+                scan_root_value = (row.get(scan_root_col) or "").strip() or None
+
             # Extract normalization parameters if available
             norm_params = {}
             for param_name, col_name in norm_cols.items():
@@ -189,6 +196,7 @@ def iter_audio_csv_rows(
                 full_path=full_path,
                 duration_seconds=duration_value,
                 added_at=added_at_value,
+                scan_root=scan_root_value,
                 **norm_params,
             )
 

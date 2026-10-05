@@ -19,10 +19,10 @@ vi.mock('@/lib/db', () => ({
 }));
 
 vi.mock(
-  '@/app/api/catalogs/[id]/search/search-route-helpers',
+  '@/lib/search/search-helpers',
   async (importOriginal) => ({
     ...(await importOriginal<
-      typeof import('@/app/api/catalogs/[id]/search/search-route-helpers')
+      typeof import('@/lib/search/search-helpers')
     >()),
     buildEligibleAudioHashesQuery: mocks.buildEligibleAudioHashesQuery,
     lookupColbertNeighbors: mocks.lookupColbertNeighbors,
@@ -31,8 +31,8 @@ vi.mock(
   }),
 );
 
-import { executeCatalogLexicalSearch } from '@/app/api/catalogs/[id]/search/search-service';
-import { getSearchConfig } from '@/app/api/catalogs/[id]/search/search-route-helpers';
+import { executeCatalogLexicalSearch } from '@/lib/search/search-service';
+import { getSearchConfig } from '@/lib/search/search-helpers';
 import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 describe('catalog lexical search service', () => {

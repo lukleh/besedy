@@ -63,7 +63,7 @@ ruff-format *args:
 # RAG Services (Docker)
 # ============================================================================
 
-rag_services_compose := "docker compose -f rag-services/docker-compose.yml"
+rag_services_compose := "bash scripts/run_rag_services_compose.sh"
 
 ensure_internal_network := "docker network inspect \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null"
 ensure_prefect_network := "docker network inspect \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null"
@@ -134,15 +134,6 @@ rag-services-down: (_guard-shared-colbert "rag-services-down")
 
 rag-services-logs:
     {{ rag_services_compose }} logs -f
-
-tei-up:
-    {{ rag_services_compose }} --profile legacy-tei up -d reranker
-
-tei-down:
-    {{ rag_services_compose }} stop reranker
-
-tei-logs:
-    {{ rag_services_compose }} logs -f reranker
 
 colbert-up: (_guard-shared-colbert "colbert-up") _colbert-state-dir
     {{ rag_services_compose }} up -d --build colbert
@@ -1192,7 +1183,6 @@ mcp-smoke:
     export BESEDY_MCP_ENABLED=true
     export RAG_COLBERT_URL="http://$rag_container:18192/query"
     export RAG_COLBERT_INDEX_DIR=
-    export RAG_COLBERT_RERANK_ENABLED=false
     just test-up
     mcp_web_port="$(resolve_mcp_port web 3000)"
     mcp_db_port="$(resolve_mcp_port db 5432)"

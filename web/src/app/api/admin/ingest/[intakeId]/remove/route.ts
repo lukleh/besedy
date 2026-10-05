@@ -15,6 +15,7 @@ import { fetchJobsApi } from '@/lib/jobs-api/server';
 import { CuidSchema } from '@/lib/validation/schemas';
 import {
   AcceptedIntakeIdentityError,
+  CLEARED_PROGRESS,
   INTAKE_INCLUDE,
   recoverAcceptedIntakeAudioHash,
   removeAllIntakeDirs,
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       await removeAllIntakeDirs(intake.workflowGroupId, intake.id);
       await prisma.recordingIntake.updateMany({
         where: { id: intake.id, status: intake.status },
-        data: { status: 'REMOVED', finishedAt: new Date() },
+        data: { status: 'REMOVED', finishedAt: new Date(), ...CLEARED_PROGRESS },
       });
       const removed = await prisma.recordingIntake.findUniqueOrThrow({
         where: { id: intake.id },
@@ -148,6 +149,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         errorCode: null,
         errorMessage: null,
         finishedAt: null,
+        // The removal is a new run on the same row; drop the ingest's progress.
+        ...CLEARED_PROGRESS,
       },
     });
     const removing = await prisma.recordingIntake.findUniqueOrThrow({
