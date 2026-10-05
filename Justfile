@@ -328,19 +328,7 @@ jobs-prod-deploy:
 # the GPU backends, ffmpeg and the host besedy.toml; see
 # jobs-service/host-worker/ingest-worker.env.example for the required env.
 ingest-worker-run:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    env_file="${BESEDY_INGEST_WORKER_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/lukleh/besedy/ingest-worker.env}"
-    if [ -f "$env_file" ]; then
-        set -a
-        . "$env_file"
-        set +a
-    else
-        echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
-    fi
-    exec uv run --extra jobs --extra ml prefect worker start \
-        --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
-        --type process --limit 1 --install-policy never
+    bash jobs-service/host-worker/run-worker.sh --dev
 
 # Deploy the production host ingest worker at <rev>; use the commit production
 # web runs (`curl -s http://localhost:3000/api/version | jq -r .commit`).
@@ -392,6 +380,17 @@ ingest-worker-deploy rev:
         echo "The installed $unit unit runs from '${unit_dir:-<none>}', not $worktree." >&2
         echo "$worktree is ready. Install the current unit, then run this again:" >&2
         echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
+        exit 1
+    fi
+
+    # An installed unit that starts run-worker.sh cannot run a revision that
+    # predates the script (a rollback past it); refuse before stopping anything.
+    script="jobs-service/host-worker/run-worker.sh"
+    if systemctl --user show -P ExecStart "$unit" | grep -q "run-worker.sh" \
+        && ! git cat-file -e "$sha:$script" 2>/dev/null; then
+        echo "Refusing to deploy ${sha:0:12}: the installed $unit unit starts $script, which that revision does not have." >&2
+        echo "Install that revision's unit first, then run this again:" >&2
+        echo "  git show $sha:jobs-service/host-worker/$unit.service > ~/.config/systemd/user/$unit.service && systemctl --user daemon-reload" >&2
         exit 1
     fi
 
