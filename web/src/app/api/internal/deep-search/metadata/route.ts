@@ -5,7 +5,7 @@ import {
   applyTimingHeaders,
   elapsedMs,
   type SearchTimings,
-} from "@/app/api/catalogs/[id]/search/search-route-helpers";
+} from "@/lib/search/search-helpers";
 import {
   authorizeDeepSearchServiceRequest,
   catalogExists,

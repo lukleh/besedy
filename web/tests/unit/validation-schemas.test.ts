@@ -217,13 +217,13 @@ describe("TranscriptBackendSchema", () => {
 describe("AudioSourceSchema", () => {
   it("accepts valid audio sources", () => {
     expect(AudioSourceSchema.safeParse("archived").success).toBe(true);
-    expect(AudioSourceSchema.safeParse("listening").success).toBe(true);
     expect(AudioSourceSchema.safeParse("original").success).toBe(true);
   });
 
   it("rejects invalid sources", () => {
     expect(AudioSourceSchema.safeParse("").success).toBe(false);
     expect(AudioSourceSchema.safeParse("raw").success).toBe(false);
+    expect(AudioSourceSchema.safeParse("listening").success).toBe(false);
   });
 });
 
@@ -475,6 +475,23 @@ describe("AudioQuerySchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.source).toBe("archived");
+    }
+  });
+
+  it("serves the retired listening source from old clients as archived", () => {
+    const result = AudioQuerySchema.safeParse({ source: "listening", variant: "mobile" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.source).toBe("archived");
+      expect(result.data).not.toHaveProperty("variant");
+    }
+  });
+
+  it("keeps the original source", () => {
+    const result = AudioQuerySchema.safeParse({ source: "original" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.source).toBe("original");
     }
   });
 

@@ -89,12 +89,12 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "write_duplicates_csv": ("besedy.commands.catalog.ui", "write_duplicates_csv"),
     "DUPLICATES_CSV_COLUMNS": ("besedy.commands.catalog.ui", "DUPLICATES_CSV_COLUMNS"),
     # Symlink / alignment helpers
-    "_ensure_chain_alignment": ("besedy.commands.catalog.symlink", "_ensure_chain_alignment"),
+    "_ensure_chain_alignment": ("besedy.core.symlinks", "_ensure_chain_alignment"),
     "validate_symlink_can_be_created": (
-        "besedy.commands.catalog.symlink",
+        "besedy.core.symlinks",
         "validate_symlink_can_be_created",
     ),
-    "create_or_update_symlink": ("besedy.commands.catalog.symlink", "create_or_update_symlink"),
+    "create_or_update_symlink": ("besedy.core.symlinks", "create_or_update_symlink"),
     # CSV helpers
     "resolve_catalog_csv": ("besedy.commands.catalog.csv_utils", "resolve_catalog_csv"),
     "load_audio_rows": ("besedy.commands.catalog.csv_utils", "load_audio_rows"),

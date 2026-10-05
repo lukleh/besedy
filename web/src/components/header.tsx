@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
+import { Bookmark, Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
 import { openSupportEmail } from "@/lib/support-email";
 import { useSession } from "@/contexts/session-context";
 import { useCatalogs } from "@/hooks/use-catalogs";
@@ -68,6 +68,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
       ? `${t("nav.downloads")} (${downloadCountLabel})`
       : t("nav.downloads");
   const downloadsHref = useReturnHref(DOWNLOADS_PATH);
+  const bookmarksHref = useReturnHref("/bookmarks");
 
   // Fetch catalogs and preferences (skip on auth pages)
   const { data: groups } = useCatalogs({ enabled: !isAuthPage });
@@ -139,6 +140,20 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
                   data-testid="offline-indicator"
                 >
                   <WifiOff className="h-5 w-5" aria-hidden="true" />
+                </Link>
+              </Button>
+            )}
+            {/* Bookmarks live on the server, so they need a signed-in session
+                and a connection. */}
+            {!isAuthPage && isSignedIn && isOnline && (
+              <Button variant="ghost" size="icon" asChild>
+                <Link
+                  href={bookmarksHref}
+                  title={t("nav.bookmarks")}
+                  aria-label={t("nav.bookmarks")}
+                  data-testid="header-bookmarks"
+                >
+                  <Bookmark className="h-5 w-5" aria-hidden="true" />
                 </Link>
               </Button>
             )}

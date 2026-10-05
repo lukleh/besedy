@@ -4,6 +4,7 @@ import { fetchJson } from "@/lib/api/fetch-json";
 import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { createClientLogger } from "@/lib/log/client";
 import { serviceWorkerKeysAudioByFormat } from "@/lib/service-worker/audio-format-support";
+import { fadeOutAndPause } from "@/lib/sleep-timer/fade-out";
 import type { RandomEventResponse } from "@/types/api";
 
 export interface RadioEventTrack {
@@ -109,6 +110,11 @@ export function createRadioRuntime() {
   let errorHandler: ((event: Event) => void) | null = null;
   let isFetchingNext = false;
   let fetchRetryCount = 0;
+  let cancelSleepFade: (() => void) | null = null;
+  // The sleep timer's fade was cut short by the track ending: stay on that
+  // track ("pending" until it has ended, then "holding") instead of starting
+  // the next one, which the next play starts.
+  let trackEndHold: "pending" | "holding" | null = null;
 
   const listeners = new Set<RadioRuntimeListener>();
 
@@ -131,6 +137,8 @@ export function createRadioRuntime() {
 
   function stopAudioAndClearSource() {
     if (!audio) return;
+    cancelSleepFade?.();
+    trackEndHold = null;
 
     if (errorHandler) {
       audio.removeEventListener("error", errorHandler);
@@ -162,6 +170,8 @@ export function createRadioRuntime() {
 
   function playEventTrack(track: RadioEventTrack) {
     if (!audio) return;
+    cancelSleepFade?.();
+    trackEndHold = null;
 
     setSnapshot((current) => ({
       ...current,
@@ -296,6 +306,10 @@ export function createRadioRuntime() {
 
     const handleEnded = () => {
       setSnapshot((current) => ({ ...current, isPlaying: false }));
+      if (trackEndHold === "pending") {
+        trackEndHold = "holding";
+        return;
+      }
       playNextEventTrack();
     };
 
@@ -448,6 +462,12 @@ export function createRadioRuntime() {
     },
 
     resume() {
+      // Held at the end of a track by the sleep timer: go on to the next one.
+      if (trackEndHold === "holding") {
+        trackEndHold = null;
+        playNextEventTrack();
+        return;
+      }
       audio?.play().catch((error: unknown) => {
         logger.error("Failed to resume:", error);
       });
@@ -480,8 +500,26 @@ export function createRadioRuntime() {
       return { time, wasPlaying };
     },
 
+    /**
+     * The sleep timer ran out: fade the current track out and pause. Returns
+     * a function that cancels the fade.
+     */
+    fadeOutAndPause(): () => void {
+      if (!audio || audio.paused) return () => {};
+      cancelSleepFade?.();
+      const cancel = fadeOutAndPause(audio, {
+        onFinish: (outcome) => {
+          if (cancelSleepFade === cancel) cancelSleepFade = null;
+          if (outcome === "ended") trackEndHold = "pending";
+        },
+      });
+      cancelSleepFade = cancel;
+      return cancel;
+    },
+
     setVolume(nextVolume: number) {
       if (!audio) return;
+      cancelSleepFade?.();
 
       const clampedVolume = Math.max(0, Math.min(1, nextVolume));
       audio.volume = clampedVolume;
@@ -494,6 +532,7 @@ export function createRadioRuntime() {
 
     toggleMute() {
       if (!audio) return;
+      cancelSleepFade?.();
 
       if (snapshot.isMuted) {
         audio.volume = snapshot.volume || 1;

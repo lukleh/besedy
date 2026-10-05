@@ -63,7 +63,7 @@ ruff-format *args:
 # RAG Services (Docker)
 # ============================================================================
 
-rag_services_compose := "docker compose -f rag-services/docker-compose.yml"
+rag_services_compose := "bash scripts/run_rag_services_compose.sh"
 
 ensure_internal_network := "docker network inspect \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null"
 ensure_prefect_network := "docker network inspect \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null"
@@ -71,13 +71,15 @@ ensure_prefect_volume := "docker volume inspect \"${BESEDY_PREFECT_POSTGRES_VOLU
 
 prefect_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh prefect)\" -f jobs-service/docker-compose.prefect.yml"
 
-jobs_dev_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh development)\" -f jobs-service/docker-compose.jobs-dev.yml"
+# The jobs stacks run through scripts/run_jobs_compose.sh, which refuses a rendered
+# project that points at another environment (see docs/web/operations.md).
+jobs_dev_compose := "bash scripts/run_jobs_compose.sh development"
 
-jobs_test_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh test)\" -f jobs-service/docker-compose.jobs-test.yml"
+jobs_test_compose := "bash scripts/run_jobs_compose.sh test"
 
-jobs_prod_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh production)\" -f jobs-service/docker-compose.jobs-prod.yml"
+jobs_prod_compose := "bash scripts/run_jobs_compose.sh production"
 
-jobs_prod_codex_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh production)\" -f jobs-service/docker-compose.jobs-prod.yml -f jobs-service/docker-compose.jobs-codex-auth.yml"
+jobs_prod_codex_compose := "bash scripts/run_jobs_compose.sh production --codex-auth"
 
 # The ColBERT state bind source, created as the invoking user; Docker would create it as root.
 _colbert-state-dir:
@@ -132,15 +134,6 @@ rag-services-down: (_guard-shared-colbert "rag-services-down")
 
 rag-services-logs:
     {{ rag_services_compose }} logs -f
-
-tei-up:
-    {{ rag_services_compose }} --profile legacy-tei up -d reranker
-
-tei-down:
-    {{ rag_services_compose }} stop reranker
-
-tei-logs:
-    {{ rag_services_compose }} logs -f reranker
 
 colbert-up: (_guard-shared-colbert "colbert-up") _colbert-state-dir
     {{ rag_services_compose }} up -d --build colbert
@@ -1190,7 +1183,6 @@ mcp-smoke:
     export BESEDY_MCP_ENABLED=true
     export RAG_COLBERT_URL="http://$rag_container:18192/query"
     export RAG_COLBERT_INDEX_DIR=
-    export RAG_COLBERT_RERANK_ENABLED=false
     just test-up
     mcp_web_port="$(resolve_mcp_port web 3000)"
     mcp_db_port="$(resolve_mcp_port db 5432)"

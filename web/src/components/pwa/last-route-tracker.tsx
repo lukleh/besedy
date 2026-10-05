@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { saveLastRoute } from "@/lib/pwa/last-route";
+import { NOT_FOUND_PAGE_ATTRIBUTE, saveLastRoute } from "@/lib/pwa/last-route";
 
 /**
  * Records the page the listener has open so the installed app can resume
@@ -23,6 +23,9 @@ function LastRouteRecorder() {
 
   useEffect(() => {
     if (!pathname) return;
+    // The page is already in the DOM when this effect runs. A not-found page
+    // (a missing catalog or event, an unmatched URL) is not worth resuming on.
+    if (document.querySelector(`[${NOT_FOUND_PAGE_ATTRIBUTE}]`)) return;
     saveLastRoute(search ? `${pathname}?${search}` : pathname);
   }, [pathname, search]);
 

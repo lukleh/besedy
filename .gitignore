@@ -70,6 +70,8 @@ screenshots/
 # Root-level PNG screenshots
 /*.png
 pretrained_models/
+# Models live under the share home, not in a checkout.
+/models/
 worktrees/
 backups/
 besedy.toml
