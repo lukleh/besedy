@@ -23,8 +23,9 @@ overview of the current component and pipeline structure.
 │          │                                                          │
 │          ▼                                                          │
 │  ┌────────────────┐                                                 │
-│  │  run-pipeline  │  Orchestrates loudness, staging, ASR, and      │
-│  │ (stage-audio)  │  downstream artifacts for pending recordings   │
+│  │  run-pipeline  │  Orchestrates loudness, staging, archive       │
+│  │ (stage-audio)  │  (Opus + AAC), ASR, and, when enabled, the     │
+│  │                │  ColBERT index, diarization, and exports       │
 │  └───────┬────────┘                                                 │
 │          │                                                          │
 │          ├────────────────┬────────────────┬───────────────────┐   │
@@ -191,15 +192,7 @@ All related artifacts share a timestamp: `audio_catalog_<TS>.csv`, `audio_catalo
 
 **Trade-offs:** Longer, less human-friendly directory names. Requires tooling to work with timestamped paths.
 
-### 5. Polars with Nested Schemas
-
-Polars DataFrames with nested `List[Struct]` columns for words within segments, cached as Parquet.
-
-**Rationale:** 12x speedup over JSON iteration for batch analysis. Arrow memory format enables lazy evaluation and columnar ops. Nested structure preserves segment-word hierarchy without denormalization. Parquet cache makes subsequent loads instant. Can work at segment level or explode to flat words table.
-
-**Trade-offs:** Polars learning curve (explode, unnest). Cache files add disk usage. Overkill for small datasets.
-
-### 6. Canonical Transcript Schema
+### 5. Canonical Transcript Schema
 
 All transcription backends output the same JSON schema: `segments[]` with `start`, `end`, `text`, `confidence`, and nested `words[]`.
 
@@ -207,7 +200,7 @@ All transcription backends output the same JSON schema: `segments[]` with `start
 
 **Trade-offs:** Backend-specific features (language detection, embedded speaker IDs) may be lost in conversion. Requires maintaining a converter per backend.
 
-### 7. Full Audio-Hash Directories
+### 6. Full Audio-Hash Directories
 
 Transcripts are stored as
 `<workflow>/<output-component>/<audio_hash>/transcript.json`, where
@@ -223,7 +216,7 @@ operator search commands, but are not the persisted directory identity.
 **Trade-offs:** Paths are long and not pleasant to type manually; CLI output
 may abbreviate hashes for display.
 
-### 8. Speaker ID Scope
+### 7. Speaker ID Scope
 
 Speaker identifiers (`SPEAKER_01`, etc.) are unique only within a single audio file.
 
@@ -231,11 +224,11 @@ Speaker identifiers (`SPEAKER_01`, etc.) are unique only within a single audio f
 
 **Trade-offs:** Same speaker across recordings gets different IDs. Cross-file analysis requires an explicit clustering step.
 
-### 9. Opus Archive Compression
+### 8. Opus Archive Compression
 
-Audio archiving uses Opus codec, `voip` application mode, 32 kbps default (`low` quality preset).
+Audio archiving uses Opus codec, `voip` application mode. `catalog archive` defaults to the `low` quality preset (32 kbps); `run-pipeline` archives with `medium` (48 kbps), so recordings processed through the pipeline are 48 kbps unless archived by hand with another preset.
 
-**Why 32 kbps:** IETF MUSHRA tests scored Opus fullband at 32 kbps as 98.13/100 -- "almost transparent." RFC 6716 and Xiph guidance place fullband speech at 28-40 kbps. Diminishing returns beyond 32 kbps for speech-only content.
+**Why 32 kbps for speech:** IETF MUSHRA tests scored Opus fullband at 32 kbps as 98.13/100 -- "almost transparent." RFC 6716 and Xiph guidance place fullband speech at 28-40 kbps. Diminishing returns beyond 32 kbps for speech-only content.
 
 **Why `voip` mode:** Applies high-pass filter and formant emphasis to improve intelligibility in noisy environments -- matches the noisy discussion panel recordings in this corpus.
 
@@ -243,13 +236,13 @@ Audio archiving uses Opus codec, `voip` application mode, 32 kbps default (`low`
 
 | Preset | Bitrate | Use case |
 |--------|---------|----------|
-| low (default) | 32 kbps | Speech archival -- "almost transparent" |
-| medium | 48 kbps | Mixed speech/music, safety margin |
+| low (`catalog archive` default) | 32 kbps | Speech archival -- "almost transparent" |
+| medium (`run-pipeline`) | 48 kbps | Mixed speech/music, safety margin |
 | high | 64 kbps | Significant musical content |
 | max | 96 kbps | Rarely justified for speech |
 
 **Additional settings:** 24 kHz sample rate (super-wideband, sufficient for speech), VBR enabled, compression level 10, mono.
 
-**Trade-offs:** Minor artifacts in direct A/B at 32 kbps. VoIP high-pass removes sub-80 Hz content. Music-heavy content benefits from `--quality medium` (48 kbps).
+**Trade-offs:** Minor artifacts in direct A/B at 32 kbps. VoIP high-pass removes sub-80 Hz content. Music-heavy content benefits from `--quality medium` (48 kbps), which is what `run-pipeline` uses.
 
 **AAC-in-MP4 copy:** each Opus archive also gets `<name>.m4a` next to the `.webm`, AAC in MP4, recorded in the manifest's `Compressed AAC Path`, `Compressed AAC Size (bytes)` and `Compressed AAC Bitrate (kbps)` columns. iOS Safari loads a WebM audio file whole into its GPU process instead of streaming it, which fails for multi-hour recordings; with an MP4 it uses AVFoundation, which streams with range requests (measurements in #291). The copy is encoded from the same decoded source, with the same loudness measurement and declip decision, not transcoded from the Opus file, so there is no second lossy generation and both files share one timeline. It uses one FDK VBR mode for every recording, mode 3 (`AAC_COPY_VBR_MODE`), whatever the Opus bitrate: on 24 kHz mono speech that is about 59 kbps, about 30 kbps on 16 kHz sources (on one excerpt, modes 1 and 2 were no smaller). On 10-minute excerpts of 20 archive recordings, ViSQOL scored mode 3 at 4.69 and mode 4 (about 73 kbps) at 4.71 of about 4.75, and NISQA found no difference, so the larger mode was not worth its 25% more space (#291). `libfdk_aac` is used when ffmpeg has it. If only the copy fails, the Opus archive is kept with blank AAC columns and a warning, so a recording is never lost over its copy. `catalog archive --no-aac` skips the copy, and `catalog archive --backfill-aac` adds it to Opus rows of an existing archived manifest that lack one: it encodes each hash once and records every copy in the manifest as it finishes, so an interrupted run keeps every copy it recorded. Ctrl-C stops the copies being encoded as well (ffmpeg gets the same signal); they remove their partial files and a re-run encodes them. Every change to the manifest, whether a row appended by `catalog archive`, a backfill record or a `catalog remove`, takes the manifest's own lock (`.<manifest>.lock` next to it) for just that change, and each backfill record also takes the catalog's ingest lock (`.ingest-<catalog>.lock`, held by admin uploads around `run-pipeline`), so a backfill can run alongside uploads, even from an ingest worker on an older release, without either losing rows. A copy whose row was removed while it encoded is deleted rather than left behind.

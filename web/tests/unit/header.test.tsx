@@ -214,6 +214,26 @@ describe("Header", () => {
     );
   });
 
+  it("gives signed-in users a Bookmarks shortcut that returns to where it was opened", () => {
+    render(<Header />);
+
+    const shortcut = screen.getByTestId("header-bookmarks");
+    expect(shortcut).toHaveAttribute("href", "/bookmarks?backTo=%2Fcatalog%2Fc1%3Ftab%3Devents");
+    expect(shortcut).toHaveAccessibleName("nav.bookmarks");
+    expect(shortcut.querySelector(".lucide-bookmark")).toBeInTheDocument();
+  });
+
+  it("has no Bookmarks shortcut while signed out or offline", () => {
+    mocks.session = null;
+    const { rerender } = render(<Header />);
+    expect(screen.queryByTestId("header-bookmarks")).not.toBeInTheDocument();
+
+    mocks.session = { user: { id: "user-1", name: "Listener" } };
+    mocks.isOnline = false;
+    rerender(<Header />);
+    expect(screen.queryByTestId("header-bookmarks")).not.toBeInTheDocument();
+  });
+
   it("does not expose the protected shortcut while signed out", () => {
     mocks.session = null;
 

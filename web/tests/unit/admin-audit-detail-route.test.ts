@@ -65,29 +65,6 @@ describe("admin audit detail route", () => {
     isSuperadmin.mockResolvedValue(false);
   });
 
-  it("returns no related entity for unsupported legacy invitation audit rows", async () => {
-    prisma.auditLog.findFirst.mockResolvedValue(null);
-
-    const response = await getAuditDetail(
-      new NextRequest("http://localhost/api/admin/audit/log-inv-1?expand=true"),
-      { params: Promise.resolve({ id: "log-inv-1" }) }
-    );
-
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({
-      error: "Audit log entry not found",
-    });
-    expect(prisma.auditLog.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          id: "log-inv-1",
-          resource: { not: "invitation" },
-          domain: { not: null },
-        },
-      })
-    );
-  });
-
   it("does not expose pre-cutover audit rows through the detail route", async () => {
     prisma.auditLog.findFirst.mockResolvedValue(null);
 
@@ -101,7 +78,6 @@ describe("admin audit detail route", () => {
       expect.objectContaining({
         where: {
           id: "log-old-1",
-          resource: { not: "invitation" },
           domain: { not: null },
         },
       })

@@ -7,8 +7,7 @@
 
 export interface AudioSourceOption {
   id: string;
-  type: "archived" | "listening";
-  variant?: string;
+  type: "archived";
   /** Files the audio route can serve for this source (`/audio/sources`). */
   formats?: readonly string[];
 }
@@ -30,6 +29,10 @@ export function buildPlaybackProgressUrl(catalogId: string, hash: string): strin
   return `/api/catalogs/${catalogId}/recordings/${hash}/progress`;
 }
 
+export function buildRecordingBookmarksUrl(catalogId: string, hash: string): string {
+  return `/api/catalogs/${catalogId}/recordings/${hash}/bookmarks`;
+}
+
 /**
  * The streaming URL for a source. With `preferAac` (see prefersAacAudio), the
  * URL asks for the AAC-in-MP4 copy, but only when `/audio/sources` lists one
@@ -45,10 +48,6 @@ export function buildAudioUrl(
 ): string {
   const selectedSource = sources.find((source) => source.id === audioSource);
   const params = new URLSearchParams();
-  if (selectedSource?.type === "listening" && selectedSource.variant) {
-    params.set("source", "listening");
-    params.set("variant", selectedSource.variant);
-  }
   if (options.preferAac && selectedSource?.formats?.includes("aac")) {
     params.set("format", "aac");
   }
