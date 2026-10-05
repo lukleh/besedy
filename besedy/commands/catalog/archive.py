@@ -70,7 +70,7 @@ from besedy.lib.audio.types import (
     format_size,
 )
 from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
-from besedy.lib.workflow.common import CsvAudioRow
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED, CsvAudioRow
 
 # =============================================================================
 # Constants
@@ -1156,7 +1156,7 @@ def _run_backfill_jobs(
         s.reason not in ("source file not found", "not in source catalog", "archive file not found")
         for s in skipped
     )
-    return 1 if has_errors else 0
+    return EXIT_ROWS_SKIPPED if has_errors else 0
 
 
 def handle_archive(
@@ -1487,8 +1487,8 @@ def handle_archive(
         print(f"  Symlink:    {get_default_archived_symlink()}")
     print()
 
-    # Return error if any non-trivial failures
+    # Rows that failed to encode are skipped; the step itself ran.
     has_errors = any(
         s.reason not in ("output already exists", "source file not found") for s in skipped
     )
-    return 1 if has_errors else 0
+    return EXIT_ROWS_SKIPPED if has_errors else 0

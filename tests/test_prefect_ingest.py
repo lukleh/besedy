@@ -287,6 +287,7 @@ def test_run_catalog_cli_streams_output_and_raises_on_failure(tmp_path: Path) ->
                 log=lines.append,
             )
         assert failure.value.error_code == "run_pipeline_failed"
+        assert failure.value.return_code == 3
         assert "boom detail" in str(failure.value)
         assert "code 3" in str(failure.value)
     finally:
@@ -389,18 +390,30 @@ def test_progress_reporter_turns_off_without_client_configuration(monkeypatch) -
 # --- flow ---------------------------------------------------------------------
 
 
-def _run_flow(monkeypatch, paths: ingest_module.IngestPaths, *, audio_hash: str, progress=None):  # type: ignore[no-untyped-def]
+def _run_flow(  # type: ignore[no-untyped-def]
+    monkeypatch,
+    paths: ingest_module.IngestPaths,
+    *,
+    audio_hash: str,
+    progress=None,
+    pipeline_exit: int = 0,
+):
     cli_calls: list[list[str]] = []
     reports: list[tuple[str, dict[str, object]]] = []
     progress = [] if progress is None else progress
 
+    def fake_cli(args, *, stage, **_k):  # type: ignore[no-untyped-def]
+        cli_calls.append([stage, *args])
+        if stage == "run_pipeline" and pipeline_exit:
+            raise ingest_module.IngestFlowError(
+                f"run_pipeline exited with code {pipeline_exit}.",
+                error_code="run_pipeline_failed",
+                return_code=pipeline_exit,
+            )
+
     monkeypatch.setattr(ingest_module, "resolve_ingest_paths", lambda *_a, **_k: paths)
     monkeypatch.setattr(ingest_module, "audio_content_sha256sum", lambda _path: audio_hash)
-    monkeypatch.setattr(
-        ingest_module,
-        "run_catalog_cli",
-        lambda args, *, stage, **_k: cli_calls.append([stage, *args]),
-    )
+    monkeypatch.setattr(ingest_module, "run_catalog_cli", fake_cli)
     monkeypatch.setattr(
         ingest_module,
         "build_besedy_ingest_client_from_env",
@@ -496,6 +509,49 @@ def test_flow_accepts_new_recording_and_runs_cli(monkeypatch, tmp_path: Path) ->
         ["run_pipeline", "run-pipeline", "--csv", str(paths.catalog_csv), "--no-symlink"],
     ]
     assert reports == [(INTAKE_ID, result)]
+
+
+def test_flow_succeeds_when_only_other_rows_were_skipped(monkeypatch, tmp_path: Path) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    checked: list[tuple[Path, str]] = []
+    monkeypatch.setattr(
+        ingest_module,
+        "missing_pipeline_transcripts",
+        lambda csv_path, audio_hash: checked.append((csv_path, audio_hash)) or [],
+    )
+
+    result, _cli_calls, reports = _run_flow(
+        monkeypatch, paths, audio_hash=NEW_HASH, pipeline_exit=2
+    )
+
+    assert result["status"] == "SUCCEEDED"
+    assert checked == [(paths.catalog_csv, NEW_HASH)]
+    assert reports == [(INTAKE_ID, result)]
+
+
+@pytest.mark.parametrize(
+    ("pipeline_exit", "missing", "checks_transcripts"),
+    [(2, ["transcripts/faster-whisper/x/transcript.json"], True), (1, [], False)],
+)
+def test_flow_fails_when_the_pipeline_did_not_process_the_upload(  # type: ignore[no-untyped-def]
+    monkeypatch, tmp_path: Path, pipeline_exit: int, missing: list[str], checks_transcripts: bool
+) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    checked: list[str] = []
+    monkeypatch.setattr(
+        ingest_module,
+        "missing_pipeline_transcripts",
+        lambda _csv, audio_hash: checked.append(audio_hash) or [Path(p) for p in missing],
+    )
+
+    with pytest.raises(ingest_module.IngestFlowError) as failure:
+        _run_flow(monkeypatch, paths, audio_hash=NEW_HASH, pipeline_exit=pipeline_exit)
+
+    assert failure.value.error_code == "run_pipeline_failed"
+    assert checked == ([NEW_HASH] if checks_transcripts else [])
+    if checks_transcripts:
+        assert NEW_HASH in str(failure.value)
+        assert missing[0] in str(failure.value)
 
 
 def test_flow_reports_its_stages_before_the_pipeline(monkeypatch, tmp_path: Path) -> None:

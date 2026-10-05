@@ -29,7 +29,7 @@ from besedy.commands.catalog.archive import (
     nearest_opus_sample_rate,
     update_manifest_rows,
 )
-from besedy.lib.workflow.common import CsvAudioRow
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED, CsvAudioRow
 
 
 class TestNearestOpusSampleRate:
@@ -675,6 +675,27 @@ class TestArchiveAndBackfill:
         stamp = archived.stat().st_mtime_ns
         assert handle_archive(request) == 0
         assert archived.stat().st_mtime_ns == stamp
+
+    def test_row_that_fails_to_encode_is_skipped_with_exit_2(
+        self, tmp_path, require_ffmpeg, monkeypatch
+    ):
+        monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(tmp_path / "artifacts"))
+        (tmp_path / "media").mkdir()
+        good = _tone(tmp_path / "media" / "talk.mp3", seconds=3)
+        broken = tmp_path / "media" / "broken.mp3"
+        broken.write_bytes(b"not audio at all")
+        loudness = tmp_path / "audio_catalog_20260101_000000_loudness.csv"
+        loudness.write_text(
+            f"Hash,Full Path,Duration\n{'d' * 64},{good},00:00:03\n{'e' * 64},{broken},00:00:03\n",
+            encoding="utf-8",
+        )
+
+        request = ArchiveRequest(
+            csv=loudness, no_symlink=True, aac_copy=False, continue_on_error=True
+        )
+        assert handle_archive(request) == EXIT_ROWS_SKIPPED
+        _, rows = _read_rows(loudness.with_name(f"{loudness.stem}_archived.csv"))
+        assert [row["Hash"] for row in rows] == ["d" * 64]
 
 
 class TestBackfillSafety:

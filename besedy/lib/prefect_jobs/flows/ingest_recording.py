@@ -47,6 +47,8 @@ from besedy.lib.internal_ingest_client import (
     IngestProgressReport,
     build_besedy_ingest_client_from_env,
 )
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
+from besedy.lib.workflow.paths import missing_pipeline_transcripts
 
 from ..json_types import JsonDict
 from ..models import validate_catalog_id, validate_intake_id, validate_original_filename
@@ -70,9 +72,11 @@ ProgressReporter = Callable[[IngestProgressReport], None]
 class IngestFlowError(RuntimeError):
     """Raised for ingest failures that carry a stable error code for the web app."""
 
-    def __init__(self, message: str, *, error_code: str) -> None:
+    def __init__(self, message: str, *, error_code: str, return_code: int | None = None) -> None:
         super().__init__(message)
         self.error_code = error_code
+        # Exit code of the catalog CLI command that failed, if one did.
+        self.return_code = return_code
 
 
 @dataclass(slots=True, frozen=True)
@@ -244,6 +248,7 @@ def run_catalog_cli(
         raise IngestFlowError(
             f"{stage} exited with code {return_code}.\n{detail}".strip(),
             error_code=f"{stage}_failed",
+            return_code=return_code,
         )
     return "\n".join(captured) if capture_output else None
 
@@ -352,12 +357,34 @@ def catalog_add(accepted_dir: str, catalog_csv: str, intake_id: str) -> None:
 
 
 @task
-def run_pipeline(catalog_csv: str, intake_id: str) -> None:
-    run_catalog_cli(
-        ["run-pipeline", "--csv", catalog_csv, "--no-symlink"],
-        stage="run_pipeline",
-        progress=progress_reporter(intake_id),
-    )
+def run_pipeline(catalog_csv: str, intake_id: str, audio_hash: str) -> None:
+    """Run the pipeline over the whole catalog and require the upload's transcripts.
+
+    Exit 2 means other rows were skipped (for example an older recording whose
+    source is gone); that must not fail this upload, as long as the upload
+    itself was transcribed by every pipeline transcription workflow.
+    """
+    try:
+        run_catalog_cli(
+            ["run-pipeline", "--csv", catalog_csv, "--no-symlink"],
+            stage="run_pipeline",
+            progress=progress_reporter(intake_id),
+        )
+    except IngestFlowError as exc:
+        if exc.return_code != EXIT_ROWS_SKIPPED:
+            raise
+        missing = missing_pipeline_transcripts(Path(catalog_csv), audio_hash)
+        if missing:
+            listed = ", ".join(str(path) for path in missing)
+            raise IngestFlowError(
+                f"run_pipeline skipped this upload ({audio_hash}): no transcript at {listed}.\n{exc}",
+                error_code="run_pipeline_failed",
+                return_code=exc.return_code,
+            ) from exc
+        print(
+            "[run_pipeline] Some other catalog rows were skipped; "
+            f"the upload {audio_hash} has every pipeline transcript."
+        )
 
 
 @task(retries=3, retry_delay_seconds=[5, 15, 45], retry_condition_fn=_should_retry_report)
@@ -424,7 +451,7 @@ def ingest_recording_flow(
                 audio_hash = decoded_hash
                 accept_file(source, str(paths.accepted_dir), original_filename, audio_hash)
                 catalog_add(str(paths.accepted_dir), str(paths.catalog_csv), paths.intake_id)
-                run_pipeline(str(paths.catalog_csv), paths.intake_id)
+                run_pipeline(str(paths.catalog_csv), paths.intake_id, audio_hash)
                 outcome = {
                     "status": IngestCompletionStatus.SUCCEEDED.value,
                     "audioHash": audio_hash,

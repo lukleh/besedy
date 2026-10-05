@@ -29,6 +29,9 @@ host worker (work pool besedy-ingest-<env>, concurrency 1)
          no  ─▶ move to <uploads>/<catalog>/accepted/<intake>/<name>.<ext> (+ .audiohash)
     3. python -m besedy.cli.catalog add <uploads>/<catalog>/accepted/<intake> --csv <csv> --no-symlink
     4. python -m besedy.cli.catalog run-pipeline --csv <csv> --no-symlink
+       (exit 2 = other rows were skipped: accepted when the upload has a
+        transcript.json for every pipeline transcription workflow, otherwise
+        run_pipeline_failed naming the hash)
        (CLI children run with PYTHONUNBUFFERED=1; every `[N/M] step...` header
         line, and the duplicate check and catalog add before it, is sent to
         POST web /api/internal/ingest/<intake>/progress {step, total, label}
@@ -247,7 +250,10 @@ admin poll applies that outcome and syncs the catalog.
   killed run does not leave a truncated file, but it can leave recordings
   without a transcript, and `check` reports them.
 - `run-pipeline` processes every pending row of the catalog, so an ingest can
-  also finish work left over from manual runs. This is intentional.
+  also finish work left over from manual runs. This is intentional. An older
+  row that cannot be processed (missing source, undecodable file, unreadable
+  transcript) is skipped and makes `run-pipeline` exit 2; it does not fail
+  later uploads. Its step output names the row; fix or `catalog remove` it.
 - Production preflight adds: `UPLOADS_DIR`, `UPLOADS_GID` and
   `BESEDY_PATH_MAPPINGS` in the web env file; a group-owned mode-`2770` uploads
   root; `uploads_dir` in the host toml; the `PREFECT_INGEST_*` entries in
