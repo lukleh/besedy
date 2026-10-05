@@ -140,7 +140,6 @@ export async function POST(request: NextRequest) {
           denseScore: null,
           sparseScore: null,
           rrfScore: 0,
-          rerankScore: null,
         },
         neighbors
       ),
