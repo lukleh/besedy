@@ -181,7 +181,9 @@ workflow CLI.
 The configured language is also part of transcript identity: `auto` appends
 `@lang-auto` to the workflow output component, and every concrete language
 appends `@lang-<code>`. Czech (`cs`, explicit or defaulted) uses `@lang-cs`.
-Unsuffixed Czech transcript trees from before September 2026 are not read.
+Unsuffixed Czech transcript trees from before September 2026 are no longer
+written; to rename one, follow
+[Renaming a transcript backend key](migrations/renaming-a-transcript-backend-key.md).
 Canary translation runs with different source and target languages append
 `@lang-<source>-<target>` so translations never collide with native
 transcriptions.

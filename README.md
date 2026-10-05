@@ -231,7 +231,9 @@ prompts require a concrete language code, so the example configuration keeps
 
 Entries that omit `language` keep the historical forced-Czech behavior
 (`"cs"`) and write `@lang-cs` output paths. Older unsuffixed Czech transcripts
-are not read; automatic detection is always an explicit opt-in. When WhisperX
+are no longer written (see
+[Renaming a transcript backend key](docs/migrations/renaming-a-transcript-backend-key.md));
+automatic detection is always an explicit opt-in. When WhisperX
 uses automatic detection, omit `align_model` so WhisperX can select an
 alignment model for the detected language. See
 [`besedy.toml.example`](besedy.toml.example) for complete examples.
