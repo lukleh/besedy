@@ -3,7 +3,7 @@ import { AuthError, requireAuth } from "@/lib/auth/permissions";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { validateParams, validateRequestBody, forbidden, notFound } from "@/lib/api";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
-import { executeCatalogSearch } from "./search-service";
+import { executeCatalogSearch } from "@/lib/search/search-service";
 import {
   elapsedMs,
   getSearchConfig,
@@ -13,7 +13,7 @@ import {
   RagServiceError,
   RouteParams,
   SearchRequestSchema,
-} from "./search-route-helpers";
+} from "@/lib/search/search-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
