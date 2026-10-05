@@ -13,6 +13,8 @@ from .rag_retrieval_types import ChunkTokenDistribution, ChunkWindow, SegmentUni
 SHA256_64_RE = re.compile(r"^[a-f0-9]{64}$")
 
 CHUNK_VERSION = "v2"
+# Only the tokenizer of this model is used, to size chunks; no reranker runs.
+# Changing it moves every chunk boundary and forces a full re-index.
 CHUNK_TOKENIZER_MODEL = "Alibaba-NLP/gte-multilingual-reranker-base"
 CHUNK_MAX_SEGMENT_TOKENS = 90
 CHUNK_SEGMENT_SPLIT_STRATEGY = "punctuation-then-words"

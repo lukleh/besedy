@@ -219,8 +219,9 @@ admin poll applies that outcome and syncs the catalog.
   for it is RUNNING; the flow holds a per-catalog lock only against other
   ingest flows, not against the operator shell.
 - After a `FAILED` or `CANCELLED` ingest run `just catalog check` for that
-  catalog: a run killed mid-transcription can leave a truncated
-  `transcript.json` that later runs treat as complete.
+  catalog. Every transcript writer publishes `transcript.json` atomically, so a
+  killed run does not leave a truncated file, but it can leave recordings
+  without a transcript, and `check` reports them.
 - `run-pipeline` processes every pending row of the catalog, so an ingest can
   also finish work left over from manual runs. This is intentional.
 - Production preflight adds: `UPLOADS_DIR`, `UPLOADS_GID` and
