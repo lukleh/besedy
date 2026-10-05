@@ -12,11 +12,10 @@ How the web app models and serves catalog data (PostgreSQL + CSVs), database mig
 
 Each workflow group (catalog) is identified by a timestamp ID like `20251201_143022`. Three CSV types feed the web data layer:
 
-| Type                      | Pattern                                                           | Required |
-| ------------------------- | ----------------------------------------------------------------- | -------- |
-| Metadata catalog          | `audio_catalog_<id>.csv`                                          | Yes      |
-| Archived catalog          | `audio_catalog_<id>_loudness_archived.csv`                        | Yes      |
-| Listening variant catalog | Path stored in `workflow_variant.listening_archived_catalog_path` | No       |
+| Type             | Pattern                                    | Required |
+| ---------------- | ------------------------------------------ | -------- |
+| Metadata catalog | `audio_catalog_<id>.csv`                   | Yes      |
+| Archived catalog | `audio_catalog_<id>_loudness_archived.csv` | Yes      |
 
 Optional artifacts: `audio_catalog_<id>_duplicates.csv` (duplicates), `transcripts_<id>/` (ASR output). CSV files are ingest input only -- API endpoints never parse them directly.
 
@@ -40,7 +39,6 @@ unchanged; `v4` added the AAC copy columns (#291).
 | Fingerprint unchanged            | Source skipped                                           |
 | Changed metadata or archived CSV | Rebuild `catalog_entry`                                  |
 | Changed duplicates CSV           | Rebuild `catalog_duplicate`, recompute `duplicate_count` |
-| Changed listening variant CSV    | Rebuild only that variant in `catalog_listening_entry`   |
 
 Sync triggers:
 
@@ -77,17 +75,16 @@ configuration error.
 
 Rows missing from one source still exist in `catalog_entry` but remain non-actionable.
 
-### WorkflowVariant Model
-
-`WorkflowVariant` enables alternate listening sources per catalog. Each variant points to a separate archived catalog via `listeningArchivedCatalogPath`. Variant availability is tracked in `catalog_listening_entry`, synced independently from the main catalog entries; its `compressed_aac_path` comes from the variant catalog's `Compressed AAC Path` in the same way.
-
 ### Audio Source Resolution
 
-When serving audio, the app resolves sources in priority order:
+When serving audio, the app resolves the source from the `source` query
+parameter:
 
-1. **Archived** (compressed) -- primary playback source
-2. **Listening variant** -- alternate quality/format from a workflow variant
-3. **Original** -- uncompressed source for download
+1. **Archived** (compressed, the default) -- primary playback source
+2. **Original** -- uncompressed source for download
+
+The retired `listening` source (and its `variant` parameter) is still accepted
+from old clients and served as archived.
 
 Per-recording source preferences are stored in `user_preferences.settings.audioSources`.
 
@@ -176,10 +173,9 @@ Additional constraints:
 
 | Table                                | Purpose                                          |
 | ------------------------------------ | ------------------------------------------------ |
-| `workflow_group`, `workflow_variant` | Catalog registration and alternate audio sources |
+| `workflow_group`                     | Catalog registration                             |
 | `catalog_entry`                      | Materialized metadata + archived join            |
 | `catalog_duplicate`                  | Duplicate rows from duplicates CSV               |
-| `catalog_listening_entry`            | Per-variant listening availability               |
 | `catalog_sync_state`                 | Source fingerprint + status tracking             |
 | `catalog_access`                     | User-to-catalog grants with access levels        |
 | `audio_metadata`                     | Curated metadata per recording                   |

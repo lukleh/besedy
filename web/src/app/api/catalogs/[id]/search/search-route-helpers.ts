@@ -6,24 +6,20 @@ import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   getRagBackendKey,
   getRagColbertModel,
-  getRagRerankModel,
   RAG_DEFAULTS,
 } from "@/lib/runtime-config";
 
 const DEFAULT_RESULT_LIMIT = RAG_DEFAULTS.RESULT_LIMIT;
 const MAX_LIMIT = RAG_DEFAULTS.MAX_LIMIT;
-const MAX_CANDIDATE_LIMIT = 200;
 const MAX_NEIGHBOR_COUNT = 3;
 export const MAX_PER_AUDIO_LIMIT = 100;
 export const LEXICAL_MATCH_MODES = ["all_terms", "phrase", "any_term", "prefix"] as const;
 export const LexicalMatchModeSchema = z.enum(LEXICAL_MATCH_MODES);
 export type LexicalMatchMode = z.infer<typeof LexicalMatchModeSchema>;
 const MAX_METADATA_FILTER_VALUES = 50;
-const DEFAULT_RERANK_TOP_N = RAG_DEFAULTS.RERANK_TOP_N;
 const DEFAULT_RELATIVE_SCORE_CUTOFF = RAG_DEFAULTS.RELATIVE_SCORE_CUTOFF;
 const DEFAULT_TIMEOUT_MS = RAG_DEFAULTS.TIMEOUT_MS;
 const DEFAULT_COLBERT_TOP_K = RAG_DEFAULTS.COLBERT_TOP_K;
-const DEFAULT_COLBERT_RERANK_ENABLED = false;
 const COLBERT_POST_FILTER_FETCH_MULTIPLIER = 4;
 const MAX_COLBERT_FETCH_LIMIT = 1000;
 export type RetrievalMode = "colbert";
@@ -111,7 +107,6 @@ export function searchesPrimaryRecordingsOnly(
 export const SearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(2000),
   limit: z.number().int().min(1).max(MAX_LIMIT).optional(),
-  candidateLimit: z.number().int().min(1).max(MAX_CANDIDATE_LIMIT).optional(),
   includeNeighbors: z.boolean().optional(),
   neighborCount: z.number().int().min(0).max(MAX_NEIGHBOR_COUNT).optional(),
   dedupeByAudio: z.boolean().optional(),
@@ -138,7 +133,6 @@ export interface Candidate {
   denseScore: number | null;
   sparseScore: number | null;
   rrfScore: number;
-  rerankScore: number | null;
 }
 
 export interface RetrievalPassage {
@@ -186,7 +180,6 @@ export interface SearchTimings {
   totalMs: number;
   authMs?: number;
   colbertMs?: number;
-  rerankMs?: number;
   metadataMs?: number;
 }
 
@@ -198,7 +191,6 @@ export interface SearchTelemetryPayload {
   backendKey: string;
   queryLength: number;
   limit: number;
-  rerankTopN: number;
   fusedCandidates: number;
   resultCount: number;
   timings: SearchTimings;
@@ -240,20 +232,6 @@ function parseFloatEnv(
     throw new Error(`${name} must be between ${min} and ${max}. Received: ${value}`);
   }
   return parsed;
-}
-
-function parseBooleanEnv(name: string, value: string | undefined, fallback: boolean): boolean {
-  if (!value) return fallback;
-
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-
-  throw new Error(`${name} must be a boolean. Received: ${value}`);
 }
 
 export function buildAllowedAudioHashesQuery(
@@ -490,21 +468,11 @@ export function getSearchConfig() {
     MAX_LIMIT,
   );
   const retrievalMode: RetrievalMode = "colbert";
-  const rerankEnabled = parseBooleanEnv(
-    "RAG_COLBERT_RERANK_ENABLED",
-    process.env.RAG_COLBERT_RERANK_ENABLED,
-    DEFAULT_COLBERT_RERANK_ENABLED,
-  );
   const colbertIndexDir = process.env.RAG_COLBERT_INDEX_DIR?.trim() || null;
 
   return {
     retrievalMode,
-    rerankEnabled,
     backendKey: getRagBackendKey(),
-    rerankUrl:
-      process.env.RAG_TEI_RERANK_URL ||
-      process.env.RAG_RERANK_URL ||
-      RAG_DEFAULTS.RERANK_URL,
     colbertUrl: process.env.RAG_COLBERT_URL || RAG_DEFAULTS.COLBERT_URL,
     colbertTopK: parseIntEnv(
       "RAG_COLBERT_TOP_K",
@@ -515,9 +483,7 @@ export function getSearchConfig() {
     colbertRootDir:
       process.env.RAG_COLBERT_ROOT_DIR?.trim() || RAG_DEFAULTS.COLBERT_ROOT_DIR,
     colbertIndexDir,
-    rerankModel: getRagRerankModel(),
-    timeoutMs: parseIntEnv("RAG_TEI_TIMEOUT_MS", process.env.RAG_TEI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
-    rerankTopN: parseIntEnv("RAG_RERANK_TOP_N", process.env.RAG_RERANK_TOP_N, DEFAULT_RERANK_TOP_N),
+    timeoutMs: parseIntEnv("RAG_COLBERT_TIMEOUT_MS", process.env.RAG_COLBERT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
     resultLimit,
     relativeScoreCutoff: parseFloatEnv(
       "RAG_RELATIVE_SCORE_CUTOFF",
@@ -527,15 +493,6 @@ export function getSearchConfig() {
       1,
     ),
   };
-}
-
-export function resolveRerankCandidateLimit(
-  requestedCandidateLimit: number | undefined,
-  resultLimit: number,
-  rerankTopN: number,
-): number {
-  const requested = requestedCandidateLimit ?? rerankTopN;
-  return Math.min(rerankTopN, Math.max(requested, resultLimit));
 }
 
 export function shouldOverfetchColbertResults(
@@ -553,32 +510,8 @@ export function resolveColbertFetchLimit(baseLimit: number): number {
   return Math.min(MAX_COLBERT_FETCH_LIMIT, baseLimit * COLBERT_POST_FILTER_FETCH_MULTIPLIER);
 }
 
-export function collectRerankCandidates(
-  candidates: Candidate[],
-  candidateLimit: number,
-  maxPerAudio: number | null,
-): Candidate[] {
-  if (candidateLimit <= 0 || candidates.length === 0) return [];
-  if (!maxPerAudio || maxPerAudio < 1) {
-    return candidates.slice(0, candidateLimit);
-  }
-
-  const counts = new Map<string, number>();
-  const selected: Candidate[] = [];
-
-  for (const candidate of candidates) {
-    const seen = counts.get(candidate.audioHash) ?? 0;
-    if (seen >= maxPerAudio) continue;
-    counts.set(candidate.audioHash, seen + 1);
-    selected.push(candidate);
-    if (selected.length >= candidateLimit) break;
-  }
-
-  return selected;
-}
-
 function candidateScore(candidate: Candidate): number {
-  const score = candidate.rerankScore ?? candidate.rrfScore;
+  const score = candidate.rrfScore;
   return Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY;
 }
 
@@ -612,7 +545,6 @@ export function applyTimingHeaders(
     ["total", timings.totalMs],
     ["auth", timings.authMs],
     ["colbert", timings.colbertMs],
-    ["rerank", timings.rerankMs],
     ["metadata", timings.metadataMs],
   ];
 
@@ -662,49 +594,6 @@ async function fetchJsonWithTimeout(
   } finally {
     clearTimeout(timeout);
   }
-}
-
-export async function rerankCandidates(
-  query: string,
-  candidates: Candidate[],
-  rerankUrl: string,
-  timeoutMs: number,
-): Promise<number[]> {
-  if (candidates.length === 0) return [];
-
-  const raw = await fetchJsonWithTimeout(
-    rerankUrl,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query,
-        texts: candidates.map((candidate) => candidate.text),
-      }),
-    },
-    timeoutMs,
-  );
-
-  if (!Array.isArray(raw)) {
-    throw new RagServiceError("Invalid rerank response payload", 502);
-  }
-
-  const scores = new Array<number>(candidates.length).fill(0);
-  for (const item of raw) {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      typeof (item as { index?: unknown }).index !== "number" ||
-      typeof (item as { score?: unknown }).score !== "number"
-    ) {
-      continue;
-    }
-    const index = (item as { index: number }).index;
-    if (index >= 0 && index < scores.length) {
-      scores[index] = (item as { score: number }).score;
-    }
-  }
-  return scores;
 }
 
 export async function queryColbertService(
@@ -978,7 +867,6 @@ export function materializeColbertCandidates(
       denseScore: hit.score,
       sparseScore: null,
       rrfScore: hit.score,
-      rerankScore: null,
     });
     return acc;
   }, []);

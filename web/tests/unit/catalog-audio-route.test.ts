@@ -35,17 +35,7 @@ const {
   mockLogAccessDenied,
   mockValidatePathAsync,
   mockRewritePath,
-  mockPrisma,
 } = vi.hoisted(() => {
-  const mockPrisma = {
-    workflowVariant: {
-      findFirst: vi.fn(),
-    },
-    catalogListeningEntry: {
-      findUnique: vi.fn(),
-    },
-  };
-
   return {
     mockResolveCatalogRecordingRouteAccess: vi.fn(),
     mockRequireCatalogRecordingAccess: vi.fn(),
@@ -57,7 +47,6 @@ const {
     mockLogAccessDenied: vi.fn(),
     mockValidatePathAsync: vi.fn(),
     mockRewritePath: vi.fn((input: string) => input),
-    mockPrisma,
   };
 });
 
@@ -81,11 +70,6 @@ vi.mock("@/lib/audit/logger", () => ({
 vi.mock("@/lib/security/path-validation", () => ({
   validatePathAsync: mockValidatePathAsync,
   rewritePath: mockRewritePath,
-}));
-
-vi.mock("@/lib/db", () => ({
-  default: mockPrisma,
-  prisma: mockPrisma,
 }));
 
 describe("catalog audio route", () => {
@@ -639,38 +623,28 @@ describe("catalog audio route", () => {
     }
   });
 
-  it("logs the resolved listening variant when serving listening audio", async () => {
+  it("serves the retired listening source as the archived recording", async () => {
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 
     try {
-      const listeningPath = path.join(tmpDir, "listening.mp3");
-      fs.writeFileSync(listeningPath, Buffer.alloc(FILE_SIZE, 2));
-
-      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
-        variant: "enhanced-default",
-        listeningArchivedCatalogPath: "/catalogs/listening.csv",
-      });
-      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue({
-        compressedPath: listeningPath,
-      });
-
       const request = new NextRequest(
-        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening`
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=enhanced-default`
       );
       const response = await getAudio(request, {
         params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
       });
 
       expect(response.status).toBe(200);
+      expect(mockValidatePathAsync).toHaveBeenCalledWith(audioPath);
 
       const event = findStructuredEvent(infoSpy.mock.calls as unknown[][], "audio_route_response");
       expect(event).toMatchObject({
         status: 200,
         reason: "full_stream",
-        requestedSource: "listening",
-        servedSource: "listening",
-        variant: "enhanced-default",
+        requestedSource: "archived",
+        servedSource: "archived",
       });
+      expect(event).not.toHaveProperty("variant");
       await response.arrayBuffer();
     } finally {
       infoSpy.mockRestore();
@@ -814,49 +788,7 @@ describe("catalog audio route", () => {
       expect(response.status).toBe(400);
     });
 
-    it("serves the listening variant's own AAC copy", async () => {
-      const listeningAac = path.join(tmpDir, "listening.m4a");
-      fs.writeFileSync(listeningAac, Buffer.alloc(512, 4));
-      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
-        variant: "enhanced",
-        listeningArchivedCatalogPath: "/catalogs/listening.csv",
-      });
-      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue({
-        compressedPath: path.join(tmpDir, "listening.webm"),
-        compressedAacPath: listeningAac,
-      });
-
-      const response = await request("source=listening&format=aac");
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("Content-Length")).toBe("512");
-      expect(mockValidatePathAsync).toHaveBeenCalledWith(listeningAac);
-      await response.arrayBuffer();
-    });
-
-    it("does not substitute the archived AAC copy for a variant without one", async () => {
-      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
-        variant: "enhanced",
-        listeningArchivedCatalogPath: "/catalogs/listening.csv",
-      });
-      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue({
-        compressedPath: path.join(tmpDir, "listening.webm"),
-        compressedAacPath: null,
-      });
-
-      const response = await request("source=listening&format=aac");
-
-      expect(response.status).toBe(404);
-      expect(mockValidatePathAsync).not.toHaveBeenCalled();
-    });
-
-    it("uses the archived AAC copy when the variant has no row for the recording", async () => {
-      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
-        variant: "enhanced",
-        listeningArchivedCatalogPath: "/catalogs/listening.csv",
-      });
-      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue(null);
-
+    it("serves the archived AAC copy for the retired listening source", async () => {
       const response = await request("source=listening&format=aac");
 
       expect(response.status).toBe(200);
@@ -864,13 +796,7 @@ describe("catalog audio route", () => {
       await response.arrayBuffer();
     });
 
-    it("audits the archived source when a listening download falls back to it", async () => {
-      mockPrisma.workflowVariant.findFirst.mockResolvedValue({
-        variant: "enhanced",
-        listeningArchivedCatalogPath: "/catalogs/listening.csv",
-      });
-      mockPrisma.catalogListeningEntry.findUnique.mockResolvedValue(null);
-
+    it("audits the archived source for a retired listening download", async () => {
       const response = await request("source=listening&format=aac&download=true");
 
       expect(response.status).toBe(200);

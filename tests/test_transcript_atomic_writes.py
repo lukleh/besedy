@@ -137,7 +137,6 @@ def _drive_faster_whisper_main(monkeypatch, tmp_path: Path, bundle_root: Path) -
     monkeypatch.setattr(
         faster_whisper_module, "BatchedInferencePipeline", lambda *, model: DummyPipeline()
     )
-    monkeypatch.setattr(faster_whisper_module, "extract_vad_segments", lambda *_a, **_k: [])
     monkeypatch.setattr(
         faster_whisper_module,
         "build_payload",

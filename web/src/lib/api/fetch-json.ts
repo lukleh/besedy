@@ -47,7 +47,7 @@ interface ApiErrorPayload {
   error?: string;
 }
 
-function redirectToSignIn(): void {
+export function redirectToSignIn(): void {
   if (typeof window === "undefined") return;
 
   const { pathname, search } = window.location;

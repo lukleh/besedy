@@ -299,11 +299,6 @@ function sample(values: string[], max = 10): string[] {
 async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCount: number }> {
   const group = await prisma.workflowGroup.findUnique({
     where: { id: groupId },
-    include: {
-      variants: {
-        orderBy: { variant: "asc" },
-      },
-    },
   });
   if (!group) {
     throw new Error(`Workflow group not found: ${groupId}`);
@@ -354,24 +349,7 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
     expectedDuplicatePayloadByKey.set(key, toDuplicatePayload(row));
   }
 
-  const expectedListeningByVariant = new Map<string, Set<string>>();
-  const expectedListeningAacPaths = new Map<string, string | null>();
-  for (const variant of group.variants) {
-    const variantSet = new Set<string>();
-    if (variant.listeningArchivedCatalogPath) {
-      const listeningRows = await loadCsvRows(variant.listeningArchivedCatalogPath);
-      for (const row of listeningRows) {
-        const hash = normalizeHash(getRowValue(row, ["sha256", "hash", "Hash"]));
-        if (hash) {
-          variantSet.add(hash);
-          expectedListeningAacPaths.set(`${variant.variant}\u0000${hash}`, expectedAacPath(row));
-        }
-      }
-    }
-    expectedListeningByVariant.set(variant.variant, variantSet);
-  }
-
-  const [entryRows, dbDuplicateRows, dbListeningRows] = await Promise.all([
+  const [entryRows, dbDuplicateRows] = await Promise.all([
     prisma.catalogEntry.findMany({
       where: { workflowGroupId: groupId },
       select: {
@@ -394,14 +372,6 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
         duplicatePath: true,
         duplicatePayloadVersion: true,
         duplicatePayload: true,
-      },
-    }),
-    prisma.catalogListeningEntry.findMany({
-      where: { workflowGroupId: groupId },
-      select: {
-        variant: true,
-        audioHash: true,
-        compressedAacPath: true,
       },
     }),
   ]);
@@ -518,49 +488,8 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
     }
   }
 
-  const dbListeningByVariant = new Map<string, Set<string>>();
-  for (const row of dbListeningRows) {
-    const set = dbListeningByVariant.get(row.variant) ?? new Set<string>();
-    set.add(row.audioHash);
-    dbListeningByVariant.set(row.variant, set);
-    const key = `${row.variant}\u0000${row.audioHash}`;
-    if (!expectedListeningAacPaths.has(key)) continue;
-    const expectedAac = expectedListeningAacPaths.get(key) ?? null;
-    if ((row.compressedAacPath ?? null) !== expectedAac) {
-      mismatches.push(
-        `catalog_listening_entry.compressed_aac_path mismatch for variant=${row.variant} ${row.audioHash}: db=${row.compressedAacPath ?? "NULL"} expected=${expectedAac ?? "NULL"}`
-      );
-    }
-  }
-
-  const allVariants = new Set([
-    ...expectedListeningByVariant.keys(),
-    ...dbListeningByVariant.keys(),
-  ]);
-  for (const variant of allVariants) {
-    const expectedSet = expectedListeningByVariant.get(variant) ?? new Set<string>();
-    const actualSet = dbListeningByVariant.get(variant) ?? new Set<string>();
-    const listeningDiff = diffSets(expectedSet, actualSet);
-    if (listeningDiff.missing.length > 0 || listeningDiff.extra.length > 0) {
-      mismatches.push(
-        `catalog_listening_entry mismatch for variant=${variant}: missing=${listeningDiff.missing.length} extra=${listeningDiff.extra.length}`
-      );
-      if (listeningDiff.missing.length > 0) {
-        mismatches.push(
-          `  listening missing sample (${variant}): ${sample(listeningDiff.missing).join(", ")}`
-        );
-      }
-      if (listeningDiff.extra.length > 0) {
-        mismatches.push(
-          `  listening extra sample (${variant}): ${sample(listeningDiff.extra).join(", ")}`
-        );
-      }
-    }
-  }
-
   // Explicit source availability parity check for each hash.
-  // This mirrors expected API source availability: archived by archived membership,
-  // listening by variant-specific listening catalog membership.
+  // This mirrors expected API source availability: archived by archived membership.
   for (const hash of expectedUnion) {
     const dbEntry = entryByHash.get(hash);
     if (!dbEntry) continue;
@@ -570,16 +499,6 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
       mismatches.push(
         `audio_source.archived availability mismatch for ${hash}: db=${dbEntry.hasArchived} expected=${expectedArchivedAvailable}`
       );
-    }
-
-    for (const variant of allVariants) {
-      const expectedAvailable = expectedListeningByVariant.get(variant)?.has(hash) ?? false;
-      const actualAvailable = dbListeningByVariant.get(variant)?.has(hash) ?? false;
-      if (expectedAvailable !== actualAvailable) {
-        mismatches.push(
-          `audio_source.listening availability mismatch for ${hash} variant=${variant}: db=${actualAvailable} expected=${expectedAvailable}`
-        );
-      }
     }
   }
 
@@ -597,7 +516,7 @@ async function verifyGroup(groupId: string): Promise<{ ok: boolean; mismatchCoun
   }
 
   console.log(
-    `[verify-catalog-db-parity] Group ${groupId}: OK (hashes=${entryRows.length}, duplicates=${dbDuplicateRows.length}, listening=${dbListeningRows.length})`
+    `[verify-catalog-db-parity] Group ${groupId}: OK (hashes=${entryRows.length}, duplicates=${dbDuplicateRows.length})`
   );
   return { ok: true, mismatchCount: 0 };
 }

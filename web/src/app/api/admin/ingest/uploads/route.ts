@@ -14,8 +14,8 @@ import {
   ensureSharedIntakeDir,
   getIngestChunkBytes,
   getIngestMaxUploadBytes,
-  getSafeAudioExtension,
 } from '@/lib/ingest/server';
+import { getAllowedIngestExtension } from '@/lib/ingest/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     if (!bodyResult.success) return bodyResult.response;
     const { catalogId, filename, sizeBytes, mimeType } = bodyResult.data;
 
-    const extension = getSafeAudioExtension(filename);
+    const extension = getAllowedIngestExtension(filename);
     if (!extension) {
       return badRequest('Unsupported file type');
     }

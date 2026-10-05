@@ -138,7 +138,7 @@ def test_main_json_keeps_stdout_machine_readable(
         return ColbertIndexResult(
             index_dir=str(index_dir),
             workflow_group_id="wg-123",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260403_120000",
             chunk_version="v2",
             min_chunk_tokens=180,
@@ -179,7 +179,7 @@ def test_main_json_keeps_stdout_machine_readable(
                 "--workflow-group-id",
                 "wg-123",
                 "--backend-key",
-                "faster-whisper/large-v3@silero_vad_v6",
+                "faster-whisper/large-v3@silero_vad_v6@lang-cs",
                 "--transcripts-root",
                 str(tmp_path),
                 "--output-dir",
