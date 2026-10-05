@@ -58,7 +58,6 @@ export async function POST(request: NextRequest) {
       catalogId: bodyResult.data.catalogId,
       query: bodyResult.data.query,
       limit: bodyResult.data.limit ?? config.resultLimit,
-      candidateLimit: bodyResult.data.candidateLimit,
       includeNeighbors: bodyResult.data.includeNeighbors ?? false,
       neighborCount: bodyResult.data.neighborCount,
       maxPerAudio: bodyResult.data.dedupeByAudio
@@ -79,8 +78,6 @@ export async function POST(request: NextRequest) {
       retrieval: {
         backendKey: execution.config.backendKey,
         retrievalMode: execution.config.retrievalMode,
-        rerankEnabled: execution.config.rerankEnabled,
-        rerankTopN: execution.config.rerankTopN,
         fusedCandidates: execution.fusedCandidates,
       },
     });

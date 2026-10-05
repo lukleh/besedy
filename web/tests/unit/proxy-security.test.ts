@@ -202,18 +202,18 @@ describe("proxy security controls", () => {
     expect(response.headers.get("X-App-Commit")).toBeTruthy();
   });
 
-  it("funnels legacy signin callback fallout into auth-complete for old auth tabs", async () => {
+  it("shows the sign-in page for a signed-out visit that carries OAuth callback parameters", async () => {
     const { proxy } = await import("@/proxy");
 
     const request = new NextRequest(
-      "http://localhost/auth/signin?callbackUrl=%2Flabs&state=state_not_found"
+      "http://localhost/auth/signin?callbackUrl=%2Flabs&state=state_not_found&error=access_denied"
     );
     const response = await proxy(request);
 
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(
-      "http://localhost/auth/complete?callbackUrl=%2Flabs&state=state_not_found"
-    );
+    // No redirect into /auth/complete: those parameters only came from tabs
+    // running a bundle that no longer exists.
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
     expect(response.headers.get("X-App-Commit")).toBeTruthy();
   });
 

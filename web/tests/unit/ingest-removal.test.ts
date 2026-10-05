@@ -13,6 +13,7 @@ const tx = vi.hoisted(() => ({
   audioMetadata: { deleteMany: vi.fn() },
   recordingPlaybackProgress: { deleteMany: vi.fn() },
   recordingNotification: { deleteMany: vi.fn() },
+  recordingBookmark: { deleteMany: vi.fn() },
   workflowGroup: { update: vi.fn() },
 }));
 
@@ -32,6 +33,7 @@ describe('removeRecordingWebState', () => {
     tx.catalogEntry.count.mockResolvedValue(0);
     tx.recordingPlaybackProgress.deleteMany.mockResolvedValue({ count: 3 });
     tx.recordingNotification.deleteMany.mockResolvedValue({ count: 2 });
+    tx.recordingBookmark.deleteMany.mockResolvedValue({ count: 4 });
   });
 
   it('detaches the recording, repairs an event that lost its primary, and deletes user-authored rows', async () => {
@@ -49,6 +51,7 @@ describe('removeRecordingWebState', () => {
       progressDeleted: 3,
       progressRetained: false,
       notificationsDeleted: 2,
+      bookmarksDeleted: 4,
     });
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(tx.catalogEventRecording.delete).toHaveBeenCalledWith({
@@ -69,6 +72,11 @@ describe('removeRecordingWebState', () => {
     });
     expect(tx.recordingNotification.deleteMany).toHaveBeenCalledWith({
       where: { catalogId: CATALOG_ID, audioHash: HASH },
+    });
+    // Bookmarks belong to the catalog they were made in, so a copy of the
+    // same audio in another catalog keeps its own.
+    expect(tx.recordingBookmark.deleteMany).toHaveBeenCalledWith({
+      where: { workflowGroupId: CATALOG_ID, audioHash: HASH },
     });
     expect(tx.workflowGroup.update).toHaveBeenCalled();
   });

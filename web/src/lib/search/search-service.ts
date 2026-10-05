@@ -6,7 +6,6 @@ import {
   assembleContextText,
   buildAllowedAudioHashesQuery,
   buildEligibleAudioHashesQuery,
-  collectRerankCandidates,
   elapsedMs,
   getSearchConfig,
   lookupColbertChunks,
@@ -17,8 +16,6 @@ import {
   RagServiceError,
   resolveColbertFetchLimit,
   resolveColbertIndexDir,
-  resolveRerankCandidateLimit,
-  rerankCandidates,
   searchesPrimaryRecordingsOnly,
   shouldOverfetchColbertResults,
   type AllowedAudioHashRow,
@@ -106,7 +103,6 @@ export interface ExecuteCatalogSearchInput {
   catalogId: string;
   query: string;
   limit?: number;
-  candidateLimit?: number;
   includeNeighbors?: boolean;
   neighborCount?: number;
   maxPerAudio?: number | null;
@@ -159,18 +155,12 @@ export async function executeCatalogSearch(
   const config = input.config ?? getSearchConfig();
   const requestStartedAt = input.requestStartedAt ?? performance.now();
   const limit = input.limit ?? config.resultLimit;
-  const rerankCandidateLimit = resolveRerankCandidateLimit(
-    input.candidateLimit,
-    limit,
-    config.rerankTopN,
-  );
   const neighborCount = input.includeNeighbors ? (input.neighborCount ?? 1) : 0;
   const metadataFilters = input.metadataFilters ?? null;
   const audioHashesQueryOptions = {
     primaryRecordingsOnly: searchesPrimaryRecordingsOnly(metadataFilters),
   };
 
-  let rerankMs: number | undefined;
   let fusedCandidates = 0;
 
   const colbertStartedAt = performance.now();
@@ -191,8 +181,7 @@ export async function executeCatalogSearch(
     };
   }
 
-  const requiredColbertRows = config.rerankEnabled ? rerankCandidateLimit : limit;
-  const baseColbertK = Math.max(config.colbertTopK, requiredColbertRows, limit);
+  const baseColbertK = Math.max(config.colbertTopK, limit);
   const maxColbertK = shouldOverfetchColbertResults(input.catalogGrant, metadataFilters)
     ? resolveColbertFetchLimit(baseColbertK)
     : baseColbertK;
@@ -227,7 +216,7 @@ export async function executeCatalogSearch(
     config.colbertModel,
   );
   while (
-    colbertCandidates.length < requiredColbertRows &&
+    colbertCandidates.length < limit &&
     requestedColbertK < maxColbertK &&
     colbertHits.length >= requestedColbertK
   ) {
@@ -279,35 +268,8 @@ export async function executeCatalogSearch(
     };
   }
 
-  let rankedForSelection = colbertCandidates;
-  if (config.rerankEnabled) {
-    const rerankCandidatesInput = collectRerankCandidates(
-      colbertCandidates,
-      rerankCandidateLimit,
-      input.maxPerAudio ?? null,
-    );
-    const rerankStartedAt = performance.now();
-    const rerankScores = await rerankCandidates(
-      input.query,
-      rerankCandidatesInput,
-      config.rerankUrl,
-      config.timeoutMs,
-    );
-    rerankMs = elapsedMs(rerankStartedAt);
-
-    rerankCandidatesInput.forEach((candidate, index) => {
-      candidate.rerankScore = rerankScores[index] ?? 0;
-    });
-    rerankCandidatesInput.sort((a, b) => {
-      const scoreDiff = (b.rerankScore ?? 0) - (a.rerankScore ?? 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return b.rrfScore - a.rrfScore;
-    });
-    rankedForSelection = rerankCandidatesInput;
-  }
-
   const filteredByCutoff = applyRelativeCutoff(
-    rankedForSelection,
+    colbertCandidates,
     config.relativeScoreCutoff,
   );
   const deduped = applyMaxPerAudio(filteredByCutoff, input.maxPerAudio ?? null);
@@ -327,7 +289,6 @@ export async function executeCatalogSearch(
       totalMs: elapsedMs(requestStartedAt),
       authMs: input.authMs,
       colbertMs,
-      rerankMs,
       metadataMs: materialized.metadataMs,
     },
     results: materialized.results,
@@ -382,7 +343,6 @@ export async function executeCatalogLexicalSearch(
     denseScore: null,
     sparseScore: null,
     rrfScore: match.score,
-    rerankScore: null,
   }));
   const materialized = await materializeSearchResults({
     catalogId: input.catalogId,
@@ -481,7 +441,7 @@ async function materializeSearchResults({
         rank: index + 1,
         audioHash: item.audioHash,
         chunkId: item.chunkId,
-        score: item.rerankScore ?? item.rrfScore,
+        score: item.rrfScore,
         startSec: item.startSec,
         endSec: item.endSec,
         text: item.text,

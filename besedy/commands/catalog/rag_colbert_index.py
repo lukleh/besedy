@@ -38,7 +38,6 @@ class RagColbertIndexRequest:
     chunk_tokenizer_model: str | None = None
     doc_maxlen: int = 384
     index_bsize: int = DEFAULT_INDEX_BSIZE
-    use_faiss: bool = False
     target_audio_hash: str | None = None
     runtime: str | None = None
     force: bool = False
@@ -64,7 +63,6 @@ class RagColbertIndexRequest:
             chunk_tokenizer_model=getattr(args, "chunk_tokenizer_model", None),
             doc_maxlen=getattr(args, "doc_maxlen", 384),
             index_bsize=getattr(args, "index_bsize", DEFAULT_INDEX_BSIZE),
-            use_faiss=bool(getattr(args, "use_faiss", False)),
             target_audio_hash=getattr(args, "target_audio_hash", None),
             runtime=getattr(args, "runtime", None),
             force=bool(getattr(args, "force", False)),
@@ -144,7 +142,6 @@ def register_parser(
             f"Default: {DEFAULT_INDEX_BSIZE}."
         ),
     )
-    parser.add_argument("--use-faiss", action="store_true")
     parser.add_argument(
         "--hash",
         dest="target_audio_hash",
@@ -213,7 +210,6 @@ def handle_rag_colbert_index(
         chunk_tokenizer_model=request.chunk_tokenizer_model,
         doc_maxlen=request.doc_maxlen,
         index_bsize=request.index_bsize,
-        use_faiss=request.use_faiss,
         force=request.force,
         rebuild=request.rebuild,
         target_audio_hash=request.target_audio_hash,
@@ -246,7 +242,6 @@ def handle_rag_colbert_index(
         print(f"  chunk_tokenizer_model: {result.chunk_tokenizer_model}")
     print(f"  doc_maxlen: {result.doc_maxlen}")
     print(f"  index_bsize: {result.index_bsize}")
-    print(f"  use_faiss: {str(result.use_faiss).lower()}")
     print(f"  chunk_count: {result.chunk_count}")
     if result.sync_mode is not None:
         print(f"  sync_mode: {result.sync_mode}")

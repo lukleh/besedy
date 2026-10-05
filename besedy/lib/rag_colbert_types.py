@@ -31,7 +31,6 @@ class ColbertIndexResult:
     doc_maxlen: int
     index_bsize: int
     split_documents: bool
-    use_faiss: bool
     chunk_count: int
     token_audit: ColbertTokenAudit
     retrieval_engine: str | None = None

@@ -2,16 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { fetchJson } from "@/lib/api/fetch-json";
 
-export interface WorkflowVariant {
-  id: number;
-  workflowGroupId: string;
-  variant: string;
-  label: string | null;
-  isDefault: boolean;
-  listeningArchivedCatalogPath: string | null;
-  createdAt: string;
-}
-
 export interface Catalog {
   id: string;
   label: string | null;
@@ -23,18 +13,7 @@ export interface Catalog {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  variants: WorkflowVariant[];
 }
-
-export const workflowVariantSchema = z.object({
-  id: z.number(),
-  workflowGroupId: z.string(),
-  variant: z.string(),
-  label: z.string().nullable(),
-  isDefault: z.boolean(),
-  listeningArchivedCatalogPath: z.string().nullable(),
-  createdAt: z.string(),
-}).strict();
 
 export const catalogSchema = z.object({
   id: z.string(),
@@ -47,7 +26,6 @@ export const catalogSchema = z.object({
   isActive: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  variants: z.array(workflowVariantSchema),
 }).strict();
 
 export const catalogsSchema = z.array(catalogSchema);

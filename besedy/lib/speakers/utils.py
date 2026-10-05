@@ -100,8 +100,8 @@ def load_diarization_json(json_path: Path) -> dict:
 def get_hf_token() -> str:
     """Get HuggingFace token from environment.
 
-    Checks HF_TOKEN and HUGGINGFACE_TOKEN environment variables first, then
-    falls back to the cached Hugging Face login when available.
+    Checks the HF_TOKEN environment variable first, then falls back to the
+    cached Hugging Face login when available.
 
     Returns:
         HuggingFace token string.
@@ -109,7 +109,7 @@ def get_hf_token() -> str:
     Note:
         Exits with error if no token is found.
     """
-    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+    hf_token = os.getenv("HF_TOKEN")
     if not hf_token:
         try:
             from huggingface_hub import get_token
@@ -119,6 +119,6 @@ def get_hf_token() -> str:
             hf_token = None
     if not hf_token:
         print("Error: No HF token found (env vars or cached Hugging Face login)")
-        print("Please set HF_TOKEN/HUGGINGFACE_TOKEN or run 'hf auth login'")
+        print("Please set HF_TOKEN or run 'hf auth login'")
         sys.exit(1)
     return hf_token

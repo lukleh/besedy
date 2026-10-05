@@ -250,6 +250,11 @@ describe('admin ingest removal', () => {
         errorCode: null,
         errorMessage: null,
         finishedAt: null,
+        startedAt: null,
+        progressStep: null,
+        progressTotal: null,
+        progressLabel: null,
+        progressStepStartedAt: null,
       },
     });
     expect(logContentEvent).toHaveBeenCalledWith(
