@@ -178,7 +178,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     # Get HF token from environment or cached login
-    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+    hf_token = os.getenv("HF_TOKEN")
     if not hf_token:
         try:
             hf_token = get_token()
@@ -188,7 +188,7 @@ def main(argv: list[str]) -> int:
 
     if not hf_token:
         print("Error: No Hugging Face token found (env vars or 'hf auth login')", file=sys.stderr)
-        print("Please export HF_TOKEN/HUGGINGFACE_TOKEN or run 'hf auth login'", file=sys.stderr)
+        print("Please export HF_TOKEN or run 'hf auth login'", file=sys.stderr)
         return 1
 
     # Setup output directory

@@ -24,9 +24,8 @@ from besedy.lib.rag_retrieval_chunking import (
     CHUNK_MAX_SEGMENT_TOKENS,
     CHUNK_VERSION,
     # Shared chunk-corpus code intentionally reuses the canonical transcript discovery
-    # and audio-hash inference helpers so DB and sidecar retrievers stay identical.
+    # and chunking helpers so DB and sidecar retrievers stay identical.
     _discover_backend_transcripts,
-    _infer_audio_hash,
     _is_full_sha256,
     _segments_from_transcript,
     chunk_segments,
@@ -144,7 +143,6 @@ def _resolve_source_audio_hash(
     transcript_path: Path,
     transcripts_root: Path,
     backend_key: str,
-    data: dict[str, Any],
     resolved_audio_hash: str | None,
 ) -> str:
     """Identify the recording a transcript file belongs to."""
@@ -161,10 +159,9 @@ def _resolve_source_audio_hash(
     if file_backend != backend_key:
         raise ValueError(f"Transcript backend mismatch for {transcript_path}: {file_backend}")
 
-    audio_hash = _infer_audio_hash(hash_component, data)
-    if audio_hash is None:
-        raise ValueError(f"Could not infer audio hash from transcript: {transcript_path}")
-    return audio_hash
+    if not _is_full_sha256(hash_component.lower()):
+        raise ValueError(f"Transcript directory is not a full audio hash: {transcript_path}")
+    return hash_component.lower()
 
 
 def resolve_scope_transcripts(
@@ -194,22 +191,14 @@ def resolve_scope_transcripts(
         if _is_full_sha256(hash_component):
             machine_transcripts.append((hash_component, transcript_path))
             continue
-        # A legacy short directory name may still carry the full hash in the
-        # file's metadata. It has to be known here, before pointers are
-        # matched: otherwise the machine file and its correction would both be
-        # indexed and the scope build would abort on the duplicate hash. A file
-        # that cannot be read stays on the per-file path, where the builders
-        # count it as skipped instead of failing the whole scope.
-        try:
-            data = load_json_with_fallback(transcript_path)
-        except (OSError, ValueError):
-            unmatched.append(transcript_path)
-            continue
-        inferred = _infer_audio_hash(hash_component, data) if isinstance(data, dict) else None
-        if inferred is not None:
-            machine_transcripts.append((inferred, transcript_path))
-        else:
-            unmatched.append(transcript_path)
+        # The leaf of a transcript directory is the full audio hash. Anything
+        # else stays on the per-file path, where the builders count it as
+        # skipped instead of failing the whole scope.
+        LOGGER.warning(
+            "Skipping %s: its directory name is not a full 64-character audio hash",
+            transcript_path,
+        )
+        unmatched.append(transcript_path)
 
     resolved = resolve_effective_transcript_sources(
         workflow_group_id=workflow_group_id,
@@ -244,6 +233,15 @@ def build_transcript_source(
     with the correction workspace.
     """
 
+    # The recording is named before the file is read: a transcript directory
+    # that is not a full audio hash is rejected without parsing it.
+    audio_hash = _resolve_source_audio_hash(
+        transcript_path=transcript_path,
+        transcripts_root=transcripts_root,
+        backend_key=backend_key,
+        resolved_audio_hash=resolved_audio_hash,
+    )
+
     chunk_token_counter = token_counter or _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
@@ -251,14 +249,6 @@ def build_transcript_source(
     data = load_json_with_fallback(transcript_path)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
-
-    audio_hash = _resolve_source_audio_hash(
-        transcript_path=transcript_path,
-        transcripts_root=transcripts_root,
-        backend_key=backend_key,
-        data=data,
-        resolved_audio_hash=resolved_audio_hash,
-    )
 
     segments = _segments_from_transcript(data, token_counter=chunk_token_counter)
     transcript_fingerprint = _stable_fingerprint(
@@ -374,6 +364,15 @@ def build_chunks_for_transcript(
     Only the text differs, which is the whole point.
     """
 
+    # The recording is named before the file is read: a transcript directory
+    # that is not a full audio hash is rejected without parsing it.
+    audio_hash = _resolve_source_audio_hash(
+        transcript_path=transcript_path,
+        transcripts_root=transcripts_root,
+        backend_key=backend_key,
+        resolved_audio_hash=resolved_audio_hash,
+    )
+
     chunk_token_counter = token_counter or _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
@@ -381,14 +380,6 @@ def build_chunks_for_transcript(
     data = load_json_with_fallback(transcript_path)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
-
-    audio_hash = _resolve_source_audio_hash(
-        transcript_path=transcript_path,
-        transcripts_root=transcripts_root,
-        backend_key=backend_key,
-        data=data,
-        resolved_audio_hash=resolved_audio_hash,
-    )
 
     segments = _segments_from_transcript(data, token_counter=chunk_token_counter)
     prepared_segments = split_segments_for_chunking(

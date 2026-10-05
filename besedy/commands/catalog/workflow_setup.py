@@ -8,16 +8,16 @@ from pathlib import Path
 
 from besedy.commands.catalog.csv_utils import load_audio_rows, resolve_catalog_csv
 from besedy.commands.catalog.default_paths import get_default_normalized_symlink
-from besedy.commands.catalog.symlink import (
-    _ensure_chain_alignment,
-    create_or_update_symlink,
-    validate_symlink_can_be_created,
-)
 from besedy.core.paths import (
     PROJECT_ROOT,
     extract_timestamp_from_normalized_catalog,
     resolve_catalogs_root,
     resolve_transcripts_parent,
+)
+from besedy.core.symlinks import (
+    _ensure_chain_alignment,
+    create_or_update_symlink,
+    validate_symlink_can_be_created,
 )
 from besedy.lib.workflow.common import CsvAudioRow
 

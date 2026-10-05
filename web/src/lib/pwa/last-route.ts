@@ -11,6 +11,8 @@ import { sanitizeAppRelativePath } from "@/lib/auth/oauth-routing";
  */
 
 export const LAST_ROUTE_COOKIE = "besedy_last_route";
+/** Set on the app's not-found page so a launch is never resumed onto it. */
+export const NOT_FOUND_PAGE_ATTRIBUTE = "data-not-found-page";
 export const PWA_LAUNCH_PARAM = "launch";
 export const PWA_LAUNCH_VALUE = "pwa";
 

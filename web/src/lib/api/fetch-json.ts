@@ -22,6 +22,30 @@ export class ApiError extends Error {
 }
 
 /**
+ * The request could not be made at all (offline, DNS, refused connection):
+ * `fetch` rejects with a TypeError. An ApiError is an answer from the server
+ * and never counts, whatever its status.
+ */
+export function isNetworkFailure(error: unknown): boolean {
+  if (error instanceof ApiError) return false;
+  return error instanceof TypeError;
+}
+
+/**
+ * A 4xx answer that will not change on retry (missing, hidden, or invalid
+ * input). Timeouts (408) and rate limits (429) are temporary and excluded.
+ */
+export function isFinalClientError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429
+  );
+}
+
+/**
  * The server returned a 2xx response but its payload did not match the
  * schema the caller asked fetchJson to validate against. Extends ApiError
  * so existing `instanceof ApiError` checks still match, but carries
@@ -47,7 +71,7 @@ interface ApiErrorPayload {
   error?: string;
 }
 
-function redirectToSignIn(): void {
+export function redirectToSignIn(): void {
   if (typeof window === "undefined") return;
 
   const { pathname, search } = window.location;

@@ -15,7 +15,7 @@ def _write_index_meta(index_dir: Path) -> None:
         json.dumps(
             {
                 "workflow_group_id": "wg-123",
-                "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+                "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
                 "run_id": "20260206_120000",
                 "chunk_version": "v2",
                 "colbert_model": "jinaai/jina-colbert-v2",
@@ -192,7 +192,7 @@ def test_colbert_eval_reports_oblique_span_and_audio_only_diagnostics(
             query=query,
             index_dir=str(index_dir),
             workflow_group_id="wg-123",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260206_120000",
             chunk_version="v2",
             colbert_model="jinaai/jina-colbert-v2",
@@ -281,7 +281,7 @@ def test_colbert_eval_audio_recall_excludes_chunk_only_targets(
             query=query,
             index_dir=str(index_dir),
             workflow_group_id="wg-123",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260206_120000",
             chunk_version="v2",
             colbert_model="jinaai/jina-colbert-v2",

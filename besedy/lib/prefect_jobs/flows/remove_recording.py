@@ -17,7 +17,7 @@ from pathlib import Path
 from prefect import flow, task
 
 from besedy.lib.catalog.remover import normalize_audio_hash
-from besedy.lib.internal_ingest_client import IngestCompletionStatus
+from besedy.lib.internal_ingest_client import IngestCompletionStatus, IngestProgressReport
 
 from ..json_types import JsonDict
 from .ingest_recording import (
@@ -27,6 +27,7 @@ from .ingest_recording import (
     IngestPaths,
     _report_failure_best_effort,
     catalog_ingest_lock,
+    progress_reporter,
     report_completion,
     resolve_ingest_paths,
     run_catalog_cli,
@@ -34,7 +35,8 @@ from .ingest_recording import (
 
 
 @task
-def remove_recording_artifacts(catalog_csv: str, audio_hash: str) -> None:
+def remove_recording_artifacts(catalog_csv: str, audio_hash: str, intake_id: str) -> None:
+    progress_reporter(intake_id)(IngestProgressReport(label="catalog remove"))
     run_catalog_cli(
         [
             "remove",
@@ -52,7 +54,7 @@ def remove_recording_artifacts(catalog_csv: str, audio_hash: str) -> None:
 
 
 @task
-def refresh_derived_stores(catalog_csv: str) -> str | None:
+def refresh_derived_stores(catalog_csv: str, intake_id: str) -> str | None:
     """Prune the RAG index and rebuild speaker clusters; best effort.
 
     The recording is already gone from the catalog at this point, so a failure
@@ -61,7 +63,9 @@ def refresh_derived_stores(catalog_csv: str) -> str | None:
     """
     try:
         run_catalog_cli(
-            ["run-pipeline", "--csv", catalog_csv, "--no-symlink"], stage="run_pipeline"
+            ["run-pipeline", "--csv", catalog_csv, "--no-symlink"],
+            stage="run_pipeline",
+            progress=progress_reporter(intake_id),
         )
     except IngestFlowError as exc:
         return str(exc)
@@ -91,8 +95,8 @@ def remove_recording_flow(
 
     with catalog_ingest_lock(paths.lock_path):
         try:
-            remove_recording_artifacts(str(paths.catalog_csv), audio_hash)
-            warning = refresh_derived_stores(str(paths.catalog_csv))
+            remove_recording_artifacts(str(paths.catalog_csv), audio_hash, paths.intake_id)
+            warning = refresh_derived_stores(str(paths.catalog_csv), paths.intake_id)
             remove_intake_dirs(_intake_dirs(paths))
         except Exception as exc:
             _report_failure_best_effort(paths.intake_id, exc, audio_hash=audio_hash)
