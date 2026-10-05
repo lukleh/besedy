@@ -7,19 +7,17 @@ import {
   assembleContextText,
   buildAllowedAudioHashesQuery,
   buildEligibleAudioHashesQuery,
-  collectRerankCandidates,
   getSearchConfig,
   queryLexicalService,
   resolveColbertFetchLimit,
   resolveColbertIndexDir,
-  resolveRerankCandidateLimit,
   searchesPrimaryRecordingsOnly,
   shouldOverfetchColbertResults,
 } from "@/app/api/catalogs/[id]/search/search-route-helpers";
 
 const originalEnv = process.env;
 
-function makeCandidate(chunkId: string, audioHash: string, rerankScore: number) {
+function makeCandidate(chunkId: string, audioHash: string, score: number) {
   return {
     chunkId,
     audioHash,
@@ -32,10 +30,9 @@ function makeCandidate(chunkId: string, audioHash: string, rerankScore: number) 
     embeddingModelVersion: "1",
     denseRank: 1,
     sparseRank: 1,
-    denseScore: rerankScore,
-    sparseScore: rerankScore,
-    rrfScore: rerankScore,
-    rerankScore,
+    denseScore: score,
+    sparseScore: score,
+    rrfScore: score,
   };
 }
 
@@ -51,8 +48,8 @@ describe("catalog search route helpers", () => {
   });
 
   it("fails loudly on invalid numeric config", () => {
-    process.env.RAG_RERANK_TOP_N = "zero";
-    expect(() => getSearchConfig()).toThrow(/RAG_RERANK_TOP_N must be a positive integer/);
+    process.env.RAG_COLBERT_TIMEOUT_MS = "zero";
+    expect(() => getSearchConfig()).toThrow(/RAG_COLBERT_TIMEOUT_MS must be a positive integer/);
   });
 
   it("allows max-per-audio searches up to the overall result ceiling", () => {
@@ -180,22 +177,12 @@ describe("catalog search route helpers", () => {
     );
   });
 
-  it("prefers the legacy TEI rerank URL and exposes the rerank model", () => {
-    process.env.RAG_TEI_RERANK_URL = "http://localhost:8191/rerank";
-    process.env.RAG_RERANK_URL = "http://localhost:9191/v1/rerank";
-    process.env.RAG_RERANK_MODEL = "custom/reranker";
+  it("reads the ColBERT request timeout and defaults it to 8 seconds", () => {
+    delete process.env.RAG_COLBERT_TIMEOUT_MS;
+    expect(getSearchConfig().timeoutMs).toBe(8000);
 
-    expect(getSearchConfig()).toMatchObject({
-      rerankUrl: "http://localhost:8191/rerank",
-      rerankModel: "custom/reranker",
-    });
-  });
-
-  it("falls back to RAG_RERANK_URL when the TEI-specific alias is unset", () => {
-    delete process.env.RAG_TEI_RERANK_URL;
-    process.env.RAG_RERANK_URL = "http://localhost:9191/v1/rerank";
-
-    expect(getSearchConfig().rerankUrl).toBe("http://localhost:9191/v1/rerank");
+    process.env.RAG_COLBERT_TIMEOUT_MS = "12000";
+    expect(getSearchConfig().timeoutMs).toBe(12000);
   });
 
   it("exposes ColBERT runtime config", () => {
@@ -206,24 +193,11 @@ describe("catalog search route helpers", () => {
 
     expect(getSearchConfig()).toMatchObject({
       retrievalMode: "colbert",
-      rerankEnabled: false,
       colbertUrl: "http://localhost:8192/query",
       colbertTopK: 250,
       colbertModel: "jinaai/jina-colbert-v2",
       colbertRootDir: "/workspace/besedy/tmp/rag_colbert",
     });
-  });
-
-  it("allows ColBERT reranking to be explicitly re-enabled", () => {
-    process.env.RAG_COLBERT_RERANK_ENABLED = "true";
-
-    expect(getSearchConfig().rerankEnabled).toBe(true);
-  });
-
-  it("caps rerank candidate selection at the server rerank budget", () => {
-    expect(resolveRerankCandidateLimit(200, 5, 10)).toBe(10);
-    expect(resolveRerankCandidateLimit(undefined, 5, 10)).toBe(10);
-    expect(resolveRerankCandidateLimit(3, 5, 10)).toBe(5);
   });
 
   it("overfetches ColBERT when results will be post-filtered", () => {
@@ -347,22 +321,6 @@ describe("catalog search route helpers", () => {
     expect(filtered.map((item) => item.chunkId)).toEqual(["chunk-1", "chunk-3"]);
   });
 
-  it("scans deeper fused candidates to satisfy per-audio rerank limits", () => {
-    const selected = collectRerankCandidates(
-      [
-        makeCandidate("chunk-a1", "audio-a", 0.9),
-        makeCandidate("chunk-a2", "audio-a", 0.8),
-        makeCandidate("chunk-a3", "audio-a", 0.7),
-        makeCandidate("chunk-b1", "audio-b", 0.6),
-        makeCandidate("chunk-c1", "audio-c", 0.5),
-      ],
-      3,
-      1,
-    );
-
-    expect(selected.map((item) => item.chunkId)).toEqual(["chunk-a1", "chunk-b1", "chunk-c1"]);
-  });
-
   it("assembles context text in timeline order", () => {
     const neighbors = {
       before: [
@@ -402,7 +360,6 @@ describe("catalog search route helpers", () => {
           denseScore: 0.9,
           sparseScore: 0.9,
           rrfScore: 0.5,
-          rerankScore: 0.9,
         },
         neighbors,
       ),
