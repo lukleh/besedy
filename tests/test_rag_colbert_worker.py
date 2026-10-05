@@ -18,7 +18,7 @@ def _chunk(*, chunk_id: str, audio_hash: str, chunk_ordinal: int, text: str) -> 
         chunk_id=chunk_id,
         chunk_version="v2",
         run_id="20260206_120000",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         audio_hash=audio_hash,
         source_path="/tmp/transcript.json",
         start=float(chunk_ordinal * 10),
@@ -114,7 +114,7 @@ def test_build_index_uses_pylate_model_and_index(
     manifest_path.write_text(
         '{"chunk_id":"chunk-1","text":"ahoj svete","audio_hash":"'
         + ("a" * 64)
-        + '","start_sec":0.0,"end_sec":1.0,"run_id":"20260206_120000","backend_key":"faster-whisper/large-v3@silero_vad_v6","chunk_version":"v2","source_path":"/tmp/transcript.json","token_count":2,"chunk_ordinal":0}\n',
+        + '","start_sec":0.0,"end_sec":1.0,"run_id":"20260206_120000","backend_key":"faster-whisper/large-v3@silero_vad_v6@lang-cs","chunk_version":"v2","source_path":"/tmp/transcript.json","token_count":2,"chunk_ordinal":0}\n',
         encoding="utf-8",
     )
     destination = tmp_path / "bundle" / "colbert_index"
@@ -213,7 +213,7 @@ def test_build_index_bootstraps_and_streams_large_manifest(
             "start_sec": float(index),
             "end_sec": float(index + 1),
             "run_id": "20260206_120000",
-            "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+            "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
             "chunk_version": "v2",
             "source_path": "/tmp/transcript.json",
             "token_count": 2,

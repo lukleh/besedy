@@ -21,15 +21,11 @@ vi.mock("@/lib/access/capabilities", () => ({
 vi.mock("@/lib/runtime-config", () => ({
   getRagBackendKey: vi.fn(() => "faster-whisper/large-v3@silero_vad_v6"),
   getRagColbertModel: vi.fn(() => "jinaai/jina-colbert-v2"),
-  getRagRerankModel: vi.fn(() => "Alibaba-NLP/gte-multilingual-reranker-base"),
   RAG_DEFAULTS: {
     RESULT_LIMIT: 10,
     MAX_LIMIT: 100,
-    RERANK_TOP_N: 10,
     RELATIVE_SCORE_CUTOFF: 0.8,
     TIMEOUT_MS: 5000,
-    RERANK_URL: "http://localhost:9000/rerank",
-    RERANK_MODEL: "Alibaba-NLP/gte-multilingual-reranker-base",
     COLBERT_URL: "http://localhost:8192/query",
     COLBERT_TOP_K: 200,
     COLBERT_MODEL: "jinaai/jina-colbert-v2",
@@ -157,8 +153,6 @@ describe("catalog search route", () => {
     const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
     const eventFindManyMock = vi.mocked(prisma.catalogEventRecording.findMany);
 
-    process.env.RAG_COLBERT_RERANK_ENABLED = "true";
-
     requireAuth.mockResolvedValue("user-1");
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
@@ -241,13 +235,6 @@ describe("catalog search route", () => {
         });
       }
 
-      if (endpoint.endsWith("/rerank")) {
-        return jsonResponse([
-          { index: 0, score: 0.91 },
-          { index: 1, score: 0.76 },
-        ]);
-      }
-
       throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
     });
 
@@ -325,7 +312,7 @@ describe("catalog search route", () => {
           rank: 1,
           audioHash: "hash-1",
           chunkId: "chunk-2",
-          score: 0.91,
+          score: 19.3,
           startSec: 10,
           endSec: 20,
           text: "primary evidence",
@@ -380,7 +367,7 @@ describe("catalog search route", () => {
           rank: 2,
           audioHash: "hash-2",
           chunkId: "chunk-3",
-          score: 0.76,
+          score: 18.1,
           startSec: 30,
           endSec: 40,
           text: "secondary evidence",
@@ -422,7 +409,7 @@ describe("catalog search route", () => {
       ],
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     const sqlCalls = queryRawMock.mock.calls.map(([query]) => sqlText(query));
     expect(sqlCalls[0]).toContain("FROM catalog_entry ce");
     expect(sqlCalls[0]).toContain("ce.is_actionable = true");
@@ -432,8 +419,6 @@ describe("catalog search route", () => {
   it("fetches deeper ColBERT hits when listener filtering removes the first batch", async () => {
     const queryRawMock = vi.mocked(prisma.$queryRaw);
     const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
-
-    process.env.RAG_COLBERT_RERANK_ENABLED = "true";
 
     requireAuth.mockResolvedValue("user-1");
     getCatalogCapability.mockResolvedValue({
@@ -497,13 +482,6 @@ describe("catalog search route", () => {
         return jsonResponse({ chunks });
       }
 
-      if (endpoint.endsWith("/rerank")) {
-        return jsonResponse([
-          { index: 0, score: 0.92 },
-          { index: 1, score: 0.81 },
-        ]);
-      }
-
       throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
     });
 
@@ -548,14 +526,13 @@ describe("catalog search route", () => {
         body: JSON.stringify({
           query: "folk song",
           limit: 2,
-          candidateLimit: 2,
         }),
       }),
       { params: Promise.resolve({ id: catalogId }) }
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     const firstColbertRequest = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "{}"));
     const secondColbertRequest = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body ?? "{}"));
     expect(firstColbertRequest.k).toBe(200);
@@ -569,7 +546,7 @@ describe("catalog search route", () => {
     ]);
   });
 
-  it("uses raw ColBERT scores when ColBERT reranking is disabled", async () => {
+  it("uses raw ColBERT scores", async () => {
     const queryRawMock = vi.mocked(prisma.$queryRaw);
     const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
 
@@ -675,12 +652,10 @@ describe("catalog search route", () => {
     });
   });
 
-  it("does not let a low rerank budget underfill filtered ColBERT results when reranking is disabled", async () => {
+  it("fetches enough ColBERT hits to fill the requested limit after filtering", async () => {
     const queryRawMock = vi.mocked(prisma.$queryRaw);
     const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
 
-    process.env.RAG_RERANK_TOP_N = "2";
-    process.env.RAG_COLBERT_RERANK_ENABLED = "false";
 
     requireAuth.mockResolvedValue("user-1");
     getCatalogCapability.mockResolvedValue({
@@ -825,211 +800,6 @@ describe("catalog search route", () => {
       "chunk-visible-1",
       "chunk-visible-2",
       "chunk-visible-3",
-    ]);
-  });
-
-  it("caps client candidateLimit at the server rerank budget", async () => {
-    const queryRawMock = vi.mocked(prisma.$queryRaw);
-    const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
-
-    requireAuth.mockResolvedValue("user-1");
-    getCatalogCapability.mockResolvedValue({
-      catalogExists: true,
-      hasAccess: true,
-      canUseRagSearch: true,
-      catalogGrant: grantForRole("reader"),
-    });
-    process.env.RAG_COLBERT_RERANK_ENABLED = "true";
-
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const endpoint = String(url);
-      const body = JSON.parse(String(init?.body ?? "{}"));
-
-      if (endpoint.endsWith("/resolve")) {
-        return jsonResponse({
-          colbert_index_dir: process.env.RAG_COLBERT_INDEX_DIR,
-        });
-      }
-
-      if (endpoint.endsWith("/query")) {
-        return jsonResponse({
-          hits: Array.from({ length: 20 }, (_, index) => ({
-            chunk_id: `chunk-${index + 1}`,
-            score: 1 - index * 0.01,
-          })),
-        });
-      }
-
-      if (endpoint.endsWith("/lookup")) {
-        return jsonResponse({
-          chunks: Array.from({ length: 20 }, (_, index) => ({
-            chunk_id: `chunk-${index + 1}`,
-            audio_hash: `hash-${index + 1}`,
-            start_sec: index * 10,
-            end_sec: index * 10 + 10,
-            text: `evidence ${index + 1}`,
-            run_id: "run-123",
-            chunk_version: "v2",
-          })),
-        });
-      }
-
-      if (endpoint.endsWith("/rerank")) {
-        return jsonResponse(
-          body.texts.map((_: string, index: number) => ({
-            index,
-            score: 1 - index * 0.01,
-          })),
-        );
-      }
-
-      throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
-    });
-
-    queryRawMock.mockResolvedValue(
-      Array.from({ length: 20 }, (_, index) => ({ audioHash: `hash-${index + 1}` })) as never,
-    );
-
-    metadataFindManyMock.mockResolvedValue([] as never);
-
-    const response = await searchCatalog(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: "folk song",
-          limit: 3,
-          candidateLimit: 200,
-        }),
-      }),
-      { params: Promise.resolve({ id: catalogId }) }
-    );
-
-    expect(response.status).toBe(200);
-
-    const rerankRequest = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body ?? "{}"));
-    expect(rerankRequest.texts).toHaveLength(10);
-
-    const payload = await response.json();
-    expect(payload.results).toHaveLength(3);
-  });
-
-  it("fills deduped result slots from deeper fused candidates before reranking", async () => {
-    const queryRawMock = vi.mocked(prisma.$queryRaw);
-    const metadataFindManyMock = vi.mocked(prisma.audioMetadata.findMany);
-
-    requireAuth.mockResolvedValue("user-1");
-    getCatalogCapability.mockResolvedValue({
-      catalogExists: true,
-      hasAccess: true,
-      canUseRagSearch: true,
-      catalogGrant: grantForRole("reader"),
-    });
-    process.env.RAG_COLBERT_RERANK_ENABLED = "true";
-
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const endpoint = String(url);
-      const body = JSON.parse(String(init?.body ?? "{}"));
-
-      if (endpoint.endsWith("/resolve")) {
-        return jsonResponse({
-          colbert_index_dir: process.env.RAG_COLBERT_INDEX_DIR,
-        });
-      }
-
-      if (endpoint.endsWith("/query")) {
-        return jsonResponse({
-          hits: [
-            { chunk_id: "chunk-a1", score: 0.95 },
-            { chunk_id: "chunk-a2", score: 0.9 },
-            { chunk_id: "chunk-a3", score: 0.85 },
-            { chunk_id: "chunk-b1", score: 0.8 },
-          ],
-        });
-      }
-
-      if (endpoint.endsWith("/lookup")) {
-        return jsonResponse({
-          chunks: [
-            {
-              chunk_id: "chunk-a1",
-              audio_hash: "audio-a",
-              start_sec: 0,
-              end_sec: 10,
-              text: "audio-a first",
-              run_id: "run-123",
-              chunk_version: "v2",
-            },
-            {
-              chunk_id: "chunk-a2",
-              audio_hash: "audio-a",
-              start_sec: 10,
-              end_sec: 20,
-              text: "audio-a second",
-              run_id: "run-123",
-              chunk_version: "v2",
-            },
-            {
-              chunk_id: "chunk-a3",
-              audio_hash: "audio-a",
-              start_sec: 20,
-              end_sec: 30,
-              text: "audio-a third",
-              run_id: "run-123",
-              chunk_version: "v2",
-            },
-            {
-              chunk_id: "chunk-b1",
-              audio_hash: "audio-b",
-              start_sec: 0,
-              end_sec: 10,
-              text: "audio-b first",
-              run_id: "run-123",
-              chunk_version: "v2",
-            },
-          ],
-        });
-      }
-
-      if (endpoint.endsWith("/rerank")) {
-        return jsonResponse(
-          body.texts.map((_: string, index: number) => ({
-            index,
-            score: 1 - index * 0.01,
-          })),
-        );
-      }
-
-      throw new Error(`Unexpected fetch endpoint: ${endpoint}`);
-    });
-
-    queryRawMock.mockResolvedValue([{ audioHash: "audio-a" }, { audioHash: "audio-b" }] as never);
-
-    metadataFindManyMock.mockResolvedValue([] as never);
-
-    const response = await searchCatalog(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}/search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: "folk song",
-          limit: 2,
-          candidateLimit: 2,
-          dedupeByAudio: true,
-        }),
-      }),
-      { params: Promise.resolve({ id: catalogId }) }
-    );
-
-    expect(response.status).toBe(200);
-
-    const rerankRequest = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body ?? "{}"));
-    expect(rerankRequest.texts).toEqual(["audio-a first", "audio-b first"]);
-
-    const payload = await response.json();
-    expect(payload.results.map((item: { audioHash: string }) => item.audioHash)).toEqual([
-      "audio-a",
-      "audio-b",
     ]);
   });
 });
