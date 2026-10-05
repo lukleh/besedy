@@ -371,12 +371,14 @@ def _load_config() -> Config:
 
     transcription_workflows = _load_transcription_workflows(data)
 
-    paths_data = dict(data["paths"])
-    # Key from the removed enhancement pipeline; tolerated so older configs load.
-    paths_data.pop("decoded_audio_dir", None)
+    if "decoded_audio_dir" in data["paths"]:
+        raise ValueError(
+            f"{config_path}: [paths] decoded_audio_dir belongs to the removed "
+            "enhancement pipeline and is no longer read; delete that line."
+        )
 
     return Config(
-        paths=PathsConfig(**paths_data),
+        paths=PathsConfig(**data["paths"]),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),

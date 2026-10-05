@@ -4,9 +4,9 @@ A backend key (`{workflow}/{model component}`, for example
 `faster-whisper/large-v3@silero_vad_v6@lang-cs`) names a transcript directory,
 a ColBERT search scope and `RAG_BACKEND_KEY`. Changing it moves all of those,
 and also three database columns that store the key as text. This is the
-procedure for a rename when correction data exists. The
-[explicit Czech paths migration](explicit-czech-transcript-paths.md) is the
-worked example of the directory and index steps.
+procedure for a rename when correction data exists. The September 2026
+`@lang-cs` cutover (#256) was the worked example; its one-time path tool
+`scripts/migrate_czech_transcript_paths.py` is in git history.
 
 ## What is stored, and what a rename does to it
 
@@ -24,10 +24,14 @@ not moving correction data. The audit log keeps the old key, as history.
 
 ## Procedure
 
-1. Do the directory move, the index rebuild and the env changes of the rename
-   as in the Czech paths migration (pause writers, back up, move the
-   transcript directories, rebuild the search scope under the new key). Before
-   the database step, confirm no correction publication is `PENDING`,
+1. Pause the pipeline and the ingest worker, and stop every web reader that
+   shares the transcript and ColBERT roots (production and development).
+   Back up the transcript trees and the database. In every timestamped
+   transcript generation, rename the model-component directory; merged
+   `transcripts_merged_*/*/slots.json` files record model keys, so update
+   those labels too. Rebuild the search scope under the new key with
+   `just catalog rag-colbert-index --group <id> --backend <new key> --rebuild`;
+   the old scope can stay for rollback. Before the database step, confirm no correction publication is `PENDING`,
    `ACTIVATING` or `ROLLING_BACK`: one that completes between the rewrite and
    the env change would be judged against the wrong key.
 2. In the same maintenance window, rewrite the stored keys with one
@@ -48,8 +52,11 @@ bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d bese
    several fails (for example on the priority-conflict check), fix the cause
    and run the failed key again. Without both variables it exits with an error. Run the development database the same way
    (`development` instead of `production`).
-3. Set `RAG_BACKEND_KEY` to the new key in the web and worker env files, as in
-   the migration, and restart.
+3. Set `RAG_BACKEND_KEY` to the new key in the production and development web
+   env files and the host worker env file, and restart them from the new
+   revision. The test stack has its own transcript tree: regenerate its
+   fixtures (`cd web && npm run test:e2e:generate`) and set the same key in its
+   env file.
 
 To roll back, run the script again with the keys swapped, together with the
 directory and env rollback.
