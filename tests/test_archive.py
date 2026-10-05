@@ -88,10 +88,9 @@ class TestComputeOutputPath:
     def test_preserves_directory_structure(self):
         """Output path should preserve source directory structure with hash suffix."""
         source = Path("/data/podcasts/2024/episode1.mp3")
-        source_root = Path("/data")
         output_dir = Path("/archive")
         sha256 = "abc12345def67890"
-        result = compute_output_path(source, source_root, output_dir, ".webm", sha256)
+        result = compute_output_path(source, "/data", output_dir, ".webm", sha256)
 
         # Hash suffix (first 8 chars) is added to filename
         assert result == Path("/archive/podcasts/2024/episode1_abc12345.webm")
@@ -99,37 +98,74 @@ class TestComputeOutputPath:
     def test_changes_extension(self):
         """Output should have the new extension."""
         source = Path("/audio/file.mp3")
-        source_root = Path("/audio")
         output_dir = Path("/out")
         sha256 = "abc12345def67890"
 
-        webm_result = compute_output_path(source, source_root, output_dir, ".webm", sha256)
+        webm_result = compute_output_path(source, "/audio", output_dir, ".webm", sha256)
         assert webm_result.suffix == ".webm"
 
-        m4a_result = compute_output_path(source, source_root, output_dir, ".m4a", sha256)
+        m4a_result = compute_output_path(source, "/audio", output_dir, ".m4a", sha256)
         assert m4a_result.suffix == ".m4a"
 
     def test_handles_deep_paths(self):
         """Should handle deeply nested paths."""
         source = Path("/a/b/c/d/e/f/file.wav")
-        source_root = Path("/a")
         output_dir = Path("/out")
         sha256 = "abc12345def67890"
-        result = compute_output_path(source, source_root, output_dir, ".webm", sha256)
+        result = compute_output_path(source, "/a", output_dir, ".webm", sha256)
 
         assert result == Path("/out/b/c/d/e/f/file_abc12345.webm")
 
     def test_handles_spaces_in_path(self):
         """Should handle paths with spaces."""
         source = Path("/my files/podcast episodes/episode 1.mp3")
-        source_root = Path("/my files")
         output_dir = Path("/archive")
         sha256 = "abc12345def67890"
-        result = compute_output_path(source, source_root, output_dir, ".webm", sha256)
+        result = compute_output_path(source, "/my files", output_dir, ".webm", sha256)
 
         assert result == Path("/archive/podcast episodes/episode 1_abc12345.webm")
         assert "podcast episodes" in str(result)
         assert result.name == "episode 1_abc12345.webm"
+
+    def test_each_row_uses_its_own_scan_root(self):
+        """Files from unrelated roots never pick up the other root's path."""
+        output_dir = Path("/archive")
+        scanned = compute_output_path(
+            Path("/mnt/data/Besedy/Talks 2025/talk.mp3"),
+            "/mnt/data/Besedy",
+            output_dir,
+            ".webm",
+            "aaaaaaaa11111111",
+        )
+        uploaded = compute_output_path(
+            Path("/srv/uploads/cat/accepted/intake1/upload.m4a"),
+            "/srv/uploads/cat/accepted/intake1",
+            output_dir,
+            ".webm",
+            "bbbbbbbb22222222",
+        )
+
+        assert scanned == Path("/archive/Talks 2025/talk_aaaaaaaa.webm")
+        assert uploaded == Path("/archive/upload_bbbbbbbb.webm")
+        assert "srv" not in scanned.parts and "uploads" not in scanned.parts
+        assert "mnt" not in uploaded.parts and "Besedy" not in uploaded.parts
+
+    @pytest.mark.parametrize("scan_root", [None, "", "/somewhere/else"])
+    def test_falls_back_to_file_name(self, scan_root):
+        """No Scan Root, or a source outside it, lands directly under output_dir."""
+        result = compute_output_path(
+            Path("/data/folder/file.mp3"), scan_root, Path("/out"), ".webm", "abc12345def67890"
+        )
+
+        assert result == Path("/out/file_abc12345.webm")
+
+    def test_scan_root_equal_to_file_uses_file_name(self):
+        """A single-file `catalog add` stores the file itself as its Scan Root."""
+        result = compute_output_path(
+            Path("/data/file.mp3"), "/data/file.mp3", Path("/out"), ".webm", "abc12345def67890"
+        )
+
+        assert result == Path("/out/file_abc12345.webm")
 
 
 class TestArchivedManifestWriter:

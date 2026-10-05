@@ -44,6 +44,7 @@ from besedy.lib.internal_ingest_client import (
     IngestClientError,
     IngestCompletionReport,
     IngestCompletionStatus,
+    IngestProgressReport,
     build_besedy_ingest_client_from_env,
 )
 
@@ -60,6 +61,10 @@ MAX_ERROR_MESSAGE_LENGTH = 2000
 # follows it to recover the outcome.
 COMPLETION_REPORT_FAILED_MARKER = "completion_report_failed:"
 _SAFE_EXTENSION_RE = re.compile(r"^\.[a-z0-9]{1,8}$")
+# Step header printed by `run-pipeline` (`print_step` in commands/catalog/pipeline.py).
+_PIPELINE_STEP_RE = re.compile(r"^\[(\d+)/(\d+)\] (\S+)(?: \((.*)\))?\.\.\.$")
+
+ProgressReporter = Callable[[IngestProgressReport], None]
 
 
 class IngestFlowError(RuntimeError):
@@ -143,6 +148,45 @@ def catalog_cli_command(args: Sequence[str]) -> list[str]:
     return [sys.executable, "-m", "besedy.cli.catalog", *args]
 
 
+def parse_pipeline_step(line: str) -> IngestProgressReport | None:
+    """Return the step a `run-pipeline` header line announces, if it is one."""
+    match = _PIPELINE_STEP_RE.fullmatch(line.strip())
+    if match is None:
+        return None
+    step, total, name, detail = match.groups()
+    label = f"{name} ({detail})" if detail else name
+    return IngestProgressReport(label=label, step=int(step), total=int(total))
+
+
+def progress_reporter(intake_id: str, *, log: Callable[[str], None] = print) -> ProgressReporter:
+    """Send step reports to the web app; best effort, never raises.
+
+    Progress is only a display: a report that cannot be delivered is logged and
+    dropped, so it never fails or retries the run, and each request is capped at
+    a few seconds. Without client configuration, reports are off after one warning.
+    """
+    client: BesedyIngestClient | None = None
+    disabled = False
+
+    def report(progress: IngestProgressReport) -> None:
+        nonlocal client, disabled
+        if disabled:
+            return
+        if client is None:
+            try:
+                client = build_besedy_ingest_client_from_env()
+            except Exception as exc:
+                disabled = True
+                log(f"Progress reports for intake {intake_id} are off: {exc}")
+                return
+        try:
+            client.report_progress(intake_id=intake_id, report=progress)
+        except Exception as exc:
+            log(f"Progress report '{progress.label}' for intake {intake_id} failed: {exc}")
+
+    return report
+
+
 def run_catalog_cli(
     args: Sequence[str],
     *,
@@ -150,6 +194,7 @@ def run_catalog_cli(
     cwd: Path = PROJECT_ROOT,
     log: Callable[[str], None] = print,
     capture_output: bool = False,
+    progress: ProgressReporter | None = None,
 ) -> str | None:
     """Run a catalog CLI subcommand in its own process group and stream its output.
 
@@ -160,6 +205,10 @@ def run_catalog_cli(
     With ``capture_output`` the complete output is returned as well, for commands
     whose result the flow has to read back (``--json`` reports). The default keeps
     only a tail for the error message, because a pipeline run logs for hours.
+
+    With ``progress``, every ``run-pipeline`` step header is reported as it is
+    printed. The child runs unbuffered so its lines reach the flow (and the
+    worker journal) when they are written, not in 8 KB bursts.
     """
     command = catalog_cli_command(args)
     log(f"[{stage}] $ {' '.join(command)}")
@@ -172,6 +221,7 @@ def run_catalog_cli(
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=True,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     try:
         assert process.stdout is not None
@@ -181,6 +231,10 @@ def run_catalog_cli(
             if capture_output:
                 captured.append(rendered)
             log(f"[{stage}] {rendered}")
+            if progress is not None:
+                step = parse_pipeline_step(rendered)
+                if step is not None:
+                    progress(step)
         return_code = process.wait()
     finally:
         if process.poll() is None:
@@ -289,7 +343,8 @@ def accept_file(
 
 
 @task
-def catalog_add(accepted_dir: str, catalog_csv: str) -> None:
+def catalog_add(accepted_dir: str, catalog_csv: str, intake_id: str) -> None:
+    progress_reporter(intake_id)(IngestProgressReport(label="catalog add"))
     run_catalog_cli(
         ["add", accepted_dir, "--csv", catalog_csv, "--no-symlink"],
         stage="catalog_add",
@@ -297,10 +352,11 @@ def catalog_add(accepted_dir: str, catalog_csv: str) -> None:
 
 
 @task
-def run_pipeline(catalog_csv: str) -> None:
+def run_pipeline(catalog_csv: str, intake_id: str) -> None:
     run_catalog_cli(
         ["run-pipeline", "--csv", catalog_csv, "--no-symlink"],
         stage="run_pipeline",
+        progress=progress_reporter(intake_id),
     )
 
 
@@ -348,6 +404,7 @@ def ingest_recording_flow(
     with catalog_ingest_lock(paths.lock_path):
         try:
             source = validate_intake(str(paths.incoming_dir), str(paths.catalog_csv))
+            progress_reporter(paths.intake_id)(IngestProgressReport(label="duplicate check"))
             identity = check_duplicate(source, str(paths.catalog_csv))
             decoded_hash = str(identity["audio_hash"])
             if identity["duplicate"]:
@@ -366,8 +423,8 @@ def ingest_recording_flow(
                 # partial catalog add can be cleaned up safely.
                 audio_hash = decoded_hash
                 accept_file(source, str(paths.accepted_dir), original_filename, audio_hash)
-                catalog_add(str(paths.accepted_dir), str(paths.catalog_csv))
-                run_pipeline(str(paths.catalog_csv))
+                catalog_add(str(paths.accepted_dir), str(paths.catalog_csv), paths.intake_id)
+                run_pipeline(str(paths.catalog_csv), paths.intake_id)
                 outcome = {
                     "status": IngestCompletionStatus.SUCCEEDED.value,
                     "audioHash": audio_hash,

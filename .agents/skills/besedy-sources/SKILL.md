@@ -40,9 +40,11 @@ search results to focus exploration and distinguish independent discussions. Sto
 when the returned and verified evidence adequately covers the user's request;
 disclose material coverage limits.
 
-Prefer the clearest recording when the MCP results identify variants. Preserve
-differences and tensions between distinct discussions instead of flattening them
-into false consensus. When an important passage appears badly transcribed,
+Searches return each event's primary recording only; the other recordings of an
+event are parallel captures of the same session. When a passage reads badly,
+open the event's other recordings (`get_event` lists them) before relying on it.
+Preserve differences and tensions between distinct discussions instead of
+flattening them into false consensus. When an important passage appears badly transcribed,
 qualify the quotation or rely on other independently verified evidence.
 
 Transcripts carry no speaker labels, and these recordings are discussions.

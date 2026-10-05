@@ -22,6 +22,7 @@
     "back": "Back",
     "catalog": "Catalog",
     "settings": "Settings",
+    "bookmarks": "Bookmarks",
     "downloads": "Downloads",
     "admin": "Admin",
     "enums": "Catalog Enums",
@@ -345,6 +346,25 @@
       "day": "DD"
     }
   },
+  "bookmarks": {
+    "title": "Bookmarks",
+    "description": "Moments you bookmarked in recordings. Open one to play from that point.",
+    "all": "All bookmarks",
+    "newAt": "New bookmark at {time}",
+    "comment": "Bookmark comment",
+    "commentPlaceholder": "Comment (optional)",
+    "editComment": "Edit comment",
+    "playFrom": "Play from here",
+    "excerpt": "“{text}”",
+    "empty": "No bookmarks yet. Bookmark a moment while listening to a recording and it shows up here.",
+    "filterPlaceholder": "Filter bookmarks",
+    "noMatches": "No bookmarks match the filter.",
+    "loadFailed": "Bookmarks could not be loaded.",
+    "saveFailed": "The bookmark could not be saved.",
+    "deleteFailed": "The bookmark could not be deleted.",
+    "deleteTitle": "Delete bookmark?",
+    "deleteDescription": "The bookmark and its comment will be deleted. This cannot be undone."
+  },
   "player": {
     "play": "Play",
     "pause": "Pause",
@@ -357,6 +377,8 @@
     "volume": "Volume",
     "waveform": "Toggle waveform",
     "keyboardHints": "Space: play/pause · ←→: seek 5s · ↑↓: volume · M: mute",
+    "keyboardHintBookmark": "B: bookmark",
+    "bookmark": "Bookmark this moment (B)",
     "reconnecting": "Reconnecting..."
   },
   "radio": {
@@ -371,6 +393,12 @@
     "volume": "Volume",
     "mute": "Mute",
     "unmute": "Unmute"
+  },
+  "sleepTimer": {
+    "label": "Sleep timer",
+    "activeLabel": "Sleep timer: {time} left",
+    "off": "Off",
+    "minutes": "{count} min"
   },
   "transcript": {
     "title": "Transcript",
@@ -560,6 +588,8 @@
         "selectCatalog": "Select a catalog",
         "files": "Audio files",
         "submit": "Upload & process ({count})",
+        "dropHint": "Drag files here, or choose them below.",
+        "skipped": "{count, plural, one {# file skipped (unsupported type)} other {# files skipped (unsupported type)}}",
         "phase": {
           "pending": "Ready to upload",
           "uploading": "Uploading… {percent}%",
@@ -583,6 +613,13 @@
           "status": "Status",
           "actions": "Actions",
           "result": "Result"
+        },
+        "progress": {
+          "step": "Step {step}/{total} · {label}",
+          "elapsed": "{step} (total {total})",
+          "took": "Took {duration}",
+          "minutes": "{minutes} min",
+          "hoursMinutes": "{hours} h {minutes} min"
         }
       },
       "status": {
@@ -1749,12 +1786,7 @@
       "duplicatesPath": "Duplicates catalog path",
       "transcriptsPath": "Transcripts path",
       "active": "Active",
-      "defaultCatalog": "Default catalog",
-      "variants": "Variants",
-      "noLabel": "No label",
-      "noListeningPath": "No listening archive path",
-      "noVariants": "No variants configured.",
-      "default": "Default"
+      "defaultCatalog": "Default catalog"
     },
     "transcriptExports": {
       "title": "Transcript exports",
@@ -1944,6 +1976,7 @@
       "pendingAccessUpdatedDesc": "The pending user's access level has been updated.",
       "catalogSynced": "Catalog synced",
       "catalogSyncedDesc": "Catalog data was refreshed from CSV sources.",
+      "catalogSyncedHashAlgorithmDesc": "Catalog data was refreshed, but {count, plural, one {# row has} other {# rows have}} a missing or unknown hash algorithm. Their hashes may not identify the same audio as the rest of the catalog.",
       "catalogSyncSkipped": "Catalog already up to date",
       "catalogSyncSkippedDesc": "No CSV changes were detected.",
       "validationError": "Missing required fields",
@@ -2016,7 +2049,8 @@
     "unauthorized": "Unauthorized",
     "unauthorizedDescription": "You don't have permission to access this page.",
     "serverError": "Server error",
-    "serverErrorDescription": "Something went wrong. Please try again later."
+    "serverErrorDescription": "Something went wrong. Please try again later.",
+    "offlineDescription": "You appear to be offline and this page is not downloaded. Reconnect and try again, or open a downloaded event from Downloads."
   },
   "googleTranslate": {
     "warningMessage": "Browser translation detected. Please use the language selector instead for the best experience.",

@@ -34,3 +34,18 @@ display and search convenience only.
   treated as published artifacts.
 - Compatibility readers may recognize historical names, but new writers follow
   the canonical layout.
+
+## Practice since 2026-10 (clarification)
+
+The decision above states the intent; the commands do not create a new
+generation for every run. The catalog ID is the timestamp of the catalog's
+creation, and every output derived from it shares that timestamp
+(`transcripts_<catalog-timestamp>/`). `run-pipeline` and the individual
+workflow commands add transcripts, speaker files and sidecars for new
+recordings to that existing directory, and a rerun with `--overwrite` replaces
+a recording's files in place, so the contents of a generation are not immutable
+or rolled back as a unit. What does hold: files are written atomically, each
+recording's outputs sit under its own full-hash leaf, and a new catalog gets a
+new timestamped directory. Human correction
+([ADR 0006](0006-transcript-correction.md)) keeps its own root for the same
+reason.

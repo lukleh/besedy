@@ -12,12 +12,18 @@ type WorkflowGroup = NonNullable<
 
 /**
  * Resolve the active workflow group following the resolution rules:
- * 1. If group override provided, use it (validates access before saving preference)
+ * 1. If group override provided, use it
  * 2. Else use user preference active_group
  * 3. Else use default group
  * 4. Else use most recent accessible group
  * 5. Fallback for admins/superadmins: Most recent group (they have implicit access)
  * 6. Return null if no accessible group found
+ *
+ * This is a read: it never writes the user's preferences, so a request for one
+ * catalog cannot change what a later request without a group resolves to. The
+ * saved active group is written only by an explicit `PATCH /api/preferences`,
+ * which `useCatalogContext` sends when the catalog list, a recording or the
+ * catalog settings open.
  *
  * Note: This function returns the resolved group but downstream routes must still
  * check access permissions. The group override is returned even without access,
@@ -33,40 +39,13 @@ export async function resolveActiveGroup(
 ): Promise<WorkflowGroup | null> {
   const effectiveUserId = userId || "local";
 
-  // 1. Group override - validate access before saving preference
+  // 1. Group override. Returned even without access, so downstream routes can
+  // answer "access denied" instead of silently falling back.
   if (groupOverride) {
     const group = await prisma.workflowGroup.findFirst({
       where: { id: groupOverride, isActive: true },
     });
     if (group) {
-      // Only save preference if user has access to the group
-      // Admins have implicit access to all catalogs; regular users need explicit access
-      let hasAccess = false;
-
-      if (userId) {
-        const [adminCapability, catalogCapability] = await Promise.all([
-          getAdminCapability(userId),
-          getCatalogCapability(group.id, userId),
-        ]);
-        hasAccess = adminCapability.canAccessAdmin || catalogCapability.hasAccess;
-      }
-
-      if (hasAccess) {
-        // Update user preference to remember this selection
-        await prisma.userPreferences.upsert({
-          where: { userId: effectiveUserId },
-          update: { activeGroupId: group.id },
-          create: {
-            userId: effectiveUserId,
-            activeGroupId: group.id,
-            theme: "system",
-            catalogColumns: [],
-            settings: {},
-          },
-        });
-      }
-      // Return the group regardless (downstream routes will check access)
-      // This allows viewing "no access" messages instead of failing silently
       return group;
     }
   }
