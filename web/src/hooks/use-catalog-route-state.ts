@@ -57,7 +57,7 @@ function resolveParent(
   if (root === "downloads" && segments.length === 1) {
     return { url: downloadsIsHome ? null : "/catalog", label: "backToCatalog" };
   }
-  if (root === "settings" && segments.length === 1) {
+  if ((root === "settings" || root === "bookmarks") && segments.length === 1) {
     return { url: "/catalog", label: "backToCatalog" };
   }
   if (root !== "catalog" || !catalogId || !section) return null;

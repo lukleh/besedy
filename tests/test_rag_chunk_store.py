@@ -26,7 +26,7 @@ def _chunk(*, chunk_id: str, audio_hash: str, chunk_ordinal: int | None, text: s
         chunk_id=chunk_id,
         chunk_version="v2",
         run_id="20260206_120000",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         audio_hash=audio_hash,
         source_path="/tmp/transcript.json",
         start=float((chunk_ordinal or 0) * 10),
@@ -226,7 +226,7 @@ def test_ensure_chunk_store_fts_recovers_partial_existing_backfill(tmp_path: Pat
               5.0,
               'starší hledatelný přepis',
               '20260206_120000',
-              'faster-whisper/large-v3@silero_vad_v6',
+              'faster-whisper/large-v3@silero_vad_v6@lang-cs',
               'v2',
               3,
               '/tmp/transcript.json'

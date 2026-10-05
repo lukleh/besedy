@@ -1,5 +1,3 @@
-import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
 import path from "node:path";
 import { afterEach, vi, beforeAll } from "vitest";
 import { webEnvVarNames } from "./env-isolation";
@@ -51,11 +49,6 @@ vi.mock("@/lib/auth/session", () => ({
   auth: vi.fn(() => Promise.resolve(null)),
 }));
 
-// Cleanup after each test
-afterEach(() => {
-  cleanup();
-});
-
 const usePathnameMock = vi.fn(() => "/");
 
 // Mock Next.js router
@@ -70,33 +63,46 @@ vi.mock("next/navigation", () => ({
   usePathname: usePathnameMock,
 }));
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-};
-Object.defineProperty(window, "localStorage", { value: localStorageMock });
+// The DOM parts only apply when the test file runs under jsdom (component
+// tests, or a `@vitest-environment jsdom` docblock). They load dynamically so
+// that node-environment tests do not pay for react-dom and testing-library.
+if (typeof window !== "undefined") {
+  await import("@testing-library/jest-dom/vitest");
+  const { cleanup } = await import("@testing-library/react");
 
-// Mock ResizeObserver (required for Radix UI components)
-global.ResizeObserver = class ResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-};
+  // Cleanup after each test
+  afterEach(() => {
+    cleanup();
+  });
 
-// Mock matchMedia
-Object.defineProperty(window, "matchMedia", {
-  writable: true,
-  value: vi.fn().mockImplementation((query) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-});
+  // Mock localStorage
+  const localStorageMock = {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn(),
+  };
+  Object.defineProperty(window, "localStorage", { value: localStorageMock });
+
+  // Mock ResizeObserver (required for Radix UI components)
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+
+  // Mock matchMedia
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
