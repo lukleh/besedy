@@ -30,11 +30,29 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content", () => ({
-  default: (props: { afterAudioPlayer?: ReactNode }) => {
+  default: (props: { afterAudioPlayer?: ReactNode; headerActions?: ReactNode }) => {
     recordingContentMock(props);
-    return <div data-testid="recording-content">{props.afterAudioPlayer}</div>;
+    return (
+      <div data-testid="recording-content">
+        <div data-testid="header-actions">{props.headerActions}</div>
+        {props.afterAudioPlayer}
+      </div>
+    );
   },
 }));
+
+// Menus render their items inline so the tests can read them without opening a portal.
+vi.mock("@/components/ui/responsive-menu", () => {
+  const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+  return {
+    ResponsiveMenu: Passthrough,
+    ResponsiveMenuTrigger: Passthrough,
+    ResponsiveMenuContent: Passthrough,
+    ResponsiveMenuItem: Passthrough,
+    ResponsiveMenuRadioGroup: Passthrough,
+    ResponsiveMenuRadioItem: Passthrough,
+  };
+});
 
 vi.mock("@/hooks/use-local-package", () => ({
   useLocalArtworkUrl: () => null,
@@ -82,9 +100,9 @@ function eventDetail(overrides: Partial<EventDetailResponse> = {}): EventDetailR
   };
 }
 
-function renderEventDetail(data: EventDetailResponse) {
+function renderEventDetail(data: EventDetailResponse, canEdit = false) {
   useQueryMock.mockReturnValue({ data, isLoading: false, error: null });
-  renderComponent();
+  renderComponent(canEdit);
 }
 
 function renderEventDetailError(error: unknown, refetch = vi.fn()) {
@@ -92,12 +110,12 @@ function renderEventDetailError(error: unknown, refetch = vi.fn()) {
   renderComponent();
 }
 
-function renderComponent() {
+function renderComponent(canEdit = false) {
   render(
     <EventDetail
       catalogId={CATALOG_ID}
       eventId={EVENT_ID}
-      canEdit={false}
+      canEdit={canEdit}
       showAllColumns={false}
       showReleaseState={false}
     />
@@ -205,5 +223,86 @@ describe("EventDetail load failures", () => {
     expect(screen.queryByText("Internal error")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/ }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EventDetail edit menu", () => {
+  const eventPath = `/catalog/${CATALOG_ID}/event/${EVENT_ID}`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function linkHrefs() {
+    return screen.queryAllByRole("link").map((link) => link.getAttribute("href"));
+  }
+
+  it("puts every edit entry for a curator behind the one menu", () => {
+    renderEventDetail(
+      eventDetail({
+        canViewArtworkCandidates: true,
+        canManageSources: true,
+        canEditMetadata: true,
+        artworkStatus: "none",
+      }),
+      true
+    );
+
+    expect(screen.getByRole("button", { name: /editEvent/ })).toBeInTheDocument();
+    expect(linkHrefs()).toEqual([
+      `${eventPath}/edit`,
+      `/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/edit`,
+      `${eventPath}/artwork`,
+      `${eventPath}/sources`,
+    ]);
+    // Missing artwork is a hint on its entry rather than a badge on the page.
+    expect(screen.getByRole("link", { name: /editMenu.artwork/ })).toHaveTextContent("recording.noArtwork");
+    // The menu replaces the player's own metadata button.
+    expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({ hideMetadataEdit: true }));
+  });
+
+  it("names the recorder whose metadata is edited when the event has several", () => {
+    const recording = eventDetail().recordings[0];
+    renderEventDetail(
+      eventDetail({
+        canEditMetadata: true,
+        recordings: [
+          recording,
+          { ...recording, audioHash: "b".repeat(64), isPrimary: false, recorder: { id: 2, name: "Second" } },
+        ],
+      })
+    );
+
+    expect(screen.getByRole("link", { name: /editMenu.recordingMetadata/ })).toHaveTextContent("Recorder");
+  });
+
+  it("offers artwork alone to an account granted artwork without event editing", () => {
+    renderEventDetail(eventDetail({ canViewArtworkCandidates: true, artworkStatus: "published" }));
+
+    expect(linkHrefs()).toEqual([`${eventPath}/artwork`]);
+  });
+
+  it("shows no edit menu to a reader", () => {
+    renderEventDetail(eventDetail());
+
+    expect(screen.queryByRole("button", { name: /editEvent/ })).not.toBeInTheDocument();
+    expect(linkHrefs()).toEqual([]);
+  });
+
+  it("badges only an unreleased event", () => {
+    renderEventDetail(eventDetail({ released: true }));
+    expect(screen.queryByText("unreleased")).not.toBeInTheDocument();
+    expect(screen.queryByText("released")).not.toBeInTheDocument();
+  });
+
+  it("badges an unreleased event", () => {
+    renderEventDetail(eventDetail({ released: false }));
+    expect(screen.getByText("unreleased")).toBeInTheDocument();
+  });
+
+  it("keeps the edit menu on an event without recordings", () => {
+    renderEventDetail(eventDetail({ recordings: [], canManageSources: true }), true);
+
+    expect(linkHrefs()).toEqual([`${eventPath}/edit`, `${eventPath}/sources`]);
   });
 });

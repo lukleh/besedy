@@ -47,6 +47,8 @@ interface RecordingPageStateProps {
   afterAudioPlayer?: ReactNode;
   backToListUrl: string;
   catalogId: string;
+  /** The embedding page's own actions, which stay usable when the recording itself is not. */
+  headerActions?: ReactNode;
   variant: RecordingPageStateVariant;
 }
 
@@ -83,6 +85,8 @@ interface RecordingAudioSectionProps {
   currentTimeSetter: (time: number) => void;
   hash: string;
   headingContext?: RecordingHeadingContext;
+  /** The page offers metadata editing elsewhere, as the event page's edit menu does. */
+  hideMetadataEdit?: boolean;
   onAudioDownload: (source: "archived" | "original") => void;
   onAudioEnded: (duration: number) => void;
   onDurationChange: (duration: number) => void;
@@ -131,7 +135,13 @@ export function RecordingPageSkeleton() {
   );
 }
 
-export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId, variant }: RecordingPageStateProps) {
+export function RecordingPageState({
+  afterAudioPlayer,
+  backToListUrl,
+  catalogId,
+  headerActions,
+  variant,
+}: RecordingPageStateProps) {
   const t = useTranslations();
   const backHref = variant === "catalogNotFound" ? "/catalog" : backToListUrl;
   const title =
@@ -149,13 +159,16 @@ export function RecordingPageState({ afterAudioPlayer, backToListUrl, catalogId,
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-6">
-      <Link
-        href={backHref}
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {t("recording.backToCatalog")}
-      </Link>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href={backHref}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t("recording.backToCatalog")}
+        </Link>
+        {headerActions && <div className="flex flex-wrap items-center gap-2">{headerActions}</div>}
+      </div>
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <FileAudio className="h-12 w-12 text-muted-foreground mb-4" />
         <h2 className="text-lg font-semibold">{title}</h2>
@@ -257,6 +270,7 @@ export function RecordingAudioSection({
   currentTimeSetter,
   hash,
   headingContext,
+  hideMetadataEdit = false,
   onAudioDownload,
   onAudioEnded,
   onDurationChange,
@@ -271,6 +285,7 @@ export function RecordingAudioSection({
 }: RecordingAudioSectionProps) {
   const t = useTranslations();
   const { headingText } = useRecordingHeading(recording, hash, headingContext);
+  const showMetadataEdit = permissions.canEditMetadata && !hideMetadataEdit;
 
   return (
     <div className="space-y-4 mb-6">
@@ -323,11 +338,11 @@ export function RecordingAudioSection({
         }}
       />
 
-      {(permissions.canEditMetadata ||
+      {(showMetadataEdit ||
         (permissions.canDownloadAudio && recording.hasArchivedAudio) ||
         (permissions.canDownloadOriginalAudio && recording.hasOriginalAudio)) && (
         <div className="flex flex-wrap items-center gap-2">
-          {permissions.canEditMetadata && (
+          {showMetadataEdit && (
             <Button variant="outline" size="sm" asChild>
               <Link href={`/catalog/${catalogId}/recording/${hash}/edit`}>
                 <Pencil className="h-4 w-4 mr-2" />

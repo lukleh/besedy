@@ -136,6 +136,7 @@ export async function readLocalEventDetail(
     canManageArtwork: false,
     canPublishArtwork: false,
     canManageSources: false,
+    canEditMetadata: false,
     latestDraftCandidate: null,
   };
 }

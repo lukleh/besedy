@@ -1,8 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RecordingAudioSection,
   RecordingHeader,
+  RecordingPageState,
   type RecordingHeadingContext,
 } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content-sections";
 import type { CatalogEntryResponse } from "@/types/catalog";
@@ -21,6 +23,10 @@ vi.mock("@/components/player/audio-player", () => ({
     playerProps.current = props;
     return null;
   },
+}));
+
+vi.mock("next/link", () => ({
+  default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
 
 vi.mock("@/components/transcript/transcript-stream-viewer", () => ({
@@ -203,5 +209,63 @@ describe("RecordingAudioSection lock-screen metadata", () => {
       artist: "Jan Novák",
       album: "Series",
     });
+  });
+});
+
+describe("RecordingAudioSection metadata edit", () => {
+  const noop = () => {};
+  const recording = { hash: HASH, filename: "recording.wav" } as CatalogEntryResponse;
+
+  function renderSection(hideMetadataEdit?: boolean) {
+    render(
+      <RecordingAudioSection
+        audioSource="archived"
+        audioUrl="/audio"
+        autoPlayOnSeek={false}
+        catalogId="c"
+        currentTimeSetter={noop}
+        hash={HASH}
+        hideMetadataEdit={hideMetadataEdit}
+        onAudioDownload={noop}
+        onAudioEnded={noop}
+        onDurationChange={noop}
+        onPlayingChange={noop}
+        onSeek={noop}
+        onSourceChange={noop}
+        permissions={{ canEditMetadata: true }}
+        recording={recording}
+        savedSourceId={null}
+        sources={[]}
+      />,
+    );
+  }
+
+  it("offers metadata editing to an editor", () => {
+    renderSection();
+    expect(screen.getByRole("link", { name: /metadata.editCurated/ })).toHaveAttribute(
+      "href",
+      `/catalog/c/recording/${HASH}/edit`,
+    );
+  });
+
+  it("leaves metadata editing to a page that offers it elsewhere", () => {
+    renderSection(true);
+    expect(screen.queryByRole("link", { name: /metadata.editCurated/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("RecordingPageState", () => {
+  it("keeps the embedding page's actions when the recording is unavailable", () => {
+    render(
+      <RecordingPageState
+        variant="recordingUnavailable"
+        catalogId="c"
+        backToListUrl="/catalog/c"
+        headerActions={<button type="button">Edit Event</button>}
+      />,
+    );
+
+    expect(screen.getByText("recording.unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Event" })).toBeInTheDocument();
   });
 });
