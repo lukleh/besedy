@@ -105,6 +105,16 @@ describe("LastRouteTracker", () => {
     expect(readCookie()).toBe("/catalog/c1/recording/abc?variant=nemo");
   });
 
+  it("does not record a not-found page, so a launch is not resumed onto it", () => {
+    saveLastRoute("/catalog/20260101_120000/event/7");
+    navigation.pathname = "/catalog/99999999_999999";
+    render(<div data-not-found-page="" />);
+
+    render(<LastRouteTracker />);
+
+    expect(readCookie()).toBe("/catalog/20260101_120000/event/7");
+  });
+
   it("updates the record on navigation", () => {
     const { rerender } = render(<LastRouteTracker />);
     expect(readCookie()).toBe("/catalog/20260101_120000");

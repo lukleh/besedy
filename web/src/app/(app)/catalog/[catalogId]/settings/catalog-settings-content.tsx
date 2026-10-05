@@ -124,13 +124,13 @@ export default function CatalogSettingsContent({
           );
         } catch (error) {
           if (error instanceof ApiError && error.status === 403) {
-            throw new Error("You don't have permission to manage this catalog");
+            // Keep the status: a 403 is final, so the query does not retry it.
+            throw new ApiError("You don't have permission to manage this catalog", 403);
           }
           throw error;
         }
       },
       enabled: cards.access && !catalogNotFound && !catalogValidationLoading,
-      retry: false, // Don't retry on error (403 is expected for unauthorized users)
       ...AUTH_SENSITIVE_QUERY_OPTIONS,
     });
 

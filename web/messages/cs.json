@@ -2052,7 +2052,8 @@
     "unauthorized": "Neoprávněný přístup",
     "unauthorizedDescription": "Nemáte oprávnění k přístupu na tuto stránku.",
     "serverError": "Chyba serveru",
-    "serverErrorDescription": "Něco se pokazilo. Zkuste to prosím později."
+    "serverErrorDescription": "Něco se pokazilo. Zkuste to prosím později.",
+    "offlineDescription": "Zdá se, že jste offline a tato stránka není stažená. Připojte se a zkuste to znovu, nebo otevřete staženou událost v části Stažené."
   },
   "pwa": {
     "installTitle": "Nainstalovat Besedy",

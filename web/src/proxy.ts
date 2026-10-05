@@ -114,6 +114,11 @@ function getRateLimitClientKey(req: NextRequest): string {
   return getRateLimitFallbackKey(req);
 }
 
+/** `/api` itself answers like `/api/...`: the JSON 404 of the API catch-all. */
+function isApiPath(pathname: string): boolean {
+  return pathname === "/api" || pathname.startsWith("/api/");
+}
+
 function isMutationMethod(method: string): boolean {
   return (
     method === "POST" ||
@@ -377,7 +382,7 @@ function addSecurityHeaders(
   response: NextResponse,
   nonce: string
 ): NextResponse {
-  if (!req.nextUrl.pathname.startsWith("/api/")) {
+  if (!isApiPath(req.nextUrl.pathname)) {
     response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
   }
 
@@ -518,7 +523,7 @@ export async function proxy(req: NextRequest) {
   }
 
   // Non-auth APIs are not redirected by middleware; route handlers return 401/403.
-  if (pathname.startsWith("/api/")) {
+  if (isApiPath(pathname)) {
     if (
       isMutationMethod(req.method) &&
       !isAuthorizedInternalServiceRequest(req) &&
