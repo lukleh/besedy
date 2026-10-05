@@ -38,11 +38,6 @@ export async function GET() {
         isActive: true,
       },
       orderBy: { id: "desc" },
-      include: {
-        variants: {
-          orderBy: { variant: "asc" },
-        },
-      },
     });
 
     return NextResponse.json(groups);

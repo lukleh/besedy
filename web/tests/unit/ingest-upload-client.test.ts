@@ -1,5 +1,13 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { uploadRecording } from "@/lib/ingest/upload-client";
+import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";
+
+vi.mock("@/lib/service-worker/runtime", () => ({
+  notifyWebVersionObserver: vi.fn(),
+}));
 
 const INTAKE_ID = "cmf9abcdefghijklmnopqrstu";
 
@@ -42,49 +50,130 @@ function intakeDto(overrides: Record<string, unknown> = {}) {
   };
 }
 
+type ChunkHandler = (xhr: FakeXhr, index: number, body: Blob) => void | Promise<void>;
+
+/**
+ * Chunk PUTs go through XMLHttpRequest for upload progress; the other requests
+ * still use fetch. Each test answers chunks through `chunkHandler`.
+ */
+let chunkHandler: ChunkHandler = () => {
+  throw new Error("no chunk handler");
+};
+// Errors thrown by a handler (including failed expectations) are kept here and
+// rethrown after the upload, so a retry can never hide them.
+let handlerErrors: unknown[] = [];
+
+class FakeXhr {
+  method = "";
+  url = "";
+  status = 0;
+  statusText = "";
+  responseText = "";
+  requestHeaders: Record<string, string> = {};
+  responseHeaders: Record<string, string> = {};
+  upload: { onprogress: ((event: { loaded: number }) => void) | null } = {
+    onprogress: null,
+  };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onabort: (() => void) | null = null;
+  ontimeout: (() => void) | null = null;
+
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.requestHeaders[name] = value;
+  }
+
+  send(body: Blob) {
+    const match = this.url.match(/\/chunks\/(\d+)$/);
+    if (!match) throw new Error(`unexpected XHR ${this.method} ${this.url}`);
+    void Promise.resolve()
+      .then(() => chunkHandler(this, Number(match[1]), body))
+      .catch((error: unknown) => {
+        handlerErrors.push(error);
+        this.fail();
+      });
+  }
+
+  getResponseHeader(name: string): string | null {
+    return this.responseHeaders[name] ?? null;
+  }
+
+  progress(loaded: number) {
+    this.upload.onprogress?.({ loaded });
+  }
+
+  respond(payload: unknown, status = 200) {
+    this.status = status;
+    this.responseText = JSON.stringify(payload);
+    this.onload?.();
+  }
+
+  fail() {
+    this.onerror?.();
+  }
+}
+
+function chunkAccepted(index: number, receivedBytes: number) {
+  return { intakeId: INTAKE_ID, receivedBytes, receivedChunks: index + 1 };
+}
+
 describe("uploadRecording", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
+  let createBodies: unknown[];
 
   beforeEach(() => {
     fetchMock = vi.fn();
+    createBodies = [];
     vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+    vi.mocked(notifyWebVersionObserver).mockClear();
+    handlerErrors = [];
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    chunkHandler = () => {
+      throw new Error("no chunk handler");
+    };
+    const errors = handlerErrors;
+    handlerErrors = [];
+    if (errors.length > 0) throw errors[0];
   });
+
+  function mockFetch(chunkSizeBytes: number, finalized = intakeDto()) {
+    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
+      const target = String(url);
+      if (target === "/api/admin/ingest/uploads") {
+        createBodies.push(JSON.parse(String(init?.body)));
+        return jsonResponse({ intakeId: INTAKE_ID, chunkSizeBytes }, 201);
+      }
+      if (target.endsWith("/finalize")) {
+        return jsonResponse({ intake: finalized });
+      }
+      if (target === `/api/admin/ingest/uploads/${INTAKE_ID}` && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected request ${target}`);
+    });
+  }
 
   it("creates the upload, sends sequential chunks and finalizes", async () => {
     const file = new File(["abcdefg"], "talk.mp3", { type: "audio/mpeg" });
     const chunkBodies: string[] = [];
     const progress: number[] = [];
 
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const target = String(url);
-      if (target === "/api/admin/ingest/uploads") {
-        expect(JSON.parse(String(init?.body))).toEqual({
-          catalogId: "20260201_120000",
-          filename: "talk.mp3",
-          sizeBytes: 7,
-          mimeType: "audio/mpeg",
-        });
-        return jsonResponse({ intakeId: INTAKE_ID, chunkSizeBytes: 3 }, 201);
-      }
-      const chunkMatch = target.match(/\/chunks\/(\d+)$/);
-      if (chunkMatch) {
-        chunkBodies.push(await readBlobText(init?.body as Blob));
-        const index = Number(chunkMatch[1]);
-        return jsonResponse({
-          intakeId: INTAKE_ID,
-          receivedBytes: Math.min(7, (index + 1) * 3),
-          receivedChunks: index + 1,
-        });
-      }
-      if (target.endsWith("/finalize")) {
-        return jsonResponse({ intake: intakeDto() });
-      }
-      throw new Error(`unexpected request ${target}`);
-    });
+    mockFetch(3);
+    chunkHandler = async (xhr, index, body) => {
+      expect(xhr.method).toBe("PUT");
+      expect(xhr.requestHeaders["Content-Type"]).toBe("application/octet-stream");
+      chunkBodies.push(await readBlobText(body));
+      xhr.respond(chunkAccepted(index, Math.min(7, (index + 1) * 3)));
+    };
 
     const intake = await uploadRecording({
       catalogId: "20260201_120000",
@@ -92,62 +181,102 @@ describe("uploadRecording", () => {
       onProgress: (sent) => progress.push(sent),
     });
 
+    expect(createBodies).toEqual([{
+      catalogId: "20260201_120000",
+      filename: "talk.mp3",
+      sizeBytes: 7,
+      mimeType: "audio/mpeg",
+    }]);
     expect(intake.status).toBe("QUEUED");
     expect(chunkBodies).toEqual(["abc", "def", "g"]);
     expect(progress).toEqual([0, 3, 6, 7]);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports progress inside each chunk as the browser sends it", async () => {
+    const file = new File(["abcdefg"], "talk.mp3", { type: "audio/mpeg" });
+    const progress: number[] = [];
+
+    mockFetch(3);
+    chunkHandler = (xhr, index, body) => {
+      xhr.progress(1);
+      xhr.progress(body.size);
+      xhr.respond(chunkAccepted(index, Math.min(7, (index + 1) * 3)));
+    };
+
+    await uploadRecording({
+      catalogId: "20260201_120000",
+      file,
+      onProgress: (sent) => progress.push(sent),
+    });
+
+    expect(progress).toEqual([0, 1, 3, 3, 4, 6, 6, 7, 7, 7]);
+    for (let i = 1; i < progress.length; i += 1) {
+      expect(progress[i]).toBeGreaterThanOrEqual(progress[i - 1]);
+    }
   });
 
   it("retries a chunk once on a server error", async () => {
     const file = new File(["abc"], "talk.mp3", { type: "audio/mpeg" });
     let chunkAttempts = 0;
 
-    fetchMock.mockImplementation(async (url: string | URL) => {
-      const target = String(url);
-      if (target === "/api/admin/ingest/uploads") {
-        return jsonResponse({ intakeId: INTAKE_ID, chunkSizeBytes: 10 }, 201);
+    mockFetch(10, intakeDto({ sizeBytes: 3, receivedBytes: 3 }));
+    chunkHandler = (xhr, index) => {
+      chunkAttempts += 1;
+      if (chunkAttempts === 1) {
+        xhr.respond({ error: "boom" }, 503);
+        return;
       }
-      if (target.includes("/chunks/0")) {
-        chunkAttempts += 1;
-        if (chunkAttempts === 1) {
-          return jsonResponse({ error: "boom" }, 503);
-        }
-        return jsonResponse({ intakeId: INTAKE_ID, receivedBytes: 3, receivedChunks: 1 });
-      }
-      if (target.endsWith("/finalize")) {
-        return jsonResponse({ intake: intakeDto({ sizeBytes: 3, receivedBytes: 3 }) });
-      }
-      throw new Error(`unexpected request ${target}`);
-    });
+      xhr.respond(chunkAccepted(index, 3));
+    };
 
     await uploadRecording({ catalogId: "20260201_120000", file });
     expect(chunkAttempts).toBe(2);
+  });
+
+  it("retries after a network error and restarts progress at the chunk start", async () => {
+    const file = new File(["abcdef"], "talk.mp3", { type: "audio/mpeg" });
+    const progress: number[] = [];
+    let chunk1Attempts = 0;
+
+    mockFetch(3, intakeDto({ sizeBytes: 6, receivedBytes: 6 }));
+    chunkHandler = (xhr, index) => {
+      if (index === 1) {
+        chunk1Attempts += 1;
+        if (chunk1Attempts === 1) {
+          xhr.progress(2);
+          xhr.fail();
+          return;
+        }
+        xhr.progress(1);
+      }
+      xhr.respond(chunkAccepted(index, (index + 1) * 3));
+    };
+
+    await uploadRecording({
+      catalogId: "20260201_120000",
+      file,
+      onProgress: (sent) => progress.push(sent),
+    });
+
+    expect(chunk1Attempts).toBe(2);
+    expect(progress).toEqual([0, 3, 5, 3, 4, 6]);
   });
 
   it("skips ahead when the server reports a later expected chunk index", async () => {
     const file = new File(["abcdef"], "talk.mp3", { type: "audio/mpeg" });
     const putIndices: number[] = [];
 
-    fetchMock.mockImplementation(async (url: string | URL) => {
-      const target = String(url);
-      if (target === "/api/admin/ingest/uploads") {
-        return jsonResponse({ intakeId: INTAKE_ID, chunkSizeBytes: 3 }, 201);
+    mockFetch(3, intakeDto({ sizeBytes: 6, receivedBytes: 6 }));
+    chunkHandler = (xhr, index) => {
+      putIndices.push(index);
+      if (index === 0) {
+        // The first attempt was committed server-side; the retry sees a conflict.
+        xhr.respond({ error: "Unexpected chunk index", expectedIndex: 1 }, 409);
+        return;
       }
-      const chunkMatch = target.match(/\/chunks\/(\d+)$/);
-      if (chunkMatch) {
-        const index = Number(chunkMatch[1]);
-        putIndices.push(index);
-        if (index === 0) {
-          // The first attempt was committed server-side; the retry sees a conflict.
-          return jsonResponse({ error: "Unexpected chunk index", expectedIndex: 1 }, 409);
-        }
-        return jsonResponse({ intakeId: INTAKE_ID, receivedBytes: 6, receivedChunks: 2 });
-      }
-      if (target.endsWith("/finalize")) {
-        return jsonResponse({ intake: intakeDto({ sizeBytes: 6, receivedBytes: 6 }) });
-      }
-      throw new Error(`unexpected request ${target}`);
-    });
+      xhr.respond(chunkAccepted(index, 6));
+    };
 
     await uploadRecording({ catalogId: "20260201_120000", file });
     expect(putIndices).toEqual([0, 1]);
@@ -155,25 +284,47 @@ describe("uploadRecording", () => {
 
   it("aborts the upload when a chunk fails permanently", async () => {
     const file = new File(["abc"], "talk.mp3", { type: "audio/mpeg" });
-    const methods: string[] = [];
 
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const target = String(url);
-      methods.push(`${init?.method ?? "GET"} ${target}`);
-      if (target === "/api/admin/ingest/uploads") {
-        return jsonResponse({ intakeId: INTAKE_ID, chunkSizeBytes: 10 }, 201);
-      }
-      if (target.includes("/chunks/0")) {
-        return jsonResponse({ error: "Unexpected chunk index" }, 409);
-      }
-      if (target === `/api/admin/ingest/uploads/${INTAKE_ID}`) {
-        return new Response(null, { status: 204 });
-      }
-      throw new Error(`unexpected request ${target}`);
+    mockFetch(10);
+    chunkHandler = (xhr) => {
+      xhr.respond({ error: "Unexpected chunk index" }, 409);
+    };
+
+    await expect(uploadRecording({ catalogId: "20260201_120000", file })).rejects.toMatchObject({
+      name: "ApiError",
+      status: 409,
+      message: "Unexpected chunk index",
     });
+    const requests = fetchMock.mock.calls.map(
+      ([url, init]) => `${(init as RequestInit | undefined)?.method ?? "GET"} ${String(url)}`
+    );
+    expect(requests).toContain(`DELETE /api/admin/ingest/uploads/${INTAKE_ID}`);
+    expect(requests.some((entry) => entry.endsWith("/finalize"))).toBe(false);
+  });
 
-    await expect(uploadRecording({ catalogId: "20260201_120000", file })).rejects.toThrow();
-    expect(methods).toContain(`DELETE /api/admin/ingest/uploads/${INTAKE_ID}`);
-    expect(methods.some((entry) => entry.endsWith("/finalize"))).toBe(false);
+  it("rejects a chunk response that does not match the schema", async () => {
+    const file = new File(["abc"], "talk.mp3", { type: "audio/mpeg" });
+
+    mockFetch(10);
+    chunkHandler = (xhr) => {
+      xhr.respond({ unexpected: true });
+    };
+
+    await expect(uploadRecording({ catalogId: "20260201_120000", file })).rejects.toMatchObject({
+      name: "SchemaValidationError",
+    });
+  });
+
+  it("reports the deployed web version from chunk responses", async () => {
+    const file = new File(["abc"], "talk.mp3", { type: "audio/mpeg" });
+
+    mockFetch(10, intakeDto({ sizeBytes: 3, receivedBytes: 3 }));
+    chunkHandler = (xhr, index) => {
+      xhr.responseHeaders["X-Web-Version"] = "web-vnext";
+      xhr.respond(chunkAccepted(index, 3));
+    };
+
+    await uploadRecording({ catalogId: "20260201_120000", file });
+    expect(notifyWebVersionObserver).toHaveBeenCalledWith("web-vnext");
   });
 });

@@ -13,14 +13,14 @@ from besedy.commands.catalog.default_paths import (
     get_default_loudness_symlink,
     get_default_normalized_symlink,
 )
-from besedy.commands.catalog.symlink import (
-    create_or_update_symlink,
-    validate_symlink_can_be_created,
-)
 from besedy.commands.catalog.ui import print_workflow_summary
 from besedy.core.paths import (
     extract_timestamp_from_loudness_catalog,
     resolve_audio_artifacts_root,
+)
+from besedy.core.symlinks import (
+    create_or_update_symlink,
+    validate_symlink_can_be_created,
 )
 from besedy.lib.audio.normalize import stage_audio_files
 from besedy.lib.audio.types import ManifestWriter

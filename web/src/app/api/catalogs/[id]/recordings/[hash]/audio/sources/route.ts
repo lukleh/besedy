@@ -18,8 +18,7 @@ interface RouteParams {
 interface AudioSource {
   id: string;
   label: string;
-  type: "archived" | "listening";
-  variant?: string;
+  type: "archived";
   available: boolean;
   /**
    * Files the audio route can serve for this source with `format=`: "webm"
@@ -40,8 +39,8 @@ function formatsFor(
 /**
  * GET /api/catalogs/:id/recordings/:hash/audio/sources - List available audio sources
  *
- * Returns list of available audio sources (archived, listening variants),
- * each with the formats it can be served in.
+ * Returns the available audio sources (the archived recording), each with
+ * the formats it can be served in.
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -64,17 +63,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const sources: AudioSource[] = [];
 
-    const [archived, variants] = await Promise.all([
-      prisma.catalogEntry.findUnique({
-        where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: hash } },
-        select: { compressedPath: true, compressedAacPath: true },
-      }),
-      // Check for variants with listening audio
-      prisma.workflowVariant.findMany({
-        where: { workflowGroupId: catalogId },
-        orderBy: [{ isDefault: "desc" }, { variant: "asc" }],
-      }),
-    ]);
+    const archived = await prisma.catalogEntry.findUnique({
+      where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: hash } },
+      select: { compressedPath: true, compressedAacPath: true },
+    });
 
     // Always listed; available when it has a file the audio route can serve.
     const archivedFormats = formatsFor(archived);
@@ -85,36 +77,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       available: archivedFormats.length > 0,
       formats: archivedFormats,
     });
-
-    const listeningAvailability = await Promise.all(
-      variants
-        .filter((variant) => !!variant.listeningArchivedCatalogPath)
-        .map(async (variant) => {
-          const row = await prisma.catalogListeningEntry.findUnique({
-            where: {
-              workflowGroupId_variant_audioHash: {
-                workflowGroupId: catalogId,
-                variant: variant.variant,
-                audioHash: hash,
-              },
-            },
-            select: { compressedPath: true, compressedAacPath: true },
-          });
-          const formats = formatsFor(row);
-          return { variant, available: formats.length > 0, formats };
-        })
-    );
-
-    for (const item of listeningAvailability) {
-      sources.push({
-        id: `listening:${item.variant.variant}`,
-        label: item.variant.label || `Listening (${item.variant.variant})`,
-        type: "listening",
-        variant: item.variant.variant,
-        available: item.available,
-        formats: item.formats,
-      });
-    }
 
     return NextResponse.json({
       hash,

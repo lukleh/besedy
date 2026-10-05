@@ -9,7 +9,7 @@ from besedy.commands.catalog import check as check_module
 from besedy.lib.rag_bundle import ResolvedColbertBundle, resolve_colbert_bundle_artifacts
 from besedy.lib.rag_colbert_source_state import ColbertSourceStateRow, replace_source_state
 
-BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6"
+BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 SECOND_BACKEND_KEY = "whisperx/large-v3"
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -22,7 +22,7 @@ class _StubWorkflow:
     def __init__(
         self,
         workflow_label: str = "faster-whisper",
-        model_component: str = "large-v3@silero_vad_v6",
+        model_component: str = "large-v3@silero_vad_v6@lang-cs",
     ) -> None:
         self.workflow_label = workflow_label
         self.model_component = model_component

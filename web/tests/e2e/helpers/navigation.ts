@@ -74,17 +74,6 @@ export async function openMetadataSidebarIfNeeded(page: Page, breakpoint = 1024)
 }
 
 /**
- * Kept for backward compatibility with older tests.
- * Mobile filters are now always visible as chips, so there is no panel to open.
- */
-export async function openCatalogFiltersIfNeeded(page: Page, breakpoint = 768): Promise<void> {
-  const viewport = page.viewportSize();
-  if (viewport && viewport.width < breakpoint) {
-    await page.locator("[data-testid='mobile-filter-chips']").first().waitFor({ state: "visible", timeout: 2000 }).catch(() => {});
-  }
-}
-
-/**
  * Finds the first visible catalog search input across responsive layouts.
  */
 export async function findVisibleCatalogSearchInput(page: Page): Promise<Locator | null> {

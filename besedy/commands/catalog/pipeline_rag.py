@@ -170,7 +170,6 @@ def run_rag_colbert_index_for_workflow(
         chunk_tokenizer_model=getattr(args, "rag_chunk_tokenizer_model", None),
         doc_maxlen=getattr(args, "rag_colbert_doc_maxlen", 384),
         index_bsize=getattr(args, "rag_colbert_index_bsize", DEFAULT_INDEX_BSIZE),
-        use_faiss=bool(getattr(args, "rag_colbert_use_faiss", False)),
         force=bool(getattr(args, "rag_force", False)),
         min_chunk_tokens=getattr(args, "rag_min_chunk_tokens", DEFAULT_MIN_CHUNK_TOKENS),
         max_chunk_tokens=getattr(args, "rag_max_chunk_tokens", DEFAULT_MAX_CHUNK_TOKENS),

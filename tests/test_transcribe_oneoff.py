@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -194,9 +197,6 @@ def test_main_transcribes_with_mocked_faster_whisper_runtime(
         resolve_model_reference=lambda model_name: f"resolved:{model_name}",
         WhisperModel=DummyModel,
         BatchedInferencePipeline=DummyPipeline,
-        extract_vad_segments=lambda _path, min_silence_duration_ms=None, sampling_rate=None: [
-            {"start": 0.0, "end": 1.2}
-        ],
         build_payload=build_payload,
     )
 
@@ -227,6 +227,56 @@ def test_main_transcribes_with_mocked_faster_whisper_runtime(
     assert calls["transcribe_kwargs"]["language"] == "cs"
     assert (tmp_path / "recording.transcript.json").exists()
     assert (tmp_path / "recording.transcript.txt").read_text(encoding="utf-8") == "Ahoj svete\n"
+
+
+def test_main_runs_against_the_real_workflow_helper_module(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # The CLI calls into besedy.workflows.transcribe_faster_whisper; a stand-in
+    # helper object would hide a removed or renamed function. Only the
+    # faster-whisper library, the model and the audio probe are faked.
+    monkeypatch.setitem(sys.modules, "faster_whisper", MagicMock())
+    monkeypatch.setitem(sys.modules, "faster_whisper.vad", MagicMock())
+    helpers = importlib.import_module("besedy.workflows.transcribe_faster_whisper")
+
+    audio = tmp_path / "recording.mp3"
+    audio.touch()
+
+    class DummySegment:
+        start = 0.0
+        end = 1.2
+        text = "Ahoj svete"
+        words: list[object] = []
+        avg_logprob = -0.1
+
+    class DummyInfo:
+        language = "cs"
+        language_probability = 0.99
+        duration = 1.2
+        duration_after_vad = 1.2
+        transcription_options = None
+
+    class DummyPipeline:
+        def __init__(self, model: object) -> None:
+            pass
+
+        def transcribe(self, audio_path: str, **kwargs: object):
+            return iter([DummySegment()]), DummyInfo()
+
+    monkeypatch.setattr(helpers, "resolve_model_reference", lambda name: name)
+    monkeypatch.setattr(helpers, "WhisperModel", lambda *args, **kwargs: object())
+    monkeypatch.setattr(helpers, "BatchedInferencePipeline", DummyPipeline)
+    monkeypatch.setattr(helpers, "measure_audio_duration_seconds", lambda _path: 1.2)
+    monkeypatch.setattr(transcribe_oneoff, "_load_faster_whisper_helpers", lambda: helpers)
+    monkeypatch.setattr(transcribe_oneoff, "resolve_defaults", lambda: OneOffDefaults())
+
+    result = transcribe_oneoff.main([str(audio), "--device", "cpu", "--compute-type", "int8"])
+
+    assert result == 0
+    payload = json.loads((tmp_path / "recording.transcript.json").read_text(encoding="utf-8"))
+    assert payload["meta"]["backend"] == "faster-whisper"
+    assert "vad_segments" not in payload
 
 
 def test_main_auto_falls_back_to_docker_when_host_runtime_is_missing(
