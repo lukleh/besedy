@@ -582,7 +582,7 @@ class TestRunPipelineCommand:
                 "run-pipeline",
                 "--skip-rag-colbert-index",
                 "--rag-backend",
-                "faster-whisper/large-v3@silero_vad_v6",
+                "faster-whisper/large-v3@silero_vad_v6@lang-cs",
                 "--rag-all-backends",
                 "--rag-force",
                 "--rag-colbert-index-dir",
@@ -607,7 +607,7 @@ class TestRunPipelineCommand:
             ]
         )
         assert args.skip_rag_colbert_index is True
-        assert args.rag_backend == "faster-whisper/large-v3@silero_vad_v6"
+        assert args.rag_backend == "faster-whisper/large-v3@silero_vad_v6@lang-cs"
         assert args.rag_all_backends is True
         assert args.rag_force is True
         assert args.rag_colbert_index_dir == Path("tmp/rag-colbert")
