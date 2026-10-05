@@ -56,16 +56,10 @@ class ColbertQueryService:
         k = int(payload.get("k", 10))
         if k <= 0:
             raise ValueError("k must be positive.")
-        force_fast = bool(payload.get("force_fast", False))
 
         resolved_index_dir = Path(raw_index_dir).resolve()
         if not resolved_index_dir.exists():
             raise FileNotFoundError(f"ColBERT index directory does not exist: {resolved_index_dir}")
-
-        if force_fast:
-            # Keep accepting the legacy flag during migration, but PyLate does not
-            # expose a direct equivalent for Besedy's old query path.
-            force_fast = False
 
         model, retriever, device = self._ensure_loaded_runtime(resolved_index_dir)
         query_embeddings = model.encode(

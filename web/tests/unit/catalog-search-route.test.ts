@@ -300,7 +300,6 @@ describe("catalog search route", () => {
     expect(colbertRequest).toMatchObject({
       query: "folk song",
       k: 200,
-      force_fast: false,
       colbert_index_dir: "/workspace/besedy/tmp/rag-colbert-test/index/colbert_index",
     });
 

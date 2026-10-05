@@ -158,6 +158,8 @@ def test_build_colbert_index_writes_meta_and_manifest(
     assert index_meta["retrieval_engine"] == "pylate"
     assert index_meta["index_format_version"] == "pylate-v1"
     assert index_meta["plaid_backend"] == "fast"
+    # The retired PyLate-incompatible option is no longer recorded.
+    assert "use_faiss" not in index_meta
     assert len(index_meta["chunking_fingerprint"]) == 64
     assert len(index_meta["bundle_fingerprint"]) == 64
     assert index_meta["chunk_distribution"]["chunk_count"] == 1
@@ -521,7 +523,6 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_runtime(
             doc_maxlen=384,
             index_bsize=32,
             split_documents=False,
-            use_faiss=False,
             chunk_count=1,
             token_audit=ColbertTokenAudit(
                 tokenizer_name="jinaai/jina-colbert-v2",
@@ -548,7 +549,6 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_runtime(
         chunk_tokenizer_model=None,
         doc_maxlen=384,
         index_bsize=32,
-        use_faiss=False,
         runtime=None,
         force=False,
         rebuild=False,
@@ -649,7 +649,6 @@ def test_handle_rag_colbert_index_defaults_to_docker_runtime_on_cpu_only_host(
             doc_maxlen=384,
             index_bsize=32,
             split_documents=False,
-            use_faiss=False,
             chunk_count=1,
             token_audit=ColbertTokenAudit(
                 tokenizer_name="jinaai/jina-colbert-v2",
@@ -676,7 +675,6 @@ def test_handle_rag_colbert_index_defaults_to_docker_runtime_on_cpu_only_host(
         chunk_tokenizer_model=None,
         doc_maxlen=384,
         index_bsize=32,
-        use_faiss=False,
         runtime=None,
         force=False,
         rebuild=False,
@@ -713,7 +711,6 @@ def test_handle_rag_colbert_index_defers_to_runtime_env_override(
             doc_maxlen=384,
             index_bsize=32,
             split_documents=False,
-            use_faiss=False,
             chunk_count=1,
             token_audit=ColbertTokenAudit(
                 tokenizer_name="jinaai/jina-colbert-v2",
@@ -740,7 +737,6 @@ def test_handle_rag_colbert_index_defers_to_runtime_env_override(
         chunk_tokenizer_model=None,
         doc_maxlen=384,
         index_bsize=32,
-        use_faiss=False,
         runtime=None,
         force=False,
         rebuild=False,
@@ -781,7 +777,6 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_for_external_index_
             doc_maxlen=384,
             index_bsize=32,
             split_documents=False,
-            use_faiss=False,
             chunk_count=1,
             token_audit=ColbertTokenAudit(
                 tokenizer_name="jinaai/jina-colbert-v2",
@@ -808,7 +803,6 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_for_external_index_
         chunk_tokenizer_model=None,
         doc_maxlen=384,
         index_bsize=32,
-        use_faiss=False,
         runtime=None,
         force=False,
         rebuild=False,
@@ -1962,3 +1956,39 @@ def test_lookup_colbert_neighbors_maps_worker_payload(
 
     assert [chunk.chunk_id for chunk in neighbors["chunk-1"].before] == ["chunk-0"]
     assert neighbors["chunk-1"].after == []
+
+
+def test_index_meta_written_with_the_retired_use_faiss_key_still_loads() -> None:
+    from besedy.lib.rag_colbert_artifacts import _coerce_index_result_from_meta
+
+    meta = {
+        "workflow_group_id": "wg-123",
+        "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+        "run_id": "20260206_120000",
+        "chunk_version": "v2",
+        "min_chunk_tokens": 220,
+        "max_chunk_tokens": 300,
+        "overlap_tokens": 50,
+        "chunk_count": 1,
+        "colbert_model": "jinaai/jina-colbert-v2",
+        "doc_maxlen": 384,
+        "index_bsize": 32,
+        "use_faiss": True,
+        "retrieval_engine": "pylate",
+        "retrieval_engine_version": "1.4.0",
+        "index_format_version": "pylate-v1",
+        "plaid_backend": "fast",
+    }
+
+    result = _coerce_index_result_from_meta(
+        index_dir="/tmp/bundle",
+        meta=meta,
+        sync_mode="noop",
+        default_colbert_model="jinaai/jina-colbert-v2",
+        default_doc_maxlen=384,
+        default_index_bsize=32,
+    )
+
+    assert result.workflow_group_id == "wg-123"
+    assert result.index_bsize == 32
+    assert not hasattr(result, "use_faiss")

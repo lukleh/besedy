@@ -119,7 +119,6 @@ def test_main_json_keeps_stdout_machine_readable(
             doc_maxlen=384,
             index_bsize=int(kwargs["index_bsize"]),
             split_documents=False,
-            use_faiss=False,
             chunk_count=1,
             token_audit=ColbertTokenAudit(
                 tokenizer_name="jinaai/jina-colbert-v2",
