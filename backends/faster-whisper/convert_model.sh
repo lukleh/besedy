@@ -195,10 +195,6 @@ if [[ -n "${HF_TOKEN:-}" ]]; then
     cmd+=(-e "HF_TOKEN=$HF_TOKEN")
 fi
 
-if [[ -n "${HUGGINGFACE_TOKEN:-}" ]]; then
-    cmd+=(-e "HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN")
-fi
-
 cmd+=(
     "$SERVICE"
     ct2-transformers-converter

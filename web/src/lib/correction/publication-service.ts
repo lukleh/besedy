@@ -812,6 +812,9 @@ export async function completeIndexSync(
     // When the frozen machine backend *is* that scope, an absent row means the
     // sync removed the correction without restoring its replacement. Keep the
     // rollback resumable instead of declaring that missing text a success.
+    // previousSourceRef is a backend key stored as text: a key rename must rewrite
+    // it together with RAG_BACKEND_KEY, or it reads as "not the active scope"
+    // (docs/migrations/renaming-a-transcript-backend-key.md).
     const machineShouldBeIndexed =
       publication.previousSourceKind === "machine" &&
       publication.previousSourceRef === getRagBackendKey();

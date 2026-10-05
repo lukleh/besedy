@@ -348,7 +348,7 @@ def build_workflows(
                         docker_service="whisperx",
                         extra_env={
                             "BESEDY_WHISPERX_CLI": "whisperx",
-                            **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+                            **forward_host_env("HF_TOKEN"),
                         },
                         input_paths=[str(path) for path in align_input_paths],
                         output_paths=[str(path.parent) for path in segments_paths],
@@ -387,7 +387,7 @@ def build_workflows(
             faster_argv.append("--audio")
             faster_argv.extend(str(entry.staged) for entry in faster_entries)
 
-            faster_extra_env = forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN")
+            faster_extra_env = forward_host_env("HF_TOKEN")
 
             process = build_python_backend_process(
                 backend_id="faster-whisper",
@@ -435,7 +435,7 @@ def build_workflows(
             qwen_extra_env = {
                 "PYTORCH_ALLOC_CONF": "expandable_segments:True",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
-                **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+                **forward_host_env("HF_TOKEN"),
             }
 
             process = build_python_backend_process(
@@ -505,7 +505,7 @@ def build_workflows(
             )
             whisperx_extra_env = {
                 "BESEDY_WHISPERX_CLI": "whisperx",
-                **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+                **forward_host_env("HF_TOKEN"),
             }
 
             process = build_python_backend_process(
@@ -598,7 +598,7 @@ def build_workflows(
                 pyannote_argv.extend(staged_paths)
                 pyannote_extra_env = {
                     "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD": "1",
-                    **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+                    **forward_host_env("HF_TOKEN"),
                 }
 
                 process = build_python_backend_process(

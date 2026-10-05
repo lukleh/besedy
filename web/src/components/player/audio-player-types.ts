@@ -18,6 +18,10 @@ export interface AudioPlayerProps {
   autoPlayOnSeek?: boolean;
   /** What the lock screen and media notification show for this recording. */
   mediaMetadata?: MediaSessionMetadata;
+  /** Positions (seconds) marked on the progress bar, e.g. the listener's bookmarks. */
+  markers?: readonly number[];
+  /** Bookmarks the current moment; the player shows its bookmark button only when given. */
+  onBookmark?: () => void;
 }
 
 export interface MediaSessionMetadata {

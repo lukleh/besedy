@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from besedy.config.settings import get_config, resolve_config_path, set_config
+from besedy.core import paths_runtime
 from besedy.core.paths import (
     BESEDY_ROOT,
     PROJECT_ROOT,
@@ -25,6 +26,7 @@ from besedy.core.paths import (
     resolve_logs_dir,
     resolve_models_dir,
     resolve_original_audio_root,
+    resolve_pretrained_models_dir,
     resolve_project_path,
     resolve_share_home,
     resolve_state_home,
@@ -102,16 +104,48 @@ class TestHomeRuntimeRoots:
         assert resolve_logs_dir() == expected_root / "logs"
         assert resolve_tmp_dir() == expected_root / "tmp"
 
-    def test_models_dir_prefers_home_copy_once_it_exists(self, monkeypatch, tmp_path):
+    def test_models_dir_is_under_the_share_home(self, monkeypatch, tmp_path):
         monkeypatch.setenv("BESEDY_SHARE_HOME", str(tmp_path / "share-home"))
-        home_models_dir = tmp_path / "share-home" / "models"
-        home_models_dir.mkdir(parents=True)
-        assert resolve_models_dir() == home_models_dir
+        assert resolve_models_dir() == tmp_path / "share-home" / "models"
+
+    def test_frame_vad_model_path_is_under_the_share_home(self, tmp_path):
+        # The constant is computed at import, so check it in a fresh interpreter.
+        import os
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from besedy.core.paths import FRAME_VAD_LOCAL_MODEL_PATH; "
+                "print(FRAME_VAD_LOCAL_MODEL_PATH)",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "BESEDY_SHARE_HOME": str(tmp_path / "share-home")},
+        )
+
+        assert Path(result.stdout.strip()) == (
+            tmp_path / "share-home" / "models" / "frame_vad_multilingual_marblenet_v2.0.nemo"
+        )
+
+    def test_model_dirs_ignore_models_kept_in_a_checkout(self, monkeypatch, tmp_path):
+        # Models in the repository used to win when the share home had none.
+        repo = tmp_path / "repo"
+        (repo / "models").mkdir(parents=True)
+        (repo / "pretrained_models").mkdir()
+        monkeypatch.setattr(paths_runtime, "PROJECT_ROOT", repo)
+        monkeypatch.setenv("BESEDY_SHARE_HOME", str(tmp_path / "share-home"))
+
+        assert resolve_models_dir() == tmp_path / "share-home" / "models"
+        assert resolve_pretrained_models_dir() == tmp_path / "share-home" / "pretrained_models"
 
     def test_web_env_path_honors_explicit_override(self, monkeypatch, tmp_path):
         env_file = tmp_path / "web.env.prod"
         env_file.write_text(
-            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6\n", encoding="utf-8"
+            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs\n", encoding="utf-8"
         )
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(env_file))
         assert resolve_web_env_path("production") == env_file
@@ -121,7 +155,7 @@ class TestHomeRuntimeRoots:
         canonical_path = tmp_path / "xdg-config" / "lukleh" / "besedy" / "web.env.prod"
         canonical_path.parent.mkdir(parents=True)
         canonical_path.write_text(
-            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6\n", encoding="utf-8"
+            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs\n", encoding="utf-8"
         )
 
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(override_path))
@@ -357,10 +391,10 @@ class TestTimestampExtraction:
         assert extract_timestamp_from_transcripts_root(path) == "20251128_120000"
         assert extract_run_id_from_transcripts_root(path) == "20251128_120000_dfn3-v1"
 
-    def test_extract_from_enhanced_transcripts_root(self):
+    def test_extract_rejects_the_retired_enhanced_root(self):
         path = Path("transcripts_enhanced_20251128_120000_dfn3-v1")
-        assert extract_timestamp_from_transcripts_root(path) == "20251128_120000"
-        assert extract_run_id_from_transcripts_root(path) == "20251128_120000_dfn3-v1"
+        assert extract_timestamp_from_transcripts_root(path) is None
+        assert extract_run_id_from_transcripts_root(path) is None
 
     def test_extract_handles_trailing_slash(self):
         path = Path("transcripts_20251128_120000/")

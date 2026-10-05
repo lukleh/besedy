@@ -66,7 +66,7 @@ const PUBLIC: Record<string, string> = {
   "web-update-events": "service-worker update telemetry, also from signed-out pages",
   "auth/[...all]": "Better Auth's own endpoints",
   "auth-complete/session": "finishes sign-in, before a session exists",
-  "[...notFound]": "answers every unknown API path with 404",
+  "[[...notFound]]": "answers every unknown API path, and /api itself, with 404",
 };
 
 function routeFiles(dir: string): string[] {
