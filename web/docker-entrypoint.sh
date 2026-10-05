@@ -80,10 +80,7 @@ if [ "${APP_ENV}" = "production" ]; then
     exit 1
   fi
 
-  if [ -z "${AUTH_SECRET:-}" ] && [ -z "${BETTER_AUTH_SECRET:-}" ]; then
-    echo "ERROR: AUTH_SECRET or BETTER_AUTH_SECRET must be set in production"
-    exit 1
-  fi
+  require_env AUTH_SECRET
 
   require_env DATABASE_URL
   require_env AUTH_URL

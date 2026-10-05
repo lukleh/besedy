@@ -148,6 +148,21 @@ steps before it. Paths below use the default config home
    `prod-build` reads `jobs.env.prod` even for a web-only deploy so a custom
    `BESEDY_JOBS_IMAGE` is honored.
 
+   Every `just jobs-*` and jobs-related `prod-*` recipe runs the jobs stack
+   through `scripts/run_jobs_compose.sh <development|test|production>`. Before
+   a command that creates or starts containers (`up`, `create`, `run`, `start`,
+   `restart`, `scale`), it renders the project and refuses to continue when it
+   points at another environment (`down`, `stop`, `logs`, `ps` and `build`
+   always run, so a mis-wired stack stays stoppable): `BESEDY_INTERNAL_BASE_URL` must name this
+   environment's web container (`besedy-<development|test|production>-web`),
+   the deep-search and ingest work pools, the worker's `--pool` and the Prefect
+   deployment names must end in `-dev`, `-test` or `-prod`, `DEEP_SEARCH_OUTPUT_ENV` and the last component of
+   `DEEP_SEARCH_OUTPUT_DIR` must be the same suffix, and the container names
+   and project must carry it too. The error names the variable, its value and
+   the env file to fix. The `docker-compose.jobs-*.yml` defaults already satisfy
+   these rules, so a minimal env file passes; only an override can fail.
+   `--codex-auth` adds the Codex overlay (production only).
+
 3. **Host directories:** create every data directory named in `web.env.prod`.
    `WEB_LOGS_DIR` must be writable by container UID 1001. Prepare `ARTWORK_DIR`
    and `UPLOADS_DIR` with group `UPLOADS_GID` and mode `2770`, and make
@@ -349,69 +364,21 @@ SELECT count(*) AS published_artwork
 The result must be zero when the deployment policy requires every artwork to
 remain unpublished.
 
-### Permissions rework rollout
+### Maintenance-run releases
 
-Deploy the lookup ownership change separately from the role cutover:
-
-1. Merge through migration `20260916090000_scope_metadata_lookups_to_catalog`
-   together with the lookup-route changes that write `workflow_group_id`, then
-   run `just prod-deploy`. Do not apply this migration while older lookup code
-   can create rows without a catalog.
-2. Verify every lookup has a catalog and every reference points to a lookup in
-   the same catalog:
-
-   ```sql
-   SELECT 'recorders' AS kind, count(*) FROM recorders WHERE workflow_group_id IS NULL
-   UNION ALL SELECT 'locations', count(*) FROM locations WHERE workflow_group_id IS NULL
-   UNION ALL SELECT 'albums', count(*) FROM albums WHERE workflow_group_id IS NULL;
-
-   SELECT count(*) AS mismatched_lookup_references
-   FROM (
-     SELECT 1 FROM audio_metadata m JOIN recorders r ON r.id = m.recorder_id
-       WHERE r.workflow_group_id <> m.workflow_group_id
-     UNION ALL
-     SELECT 1 FROM audio_metadata m JOIN locations l ON l.id = m.location_id
-       WHERE l.workflow_group_id <> m.workflow_group_id
-     UNION ALL
-     SELECT 1 FROM audio_metadata m JOIN albums a ON a.id = m.album_id
-       WHERE a.workflow_group_id <> m.workflow_group_id
-     UNION ALL
-     SELECT 1 FROM catalog_event e JOIN locations l ON l.id = e.location_id
-       WHERE l.workflow_group_id <> e.workflow_group_id
-   ) mismatches;
-   ```
-
-   Every count must be zero before continuing.
-
-3. Merge the remaining permission stack and deploy it as one coordinated
-   web/jobs maintenance release with `just prod-deploy-with-jobs` (or the
-   `-codex` variant). This applies the additive role columns and then assigns
-   every active and pending grant a role while no old worker is running.
-4. Verify the role backfill before accepting traffic as healthy:
-
-   ```sql
-   SELECT count(*) AS grants_without_role FROM catalog_access WHERE role IS NULL;
-   SELECT count(*) AS pending_without_role FROM pending_catalog_grant WHERE role IS NULL;
-   SELECT access_level, role, extra_permissions, count(*)
-     FROM catalog_access
-    GROUP BY access_level, role, extra_permissions
-    ORDER BY access_level, role;
-   ```
-
-   The first two counts must be zero. Compare the grouped mapping with the
-   preflight snapshot: `LISTENER -> listener`, `VIEWER/MEMBER -> reader`,
-   `EDITOR -> curator`, and `OWNER -> host` plus `download_transcripts`. This
-   check must run before step 5: once `access_level` is dropped, only the two
-   `role IS NULL` counts remain meaningful.
-5. Once the role-native web release (#151) is live and nothing reads
-   `access_level`, deploy `20260921170000_drop_legacy_access_level` with a
-   plain `just prod-deploy`. It refuses to run while any grant lacks a role,
-   then makes `role` NOT NULL and drops `access_level` and the `AccessLevel`
-   enum. There is no reverse migration, and the previous image alone cannot
-   run against the migrated schema: its claim path still selects
-   `access_level`, so first sign-in for invited users would fail. Roll back
-   with the guarded `prod-rollback` recipe (see Rollback below), which
-   restores the retained pre-migration backup together with the image.
+The catalog permissions rework (September 2026) shipped as two migration
+steps: the lookup-ownership scoping (`20260916090000_scope_metadata_lookups_to_catalog`,
+[ADR 0007](../adr/0007-per-catalog-lookups.md)) and a coordinated web/jobs
+maintenance release for the role cutover, followed by a separate destructive
+migration (`20260921170000_drop_legacy_access_level`,
+[ADR 0005](../adr/0005-catalog-permission-model.md)). The step-by-step runbook
+was removed once that rollout finished. Use the same shape for any future
+change that cannot be applied additively: deploy it with
+`just prod-deploy-with-jobs` (or the `-codex` variant) so no old worker runs
+against the new schema. A migration that drops a column has no reverse
+migration, and the previous image alone cannot run against the migrated
+schema, so recover with the guarded `prod-rollback` recipe below, which
+restores the retained pre-migration backup together with the image.
 
 Each maintenance run creates its own verified pre-migration backup below
 `BACKUP_DIR/deploy/`. These backups are deliberately excluded from the rotating
@@ -649,8 +616,16 @@ through the development runtime.
   pin in `pyproject.toml`, which the jobs images and the host ingest worker
   install from `uv.lock`. `tests/test_web_production_hardening.py` enforces
   this. Leave `PREFECT_IMAGE` unset in `jobs.env.prefect`: a copied value
-  silently pins the old server at the next bump. `just prefect-status` prints
-  the client pin and the running server version.
+  silently pins the old server at the next bump. `just prefect-up` and
+  `just prefect-status` run `scripts/check_prefect_server_version.sh`, which
+  resolves the image through `docker compose config` and fails with both
+  versions when it differs from the pin; `prefect-status` also compares the
+  running server and shows the real error when the container cannot be queried.
+  An image without a comparable `X.Y.Z[-pythonN.N]` tag (a digest, a mirror
+  tag, a prerelease) counts as drift too. Export
+  `BESEDY_ALLOW_PREFECT_VERSION_DRIFT=1` in the shell to run a deliberately
+  different server (the mismatch is then only a warning); every `just` recipe
+  that calls `prefect-up` needs it.
 - **Upgrading.** The server is shared, so first make sure no flow run of any
   deployment is running or pending (Prefect UI, or the `flow_runs/filter` API);
   `just jobs-prod-check-idle` covers only the production Deep Search

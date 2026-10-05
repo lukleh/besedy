@@ -79,8 +79,8 @@ describe("AuditDetailContent", () => {
         email: "pending@example.com",
         pendingGrantCount: 2,
         reopenedGrants: [
-          { catalogId: "20260101_000000", accessLevel: "EDITOR" },
-          { catalogId: "20260102_000000", accessLevel: "VIEWER" },
+          { catalogId: "20260101_000000", role: "curator" },
+          { catalogId: "20260102_000000", role: "reader" },
         ],
       },
       ipAddress: null,
@@ -95,7 +95,38 @@ describe("AuditDetailContent", () => {
     expect(await screen.findByText("Reopened catalog grants")).toBeInTheDocument();
     expect(screen.getByText("20260101_000000")).toBeInTheDocument();
     expect(screen.getByText("20260102_000000")).toBeInTheDocument();
-    expect(screen.getByText("VIEWER")).toBeInTheDocument();
+    expect(screen.getByText("reader")).toBeInTheDocument();
+  });
+
+  it("still lists the catalogs of a grant written with the retired access level, without a role", async () => {
+    fetchJsonMock.mockResolvedValueOnce({
+      id: "log-1",
+      userId: "user-1",
+      action: "PORTAL_ADMISSION_CLAIMED",
+      resource: "portal_admission",
+      resourceId: "portal-1",
+      details: {
+        email: "old@example.com",
+        pendingGrantCount: 1,
+        // The same catalog twice, as a re-grant would list it.
+        grants: [
+          { catalogId: "20260105_000000", accessLevel: "LISTENER" },
+          { catalogId: "20260105_000000", accessLevel: "EDITOR" },
+        ],
+      },
+      ipAddress: null,
+      userAgent: null,
+      createdAt: "2026-03-10T11:00:00.000Z",
+      user: null,
+      relatedEntity: null,
+    });
+
+    renderAuditDetail();
+
+    expect(await screen.findByText("Claimed catalog grants")).toBeInTheDocument();
+    expect(screen.getAllByText("20260105_000000")).toHaveLength(2);
+    // The old level is no longer a headline label; it stays in the raw payload.
+    expect(screen.queryByText("LISTENER", { selector: "[data-slot='badge']" })).not.toBeInTheDocument();
   });
 
   it("renders claimed grant breakdowns for claim actions", async () => {
@@ -109,8 +140,8 @@ describe("AuditDetailContent", () => {
         email: "claimed@example.com",
         pendingGrantCount: 2,
         grants: [
-          { catalogId: "20260103_000000", accessLevel: "MEMBER" },
-          { catalogId: "20260104_000000", accessLevel: "EDITOR" },
+          { catalogId: "20260103_000000", role: "reader" },
+          { catalogId: "20260104_000000", role: "curator" },
         ],
       },
       ipAddress: null,
@@ -125,6 +156,7 @@ describe("AuditDetailContent", () => {
     expect(await screen.findByText("Claimed catalog grants")).toBeInTheDocument();
     expect(screen.getByText("20260103_000000")).toBeInTheDocument();
     expect(screen.getByText("20260104_000000")).toBeInTheDocument();
-    expect(screen.getByText("MEMBER")).toBeInTheDocument();
+    expect(screen.getByText("reader")).toBeInTheDocument();
+    expect(screen.getByText("curator")).toBeInTheDocument();
   });
 });

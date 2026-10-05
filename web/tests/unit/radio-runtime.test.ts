@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+/**
+ * @vitest-environment jsdom
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRadioRuntime } from "@/lib/radio/runtime";
 import { fetchJson } from "@/lib/api/fetch-json";
 
@@ -269,5 +272,95 @@ describe("createRadioRuntime", () => {
     expect(runtime.getSnapshot().stopReason).toBe("user-stop");
 
     stop();
+  });
+
+  describe("sleep timer fade", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function playingRadio() {
+      const runtime = createRadioRuntime();
+      const stop = runtime.start();
+      await runtime.startRadio("catalog-1");
+      Object.assign(audio, { paused: false, ended: false });
+      audio.pause.mockImplementation(() => {
+        Object.assign(audio, { paused: true });
+        audio.dispatchEvent(new Event("pause"));
+      });
+      audio.dispatchEvent(new Event("play"));
+      return { runtime, stop };
+    }
+
+    it("fades the track out and pauses it", async () => {
+      const { runtime, stop } = await playingRadio();
+      runtime.setVolume(0.6);
+
+      runtime.fadeOutAndPause();
+      vi.advanceTimersByTime(2_500);
+      expect(audio.volume).toBeCloseTo(0.3, 1);
+
+      vi.advanceTimersByTime(2_500);
+      expect(audio.pause).toHaveBeenCalledTimes(1);
+      expect(audio.volume).toBe(0.6);
+      expect(runtime.getSnapshot().isPlaying).toBe(false);
+      expect(runtime.getSnapshot().isActive).toBe(true);
+
+      stop();
+    });
+
+    it("stays on a track that ends during the fade, and resume moves on", async () => {
+      const { runtime, stop } = await playingRadio();
+      runtime.fadeOutAndPause();
+      vi.advanceTimersByTime(1_000);
+
+      Object.assign(audio, { paused: true, ended: true });
+      audio.dispatchEvent(new Event("pause"));
+      audio.dispatchEvent(new Event("ended"));
+      await vi.runOnlyPendingTimersAsync();
+
+      expect(fetchJson).toHaveBeenCalledTimes(1);
+      expect(audio.volume).toBe(1);
+      expect(runtime.getSnapshot().isPlaying).toBe(false);
+
+      runtime.resume();
+      await vi.waitFor(() => expect(fetchJson).toHaveBeenCalledTimes(2));
+      expect(audio.play).toHaveBeenCalledTimes(2);
+
+      stop();
+    });
+
+    it("plays on after a normal track end instead of fetching again", async () => {
+      const { runtime, stop } = await playingRadio();
+      // The next track's fetch fails and a retry is scheduled.
+      vi.mocked(fetchJson).mockRejectedValueOnce(new Error("offline"));
+      Object.assign(audio, { paused: true, ended: true });
+      audio.dispatchEvent(new Event("ended"));
+      await vi.waitFor(() => expect(fetchJson).toHaveBeenCalledTimes(2));
+
+      runtime.resume();
+      expect(fetchJson).toHaveBeenCalledTimes(2);
+      expect(audio.play).toHaveBeenCalledTimes(2);
+
+      stop();
+    });
+
+    it("ends the fade when the listener changes the volume", async () => {
+      const { runtime, stop } = await playingRadio();
+      runtime.fadeOutAndPause();
+      vi.advanceTimersByTime(2_000);
+
+      runtime.setVolume(0.5);
+      vi.advanceTimersByTime(5_000);
+
+      expect(audio.pause).not.toHaveBeenCalled();
+      expect(audio.volume).toBe(0.5);
+
+      stop();
+    });
   });
 });

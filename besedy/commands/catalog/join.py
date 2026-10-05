@@ -34,15 +34,15 @@ from besedy.commands.catalog.join_paths import (
     _normalize_path_nfc,
     _plan_original_moves,  # noqa: F401
 )
-from besedy.commands.catalog.symlink import (
-    create_or_update_symlink,
-    validate_symlink_can_be_created,
-)
 from besedy.core.paths import (
     extract_timestamp_from_catalog,
     resolve_catalogs_root,
     resolve_joined_audio_root,
     resolve_original_audio_root,
+)
+from besedy.core.symlinks import (
+    create_or_update_symlink,
+    validate_symlink_can_be_created,
 )
 from besedy.lib.audio.join import (
     CODEC_TO_FORMAT,

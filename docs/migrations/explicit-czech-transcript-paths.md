@@ -24,10 +24,10 @@ remain in place for rollback.
    transcript and index roots, so both active stacks must switch together.
    Test uses a separate transcript fixture tree; regenerate its fixtures and
    change its private backend key together before running E2E tests.
-3. Confirm no correction workspace or publication is in flight. This procedure
-   requires both `transcript_workspace` and `transcript_publication` to be empty;
-   otherwise their frozen backend references and search paths need a separate
-   data migration.
+3. Confirm no correction publication is in flight. Correction workspaces and
+   publications may exist: their stored backend keys are rewritten in the
+   cutover below, with the script of
+   [Renaming a transcript backend key](renaming-a-transcript-backend-key.md).
 4. List timestamped roots beneath the configured transcript parent. Pass each
    root directly; do not pass the `transcripts` symlink or a merged transcript
    tree. The tool checks all destination paths before moving anything.
@@ -60,16 +60,19 @@ SELECT count(*) FROM transcript_publication;
    directories and preserves every hash directory and sidecar. It also updates
    merged `slots.json` model labels when `--merged-root` is supplied. Re-running
    it after an interruption completes the remaining changes.
-2. Update backend-priority rows in PostgreSQL. Check the counts first. With no
-   correction rows, this transaction updates only unsuffixed transcription
-   backend keys:
+2. Update the stored backend keys in PostgreSQL. For every unsuffixed key in
+   use, run `scripts/rename_transcript_backend_key.sql` as described in
+   [Renaming a transcript backend key](renaming-a-transcript-backend-key.md);
+   it also rewrites `transcript_workspace.source_backend` and
+   `transcript_publication.previous_source_ref`. With no correction rows, this
+   transaction updates just the priority rows and refuses to run otherwise:
 
 ```sql
 BEGIN;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM transcript_workspace)
      OR EXISTS (SELECT 1 FROM transcript_publication) THEN
-    RAISE EXCEPTION 'Correction data requires a separate migration';
+    RAISE EXCEPTION 'Correction data exists: use scripts/rename_transcript_backend_key.sql';
   END IF;
 END $$;
 UPDATE transcript_backend_priority
@@ -121,7 +124,11 @@ during cutover, and `--rollback --apply`. This also restores the merged
 `slots.json` model labels. Restore the previous pipeline and host-worker code
 revision before resuming transcription; the new revision always writes
 `@lang-cs` paths. The old ColBERT scope remains available. A rollback dry run
-omits `--apply`. To reverse only the priority-row change, use:
+omits `--apply`. If correction rows exist, reverse the stored keys with
+`scripts/rename_transcript_backend_key.sql`, swapping `old_key` and `new_key`
+for every key renamed in cutover step 2 (see
+[Renaming a transcript backend key](renaming-a-transcript-backend-key.md)).
+To reverse only the priority-row change, use:
 
 ```sql
 BEGIN;

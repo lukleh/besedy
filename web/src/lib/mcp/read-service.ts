@@ -25,14 +25,14 @@ import {
   executeCatalogLexicalSearch,
   executeCatalogSearch,
   type CatalogSearchResult,
-} from '@/app/api/catalogs/[id]/search/search-service';
+} from '@/lib/search/search-service';
 import {
   RagServiceError,
   buildAllowedAudioHashesQuery,
   buildEligibleAudioHashesQuery,
   type LexicalMatchMode,
   type SearchMetadataFilters,
-} from '@/app/api/catalogs/[id]/search/search-route-helpers';
+} from '@/lib/search/search-helpers';
 import { getMcpResourceUrl } from '@/lib/mcp/config';
 
 export type McpEventOrder = 'asc' | 'desc';

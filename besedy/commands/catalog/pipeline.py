@@ -275,11 +275,6 @@ Example:
         ),
     )
     parser.add_argument(
-        "--rag-colbert-use-faiss",
-        action="store_true",
-        help="Enable FAISS when building ColBERT sidecar indexes during the pipeline.",
-    )
-    parser.add_argument(
         "--rag-colbert-runtime",
         choices=COLBERT_RUNTIME_CHOICES,
         default=None,
