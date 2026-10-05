@@ -3,7 +3,6 @@ import {
   getAuthTrustedOrigins,
   getRagBackendKey,
   getRagColbertModel,
-  getRagRerankModel,
   getSupportEmail,
   getVapidSubject,
   RAG_DEFAULTS,
@@ -74,10 +73,5 @@ describe("runtime config helpers", () => {
     expect(getRagBackendKey("faster-whisper/custom@lang-en")).toBe(
       "faster-whisper/custom@lang-en"
     );
-  });
-
-  it("falls back to default rerank model", () => {
-    expect(getRagRerankModel(undefined)).toBe(RAG_DEFAULTS.RERANK_MODEL);
-    expect(getRagRerankModel("custom/reranker")).toBe("custom/reranker");
   });
 });

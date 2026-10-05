@@ -6,10 +6,20 @@ using unique Scan Root values from the existing catalog.
 
 from __future__ import annotations
 
+import argparse
 import csv
 from pathlib import Path
 
-from besedy.lib.catalog.manager import FileRecord, catalog_fieldnames
+import pytest
+
+from besedy.commands.catalog import add as add_command
+from besedy.commands.catalog import create as create_command
+from besedy.commands.catalog.file_processing import AddFilesResult
+from besedy.lib.catalog.manager import (
+    AUDIO_HASH_ALGORITHM,
+    FileRecord,
+    catalog_fieldnames,
+)
 
 
 def make_catalog_row(
@@ -320,3 +330,75 @@ class TestCrossRootDuplicateHandling:
 
         assert is_duplicate is True
         assert hash_to_original_path.get(hash2) == path1
+
+
+class TestScanRootStoredResolved:
+    """A relative scan path is stored as an absolute Scan Root."""
+
+    @staticmethod
+    def _capture_scan_root(monkeypatch: pytest.MonkeyPatch, module) -> list[str]:
+        seen: list[str] = []
+
+        def fake_add_files_to_catalog(**kwargs):
+            seen.append(kwargs["scan_root"])
+            return AddFilesResult(
+                new_records=[], duplicate_records=[], errors=[], sidecar_warnings=[]
+            )
+
+        monkeypatch.setattr(module, "add_files_to_catalog", fake_add_files_to_catalog)
+        return seen
+
+    def test_add_stores_absolute_scan_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        library = tmp_path / "library"
+        library.mkdir()
+        (library / "talk.wav").write_bytes(b"x")
+        catalog = tmp_path / "audio_catalog_20260101_120000.csv"
+        with catalog.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["Hash", "Hash Algorithm", "Full Path"])
+            writer.writeheader()
+            writer.writerow(
+                {"Hash": "a" * 64, "Hash Algorithm": AUDIO_HASH_ALGORITHM, "Full Path": "/a.wav"}
+            )
+        seen = self._capture_scan_root(monkeypatch, add_command)
+        monkeypatch.chdir(tmp_path)
+
+        args = argparse.Namespace(
+            csv=catalog,
+            encoding="utf-8",
+            paths=[Path("library")],
+            skip_enrich=True,
+            no_audio_filter=True,
+            dry_run=False,
+            no_symlink=True,
+            ffprobe_binary="ffprobe",
+            ffprobe_timeout=10,
+            verbose=False,
+        )
+        assert add_command.handle_add(args) == 0
+
+        assert seen == [str(library.resolve())]
+
+    def test_create_stores_absolute_scan_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        library = tmp_path / "library"
+        library.mkdir()
+        (library / "talk.wav").write_bytes(b"x")
+        seen = self._capture_scan_root(monkeypatch, create_command)
+        monkeypatch.setattr(create_command, "check_ffprobe", lambda _binary: True)
+        monkeypatch.chdir(tmp_path)
+
+        args = argparse.Namespace(
+            directory=Path("library"),
+            output=tmp_path / "audio_catalog_20260101_120000.csv",
+            no_color=True,
+            no_audio_filter=True,
+            no_symlink=True,
+            ffprobe_binary="ffprobe",
+            ffprobe_timeout=10,
+        )
+        assert create_command.handle_create(args) == 0
+
+        assert seen == [str(library.resolve())]

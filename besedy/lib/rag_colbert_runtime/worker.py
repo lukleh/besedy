@@ -333,14 +333,6 @@ def _engine_payload(*, plaid_backend: str) -> dict[str, str]:
     return rag_pylate.get_engine_metadata(plaid_backend=plaid_backend)
 
 
-def _warn_legacy_flag(flag_name: str) -> None:
-    print(
-        f"rag_colbert_worker: ignoring deprecated {flag_name} under the PyLate runtime",
-        file=sys.stderr,
-        flush=True,
-    )
-
-
 def _build_index(payload: dict[str, Any]) -> dict[str, Any]:
     manifest_path = Path(str(payload["manifest_path"]))
     destination = Path(str(payload["colbert_index_dir"]))
@@ -348,11 +340,8 @@ def _build_index(payload: dict[str, Any]) -> dict[str, Any]:
     plaid_backend = _resolve_plaid_backend(payload)
     doc_maxlen = int(payload["doc_maxlen"])
     index_bsize = int(payload.get("index_bsize", 32))
-    use_faiss = bool(payload.get("use_faiss", False))
     if index_bsize <= 0:
         raise ValueError("index_bsize must be positive.")
-    if use_faiss:
-        _warn_legacy_flag("use_faiss")
 
     rows = _load_manifest_rows(manifest_path)
     audit_started_at = _log_phase_start(4, "auditing token lengths")
@@ -457,9 +446,6 @@ def _query_index(payload: dict[str, Any]) -> dict[str, Any]:
     doc_maxlen = int(meta.get("doc_maxlen", payload.get("doc_maxlen", 384)))
     query = str(payload["query"])
     k = int(payload.get("k", 10))
-    force_fast = bool(payload.get("force_fast", False))
-    if force_fast:
-        _warn_legacy_flag("force_fast")
 
     device = rag_pylate.resolve_pylate_device()
     model = rag_pylate.build_pylate_model(
@@ -503,11 +489,8 @@ def _add_to_index(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_rows, list):
         raise ValueError("rows must be a JSON array.")
     index_bsize = int(payload.get("index_bsize", 32))
-    use_faiss = bool(payload.get("use_faiss", False))
     if index_bsize <= 0:
         raise ValueError("index_bsize must be positive.")
-    if use_faiss:
-        _warn_legacy_flag("use_faiss")
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
     if not rows:

@@ -208,7 +208,6 @@ def _pipeline_args(**overrides) -> argparse.Namespace:
         "rag_chunk_tokenizer_model": None,
         "rag_colbert_doc_maxlen": 384,
         "rag_colbert_index_bsize": 32,
-        "rag_colbert_use_faiss": False,
         "rag_colbert_runtime": None,
         "rag_min_chunk_tokens": 180,
         "rag_max_chunk_tokens": 260,
@@ -636,7 +635,6 @@ class TestPipelineRagIndexing:
             rag_chunk_tokenizer_model="acme/chunk-tokenizer",
             rag_colbert_doc_maxlen=512,
             rag_colbert_index_bsize=16,
-            rag_colbert_use_faiss=True,
         )
 
         assert handle_run_pipeline(args) == 0
@@ -655,7 +653,6 @@ class TestPipelineRagIndexing:
         assert colbert_args.chunk_tokenizer_model == "acme/chunk-tokenizer"
         assert colbert_args.doc_maxlen == 512
         assert colbert_args.index_bsize == 16
-        assert colbert_args.use_faiss is True
         assert colbert_args.min_chunk_tokens == 150
         assert colbert_args.max_chunk_tokens == 250
         assert colbert_args.overlap_tokens == 40

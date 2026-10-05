@@ -11,9 +11,7 @@ import { validateMutationSource } from "./lib/api/csrf";
 import { AUTH_COOKIE_PREFIX } from "./lib/auth/constants";
 import { applyAuthCleanup } from "./lib/auth/response-cleanup";
 import {
-  buildAuthCompletePath,
   getAllowlistRejectionParam,
-  hasOAuthCallbackResidue,
   sanitizeAppRelativePath,
   sanitizePostAuthCallbackPath,
 } from "./lib/auth/oauth-routing";
@@ -433,7 +431,6 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const error = req.nextUrl.searchParams.get("error");
   const errorDescription = req.nextUrl.searchParams.get("error_description");
-  const state = req.nextUrl.searchParams.get("state");
   const allowlistRejection = getAllowlistRejectionParam(error, errorDescription);
   const callbackUrl = sanitizePostAuthCallbackPath(
     req.nextUrl.searchParams.get("callbackUrl")
@@ -452,22 +449,6 @@ export async function proxy(req: NextRequest) {
       const response = NextResponse.redirect(
         new URL(
           `/auth/unauthorized?error=${encodeURIComponent(allowlistRejection)}`,
-          req.url
-        )
-      );
-      handleLocale(req, response);
-      return logAndReturn(addSecurityHeaders(req, response, nonce), 307);
-    }
-
-    // Compatibility funnel for older tabs still running the pre-/auth/complete bundle.
-    if (hasOAuthCallbackResidue({ error, errorDescription, state })) {
-      const response = NextResponse.redirect(
-        new URL(
-          buildAuthCompletePath(callbackUrl, {
-            error,
-            errorDescription,
-            state,
-          }),
           req.url
         )
       );

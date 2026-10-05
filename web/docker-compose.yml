@@ -109,18 +109,14 @@ services:
       # scripts/run_web_compose.sh sets BESEDY_JOBS_API_HOST to this mode's jobs
       # container; the bare service name jobs-api resolves to every runtime.
       JOBS_API_BASE_URL: ${JOBS_API_BASE_URL:-http://${BESEDY_JOBS_API_HOST:-jobs-api}:8390}
-      # RAG search (ColBERT sidecar + optional reranker)
+      # RAG search (ColBERT sidecar)
       RAG_BACKEND_KEY: ${RAG_BACKEND_KEY:-faster-whisper/large-v3@silero_vad_v6@lang-cs}
-      RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}
-      RAG_TEI_RERANK_URL: ${RAG_TEI_RERANK_URL:-http://host.docker.internal:8191/rerank}
-      RAG_COLBERT_RERANK_ENABLED: ${RAG_COLBERT_RERANK_ENABLED:-false}
-      RAG_TEI_TIMEOUT_MS: ${RAG_TEI_TIMEOUT_MS:-8000}
+      RAG_COLBERT_TIMEOUT_MS: ${RAG_COLBERT_TIMEOUT_MS:-8000}
       RAG_COLBERT_URL: ${RAG_COLBERT_URL:-http://host.docker.internal:8192/query}
       RAG_COLBERT_TOP_K: ${RAG_COLBERT_TOP_K:-200}
       RAG_COLBERT_MODEL: ${RAG_COLBERT_MODEL:-jinaai/jina-colbert-v2}
       RAG_COLBERT_ROOT_DIR: ${RAG_COLBERT_ROOT_DIR:-/data/state/rag_colbert}
       RAG_COLBERT_INDEX_DIR: ${RAG_COLBERT_INDEX_DIR:-}
-      RAG_RERANK_TOP_N: ${RAG_RERANK_TOP_N:-50}
       RAG_RESULT_LIMIT: ${RAG_RESULT_LIMIT:-50}
       RAG_RELATIVE_SCORE_CUTOFF: ${RAG_RELATIVE_SCORE_CUTOFF:-0}
     volumes:

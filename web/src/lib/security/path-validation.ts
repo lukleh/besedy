@@ -25,6 +25,9 @@ import {
  * Get path mappings from environment variable.
  * Format: BESEDY_PATH_MAPPINGS=/host/path=/container/path,/other/host=/other/container
  *
+ * Each mapping splits on its first `=`, so a container path may contain one.
+ * A comma always separates mappings. Trailing slashes are ignored.
+ *
  * Used to rewrite paths from CSV catalogs (which contain host paths)
  * to container paths (where files are actually mounted).
  */
@@ -32,26 +35,38 @@ function getPathMappings(): Array<{ from: string; to: string }> {
   const mappings = process.env.BESEDY_PATH_MAPPINGS;
   if (!mappings) return [];
 
-  return mappings.split(",").map((mapping) => {
-    const [from, to] = mapping.trim().split("=");
-    return { from: from?.trim() || "", to: to?.trim() || "" };
-  }).filter((m) => m.from && m.to);
+  return mappings
+    .split(",")
+    .map((mapping) => {
+      const separator = mapping.indexOf("=");
+      if (separator < 0) return { from: "", to: "" };
+      return {
+        from: trimTrailingSlashes(mapping.slice(0, separator).trim()),
+        to: trimTrailingSlashes(mapping.slice(separator + 1).trim()),
+      };
+    })
+    .filter((m) => m.from && m.to);
+}
+
+function trimTrailingSlashes(value: string): string {
+  return value.length > 1 ? value.replace(/\/+$/, "") : value;
 }
 
 /**
  * Rewrite a path using configured path mappings.
  * This translates host paths from CSV catalogs to container mount paths.
+ * The longest matching prefix wins, whatever the order in the env value.
  *
  * @param filePath - The original path (possibly a host path)
  * @returns The rewritten path if a mapping matches, otherwise the original path
  */
 export function rewritePath(filePath: string): string {
-  const mappings = getPathMappings();
+  const mappings = getPathMappings().sort((a, b) => b.from.length - a.from.length);
 
   for (const { from, to } of mappings) {
     // Use path boundary check to avoid matching /data2 when mapping /data
     if (filePath === from || filePath.startsWith(from + path.sep)) {
-      return filePath.replace(from, to);
+      return to + filePath.slice(from.length);
     }
   }
 
