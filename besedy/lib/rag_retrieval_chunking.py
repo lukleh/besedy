@@ -13,6 +13,8 @@ from .rag_retrieval_types import ChunkTokenDistribution, ChunkWindow, SegmentUni
 SHA256_64_RE = re.compile(r"^[a-f0-9]{64}$")
 
 CHUNK_VERSION = "v2"
+# Only the tokenizer of this model is used, to size chunks; no reranker runs.
+# Changing it moves every chunk boundary and forces a full re-index.
 CHUNK_TOKENIZER_MODEL = "Alibaba-NLP/gte-multilingual-reranker-base"
 CHUNK_MAX_SEGMENT_TOKENS = 90
 CHUNK_SEGMENT_SPLIT_STRATEGY = "punctuation-then-words"
@@ -126,29 +128,6 @@ def normalize_backend_key(value: str) -> str:
 
 def _is_full_sha256(value: str) -> bool:
     return bool(SHA256_64_RE.match(value.lower()))
-
-
-def _infer_audio_hash(hash_component: str, transcript: dict[str, Any]) -> str | None:
-    """Infer canonical 64-char audio hash from path/meta fields."""
-
-    lowered = hash_component.lower()
-    if _is_full_sha256(lowered):
-        return lowered
-
-    meta = transcript.get("meta")
-    if isinstance(meta, dict):
-        for key in ("audio_hash", "hash", "sha256"):
-            value = meta.get(key)
-            if isinstance(value, str) and _is_full_sha256(value):
-                return value.lower()
-
-        audio_path = meta.get("audio_filepath")
-        if isinstance(audio_path, str):
-            stem = Path(audio_path).stem.lower()
-            if _is_full_sha256(stem):
-                return stem
-
-    return None
 
 
 def _segments_from_transcript(

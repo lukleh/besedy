@@ -121,7 +121,7 @@ Commands supporting `--format json` write one JSON object to stdout:
 4. Create timestamped output directory.
 5. Create/update symlink to latest.
 6. Use helpers from `besedy/core/paths.py` and
-   `besedy/commands/catalog/symlink.py`. Do not hand-roll output naming.
+   `besedy/core/symlinks.py`. Do not hand-roll output naming.
 
 ---
 

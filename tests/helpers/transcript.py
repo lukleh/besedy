@@ -172,11 +172,15 @@ def write_transcript_json(
     return path
 
 
+# A full 64-character audio hash: the leaf directory of every transcript.
+SAMPLE_AUDIO_HASH = "abc123def456" * 5 + "abcd"
+
+
 def create_transcript_directory_structure(
     root: Path,
     timestamp: str = "20251128_120000",
     backends: list[str] | None = None,
-    audio_hash: str = "abc123def456",
+    audio_hash: str = SAMPLE_AUDIO_HASH,
 ) -> Path:
     """Create a complete transcript directory structure for testing.
 
@@ -196,11 +200,11 @@ def create_transcript_directory_structure(
 
     for backend in backends:
         if backend == "faster-whisper":
-            model = "large-v3@silero_vad_v6"
+            model = "large-v3@silero_vad_v6@lang-cs"
         elif backend == "canary-nemo":
-            model = "nvidia_canary-1b-v2[greedy]@frame_vad"
+            model = "nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs"
         else:
-            model = "default_model"
+            model = "default_model@lang-cs"
 
         transcript_dir = transcripts_root / backend / model / audio_hash
         transcript_dir.mkdir(parents=True)

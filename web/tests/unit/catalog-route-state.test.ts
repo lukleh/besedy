@@ -63,6 +63,7 @@ describe("catalog route state helpers", () => {
   it.each([
     ["/downloads", "/catalog"],
     ["/settings", "/catalog"],
+    ["/bookmarks", "/catalog"],
     ["/catalog/c1/settings", "/catalog/c1"],
     ["/catalog/c1/deep-search", "/catalog/c1"],
     ["/catalog/c1/deep-search/job-1", "/catalog/c1/deep-search"],
@@ -75,7 +76,7 @@ describe("catalog route state helpers", () => {
     expect(result.backTargetUrl).toBe(parent);
   });
 
-  it.each(["/settings", "/catalog/c1/settings"])(
+  it.each(["/settings", "/bookmarks", "/catalog/c1/settings"])(
     "returns from %s to the page it was opened from",
     (pathname) => {
       const result = buildCatalogRouteState(pathname, LABELS, {

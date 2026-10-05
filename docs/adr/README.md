@@ -20,7 +20,7 @@ each record links to those references.
 | [0003](0003-web-catalog-projection.md)   | Accepted | CSV ingest ownership and PostgreSQL serving projection                                   |
 | [0004](0004-system-boundaries.md)        | Accepted | Python, web, jobs, and backend responsibility boundaries                                 |
 | [0005](0005-catalog-permission-model.md) | Accepted | Permission sets with visibility as one permission, roles as named presets                |
-| [0006](0006-transcript-correction.md)    | Proposed | Human transcript correction as a time-anchored layer that substitutes for machine output |
+| [0006](0006-transcript-correction.md)    | Accepted | Human transcript correction as a time-anchored layer that substitutes for machine output |
 | [0007](0007-per-catalog-lookups.md)      | Accepted | Recorder, location and album rows belong to one catalog                                  |
 | [0008](0008-web-recording-ingest.md)     | Accepted | Web-triggered recording ingest via a host Prefect worker; duplicates rejected            |
 | [0009](0009-event-poster-publication.md) | Accepted | Immutable event-poster candidates with explicit publication and separate upload/publish authority |

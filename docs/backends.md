@@ -1,6 +1,6 @@
 # ML Backends
 
-> **Last Updated:** 2026-10-02
+> **Last Updated:** 2026-10-03
 
 How Besedy's ML backends are deployed and configured.
 
@@ -62,10 +62,9 @@ test, and prod web environments on the same host.
 | Container | Purpose | Endpoint | Profile |
 |-----------|---------|----------|---------|
 | `besedy-colbert` | Warm ColBERT query server (active retrieval path) | `http://127.0.0.1:8192` | default |
-| `besedy-tei-reranker` | Reranking (optional for ColBERT path) | `http://127.0.0.1:8191` | `legacy-tei` |
 
 Requirements: NVIDIA GPU with CUDA, Docker with NVIDIA Container Toolkit
-(`nvidia-ctk`), BuildKit/Buildx (for TEI image build).
+(`nvidia-ctk`), BuildKit/Buildx.
 
 ### ColBERT Sidecar Architecture
 
@@ -79,10 +78,23 @@ cold-load penalty while the server loads that index. Subsequent queries against
 the same index stay warm until the container restarts or a different index is
 requested.
 
-**Preloading.** Set `COLBERT_PRELOAD_INDEX_DIR` to a sidecar index path. If the
-path exists, the container loads it before marking the service healthy. If it
-does not exist, the server logs a warning and continues without a preloaded
-index.
+**Preloading.** Set `COLBERT_PRELOAD_INDEX_DIR` to a sidecar index path inside
+the container. If the path exists, the container loads it before marking the
+service healthy. If it does not exist, the server logs a warning and continues
+without a preloaded index; if it is empty, the server logs that no preload is
+configured. The value lives in `~/.config/lukleh/besedy/rag-services.env` (or
+the file `BESEDY_RAG_SERVICES_ENV` names; template `rag-services/.env.example`),
+which every `just colbert-up` / `rag-services-up` passes to Compose through
+`scripts/run_rag_services_compose.sh`, so recreating the container keeps it.
+Use the wrapper (or the recipes) instead of raw `docker compose`; the file sets
+the preload only, and the host path overrides stay shell variables because the
+Python ColBERT runtime also calls Compose directly.
+Point it at the `index` symlink
+(`/data/state/rag_colbert/<wg_id>/<backend_slug>/<chunk_ver>/<model_slug>/index/colbert_index`),
+not at an `index_<timestamp>/` folder: every index update, including the
+incremental syncs, writes a new timestamped folder and moves the symlink, and
+the server keys the loaded index by the resolved path, so a pinned timestamp
+warms an old build and cold-loads the active one on the first search.
 
 **GPU indexing.** The `colbert-indexer` profile provides an ephemeral GPU build
 worker, separate from the long-lived CPU query server. Both share Hugging Face
@@ -116,25 +128,8 @@ bundle:
 - `index_meta.json`
 - `chunk_store.sqlite`
 
-ColBERT mode does not require the TEI reranker unless
-`RAG_COLBERT_RERANK_ENABLED=true` is explicitly set. All three web environments
-reach ColBERT via `RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
-
-### TEI Reranker (Optional)
-
-The TEI reranker is behind the `legacy-tei` Docker Compose profile. It is only
-needed for optional ColBERT reranking.
-
-**Blackwell GPU (RTX 5070 Ti / 5090).** The compose stack builds a local TEI
-image from upstream source (`Dockerfile-cuda-blackwell`). Blackwell support (TEI
-PR #735) landed after v1.8.3, so `main` is required. Set
-`TEI_BUILD_CONTEXT=...#v1.8.3` for strict release pinning on older GPUs.
-
-**Health checks:**
-
-```bash
-curl -fsS http://127.0.0.1:8191/health   # reranker
-```
+All three web environments reach ColBERT via
+`RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
 
 ### Web Environment Integration
 
@@ -144,7 +139,7 @@ stack resolves and serves them. Key env vars:
 
 - `RAG_COLBERT_URL=http://host.docker.internal:8192/query`
 - `RAG_COLBERT_ROOT_DIR=/workspace/besedy/tmp/rag_colbert`
-- `RAG_COLBERT_RERANK_ENABLED=false` (set `true` to enable TEI reranker)
+- `RAG_COLBERT_TIMEOUT_MS=8000` (timeout for each request to the sidecar)
 
 ### Retrieval Flow
 
@@ -154,7 +149,6 @@ Indexing                              Query
 Documents -> chunk -> ColBERT build   Query -> ColBERT sidecar /query
          -> bundle on disk                   -> bundle lookup / neighbors
                                              -> PostgreSQL ACL + metadata filter
-                                             -> optional POST /rerank
                                              -> top snippets
 ```
 
@@ -285,17 +279,18 @@ Three steps, in this order:
 
 1. **Build the bundle.** Ensure a complete ColBERT bundle exists for the
    production catalog/backend (index, metadata, chunk store).
-2. **Preload and restart.** Set `COLBERT_PRELOAD_INDEX_DIR` to the production
-   index path. Recreate the ColBERT container so the preferred index is warm
+2. **Preload and restart.** Make sure `COLBERT_PRELOAD_INDEX_DIR` in the
+   rag-services env file points at the production `index/colbert_index`
+   symlink. Recreate the ColBERT container so the preferred index is warm
    before the service marks itself healthy.
 3. **Deploy web.** Rebuild and restart the production web container.
 
 ```bash
-# 1) Set preload
-export COLBERT_PRELOAD_INDEX_DIR=/workspace/besedy/tmp/rag_colbert/<wg_id>/<backend_slug>/<chunk_ver>/<model_slug>/index/colbert_index
+# 1) Check the preload (the container path of the `index` symlink)
+grep COLBERT_PRELOAD_INDEX_DIR ~/.config/lukleh/besedy/rag-services.env
 
 # 2) Recreate ColBERT
-docker compose -f rag-services/docker-compose.yml up -d --build --force-recreate colbert
+bash scripts/run_rag_services_compose.sh up -d --build --force-recreate colbert
 
 # 3) Rebuild web
 just prod-rebuild
@@ -308,13 +303,15 @@ curl -s http://localhost:3000/api/version | jq          # web revision
 curl -fsS http://127.0.0.1:8192/health | jq             # ColBERT healthy
 curl -fsS http://127.0.0.1:8192/resolve \
   -H 'Content-Type: application/json' \
-  -d '{"workflow_group_id":"<wg_id>","backend_key":"<bk>","colbert_model":"jinaai/jina-colbert-v2","root_dir":"/workspace/besedy/tmp/rag_colbert"}' | jq
+  -d '{"workflow_group_id":"<wg_id>","backend_key":"<bk>","colbert_model":"jinaai/jina-colbert-v2","root_dir":"/data/state/rag_colbert"}' | jq
 ```
 
 ### Rollback
 
-Point `COLBERT_PRELOAD_INDEX_DIR` at the previous known-good bundle and restart
-ColBERT. Then rebuild the web container if needed.
+Point `COLBERT_PRELOAD_INDEX_DIR` in the rag-services env file at the previous
+known-good bundle (a concrete `index_<timestamp>/colbert_index` path, since the
+`index` symlink follows the newest build) and recreate ColBERT. Put the symlink
+path back afterwards. Then rebuild the web container if needed.
 
 ### Index Rebuild Triggers
 
@@ -331,22 +328,20 @@ just catalog rag-colbert-index \
   --rebuild
 ```
 
-TEI changes do not require a production RAG rebuild.
-
 ---
 
 ## Troubleshooting
 
 **Container exits with "compute cap not compatible":** GPU architecture
 mismatch. Check `nvidia-smi` and ensure the image supports your compute
-capability. See the Blackwell build note above.
+capability.
 
 **Model download stalls:** Check network inside the container. Delete the
 model cache volume to force re-download:
-`docker volume rm besedy_tei_model_cache besedy_colbert_model_cache`
+`docker volume rm besedy_colbert_model_cache`
 
 **ColBERT CLI says Docker service not running:** Start with
-`docker compose -f rag-services/docker-compose.yml up -d --build colbert`. For
+`just colbert-up`. For
 index builds, ensure the `colbert-indexer` profile is available. Remove any
 leftover `BESEDY_COLBERT_RUNTIME=isolated` -- that value is no longer supported.
 

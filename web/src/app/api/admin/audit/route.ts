@@ -8,8 +8,6 @@ import { mapAuditLogToListItem } from "@/lib/audit/model";
 
 export const dynamic = "force-dynamic";
 
-const LEGACY_AUDIT_RESOURCE = "invitation";
-
 /**
  * GET /api/admin/audit - Query audit logs
  *
@@ -66,7 +64,6 @@ export async function GET(request: NextRequest) {
     }
 
     where.AND = [
-      { resource: { not: LEGACY_AUDIT_RESOURCE } },
       { domain: { not: null } },
     ];
 
@@ -100,7 +97,6 @@ export async function GET(request: NextRequest) {
 
     const canonicalFilterWhere = {
       AND: [
-        { resource: { not: LEGACY_AUDIT_RESOURCE } },
         { domain: { not: null } },
       ],
     };
