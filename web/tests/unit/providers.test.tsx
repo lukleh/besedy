@@ -32,6 +32,10 @@ vi.mock("@/contexts/audio-playback-context", () => ({
   AudioPlaybackProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+vi.mock("@/components/radio/radio-sleep-timer-target", () => ({
+  RadioSleepTimerTarget: () => null,
+}));
+
 vi.mock("@/contexts/service-worker-context", () => ({
   ServiceWorkerProvider: ({ children, passive }: { children: ReactNode; passive?: boolean }) => {
     serviceWorkerProvider({ passive });

@@ -11,12 +11,9 @@ const DEFAULT_SUPPORT_EMAIL_B64 = "aW5mb0BleGFtcGxlLmNvbQ==";
 export const RAG_DEFAULTS = {
   RESULT_LIMIT: 50,
   MAX_LIMIT: 50,
-  RERANK_TOP_N: 50,
   RELATIVE_SCORE_CUTOFF: 0,
   TIMEOUT_MS: 8000,
   BACKEND_KEY: "faster-whisper/large-v3@silero_vad_v6@lang-cs",
-  RERANK_URL: "http://host.docker.internal:8191/rerank",
-  RERANK_MODEL: "Alibaba-NLP/gte-multilingual-reranker-base",
   COLBERT_URL: "http://host.docker.internal:8192/query",
   COLBERT_TOP_K: 200,
   COLBERT_MODEL: "jinaai/jina-colbert-v2",
@@ -76,13 +73,6 @@ export function getVapidSubject(
 ): string {
   const normalized = value?.trim();
   return normalized || DEFAULT_VAPID_SUBJECT;
-}
-
-export function getRagRerankModel(
-  value = process.env.RAG_RERANK_MODEL
-): string {
-  const normalized = value?.trim();
-  return normalized || RAG_DEFAULTS.RERANK_MODEL;
 }
 
 export function getRagBackendKey(

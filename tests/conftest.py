@@ -122,14 +122,24 @@ def sample_audio_catalog_csv(tmp_path):
     import csv
 
     csv_path = tmp_path / "audio_catalog_20251128_120000.csv"
-    fieldnames = ["Hash", "Filename", "Full Path", "Size", "Duration", "added_at", "Status"]
+    fieldnames = [
+        "Hash",
+        "Hash Algorithm",
+        "Filename",
+        "Full Path",
+        "Size",
+        "Duration",
+        "added_at",
+        "Status",
+    ]
 
     with csv_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerow(
             {
-                "Hash": "abc123def456",
+                "Hash": "abc123def456" * 5 + "abcd",
+                "Hash Algorithm": "pcm-s16le-16000hz-mono-sha256-v1",
                 "Filename": "audio1.wav",
                 "Full Path": str(tmp_path / "audio1.wav"),
                 "Size": "1.5 MB",
@@ -140,7 +150,8 @@ def sample_audio_catalog_csv(tmp_path):
         )
         writer.writerow(
             {
-                "Hash": "def789abc012",
+                "Hash": "def789abc012" * 5 + "def7",
+                "Hash Algorithm": "pcm-s16le-16000hz-mono-sha256-v1",
                 "Filename": "audio2.wav",
                 "Full Path": str(tmp_path / "audio2.wav"),
                 "Size": "2.0 MB",
