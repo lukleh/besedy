@@ -35,11 +35,6 @@ else
 fi
 
 compose=(docker compose)
-# --env-file turns off Compose's own loading of rag-services/.env, so pass it
-# first (later files win) to keep a host that uses it working.
-if [[ -f "$repo_root/rag-services/.env" ]]; then
-  compose+=(--env-file "$repo_root/rag-services/.env")
-fi
 if [[ -f "$env_file" ]]; then
   compose+=(--env-file "$env_file")
 elif [[ -z "${COLBERT_PRELOAD_INDEX_DIR:-}" ]]; then
