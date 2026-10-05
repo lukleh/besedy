@@ -5,6 +5,33 @@ export const recordingIntakeStatusSchema = z.nativeEnum(PrismaRecordingIntakeSta
 
 export type RecordingIntakeStatus = z.infer<typeof recordingIntakeStatusSchema>;
 
+export const INGEST_ALLOWED_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".mp3",
+  ".wav",
+  ".flac",
+  ".m4a",
+  ".aac",
+  ".ogg",
+  ".opus",
+  ".webm",
+  ".mp4",
+  ".mkv",
+]);
+
+/**
+ * The lower-cased extension of `filename` if the upload API accepts it, else
+ * null. Shared by the upload route and the page's drop filter so both apply
+ * the same rule; the filename is trimmed like the route's request schema does.
+ */
+export function getAllowedIngestExtension(filename: string): string | null {
+  const name = filename.trim();
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const extension = base.slice(dot).toLowerCase();
+  return INGEST_ALLOWED_EXTENSIONS.has(extension) ? extension : null;
+}
+
 /** Statuses the worker can still advance; only these are worth polling for. */
 export const ACTIVE_INTAKE_STATUSES: readonly RecordingIntakeStatus[] = [
   "QUEUED",

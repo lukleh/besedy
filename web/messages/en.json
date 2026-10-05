@@ -588,6 +588,8 @@
         "selectCatalog": "Select a catalog",
         "files": "Audio files",
         "submit": "Upload & process ({count})",
+        "dropHint": "Drag files here, or choose them below.",
+        "skipped": "{count, plural, one {# file skipped (unsupported type)} other {# files skipped (unsupported type)}}",
         "phase": {
           "pending": "Ready to upload",
           "uploading": "Uploading… {percent}%",

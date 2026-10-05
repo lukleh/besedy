@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -39,9 +39,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCatalogs } from "@/hooks/use-catalogs";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import {
   finalizeUploadResponseSchema,
+  getAllowedIngestExtension,
   isActiveIntakeStatus,
   isRemovableIntakeStatus,
   recordingIntakeListSchema,
@@ -61,6 +62,10 @@ interface UploadItem {
   phase: UploadPhase;
   sentBytes: number;
   error?: string;
+}
+
+function isFileDrag(event: { dataTransfer: DataTransfer | null }): boolean {
+  return event.dataTransfer?.types.includes("Files") ?? false;
 }
 
 function statusVariant(
@@ -90,6 +95,7 @@ export default function IngestContent() {
   const [chosenCatalogId, setChosenCatalogId] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [removeTarget, setRemoveTarget] = useState<RecordingIntakeDto | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const { data: catalogs, isLoading: catalogsLoading } = useCatalogs();
 
@@ -205,15 +211,74 @@ export default function IngestContent() {
     },
   });
 
+  // A file dropped outside the drop zone would otherwise make the browser
+  // open it in this tab and lose the page. The zone's own handlers run first
+  // and mark the events as handled.
+  useEffect(() => {
+    const blockStrayFileDrop = (event: globalThis.DragEvent) => {
+      if (event.defaultPrevented || !isFileDrag(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", blockStrayFileDrop);
+    window.addEventListener("drop", blockStrayFileDrop);
+    return () => {
+      window.removeEventListener("dragover", blockStrayFileDrop);
+      window.removeEventListener("drop", blockStrayFileDrop);
+    };
+  }, []);
+
   const handleFilesSelected = (files: FileList | null) => {
     if (!files) return;
-    const items: UploadItem[] = Array.from(files).map((file, index) => ({
+    selectFiles(Array.from(files));
+  };
+
+  const selectFiles = (files: File[]) => {
+    const items: UploadItem[] = files.map((file, index) => ({
       key: `${Date.now()}-${index}-${file.name}`,
       file,
       phase: "pending",
       sentBytes: 0,
     }));
     setUploads(items);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (uploadMutation.isPending || !isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (uploadMutation.isPending || !isFileDrag(event)) return;
+    event.preventDefault();
+    setIsDragOver(false);
+    // Unlike the picker, a drop ignores the input's `accept` filter, so apply
+    // the upload API's extension rule here. Most folders fail it too, but one
+    // named like a media file gets through and fails when it is uploaded.
+    const accepted: File[] = [];
+    const skipped: File[] = [];
+    for (const file of Array.from(event.dataTransfer.files)) {
+      (getAllowedIngestExtension(file.name) ? accepted : skipped).push(file);
+    }
+    if (skipped.length > 0) {
+      toast({
+        title: t("upload.skipped", { count: skipped.length }),
+        description: skipped.map((file) => file.name).join(", "),
+        variant: "destructive",
+      });
+    }
+    if (accepted.length === 0) return;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    selectFiles(accepted);
   };
 
   const pendingUploads = useMemo(
@@ -280,8 +345,22 @@ export default function IngestContent() {
                 </ResponsiveSelect>
               )}
             </div>
-            <div className="space-y-2">
+            <div
+              className={cn(
+                "space-y-2 rounded-lg border-2 border-dashed p-3 transition-colors",
+                isDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25"
+              )}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              data-drag-over={isDragOver || undefined}
+              data-testid="ingest-dropzone"
+            >
               <Label htmlFor="ingest-files">{t("upload.files")}</Label>
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Upload className="h-3.5 w-3.5 shrink-0" />
+                {t("upload.dropHint")}
+              </p>
               <Input
                 id="ingest-files"
                 ref={fileInputRef}

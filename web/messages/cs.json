@@ -588,6 +588,8 @@
         "selectCatalog": "Vyberte katalog",
         "files": "Zvukové soubory",
         "submit": "Nahrát a zpracovat ({count})",
+        "dropHint": "Přetáhněte soubory sem, nebo je vyberte níže.",
+        "skipped": "{count, plural, one {Přeskočen # soubor (nepodporovaný typ)} few {Přeskočeny # soubory (nepodporovaný typ)} other {Přeskočeno # souborů (nepodporovaný typ)}}",
         "phase": {
           "pending": "Připraveno k nahrání",
           "uploading": "Nahrávání… {percent} %",
