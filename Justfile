@@ -328,26 +328,14 @@ jobs-prod-deploy:
 # the GPU backends, ffmpeg and the host besedy.toml; see
 # jobs-service/host-worker/ingest-worker.env.example for the required env.
 ingest-worker-run:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    env_file="${BESEDY_INGEST_WORKER_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/lukleh/besedy/ingest-worker.env}"
-    if [ -f "$env_file" ]; then
-        set -a
-        . "$env_file"
-        set +a
-    else
-        echo "Ingest worker env file not found: $env_file (copy jobs-service/host-worker/ingest-worker.env.example)" >&2
-    fi
-    exec uv run --extra jobs --extra ml prefect worker start \
-        --pool "${PREFECT_INGEST_WORK_POOL:-besedy-ingest-dev}" \
-        --type process --limit 1 --install-policy never
+    bash jobs-service/host-worker/run-worker.sh --dev
 
 # Deploy the production host ingest worker at <rev>; use the commit production
 # web runs (`curl -s http://localhost:3000/api/version | jq -r .commit`).
 # The systemd unit runs from the fixed, locked checkout
 # ~/worktrees/besedy/prod-ingest, never the dev checkout. Refuses while the
 # running worker has work, asks before stopping it, then checks out <rev>,
-# syncs the frozen venv and starts it again. Uploads made meanwhile wait in the
+# syncs the locked venv and starts it again. Uploads made meanwhile wait in the
 # Prefect queue.
 ingest-worker-deploy rev:
     #!/usr/bin/env bash
@@ -372,6 +360,9 @@ ingest-worker-deploy rev:
     # so an offline rollback to an earlier deploy still works.
     git fetch --quiet origin || echo "Warning: git fetch failed; resolving '$1' from local refs." >&2
     sha="$(git rev-parse --verify "$1^{commit}")"
+    # A lock that does not match its pyproject.toml would fail `uv sync --locked`
+    # below; refuse it before the checkout is created or the worker is stopped.
+    bash scripts/check_uv_lock_at_rev.sh "$sha"
     if [ ! -e "$worktree" ]; then
         # Locked so worktree cleanup (`git worktree remove`, worktree-report.sh)
         # never removes the checkout the unit runs from.
@@ -382,7 +373,7 @@ ingest-worker-deploy rev:
         exit 1
     fi
     if [ ! -x "$worktree/.venv/bin/python" ]; then
-        (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+        (cd "$worktree" && uv sync --locked --extra jobs --extra ml)
     fi
 
     # Checked after the checkout exists, so installing the unit never points
@@ -392,6 +383,17 @@ ingest-worker-deploy rev:
         echo "The installed $unit unit runs from '${unit_dir:-<none>}', not $worktree." >&2
         echo "$worktree is ready. Install the current unit, then run this again:" >&2
         echo "  cp jobs-service/host-worker/$unit.service ~/.config/systemd/user/ && systemctl --user daemon-reload" >&2
+        exit 1
+    fi
+
+    # An installed unit that starts run-worker.sh cannot run a revision that
+    # predates the script (a rollback past it); refuse before stopping anything.
+    script="jobs-service/host-worker/run-worker.sh"
+    if systemctl --user show -P ExecStart "$unit" | grep -q "run-worker.sh" \
+        && ! git cat-file -e "$sha:$script" 2>/dev/null; then
+        echo "Refusing to deploy ${sha:0:12}: the installed $unit unit starts $script, which that revision does not have." >&2
+        echo "Install that revision's unit first, then run this again:" >&2
+        echo "  git show $sha:jobs-service/host-worker/$unit.service > ~/.config/systemd/user/$unit.service && systemctl --user daemon-reload" >&2
         exit 1
     fi
 
@@ -419,7 +421,7 @@ ingest-worker-deploy rev:
     systemctl --user stop "$unit"
     trap 'echo "Deploy failed with $unit stopped. Redeploy the previous revision: just ingest-worker-deploy $current" >&2' ERR
     git -C "$worktree" checkout --quiet --detach "$sha"
-    (cd "$worktree" && uv sync --frozen --extra jobs --extra ml)
+    (cd "$worktree" && uv sync --locked --extra jobs --extra ml)
     systemctl --user start "$unit"
     sleep 10
     if ! systemctl --user is-active --quiet "$unit"; then
@@ -912,6 +914,27 @@ _prod-rollback jobs_start commit backup:
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just "$jobs_start"
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-deploy
     echo "Rollback complete. Verify web, jobs, and permissions before reopening maintenance."
+
+# Remove old production web/jobs image tags, keeping the newest <keep> deployed commits (asks first)
+prod-prune-images keep="5":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Keeps the besedy-web:<commit> and besedy-jobs:<commit> tags of the newest
+    # <keep> distinct commits in web_deploy_log (what prod-rollback can still
+    # reach), the :prod tags and any image a container uses. It lists the tags
+    # and asks first; GPU backend images and every other repository are untouched.
+    keep="$1"
+    if [[ ! "$keep" =~ ^[1-9][0-9]*$ ]]; then
+        echo "keep must be a positive integer (the rollback window), got: $keep" >&2
+        exit 2
+    fi
+    commits="$(bash scripts/run_web_compose.sh production exec -T db psql -U besedy_app -d besedy -At -v ON_ERROR_STOP=1 -v keep="$keep" <<< "SELECT git_commit FROM web_deploy_log WHERE git_commit ~ '^[0-9a-f]{40}\$' GROUP BY git_commit ORDER BY max(deployed_at) DESC LIMIT :keep;")"
+    if [ -z "$commits" ]; then
+        echo "web_deploy_log has no deploys; refusing to prune without a rollback window." >&2
+        exit 1
+    fi
+    mapfile -t commit_list <<< "$commits"
+    bash scripts/prune_prod_images.sh "${commit_list[@]}"
 
 # Roll back a standard OpenRouter/NVIDIA production jobs deployment.
 prod-rollback commit backup:
