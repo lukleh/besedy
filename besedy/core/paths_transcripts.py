@@ -50,28 +50,12 @@ def extract_timestamp_from_joined_catalog(path: Path) -> str | None:
 
 def extract_timestamp_from_transcripts_root(path: Path) -> str | None:
     """Extract <ts> from a transcripts run root directory name."""
-    ts = _extract_timestamp(path, r"transcripts_(\d{8}_\d{6})(?:_.+)?$", strip_slash=True)
-    if ts:
-        return ts
-    return extract_timestamp_from_enhanced_transcripts_root(path)
+    return _extract_timestamp(path, r"transcripts_(\d{8}_\d{6})(?:_.+)?$", strip_slash=True)
 
 
 def extract_run_id_from_transcripts_root(path: Path) -> str | None:
     """Extract <run_id> from transcripts_<run_id> directory name."""
-    run_id = _extract_timestamp(path, r"transcripts_(\d{8}_\d{6}(?:_.+)?)$", strip_slash=True)
-    if run_id:
-        return run_id
-    return extract_run_id_from_enhanced_transcripts_root(path)
-
-
-def extract_timestamp_from_enhanced_transcripts_root(path: Path) -> str | None:
-    """Extract <ts> from transcripts_enhanced_<ts>_<variant> directory name."""
-    return _extract_timestamp(path, r"transcripts_enhanced_(\d{8}_\d{6})_.+$", strip_slash=True)
-
-
-def extract_run_id_from_enhanced_transcripts_root(path: Path) -> str | None:
-    """Extract <run_id> from transcripts_enhanced_<run_id> directory name."""
-    return _extract_timestamp(path, r"transcripts_enhanced_(\d{8}_\d{6}_.+)$", strip_slash=True)
+    return _extract_timestamp(path, r"transcripts_(\d{8}_\d{6}(?:_.+)?)$", strip_slash=True)
 
 
 def extract_timestamp_from_parquet_root(path: Path) -> str | None:
@@ -186,8 +170,7 @@ def require_timestamped_transcripts_root(transcripts_root: Path) -> str:
     if not ts:
         raise RuntimeError(
             "transcripts path must be timestamped as "
-            "transcripts_<YYYYMMDD_HHMMSS>[_<variant>] "
-            "or transcripts_enhanced_<YYYYMMDD_HHMMSS>_<variant>. "
+            "transcripts_<YYYYMMDD_HHMMSS>[_<variant>]. "
             f"Got: {transcripts_root}"
         )
     return ts
@@ -199,8 +182,7 @@ def require_run_id_from_transcripts_root(transcripts_root: Path) -> str:
     if not run_id:
         raise RuntimeError(
             "transcripts path must be timestamped as "
-            "transcripts_<YYYYMMDD_HHMMSS>[_<variant>] "
-            "or transcripts_enhanced_<YYYYMMDD_HHMMSS>_<variant>. "
+            "transcripts_<YYYYMMDD_HHMMSS>[_<variant>]. "
             f"Got: {transcripts_root}"
         )
     return run_id

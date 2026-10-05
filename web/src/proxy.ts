@@ -11,9 +11,7 @@ import { validateMutationSource } from "./lib/api/csrf";
 import { AUTH_COOKIE_PREFIX } from "./lib/auth/constants";
 import { applyAuthCleanup } from "./lib/auth/response-cleanup";
 import {
-  buildAuthCompletePath,
   getAllowlistRejectionParam,
-  hasOAuthCallbackResidue,
   sanitizeAppRelativePath,
   sanitizePostAuthCallbackPath,
 } from "./lib/auth/oauth-routing";
@@ -114,6 +112,11 @@ function getRateLimitClientKey(req: NextRequest): string {
   }
 
   return getRateLimitFallbackKey(req);
+}
+
+/** `/api` itself answers like `/api/...`: the JSON 404 of the API catch-all. */
+function isApiPath(pathname: string): boolean {
+  return pathname === "/api" || pathname.startsWith("/api/");
 }
 
 function isMutationMethod(method: string): boolean {
@@ -379,7 +382,7 @@ function addSecurityHeaders(
   response: NextResponse,
   nonce: string
 ): NextResponse {
-  if (!req.nextUrl.pathname.startsWith("/api/")) {
+  if (!isApiPath(req.nextUrl.pathname)) {
     response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
   }
 
@@ -428,7 +431,6 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const error = req.nextUrl.searchParams.get("error");
   const errorDescription = req.nextUrl.searchParams.get("error_description");
-  const state = req.nextUrl.searchParams.get("state");
   const allowlistRejection = getAllowlistRejectionParam(error, errorDescription);
   const callbackUrl = sanitizePostAuthCallbackPath(
     req.nextUrl.searchParams.get("callbackUrl")
@@ -447,22 +449,6 @@ export async function proxy(req: NextRequest) {
       const response = NextResponse.redirect(
         new URL(
           `/auth/unauthorized?error=${encodeURIComponent(allowlistRejection)}`,
-          req.url
-        )
-      );
-      handleLocale(req, response);
-      return logAndReturn(addSecurityHeaders(req, response, nonce), 307);
-    }
-
-    // Compatibility funnel for older tabs still running the pre-/auth/complete bundle.
-    if (hasOAuthCallbackResidue({ error, errorDescription, state })) {
-      const response = NextResponse.redirect(
-        new URL(
-          buildAuthCompletePath(callbackUrl, {
-            error,
-            errorDescription,
-            state,
-          }),
           req.url
         )
       );
@@ -537,7 +523,7 @@ export async function proxy(req: NextRequest) {
   }
 
   // Non-auth APIs are not redirected by middleware; route handlers return 401/403.
-  if (pathname.startsWith("/api/")) {
+  if (isApiPath(pathname)) {
     if (
       isMutationMethod(req.method) &&
       !isAuthorizedInternalServiceRequest(req) &&

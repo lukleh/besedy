@@ -138,6 +138,8 @@ export interface TranscriptViewerProps {
   canSeeTranscriptVariants?: boolean;
   /** Administrative: the diarization overlay. */
   canSeeSpeakers?: boolean;
+  /** Called with the transcript on screen, or null while there is none. */
+  onTranscriptChange?: (transcript: Transcript | null) => void;
 }
 
 export interface TranscriptContentProps {

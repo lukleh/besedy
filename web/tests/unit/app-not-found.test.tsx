@@ -29,6 +29,12 @@ describe("app not-found page", () => {
     expect(screen.getByRole("link", { name: /errors.goToCatalogs/ })).toHaveAttribute("href", "/catalog");
   });
 
+  it("marks itself so the installed app never resumes on it", async () => {
+    const { container } = render(await NotFound());
+
+    expect(container.querySelector("[data-not-found-page]")).not.toBeNull();
+  });
+
   it("sends unmatched URLs to the not-found page", () => {
     expect(() => UnmatchedRoute()).toThrow("NEXT_NOT_FOUND");
     expect(notFoundMock).toHaveBeenCalledTimes(1);

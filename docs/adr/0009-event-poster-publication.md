@@ -332,6 +332,9 @@ The production cutover was completed on 2026-09-19 in two phases:
    `20260218100000_drop_poster_status` migration had already removed the obsolete
    table, so no duplicate schema migration is needed.
 
+   *Update, October 2026:* this cleanup landed in #138; see
+   [ADR 0011](0011-poster-to-artwork-rename.md).
+
 The retained archive and deployment record are operational artifacts rather
 than repository data. The normal candidate-management CLI and event-scoped
 storage remain; only the one-time legacy interpretation is retired.

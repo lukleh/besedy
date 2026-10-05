@@ -16,9 +16,9 @@ from besedy.lib.runtime.backend_runtime import (
 
 def test_forward_host_env_keeps_only_present_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_TOKEN", "secret")
-    monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
+    monkeypatch.delenv("BESEDY_TEST_UNSET_VARIABLE", raising=False)
 
-    assert forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN") == {"HF_TOKEN": "secret"}
+    assert forward_host_env("HF_TOKEN", "BESEDY_TEST_UNSET_VARIABLE") == {"HF_TOKEN": "secret"}
 
 
 def test_build_python_backend_process_docker_uses_compose_run_and_same_path_mounts(

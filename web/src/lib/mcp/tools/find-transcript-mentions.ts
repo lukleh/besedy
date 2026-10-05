@@ -5,7 +5,7 @@ import {
   MAX_PER_AUDIO_LIMIT,
   SearchMetadataFiltersSchema,
   type SearchMetadataFilters,
-} from '@/app/api/catalogs/[id]/search/search-route-helpers';
+} from '@/lib/search/search-helpers';
 import { findMcpTranscriptMentions } from '@/lib/mcp/read-service';
 import { FindTranscriptMentionsOutputSchema } from '@/lib/mcp/tools/output-schemas';
 import {

@@ -15,6 +15,7 @@ import { useRadioMode } from "@/contexts/radio-mode-context";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { BufferIndicator } from "@/components/player/buffer-indicator";
+import { SleepTimerButton } from "@/components/player/sleep-timer-button";
 import { cn } from "@/lib/utils";
 import { formatPartialDate } from "@/lib/date-format";
 import { useToast } from "@/hooks/use-toast";
@@ -203,6 +204,8 @@ export function RadioBanner() {
                 {" "}/ {formatTime(duration)}
               </span>
             </span>
+
+            <SleepTimerButton variant="banner" />
 
             {/* Playback controls */}
             <Button

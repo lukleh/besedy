@@ -15,6 +15,7 @@ import pytest
 
 from besedy.lib.catalog.manager import AUDIO_HASH_ALGORITHM
 from tests.helpers.audio import create_silent_wav, create_tone_wav
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -208,7 +209,7 @@ class TestCatalogValidateIntegration:
         root.mkdir()
 
         # Create a valid transcript structure
-        backend_dir = root / "faster-whisper" / "large-v3@silero_vad_v6" / "abc123def456"
+        backend_dir = root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / SAMPLE_AUDIO_HASH
         backend_dir.mkdir(parents=True)
 
         transcript = create_transcript_with_words(
