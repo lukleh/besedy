@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
+  BookmarkPlus,
   Bug,
   Loader2,
   Pause,
@@ -37,6 +38,8 @@ interface AudioPlayerChromeProps {
   isMuted: boolean;
   isPlaying: boolean;
   isReconnecting: boolean;
+  markers?: readonly number[];
+  onBookmark?: () => void;
   onSeek: (value: number[]) => void;
   onSkipBackward: () => void;
   onSkipForward: () => void;
@@ -60,6 +63,8 @@ export function AudioPlayerChrome({
   isMuted,
   isPlaying,
   isReconnecting,
+  markers,
+  onBookmark,
   onSeek,
   onSkipBackward,
   onSkipForward,
@@ -92,10 +97,23 @@ export function AudioPlayerChrome({
         <DownloadButton catalogId={catalogId} hash={hash} size="player" />
       )
     ) : null;
+  const bookmarkControl = onBookmark ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onBookmark}
+      title={t("bookmark")}
+      aria-label={t("bookmark")}
+      className="h-12 w-12"
+      data-testid="audio-bookmark"
+    >
+      <BookmarkPlus className="size-6" />
+    </Button>
+  ) : null;
 
   return (
     <>
-      <div className="mb-4">
+      <div className="relative mb-4">
         <Slider
           // Until the duration is known the thumb stays at the start, but a
           // drag still has to register as a change for it to commit a seek.
@@ -125,6 +143,16 @@ export function AudioPlayerChrome({
           className="min-h-11 cursor-pointer [&_[data-slot=slider-thumb]]:size-6"
           aria-label={t("progress")}
         />
+        {duration > 0 &&
+          markers?.map((position, index) => (
+            <span
+              key={index}
+              aria-hidden="true"
+              data-testid="audio-progress-marker"
+              className="pointer-events-none absolute top-[1.375rem] h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500"
+              style={{ left: `${(Math.min(position, duration) / duration) * 100}%` }}
+            />
+          ))}
         <div className="mt-1 flex justify-between text-xs text-muted-foreground">
           <span>{formatAudioTime(shownTime)}</span>
           <span>{formatAudioTime(duration)}</span>
@@ -143,6 +171,7 @@ export function AudioPlayerChrome({
               isReconnecting={isReconnecting}
               isCached={isDownloaded}
             />
+            {bookmarkControl}
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
@@ -232,7 +261,11 @@ export function AudioPlayerChrome({
           >
             <Bug className="h-3.5 w-3.5" />
           </button>
-          <div className="grid w-[14.25rem] grid-cols-4 items-center justify-items-center gap-3">
+          <div
+            className={`grid items-center justify-items-center gap-3 ${
+              bookmarkControl ? "w-[18rem] grid-cols-5" : "w-[14.25rem] grid-cols-4"
+            }`}
+          >
             <div className="flex h-12 items-center justify-center">
               {downloadControl}
             </div>
@@ -246,6 +279,7 @@ export function AudioPlayerChrome({
                 isCached={isDownloaded}
               />
             </div>
+            {bookmarkControl}
             <Button
               variant="ghost"
               size="icon"
@@ -279,7 +313,7 @@ export function AudioPlayerChrome({
           <Bug className="h-3.5 w-3.5" />
         </button>
         <div className="hidden flex-1 text-center text-xs text-muted-foreground sm:block">
-          {t("keyboardHints")}
+          {onBookmark ? `${t("keyboardHints")} · ${t("keyboardHintBookmark")}` : t("keyboardHints")}
         </div>
         <div className="hidden w-8 sm:block" />
       </div>

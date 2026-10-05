@@ -252,9 +252,9 @@ Every row on **Admin -> Ingest** in a finished state has a **Remove** action
   and reports `REMOVED`. The web app deletes the recording's event assignment
   (when it was the primary, the event's next playable recording becomes primary;
   with none left, the event is unreleased but kept), curated metadata,
-  catalog metadata and notifications. Playback progress is globally keyed by
-  hash, so it is deleted only if no other catalog still references the
-  recording. The projection is then re-synced.
+  catalog metadata, notifications and listeners' bookmarks in that catalog.
+  Playback progress is globally keyed by hash, so it is deleted only if no
+  other catalog still references the recording. The projection is then re-synced.
 - The recording never reached the catalog (`REJECTED` duplicate, early failure,
   `CANCELLED`): only the upload files are deleted and the row becomes `REMOVED`
   immediately. A rejected intake's hash belongs to the *existing* recording it

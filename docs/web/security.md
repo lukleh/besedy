@@ -251,6 +251,7 @@ routes deliver.
 | Admin panel, user management, audit log, MCP usage telemetry, transcript backend order, catalog sync | ADMIN                  |
 | Grant / revoke admin role                                                                            | SUPERADMIN             |
 | Labs toggle, notification preferences, playback progress                                             | any authenticated user |
+| Own recording bookmarks (create needs access to the recording; listing hides inaccessible ones)      | any authenticated user |
 
 ### Listener role
 
