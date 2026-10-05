@@ -19,7 +19,7 @@ from besedy.lib.rag_pylate import (
 )
 
 WORKFLOW_GROUP_ID = "20260206_120000"
-BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6"
+BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 COLBERT_MODEL = "jinaai/jina-colbert-v2"
 
 

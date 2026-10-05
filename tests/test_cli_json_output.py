@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
+
 
 def test_catalog_check_json_is_enveloped(capsys) -> None:
     from besedy.commands.catalog.check import handle_check
@@ -28,7 +30,7 @@ def test_catalog_check_json_is_enveloped(capsys) -> None:
     assert payload["result"]["error"] == "catalog_csv_missing"
 
 
-CATALOG_CHECK_BACKEND = "faster-whisper/large-v3@silero_vad_v6"
+CATALOG_CHECK_BACKEND = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 
 
 def _patch_catalog_check(
@@ -358,8 +360,8 @@ def test_analyze_validate_json_is_enveloped(tmp_path) -> None:
     transcript_path = (
         transcripts_root
         / "faster-whisper"
-        / "large-v3@silero_vad_v6"
-        / "abc123def456"
+        / "large-v3@silero_vad_v6@lang-cs"
+        / SAMPLE_AUDIO_HASH
         / "transcript.json"
     )
     write_transcript_json(

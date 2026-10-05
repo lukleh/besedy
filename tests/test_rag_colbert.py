@@ -56,7 +56,7 @@ def _write_index_meta(index_dir: Path) -> None:
     (index_dir / "chunk_store.sqlite").write_bytes(b"sqlite")
     payload = {
         "workflow_group_id": "wg-123",
-        "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+        "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
         "run_id": "20260206_120000",
         "chunk_version": "v2",
         "min_chunk_tokens": 220,
@@ -82,7 +82,7 @@ def _write_manifest(index_dir: Path, *, chunk_id: str = "chunk-1") -> None:
         "end_sec": 3.0,
         "text": "rozpocet a finance",
         "run_id": "20260206_120000",
-        "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+        "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
         "chunk_version": "v2",
         "source_path": "/tmp/transcript.json",
         "token_count": 3,
@@ -118,7 +118,7 @@ def test_build_colbert_index_writes_meta_and_manifest(
     monkeypatch.setattr(rag_colbert, "_run_colbert_worker", fake_run_colbert_worker)
 
     transcripts_root = tmp_path / "transcripts_20260206_120000"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("a" * 64) / "transcript.json",
         [
@@ -130,7 +130,7 @@ def test_build_colbert_index_writes_meta_and_manifest(
     index_dir = tmp_path / "rag_colbert_index"
     result = build_colbert_index(
         workflow_group_id="wg-123",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=index_dir,
         min_chunk_tokens=4,
@@ -263,7 +263,7 @@ def test_token_audit_is_recorded(
     monkeypatch.setattr(rag_colbert, "_run_colbert_worker", fake_run_colbert_worker)
 
     transcripts_root = tmp_path / "transcripts_20260206_120002"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("b" * 64) / "transcript.json",
         [
@@ -275,7 +275,7 @@ def test_token_audit_is_recorded(
     index_dir = tmp_path / "rag_colbert_audit"
     result = build_colbert_index(
         workflow_group_id="wg-124",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=index_dir,
         min_chunk_tokens=4,
@@ -323,7 +323,7 @@ def test_build_colbert_index_passes_runtime_override_to_worker(
     monkeypatch.setattr(rag_colbert, "_run_colbert_worker", fake_run_colbert_worker)
 
     transcripts_root = tmp_path / "transcripts_20260206_120004"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("c" * 64) / "transcript.json",
         [
@@ -334,7 +334,7 @@ def test_build_colbert_index_passes_runtime_override_to_worker(
 
     build_colbert_index(
         workflow_group_id="wg-runtime",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=tmp_path / "rag_colbert_runtime",
         min_chunk_tokens=4,
@@ -377,7 +377,7 @@ def test_build_colbert_index_uses_index_bsize_in_payload_and_bundle_fingerprint(
     monkeypatch.setattr(rag_colbert, "_run_colbert_worker", fake_run_colbert_worker)
 
     transcripts_root = tmp_path / "transcripts_20260206_120004"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("c" * 64) / "transcript.json",
         [
@@ -388,7 +388,7 @@ def test_build_colbert_index_uses_index_bsize_in_payload_and_bundle_fingerprint(
 
     result_32 = build_colbert_index(
         workflow_group_id="wg-index-bsize",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=tmp_path / "rag_colbert_index_bsize_32",
         min_chunk_tokens=4,
@@ -398,7 +398,7 @@ def test_build_colbert_index_uses_index_bsize_in_payload_and_bundle_fingerprint(
     )
     result_16 = build_colbert_index(
         workflow_group_id="wg-index-bsize",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=tmp_path / "rag_colbert_index_bsize_16",
         min_chunk_tokens=4,
@@ -443,7 +443,7 @@ def test_build_colbert_index_accepts_chunk_tokenizer_override(
     monkeypatch.setattr(rag_colbert, "_run_colbert_worker", fake_run_colbert_worker)
 
     transcripts_root = tmp_path / "transcripts_20260206_120006"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("e" * 64) / "transcript.json",
         [
@@ -455,7 +455,7 @@ def test_build_colbert_index_accepts_chunk_tokenizer_override(
     index_dir = tmp_path / "rag_colbert_chunk_tokenizer_override"
     result = build_colbert_index(
         workflow_group_id="wg-chunk-tokenizer",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=index_dir,
         chunk_tokenizer_model="acme/custom-tokenizer",
@@ -511,7 +511,7 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_runtime(
         return ColbertIndexResult(
             index_dir="/tmp/rag-colbert-index",
             workflow_group_id="wg-runtime-default",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260206_120000",
             chunk_version="v2",
             min_chunk_tokens=220,
@@ -541,7 +541,7 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_runtime(
 
     args = argparse.Namespace(
         group="wg-runtime-default",
-        backend="faster-whisper/large-v3@silero_vad_v6",
+        backend="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=None,
         index_dir=None,
         model="jinaai/jina-colbert-v2",
@@ -611,7 +611,7 @@ def test_handle_rag_colbert_index_reports_unresolvable_default_backend(
 def test_handle_rag_colbert_index_keeps_explicit_backend_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    explicit_key = "faster-whisper/large-v3@silero_vad_v6"
+    explicit_key = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 
     request = RagColbertIndexRequest(
         group="wg-explicit-backend",
@@ -639,7 +639,7 @@ def test_handle_rag_colbert_index_defaults_to_docker_runtime_on_cpu_only_host(
         return ColbertIndexResult(
             index_dir="/tmp/rag-colbert-index",
             workflow_group_id="wg-runtime-default-cpu",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260206_120000",
             chunk_version="v2",
             min_chunk_tokens=220,
@@ -669,7 +669,7 @@ def test_handle_rag_colbert_index_defaults_to_docker_runtime_on_cpu_only_host(
 
     args = argparse.Namespace(
         group="wg-runtime-default-cpu",
-        backend="faster-whisper/large-v3@silero_vad_v6",
+        backend="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=None,
         index_dir=None,
         model="jinaai/jina-colbert-v2",
@@ -703,7 +703,7 @@ def test_handle_rag_colbert_index_defers_to_runtime_env_override(
         return ColbertIndexResult(
             index_dir="/tmp/rag-colbert-index",
             workflow_group_id="wg-runtime-env",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260206_120000",
             chunk_version="v2",
             min_chunk_tokens=220,
@@ -733,7 +733,7 @@ def test_handle_rag_colbert_index_defers_to_runtime_env_override(
 
     args = argparse.Namespace(
         group="wg-runtime-env",
-        backend="faster-whisper/large-v3@silero_vad_v6",
+        backend="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=None,
         index_dir=None,
         model="jinaai/jina-colbert-v2",
@@ -771,7 +771,7 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_for_external_index_
         return ColbertIndexResult(
             index_dir="/tmp/rag-colbert-index",
             workflow_group_id="wg-runtime-external-index-dir",
-            backend_key="faster-whisper/large-v3@silero_vad_v6",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
             run_id="20260206_120000",
             chunk_version="v2",
             min_chunk_tokens=220,
@@ -801,7 +801,7 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_for_external_index_
 
     args = argparse.Namespace(
         group="wg-runtime-external-index-dir",
-        backend="faster-whisper/large-v3@silero_vad_v6",
+        backend="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=None,
         index_dir=Path("/tmp/rag-colbert-index"),
         model="jinaai/jina-colbert-v2",
@@ -882,7 +882,7 @@ def test_build_colbert_index_emits_phase_progress(
     monkeypatch.setattr(rag_colbert, "_run_colbert_worker", fake_run_colbert_worker)
 
     transcripts_root = tmp_path / "transcripts_20260206_120005"
-    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6"
+    backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
     _write_transcript(
         backend_dir / ("d" * 64) / "transcript.json",
         [
@@ -893,7 +893,7 @@ def test_build_colbert_index_emits_phase_progress(
 
     build_colbert_index(
         workflow_group_id="wg-progress",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=tmp_path / "rag_colbert_progress",
         min_chunk_tokens=4,
@@ -940,7 +940,7 @@ def test_build_colbert_index_skips_worker_for_empty_corpus(
     index_dir = tmp_path / "rag_colbert_empty"
     result = build_colbert_index(
         workflow_group_id="wg-empty",
-        backend_key="faster-whisper/large-v3@silero_vad_v6",
+        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
         transcripts_root=transcripts_root,
         index_dir=index_dir,
     )
@@ -1431,7 +1431,7 @@ def test_run_colbert_worker_requires_running_docker_service(
 
     with pytest.raises(
         RuntimeError,
-        match="docker compose -f rag-services/docker-compose.yml up -d --build colbert",
+        match="just colbert-up",
     ):
         rag_colbert._run_colbert_worker(
             command="audit-tokens", payload={"texts": ["a"], "colbert_model": "m", "doc_maxlen": 1}
@@ -1907,7 +1907,7 @@ def test_lookup_colbert_chunks_maps_worker_payload(
                     "end_sec": 3.0,
                     "text": "rozpocet a finance",
                     "run_id": "20260206_120000",
-                    "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+                    "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
                     "chunk_version": "v2",
                     "token_count": 3,
                     "source_path": "/tmp/transcript.json",
@@ -1944,7 +1944,7 @@ def test_lookup_colbert_neighbors_maps_worker_payload(
                             "end_sec": 1.0,
                             "text": "pred",
                             "run_id": "20260206_120000",
-                            "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+                            "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
                             "chunk_version": "v2",
                             "token_count": 1,
                             "source_path": "/tmp/transcript.json",
