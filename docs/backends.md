@@ -154,17 +154,6 @@ Documents -> chunk -> ColBERT build   Query -> ColBERT sidecar /query
 
 ---
 
-## Historical Enhanced-Audio Artifacts
-
-Older installations may contain `audio_enhanced_*`, `audio_listen_*`,
-`audio_asr_*`, or `transcripts_enhanced_*` artifacts. They remain ordinary
-on-disk data, and transcript-path readers still recognize the historical
-`transcripts_enhanced_*` naming convention. Besedy no longer ships an
-enhanced-audio generation workflow or its DeepFilterNet and Resemble Enhance
-images.
-
----
-
 ## Config Tuning
 
 The full config key reference lives in `besedy.toml.example` and the

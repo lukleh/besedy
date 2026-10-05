@@ -158,8 +158,6 @@ manages workflow-group records themselves.
 
 - Timestamp format: `YYYYMMDD_HHMMSS`.
 - Output dirs follow `{base_name}_{timestamp}/` (see `docs/patterns.md`).
-- Historical `transcripts_enhanced_*` directory names remain readable for
-  compatibility, but no active workflow generates enhanced-audio artifacts.
 - Always create/update a symlink `{base_name}/` pointing to the latest timestamped dir.
 - Extract timestamps from upstream artifacts (catalog CSV or transcripts dir).
 - `export-transcripts` is the exception: it writes sidecars next to `transcript.json`
@@ -175,7 +173,7 @@ manages workflow-group records themselves.
 
 ## Production DB & Catalog Paths (Reference)
 
-- **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, `duplicates_catalog_path`, `transcripts_path`; `workflow_variant` holds `listening_archived_catalog_path`. Source of truth: `web/prisma/schema.prisma`.
+- **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, `duplicates_catalog_path`, `transcripts_path`. Source of truth: `web/prisma/schema.prisma`.
 - **Where container path roots are defined:** the resolved production env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`; see template in `web/.env.prod.example`) defines `TEXT_DATA_DIR`, `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`, `UPLOADS_DIR` (admin recording uploads, shared with the host ingest worker), and optional `BESEDY_PATH_MAPPINGS` for host↔container path rewrites.
 - **Existing path-mapping logic:** helpers that read production path mappings now use `BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`.
 - **How to connect to prod DB (local host → prod container):**
@@ -189,8 +187,6 @@ manages workflow-group records themselves.
 
 - List catalogs and CSV paths:
   - `SELECT id, label, metadata_catalog_path, archived_catalog_path, duplicates_catalog_path, transcripts_path FROM workflow_group ORDER BY id DESC;`
-- List variants and listening catalogs:
-  - `SELECT workflow_group_id, variant, listening_archived_catalog_path FROM workflow_variant ORDER BY workflow_group_id, variant;`
 - Metadata rows for a catalog:
   - `SELECT audio_hash, date_year, date_month, date_day, title, artist, part FROM audio_metadata WHERE workflow_group_id = '<catalog_id>' ORDER BY date_year, date_month, date_day;`
 

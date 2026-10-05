@@ -1785,12 +1785,7 @@
       "duplicatesPath": "Cesta ke katalogu duplikátů",
       "transcriptsPath": "Cesta k přepisům",
       "active": "Aktivní",
-      "defaultCatalog": "Výchozí katalog",
-      "variants": "Varianty",
-      "noLabel": "Bez názvu",
-      "noListeningPath": "Bez cesty k poslechovému archivu",
-      "noVariants": "Žádné varianty nakonfigurovány.",
-      "default": "Výchozí"
+      "defaultCatalog": "Výchozí katalog"
     },
     "transcriptExports": {
       "title": "Export přepisů",

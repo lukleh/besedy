@@ -422,7 +422,7 @@ describe("RecordingContent transcript toggle", () => {
 
   it("plays a completed download while online when it matches the selected source", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
-    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;
+    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
     useDownloadRecordMock.mockReturnValue({
       status: "complete",
       audioUrl: url,
@@ -433,22 +433,16 @@ describe("RecordingContent transcript toggle", () => {
       ({ queryKey }: { queryKey?: unknown[] } = {}) => {
         const key = queryKey?.[0];
         if (key === "audio-source-preference") {
-          return { data: { hash: HASH, sourceId: "mobile" } };
+          return { data: { hash: HASH, sourceId: "archived" } };
         }
         if (key === "audio-variants") {
           return {
             data: {
               hash: HASH,
               sources: [
-                {
-                  id: "mobile",
-                  label: "Mobile",
-                  type: "listening",
-                  variant: "mobile",
-                  available: true,
-                },
+                { id: "archived", label: "Archived", type: "archived", available: true },
               ],
-              defaultSource: "mobile",
+              defaultSource: "archived",
             },
           };
         }
@@ -459,7 +453,7 @@ describe("RecordingContent transcript toggle", () => {
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
     expect(audioPlayerMock).toHaveBeenCalledWith(
-      expect.objectContaining({ src: `${url}&local=1` })
+      expect.objectContaining({ src: `${url}?local=1` })
     );
   });
 
@@ -693,55 +687,6 @@ describe("RecordingContent transcript toggle", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it("honors the selected audio source while online after a different variant was downloaded", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
-    useDownloadRecordMock.mockReturnValue({
-      status: "complete",
-      audioUrl: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
-    });
-    useQueryMock.mockImplementation(
-      ({ queryKey }: { queryKey?: unknown[] } = {}) => {
-        const key = queryKey?.[0];
-        if (key === "audio-source-preference") {
-          return { data: { hash: HASH, sourceId: "studio" } };
-        }
-        if (key === "audio-variants") {
-          return {
-            data: {
-              hash: HASH,
-              sources: [
-                {
-                  id: "mobile",
-                  label: "Mobile",
-                  type: "listening",
-                  variant: "mobile",
-                  available: true,
-                },
-                {
-                  id: "studio",
-                  label: "Studio",
-                  type: "listening",
-                  variant: "studio",
-                  available: true,
-                },
-              ],
-              defaultSource: "mobile",
-            },
-          };
-        }
-        return { data: undefined };
-      }
-    );
-
-    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-
-    expect(audioPlayerMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=studio`,
-      })
-    );
   });
 
   // The stream view is every machine transcript side by side, so it belongs to

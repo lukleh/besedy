@@ -205,7 +205,6 @@ requires the named catalog permission.
 | POST | `/api/catalogs` | Admin | Create catalog |
 | GET/PUT/DELETE | `/api/catalogs/:id` | Admin | Manage catalog |
 | GET | `/api/catalogs/discover` | Admin | Discover catalogs on disk |
-| GET/POST | `/api/catalogs/:id/variants` | Admin | Manage variants |
 | GET/POST | `/api/catalogs/:id/access` | `manage_access` | List/grant access |
 | PUT/DELETE | `/api/catalogs/:id/access/:userId` | `manage_access` | Update/revoke access |
 | GET/POST | `/api/catalogs/:id/pending-catalog-grants` | `manage_access` | List or create pending grants |

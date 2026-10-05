@@ -87,9 +87,7 @@ required tools). Return `None` for optional features (missing optional tools).
 ### Timestamped Directory Pattern
 
 All CLI commands that produce output directories use `{base_name}_{timestamp}/`
-where timestamp is `YYYYMMDD_HHMMSS`. (Historical `transcripts_{timestamp}_{variant}/`
-directories from the removed enhanced pipeline remain readable but are no
-longer produced.)
+where timestamp is `YYYYMMDD_HHMMSS`.
 
 ### Symlink Convention
 
