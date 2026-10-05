@@ -90,10 +90,9 @@ describe("admin dashboard stats route", () => {
     expect(response.status).toBe(200);
     expect(body.users.pending).toBe(6);
     expect(countPendingPortalAdmissions).toHaveBeenCalledOnce();
+    // The recent-activity feed is not filtered by resource.
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { resource: { not: "invitation" } },
-      })
+      expect.not.objectContaining({ where: expect.anything() })
     );
   });
 
