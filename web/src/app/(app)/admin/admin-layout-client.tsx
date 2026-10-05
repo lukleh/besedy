@@ -92,7 +92,6 @@ function VersionDisplay() {
     queryKey: ["version"],
     queryFn: () => fetchJson<VersionInfo>("/api/version"),
     ...SESSION_STATIC_QUERY_PROFILE,
-    retry: false,
   });
 
   if (!version || version.commit === "unknown") {

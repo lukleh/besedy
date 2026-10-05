@@ -6,15 +6,11 @@ const originalEnv = process.env;
 vi.mock("@/lib/runtime-config", () => ({
   getRagBackendKey: vi.fn(() => "faster-whisper/large-v3@silero_vad_v6"),
   getRagColbertModel: vi.fn(() => "jinaai/jina-colbert-v2"),
-  getRagRerankModel: vi.fn(() => "Alibaba-NLP/gte-multilingual-reranker-base"),
   RAG_DEFAULTS: {
     RESULT_LIMIT: 10,
     MAX_LIMIT: 100,
-    RERANK_TOP_N: 10,
     RELATIVE_SCORE_CUTOFF: 0.8,
     TIMEOUT_MS: 5000,
-    RERANK_URL: "http://localhost:9000/rerank",
-    RERANK_MODEL: "Alibaba-NLP/gte-multilingual-reranker-base",
     COLBERT_URL: "http://localhost:8192/query",
     COLBERT_TOP_K: 200,
     COLBERT_MODEL: "jinaai/jina-colbert-v2",

@@ -154,6 +154,8 @@ model User {
   deepSearchSharesCreated      DeepSearchJobShare[]             @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress    RecordingPlaybackProgress[]
+  /// Timestamps this user bookmarked in recordings
+  recordingBookmarks           RecordingBookmark[]
   /// Recording uploads this user submitted for ingest
   recordingIntakes             RecordingIntake[]                @relation("RecordingIntakeRequestedBy")
   /// Correction workspaces this user started or archived
@@ -572,7 +574,6 @@ model WorkflowGroup {
   preferences              UserPreferences[]
   catalogAccess            CatalogAccess[]
   pendingCatalogGrants     PendingCatalogGrant[]
-  variants                 WorkflowVariant[]
   /// Scan state for detecting new ready recordings
   readyScanState           ReadyScanState?
   /// Notifications for recordings in this catalog
@@ -583,8 +584,6 @@ model WorkflowGroup {
   catalogEntries           CatalogEntry[]
   /// Duplicate rows derived from duplicates CSV
   catalogDuplicates        CatalogDuplicate[]
-  /// Listening availability rows per variant
-  catalogListeningEntries  CatalogListeningEntry[]
   /// Per-source sync state and fingerprints
   catalogSyncStates        CatalogSyncState[]
   /// Event catalog rows
@@ -602,6 +601,8 @@ model WorkflowGroup {
   albums                   Album[]
   /// Admin uploads being ingested into this catalog
   recordingIntakes         RecordingIntake[]
+  /// Listener bookmarks in recordings of this catalog
+  recordingBookmarks       RecordingBookmark[]
 
   @@map("workflow_group")
 }
@@ -609,25 +610,32 @@ model WorkflowGroup {
 /// Admin-uploaded recording tracked from upload through the host ingest worker.
 /// The audio hash is only known once the worker has decoded the file.
 model RecordingIntake {
-  id                String                @id @default(cuid())
-  workflowGroupId   String                @map("workflow_group_id") @db.VarChar(15)
-  requestedById     String?               @map("requested_by_id")
-  originalFilename  String                @map("original_filename")
+  id                    String                @id @default(cuid())
+  workflowGroupId       String                @map("workflow_group_id") @db.VarChar(15)
+  requestedById         String?               @map("requested_by_id")
+  originalFilename      String                @map("original_filename")
   /// File name inside <uploads>/<catalog>/incoming/<id>/ (extension only, no user input)
-  storedFilename    String                @map("stored_filename")
-  mimeType          String?               @map("mime_type")
-  expectedSizeBytes BigInt                @map("expected_size_bytes")
-  receivedBytes     BigInt                @default(0) @map("received_bytes")
-  receivedChunks    Int                   @default(0) @map("received_chunks")
-  status            RecordingIntakeStatus @default(UPLOADING)
+  storedFilename        String                @map("stored_filename")
+  mimeType              String?               @map("mime_type")
+  expectedSizeBytes     BigInt                @map("expected_size_bytes")
+  receivedBytes         BigInt                @default(0) @map("received_bytes")
+  receivedChunks        Int                   @default(0) @map("received_chunks")
+  status                RecordingIntakeStatus @default(UPLOADING)
   /// Prefect flow-run id returned by the jobs API
-  jobId             String?               @unique @map("job_id") @db.Uuid
-  audioHash         String?               @map("audio_hash") @db.VarChar(64)
-  errorCode         String?               @map("error_code")
-  errorMessage      String?               @map("error_message")
-  createdAt         DateTime              @default(now()) @map("created_at")
-  updatedAt         DateTime              @updatedAt @map("updated_at")
-  finishedAt        DateTime?             @map("finished_at")
+  jobId                 String?               @unique @map("job_id") @db.Uuid
+  audioHash             String?               @map("audio_hash") @db.VarChar(64)
+  errorCode             String?               @map("error_code")
+  errorMessage          String?               @map("error_message")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  finishedAt            DateTime?             @map("finished_at")
+  /// Set by the worker's first progress report of the current run
+  startedAt             DateTime?             @map("started_at")
+  /// `run-pipeline` step the worker reached; null for the flow's own stages
+  progressStep          Int?                  @map("progress_step")
+  progressTotal         Int?                  @map("progress_total")
+  progressLabel         String?               @map("progress_label")
+  progressStepStartedAt DateTime?             @map("progress_step_started_at")
 
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   requestedBy   User?         @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
@@ -661,27 +669,6 @@ model DeepSearchJobShare {
   @@index([ownerUserId])
   @@index([sharedByUserId])
   @@map("deep_search_job_shares")
-}
-
-/// Workflow variant for different processing configurations
-model WorkflowVariant {
-  id                           Int      @id @default(autoincrement())
-  workflowGroupId              String   @map("workflow_group_id") @db.VarChar(15)
-  /// Variant identifier (e.g., "default", "enhanced")
-  variant                      String   @db.VarChar(50)
-  /// User-friendly label
-  label                        String?
-  /// Whether this is the default variant
-  isDefault                    Boolean  @default(false) @map("is_default")
-  /// Path to listening audio catalog (enhanced audio for playback)
-  listeningArchivedCatalogPath String?  @map("listening_archived_catalog_path")
-  createdAt                    DateTime @default(now()) @map("created_at")
-
-  workflowGroup           WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  catalogListeningEntries CatalogListeningEntry[]
-
-  @@unique([workflowGroupId, variant])
-  @@map("workflow_variant")
 }
 
 // ============================================================================
@@ -741,25 +728,6 @@ model CatalogDuplicate {
   @@id([workflowGroupId, audioHash, duplicatePath])
   @@index([workflowGroupId, audioHash])
   @@map("catalog_duplicate")
-}
-
-/// Hash availability in each listening variant catalog
-model CatalogListeningEntry {
-  workflowGroupId   String   @map("workflow_group_id") @db.VarChar(15)
-  variant           String   @db.VarChar(50)
-  audioHash         String   @map("audio_hash") @db.VarChar(64)
-  compressedPath    String   @map("compressed_path")
-  /// AAC-in-MP4 copy of this variant's archive, when the variant catalog has one (#291)
-  compressedAacPath String?  @map("compressed_aac_path")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-
-  workflowGroup   WorkflowGroup   @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  workflowVariant WorkflowVariant @relation(fields: [workflowGroupId, variant], references: [workflowGroupId, variant], onDelete: Cascade)
-
-  @@id([workflowGroupId, variant, audioHash])
-  @@index([workflowGroupId, audioHash])
-  @@map("catalog_listening_entry")
 }
 
 /// Per-source sync fingerprint and status
@@ -959,6 +927,30 @@ model RecordingPlaybackProgress {
   @@id([userId, audioHash])
   @@index([userId, updatedAt])
   @@map("recording_playback_progress")
+}
+
+/// A private, user-owned timestamp in one recording of one catalog. There is
+/// no relation to catalog_entry: sync rebuilds that table, and access is
+/// checked again whenever bookmarks are listed.
+model RecordingBookmark {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  workflowGroupId String   @map("workflow_group_id") @db.VarChar(15)
+  audioHash       String   @map("audio_hash") @db.VarChar(64)
+  positionSec     Float    @map("position_sec")
+  comment         String?
+  /// The transcript line at the position when the bookmark was made
+  excerpt         String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workflowGroupId, audioHash])
+  /// Ingest removal and catalog deletion find a recording's bookmarks by catalog and hash.
+  @@index([workflowGroupId, audioHash])
+  @@map("recording_bookmark")
 }
 
 /// Admin-configured ordering for transcript backends

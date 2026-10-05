@@ -798,7 +798,6 @@ def build_colbert_index(
     colbert_model: str = DEFAULT_COLBERT_MODEL,
     doc_maxlen: int = DEFAULT_DOC_MAXLEN,
     index_bsize: int = DEFAULT_INDEX_BSIZE,
-    use_faiss: bool = False,
     overwrite: bool = False,
     min_chunk_tokens: int = DEFAULT_MIN_CHUNK_TOKENS,
     max_chunk_tokens: int = DEFAULT_MAX_CHUNK_TOKENS,
@@ -929,7 +928,6 @@ def build_colbert_index(
                 "colbert_model": colbert_model,
                 "doc_maxlen": doc_maxlen,
                 "index_bsize": index_bsize,
-                "use_faiss": use_faiss,
                 "plaid_backend": COLBERT_DEFAULT_PLAID_BACKEND,
             },
         }
@@ -983,7 +981,6 @@ def build_colbert_index(
         colbert_model=colbert_model,
         doc_maxlen=doc_maxlen,
         index_bsize=index_bsize,
-        use_faiss=use_faiss,
         retrieval_engine_version=retrieval_engine_version,
         plaid_backend=COLBERT_DEFAULT_PLAID_BACKEND,
         chunk_count=len(corpus.chunks),
@@ -1035,7 +1032,6 @@ def build_colbert_index(
         doc_maxlen=doc_maxlen,
         index_bsize=index_bsize,
         split_documents=False,
-        use_faiss=use_faiss,
         chunk_count=len(corpus.chunks),
         token_audit=token_audit,
         retrieval_engine=PYLATE_RETRIEVAL_ENGINE,
@@ -1057,7 +1053,6 @@ def sync_colbert_index(
     colbert_model: str = DEFAULT_COLBERT_MODEL,
     doc_maxlen: int = DEFAULT_DOC_MAXLEN,
     index_bsize: int = DEFAULT_INDEX_BSIZE,
-    use_faiss: bool = False,
     force: bool = False,
     rebuild: bool = False,
     target_audio_hash: str | None = None,
@@ -1138,7 +1133,6 @@ def sync_colbert_index(
                 colbert_model=colbert_model,
                 doc_maxlen=doc_maxlen,
                 index_bsize=index_bsize,
-                use_faiss=use_faiss,
                 overwrite=explicit_index_dir,
                 min_chunk_tokens=min_chunk_tokens,
                 max_chunk_tokens=max_chunk_tokens,
@@ -1349,7 +1343,6 @@ def sync_colbert_index(
                                 for chunk in new_chunks
                             ],
                             "index_bsize": index_bsize,
-                            "use_faiss": use_faiss,
                         },
                         runtime_override=runtime,
                     )
@@ -1408,7 +1401,6 @@ def sync_colbert_index(
                 colbert_model=colbert_model,
                 doc_maxlen=doc_maxlen,
                 index_bsize=index_bsize,
-                use_faiss=use_faiss,
                 retrieval_engine_version=retrieval_engine_version,
                 plaid_backend=COLBERT_DEFAULT_PLAID_BACKEND,
                 chunk_count=len(staged_chunks),
@@ -1455,7 +1447,6 @@ def query_colbert_index(
     query: str,
     index_dir: Path | str,
     k: int = 10,
-    force_fast: bool = False,
 ) -> ColbertQueryResult:
     """Query the ColBERT sidecar index from the main environment."""
 
@@ -1497,7 +1488,6 @@ def query_colbert_index(
             ),
             "query": query,
             "k": k,
-            "force_fast": force_fast,
         },
     )
 
