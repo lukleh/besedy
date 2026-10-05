@@ -393,6 +393,12 @@
     "mute": "Mute",
     "unmute": "Unmute"
   },
+  "sleepTimer": {
+    "label": "Sleep timer",
+    "activeLabel": "Sleep timer: {time} left",
+    "off": "Off",
+    "minutes": "{count} min"
+  },
   "transcript": {
     "title": "Transcript",
     "source": "Source",

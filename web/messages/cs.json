@@ -393,6 +393,12 @@
     "mute": "Ztlumit",
     "unmute": "Zapnout zvuk"
   },
+  "sleepTimer": {
+    "label": "Časovač usnutí",
+    "activeLabel": "Časovač usnutí: zbývá {time}",
+    "off": "Vypnuto",
+    "minutes": "{count} min"
+  },
   "transcript": {
     "title": "Přepis",
     "source": "Zdroj",
