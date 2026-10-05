@@ -37,6 +37,7 @@ from besedy.lib.audio.types import (
     SkippedEntry,
     format_size,
 )
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
 class TestAudioConstants:
@@ -125,14 +126,14 @@ class TestPreparedEntry:
         staged = tmp_path / "staged.wav"
 
         entry = PreparedEntry(
-            sha256="abc123def456",
+            sha256=SAMPLE_AUDIO_HASH,
             source=source,
             staged=staged,
             action="convert",
             duration_seconds=90.5,
         )
 
-        assert entry.sha256 == "abc123def456"
+        assert entry.sha256 == SAMPLE_AUDIO_HASH
         assert entry.source == source
         assert entry.staged == staged
         assert entry.action == "convert"
@@ -380,7 +381,7 @@ class TestManifestWriter:
         staged.touch()
 
         entry = PreparedEntry(
-            sha256="abc123def456",
+            sha256=SAMPLE_AUDIO_HASH,
             source=tmp_path / "source.wav",
             staged=staged,
             action="convert",
@@ -397,7 +398,7 @@ class TestManifestWriter:
             rows = list(reader)
 
         assert len(rows) == 1
-        assert rows[0]["Hash"] == "abc123def456"
+        assert rows[0]["Hash"] == SAMPLE_AUDIO_HASH
         assert rows[0]["Filename"] == "staged.wav"
         assert rows[0]["Size (bytes)"] == "1024000"
 

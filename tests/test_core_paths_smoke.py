@@ -111,7 +111,7 @@ class TestHomeRuntimeRoots:
     def test_web_env_path_honors_explicit_override(self, monkeypatch, tmp_path):
         env_file = tmp_path / "web.env.prod"
         env_file.write_text(
-            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6\n", encoding="utf-8"
+            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs\n", encoding="utf-8"
         )
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(env_file))
         assert resolve_web_env_path("production") == env_file
@@ -121,7 +121,7 @@ class TestHomeRuntimeRoots:
         canonical_path = tmp_path / "xdg-config" / "lukleh" / "besedy" / "web.env.prod"
         canonical_path.parent.mkdir(parents=True)
         canonical_path.write_text(
-            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6\n", encoding="utf-8"
+            "RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-cs\n", encoding="utf-8"
         )
 
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(override_path))
