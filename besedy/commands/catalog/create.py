@@ -15,10 +15,6 @@ from besedy.commands.catalog.file_processing import (
     add_files_to_catalog,
     write_duplicates_report,
 )
-from besedy.commands.catalog.symlink import (
-    create_or_update_symlink,
-    validate_symlink_can_be_created,
-)
 from besedy.commands.catalog.ui import (
     Ansi,
     color_text,
@@ -26,6 +22,10 @@ from besedy.commands.catalog.ui import (
     print_duration_summary,
 )
 from besedy.core.paths import resolve_catalogs_root
+from besedy.core.symlinks import (
+    create_or_update_symlink,
+    validate_symlink_can_be_created,
+)
 from besedy.lib.catalog.manager import (
     FileRecord,
     catalog_fieldnames,

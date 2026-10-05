@@ -30,6 +30,10 @@ export function buildPlaybackProgressUrl(catalogId: string, hash: string): strin
   return `/api/catalogs/${catalogId}/recordings/${hash}/progress`;
 }
 
+export function buildRecordingBookmarksUrl(catalogId: string, hash: string): string {
+  return `/api/catalogs/${catalogId}/recordings/${hash}/bookmarks`;
+}
+
 /**
  * The streaming URL for a source. With `preferAac` (see prefersAacAudio), the
  * URL asks for the AAC-in-MP4 copy, but only when `/audio/sources` lists one

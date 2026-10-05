@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from besedy.commands.catalog.symlink import create_or_update_symlink
+from besedy.core.symlinks import create_or_update_symlink
 from besedy.lib.rag_bundle import (
     default_colbert_bundle_root,
     resolve_colbert_scope_bundle,
@@ -19,7 +19,7 @@ from besedy.lib.rag_pylate import (
 )
 
 WORKFLOW_GROUP_ID = "20260206_120000"
-BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6"
+BACKEND_KEY = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 COLBERT_MODEL = "jinaai/jina-colbert-v2"
 
 

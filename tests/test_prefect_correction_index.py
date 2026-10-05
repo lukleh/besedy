@@ -202,7 +202,7 @@ def _run_flow(monkeypatch, *, operation: str, indexed_row, tmp_path: Path):  # t
         operation=operation,
         operation_token=PUBLICATION_ID,
         requested_by_id="curator-1",
-        backend="faster-whisper/large-v3@silero_vad_v6",
+        backend="faster-whisper/large-v3@silero_vad_v6@lang-cs",
     )
     return result, cli_calls, reports
 
@@ -227,7 +227,7 @@ def test_flow_syncs_one_recording_and_reports_what_the_bundle_holds(
             "--group",
             CATALOG_ID,
             "--backend",
-            "faster-whisper/large-v3@silero_vad_v6",
+            "faster-whisper/large-v3@silero_vad_v6@lang-cs",
             "--transcripts-root",
             str(tmp_path / f"transcripts_{CATALOG_ID}"),
             "--hash",

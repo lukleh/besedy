@@ -16,6 +16,7 @@ from besedy.core.paths import (
     parse_transcript_components,
 )
 from besedy.lib.validation.core import validate_shared_schema, validate_single_file
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
 @pytest.fixture
@@ -25,22 +26,22 @@ def synthetic_transcripts_dir(tmp_path):
     Structure:
       transcripts_20251128_120000/
         faster-whisper/
-          large-v3@silero_vad_v6/
-            abc123def456/
+          large-v3@silero_vad_v6@lang-cs/
+            <audio hash>/
               transcript.json
         canary-nemo/
-          nvidia_canary-1b-v2[greedy]@frame_vad/
-            abc123def456/
+          nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs/
+            <audio hash>/
               transcript.json
         speaker_diarization/
           pyannote_speaker-diarization-community-1/
-            abc123def456/
+            <audio hash>/
               speakers.json
     """
     root = tmp_path / "transcripts_20251128_120000"
 
     # Faster-Whisper transcript
-    fw_dir = root / "faster-whisper" / "large-v3@silero_vad_v6" / "abc123def456"
+    fw_dir = root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / SAMPLE_AUDIO_HASH
     fw_dir.mkdir(parents=True)
     fw_transcript = {
         "segments": [
@@ -65,7 +66,12 @@ def synthetic_transcripts_dir(tmp_path):
     (fw_dir / "transcript.json").write_text(json.dumps(fw_transcript, indent=2))
 
     # NeMo/Canary transcript
-    nemo_dir = root / "canary-nemo" / "nvidia_canary-1b-v2[greedy]@frame_vad" / "abc123def456"
+    nemo_dir = (
+        root
+        / "canary-nemo"
+        / "nvidia_canary-1b-v2[greedy]@frame_vad_multilingual_marblenet_v2_0@lang-cs"
+        / SAMPLE_AUDIO_HASH
+    )
     nemo_dir.mkdir(parents=True)
     nemo_transcript = {
         "meta": {
@@ -82,7 +88,10 @@ def synthetic_transcripts_dir(tmp_path):
 
     # Diarization output
     dia_dir = (
-        root / "speaker_diarization" / "pyannote_speaker-diarization-community-1" / "abc123def456"
+        root
+        / "speaker_diarization"
+        / "pyannote_speaker-diarization-community-1"
+        / SAMPLE_AUDIO_HASH
     )
     dia_dir.mkdir(parents=True)
     diarization = {
@@ -125,7 +134,7 @@ class TestTranscriptComponentParsing:
         workflow, model, audio_hash = result
         assert workflow == "faster-whisper"
         assert "large-v3" in model
-        assert audio_hash == "abc123def456"
+        assert audio_hash == SAMPLE_AUDIO_HASH
 
     def test_parses_nemo_path(self, synthetic_transcripts_dir):
         """parse_transcript_components works for NeMo paths."""
@@ -136,7 +145,7 @@ class TestTranscriptComponentParsing:
         assert result is not None
         workflow, model, audio_hash = result
         assert workflow == "canary-nemo"
-        assert audio_hash == "abc123def456"
+        assert audio_hash == SAMPLE_AUDIO_HASH
 
 
 class TestSchemaValidation:
@@ -193,7 +202,7 @@ class TestMultiBackendStructure:
                 hashes.add(audio_hash)
 
         # Both backends have same audio hash
-        assert "abc123def456" in hashes
+        assert SAMPLE_AUDIO_HASH in hashes
         # But we have multiple transcripts for it
         assert len(paths) == 2
 

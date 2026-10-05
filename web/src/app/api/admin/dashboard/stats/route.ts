@@ -7,8 +7,6 @@ import { requireAdminCapability } from "@/lib/access/require-admin";
 
 export const dynamic = "force-dynamic";
 
-const LEGACY_AUDIT_RESOURCE = "invitation";
-
 /**
  * GET /api/admin/dashboard/stats - Get comprehensive dashboard statistics
  * Returns user stats, audit log summary, and client error summary
@@ -98,9 +96,6 @@ export async function GET() {
 
       // Recent activity feed (last 10)
       prisma.auditLog.findMany({
-        where: {
-          resource: { not: LEGACY_AUDIT_RESOURCE },
-        },
         take: 10,
         orderBy: { createdAt: "desc" },
         select: {
