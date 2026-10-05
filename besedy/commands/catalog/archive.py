@@ -733,20 +733,6 @@ def backfill_aac_copy(
 # =============================================================================
 
 
-def compute_common_source_root(rows: list[CsvAudioRow]) -> Path:
-    """Find the common root directory of all source files.
-
-    Example:
-        /path/to/Besedy/folder1/file1.mp3
-        /path/to/Besedy/folder2/file2.mp3
-        → common root: /path/to/Besedy
-    """
-    # Use parent directories (not file paths) so single-file catalogs resolve
-    # to the containing folder instead of the file itself.
-    parents = [Path(row.full_path).resolve().parent for row in rows]
-    return Path(os.path.commonpath(parents))
-
-
 def load_archived_hashes(csv_path: Path) -> set[str]:
     """Load audio content hashes that have already been archived.
 
@@ -836,37 +822,41 @@ def infer_output_dir_from_archived_csv(csv_path: Path) -> tuple[Path | None, str
 
 def compute_output_path(
     source_path: Path,
-    source_root: Path,
+    scan_root: str | None,
     output_dir: Path,
     extension: str,
     sha256: str,
 ) -> Path:
-    """Compute output path relative to common source root with hash suffix.
+    """Compute output path relative to the file's own Scan Root with hash suffix.
+
+    Each file is placed by its own catalog row, so where it lands never depends
+    on the other files in the catalog. A source outside its Scan Root, or a row
+    without one, is placed directly under ``output_dir``.
 
     Args:
         source_path: Absolute path to the source file.
-        source_root: Common root directory of all source files.
+        scan_root: The row's ``Scan Root`` value (may be empty or None).
         output_dir: Directory where compressed files will be stored.
         extension: File extension for the output file (e.g., ".webm").
         sha256: Content hash of the source file (first 8 chars used in filename).
 
     Returns:
-        Output path preserving directory structure relative to source_root,
+        Output path preserving directory structure relative to scan_root,
         with 8-character hash suffix to prevent filename collisions.
 
     Example:
         source_path: /mnt/data/Besedy/folder/file.mp3
-        source_root: /mnt/data/Besedy
+        scan_root:   /mnt/data/Besedy
         output_dir:  /mnt/data/Besedy-archive
         sha256:      2cb6f452b62cb491...
         → output:    /mnt/data/Besedy-archive/folder/file_2cb6f452.webm
     """
     source_abs = source_path.resolve()
-    relative = source_abs.relative_to(source_root)
-    if relative == Path("."):
-        # Defensive fallback: if source_root unexpectedly equals source file,
-        # keep output as a file under output_dir.
-        relative = Path(source_abs.name)
+    relative = Path(source_abs.name)
+    if scan_root:
+        root = Path(scan_root).expanduser().resolve()
+        if source_abs.is_relative_to(root) and source_abs != root:
+            relative = source_abs.relative_to(root)
     output_base = output_dir / relative
     # Add 8-char hash suffix to prevent collisions from same-name files
     new_name = f"{output_base.stem}_{sha256[:8]}{extension}"
@@ -1231,11 +1221,7 @@ def handle_archive(
             )
             return 1
 
-    # 5. Compute common source root and resolve output directory
-    # Always compute source_root from current catalog rows (consistent and reliable)
-    source_root = compute_common_source_root(rows)
-    print(f"Source root: {source_root}")
-
+    # 5. Resolve output directory
     archive_symlink: Path | None = None  # Only set for fresh runs with default path
     if is_resume:
         # Infer output directory from existing archived CSV if not provided
@@ -1395,7 +1381,7 @@ def handle_archive(
                 for row in rows_to_process:
                     source = Path(row.full_path)
                     output_path = compute_output_path(
-                        source, source_root, output_dir, extension, row.sha256
+                        source, row.scan_root, output_dir, extension, row.sha256
                     )
 
                     future = executor.submit(

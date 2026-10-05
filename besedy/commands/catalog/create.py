@@ -169,7 +169,7 @@ def handle_create(args: argparse.Namespace) -> int:
         ffprobe_binary=args.ffprobe_binary,
         ffprobe_timeout=args.ffprobe_timeout,
         use_color=use_color,
-        scan_root=str(directory),
+        scan_root=str(directory.resolve()),
     )
 
     # Set added_at timestamp for all records
