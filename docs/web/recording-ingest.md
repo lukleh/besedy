@@ -1,6 +1,6 @@
 # Recording Ingest (Admin Upload)
 
-> **Last Updated:** 2026-09-08
+> **Last Updated:** 2026-10-04
 > **Status:** Phase 1 - upload, process, auto-sync, status. Metadata/event
 > pre-fill is a follow-up.
 
@@ -29,11 +29,20 @@ host worker (work pool besedy-ingest-<env>, concurrency 1)
          no  ─▶ move to <uploads>/<catalog>/accepted/<intake>/<name>.<ext> (+ .audiohash)
     3. python -m besedy.cli.catalog add <uploads>/<catalog>/accepted/<intake> --csv <csv> --no-symlink
     4. python -m besedy.cli.catalog run-pipeline --csv <csv> --no-symlink
+       (CLI children run with PYTHONUNBUFFERED=1; every `[N/M] step...` header
+        line, and the duplicate check and catalog add before it, is sent to
+        POST web /api/internal/ingest/<intake>/progress {step, total, label}
+        best effort: a failed report is only logged)
     5. POST web /api/internal/ingest/<intake>/complete {status, audioHash, errorCode}
        (if this cannot be delivered the run fails with a message carrying the
         outcome as `completion_report_failed:{...}` and the web app applies it later)
 
 web complete route: update recording_intake; on SUCCEEDED run syncCatalogGroup()
+web progress route: records the step on a QUEUED/RUNNING/REMOVING row (never
+    its status); the first report of a run sets started_at
+UI: shows "Step 4/9 · transcribe (…) · 12 min (total 18 min)", counted in the
+    browser from the stored timestamps; rows without reports show the Prefect
+    state name. Finished rows show the run's total duration.
 UI: polls GET /api/admin/ingest while rows are QUEUED/RUNNING; those rows are
     reconciled against jobs-api GET /jobs/:id (status-guarded writes) so crashed,
     cancelled and callback-less runs end, and undelivered outcomes are applied.
@@ -249,7 +258,9 @@ Every row on **Admin -> Ingest** in a finished state has a **Remove** action
   so the incremental ColBERT sync prunes the hash from the chunk store, FTS and
   PLAID index (no rebuild; the query server reloads on the next query) and
   `cluster-speakers` rebuilds without it, then removes the intake directories
-  and reports `REMOVED`. The web app deletes the recording's event assignment
+  and reports `REMOVED`. It reports progress like an ingest (`catalog remove`,
+  then the `run-pipeline` steps); the row's earlier progress is cleared when it
+  becomes `REMOVING`. The web app deletes the recording's event assignment
   (when it was the primary, the event's next playable recording becomes primary;
   with none left, the event is unreleased but kept), curated metadata,
   catalog metadata, notifications and listeners' bookmarks in that catalog.
