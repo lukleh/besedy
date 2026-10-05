@@ -56,16 +56,10 @@ class ColbertQueryService:
         k = int(payload.get("k", 10))
         if k <= 0:
             raise ValueError("k must be positive.")
-        force_fast = bool(payload.get("force_fast", False))
 
         resolved_index_dir = Path(raw_index_dir).resolve()
         if not resolved_index_dir.exists():
             raise FileNotFoundError(f"ColBERT index directory does not exist: {resolved_index_dir}")
-
-        if force_fast:
-            # Keep accepting the legacy flag during migration, but PyLate does not
-            # expose a direct equivalent for Besedy's old query path.
-            force_fast = False
 
         model, retriever, device = self._ensure_loaded_runtime(resolved_index_dir)
         query_embeddings = model.encode(
@@ -236,13 +230,26 @@ def main(argv: list[str] | None = None) -> int:
     preload_index_dir = (
         args.preload_index_dir or os.getenv(PRELOAD_INDEX_ENV_VAR, "").strip() or None
     )
-    if preload_index_dir is not None:
+    if preload_index_dir is None:
+        print(
+            f"No ColBERT preload configured ({PRELOAD_INDEX_ENV_VAR} is empty); "
+            "the first query loads its index.",
+            flush=True,
+        )
+    else:
         try:
             SERVICE.preload(preload_index_dir)
             print(f"Preloaded ColBERT index: {Path(preload_index_dir).resolve()}", flush=True)
         except FileNotFoundError as exc:
             print(
                 f"Skipping ColBERT preload because the index path is missing: {exc}",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - a bad preload must not crash-loop the sidecar
+            # E.g. the `index` symlink points at a bundle that is still being
+            # written: serve cold instead of restarting under `unless-stopped`.
+            print(
+                f"Skipping ColBERT preload because the index is not loadable: {exc!r}",
                 flush=True,
             )
 

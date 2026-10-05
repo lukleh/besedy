@@ -189,13 +189,11 @@ def run_index_bsize_matrix(
     min_chunk_tokens: int = DEFAULT_MIN_CHUNK_TOKENS,
     max_chunk_tokens: int = DEFAULT_MAX_CHUNK_TOKENS,
     overlap_tokens: int = DEFAULT_OVERLAP_TOKENS,
-    use_faiss: bool = False,
     build_runtime: str | None = None,
     query_runtime: str | None = None,
     k: int = 10,
     benchmark_runs: int = 2,
     benchmark_warmup_runs: int = 1,
-    force_fast: bool = False,
     overwrite: bool = False,
     gpu_poll_interval_seconds: float = 0.5,
 ) -> dict[str, Any]:
@@ -225,7 +223,6 @@ def run_index_bsize_matrix(
                 chunk_tokenizer_model=chunk_tokenizer_model,
                 doc_maxlen=doc_maxlen,
                 index_bsize=index_bsize,
-                use_faiss=use_faiss,
                 overwrite=overwrite,
                 min_chunk_tokens=min_chunk_tokens,
                 max_chunk_tokens=max_chunk_tokens,
@@ -244,13 +241,11 @@ def run_index_bsize_matrix(
                 questions_path=eval_questions_path,
                 index_dir=candidate_dir,
                 k=k,
-                force_fast=force_fast,
             )
             benchmark = benchmark_colbert_queries(
                 questions_path=benchmark_questions_path,
                 index_dir=candidate_dir,
                 k=k,
-                force_fast=force_fast,
                 runs=benchmark_runs,
                 warmup_runs=benchmark_warmup_runs,
             )
@@ -297,13 +292,11 @@ def run_index_bsize_matrix(
         "min_chunk_tokens": min_chunk_tokens,
         "max_chunk_tokens": max_chunk_tokens,
         "overlap_tokens": overlap_tokens,
-        "use_faiss": use_faiss,
         "build_runtime": build_runtime,
         "query_runtime": query_runtime,
         "k": k,
         "benchmark_runs": benchmark_runs,
         "benchmark_warmup_runs": benchmark_warmup_runs,
-        "force_fast": force_fast,
         "gpu_poll_interval_seconds": gpu_poll_interval_seconds,
         "summaries": [asdict(summary) for summary in summaries],
         "recommendation": asdict(recommendation),
@@ -337,7 +330,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-chunk-tokens", type=int, default=DEFAULT_MIN_CHUNK_TOKENS)
     parser.add_argument("--max-chunk-tokens", type=int, default=DEFAULT_MAX_CHUNK_TOKENS)
     parser.add_argument("--overlap-tokens", type=int, default=DEFAULT_OVERLAP_TOKENS)
-    parser.add_argument("--use-faiss", action="store_true")
     parser.add_argument(
         "--build-runtime",
         choices=COLBERT_RUNTIME_CHOICES,
@@ -351,7 +343,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--benchmark-runs", type=int, default=2)
     parser.add_argument("--benchmark-warmup-runs", type=int, default=1)
-    parser.add_argument("--force-fast", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--gpu-poll-interval-seconds", type=float, default=0.5)
     parser.add_argument("--json", action="store_true")
@@ -372,13 +363,11 @@ def main(argv: list[str] | None = None) -> int:
         min_chunk_tokens=args.min_chunk_tokens,
         max_chunk_tokens=args.max_chunk_tokens,
         overlap_tokens=args.overlap_tokens,
-        use_faiss=args.use_faiss,
         build_runtime=args.build_runtime,
         query_runtime=args.query_runtime,
         k=args.k,
         benchmark_runs=args.benchmark_runs,
         benchmark_warmup_runs=args.benchmark_warmup_runs,
-        force_fast=args.force_fast,
         overwrite=args.overwrite,
         gpu_poll_interval_seconds=args.gpu_poll_interval_seconds,
     )

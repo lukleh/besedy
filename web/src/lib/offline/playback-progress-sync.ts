@@ -1,6 +1,6 @@
 'use client';
 
-import { ApiError, fetchJson } from '@/lib/api/fetch-json';
+import { ApiError, fetchJson, isFinalClientError } from '@/lib/api/fetch-json';
 import { buildPlaybackProgressUrl } from '@/lib/api/recording-urls';
 import { createClientLogger } from '@/lib/log/client';
 import {
@@ -27,15 +27,10 @@ function finiteNonNegative(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
+// A 401 is excluded on top of the shared rule: the user may sign in again, and
+// the pending progress is theirs to keep until then.
 function isTerminalClientError(error: unknown): error is ApiError {
-  return (
-    error instanceof ApiError &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 401 &&
-    error.status !== 408 &&
-    error.status !== 429
-  );
+  return isFinalClientError(error) && error.status !== 401;
 }
 
 export async function queuePlaybackProgress(

@@ -10,27 +10,6 @@ from besedy.lib.validation.schema import validate_canonical_schema
 from besedy.lib.workflow.paths import get_transcript_backend_paths
 
 
-def _get_default_backends() -> list[str]:
-    """Discover backend paths from on-disk workflow/model outputs."""
-    return list(get_transcript_backend_paths().values())
-
-
-# Lazy-initialized module-level default (for backward compatibility)
-_DEFAULT_BACKENDS: list[str] | None = None
-
-
-def _ensure_default_backends() -> list[str]:
-    """Ensure DEFAULT_BACKENDS is populated and return it."""
-    global _DEFAULT_BACKENDS
-    if _DEFAULT_BACKENDS is None:
-        _DEFAULT_BACKENDS = _get_default_backends()
-    return _DEFAULT_BACKENDS
-
-
-# Backward compatibility alias
-DEFAULT_BACKENDS = _ensure_default_backends
-
-
 def load_json(path: Path) -> dict | None:
     """Load a UTF-8 JSON file, returning None if it is missing or unreadable."""
     try:

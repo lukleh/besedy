@@ -320,14 +320,6 @@ def register_parser(
         default=None,
         help="Transcript file or directory (default: text_data_dir/transcripts)",
     )
-    # Backward-compatible no-op flags used by older docs/scripts.
-    parser.add_argument("--batch", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--level",
-        choices=["basic", "strict"],
-        default="basic",
-        help=argparse.SUPPRESS,
-    )
     parser.add_argument("--limit", type=int, help="Limit number of files in batch mode")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument(

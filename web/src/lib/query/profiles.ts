@@ -1,4 +1,4 @@
-import { ApiError, SchemaValidationError } from "@/lib/api/fetch-json";
+import { isFinalClientError, isNetworkFailure, SchemaValidationError } from "@/lib/api/fetch-json";
 
 // Query updates should be driven by navigation, explicit invalidation, or
 // polling where needed, not by every tab focus event.
@@ -59,17 +59,17 @@ const MAX_QUERY_RETRIES = 3;
 // A 4xx answer (missing, hidden, or invalid) or a payload that fails its
 // schema will not change on retry, so fail at once instead of waiting through
 // the retry backoff. Timeouts and rate limits are temporary and still retry.
+// A request that could not be made while the browser knows it is offline is
+// not retried either: it recovers when the connection returns, not within the
+// backoff, and the page can say so at once.
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
   if (error instanceof SchemaValidationError) {
     return false;
   }
-  if (
-    error instanceof ApiError &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 408 &&
-    error.status !== 429
-  ) {
+  if (isFinalClientError(error)) {
+    return false;
+  }
+  if (isNetworkFailure(error) && typeof navigator !== "undefined" && navigator.onLine === false) {
     return false;
   }
   return failureCount < MAX_QUERY_RETRIES;
