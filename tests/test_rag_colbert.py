@@ -1963,7 +1963,7 @@ def test_index_meta_written_with_the_retired_use_faiss_key_still_loads() -> None
 
     meta = {
         "workflow_group_id": "wg-123",
-        "backend_key": "faster-whisper/large-v3@silero_vad_v6",
+        "backend_key": "faster-whisper/large-v3@silero_vad_v6@lang-cs",
         "run_id": "20260206_120000",
         "chunk_version": "v2",
         "min_chunk_tokens": 220,
