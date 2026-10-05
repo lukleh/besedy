@@ -18,7 +18,7 @@ from besedy.lib.rag_correction_sources import (
 CATALOG_ID = "20260101_000000"
 HASH_A = "a" * 64
 HASH_B = "b" * 64
-BACKEND = "faster-whisper/large-v3@silero_vad_v6"
+BACKEND = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
 
 
 class WhitespaceTokenCounter:

@@ -342,25 +342,14 @@ class TestHuggingFaceTokenHandling:
 
         import os
 
-        hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+        hf_token = os.getenv("HF_TOKEN")
         assert hf_token == "test_token_123"
-
-    def test_token_fallback_to_huggingface_token(self, monkeypatch):
-        """Test fallback to HUGGINGFACE_TOKEN."""
-        monkeypatch.delenv("HF_TOKEN", raising=False)
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "fallback_token")
-
-        import os
-
-        hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
-        assert hf_token == "fallback_token"
 
     def test_missing_token_detected(self, monkeypatch):
         """Test missing token detection."""
         monkeypatch.delenv("HF_TOKEN", raising=False)
-        monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
 
         import os
 
-        hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+        hf_token = os.getenv("HF_TOKEN")
         assert hf_token is None

@@ -1,73 +1,21 @@
-# Model serving for ColBERT sidecar retrieval plus the legacy TEI reranker.
+# Model serving for the ColBERT sidecar.
 # Shared across dev/test/prod — independent of the web stack.
 #
 # Usage:
-#   docker compose -f rag-services/docker-compose.yml up -d
-#   docker compose -f rag-services/docker-compose.yml --profile legacy-tei up -d
-#   docker compose -f rag-services/docker-compose.yml --profile colbert-indexer run --rm --no-deps colbert-indexer build-index
+#   just colbert-up    (or: bash scripts/run_rag_services_compose.sh up -d)
+#   bash scripts/run_rag_services_compose.sh --profile colbert-indexer run --rm --no-deps colbert-indexer build-index
+#
+# Use the wrapper rather than raw `docker compose`: it passes the host env file
+# that holds COLBERT_PRELOAD_INDEX_DIR (template: rag-services/.env.example).
 #
 # Endpoints:
 #   ColBERT:    http://127.0.0.1:8192 (default startup, internal warm-query service)
-#   Reranker:   http://127.0.0.1:8191  (legacy TEI profile only)
 #
-# NOTE:
-#   Keep the reranker batch and concurrency settings aligned with the web rerank
-#   candidate count (default RAG_RESULT_LIMIT=50).
-#
-# Canonical runtime:
-#   ColBERT runs by default.
-#   TEI reranking is kept behind the optional "legacy-tei" profile.
-#
-# Models are cached in a named volume so they survive container restarts.
+# Models are cached in named volumes so they survive container restarts.
 
 name: besedy-rag-services
 
-x-tei-gpu-image: &tei-gpu-image
-  image: "${TEI_IMAGE:-besedy/tei-blackwell:local}"
-  build:
-    context: "${TEI_BUILD_CONTEXT:-https://github.com/huggingface/text-embeddings-inference.git#main}"
-    dockerfile: "${TEI_DOCKERFILE:-Dockerfile-cuda-blackwell}"
-    args:
-      CUDA_COMPUTE_CAP: "${TEI_CUDA_COMPUTE_CAP:-120}"
-  labels:
-    besedy.tei.build_context: "${TEI_BUILD_CONTEXT:-https://github.com/huggingface/text-embeddings-inference.git#main}"
-    besedy.tei.dockerfile: "${TEI_DOCKERFILE:-Dockerfile-cuda-blackwell}"
-
 services:
-  reranker:
-    <<: *tei-gpu-image
-    container_name: besedy-tei-reranker
-    profiles: ["legacy-tei"]
-    gpus: all
-    ports:
-      - "${TEI_HOST_BIND:-0.0.0.0}:${TEI_RERANK_PORT:-8191}:80"
-    volumes:
-      - model_cache:/data
-    command:
-      - --model-id
-      - Alibaba-NLP/gte-multilingual-reranker-base
-      - --dtype
-      - "${TEI_RERANK_DTYPE:-float16}"
-      - --max-concurrent-requests
-      - "${TEI_RERANK_MAX_CONCURRENT_REQUESTS:-64}"
-      - --max-client-batch-size
-      - "${TEI_RERANK_MAX_CLIENT_BATCH_SIZE:-50}"
-      - --max-batch-requests
-      - "${TEI_RERANK_MAX_BATCH_REQUESTS:-1}"
-      - --max-batch-tokens
-      - "${TEI_RERANK_MAX_BATCH_TOKENS:-16384}"
-      - --auto-truncate
-    environment:
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
-      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
-
   colbert:
     image: "${COLBERT_IMAGE:-besedy/colbert:local}"
     build:
@@ -143,8 +91,6 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
 
 volumes:
-  model_cache:
-    name: besedy_tei_model_cache
   colbert_model_cache:
     name: besedy_colbert_model_cache
   colbert_torch_cache:

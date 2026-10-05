@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { uploadRecording } from "@/lib/ingest/upload-client";
 import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";

@@ -24,16 +24,16 @@ from rich.progress import (
 )
 
 from besedy.commands.catalog.metadata import get_loudness_metrics
-from besedy.commands.catalog.symlink import (
-    create_or_update_symlink,
-    validate_symlink_can_be_created,
-)
 from besedy.commands.catalog.system import detect_logical_cpus
 from besedy.commands.catalog.ui import (
     Ansi,
     color_text,
 )
 from besedy.core.paths import extract_timestamp_from_catalog, resolve_catalogs_root
+from besedy.core.symlinks import (
+    create_or_update_symlink,
+    validate_symlink_can_be_created,
+)
 from besedy.lib.catalog.manager import check_ffmpeg, check_ffprobe, load_csv
 from besedy.lib.data.atomic_io import atomic_path
 
