@@ -1975,6 +1975,7 @@
       "pendingAccessUpdatedDesc": "Úroveň přístupu čekajícího uživatele byla aktualizována.",
       "catalogSynced": "Katalog byl synchronizován",
       "catalogSyncedDesc": "Data katalogu byla obnovena ze zdrojových CSV souborů.",
+      "catalogSyncedHashAlgorithmDesc": "Data katalogu byla obnovena, ale {count, plural, one {# řádek má} few {# řádky mají} other {# řádků má}} chybějící nebo neznámý algoritmus hashe. Jejich hashe nemusí označovat stejný zvuk jako zbytek katalogu.",
       "catalogSyncSkipped": "Katalog je aktuální",
       "catalogSyncSkippedDesc": "Nebyly zjištěny žádné změny v CSV souborech.",
       "validationError": "Chybí povinná pole",

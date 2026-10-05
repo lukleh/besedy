@@ -1976,6 +1976,7 @@
       "pendingAccessUpdatedDesc": "The pending user's access level has been updated.",
       "catalogSynced": "Catalog synced",
       "catalogSyncedDesc": "Catalog data was refreshed from CSV sources.",
+      "catalogSyncedHashAlgorithmDesc": "Catalog data was refreshed, but {count, plural, one {# row has} other {# rows have}} a missing or unknown hash algorithm. Their hashes may not identify the same audio as the rest of the catalog.",
       "catalogSyncSkipped": "Catalog already up to date",
       "catalogSyncSkippedDesc": "No CSV changes were detected.",
       "validationError": "Missing required fields",

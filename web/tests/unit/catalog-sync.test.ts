@@ -582,4 +582,63 @@ describe('catalog-sync', () => {
 
     expect(result.status).toBe('success');
   });
+
+  it('syncs rows with a missing or unknown hash algorithm and reports how many', async () => {
+    const known = 'a'.repeat(64);
+    const unknown = 'b'.repeat(64);
+    const missing = 'c'.repeat(64);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: null,
+      variants: [],
+    });
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: 'old' },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: 'old' },
+      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
+    ]);
+    const rowsByFile: Record<string, Array<Record<string, string>>> = {
+      '/data/meta.csv': [
+        { Hash: known, 'Hash Algorithm': 'pcm-s16le-16000hz-mono-sha256-v1' },
+        { Hash: unknown, 'Hash Algorithm': 'sha256-of-file' },
+        { Hash: missing },
+      ],
+      '/data/archived.csv': [known, unknown, missing].map((hash) => ({
+        Hash: hash,
+        'Compressed Path': `/data/audio/${hash.slice(0, 8)}.webm`,
+      })),
+    };
+    mockReadFile.mockImplementation(async (file: string) => `content:${file}`);
+    mockParse.mockImplementation(
+      (
+        content: string,
+        options: {
+          complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void;
+        },
+      ) => {
+        options.complete({
+          data: rowsByFile[content.replace(/^content:/, '')] ?? [],
+          errors: [],
+        });
+      },
+    );
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      const result = await syncCatalogGroup('20251222_144441');
+
+      expect(result.status).toBe('success');
+      expect(result.unrecognizedHashAlgorithmRows).toBe(2);
+      // Nothing is dropped.
+      expect(mockTx.catalogEntry.createMany.mock.calls[0][0].data).toHaveLength(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('2 metadata rows have a missing or unknown Hash Algorithm'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
