@@ -53,7 +53,9 @@ export function BookmarkListItem({
               <p className="whitespace-pre-wrap break-words text-sm">{bookmark.comment}</p>
             )}
             {bookmark.excerpt && (
-              <p className="line-clamp-2 text-sm italic text-muted-foreground">„{bookmark.excerpt}“</p>
+              <p className="line-clamp-2 text-sm italic text-muted-foreground">
+                {t("excerpt", { text: bookmark.excerpt })}
+              </p>
             )}
           </>
         )}

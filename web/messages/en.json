@@ -355,6 +355,7 @@
     "commentPlaceholder": "Comment (optional)",
     "editComment": "Edit comment",
     "playFrom": "Play from here",
+    "excerpt": "“{text}”",
     "empty": "No bookmarks yet. Bookmark a moment while listening to a recording and it shows up here.",
     "filterPlaceholder": "Filter bookmarks",
     "noMatches": "No bookmarks match the filter.",

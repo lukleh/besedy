@@ -179,7 +179,7 @@ describe("RecordingBookmarks", () => {
     const { onSeek } = renderPanel(0);
 
     expect(screen.getByText("Key question")).toBeTruthy();
-    expect(screen.getByText("„Proč?“")).toBeTruthy();
+    expect(screen.getByText("“Proč?”")).toBeTruthy();
     fireEvent.click(screen.getByTestId("bookmark-seek"));
 
     expect(onSeek).toHaveBeenCalledWith(125);
