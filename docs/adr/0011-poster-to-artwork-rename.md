@@ -88,11 +88,11 @@ change).
 The storage rename ran in that window in September 2026, and the
 script was then removed (#226); recover it from git history if needed.
 
-ADR 0009 also named a pending follow-up cleanup (retiring the `inventory` and
+ADR 0009 also named a follow-up cleanup (retiring the `inventory` and
 `import-legacy` CLI subcommands and the poster branch of
-`migrate-recording-assets-to-events.ts`). That cleanup is independent of this
-rename and still outstanding; expect its diff to need re-basing over the new
-names once it lands.
+`migrate-recording-assets-to-events.ts`). That cleanup was independent of this
+rename and has since landed (#138): as of October 2026 neither subcommand exists and
+the migration script has no poster branch.
 
 ## Consequences
 

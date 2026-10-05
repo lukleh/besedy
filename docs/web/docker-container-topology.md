@@ -504,8 +504,6 @@ Before production Deep Search rollout:
 
 Medium-term cleanup:
 
-- Remove the legacy combined compose file after the host has fully migrated to
-  the split stack.
 - Consider moving ColBERT from host-port access to an explicit shared Docker network if we want less reliance on `host.docker.internal`.
 - Remove or archive stale Docker volumes after confirming they are not used:
   - `besedy-dev_besedy_dev_postgres`
