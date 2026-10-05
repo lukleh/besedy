@@ -107,7 +107,7 @@ containers. Source files:
 - `besedy/lib/prefect_jobs/flows/ingest_recording.py` - the flow
 
 The production worker runs from its own checkout,
-`~/worktrees/besedy/prod-ingest`, with its own frozen venv. Merges, branch
+`~/worktrees/besedy/prod-ingest`, with its own locked venv. Merges, branch
 switches or `just setup` in the dev checkout therefore never change production
 ingest; only `just ingest-worker-deploy` does. The checkout is a locked git
 worktree, so `git worktree remove` and `web/scripts/worktree-report.sh` leave
@@ -140,6 +140,8 @@ have `maintenance.py --work-pool`, while `<rev>` itself may be older. The recipe
 `~/.config/lukleh/besedy/ingest-worker.env`, the unit's environment file. It:
 
 1. creates the checkout on first use, or refuses if it has local changes;
+   refuses a revision whose `uv.lock` does not match its `pyproject.toml`
+   (`uv lock --check`, before anything is stopped);
 2. refuses unless the installed unit runs from `~/worktrees/besedy/prod-ingest`
    (after changing the unit, copy it again and `systemctl --user daemon-reload`),
    and refuses a revision without `run-worker.sh` while the installed unit starts it;
@@ -148,7 +150,7 @@ have `maintenance.py --work-pool`, while `<rev>` itself may be older. The recipe
    cancelling (`python -m besedy.lib.prefect_jobs.maintenance --work-pool
    <pool>`), because stopping the worker would kill it;
 4. asks for confirmation, checks again, stops the unit, checks out the revision
-   (detached), runs `uv sync --frozen --extra jobs --extra ml` and starts the
+   (detached), runs `uv sync --locked --extra jobs --extra ml` and starts the
    unit again.
 
 Uploads made while the worker is stopped wait in the Prefect queue. To roll
