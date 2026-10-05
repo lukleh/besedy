@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, SchemaValidationError } from "@/lib/api/fetch-json";
 import {
