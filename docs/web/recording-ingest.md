@@ -103,10 +103,11 @@ containers. Source files:
 
 - `jobs-service/host-worker/besedy-ingest-worker.service` - systemd user unit
 - `jobs-service/host-worker/ingest-worker.env.example` - required environment
+- `jobs-service/host-worker/run-worker.sh` - the worker start command, shared by the unit and `just ingest-worker-run`
 - `besedy/lib/prefect_jobs/flows/ingest_recording.py` - the flow
 
 The production worker runs from its own checkout,
-`~/worktrees/besedy/prod-ingest`, with its own frozen venv. Merges, branch
+`~/worktrees/besedy/prod-ingest`, with its own locked venv. Merges, branch
 switches or `just setup` in the dev checkout therefore never change production
 ingest; only `just ingest-worker-deploy` does. The checkout is a locked git
 worktree, so `git worktree remove` and `web/scripts/worktree-report.sh` leave
@@ -139,14 +140,17 @@ have `maintenance.py --work-pool`, while `<rev>` itself may be older. The recipe
 `~/.config/lukleh/besedy/ingest-worker.env`, the unit's environment file. It:
 
 1. creates the checkout on first use, or refuses if it has local changes;
+   refuses a revision whose `uv.lock` does not match its `pyproject.toml`
+   (`uv lock --check`, before anything is stopped);
 2. refuses unless the installed unit runs from `~/worktrees/besedy/prod-ingest`
-   (after changing the unit, copy it again and `systemctl --user daemon-reload`);
+   (after changing the unit, copy it again and `systemctl --user daemon-reload`),
+   and refuses a revision without `run-worker.sh` while the installed unit starts it;
 3. while the worker is running, refuses if any flow run on
    `PREFECT_INGEST_WORK_POOL` is scheduled, pending, running, paused or
    cancelling (`python -m besedy.lib.prefect_jobs.maintenance --work-pool
    <pool>`), because stopping the worker would kill it;
 4. asks for confirmation, checks again, stops the unit, checks out the revision
-   (detached), runs `uv sync --frozen --extra jobs --extra ml` and starts the
+   (detached), runs `uv sync --locked --extra jobs --extra ml` and starts the
    unit again.
 
 Uploads made while the worker is stopped wait in the Prefect queue. To roll
@@ -174,10 +178,21 @@ keys such as `transcripts_dir` are subdirectory names that stay relative.
 For development run the worker in the foreground from the dev checkout with
 `just ingest-worker-run` (defaults to pool `besedy-ingest-dev`).
 
-Both start the worker with the `jobs` and `ml` extras: the flows run
-`rag-colbert-index`, which chunks transcripts with a `transformers` tokenizer on
+Both go through `run-worker.sh`, which starts the worker with the locked
+`jobs` and `ml` extras: the flows run `rag-colbert-index`, which chunks transcripts with a `transformers` tokenizer on
 the host. `just setup-jobs` is an exact sync that removes the `ml` extra from
 the dev venv, so restart `just ingest-worker-run` after running it.
+
+The unit's `ExecStart` only calls `run-worker.sh` from the deployed checkout, so
+a change to the extras or flags reaches production with
+`just ingest-worker-deploy`, without re-copying the unit. A unit installed
+before this script existed still carries the old inline command: deploy a
+revision that contains `run-worker.sh` first, then copy the unit and
+`systemctl --user daemon-reload` once. After that, the recipe refuses a
+rollback to a revision without the script (it prints the `git show` command
+that installs that revision's unit). The development recipe uses the same
+locked command, so it also runs with `--frozen`: run `uv lock` after changing
+`pyproject.toml`.
 
 Register the pool and deployment together with deep search:
 

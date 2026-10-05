@@ -17,6 +17,18 @@ WEB_COMPOSE = PROJECT_ROOT / "web" / "docker-compose.yml"
 RLMBENCHY_GIT_URL = "https://github.com/lukleh/rlmbenchy.git"
 
 
+def test_justfile_never_installs_from_an_unchecked_lock() -> None:
+    justfile = (PROJECT_ROOT / "Justfile").read_text(encoding="utf-8")
+
+    assert "--frozen" not in justfile
+    assert justfile.count("uv sync --locked --extra jobs --extra ml") == 2
+    # The deploy recipe verifies the target revision's lock before it creates the
+    # checkout or stops the worker (behaviour: tests/test_uv_lock_check.py).
+    check = justfile.index('bash scripts/check_uv_lock_at_rev.sh "$sha"')
+    assert check < justfile.index("git worktree add --detach --lock")
+    assert check < justfile.index('systemctl --user stop "$unit"')
+
+
 def test_jobs_image_uses_locked_non_editable_installs() -> None:
     dockerfile = JOBS_DOCKERFILE.read_text(encoding="utf-8")
 
