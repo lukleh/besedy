@@ -288,7 +288,6 @@ def transcribe_audio(
     logging.info("Extracting VAD segments from %s", audio_path.name)
     vad_segments = helpers.extract_vad_segments(
         audio_path,
-        min_silence_duration_ms=min_silence_ms,
         sampling_rate=DEFAULT_SAMPLE_RATE,
     )
     logging.info("Found %d VAD speech segment(s)", len(vad_segments))
@@ -424,7 +423,7 @@ def _docker_extra_env() -> tuple[bool, dict[str, str]]:
 
     extra_env = {
         "PYTHONPATH": "/workspace/besedy",
-        **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+        **forward_host_env("HF_TOKEN"),
     }
     try:
         resolve_config_path()

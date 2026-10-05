@@ -44,7 +44,7 @@ copying command tables or test-user matrices into provider-specific files.
 - `just ingest-worker-run`: run the host-side Prefect worker for admin recording
   uploads in the foreground (see `docs/web/recording-ingest.md`).
 - `just analyze <command>`: analysis CLI wrapper (e.g. `just analyze validate`)
-- `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/ --batch`)
+- `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/`)
 - `just test` (or `uv run --locked --all-extras pytest`): run the full test suite
 - `just bump-rlmbenchy`: move the `rlmbenchy` pin in `uv.lock` to its latest
   default-branch commit and run the jobs tests; commit the lock change through a PR
@@ -164,7 +164,7 @@ manages workflow-group records themselves.
 - Extract timestamps from upstream artifacts (catalog CSV or transcripts dir).
 - `export-transcripts` is the exception: it writes sidecars next to `transcript.json`
   and does **not** create a new timestamped output directory.
-- Use helpers in `besedy/core/paths.py` and `besedy/commands/catalog/symlink.py`.
+- Use helpers in `besedy/core/paths.py` and `besedy/core/symlinks.py`.
 
 ## Database Migrations (CRITICAL)
 

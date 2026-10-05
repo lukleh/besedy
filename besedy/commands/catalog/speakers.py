@@ -9,10 +9,6 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from besedy.commands.catalog.symlink import (
-    create_or_update_symlink,
-    validate_symlink_can_be_created,
-)
 from besedy.core.paths import (
     PROJECT_ROOT,
     PYANNOTE_DIARIZATION_MODEL_NAME,
@@ -23,6 +19,10 @@ from besedy.core.paths import (
     resolve_catalogs_root,
     resolve_transcripts_parent,
     resolve_transcripts_root,
+)
+from besedy.core.symlinks import (
+    create_or_update_symlink,
+    validate_symlink_can_be_created,
 )
 from besedy.lib.runtime.backend_runtime import build_python_backend_process, forward_host_env
 from besedy.lib.speakers.utils import load_diarization_json
@@ -376,7 +376,7 @@ def handle_cluster_speakers(
     try:
         pyannote_extra_env = {
             "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD": "1",
-            **forward_host_env("HF_TOKEN", "HUGGINGFACE_TOKEN"),
+            **forward_host_env("HF_TOKEN"),
         }
         process = build_python_backend_process(
             backend_id="pyannote",
