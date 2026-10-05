@@ -10,6 +10,9 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { TEST_AUDIO_FILES } from "../../../prisma/test-data";
 
+// The identity contract of the Hash column; the CLI refuses a catalog without it.
+export const TEST_HASH_ALGORITHM = "pcm-s16le-16000hz-mono-sha256-v1";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -79,6 +82,7 @@ export async function generateArchivedCatalog(fixturesDir: string): Promise<stri
 export async function generateMetadataCatalog(fixturesDir: string): Promise<string> {
   const headers = [
     "Hash",
+    "Hash Algorithm",
     "Filename",
     "Size (bytes)",
     "Size (human)",
@@ -117,6 +121,7 @@ export async function generateMetadataCatalog(fixturesDir: string): Promise<stri
 
   const rows = TEST_AUDIO_FILES.map((file, i) => ({
     Hash: file.hash,
+    "Hash Algorithm": TEST_HASH_ALGORITHM,
     Filename: file.filename,
     "Size (bytes)": String(file.duration * 32000),
     "Size (human)": `${Math.round(file.duration * 32000 / 1024)} KB`,

@@ -95,7 +95,3 @@ export function getAllowlistRejectionParam(
   }
   return null;
 }
-
-export function hasOAuthCallbackResidue(options: AuthCompletePathOptions): boolean {
-  return Boolean(options.error || options.errorDescription || options.state);
-}

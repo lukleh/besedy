@@ -206,23 +206,13 @@ class TestHuggingFaceToken:
     def test_hf_token_env_var(self, monkeypatch, huggingface_hub_stub):
         """Test HF_TOKEN environment variable is checked."""
         monkeypatch.setenv("HF_TOKEN", "test_token_123")
-        monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
         monkeypatch.setattr(huggingface_hub_stub, "get_token", lambda: None)
 
         assert get_hf_token() == "test_token_123"
 
-    def test_huggingface_token_fallback(self, monkeypatch, huggingface_hub_stub):
-        """Test HUGGINGFACE_TOKEN fallback."""
-        monkeypatch.delenv("HF_TOKEN", raising=False)
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "fallback_token")
-        monkeypatch.setattr(huggingface_hub_stub, "get_token", lambda: None)
-
-        assert get_hf_token() == "fallback_token"
-
-    def test_hf_token_takes_precedence(self, monkeypatch, huggingface_hub_stub):
-        """Test HF_TOKEN takes precedence over HUGGINGFACE_TOKEN."""
+    def test_hf_token_takes_precedence_over_the_cached_login(self, monkeypatch, huggingface_hub_stub):
+        """Test HF_TOKEN takes precedence over the cached login."""
         monkeypatch.setenv("HF_TOKEN", "primary")
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "secondary")
         monkeypatch.setattr(huggingface_hub_stub, "get_token", lambda: "cached")
 
         assert get_hf_token() == "primary"
@@ -231,7 +221,6 @@ class TestHuggingFaceToken:
         """Test fallback to cached Hugging Face login when env vars are unset."""
 
         monkeypatch.delenv("HF_TOKEN", raising=False)
-        monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
         monkeypatch.setattr(huggingface_hub_stub, "get_token", lambda: "cached_token")
 
         assert get_hf_token() == "cached_token"
@@ -240,7 +229,6 @@ class TestHuggingFaceToken:
         """Test missing token exits with a helpful message."""
 
         monkeypatch.delenv("HF_TOKEN", raising=False)
-        monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
         monkeypatch.setattr(huggingface_hub_stub, "get_token", lambda: None)
 
         with pytest.raises(SystemExit):

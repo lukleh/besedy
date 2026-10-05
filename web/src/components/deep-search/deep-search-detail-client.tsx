@@ -1200,7 +1200,6 @@ function getEffectiveDeepSearchConfig(
   const subLm = asRecord(rlm?.sub);
   const isRlmTrace =
     stringValue(trace?.executionMode) === 'rlm' || Boolean(rlm);
-  const legacyRlmRetrievalDefault = effectiveRetrieval ? null : isRlmTrace;
 
   return {
     hasResolvedConfig: Boolean(
@@ -1221,14 +1220,12 @@ function getEffectiveDeepSearchConfig(
         effectiveRetrieval?.include_neighbors,
         payloadRetrieval?.include_neighbors,
         payloadRetrieval?.includeNeighbors,
-        legacyRlmRetrievalDefault ? true : undefined,
       ),
       neighborCount: stringValue(
         effectiveRetrieval?.neighborCount,
         effectiveRetrieval?.neighbor_count,
         payloadRetrieval?.neighbor_count,
         payloadRetrieval?.neighborCount,
-        legacyRlmRetrievalDefault ? 1 : undefined,
       ),
       windowNeighborCount: stringValue(
         effectiveRetrieval?.windowNeighborCount,
@@ -1243,7 +1240,6 @@ function getEffectiveDeepSearchConfig(
         payloadExecution?.windowNeighborCount,
         payloadExecution?.citation_neighbor_count,
         payloadExecution?.citationNeighborCount,
-        legacyRlmRetrievalDefault ? 1 : undefined,
       ),
     },
     execution: {
