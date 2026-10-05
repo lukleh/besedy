@@ -84,6 +84,8 @@ export const chunkUploadResponseSchema = z.object({
   receivedChunks: z.number().int(),
 });
 
+export type ChunkUploadResponse = z.infer<typeof chunkUploadResponseSchema>;
+
 export const finalizeUploadResponseSchema = z.object({
   intake: recordingIntakeSchema,
 });
