@@ -13,7 +13,7 @@
  * stale online answer: nothing can be edited, re-downloaded or searched
  * offline, and a transcript exists only when it was stored.
  */
-import { ApiError } from '@/lib/api/fetch-json';
+import { isNetworkFailure } from '@/lib/api/fetch-json';
 import type {
   AvailableDiarizations,
   AvailableFormats,
@@ -35,15 +35,9 @@ import {
   type DownloadRecord,
 } from './downloads-db';
 
-/**
- * A request that never reached the server: offline, DNS, or a dropped
- * connection. Server verdicts (any HTTP status, schema mismatches) are not
- * network failures and must keep their meaning.
- */
-export function isNetworkFailure(error: unknown): boolean {
-  if (error instanceof ApiError) return false;
-  return error instanceof TypeError;
-}
+// A request that never reached the server (offline, DNS, dropped connection);
+// server verdicts keep their meaning. Defined with fetch-json, re-exported here.
+export { isNetworkFailure };
 
 /**
  * Run `request`; if it fails because the network is unreachable and `local`

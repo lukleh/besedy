@@ -2,7 +2,6 @@
 
 import { Loader2, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -207,37 +206,6 @@ export function CatalogSettingsConfigCard({
                 />
                 <Label htmlFor="config-default">{t("configuration.defaultCatalog")}</Label>
               </div>
-            </div>
-
-            <div>
-              <div className="text-sm font-medium">{t("configuration.variants")}</div>
-              {catalogConfig?.variants?.length ? (
-                <div className="mt-2 space-y-2">
-                  {catalogConfig.variants.map((variant) => (
-                    <div
-                      key={variant.id}
-                      className="rounded-lg border px-3 py-2 text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{variant.variant}</span>
-                        {variant.isDefault && (
-                          <Badge variant="secondary">{t("configuration.default")}</Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {variant.label || t("configuration.noLabel")}
-                      </div>
-                      <div className="text-xs font-mono text-muted-foreground">
-                        {variant.listeningArchivedCatalogPath || t("configuration.noListeningPath")}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {t("configuration.noVariants")}
-                </p>
-              )}
             </div>
           </div>
         )}

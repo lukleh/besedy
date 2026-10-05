@@ -9,8 +9,8 @@ import { getAvailableTranscripts, loadTranscript } from '@/lib/transcript';
 import {
   executeCatalogLexicalSearch,
   executeCatalogSearch,
-} from '@/app/api/catalogs/[id]/search/search-service';
-import { RagServiceError } from '@/app/api/catalogs/[id]/search/search-route-helpers';
+} from '@/lib/search/search-service';
+import { RagServiceError } from '@/lib/search/search-helpers';
 import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   getMcpEvent,
@@ -78,7 +78,7 @@ vi.mock('@/lib/mcp/config', () => ({
   getMcpResourceUrl: () => 'https://besedy.example/api/mcp',
 }));
 
-vi.mock('@/app/api/catalogs/[id]/search/search-service', () => ({
+vi.mock('@/lib/search/search-service', () => ({
   executeCatalogLexicalSearch: vi.fn(),
   executeCatalogSearch: vi.fn(),
 }));

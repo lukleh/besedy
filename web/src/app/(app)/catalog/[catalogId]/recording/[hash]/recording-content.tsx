@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState, type ReactNode } from "react";
+import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
@@ -18,6 +18,14 @@ import {
   buildAudioUrl,
 } from "@/lib/api/recording-urls";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
+import { useRecordingBookmarks } from "@/hooks/use-recording-bookmarks";
+import { useSession } from "@/contexts/session-context";
+import {
+  RecordingBookmarks,
+  useBookmarkDraft,
+  type TranscriptLine,
+} from "@/components/bookmarks/recording-bookmarks";
+import type { Transcript } from "@/components/transcript/transcript-viewer";
 import {
   RecordingAudioSection,
   RecordingHeader,
@@ -51,8 +59,7 @@ function isPromiseParams(
 interface AudioSource {
   id: string;
   label: string;
-  type: "archived" | "listening";
-  variant?: string;
+  type: "archived";
   available: boolean;
   formats?: string[];
 }
@@ -71,8 +78,7 @@ interface AudioSourcePreference {
 const audioSourceSchema = z.object({
   id: z.string(),
   label: z.string(),
-  type: z.enum(["archived", "listening"]),
-  variant: z.string().optional(),
+  type: z.literal("archived"),
   available: z.boolean(),
   formats: z.array(z.string()).optional(),
 });
@@ -145,6 +151,25 @@ export default function RecordingContent({
     seekRequest,
     setCurrentTime,
   } = useRecordingPlayback(catalogId, hash);
+
+  // Bookmarks belong to a signed-in user; the session-free offline shell has none.
+  const { session } = useSession();
+  const signedIn = !!session?.user?.id;
+  const bookmarks = useRecordingBookmarks(
+    catalogId,
+    hash,
+    signedIn && !catalogNotFound && !catalogValidationLoading
+  );
+  const bookmarkDraft = useBookmarkDraft(currentTime, signedIn);
+  const bookmarkMarkers = useMemo(
+    () => bookmarks.bookmarks.map((bookmark) => bookmark.positionSec),
+    [bookmarks.bookmarks]
+  );
+  const [transcriptLines, setTranscriptLines] = useState<readonly TranscriptLine[]>([]);
+  const handleTranscriptChange = useCallback(
+    (transcript: Transcript | null) => setTranscriptLines(transcript?.segments ?? []),
+    []
+  );
 
   // Build back link URL - filters are restored from localStorage automatically
   const backToListUrl = `/catalog/${catalogId}`;
@@ -318,6 +343,18 @@ export default function RecordingContent({
         audioSource={audioSource}
         audioUrl={audioUrl}
         autoPlayOnSeek={autoPlayOnSeek}
+        bookmarkMarkers={bookmarkMarkers}
+        onBookmark={signedIn ? bookmarkDraft.startDraft : undefined}
+        bookmarksPanel={
+          signedIn ? (
+            <RecordingBookmarks
+              bookmarks={bookmarks}
+              draft={bookmarkDraft}
+              onSeek={handleSeek}
+              transcriptLines={transcriptLines}
+            />
+          ) : null
+        }
         catalogId={catalogId}
         downloadEventId={downloadEventId}
         currentTimeSetter={setCurrentTime}
@@ -349,6 +386,7 @@ export default function RecordingContent({
           isPlaying={isPlaying}
           onSeek={handleSeek}
           onToggleTranscriptStream={setShowTranscriptStream}
+          onTranscriptChange={handleTranscriptChange}
           showTranscriptStream={showTranscriptStream}
         />
       )}

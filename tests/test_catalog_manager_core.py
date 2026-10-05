@@ -8,6 +8,7 @@ from besedy.lib.catalog.manager import (
     is_hidden,
     source_file_sha256,
 )
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
 class TestSourceFileSha256:
@@ -109,7 +110,7 @@ class TestFileRecord:
 
     def test_basic_creation(self, tmp_path):
         record = FileRecord(
-            hash="abc123def456",
+            hash=SAMPLE_AUDIO_HASH,
             filename="audio.wav",
             full_path=tmp_path / "audio.wav",
             hash_file=tmp_path / "audio.wav.audiohash",
@@ -119,7 +120,7 @@ class TestFileRecord:
             status="EXISTS",
             extension="wav",
         )
-        assert record.hash == "abc123def456"
+        assert record.hash == SAMPLE_AUDIO_HASH
         assert record.filename == "audio.wav"
         assert record.size_bytes == 12345
 

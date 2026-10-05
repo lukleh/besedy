@@ -205,7 +205,6 @@ requires the named catalog permission.
 | POST | `/api/catalogs` | Admin | Create catalog |
 | GET/PUT/DELETE | `/api/catalogs/:id` | Admin | Manage catalog |
 | GET | `/api/catalogs/discover` | Admin | Discover catalogs on disk |
-| GET/POST | `/api/catalogs/:id/variants` | Admin | Manage variants |
 | GET/POST | `/api/catalogs/:id/access` | `manage_access` | List/grant access |
 | PUT/DELETE | `/api/catalogs/:id/access/:userId` | `manage_access` | Update/revoke access |
 | GET/POST | `/api/catalogs/:id/pending-catalog-grants` | `manage_access` | List or create pending grants |
@@ -241,6 +240,7 @@ requires the named catalog permission.
 | DELETE | `/api/admin/ingest/uploads/:intakeId` | Admin | Abort an unsubmitted upload |
 | POST | `/api/admin/ingest/:intakeId/remove` | Admin | Remove an ingested recording and catalog-owned derived data (worker flow), or just the upload files |
 | POST | `/api/internal/ingest/:intakeId/complete` | Job service bearer | Worker completion callback; re-syncs the catalog on success |
+| POST | `/api/internal/ingest/:intakeId/progress` | Job service bearer | Worker step report for an active ingest or removal; display only |
 | POST | `/api/internal/correction/index-sync/complete` | Job service bearer | Worker report after a correction index sync; moves the publication pointers once search holds the text |
 
 See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
@@ -260,9 +260,50 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 
 - Audio source preferences use scoped key `<group>:<hash>`; server keeps only the most recent 100 entries.
 
+### Further Endpoints
+
+The tables above list the main endpoints. The complete inventory is the set of
+`web/src/app/api/**/route.ts` files, and `tests/unit/api-route-guards.test.ts`
+fails when one of them has no known guard (see
+[security.md](security.md#route-protection)). Each route handler decides who may
+call it. Endpoints not listed above:
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET | `/api/catalogs/:id/capability` | Lightweight capability flags for navigation |
+| GET | `/api/catalogs/:id/features` | Feature (Labs) capabilities for the caller in this catalog |
+| GET | `/api/catalogs/:id/status` | `lastModifiedAt` and entry count for change detection |
+| GET | `/api/catalogs/:id/users` | User search for the access-grant dialog |
+| GET | `/api/catalogs/:id/random-event` | Event shown in the radio banner |
+| GET | `/api/catalogs/:id/transcript-export` | Download the catalog's visible transcripts (`zip` or `txt`) |
+| GET/PUT | `/api/catalogs/:id/recordings/:hash/progress` | Playback progress |
+| PATCH | `/api/catalogs/:id/recordings/:hash/ready` | Manual publication toggle (`publish_recording`) |
+| POST | `/api/catalog-events/from-recording` | Create an event from a recording |
+| GET | `/api/transcript/:hash/compare` | All transcript lanes for timeline comparison |
+| GET/POST | `/api/catalogs/:id/deep-search/jobs` | List and start deep-search jobs |
+| GET | `/api/catalogs/:id/deep-search/jobs/:jobId` | Job status; `/history`, `/result.pdf` and `/share-users` sit below it |
+| POST | `/api/catalogs/:id/deep-search/jobs/:jobId/cancel` | Cancel a job |
+| GET/POST | `/api/catalogs/:id/deep-search/jobs/:jobId/shares` | List and add job shares; `DELETE …/shares/:userId` removes one |
+| GET | `/api/catalogs/:id/events/:eventId/artwork` | The event's published artwork |
+| GET/POST | `/api/catalogs/:id/events/:eventId/artworks` | List and add artwork candidates; `…/artworks/:artworkId` (DELETE) and `…/image` (GET) sit below it |
+| PUT/DELETE | `/api/catalogs/:id/events/:eventId/artwork-publication` | Publish or unpublish artwork |
+| GET/POST | `/api/mcp` | MCP server endpoint (when MCP is enabled) |
+| POST | `/api/internal/deep-search/{search,citation,metadata}` | Service-to-service calls from the jobs runtime (bearer secret) |
+| GET/PATCH | `/api/notifications` | Event notifications; `/api/notifications/subscribe` (POST/DELETE) manages push subscriptions |
+| GET | `/api/auth-complete/session` | Whether the caller is signed in, during the sign-in handoff |
+| POST | `/api/web-update-events` | Web update banner events |
+| POST | `/api/csp-report/client-error` | Client error reports from the error boundary |
+| GET | `/api/admin/catalog-sync` | Latest catalog sync state (POST runs a sync) |
+| GET | `/api/admin/audit/analytics` | Activity analytics for charts |
+| GET | `/api/admin/client-errors` | Client error list |
+| GET | `/api/admin/dashboard/stats` | Dashboard statistics |
+| GET | `/api/admin/mcp-usage` | MCP tool usage |
+| GET/PUT | `/api/admin/transcript-backends` | Discovered transcript backends and their priorities |
+| GET | `/api/admin/users/:id/catalog-access` | A user's catalog access |
+
 ### Common Query Params
 
-- `group`: catalog ID override (defaults to active group from preferences/latest accessible).
+- `group`: catalog ID override (defaults to the saved active group, then the default catalog, then the latest accessible one). Reading never changes the saved active group; the client saves it with `PATCH /api/preferences` when the catalog list, a recording or the catalog settings open.
 - `page`, `limit`: pagination. `sort`, `dir`: sorting.
 
 ### Error Responses

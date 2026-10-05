@@ -177,6 +177,43 @@ describe("EventDetail load failures", () => {
     expect(screen.queryByRole("button", { name: /retry/ })).not.toBeInTheDocument();
   });
 
+  it("treats an event hidden with 401 as not found too", () => {
+    renderEventDetailError(new ApiError("Unauthorized", 401));
+
+    expect(screen.getByRole("heading", { name: "notFoundTitle" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/ })).not.toBeInTheDocument();
+  });
+
+  it("says the device is offline, not that the server failed, when the request could not be made offline", () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      const refetch = vi.fn();
+      renderEventDetailError(new TypeError("Failed to fetch"), refetch);
+
+      expect(screen.getByRole("heading", { name: "loadErrorTitle" })).toBeInTheDocument();
+      expect(screen.getByText("errors.offlineDescription")).toBeInTheDocument();
+      expect(screen.queryByText("errors.serverErrorDescription")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /retry/ }));
+      expect(refetch).toHaveBeenCalledTimes(1);
+    } finally {
+      onLine.mockRestore();
+    }
+  });
+
+  it("reports an unreachable server as a failed load while the browser thinks it is online", () => {
+    renderEventDetailError(new TypeError("Failed to fetch"));
+
+    expect(screen.getByText("errors.serverErrorDescription")).toBeInTheDocument();
+    expect(screen.queryByText("errors.offlineDescription")).not.toBeInTheDocument();
+  });
+
+  it("forgets the route to resume on when the event turns out to be hidden", () => {
+    document.cookie = "besedy_last_route=%2Fcatalog%2Fc%2Fevent%2F7;path=/";
+    renderEventDetailError(new ApiError("Catalog event not found", 404));
+
+    expect(document.cookie).not.toContain("besedy_last_route=%2F");
+  });
+
   it("offers a retry for other failures without showing the raw error", () => {
     const refetch = vi.fn();
     renderEventDetailError(new ApiError("Internal error", 500), refetch);

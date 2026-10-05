@@ -161,13 +161,11 @@ def run_chunk_matrix(
     colbert_model: str = DEFAULT_COLBERT_MODEL,
     chunk_tokenizer_model: str | None = None,
     doc_maxlen: int = DEFAULT_DOC_MAXLEN,
-    use_faiss: bool = False,
     build_runtime: str | None = None,
     query_runtime: str | None = None,
     k: int = 10,
     benchmark_runs: int = 2,
     benchmark_warmup_runs: int = 1,
-    force_fast: bool = False,
     overwrite: bool = False,
 ) -> dict[str, Any]:
     if not configs:
@@ -189,7 +187,6 @@ def run_chunk_matrix(
             colbert_model=colbert_model,
             chunk_tokenizer_model=chunk_tokenizer_model,
             doc_maxlen=doc_maxlen,
-            use_faiss=use_faiss,
             overwrite=overwrite,
             min_chunk_tokens=config.min_chunk_tokens,
             max_chunk_tokens=config.max_chunk_tokens,
@@ -207,13 +204,11 @@ def run_chunk_matrix(
                 questions_path=eval_questions_path,
                 index_dir=candidate_dir,
                 k=k,
-                force_fast=force_fast,
             )
             benchmark = benchmark_colbert_queries(
                 questions_path=benchmark_questions_path,
                 index_dir=candidate_dir,
                 k=k,
-                force_fast=force_fast,
                 runs=benchmark_runs,
                 warmup_runs=benchmark_warmup_runs,
             )
@@ -262,13 +257,11 @@ def run_chunk_matrix(
         "colbert_model": colbert_model,
         "chunk_tokenizer_model": chunk_tokenizer_model or colbert_model,
         "doc_maxlen": doc_maxlen,
-        "use_faiss": use_faiss,
         "build_runtime": build_runtime,
         "query_runtime": query_runtime,
         "k": k,
         "benchmark_runs": benchmark_runs,
         "benchmark_warmup_runs": benchmark_warmup_runs,
-        "force_fast": force_fast,
         "summaries": [asdict(summary) for summary in summaries],
         "recommendation": asdict(recommendation),
         "results": results,
@@ -297,13 +290,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional explicit tokenizer model for chunk sizing. Default: use the ColBERT model.",
     )
     parser.add_argument("--doc-maxlen", type=int, default=DEFAULT_DOC_MAXLEN)
-    parser.add_argument("--use-faiss", action="store_true")
     parser.add_argument("--build-runtime", choices=COLBERT_RUNTIME_CHOICES, default=None)
     parser.add_argument("--query-runtime", choices=COLBERT_RUNTIME_CHOICES, default=None)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--benchmark-runs", type=int, default=2)
     parser.add_argument("--benchmark-warmup-runs", type=int, default=1)
-    parser.add_argument("--force-fast", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -321,13 +312,11 @@ def main(argv: list[str] | None = None) -> int:
         colbert_model=args.model,
         chunk_tokenizer_model=args.chunk_tokenizer_model,
         doc_maxlen=args.doc_maxlen,
-        use_faiss=args.use_faiss,
         build_runtime=args.build_runtime,
         query_runtime=args.query_runtime,
         k=args.k,
         benchmark_runs=args.benchmark_runs,
         benchmark_warmup_runs=args.benchmark_warmup_runs,
-        force_fast=args.force_fast,
         overwrite=args.overwrite,
     )
 

@@ -22,6 +22,7 @@
     "back": "Zpět",
     "catalog": "Katalog",
     "settings": "Nastavení",
+    "bookmarks": "Záložky",
     "downloads": "Stažené",
     "admin": "Administrace",
     "enums": "Číselníky katalogu",
@@ -345,6 +346,25 @@
       "day": "DD"
     }
   },
+  "bookmarks": {
+    "title": "Záložky",
+    "description": "Místa, která jste si v nahrávkách označili. Otevřením záložky se přehrávání spustí od daného místa.",
+    "all": "Všechny záložky",
+    "newAt": "Nová záložka v čase {time}",
+    "comment": "Poznámka k záložce",
+    "commentPlaceholder": "Poznámka (nepovinná)",
+    "editComment": "Upravit poznámku",
+    "playFrom": "Přehrát odsud",
+    "excerpt": "„{text}“",
+    "empty": "Zatím nemáte žádné záložky. Při poslechu nahrávky si označte místo a objeví se tady.",
+    "filterPlaceholder": "Hledat v záložkách",
+    "noMatches": "Hledání neodpovídá žádná záložka.",
+    "loadFailed": "Záložky se nepodařilo načíst.",
+    "saveFailed": "Záložku se nepodařilo uložit.",
+    "deleteFailed": "Záložku se nepodařilo smazat.",
+    "deleteTitle": "Smazat záložku?",
+    "deleteDescription": "Záložka i s poznámkou bude smazána. Tuto akci nelze vrátit."
+  },
   "player": {
     "play": "Přehrát",
     "pause": "Pozastavit",
@@ -357,6 +377,8 @@
     "volume": "Hlasitost",
     "waveform": "Přepnout zobrazení vlny",
     "keyboardHints": "Mezerník: přehrát/pozastavit · ←→: posun 5s · ↑↓: hlasitost · M: ztlumit",
+    "keyboardHintBookmark": "B: záložka",
+    "bookmark": "Přidat záložku (B)",
     "reconnecting": "Připojování..."
   },
   "radio": {
@@ -371,6 +393,12 @@
     "volume": "Hlasitost",
     "mute": "Ztlumit",
     "unmute": "Zapnout zvuk"
+  },
+  "sleepTimer": {
+    "label": "Časovač usnutí",
+    "activeLabel": "Časovač usnutí: zbývá {time}",
+    "off": "Vypnuto",
+    "minutes": "{count} min"
   },
   "transcript": {
     "title": "Přepis",
@@ -560,6 +588,8 @@
         "selectCatalog": "Vyberte katalog",
         "files": "Zvukové soubory",
         "submit": "Nahrát a zpracovat ({count})",
+        "dropHint": "Přetáhněte soubory sem, nebo je vyberte níže.",
+        "skipped": "{count, plural, one {Přeskočen # soubor (nepodporovaný typ)} few {Přeskočeny # soubory (nepodporovaný typ)} other {Přeskočeno # souborů (nepodporovaný typ)}}",
         "phase": {
           "pending": "Připraveno k nahrání",
           "uploading": "Nahrávání… {percent} %",
@@ -583,6 +613,13 @@
           "status": "Stav",
           "actions": "Akce",
           "result": "Výsledek"
+        },
+        "progress": {
+          "step": "Krok {step}/{total} · {label}",
+          "elapsed": "{step} (celkem {total})",
+          "took": "Trvalo {duration}",
+          "minutes": "{minutes} min",
+          "hoursMinutes": "{hours} h {minutes} min"
         }
       },
       "status": {
@@ -1752,12 +1789,7 @@
       "duplicatesPath": "Cesta ke katalogu duplikátů",
       "transcriptsPath": "Cesta k přepisům",
       "active": "Aktivní",
-      "defaultCatalog": "Výchozí katalog",
-      "variants": "Varianty",
-      "noLabel": "Bez názvu",
-      "noListeningPath": "Bez cesty k poslechovému archivu",
-      "noVariants": "Žádné varianty nakonfigurovány.",
-      "default": "Výchozí"
+      "defaultCatalog": "Výchozí katalog"
     },
     "transcriptExports": {
       "title": "Export přepisů",
@@ -1947,6 +1979,7 @@
       "pendingAccessUpdatedDesc": "Úroveň přístupu čekajícího uživatele byla aktualizována.",
       "catalogSynced": "Katalog byl synchronizován",
       "catalogSyncedDesc": "Data katalogu byla obnovena ze zdrojových CSV souborů.",
+      "catalogSyncedHashAlgorithmDesc": "Data katalogu byla obnovena, ale {count, plural, one {# řádek má} few {# řádky mají} other {# řádků má}} chybějící nebo neznámý algoritmus hashe. Jejich hashe nemusí označovat stejný zvuk jako zbytek katalogu.",
       "catalogSyncSkipped": "Katalog je aktuální",
       "catalogSyncSkippedDesc": "Nebyly zjištěny žádné změny v CSV souborech.",
       "validationError": "Chybí povinná pole",
@@ -2023,7 +2056,8 @@
     "unauthorized": "Neoprávněný přístup",
     "unauthorizedDescription": "Nemáte oprávnění k přístupu na tuto stránku.",
     "serverError": "Chyba serveru",
-    "serverErrorDescription": "Něco se pokazilo. Zkuste to prosím později."
+    "serverErrorDescription": "Něco se pokazilo. Zkuste to prosím později.",
+    "offlineDescription": "Zdá se, že jste offline a tato stránka není stažená. Připojte se a zkuste to znovu, nebo otevřete staženou událost v části Stažené."
   },
   "pwa": {
     "installTitle": "Nainstalovat Besedy",

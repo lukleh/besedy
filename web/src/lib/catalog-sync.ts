@@ -8,14 +8,13 @@ import { rewritePath } from '@/lib/security/path-validation';
 
 type CsvRow = Record<string, string | undefined>;
 
-type SourceKind = 'metadata' | 'archived' | 'duplicates' | 'listening';
+type SourceKind = 'metadata' | 'archived' | 'duplicates';
 
 interface SourceDescriptor {
   kind: SourceKind;
   sourceKey: string;
   filePath: string | null;
   required: boolean;
-  variant?: string;
 }
 
 interface SourceRuntimeState {
@@ -97,8 +96,16 @@ export interface CatalogSyncResult {
   status: 'success' | 'skipped' | 'error';
   changedSources: string[];
   rowCounts: Record<string, number>;
+  /**
+   * Metadata rows whose `Hash Algorithm` is missing or not the one this build
+   * knows. They sync anyway; set only when there are some.
+   */
+  unrecognizedHashAlgorithmRows?: number;
   error?: string;
 }
+
+/** The decoded-audio hash contract the `Hash` column holds (see besedy/lib/catalog/manager.py). */
+export const AUDIO_HASH_ALGORITHM = 'pcm-s16le-16000hz-mono-sha256-v1';
 
 // A base-catalog sync that would drop the row count below this fraction of the
 // previous count (or to zero) is refused unless explicitly allowed, so a
@@ -274,7 +281,19 @@ function countUniqueHashes(rows: CsvRow[], sourceName: string): number {
   return seen.size;
 }
 
-function toMetadataPayload(row: CsvRow): MetadataPayload {
+/** Rows with a hash whose `Hash Algorithm` is missing or not AUDIO_HASH_ALGORITHM. */
+export function countUnrecognizedHashAlgorithms(rows: CsvRow[]): number {
+  let count = 0;
+  for (const row of rows) {
+    if (!normalizeHash(getRowValue(row, ['Hash']))) continue;
+    if (getRowValue(row, ['Hash Algorithm'])?.trim() !== AUDIO_HASH_ALGORITHM) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function toMetadataPayload(row: CsvRow): MetadataPayload {
   return {
     filename: getRowValue(row, ['Filename']),
     sizeBytes: getRowValue(row, ['Size (bytes)']),
@@ -295,7 +314,7 @@ function toMetadataPayload(row: CsvRow): MetadataPayload {
   };
 }
 
-function toArchivedPayload(row: CsvRow): ArchivedPayload {
+export function toArchivedPayload(row: CsvRow): ArchivedPayload {
   return {
     originalPath: getRowValue(row, ['Original Path']),
     compressedPath: getRowValue(row, ['Compressed Path']),
@@ -311,7 +330,7 @@ function toArchivedPayload(row: CsvRow): ArchivedPayload {
   };
 }
 
-function toDuplicatePayload(row: CsvRow): DuplicatePayload {
+export function toDuplicatePayload(row: CsvRow): DuplicatePayload {
   return {
     hash: getRowValue(row, ['Hash']),
     originalPath: getRowValue(row, ['Original Path']),
@@ -340,10 +359,6 @@ function buildSourceDescriptors(group: {
   metadataCatalogPath: string;
   archivedCatalogPath: string;
   duplicatesCatalogPath: string | null;
-  variants: Array<{
-    variant: string;
-    listeningArchivedCatalogPath: string | null;
-  }>;
 }): SourceDescriptor[] {
   return [
     {
@@ -364,13 +379,6 @@ function buildSourceDescriptors(group: {
       filePath: group.duplicatesCatalogPath,
       required: false,
     },
-    ...group.variants.map((variant) => ({
-      kind: 'listening' as const,
-      sourceKey: `listening:${variant.variant}`,
-      filePath: variant.listeningArchivedCatalogPath,
-      required: false,
-      variant: variant.variant,
-    })),
   ];
 }
 
@@ -386,8 +394,7 @@ function descriptorsMatch(
         descriptor.kind === other.kind &&
         descriptor.sourceKey === other.sourceKey &&
         descriptor.filePath === other.filePath &&
-        descriptor.required === other.required &&
-        descriptor.variant === other.variant
+        descriptor.required === other.required
       );
     })
   );
@@ -555,11 +562,6 @@ async function syncCatalogGroupAttempt(
     // so its fingerprint always identifies exactly the content that is parsed.
     const sourceGroup = await prisma.workflowGroup.findUnique({
       where: { id: groupId },
-      include: {
-        variants: {
-          orderBy: { variant: 'asc' },
-        },
-      },
     });
 
     if (!sourceGroup) {
@@ -592,11 +594,6 @@ async function syncCatalogGroupAttempt(
 
         const group = await tx.workflowGroup.findUnique({
           where: { id: groupId },
-          include: {
-            variants: {
-              orderBy: { variant: 'asc' },
-            },
-          },
         });
 
         if (!group) {
@@ -655,9 +652,6 @@ async function syncCatalogGroupAttempt(
         const duplicatesState = runtimeStates.find(
           (state) => state.descriptor.kind === 'duplicates',
         );
-        const listeningStates = runtimeStates.filter(
-          (state) => state.descriptor.kind === 'listening',
-        );
 
         const baseChanged = Boolean(
           metadataState?.changed || archivedState?.changed,
@@ -666,10 +660,19 @@ async function syncCatalogGroupAttempt(
 
         let metadataRows: CsvRow[] = [];
         let archivedRows: CsvRow[] = [];
+        let unrecognizedHashAlgorithmRows = 0;
 
         if (baseChanged) {
           metadataRows = await parseCsvRows(metadataState!.content!);
           archivedRows = await parseCsvRows(archivedState!.content!);
+
+          unrecognizedHashAlgorithmRows =
+            countUnrecognizedHashAlgorithms(metadataRows);
+          if (unrecognizedHashAlgorithmRows > 0) {
+            console.warn(
+              `[catalog-sync] ${groupId}: ${unrecognizedHashAlgorithmRows} metadata rows have a missing or unknown Hash Algorithm (expected ${AUDIO_HASH_ALGORITHM}); syncing them anyway`,
+            );
+          }
 
           rowCounts[metadataState!.descriptor.sourceKey] = countUniqueHashes(
             metadataRows,
@@ -756,62 +759,6 @@ async function syncCatalogGroupAttempt(
 
           rowCounts[duplicatesState!.descriptor.sourceKey] =
             duplicateRows.length;
-        }
-
-        const listeningRowsByVariant = new Map<
-          string,
-          Array<{
-            workflowGroupId: string;
-            variant: string;
-            audioHash: string;
-            compressedPath: string;
-            compressedAacPath: string | null;
-          }>
-        >();
-
-        for (const listeningState of listeningStates) {
-          if (!listeningState.changed) continue;
-
-          const variant = listeningState.descriptor.variant;
-          if (!variant) continue;
-
-          if (!listeningState.resolvedFilePath) {
-            listeningRowsByVariant.set(variant, []);
-            rowCounts[listeningState.descriptor.sourceKey] = 0;
-            continue;
-          }
-
-          const rows = await parseCsvRows(listeningState.content!);
-          const listeningRows = rows
-            .map((row) => {
-              const audioHash = normalizeHash(
-                getRowValue(row, ['sha256', 'hash', 'Hash']),
-              );
-              const compressedPath = getRowValue(row, [
-                'compressed path',
-                'compressed_path',
-                'path',
-                'Compressed Path',
-              ])?.trim();
-              if (!audioHash || !compressedPath) return null;
-              return {
-                workflowGroupId: groupId,
-                variant,
-                audioHash,
-                compressedPath,
-                compressedAacPath: optionalPath(
-                  getRowValue(row, [
-                    'compressed aac path',
-                    'compressed_aac_path',
-                    'Compressed AAC Path',
-                  ]),
-                ),
-              };
-            })
-            .filter((row): row is NonNullable<typeof row> => row !== null);
-
-          listeningRowsByVariant.set(variant, listeningRows);
-          rowCounts[listeningState.descriptor.sourceKey] = listeningRows.length;
         }
 
         let existingDuplicateCounts = new Map<string, number>();
@@ -969,21 +916,6 @@ async function syncCatalogGroupAttempt(
           }
         }
 
-        for (const listeningState of listeningStates) {
-          if (!listeningState.changed || !listeningState.descriptor.variant)
-            continue;
-
-          const variant = listeningState.descriptor.variant;
-          await tx.catalogListeningEntry.deleteMany({
-            where: { workflowGroupId: groupId, variant },
-          });
-
-          const listeningRows = listeningRowsByVariant.get(variant) ?? [];
-          if (listeningRows.length > 0) {
-            await tx.catalogListeningEntry.createMany({ data: listeningRows });
-          }
-        }
-
         for (const state of changedStates) {
           const sourceKey = state.descriptor.sourceKey;
           const filePath = state.descriptor.filePath ?? '';
@@ -1023,6 +955,9 @@ async function syncCatalogGroupAttempt(
           status: 'success' as const,
           changedSources,
           rowCounts,
+          ...(unrecognizedHashAlgorithmRows > 0 && {
+            unrecognizedHashAlgorithmRows,
+          }),
         };
       },
       {

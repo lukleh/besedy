@@ -91,6 +91,7 @@ export function TranscriptViewer({
   canSeeTranscriptVariants = false,
   canSeeSpeakers = false,
   canCorrectTranscripts = false,
+  onTranscriptChange,
 }: TranscriptViewerProps) {
   const t = useTranslations("transcript");
   const { toast } = useToast();
@@ -226,6 +227,10 @@ export function TranscriptViewer({
         ),
       enabled: !!effectiveBackend,
     });
+
+  useEffect(() => {
+    onTranscriptChange?.(transcript ?? null);
+  }, [transcript, onTranscriptChange]);
 
   const transcriptPlainText = useMemo(() => {
     if (!transcript?.segments?.length) return "";

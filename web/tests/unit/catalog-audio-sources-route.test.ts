@@ -22,12 +22,6 @@ vi.mock("@/lib/audit/logger", () => ({
 
 vi.mock("@/lib/db", () => ({
   default: {
-    workflowVariant: {
-      findMany: vi.fn(),
-    },
-    catalogListeningEntry: {
-      findUnique: vi.fn(),
-    },
     catalogEntry: {
       findUnique: vi.fn(),
     },
@@ -38,8 +32,6 @@ describe("catalog audio sources route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getRecordingCapability: ReturnType<typeof vi.fn>;
   let prisma: {
-    workflowVariant: { findMany: ReturnType<typeof vi.fn> };
-    catalogListeningEntry: { findUnique: ReturnType<typeof vi.fn> };
     catalogEntry: { findUnique: ReturnType<typeof vi.fn> };
   };
 
@@ -67,7 +59,7 @@ describe("catalog audio sources route", () => {
     expect(requireAuth).not.toHaveBeenCalled();
   });
 
-  it("denies access before loading variants", async () => {
+  it("denies access before loading the catalog entry", async () => {
     requireAuth.mockResolvedValue("user-1");
     getRecordingCapability.mockResolvedValue({
       catalogExists: true,
@@ -87,10 +79,10 @@ describe("catalog audio sources route", () => {
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.error).toMatch(/Access denied/);
-    expect(prisma.workflowVariant.findMany).not.toHaveBeenCalled();
+    expect(prisma.catalogEntry.findUnique).not.toHaveBeenCalled();
   });
 
-  it("lists the formats each source can be served in", async () => {
+  it("lists the formats the archived source can be served in", async () => {
     requireAuth.mockResolvedValue("user-1");
     getRecordingCapability.mockResolvedValue({
       catalogExists: true,
@@ -100,20 +92,6 @@ describe("catalog audio sources route", () => {
       compressedPath: "/data/audio/talk_aaaaaaaa.webm",
       compressedAacPath: "/data/audio/talk_aaaaaaaa.m4a",
     });
-    prisma.workflowVariant.findMany.mockResolvedValue([
-      { variant: "enhanced", label: "Enhanced", listeningArchivedCatalogPath: "/c/e.csv" },
-      { variant: "quiet", label: "Quiet", listeningArchivedCatalogPath: "/c/q.csv" },
-      { variant: "missing", label: "Missing", listeningArchivedCatalogPath: "/c/m.csv" },
-    ]);
-    prisma.catalogListeningEntry.findUnique.mockImplementation(
-      async ({ where }: { where: { workflowGroupId_variant_audioHash: { variant: string } } }) => {
-        const variant = where.workflowGroupId_variant_audioHash.variant;
-        if (variant === "enhanced") return { compressedPath: "/x.webm", compressedAacPath: "/x.m4a" };
-        if (variant === "quiet") return { compressedPath: "/q.webm", compressedAacPath: null };
-        return null;
-      },
-    );
-
     const response = await getAudioSources(
       new NextRequest(
         `http://localhost/api/catalogs/20250101_120000/recordings/${"a".repeat(64)}/audio/sources`,
@@ -129,12 +107,7 @@ describe("catalog audio sources route", () => {
         source.available,
         source.formats,
       ]),
-    ).toEqual([
-      ["archived", true, ["webm", "aac"]],
-      ["listening:enhanced", true, ["webm", "aac"]],
-      ["listening:quiet", true, ["webm"]],
-      ["listening:missing", false, []],
-    ]);
+    ).toEqual([["archived", true, ["webm", "aac"]]]);
     // No server path leaves the route.
     expect(JSON.stringify(body)).not.toContain(".m4a");
   });
@@ -146,7 +119,6 @@ describe("catalog audio sources route", () => {
       compressedPath: "/data/audio/talk_aaaaaaaa.webm",
       compressedAacPath: null,
     });
-    prisma.workflowVariant.findMany.mockResolvedValue([]);
 
     const response = await getAudioSources(
       new NextRequest(
@@ -165,7 +137,6 @@ describe("catalog audio sources route", () => {
     requireAuth.mockResolvedValue("user-1");
     getRecordingCapability.mockResolvedValue({ catalogExists: true, canAccessRecording: true });
     prisma.catalogEntry.findUnique.mockResolvedValue({ compressedPath: null, compressedAacPath: null });
-    prisma.workflowVariant.findMany.mockResolvedValue([]);
 
     const response = await getAudioSources(
       new NextRequest(

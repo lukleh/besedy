@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/responsive-select";
 import { AudioPlayer } from "@/components/player/audio-player";
 import { TranscriptStreamViewer } from "@/components/transcript/transcript-stream-viewer";
-import { TranscriptViewer } from "@/components/transcript/transcript-viewer";
+import { TranscriptViewer, type Transcript } from "@/components/transcript/transcript-viewer";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -75,6 +75,11 @@ interface RecordingAudioSectionProps {
   audioSource: string;
   audioUrl: string;
   autoPlayOnSeek: boolean;
+  /** Shown under the player's own controls. */
+  bookmarksPanel?: ReactNode;
+  bookmarkMarkers?: readonly number[];
+  /** Shows the player's bookmark button. */
+  onBookmark?: () => void;
   catalogId: string;
   downloadEventId?: number;
   currentTimeSetter: (time: number) => void;
@@ -107,6 +112,7 @@ interface RecordingTranscriptSectionProps {
   isPlaying: boolean;
   onSeek: (time: number) => void;
   onToggleTranscriptStream: (value: boolean) => void;
+  onTranscriptChange?: (transcript: Transcript | null) => void;
   showTranscriptStream: boolean;
 }
 
@@ -256,6 +262,9 @@ export function RecordingAudioSection({
   audioSource,
   audioUrl,
   autoPlayOnSeek,
+  bookmarksPanel,
+  bookmarkMarkers,
+  onBookmark,
   catalogId,
   downloadEventId,
   currentTimeSetter,
@@ -320,6 +329,8 @@ export function RecordingAudioSection({
         seekKey={seekRequest?.key}
         playbackEnd={seekRequest?.end}
         autoPlayOnSeek={autoPlayOnSeek}
+        markers={bookmarkMarkers}
+        onBookmark={onBookmark}
         mediaMetadata={{
           title: headingText,
           artist: recording.curatedArtist ?? recording.artist ?? undefined,
@@ -366,6 +377,8 @@ export function RecordingAudioSection({
         </div>
       )}
 
+      {bookmarksPanel}
+
       {afterAudioPlayer}
     </div>
   );
@@ -383,6 +396,7 @@ export function RecordingTranscriptSection({
   isPlaying,
   onSeek,
   onToggleTranscriptStream,
+  onTranscriptChange,
   showTranscriptStream,
 }: RecordingTranscriptSectionProps) {
   const t = useTranslations();
@@ -455,6 +469,7 @@ export function RecordingTranscriptSection({
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}
           canCorrectTranscripts={canCorrectTranscripts}
+          onTranscriptChange={onTranscriptChange}
         />
       )}
     </div>

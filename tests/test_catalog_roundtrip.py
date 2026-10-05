@@ -26,6 +26,7 @@ from besedy.lib.catalog.manager import (
     write_catalog_csv,
     write_merged_csv,
 )
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
 class TestFormatSize:
@@ -104,7 +105,7 @@ class TestFileRecordToRow:
     def sample_record(self, tmp_path):
         """Create a sample FileRecord."""
         return FileRecord(
-            hash="abc123def456",
+            hash=SAMPLE_AUDIO_HASH,
             filename="test.wav",
             full_path=tmp_path / "test.wav",
             hash_file=tmp_path / "test.wav.audiohash",
@@ -125,7 +126,7 @@ class TestFileRecordToRow:
         row = file_record_to_row(sample_record, columns)
 
         assert isinstance(row, dict)
-        assert row["Hash"] == "abc123def456"
+        assert row["Hash"] == SAMPLE_AUDIO_HASH
         assert row["Filename"] == "test.wav"
         assert row["Status"] == "EXISTS"
 

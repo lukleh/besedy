@@ -544,7 +544,6 @@ class TestRunPipelineCommand:
         )  # resolved downstream via resolve_default_colbert_model()
         assert args.rag_colbert_doc_maxlen == 384
         assert args.rag_colbert_index_bsize == 32
-        assert args.rag_colbert_use_faiss is False
         assert args.rag_colbert_runtime is None
         assert args.rag_min_chunk_tokens == 180
         assert args.rag_max_chunk_tokens == 260
@@ -582,7 +581,7 @@ class TestRunPipelineCommand:
                 "run-pipeline",
                 "--skip-rag-colbert-index",
                 "--rag-backend",
-                "faster-whisper/large-v3@silero_vad_v6",
+                "faster-whisper/large-v3@silero_vad_v6@lang-cs",
                 "--rag-all-backends",
                 "--rag-force",
                 "--rag-colbert-index-dir",
@@ -595,7 +594,6 @@ class TestRunPipelineCommand:
                 "512",
                 "--rag-colbert-index-bsize",
                 "16",
-                "--rag-colbert-use-faiss",
                 "--rag-colbert-runtime",
                 "docker-indexer",
                 "--rag-min-chunk-tokens",
@@ -607,7 +605,7 @@ class TestRunPipelineCommand:
             ]
         )
         assert args.skip_rag_colbert_index is True
-        assert args.rag_backend == "faster-whisper/large-v3@silero_vad_v6"
+        assert args.rag_backend == "faster-whisper/large-v3@silero_vad_v6@lang-cs"
         assert args.rag_all_backends is True
         assert args.rag_force is True
         assert args.rag_colbert_index_dir == Path("tmp/rag-colbert")
@@ -615,7 +613,6 @@ class TestRunPipelineCommand:
         assert args.rag_chunk_tokenizer_model == "acme/chunk-tokenizer"
         assert args.rag_colbert_doc_maxlen == 512
         assert args.rag_colbert_index_bsize == 16
-        assert args.rag_colbert_use_faiss is True
         assert args.rag_colbert_runtime == "docker-indexer"
         assert args.rag_min_chunk_tokens == 150
         assert args.rag_max_chunk_tokens == 250
@@ -781,7 +778,6 @@ class TestRagColbertIndexCommand:
         assert args.doc_maxlen == 384
         assert args.index_bsize == 32
         assert args.runtime is None
-        assert args.use_faiss is False
         assert args.target_audio_hash is None
         assert args.rebuild is False
         assert args.min_chunk_tokens == 180

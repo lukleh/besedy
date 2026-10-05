@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LexicalMatchModeSchema } from '@/app/api/catalogs/[id]/search/search-route-helpers';
+import { LexicalMatchModeSchema } from '@/lib/search/search-helpers';
 import { HashSchema } from '@/lib/validation/schemas';
 
 const CatalogIdSchema = z

@@ -155,6 +155,16 @@ class TestConfTestFixtures:
         transcripts = list(mock_transcripts_dir.rglob("transcript.json"))
         assert len(transcripts) >= 1
 
+    def test_mock_transcripts_dir_uses_the_current_layout(self, mock_transcripts_dir):
+        """Output components end in @lang-<code> and the leaf is a full audio hash."""
+        import re
+
+        for transcript in mock_transcripts_dir.rglob("transcript.json"):
+            leaf = transcript.parent.name
+            component = transcript.parent.parent.name
+            assert re.fullmatch(r"[0-9a-f]{64}", leaf), transcript
+            assert re.search(r"@lang-(auto|[a-z]{2,3})$", component), transcript
+
     def test_sample_audio_catalog_csv_fixture(self, sample_audio_catalog_csv):
         """sample_audio_catalog_csv fixture creates valid CSV."""
         assert sample_audio_catalog_csv.exists()

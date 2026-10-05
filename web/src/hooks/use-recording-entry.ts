@@ -63,6 +63,8 @@ export function useRecordingEntry({
         () => readLocalRecordingEntry(catalogId, hash)
       ),
     enabled,
+    // The page cannot play until this answers, so a failure shows at once
+    // instead of after the retry backoff (also for 5xx and network errors).
     retry: false,
     ...AUTH_SENSITIVE_QUERY_OPTIONS,
   });
