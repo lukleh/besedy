@@ -45,6 +45,8 @@ interface RecordingContentProps {
   headerActions?: ReactNode;
   headerIdentity?: ReactNode;
   hideDefaultRecorder?: boolean;
+  /** The page offers metadata editing elsewhere, as the event page's edit menu does. */
+  hideMetadataEdit?: boolean;
   skipCatalogValidation?: boolean;
 }
 
@@ -119,6 +121,7 @@ export default function RecordingContent({
   headerActions,
   headerIdentity,
   hideDefaultRecorder = false,
+  hideMetadataEdit = false,
   skipCatalogValidation = false,
 }: RecordingContentProps) {
   // Owns recording-detail query orchestration and state selection, while
@@ -280,6 +283,7 @@ export default function RecordingContent({
         catalogId={catalogId}
         backToListUrl={backToListUrl}
         afterAudioPlayer={afterAudioPlayer}
+        headerActions={headerActions}
       />
     );
   }
@@ -291,6 +295,7 @@ export default function RecordingContent({
         catalogId={catalogId}
         backToListUrl={backToListUrl}
         afterAudioPlayer={afterAudioPlayer}
+        headerActions={headerActions}
       />
     );
   }
@@ -302,6 +307,7 @@ export default function RecordingContent({
         catalogId={catalogId}
         backToListUrl={backToListUrl}
         afterAudioPlayer={afterAudioPlayer}
+        headerActions={headerActions}
       />
     );
   }
@@ -361,6 +367,7 @@ export default function RecordingContent({
         onSeek={handlePlayerSeek}
         onSourceChange={handleSourceChange}
         permissions={data ?? {}}
+        hideMetadataEdit={hideMetadataEdit}
         recording={recording}
         savedSourceId={savedPreference?.sourceId ?? null}
         seekRequest={seekRequest}

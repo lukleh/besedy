@@ -1654,10 +1654,14 @@
       "retry": "Try again",
       "unknownError": "Unknown error",
       "eventFallbackTitle": "Event {id}",
-      "recordingCount": "{count, plural, one {# recording} other {# recordings}}",
-      "released": "Released",
       "unreleased": "Unreleased",
       "editEvent": "Edit Event",
+      "editMenu": {
+        "eventDetails": "Event details",
+        "recordingMetadata": "Recording metadata",
+        "artwork": "Artwork",
+        "sources": "Sources"
+      },
       "selectRecorder": "Select recorder",
       "recordingsMenuTitle": "Recordings",
       "unknownRecorder": "Unknown recorder",

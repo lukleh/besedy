@@ -40,6 +40,7 @@ export interface EventDetailResponse {
   canManageArtwork?: boolean;
   canPublishArtwork?: boolean;
   canManageSources?: boolean;
+  canEditMetadata?: boolean;
   artworkStatus?: EventArtworkStatus;
   publishedArtwork?: {
     id: string;

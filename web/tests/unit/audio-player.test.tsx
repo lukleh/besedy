@@ -120,6 +120,11 @@ function setAudioError(audio: HTMLAudioElement, code: number) {
   });
 }
 
+// load() clears the element's error; a retry that recovers on its own does too.
+function clearAudioError(audio: HTMLAudioElement) {
+  Object.defineProperty(audio, "error", { value: null, configurable: true });
+}
+
 function mockPaused(audio: HTMLAudioElement, initial: boolean) {
   let paused = initial;
   Object.defineProperty(audio, "paused", {
@@ -403,6 +408,7 @@ describe("AudioPlayer bounded playback", () => {
       audio.dispatchEvent(new Event("error"));
     });
     setPaused(true);
+    clearAudioError(audio);
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));
     });
@@ -479,6 +485,17 @@ describe("AudioPlayer retry logic", () => {
     // Simulate the decoder reporting its old position as recovery completes;
     // a request to zero must still be restored, not treated as no request.
     audio.currentTime = 25;
+    if (phase === "scheduled") {
+      // The connection is still down, so a canplay on the errored element is
+      // the seek landing in buffered data, not recovery: the timer stays.
+      await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+      expect(audio.play).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(1);
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      clearAudioError(audio);
+      await loadMetadata(audio);
+      audio.currentTime = 25;
+    }
     await act(async () => { audio.dispatchEvent(new Event("canplay")); });
     expect(audio.currentTime).toBe(target);
     expect(audio.play).toHaveBeenCalledTimes(2);
@@ -505,6 +522,41 @@ describe("AudioPlayer retry logic", () => {
     await loadMetadata(audio);
     await act(async () => { audio.dispatchEvent(new Event("canplay")); });
     expect(audio.currentTime).toBe(30);
+  });
+
+  it("does not treat a canplay from a seek into buffered data as recovery while the error is set", async () => {
+    vi.useFakeTimers();
+    const { audio, container } = renderPlayer();
+    audio.play = vi.fn().mockResolvedValue(undefined);
+    audio.load = vi.fn();
+    await loadMetadata(audio);
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[aria-label="Play"]')!);
+    });
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    expect(vi.getTimerCount()).toBe(1);
+
+    // The connection is down but the element still has buffered data: seeking
+    // into it fires canplay on the still-errored element.
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-testid="audio-skip-forward"]')!);
+    });
+    await act(async () => { audio.dispatchEvent(new Event("canplay")); });
+
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+
+    // The pending retry still fires at its original deadline, and when the
+    // reload fails the next attempt keeps counting (2 s, not a fresh 1 s).
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(audio.load).toHaveBeenCalledTimes(1);
+    setAudioError(audio, 2);
+    await act(async () => { audio.dispatchEvent(new Event("error")); });
+    await act(async () => { vi.advanceTimersByTime(1999); });
+    expect(audio.load).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(audio.load).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the existing retry deadline when the user seeks", async () => {
@@ -566,7 +618,9 @@ describe("AudioPlayer retry logic", () => {
     // timer) and fails again before React re-renders: phase, attempt and
     // delay come out exactly as before, so only the new schedule id re-arms.
     act(() => {
+      clearAudioError(audio);
       audio.dispatchEvent(new Event("canplay"));
+      setAudioError(audio, 2);
       audio.dispatchEvent(new Event("error"));
     });
     act(() => {
@@ -646,9 +700,10 @@ describe("AudioPlayer retry logic", () => {
       audio.dispatchEvent(new Event("error"));
     });
 
-    // After error, audio is reset
+    // After error, audio is reset and the browser recovers on its own
     audio.currentTime = 0;
     setPaused(true);
+    clearAudioError(audio);
 
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));
@@ -688,6 +743,7 @@ describe("AudioPlayer retry logic", () => {
 
     audio.currentTime = 0;
     setPaused(true);
+    clearAudioError(audio);
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));
     });
@@ -724,6 +780,7 @@ describe("AudioPlayer retry logic", () => {
       audio.dispatchEvent(new Event("error"));
     });
     setPaused(true);
+    clearAudioError(audio);
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));
     });
@@ -867,6 +924,7 @@ describe("AudioPlayer retry logic", () => {
     });
 
     // Before the retry timer elapses, the browser recovers on its own.
+    clearAudioError(audio);
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));
     });
@@ -1004,6 +1062,9 @@ describe("AudioPlayer retry logic", () => {
     currentSrc = "https://example.com/other.mp3";
     audio.currentTime = 0;
     setPaused(true);
+    // Loading the new source cleared the error, so only the src guard stands
+    // between this canplay and the old recording's resume state.
+    clearAudioError(audio);
 
     await act(async () => {
       audio.dispatchEvent(new Event("canplay"));

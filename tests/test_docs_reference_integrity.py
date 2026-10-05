@@ -8,7 +8,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_TO_CHECK = [
     REPO_ROOT / "README.md",
     REPO_ROOT / "AGENTS.md",
-    REPO_ROOT / ".claude" / "README.md",
     REPO_ROOT / "docs" / "README.md",
     REPO_ROOT / "docs" / "adr" / "README.md",
     REPO_ROOT / "docs" / "adr" / "0001-audio-identity.md",
@@ -141,7 +140,6 @@ def _active_docs_for_archive_link_check() -> list[Path]:
     active_docs = [
         REPO_ROOT / "README.md",
         REPO_ROOT / "AGENTS.md",
-        REPO_ROOT / ".claude" / "README.md",
     ]
     active_docs.extend(path for path in docs_root.rglob("*.md") if "archive" not in path.parts)
     return active_docs

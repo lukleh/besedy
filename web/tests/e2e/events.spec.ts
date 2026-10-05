@@ -158,13 +158,24 @@ test.describe("Event Catalog", () => {
 
     // The event detail page embeds the primary recording's player and
     // surfaces the event metadata in a side panel. Verify the seeded event
-    // title is present as metadata and the edit-event link is reachable.
+    // title is present as metadata and the edit menu leads to the editor.
     await expect(
       page.getByText(TEST_EVENTS[0].title).filter({ visible: true }).first()
     ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("link", { name: /edit event/i })).toBeVisible({
-      timeout: 10000,
-    });
+    await page
+      .getByRole("button", { name: /edit event/i })
+      .filter({ visible: true })
+      .click();
+    // A dropdown item on desktop, a plain link in the mobile drawer.
+    const eventDetailsEntry = page
+      .getByRole("menuitem", { name: /event details/i })
+      .or(page.getByRole("link", { name: /event details/i }))
+      .filter({ visible: true });
+    await expect(eventDetailsEntry).toHaveAttribute(
+      "href",
+      `/catalog/${TEST_CATALOG_ID}/event/${eventId}/edit`,
+      { timeout: 10000 }
+    );
   });
 
   test("events tab selection persists after reload", async ({ page }) => {
