@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from besedy.config.settings import PathsConfig, _load_transcription_workflows
+from besedy.config.settings import _load_config, _load_transcription_workflows
 from besedy.lib.workflow.language import (
     language_output_component,
     normalize_config_language,
@@ -94,8 +96,21 @@ def test_whisperx_rejects_auto_language_with_fixed_alignment_model() -> None:
         )
 
 
-def test_deprecated_decoded_audio_dir_key_is_dropped_from_paths_config() -> None:
-    paths = PathsConfig(transcripts_dir="t", speaker_clusters_dir="s")
+def test_config_with_the_retired_decoded_audio_dir_key_still_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The path helpers in besedy/core/paths_runtime.py turn any config-load
+    # error into a "root is required" message or a silent default, so a
+    # restored older config must keep loading rather than fail on this key.
+    example = (Path(__file__).parents[1] / "besedy.toml.example").read_text(encoding="utf-8")
+    config_path = tmp_path / "besedy.toml"
+    config_path.write_text(
+        example.replace("[paths]\n", '[paths]\ndecoded_audio_dir = "decoded_audio"\n', 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BESEDY_CONFIG", str(config_path))
+
+    paths = _load_config().paths
 
     assert not hasattr(paths, "decoded_audio_dir")
 

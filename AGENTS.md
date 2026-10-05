@@ -209,7 +209,8 @@ manages workflow-group records themselves.
   `<workflow>/<output-component>/<audio_hash>/transcript.json` (sidecars
   `transcript.txt|srt|vtt`). Every transcription output component ends in
   `@lang-<code>` or `@lang-auto`; omitted `language` defaults to `cs` and uses
-  `@lang-cs`. Older unsuffixed Czech trees require migration.
+  `@lang-cs`. Older unsuffixed Czech trees are no longer written; renaming
+  them follows `docs/migrations/renaming-a-transcript-backend-key.md`.
 - The active audio-preparation path is loudness analysis followed by
   `stage-audio`; `run-pipeline` orchestrates it automatically.
 

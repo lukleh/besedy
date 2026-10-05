@@ -231,7 +231,8 @@ prompts require a concrete language code, so the example configuration keeps
 
 Entries that omit `language` keep the historical forced-Czech behavior
 (`"cs"`) and write `@lang-cs` output paths. Older unsuffixed Czech transcripts
-require [migration](docs/migrations/explicit-czech-transcript-paths.md);
+are no longer written (see
+[Renaming a transcript backend key](docs/migrations/renaming-a-transcript-backend-key.md));
 automatic detection is always an explicit opt-in. When WhisperX
 uses automatic detection, omit `align_model` so WhisperX can select an
 alignment model for the detected language. See
@@ -364,7 +365,7 @@ If an existing web deployment sets `RAG_BACKEND_KEY`, update it to the matching
 language-aware backend key (for the default Czech workflow,
 `faster-whisper/large-v3@silero_vad_v6@lang-cs`). Repository defaults and
 environment templates use that key; private env files are not rewritten. See
-[the Czech path migration](docs/migrations/explicit-czech-transcript-paths.md)
+[Renaming a transcript backend key](docs/migrations/renaming-a-transcript-backend-key.md)
 before changing a deployed backend key.
 
 ## Optional: Backend Image Builds
