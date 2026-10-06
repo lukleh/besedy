@@ -120,6 +120,9 @@ copying command tables or test-user matrices into provider-specific files.
 - Examples: `uv run pytest -m "not slow" -q`, `uv run pytest tests/test_cli_parser.py::TestCatalogParserStructure::test_subcommand_names -v`.
 - Web unit tests: `npm run test` (from `web/`)
 - Web E2E tests: `npm run test:e2e` (Docker-based, uses port 3002; production build with security hardening)
+- CI runs `npm run test:e2e:smoke` and `just mcp-smoke` nightly against
+  `web/.env.test.example` (`.github/workflows/e2e-nightly.yml`, also on demand);
+  a change to that workflow file runs it on its own PR.
 
 ### Web E2E Commands (Playwright)
 ```bash
