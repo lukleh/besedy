@@ -1,5 +1,6 @@
 # Exact package set of the besedy/colbert:local image built on 2026-08-28
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
+# 2026-10-06: security patch bumps of non-model packages, pip check clean.
 # Top-level: pylate==1.4.0 einops psutil python-dotenv (cu128 extra index)
 --extra-index-url https://download.pytorch.org/whl/cu128
 accelerate==1.14.0
@@ -29,7 +30,7 @@ joblib==1.5.3
 MarkupSafe==3.0.3
 maturin==1.15.0
 mpmath==1.3.0
-multidict==6.7.1
+multidict==6.9.1
 multiprocess==0.70.19
 narwhals==2.25.0
 networkx==3.6.1
@@ -79,7 +80,7 @@ transformers==4.56.2
 triton==3.5.0
 typing_extensions==4.16.0
 ujson==5.10.0
-urllib3==2.7.0
+urllib3==2.8.0
 wheel==0.48.0
 xxhash==4.0.1
 yarl==1.24.5
