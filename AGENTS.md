@@ -60,6 +60,10 @@ copying command tables or test-user matrices into provider-specific files.
   3.12-only syntax (`type X = …`, PEP 695 generics) in code they import. It
   checks syntax only; 3.12-only library calls (for example
   `itertools.batched`) still fail at run time in those images.
+- `uv run pytest tests/test_pipeline_end_to_end.py`: `catalog create` →
+  `run-pipeline` on generated audio with real ffmpeg, faking only the backend
+  containers; CI runs it in its own step. When a step's outputs or a backend's
+  argv change, keep its fake (`FakeBackends`) in line.
 - `just web-check`: TypeScript + ESLint + web unit tests
 - Always run Python code via `uv run python ...` (instead of plain `python ...`) unless using a `just` wrapper.
 - Optional pre-commit (Ruff): `uv tool install pre-commit && pre-commit install` (config in `ruff.toml`)
