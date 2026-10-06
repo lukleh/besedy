@@ -427,13 +427,6 @@ export const UpdatePreferencesSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
 });
 
-/**
- * Update audio source preference
- */
-export const UpdateAudioSourceSchema = z.object({
-  audioSource: AudioSourceSchema,
-});
-
 // =============================================================================
 // Pagination
 // =============================================================================

@@ -106,10 +106,10 @@ package downloaded earlier on the same device is not touched by the AAC one's
 cleanup, and it still counts as the download of that source: the page keeps
 playing it rather than streaming the copy, which a service worker from before
 the `format` key would otherwise answer with that WebM package in 4 MiB pieces.
-On WebKit the player waits for `/audio/sources` and the saved source preference
-before it starts, so it never begins on the WebM of a recording that has a copy;
-the wait is skipped when a complete download will play, and ends after 3 s, when
-the player starts on the WebM. A WebM download that was paused before the copy
+On WebKit the player waits for `/audio/sources` before it starts, so it never
+begins on the WebM of a recording that has a copy; the wait is skipped when a
+complete download will play, and ends after 3 s, when the player starts on the
+WebM. A WebM download that was paused before the copy
 existed restarts from the beginning as the copy when it is resumed (the key
 differs), on purpose: finishing it would leave a package Safari cannot stream.
 The radio asks for the copy only after the controlling service worker confirms it

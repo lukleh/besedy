@@ -22,6 +22,8 @@ import { OFFLINE_CACHE_NAMES } from '@/lib/offline/cache-names';
 const HASH = 'c'.repeat(64);
 const OTHER_HASH = 'd'.repeat(64);
 const CATALOG = '20260101_000000';
+// Only the catalog-scoped transcript routes; the removed /api/transcript/:hash gets no answer.
+const TRANSCRIPT_PATH = new RegExp(`^/api/catalogs/${CATALOG}/recordings/[a-f0-9]{64}/transcript(/|$)`);
 const CHUNK = 2 * 1024 * 1024;
 const AUDIO_SIZE = CHUNK * 2 + 1234;
 
@@ -201,7 +203,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
           },
         });
       }
-      if (pathname.includes('/transcript')) {
+      if (TRANSCRIPT_PATH.test(pathname)) {
         if (pathname.endsWith('/speakers'))
           return json({ hash: HASH, backends: [] });
         if (pathname.endsWith('/formats'))

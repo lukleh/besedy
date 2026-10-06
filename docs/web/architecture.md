@@ -361,7 +361,8 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 | Recording | `/catalog/[catalogId]/recording/[hash]` | Catalog access, release-scoped (transcripts: `read_transcripts`) |
 | Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | `edit_metadata` |
 | Correction | `/catalog/[catalogId]/recording/[hash]/correction` | `correct_transcripts`; the working surface for a recording in correction scope (ADR 0006) |
-| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config` |
+| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config`; lookups card needs `manage_lookups` and an active catalog |
+| Catalog Lookups | `/catalog/[catalogId]/settings/metadata/{recorders,locations,albums}` | `manage_lookups` on an active catalog; without it redirects to `/catalog/[catalogId]`; an inactive catalog is not found |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
 | Admin Ingest | `/admin/ingest` | Admin |
