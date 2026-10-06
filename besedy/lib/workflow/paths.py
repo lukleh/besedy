@@ -282,9 +282,7 @@ def missing_pipeline_transcripts(csv_path: Path, audio_hash: str) -> list[Path]:
     transcripts_run_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
     hash_component = hash_component_from_sha(audio_hash)
     expected = [
-        path_builder(workflow).workflow_dir(transcripts_run_root)
-        / hash_component
-        / "transcript.json"
+        path_builder(workflow).artifact_path(hash_component, transcripts_run_root)
         for workflow in get_transcription_workflows(pipeline_only=True)
     ]
     return [path for path in expected if not path.is_file()]

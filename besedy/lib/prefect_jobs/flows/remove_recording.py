@@ -18,6 +18,7 @@ from prefect import flow, task
 
 from besedy.lib.catalog.remover import normalize_audio_hash
 from besedy.lib.internal_ingest_client import IngestCompletionStatus, IngestProgressReport
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 from ..json_types import JsonDict
 from .ingest_recording import (
@@ -68,6 +69,10 @@ def refresh_derived_stores(catalog_csv: str, intake_id: str) -> str | None:
             progress=progress_reporter(intake_id),
         )
     except IngestFlowError as exc:
+        if exc.return_code == EXIT_ROWS_SKIPPED:
+            # Other catalog rows were skipped; every step, including the
+            # ColBERT prune and cluster-speakers, still ran.
+            return None
         return str(exc)
     return None
 

@@ -29,9 +29,9 @@ host worker (work pool besedy-ingest-<env>, concurrency 1)
          no  ─▶ move to <uploads>/<catalog>/accepted/<intake>/<name>.<ext> (+ .audiohash)
     3. python -m besedy.cli.catalog add <uploads>/<catalog>/accepted/<intake> --csv <csv> --no-symlink
     4. python -m besedy.cli.catalog run-pipeline --csv <csv> --no-symlink
-       (exit 2 = other rows were skipped: accepted when the upload has a
-        transcript.json for every pipeline transcription workflow, otherwise
-        run_pipeline_failed naming the hash)
+       (exit 2 = other rows were skipped: accepted when the upload has a row
+        in the archived manifest and a transcript.json for every pipeline
+        transcription workflow, otherwise run_pipeline_failed naming the hash)
        (CLI children run with PYTHONUNBUFFERED=1; every `[N/M] step...` header
         line, and the duplicate check and catalog add before it, is sent to
         POST web /api/internal/ingest/<intake>/progress {step, total, label}

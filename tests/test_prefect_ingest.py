@@ -511,8 +511,14 @@ def test_flow_accepts_new_recording_and_runs_cli(monkeypatch, tmp_path: Path) ->
     assert reports == [(INTAKE_ID, result)]
 
 
+def _write_archived(paths: ingest_module.IngestPaths, hashes: list[str]) -> None:
+    archived = paths.catalog_csv.with_name(f"{paths.catalog_csv.stem}_loudness_archived.csv")
+    _write_catalog(archived, hashes)
+
+
 def test_flow_succeeds_when_only_other_rows_were_skipped(monkeypatch, tmp_path: Path) -> None:
     paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    _write_archived(paths, [KNOWN_HASH, NEW_HASH])
     checked: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         ingest_module,
@@ -529,6 +535,21 @@ def test_flow_succeeds_when_only_other_rows_were_skipped(monkeypatch, tmp_path: 
     assert reports == [(INTAKE_ID, result)]
 
 
+def test_flow_fails_when_the_upload_was_transcribed_but_not_archived(
+    monkeypatch, tmp_path: Path
+) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    _write_archived(paths, [KNOWN_HASH])
+    monkeypatch.setattr(ingest_module, "missing_pipeline_transcripts", lambda *_a: [])
+
+    with pytest.raises(ingest_module.IngestFlowError) as failure:
+        _run_flow(monkeypatch, paths, audio_hash=NEW_HASH, pipeline_exit=2)
+
+    assert failure.value.error_code == "run_pipeline_failed"
+    assert NEW_HASH in str(failure.value)
+    assert "archived copy" in str(failure.value)
+
+
 @pytest.mark.parametrize(
     ("pipeline_exit", "missing", "checks_transcripts"),
     [(2, ["transcripts/faster-whisper/x/transcript.json"], True), (1, [], False)],
@@ -537,6 +558,7 @@ def test_flow_fails_when_the_pipeline_did_not_process_the_upload(  # type: ignor
     monkeypatch, tmp_path: Path, pipeline_exit: int, missing: list[str], checks_transcripts: bool
 ) -> None:
     paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    _write_archived(paths, [KNOWN_HASH, NEW_HASH])
     checked: list[str] = []
     monkeypatch.setattr(
         ingest_module,
@@ -742,7 +764,9 @@ def test_service_submits_removal_on_the_ingest_pool(tmp_path: Path) -> None:
     }
 
 
-def _run_removal_flow(monkeypatch, paths, *, refresh_error: str | None = None):  # type: ignore[no-untyped-def]
+def _run_removal_flow(  # type: ignore[no-untyped-def]
+    monkeypatch, paths, *, refresh_error: str | None = None, refresh_return_code: int | None = None
+):
     from besedy.lib.prefect_jobs.flows import remove_recording as remove_module
 
     cli_calls: list[list[str]] = []
@@ -752,7 +776,9 @@ def _run_removal_flow(monkeypatch, paths, *, refresh_error: str | None = None): 
     def fake_cli(args, *, stage, **_k):  # type: ignore[no-untyped-def]
         cli_calls.append([stage, *args])
         if stage == "run_pipeline" and refresh_error:
-            raise remove_module.IngestFlowError(refresh_error, error_code="run_pipeline_failed")
+            raise remove_module.IngestFlowError(
+                refresh_error, error_code="run_pipeline_failed", return_code=refresh_return_code
+            )
 
     monkeypatch.setattr(remove_module, "resolve_ingest_paths", lambda *_a, **_k: paths)
     monkeypatch.setattr(remove_module, "run_catalog_cli", fake_cli)
@@ -820,6 +846,23 @@ def test_removal_flow_reports_removed_with_warning_when_refresh_fails(
     assert result["status"] == "REMOVED"
     assert result["errorCode"] == "derived_refresh_failed"
     assert "code 1" in str(result["errorMessage"])
+    assert reports == [result]
+
+
+def test_removal_flow_does_not_warn_when_the_refresh_only_skipped_other_rows(
+    monkeypatch, tmp_path: Path
+) -> None:
+    paths = _layout(tmp_path, hashes=[NEW_HASH])
+
+    result, _cli_calls, reports = _run_removal_flow(
+        monkeypatch,
+        paths,
+        refresh_error="run_pipeline exited with code 2.",
+        refresh_return_code=2,
+    )
+
+    assert result["status"] == "REMOVED"
+    assert result["errorCode"] is None
     assert reports == [result]
 
 

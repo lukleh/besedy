@@ -358,11 +358,12 @@ def catalog_add(accepted_dir: str, catalog_csv: str, intake_id: str) -> None:
 
 @task
 def run_pipeline(catalog_csv: str, intake_id: str, audio_hash: str) -> None:
-    """Run the pipeline over the whole catalog and require the upload's transcripts.
+    """Run the pipeline over the whole catalog and require the upload's own outputs.
 
     Exit 2 means other rows were skipped (for example an older recording whose
     source is gone); that must not fail this upload, as long as the upload
-    itself was transcribed by every pipeline transcription workflow.
+    itself was archived for playback and transcribed by every pipeline
+    transcription workflow.
     """
     try:
         run_catalog_cli(
@@ -373,18 +374,31 @@ def run_pipeline(catalog_csv: str, intake_id: str, audio_hash: str) -> None:
     except IngestFlowError as exc:
         if exc.return_code != EXIT_ROWS_SKIPPED:
             raise
-        missing = missing_pipeline_transcripts(Path(catalog_csv), audio_hash)
+        missing = upload_missing_outputs(Path(catalog_csv), audio_hash)
         if missing:
-            listed = ", ".join(str(path) for path in missing)
             raise IngestFlowError(
-                f"run_pipeline skipped this upload ({audio_hash}): no transcript at {listed}.\n{exc}",
+                f"run_pipeline skipped this upload ({audio_hash}); missing {', '.join(missing)}."
+                f"\n{exc}",
                 error_code="run_pipeline_failed",
                 return_code=exc.return_code,
             ) from exc
         print(
             "[run_pipeline] Some other catalog rows were skipped; "
-            f"the upload {audio_hash} has every pipeline transcript."
+            f"the upload {audio_hash} was archived and transcribed."
         )
+
+
+def upload_missing_outputs(catalog_csv: Path, audio_hash: str) -> list[str]:
+    """Describe what run-pipeline did not produce for the upload; empty if nothing.
+
+    The archived manifest (``<catalog>_loudness_archived.csv``) lists only the
+    rows archive actually encoded, so a row there is the upload's playback copy.
+    """
+    missing = [str(path) for path in missing_pipeline_transcripts(catalog_csv, audio_hash)]
+    archived_csv = catalog_csv.with_name(f"{catalog_csv.stem}_loudness_archived.csv")
+    if not archived_csv.is_file() or audio_hash.lower() not in catalog_hashes(archived_csv):
+        missing.append(f"the archived copy (no row in {archived_csv.name})")
+    return missing
 
 
 @task(retries=3, retry_delay_seconds=[5, 15, 45], retry_condition_fn=_should_retry_report)
