@@ -24,6 +24,7 @@ from besedy.commands.catalog.pipeline import (
 from besedy.commands.catalog.pipeline_rag import default_pipeline_rag_backend_key
 from besedy.commands.catalog.rag_colbert_index import RagColbertIndexRequest
 from besedy.lib.rag_chunk_corpus import slugify_backend_key
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from tests.helpers.workflows import make_workflow_config
 
 
@@ -265,6 +266,98 @@ def test_run_pipeline_owns_speaker_clustering(
     assert len(diarize_calls) == 1
     assert not hasattr(diarize_calls[0], "skip_cluster")
     assert len(cluster_calls) == expected_cluster_calls
+
+
+PER_ROW_STEPS = ("stage-audio", "archive", "transcribe", "diarize", "export-transcripts")
+
+
+def _stub_every_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, results: dict[str, int]
+) -> list[str]:
+    """Stub every pipeline step; return the list the steps append their names to."""
+    timestamp = "20260102_030405"
+    csv_path = tmp_path / f"audio_catalog_{timestamp}.csv"
+    csv_path.write_text("Hash,Full Path\n", encoding="utf-8")
+    calls: list[str] = []
+
+    def step(name: str):  # type: ignore[no-untyped-def]
+        return lambda _request: calls.append(name) or results.get(name, 0)
+
+    workflow = WorkflowConfig(
+        workflow_id="faster-whisper",
+        workflow_type="transcription",
+        workflow_label="faster-whisper",
+        model_name="large-v3",
+        vad_model="silero_vad_v6",
+    )
+    monkeypatch.setattr(pipeline, "resolve_pipeline_workflows", lambda: ([workflow], ["pyannote"]))
+    monkeypatch.setattr(pipeline, "resolve_catalog_csv", lambda *_args, **_kwargs: csv_path)
+    monkeypatch.setattr(pipeline, "resolve_audio_artifacts_root", lambda: tmp_path)
+    monkeypatch.setattr(pipeline, "resolve_catalogs_root", lambda: tmp_path)
+    monkeypatch.setattr(pipeline, "resolve_transcripts_parent", lambda: tmp_path)
+    monkeypatch.setattr(pipeline, "handle_loudness", step("loudness"))
+    monkeypatch.setattr(pipeline, "handle_stage_audio", step("stage-audio"))
+    monkeypatch.setattr(pipeline, "handle_archive", step("archive"))
+    monkeypatch.setattr(pipeline, "handle_transcribe", step("transcribe"))
+    monkeypatch.setattr(pipeline, "handle_diarize", step("diarize"))
+    monkeypatch.setattr(pipeline, "handle_export_transcripts", step("export-transcripts"))
+    monkeypatch.setattr(pipeline, "handle_cluster_speakers", step("cluster-speakers"))
+    monkeypatch.setattr(pipeline, "print_step", lambda *_args, **_kwargs: None)
+    return calls
+
+
+ALL_STEPS = [
+    "loudness",
+    "stage-audio",
+    "archive",
+    "transcribe",
+    "diarize",
+    "export-transcripts",
+    "cluster-speakers",
+]
+
+
+@pytest.mark.parametrize("skipping_step", PER_ROW_STEPS)
+def test_run_pipeline_continues_past_skipped_rows_and_exits_2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    skipping_step: str,
+) -> None:
+    calls = _stub_every_step(tmp_path, monkeypatch, {skipping_step: EXIT_ROWS_SKIPPED})
+
+    result = handle_run_pipeline(_pipeline_args(skip_derived=False, skip_rag_colbert_index=True))
+
+    assert result == EXIT_ROWS_SKIPPED
+    assert calls == ALL_STEPS
+    assert "skipped some rows" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("failing_step", PER_ROW_STEPS)
+def test_run_pipeline_still_stops_when_a_step_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_step: str
+) -> None:
+    calls = _stub_every_step(tmp_path, monkeypatch, {failing_step: 1})
+
+    result = handle_run_pipeline(_pipeline_args(skip_derived=False, skip_rag_colbert_index=True))
+
+    assert result == 1
+    assert calls == ALL_STEPS[: ALL_STEPS.index(failing_step) + 1]
+
+
+def test_run_pipeline_exits_1_when_a_failure_follows_skipped_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _stub_every_step(
+        tmp_path, monkeypatch, {"stage-audio": EXIT_ROWS_SKIPPED, "diarize": 1}
+    )
+
+    result = handle_run_pipeline(
+        _pipeline_args(continue_on_error=True, skip_derived=False, skip_rag_colbert_index=True)
+    )
+
+    assert result == 1
+    assert calls == ALL_STEPS
 
 
 def test_run_pipeline_requires_audio_artifacts_root_before_loudness(

@@ -38,6 +38,7 @@ from besedy.core.paths import (
     sanitize_component,
 )
 from besedy.lib.rag_colbert import check_colbert_runtime_ready, default_colbert_index_runtime
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from besedy.lib.workflow.config import (
     WorkflowConfig,
     get_diarization_workflows,
@@ -190,6 +191,11 @@ Automated pipeline that runs all processing steps in sequence:
   5. rag-colbert-index  Build/update ColBERT sidecar indexes for the active backend scope
   6. diarize      Identify speakers (configured diarization backends)
   7. derived      Export subtitles, cluster speakers
+Exit status:
+  0  every step completed
+  2  every step ran, but some rows were skipped (a missing source, an
+     undecodable file, an unreadable transcript); the rest were processed
+  1  a step failed
 Example:
   catalog run-pipeline
   catalog run-pipeline --skip-derived                       # Skip post-processing
@@ -205,7 +211,10 @@ Example:
     parser.add_argument(
         "--continue-on-error",
         action="store_true",
-        help="Continue to next pipeline step even if a step fails.",
+        help=(
+            "Continue to next pipeline step even if a step fails. Steps that only "
+            "skip rows never stop the pipeline."
+        ),
     )
     parser.add_argument(
         "--skip-derived",
@@ -405,6 +414,8 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
         total_steps += 2  # export-transcripts, cluster-speakers
 
     failures: list[tuple[str, str]] = []
+    # Steps that ran but skipped rows; they never stop the pipeline.
+    skipped_steps: list[str] = []
     step_num = 0
 
     rag_backend_keys = {rag_backend_key_for_workflow(workflow) for workflow in rag_workflows}
@@ -453,7 +464,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
     )
 
     result = handle_stage_audio(stage_args)
-    if result != 0:
+    if result == EXIT_ROWS_SKIPPED:
+        skipped_steps.append("stage-audio")
+    elif result != 0:
         failures.append(("stage-audio", "Audio staging failed"))
         if not continue_on_error:
             print(f"\nPipeline stopped: stage-audio failed with exit code {result}")
@@ -483,7 +496,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
     )
 
     result = handle_archive(archive_args)
-    if result != 0:
+    if result == EXIT_ROWS_SKIPPED:
+        skipped_steps.append("archive")
+    elif result != 0:
         failures.append(("archive", "Audio archiving failed"))
         if not continue_on_error:
             print(f"\nPipeline stopped: archive failed with exit code {result}")
@@ -518,7 +533,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
         )
 
         result = handle_transcribe(transcribe_args)
-        if result != 0:
+        if result == EXIT_ROWS_SKIPPED:
+            skipped_steps.append(f"transcribe ({workflow})")
+        elif result != 0:
             failures.append((f"transcribe ({workflow})", f"Transcription failed for {workflow}"))
             if not continue_on_error:
                 print(f"\nPipeline stopped: transcribe ({workflow}) failed with exit code {result}")
@@ -582,7 +599,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
         )
 
         result = handle_diarize(diarize_args)
-        if result != 0:
+        if result == EXIT_ROWS_SKIPPED:
+            skipped_steps.append(f"diarize ({workflow})")
+        elif result != 0:
             failures.append((f"diarize ({workflow})", f"Diarization failed for {workflow}"))
             if not continue_on_error:
                 print(f"\nPipeline stopped: diarize ({workflow}) failed with exit code {result}")
@@ -606,7 +625,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
         )
 
         result = handle_export_transcripts(extract_args)
-        if result != 0:
+        if result == EXIT_ROWS_SKIPPED:
+            skipped_steps.append("export-transcripts")
+        elif result != 0:
             failures.append(("export-transcripts", "Transcript export failed"))
             if not continue_on_error:
                 print(f"\nPipeline stopped: export-transcripts failed with exit code {result}")
@@ -648,12 +669,17 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
     print("PIPELINE SUMMARY")
     print("=" * 60)
 
-    if not failures:
+    if not failures and not skipped_steps:
         print("\nAll steps completed successfully!")
         return 0
-    else:
+
+    if skipped_steps:
+        print(f"\n{len(skipped_steps)} step(s) skipped some rows (see each step's output):")
+        for step_name in skipped_steps:
+            print(f"  - {step_name}")
+    if failures:
         print(f"\n{len(failures)} step(s) had issues:")
         for step_name, message in failures:
             print(f"  - {step_name}: {message}")
-        print("\nRun 'just catalog check' to see detailed status.")
-        return 1
+    print("\nRun 'just catalog check' to see detailed status.")
+    return 1 if failures else EXIT_ROWS_SKIPPED
