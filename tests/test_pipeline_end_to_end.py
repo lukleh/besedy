@@ -16,16 +16,28 @@ from __future__ import annotations
 import csv
 import json
 import subprocess
+import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from besedy.cli import catalog as catalog_cli
 from besedy.config import settings
-from besedy.core.paths import PYANNOTE_DIARIZATION_MODEL_NAME, resolve_transcripts_parent
+from besedy.core.paths import (
+    PYANNOTE_DIARIZATION_MODEL_NAME,
+    require_valid_hash_stem,
+    resolve_transcripts_parent,
+)
+from besedy.lib.audio import normalize as normalize_module
+from besedy.lib.runtime import backend_runtime
 from besedy.lib.workflow import runner as runner_module
-from besedy.lib.workflow.config import get_transcription_workflows
-from besedy.lib.workflow.paths import path_builder, setup_diarization_output_dir
+from besedy.lib.workflow.config import get_transcription_workflows, select_transcription_workflow
+from besedy.lib.workflow.paths import (
+    path_builder,
+    sanitize_model_identifier,
+    setup_diarization_output_dir,
+)
 from tests.helpers.audio import create_tone_wav
 from tests.helpers.transcript import (
     create_diarization_json,
@@ -58,9 +70,10 @@ def _write_config(tmp_path: Path, text_root: Path, audio_root: Path) -> Path:
     start = example.index("[[transcription_workflows]]")
     end = example.index("[vad]")
     config_text = example[:start] + PIPELINE_WORKFLOW + example[end:]
-    config_text = config_text.replace(
-        'audio_artifacts_dir = ""', f'audio_artifacts_dir = "{audio_root}"', 1
-    ).replace('text_data_dir = ""', f'text_data_dir = "{text_root}"', 1)
+    for key, value in (("audio_artifacts_dir", audio_root), ("text_data_dir", text_root)):
+        placeholder = f'{key} = ""'
+        assert config_text.count(placeholder) == 1, f"{placeholder} not found once in the example"
+        config_text = config_text.replace(placeholder, f'{key} = "{value}"')
     path = tmp_path / "besedy.toml"
     path.write_text(config_text, encoding="utf-8")
     return path
@@ -75,6 +88,10 @@ def _script_args(argv: list[str], script_suffix: str) -> list[str] | None:
 
 def _option(args: list[str], name: str) -> str:
     return args[args.index(name) + 1]
+
+
+def _optional(args: list[str], name: str) -> str | None:
+    return _option(args, name) if name in args else None
 
 
 def _audio_files(args: list[str]) -> list[Path]:
@@ -96,11 +113,21 @@ class FakeBackends:
     def run(self, argv: list[str]) -> int:
         if (args := _script_args(argv, FASTER_WHISPER_SCRIPT)) is not None:
             self.calls.append("faster-whisper")
-            (workflow,) = get_transcription_workflows(workflow_id="faster-whisper")
-            transcripts_root = Path(_option(args, "--output-dir")).parent
+            # Name the output folder from the argv the way the script does
+            # (resolve_bundle_root in besedy/workflows/transcribe_faster_whisper.py).
+            workflow = replace(
+                select_transcription_workflow("faster-whisper"),
+                model_name=_option(args, "--model"),
+                vad_model=_optional(args, "--vad-model"),
+                align_model=None,
+                language=_option(args, "--language"),
+            )
+            bundle_root = Path(_option(args, "--output-dir")) / workflow.output_component(
+                sanitize_model_identifier
+            )
             for audio in _audio_files(args):
                 write_transcript_json(
-                    path_builder(workflow).artifact_path(audio.stem, transcripts_root),
+                    bundle_root / require_valid_hash_stem(audio) / "transcript.json",
                     create_transcript_with_words(words=["Dobrý", "den", audio.stem[:8]]),
                 )
             return 0
@@ -129,11 +156,18 @@ def pipeline_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # type: igno
     audio_root = tmp_path / "audio"
     text_root.mkdir()
     audio_root.mkdir()
-    monkeypatch.setenv("BESEDY_TEXT_DATA_ROOT", str(text_root))
-    monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(audio_root))
+    # The data roots come from the config only, as on a host: conftest's
+    # session-wide overrides would otherwise win over it.
+    monkeypatch.delenv("BESEDY_TEXT_DATA_ROOT", raising=False)
+    monkeypatch.delenv("BESEDY_AUDIO_ARTIFACTS_ROOT", raising=False)
     monkeypatch.setenv("BESEDY_CONFIG", str(_write_config(tmp_path, text_root, audio_root)))
-    # Building a backend argv creates its cache directories under XDG_CACHE_HOME.
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    # Keep every XDG directory the run touches inside tmp_path: building a
+    # backend argv creates cache directories under XDG_CACHE_HOME.
+    for name in ("XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME"):
+        monkeypatch.setenv(name, str(tmp_path / name.lower()))
+    # Staging writes ffmpeg logs to a directory resolved at import time, so
+    # the XDG_STATE_HOME above is too late for it.
+    monkeypatch.setattr(normalize_module, "CONVERSION_LOG_DIR", tmp_path / "logs" / "ffmpeg")
     settings.reset_config()
 
     backends = FakeBackends()
@@ -147,15 +181,20 @@ def pipeline_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # type: igno
 
     def fake_popen(argv, *args, **kwargs):  # type: ignore[no-untyped-def]
         if list(argv)[:1] == ["docker"]:
-            return real_popen(["true" if backends.run(list(argv)) == 0 else "false"])
+            code = backends.run(list(argv))
+            return real_popen([sys.executable, "-c", f"raise SystemExit({code})"])
         return real_popen(argv, *args, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     # Docker itself may be absent where the test runs; the containers are faked.
-    monkeypatch.setattr(
-        runner_module, "check_python_backend_runtime_ready", lambda **_kwargs: (True, None)
-    )
+    monkeypatch.setattr(backend_runtime, "_docker_runtime_ready", lambda **_kwargs: (True, None))
+    # The CLI and the workflow launcher install process-wide signal handlers.
+    monkeypatch.setattr(catalog_cli, "install_signal_handlers", lambda: None)
+    monkeypatch.setattr(runner_module, "install_signal_handlers", lambda: None)
+    # Two pyannote groups regardless of the host's GPU, so the parallel
+    # (Popen) launch path runs and the launch sequence is fixed.
+    monkeypatch.setattr(runner_module, "calculate_parallel_instances", lambda *_a, **_k: 2)
     yield tmp_path, text_root, audio_root, backends
     settings.reset_config()
 
@@ -225,6 +264,4 @@ def test_catalog_create_then_run_pipeline_produces_what_the_web_reads(
         )
         assert speakers.is_file()
 
-    assert backends.calls.count("faster-whisper") >= 1
-    assert backends.calls.count("pyannote") >= 1
-    assert backends.calls[-1] == "cluster-speakers"
+    assert backends.calls == ["faster-whisper", "pyannote", "pyannote", "cluster-speakers"]

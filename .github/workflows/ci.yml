@@ -44,9 +44,13 @@ jobs:
           -q
       # catalog create -> run-pipeline on generated audio with real ffmpeg; only
       # the backend containers are faked. Marked integration (it needs ffmpeg),
-      # so it is selected by path here instead of by the filter above.
+      # so it is selected by path here instead of by the filter above. The test
+      # skips without ffmpeg, so fail the step first if ffmpeg is missing.
       - name: Pipeline end to end
-        run: uv run pytest tests/test_pipeline_end_to_end.py -q
+        run: |
+          ffmpeg -version >/dev/null
+          ffprobe -version >/dev/null
+          uv run pytest tests/test_pipeline_end_to_end.py -q
       - name: Audit locked Python dependencies
         run: |
           uv export --locked --quiet --all-extras --no-hashes --no-emit-project --output-file /tmp/requirements.txt
