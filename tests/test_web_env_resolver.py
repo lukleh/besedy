@@ -134,10 +134,10 @@ if [[ " $* " == *" config --format json "* ]]; then
     external=false
   fi
   volume_target="/var/lib/postgresql"
-  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default"},"besedy_internal":{"name":"%s","external":true}}}\n' \
+  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default","driver_opts":{"com.docker.network.bridge.name":"%s"},"enable_ipv6":false},"besedy_internal":{"name":"%s","external":true}}}\n' \
     "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
     "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external" \
-    "$COMPOSE_PROJECT_NAME" "$BESEDY_INTERNAL_NETWORK"
+    "$COMPOSE_PROJECT_NAME" "$BESEDY_WEB_BRIDGE_NAME" "$BESEDY_INTERNAL_NETWORK"
   exit 0
 fi
 printf 'APP_ENV=%s\n' "$APP_ENV"
@@ -307,15 +307,37 @@ def compose_config(
             }
         },
         "networks": {
-            "default": {"name": f"besedy-{instance}_default"},
+            "default": {
+                "name": f"besedy-{instance}_default",
+                "driver_opts": {"com.docker.network.bridge.name": "br-bsdy-wtest"},
+                "enable_ipv6": False,
+            },
             "besedy_internal": {"name": internal_network, "external": True},
         },
     }
 
 
-def validate_compose_config(config: dict[str, object], mode: str) -> subprocess.CompletedProcess[str]:
+def _default_network(config: dict[str, object]) -> dict[str, object]:
+    networks = config["networks"]
+    assert isinstance(networks, dict)
+    return networks["default"]
+
+
+def _without_bridge_name(config: dict[str, object]) -> dict[str, object]:
+    del _default_network(config)["driver_opts"]
+    return config
+
+
+def _with_ipv6(config: dict[str, object]) -> dict[str, object]:
+    _default_network(config)["enable_ipv6"] = True
+    return config
+
+
+def validate_compose_config(
+    config: dict[str, object], mode: str, *extra_args: str
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(COMPOSE_VALIDATOR), mode, mode, "besedy-internal"],
+        ["bash", str(COMPOSE_VALIDATOR), mode, mode, "besedy-internal", *extra_args],
         cwd=REPO_ROOT,
         input=json.dumps(config),
         capture_output=True,
@@ -348,6 +370,16 @@ def test_compose_validator_allows_production_text_in_non_resource_paths() -> Non
                 "test", db_networks={"besedy_internal": None, "default": None}
             ),
             "database must only join the project default network",
+        ),
+        (
+            "test",
+            _without_bridge_name(compose_config("test")),
+            "default network bridge name is '', expected a br-bsdy* name",
+        ),
+        (
+            "test",
+            _with_ipv6(compose_config("test")),
+            "default network must set enable_ipv6: false",
         ),
     ],
 )
@@ -424,7 +456,11 @@ def _bind_config(mode: str, root: Path) -> dict[str, object]:
         },
         "volumes": {"postgres_data": {"name": volume_name, "external": mode == "production"}},
         "networks": {
-            "default": {"name": f"{project}_default"},
+            "default": {
+                "name": f"{project}_default",
+                "driver_opts": {"com.docker.network.bridge.name": "br-bsdy-wtest"},
+                "enable_ipv6": False,
+            },
             "besedy_internal": {"name": "besedy-internal", "external": True},
         },
     }
@@ -598,6 +634,15 @@ printf 'BESEDY_JOBS_API_HOST=%s\\n' "${{BESEDY_JOBS_API_HOST-unset}}"
     assert result.stdout.strip() == f"BESEDY_JOBS_API_HOST={jobs_api_host}"
 
 
+def test_compose_validator_allows_a_host_alias_for_commands_that_change_nothing() -> None:
+    # ps, logs, exec, and down (and the cron monitors that use them) keep working
+    # while an env file still names host.docker.internal; up and run refuse it.
+    config = compose_config("development", jobs_api_base_url="http://host.docker.internal:8390")
+
+    assert validate_compose_config(config, "development", "false").returncode == 0
+    assert validate_compose_config(config, "development", "true").returncode == 1
+
+
 @pytest.mark.parametrize(
     ("mode", "jobs_api_base_url", "message"),
     [
@@ -627,6 +672,11 @@ printf 'BESEDY_JOBS_API_HOST=%s\\n' "${{BESEDY_JOBS_API_HOST-unset}}"
             "http://besedy-test-jobs-api:8390/",
             "names another environment's jobs runtime; use http://besedy-prod-jobs-api:8390",
         ),
+        (
+            "development",
+            "http://host.docker.internal:8390",
+            "web environment still points at host.docker.internal (JOBS_API_BASE_URL)",
+        ),
     ],
 )
 def test_compose_validator_rejects_jobs_api_names_of_other_runtimes(
@@ -646,7 +696,7 @@ def test_compose_validator_rejects_jobs_api_names_of_other_runtimes(
         ("production", "http://besedy-prod-jobs-api:8390"),
         ("test", "http://besedy-test-jobs-api:8390"),
         ("development", "http://besedy-jobs-api:8390"),
-        ("development", "http://host.docker.internal:8390"),
+        ("development", "http://jobs.example.test:8390"),
         ("production", "https://jobs.example.internal/"),
         ("test", None),
     ],

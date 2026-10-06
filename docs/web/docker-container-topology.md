@@ -342,8 +342,9 @@ The ColBERT service currently runs as:
 
 - container: `besedy-colbert`
 - compose project: `besedy-rag-services`
-- host endpoint: `http://<host>:8192`; the port binds `0.0.0.0` on purpose (LAN-reachable, no authentication; see [security.md](security.md#colbert-is-intentionally-reachable-on-the-lan))
-- common web setting: `RAG_COLBERT_URL=http://host.docker.internal:8192/query`
+- networks: `besedy-rag-services_default` (bridge `br-bsdy-rag`) and `besedy-internal`
+- host endpoint: `http://127.0.0.1:8192` (loopback only; see [security.md](security.md#colbert-is-reachable-only-through-besedy))
+- web setting: `RAG_COLBERT_URL=http://besedy-colbert:8192/query`
 - state bind: `${BESEDY_STATE_HOME}/tmp/rag_colbert:/data/state/rag_colbert`
 - model cache volumes:
   - `besedy_colbert_model_cache`
@@ -416,7 +417,7 @@ After the Deep Search production deployment:
 | `besedy-prefect-server` | shared Prefect network | Yes |
 | `besedy-prefect-services` | shared Prefect network | Yes |
 | `besedy-prefect-postgres` | shared Prefect network | Yes |
-| `besedy-colbert` | RAG stack network and host port `8192` | Shared, with constraints |
+| `besedy-colbert` | RAG stack network, `besedy-internal`, loopback port `8192` | Shared, with constraints |
 
 ## Connectivity Checks
 
@@ -504,7 +505,6 @@ Before production Deep Search rollout:
 
 Medium-term cleanup:
 
-- Consider moving ColBERT from host-port access to an explicit shared Docker network if we want less reliance on `host.docker.internal`.
 - Remove or archive stale Docker volumes after confirming they are not used:
   - `besedy-dev_besedy_dev_postgres`
   - `besedy-prod_besedy_prod_postgres`

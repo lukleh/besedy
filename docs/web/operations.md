@@ -454,10 +454,13 @@ releases.
 **First-deployment extras** (run once, not on every release):
 
 1. Install monitoring cron jobs (see Monitoring section below).
+2. Install the container egress policy and create the Besedy networks with
+   their `br-bsdy*` bridge names; see
+   [Container Egress Isolation](egress-isolation.md#installing-on-a-host).
 
 ### Post-Deploy Verification
 
-- [ ] `just prod-status` shows healthy services
+- [ ] `just prod-status` shows healthy services and ends with `Egress check: OK`
 - [ ] Site loads at production URL, Google OAuth sign-in works
 - [ ] First sign-in with `superadmin_email` gets admin role
 - [ ] Catalog upload and audio streaming work

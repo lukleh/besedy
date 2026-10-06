@@ -1,0 +1,22 @@
+# Loads the Besedy container egress policy. See docs/web/egress-isolation.md.
+#
+# Install:
+#   sudo install -D -m 0644 web/setup/egress/besedy-egress.nft /etc/besedy/besedy-egress.nft
+#   sudo install -m 0644 web/setup/egress/besedy-container-egress.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now besedy-container-egress.service
+
+[Unit]
+Description=Besedy container egress policy (nftables table inet besedy_egress)
+Documentation=https://github.com/lukleh/besedy/blob/main/docs/web/egress-isolation.md
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/besedy/besedy-egress.nft
+ExecReload=/usr/sbin/nft -f /etc/besedy/besedy-egress.nft
+ExecStop=/usr/sbin/nft delete table inet besedy_egress
+
+[Install]
+WantedBy=multi-user.target

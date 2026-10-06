@@ -50,5 +50,16 @@ elif [[ -z "${COLBERT_PRELOAD_INDEX_DIR:-}" ]]; then
   done
 fi
 
+# besedy-colbert joins the shared besedy-internal network, which must exist
+# before Compose can create the container.
+for arg in "$@"; do
+  case "$arg" in
+    up | create | run)
+      "$script_dir/docker_network.sh" ensure "${BESEDY_INTERNAL_NETWORK:-besedy-internal}"
+      break
+      ;;
+  esac
+done
+
 cd "$repo_root"
 exec "${compose[@]}" -f rag-services/docker-compose.yml "$@"

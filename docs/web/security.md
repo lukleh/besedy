@@ -9,7 +9,7 @@ hardening.
 - Audit action types: `AuditAction` enum in `prisma/schema.prisma`
 - Path validation: `web/src/lib/security/path-validation.ts`
 - Monitoring scripts and schedules: `docs/web/operations.md`
-- Retired LAN egress control: `docs/web/egress-control-retirement.md`
+- Container egress isolation: `docs/web/egress-isolation.md` (replaces the retired control in `docs/web/egress-control-retirement.md`)
 
 ---
 
@@ -542,7 +542,7 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | `no-new-privileges: true`                                |  Done  | `docker-compose.secure.yml`                                               |
 | Resource limits (2 CPU, 1 GB RAM)                        |  Done  | `docker-compose.secure.yml`                                               |
 | Syslog logging                                           |  Done  | Docker logs to host syslog                                                |
-| LAN egress isolation                                     |  Open  | Retired; see [egress-control-retirement.md](egress-control-retirement.md) |
+| LAN egress isolation                                     |  Done  | nftables policy on `br-bsdy*` bridges; see [egress-isolation.md](egress-isolation.md) |
 | Cloudflare Tunnel (outbound-only)                        |  Done  | No listening port to attack                                               |
 
 ### Container Escape Vectors
@@ -553,7 +553,7 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | Docker socket             | None     | Not mounted                                                                               |
 | Host filesystem           | None     | Only `/data` (read-only), container FS read-only                                          |
 | Privilege escalation      | Very Low | UID 1001, all caps dropped, no-new-privileges                                             |
-| Network pivot to LAN      | Medium   | No repository-managed egress block; see [retirement record](egress-control-retirement.md) |
+| Network pivot to LAN      | Low      | New connections to host, LAN, tailnet dropped; see [egress-isolation.md](egress-isolation.md) |
 | Network pivot to Internet | Medium   | Internet allowed for OAuth                                                                |
 
 ### Blast Radius: Web Container Compromised
@@ -565,7 +565,7 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | Read audio/transcripts  | `/data` mounted read-only                       |
 | Full DB read/write      | Via `DATABASE_URL` env var                      |
 | Network to DB container | Docker network                                  |
-| Reach LAN services      | No repository-managed container egress firewall |
+| Reach other containers  | Same Docker networks only (db, jobs API, ColBERT) |
 | Exfiltrate data         | Outbound internet (required for OAuth)          |
 | Delete audit logs       | Via database access                             |
 
@@ -585,9 +585,9 @@ env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`).
 | ------------------ | --------------------------------------------------------- | -------------- |
 | web -> db          | `DATABASE_URL` env var                                    | High (full DB) |
 | web -> backup      | None (no shared creds)                                    | Low            |
-| web -> host        | `host.docker.internal`; exposure depends on host services | Medium         |
+| web -> host        | Dropped by the egress policy                              | Low            |
 | web -> cloudflared | Runs on host                                              | Low            |
-| web -> LAN         | Container network; not filtered by Besedy                 | Medium         |
+| web -> LAN         | Dropped by the egress policy                              | Low            |
 | web -> Internet    | Outbound TCP/HTTP                                         | Medium (OAuth) |
 
 ### Cloudflare Origin Protection
@@ -604,37 +604,34 @@ requests not arriving via Cloudflare. Note: an attacker with their own
 Cloudflare account could still set this header, so this is not a complete
 solution. For edge MFA, consider Cloudflare Access (Zero Trust).
 
-### ColBERT Is Intentionally Reachable on the LAN
+### ColBERT Is Reachable Only Through Besedy
 
 The ColBERT search sidecar (`besedy-colbert`, `rag-services/docker-compose.yml`)
-binds `0.0.0.0:8192` (`COLBERT_HOST_BIND` and `COLBERT_HOST_PORT` change it),
-answers without authentication, and takes the index directory from the caller.
-This is a decision, not an oversight: the maintainer runs Besedy on a trusted
-home LAN (plus tailnet) and uses the service for testing and data mining
-outside Besedy.
+answers without authentication and takes the index directory from the caller,
+so it is not exposed beyond Besedy:
 
-- The home LAN and tailnet are a trusted zone. Catalog ACLs scope web and MCP
-  users; they do not guard services on the host's own network.
-- The web app reaches the sidecar through `RAG_COLBERT_URL`, normally
-  `http://host.docker.internal:8192/query`, and applies catalog ACLs to every
-  result it returns.
-- Revisit the decision if an untrusted peer can reach the LAN or tailnet, or
-  the host gets a public interface. Binding `COLBERT_HOST_BIND=127.0.0.1` alone
-  would break the web app: `host.docker.internal` maps to the Docker bridge
-  gateway (`host-gateway`), not to host loopback, so the web container could no
-  longer reach the sidecar. Bind to the bridge gateway address instead, or put
-  authentication in front of it.
+- Its host port binds to `127.0.0.1:8192` (`COLBERT_HOST_BIND` and
+  `COLBERT_HOST_PORT` change it) for the host CLI and `run-pipeline`.
+- Web containers reach it over `besedy-internal` at
+  `http://besedy-colbert:8192/query` and apply catalog ACLs to every result.
+- Searching from outside Besedy goes through the MCP server
+  (`find_transcript_mentions`), which authenticates the caller and applies the
+  same ACLs.
+- Its own egress is restricted like every other Besedy container.
+
+Residual risk: every container on `besedy-internal` (dev and test web, the
+jobs runtimes) can query it directly, bypassing ACLs.
 
 ### LAN Egress Isolation
 
-Besedy does not currently install host firewall rules that prevent containers
-from reaching private LAN addresses. The previous hardcoded-subnet control was
-retired after it was found to be silently ineffective, and a dynamic replacement
-was rejected because it added substantial fail-open reconciliation complexity.
-
-See [Docker LAN Egress Control Retirement](egress-control-retirement.md) for the
-failure analysis, current risk, host cleanup notes, and requirements for a
-future design.
+Containers on Besedy networks cannot open connections to the host, the LAN,
+the tailnet, or link-local addresses, and have no IPv6; internet access stays
+open. The policy is a single nftables table matched on the `br-bsdy*` bridge
+names every Besedy network is created with. See
+[Container Egress Isolation](egress-isolation.md) for the design, installation,
+verification (`just egress-check`), and residual risks, and
+[Docker LAN Egress Control Retirement](egress-control-retirement.md) for the
+control it replaces.
 
 ### Input Validation
 

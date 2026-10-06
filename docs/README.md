@@ -18,7 +18,8 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [web/recording-ingest.md](web/recording-ingest.md) -- admin recording upload processed by a host Prefect worker, with auto catalog sync
 - [web/data-and-database.md](web/data-and-database.md) -- web data model, database migration safety, configuration
 - [web/security.md](web/security.md) -- auth model, access control, deployment hardening
-- [web/egress-control-retirement.md](web/egress-control-retirement.md) -- why the former Docker LAN egress control was removed and what a future design must address
+- [web/egress-isolation.md](web/egress-isolation.md) -- container egress policy: design, host install, verification
+- [web/egress-control-retirement.md](web/egress-control-retirement.md) -- why the former Docker LAN egress control was removed
 - [web/mcp-server.md](web/mcp-server.md) -- remote MCP server design: OAuth, access matrix, catalog resolution, telemetry, testing
 - [web/mcp-tools.md](web/mcp-tools.md) -- per-tool MCP contract: arguments, result shapes, errors
 - [web/mcp-follow-ups.md](web/mcp-follow-ups.md) -- deferred MCP work with the reasons it was deferred

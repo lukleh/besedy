@@ -22,6 +22,15 @@ from besedy.lib.rag_colbert import (
 )
 from besedy.lib.rag_colbert_types import ColbertIndexResult, ColbertTokenAudit
 
+_ENSURE_DOCKER_NETWORK = rag_colbert._ensure_colbert_docker_network
+
+
+@pytest.fixture(autouse=True)
+def _no_docker_network_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The one-shot runner creates besedy-internal on a real host; tests that fake
+    # subprocess.run only expect Compose calls.
+    monkeypatch.setattr(rag_colbert, "_ensure_colbert_docker_network", lambda: None)
+
 
 class WhitespaceTokenCounter:
     model_name = "test-whitespace"
@@ -1992,3 +2001,40 @@ def test_index_meta_written_with_the_retired_use_faiss_key_still_loads() -> None
     assert result.workflow_group_id == "wg-123"
     assert result.index_bsize == 32
     assert not hasattr(result, "use_faiss")
+
+
+def test_docker_one_shot_ensures_the_shared_network_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.delenv("BESEDY_INTERNAL_NETWORK", raising=False)
+    monkeypatch.setattr(rag_colbert.subprocess, "run", fake_run)
+
+    _ENSURE_DOCKER_NETWORK()
+
+    assert seen == [
+        [
+            "bash",
+            str(rag_colbert.PROJECT_ROOT / "scripts" / "docker_network.sh"),
+            "ensure",
+            "besedy-internal",
+        ]
+    ]
+
+
+def test_docker_one_shot_fails_when_the_shared_network_cannot_be_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rag_colbert.subprocess,
+        "run",
+        lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="daemon down"),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Could not create Docker network besedy-internal: daemon down"
+    ):
+        _ENSURE_DOCKER_NETWORK()

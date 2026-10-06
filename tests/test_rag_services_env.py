@@ -16,6 +16,10 @@ JUSTFILE = PROJECT_ROOT / "Justfile"
 
 # Prints the arguments it was called with instead of running compose.
 DOCKER_STUB = """#!/usr/bin/env bash
+if [[ "$1 $2" == "network inspect" ]]; then
+  echo br-bsdy-int
+  exit 0
+fi
 printf '%s\\n' "$@"
 """
 

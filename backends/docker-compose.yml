@@ -36,3 +36,11 @@ services:
       dockerfile: backends/pyannote/Dockerfile
     init: true
     gpus: all
+
+networks:
+  default:
+    enable_ipv6: false
+    driver_opts:
+      # The host egress policy covers every br-bsdy* bridge
+      # (docs/web/egress-isolation.md).
+      com.docker.network.bridge.name: br-bsdy-bknd

@@ -112,7 +112,9 @@ services:
       # RAG search (ColBERT sidecar)
       RAG_BACKEND_KEY: ${RAG_BACKEND_KEY:-faster-whisper/large-v3@silero_vad_v6@lang-cs}
       RAG_COLBERT_TIMEOUT_MS: ${RAG_COLBERT_TIMEOUT_MS:-8000}
-      RAG_COLBERT_URL: ${RAG_COLBERT_URL:-http://host.docker.internal:8192/query}
+      # besedy-colbert also joins besedy-internal; the host cannot be reached
+      # from containers (docs/web/egress-isolation.md).
+      RAG_COLBERT_URL: ${RAG_COLBERT_URL:-http://besedy-colbert:8192/query}
       RAG_COLBERT_TOP_K: ${RAG_COLBERT_TOP_K:-200}
       RAG_COLBERT_MODEL: ${RAG_COLBERT_MODEL:-jinaai/jina-colbert-v2}
       RAG_COLBERT_ROOT_DIR: ${RAG_COLBERT_ROOT_DIR:-/data/state/rag_colbert}
@@ -140,8 +142,6 @@ services:
       - ${ORIGINAL_AUDIO_DIR:-./tests/e2e/fixtures/original}:/data/original:ro
     ports:
       - '${WEB_PORT:-3001}:3000'
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
     networks:
       - default
       - besedy_internal
@@ -203,6 +203,12 @@ volumes:
     name: besedy_${BESEDY_COMPOSE_INSTANCE:-unmanaged}_postgres
 
 networks:
+  default:
+    enable_ipv6: false
+    driver_opts:
+      # Set by scripts/run_web_compose.sh. The host egress policy covers every
+      # br-bsdy* bridge (docs/web/egress-isolation.md).
+      com.docker.network.bridge.name: ${BESEDY_WEB_BRIDGE_NAME:?run through scripts/run_web_compose.sh}
   besedy_internal:
     name: ${BESEDY_INTERNAL_NETWORK:-besedy-internal}
     external: true
