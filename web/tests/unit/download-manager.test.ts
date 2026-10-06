@@ -170,9 +170,6 @@ function createFakeServer(options: FakeServerOptions = {}) {
           defaultSource: 'archived',
         });
       }
-      if (pathname === '/api/preferences/audio-source') {
-        return json({ hash: HASH, sourceId: null });
-      }
       if (pathname.endsWith('/progress')) {
         return json({ progress: null });
       }
@@ -204,7 +201,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
           },
         });
       }
-      if (pathname.startsWith('/api/transcript/')) {
+      if (pathname.includes('/transcript')) {
         if (pathname.endsWith('/speakers'))
           return json({ hash: HASH, backends: [] });
         if (pathname.endsWith('/formats'))
@@ -444,7 +441,7 @@ describe('download manager', () => {
               ? input.toString()
               : input.url,
           window.location.origin,
-        ).pathname.startsWith('/api/transcript/'),
+        ).pathname.includes('/transcript'),
       ),
     ).toBe(false);
 

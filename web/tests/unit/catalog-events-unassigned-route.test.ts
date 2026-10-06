@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getUnassignedRecordings } from "@/app/api/catalog-events/unassigned/route";
+import { GET as getUnassignedRecordingsRoute } from "@/app/api/catalogs/[id]/events/unassigned/route";
+
+const getUnassignedRecordings = (request: NextRequest) =>
+  getUnassignedRecordingsRoute(request, { params: Promise.resolve({ id: "20260201_120000" }) });
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -61,7 +64,7 @@ describe("catalog events unassigned route", () => {
 
     const response = await getUnassignedRecordings(
       new NextRequest(
-        `http://localhost/api/catalog-events/unassigned?group=${catalogId}&page=1&limit=50`
+        `http://localhost/api/catalogs/${catalogId}/events/unassigned?page=1&limit=50`
       )
     );
 

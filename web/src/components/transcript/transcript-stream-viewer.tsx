@@ -7,6 +7,7 @@ import { useHydratedState } from "@/hooks/use-hydrated-state";
 import { formatTimestamp } from "@/lib/utils";
 import { formatModelLabel } from "@/lib/transcript-labels";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { buildTranscriptCompareUrl } from "@/lib/api/recording-urls";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,7 +36,7 @@ interface TranscriptCompareResponse {
 
 interface TranscriptStreamViewerProps {
   hash: string;
-  groupId?: string;
+  groupId: string;
   currentTime?: number;
   isPlaying?: boolean;
   onSeek?: (time: number) => void;
@@ -145,14 +146,7 @@ export function TranscriptStreamViewer({
   const { data, isLoading } = useQuery<TranscriptCompareResponse>({
     queryKey: ["transcript-stream", hash, groupKey],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      const suffix = params.toString();
-      return fetchJson<TranscriptCompareResponse>(
-        `/api/transcript/${hash}/compare${suffix ? `?${suffix}` : ""}`
-      );
+      return fetchJson<TranscriptCompareResponse>(buildTranscriptCompareUrl(groupId, hash));
     },
   });
 

@@ -23,103 +23,48 @@ const metadataEnumSchema = z.object({
 });
 
 const metadataEnumsSchema = z.array(metadataEnumSchema);
-const artistsSchema = z.array(z.string());
-const duplicateCountsSchema = z.array(z.number());
 
 type MetadataEnumResource = "recorders" | "locations" | "albums";
 type MetadataEnumItem = z.infer<typeof metadataEnumSchema>;
 
-function useMetadataEnumQuery(
-  resource: MetadataEnumResource,
-  groupId?: string
-) {
+/** Lookup list of one catalog; waits until the catalog id is known. */
+function useMetadataEnumQuery(resource: MetadataEnumResource, catalogId: string | undefined) {
   return useQuery<MetadataEnumItem[]>({
-    queryKey: ["metadata", resource, groupId],
+    queryKey: ["metadata", resource, catalogId],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (groupId) params.set("group", groupId);
-      const url = `/api/metadata/${resource}${params.toString() ? `?${params}` : ""}`;
       try {
-        return await fetchJson<MetadataEnumItem[]>(url, {
-          schema: metadataEnumsSchema,
-        });
+        return await fetchJson<MetadataEnumItem[]>(
+          `/api/catalogs/${catalogId}/metadata/${resource}`,
+          { schema: metadataEnumsSchema }
+        );
       } catch {
         return [];
       }
     },
+    enabled: !!catalogId,
   });
 }
 
 /**
- * Fetch the list of recorders for metadata selection.
+ * Fetch the catalog's recorders for metadata selection.
  * Returns empty array on error for graceful degradation.
  */
-export function useRecorders(groupId?: string) {
-  return useMetadataEnumQuery("recorders", groupId);
+export function useRecorders(catalogId: string | undefined) {
+  return useMetadataEnumQuery("recorders", catalogId);
 }
 
 /**
- * Fetch the list of locations for metadata selection.
+ * Fetch the catalog's locations for metadata selection.
  * Returns empty array on error for graceful degradation.
  */
-export function useLocations(groupId?: string) {
-  return useMetadataEnumQuery("locations", groupId);
+export function useLocations(catalogId: string | undefined) {
+  return useMetadataEnumQuery("locations", catalogId);
 }
 
 /**
- * Fetch distinct artist values from the catalog's metadata CSV.
- * Returns real values that exist in the current catalog.
- * Returns empty array on error for graceful degradation.
- *
- * @param groupId - Optional catalog ID. If not provided, uses active group from server.
- */
-export function useArtists(groupId?: string) {
-  return useQuery<string[]>({
-    queryKey: ["metadata", "artists", groupId],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (groupId) params.set("group", groupId);
-      const url = `/api/metadata/artists${params.toString() ? `?${params}` : ""}`;
-      try {
-        return await fetchJson<string[]>(url, {
-          schema: artistsSchema,
-        });
-      } catch {
-        return [];
-      }
-    },
-  });
-}
-
-/**
- * Fetch the list of albums for metadata selection.
+ * Fetch the catalog's albums for metadata selection.
  * Returns empty array on error for graceful degradation.
  */
-export function useAlbums(groupId?: string) {
-  return useMetadataEnumQuery("albums", groupId);
-}
-
-/**
- * Fetch distinct duplicate count values from the catalog's duplicates CSV.
- * Returns real values that exist in the current catalog.
- * Returns empty array on error for graceful degradation.
- *
- * @param groupId - Optional catalog ID. If not provided, uses active group from server.
- */
-export function useDuplicateCounts(groupId?: string) {
-  return useQuery<number[]>({
-    queryKey: ["metadata", "duplicateCounts", groupId],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (groupId) params.set("group", groupId);
-      const url = `/api/metadata/duplicate-counts${params.toString() ? `?${params}` : ""}`;
-      try {
-        return await fetchJson<number[]>(url, {
-          schema: duplicateCountsSchema,
-        });
-      } catch {
-        return [];
-      }
-    },
-  });
+export function useAlbums(catalogId: string | undefined) {
+  return useMetadataEnumQuery("albums", catalogId);
 }

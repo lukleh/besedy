@@ -38,7 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useActiveGroup } from "@/hooks/use-active-group";
+import { catalogLookupsApiPath, type CatalogLookupResource } from "@/lib/catalog/lookup-paths";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 /**
@@ -47,8 +47,8 @@ import { fetchJson } from "@/lib/api/fetch-json";
 export interface EnumCrudConfig {
   /** Entity type name (used for translation keys and API) */
   entityName: "recorder" | "location" | "album";
-  /** Base API path for CRUD operations */
-  apiPath: string;
+  /** Lookup list the page edits, under `/api/catalogs/:id/metadata/` */
+  resource: CatalogLookupResource;
   /** Icon component to display */
   icon: LucideIcon;
   /** React Query cache key */
@@ -79,21 +79,22 @@ const FILTER_PARAM_BY_ENTITY: Record<EnumCrudConfig["entityName"], string> = {
  * Generic CRUD page component for enum-like entities (recorders, locations).
  * Provides list, create, update, and delete functionality with a consistent UI.
  */
-export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
-  const { entityName, apiPath, icon: Icon, queryKey } = config;
+export function EnumCrudPage({
+  catalogId,
+  config,
+}: {
+  catalogId: string;
+  config: EnumCrudConfig;
+}) {
+  const { entityName, resource, icon: Icon, queryKey } = config;
+  const apiPath = catalogLookupsApiPath(catalogId, resource);
   const t = useTranslations("enums");
   const tCommon = useTranslations("common");
   const locale = useLocale();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { activeGroupId, groupKey } = useActiveGroup();
-  const scopedQueryKey = [...queryKey, groupKey];
-  const scopedApiPath = (path: string) => {
-    if (!activeGroupId) return path;
-    const params = new URLSearchParams({ group: activeGroupId });
-    return `${path}?${params.toString()}`;
-  };
+  const scopedQueryKey = [...queryKey, catalogId];
 
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -115,13 +116,13 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   // Fetch items
   const { data: items, isLoading } = useQuery<EnumItem[]>({
     queryKey: scopedQueryKey,
-    queryFn: () => fetchJson<EnumItem[]>(scopedApiPath(apiPath)),
+    queryFn: () => fetchJson<EnumItem[]>(apiPath),
   });
 
   // Create item
   const createItem = useMutation({
     mutationFn: async (name: string) => {
-      return fetchJson(scopedApiPath(apiPath), {
+      return fetchJson(apiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -147,7 +148,7 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   // Update item
   const updateItem = useMutation({
     mutationFn: async ({ id, name }: { id: number; name: string }) => {
-      return fetchJson(scopedApiPath(`${apiPath}/${id}`), {
+      return fetchJson(`${apiPath}/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -175,7 +176,7 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   // Delete item
   const deleteItem = useMutation({
     mutationFn: async (id: number) => {
-      return fetchJson(scopedApiPath(`${apiPath}/${id}`), {
+      return fetchJson(`${apiPath}/${id}`, {
         method: "DELETE",
       });
     },
@@ -221,8 +222,7 @@ export function EnumCrudPage({ config }: { config: EnumCrudConfig }) {
   const navigateToCatalog = (item: EnumItem) => {
     const filterKey = FILTER_PARAM_BY_ENTITY[entityName];
     const params = new URLSearchParams({ [filterKey]: item.id.toString() });
-    const basePath = activeGroupId ? `/catalog/${activeGroupId}` : "/catalog";
-    router.push(`${basePath}?${params.toString()}`);
+    router.push(`/catalog/${catalogId}?${params.toString()}`);
   };
 
   const handleRowClick = (item: EnumItem, event: MouseEvent<HTMLTableRowElement>) => {

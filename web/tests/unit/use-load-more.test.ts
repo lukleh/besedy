@@ -142,7 +142,7 @@ describe("useLoadMore", () => {
       expect(result.current.loadedCount).toBe(4);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining("/api/catalog?"),
+        expect.stringContaining("/api/catalogs/test-catalog/recordings?"),
         expect.objectContaining({ signal: expect.anything() })
       );
     });

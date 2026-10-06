@@ -8,6 +8,7 @@ import type {
 import { DEFAULT_SORT } from "../constants";
 
 export interface CatalogFilterParams {
+  /** Identifies the request's catalog; it goes in the path, not the query. */
   activeCatalogId?: string | null;
   statusFilter: StatusFilter;
   durationFilter: DurationFilter;
@@ -25,6 +26,18 @@ export interface CatalogFilterParams {
   sortDir: SortDirection;
 }
 
+/** Recordings list endpoint of one catalog, with optional query params. */
+export function catalogRecordingsUrl(
+  catalogId: string | null | undefined,
+  params: URLSearchParams
+): string {
+  if (!catalogId) {
+    throw new Error("A catalog is required to list its recordings");
+  }
+  const query = params.toString();
+  return `/api/catalogs/${encodeURIComponent(catalogId)}/recordings${query ? `?${query}` : ""}`;
+}
+
 /**
  * Builds URLSearchParams for catalog API requests.
  * Shared between useCatalogData and useLoadMore to ensure consistency.
@@ -39,9 +52,6 @@ export function buildCatalogParams(
     limit: limit.toString(),
   });
 
-  if (filters.activeCatalogId) {
-    params.set("group", filters.activeCatalogId);
-  }
   if (filters.statusFilter !== "all") {
     params.set("status", filters.statusFilter);
   }

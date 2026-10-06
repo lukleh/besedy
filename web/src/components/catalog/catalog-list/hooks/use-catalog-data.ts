@@ -10,7 +10,7 @@ import type {
   SortDirection,
 } from "../types";
 import { catalogResponseSchema } from "../types";
-import { buildCatalogParams } from "../utils";
+import { buildCatalogParams, catalogRecordingsUrl } from "../utils";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   AUTH_SENSITIVE_QUERY_OPTIONS,
@@ -105,7 +105,7 @@ export function useCatalogData({
         page,
         50
       );
-      return fetchJson<CatalogResponse>(`/api/catalog?${params.toString()}`, {
+      return fetchJson<CatalogResponse>(catalogRecordingsUrl(activeCatalogId, params), {
         schema: catalogResponseSchema,
       });
     },

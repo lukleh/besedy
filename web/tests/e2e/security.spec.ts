@@ -17,7 +17,7 @@ test.describe("API Security Boundaries @security", () => {
 
     // Try to fetch transcript directly via API
     const response = await page.request.get(
-      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}&backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
+      `/api/catalogs/${TEST_CATALOG_ID}/recordings/${FIRST_RECORDING.hash}/transcript?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
     );
 
     // Should be forbidden (LISTENER role cannot view transcripts)
@@ -30,7 +30,7 @@ test.describe("API Security Boundaries @security", () => {
     await loginAs(page, "listener");
 
     const response = await page.request.get(
-      `/api/catalog?group=${TEST_CATALOG_ID}&status=incomplete`
+      `/api/catalogs/${TEST_CATALOG_ID}/recordings?status=incomplete`
     );
 
     expect(response.status()).toBe(403);
@@ -40,7 +40,7 @@ test.describe("API Security Boundaries @security", () => {
     await loginAs(page, "listener");
 
     const response = await page.request.get(
-      `/api/catalog/filter-options?group=${TEST_CATALOG_ID}`
+      `/api/catalogs/${TEST_CATALOG_ID}/recordings/filter-options`
     );
 
     expect(response.status()).toBe(403);
@@ -183,7 +183,7 @@ test.describe("Unauthenticated API Access @security", () => {
   }) => {
     // Direct API call without any session/cookies
     const response = await request.get(
-      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}&backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
+      `/api/catalogs/${TEST_CATALOG_ID}/recordings/${FIRST_RECORDING.hash}/transcript?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
     );
 
     // Unauthenticated requests should return 401.

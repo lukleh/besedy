@@ -6,8 +6,6 @@ import RecordingContent, {
 } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 
 const useQueryMock = vi.fn();
-const useMutationMock = vi.fn();
-const useQueryClientMock = vi.fn();
 const useHydratedBooleanMock = vi.fn();
 const useRecordingEntryMock = vi.fn();
 const useCatalogContextMock = vi.fn();
@@ -23,8 +21,6 @@ const CATALOG_ID = "20260101_120000";
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => useQueryMock(options),
-  useMutation: (options: unknown) => useMutationMock(options),
-  useQueryClient: () => useQueryClientMock(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -120,19 +116,10 @@ describe("RecordingContent transcript toggle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    useQueryClientMock.mockReturnValue({
-      invalidateQueries: vi.fn(),
-    });
-    useMutationMock.mockReturnValue({
-      mutate: vi.fn(),
-    });
     useQueryMock.mockImplementation(
       ({ queryKey }: { queryKey?: unknown[] } = {}) => {
         const key = queryKey?.[0];
 
-        if (key === "audio-source-preference") {
-          return { data: { hash: HASH, sourceId: null } };
-        }
 
         if (key === "audio-variants") {
           return { data: { hash: HASH, sources: [], defaultSource: "archived" } };
@@ -432,9 +419,6 @@ describe("RecordingContent transcript toggle", () => {
     useQueryMock.mockImplementation(
       ({ queryKey }: { queryKey?: unknown[] } = {}) => {
         const key = queryKey?.[0];
-        if (key === "audio-source-preference") {
-          return { data: { hash: HASH, sourceId: "archived" } };
-        }
         if (key === "audio-variants") {
           return {
             data: {
@@ -465,9 +449,6 @@ describe("RecordingContent transcript toggle", () => {
       useQueryMock.mockImplementation(
         ({ queryKey }: { queryKey?: unknown[] } = {}) => {
           const key = queryKey?.[0];
-          if (key === "audio-source-preference") {
-            return { data: { hash: HASH, sourceId: null } };
-          }
           if (key === "audio-variants") {
             return {
               data: {
@@ -516,9 +497,6 @@ describe("RecordingContent transcript toggle", () => {
       useQueryMock.mockImplementation(
         ({ queryKey }: { queryKey?: unknown[] } = {}) => {
           const key = queryKey?.[0];
-          if (key === "audio-source-preference") {
-            return { data: { hash: HASH, sourceId: null } };
-          }
           if (key === "audio-variants") {
             return {
               data: {
@@ -552,7 +530,6 @@ describe("RecordingContent transcript toggle", () => {
   it("waits for /audio/sources before starting the player on WebKit only", () => {
     const loadingSources = ({ queryKey }: { queryKey?: unknown[] } = {}) => {
       const key = queryKey?.[0];
-      if (key === "audio-source-preference") return { data: { hash: HASH, sourceId: null } };
       if (key === "audio-variants") return { data: undefined, isLoading: true };
       return { data: undefined };
     };
@@ -576,22 +553,10 @@ describe("RecordingContent transcript toggle", () => {
   describe("WebKit format wait", () => {
     const iphone =
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
-    const queries =
-      (loading: "sources" | "preference") =>
-      ({ queryKey }: { queryKey?: unknown[] } = {}) => {
-        const key = queryKey?.[0];
-        if (key === "audio-source-preference") {
-          return loading === "preference"
-            ? { data: undefined, isLoading: true }
-            : { data: { hash: HASH, sourceId: null } };
-        }
-        if (key === "audio-variants") {
-          return loading === "sources"
-            ? { data: undefined, isLoading: true }
-            : { data: { hash: HASH, sources: [], defaultSource: "archived" } };
-        }
-        return { data: undefined };
-      };
+    const loadingSourcesQuery = ({ queryKey }: { queryKey?: unknown[] } = {}) =>
+      queryKey?.[0] === "audio-variants"
+        ? { data: undefined, isLoading: true }
+        : { data: undefined };
     let userAgent: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
@@ -603,14 +568,8 @@ describe("RecordingContent transcript toggle", () => {
       vi.useRealTimers();
     });
 
-    it("also waits for the saved source preference", () => {
-      useQueryMock.mockImplementation(queries("preference"));
-      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-      expect(audioPlayerMock).not.toHaveBeenCalled();
-    });
-
     it("does not wait when a complete download will play", () => {
-      useQueryMock.mockImplementation(queries("sources"));
+      useQueryMock.mockImplementation(loadingSourcesQuery);
       const webmUrl = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
       useDownloadRecordMock.mockReturnValue({
         status: "complete",
@@ -625,7 +584,7 @@ describe("RecordingContent transcript toggle", () => {
 
     it("waits again for the next recording after a timeout", () => {
       vi.useFakeTimers();
-      useQueryMock.mockImplementation(queries("sources"));
+      useQueryMock.mockImplementation(loadingSourcesQuery);
       const { rerender } = render(
         <RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />
       );
@@ -640,7 +599,7 @@ describe("RecordingContent transcript toggle", () => {
 
     it("plays the WebM once the sources take too long", () => {
       vi.useFakeTimers();
-      useQueryMock.mockImplementation(queries("sources"));
+      useQueryMock.mockImplementation(loadingSourcesQuery);
       render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
       expect(audioPlayerMock).not.toHaveBeenCalled();
 

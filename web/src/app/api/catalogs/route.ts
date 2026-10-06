@@ -14,9 +14,8 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/catalogs - List active workflow groups (catalogs) accessible to the user
  *
- * Naming note: this plural endpoint returns workflow-group records. Use the
- * singular `/api/catalog` endpoint for paginated recording-entry browsing
- * inside one resolved catalog.
+ * Naming note: this endpoint returns workflow-group records. Recording entries
+ * of one catalog are at `/api/catalogs/:id/recordings`.
  *
  * Returns only catalogs the current user has access to.
  * Admins and superadmins see all active catalogs.

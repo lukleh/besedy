@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { POST as createFromRecording } from "@/app/api/catalog-events/from-recording/route";
+import { POST as createFromRecordingRoute } from "@/app/api/catalogs/[id]/events/from-recording/route";
+
+const createFromRecording = (request: NextRequest) =>
+  createFromRecordingRoute(request, { params: Promise.resolve({ id: "20260201_120000" }) });
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -97,11 +100,10 @@ describe("catalog events create-from-recording route", () => {
       isPrimary: true,
     });
 
-    const request = new NextRequest("http://localhost/api/catalog-events/from-recording", {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/from-recording`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        workflowGroupId: catalogId,
         audioHash,
       }),
     });
@@ -160,11 +162,10 @@ describe("catalog events create-from-recording route", () => {
   }
 
   function buildRequest(body: Record<string, unknown> = {}) {
-    return new NextRequest("http://localhost/api/catalog-events/from-recording", {
+    return new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/from-recording`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        workflowGroupId: catalogId,
         audioHash,
         ...body,
       }),
@@ -290,11 +291,10 @@ describe("catalog events create-from-recording route", () => {
     });
     prisma.catalogEventRecording.findUnique.mockResolvedValue(null);
 
-    const request = new NextRequest("http://localhost/api/catalog-events/from-recording", {
+    const request = new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/from-recording`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        workflowGroupId: catalogId,
         audioHash,
       }),
     });

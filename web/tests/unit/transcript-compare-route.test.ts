@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getCompare } from "@/app/api/transcript/[hash]/compare/route";
+import { GET as getCompare } from "@/app/api/catalogs/[id]/recordings/[hash]/transcript/compare/route";
 
 vi.mock("@/lib/auth/permissions", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/permissions")>(
@@ -17,7 +17,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroup: vi.fn(),
+  findActiveCatalog: vi.fn(),
 }));
 
 vi.mock("@/lib/audit/logger", () => ({
@@ -43,7 +43,7 @@ const VALID_HASH = "a".repeat(64);
 describe("transcript compare route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getRecordingCapability: ReturnType<typeof vi.fn>;
-  let resolveActiveGroup: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
   let getAvailableTranscripts: ReturnType<typeof vi.fn>;
   let loadTranscript: ReturnType<typeof vi.fn>;
   let listTranscriptBackendPriorities: ReturnType<typeof vi.fn>;
@@ -57,7 +57,7 @@ describe("transcript compare route", () => {
     getRecordingCapability =
       accessModule.getRecordingCapability as ReturnType<typeof vi.fn>;
     const groupModule = await import("@/lib/catalog/resolve-group");
-    resolveActiveGroup = groupModule.resolveActiveGroup as ReturnType<typeof vi.fn>;
+    findActiveCatalog = groupModule.findActiveCatalog as ReturnType<typeof vi.fn>;
     const transcriptModule = await import("@/lib/transcript");
     getAvailableTranscripts = transcriptModule.getAvailableTranscripts as ReturnType<typeof vi.fn>;
     loadTranscript = transcriptModule.loadTranscript as ReturnType<typeof vi.fn>;
@@ -71,7 +71,7 @@ describe("transcript compare route", () => {
 
   it("computes duration from max end time even for overlapping intervals", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+    findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
     getRecordingCapability.mockResolvedValue({
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
@@ -108,8 +108,8 @@ describe("transcript compare route", () => {
       }
     );
 
-    const request = new NextRequest(`http://localhost/api/transcript/${VALID_HASH}/compare`);
-    const response = await getCompare(request, { params: Promise.resolve({ hash: VALID_HASH }) });
+    const request = new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/compare`);
+    const response = await getCompare(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
     expect(response.status).toBe(200);
     const body = await response.json();

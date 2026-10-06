@@ -215,10 +215,8 @@ export function useFilterOptions({
     queryKey: ["catalog-filter-options", groupId, normalizedFilters],
     queryFn: async () => {
       const params = filtersToParams(debouncedFilters);
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      const url = `/api/catalog/filter-options${params.toString() ? `?${params}` : ""}`;
+      const query = params.toString();
+      const url = `/api/catalogs/${encodeURIComponent(groupId ?? "")}/recordings/filter-options${query ? `?${query}` : ""}`;
       return fetchJson<FilterOptionsResponse>(url, {
         schema: filterOptionsResponseSchema,
       });

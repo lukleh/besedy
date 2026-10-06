@@ -413,8 +413,8 @@ occasional purposes. Two things follow, both deliberate and recorded in
 
 ### Browsing Recordings Is a Surface, Not Catalog Access
 
-`browse_recordings` covers the recordings list. `/api/catalog` and
-`/api/catalog/filter-options` refuse without it, the tab switcher appears only
+`browse_recordings` covers the recordings list. `/api/catalogs/:id/recordings`
+and its `filter-options` refuse without it, the tab switcher appears only
 when both surfaces are available, and a `?tab=recordings` deep link asks the
 same permission rather than asking about the switcher.
 
@@ -436,15 +436,15 @@ Two permissions sit with the catalog administrator alone, and with no other
 role.
 
 `see_transcript_variants` covers the fact that more than one machine transcript
-exists. Without it, `GET /api/transcript/:hash` lists only the default backend
-and refuses to serve any other, `GET /api/transcript/:hash/compare` — the
+exists. Without it, `GET /api/catalogs/:id/recordings/:hash/transcript` lists only
+the default backend and refuses to serve any other, `GET …/transcript/compare` — the
 multi-backend stream view in its entirety — is refused, and the picker, the
 variant counts and the stream switch are not rendered. **Reading is now the
 default view**; the stream used to be, and a stored preference saying so does
 not reopen it.
 
 `see_speakers` covers the diarization overlay. Without it,
-`GET /api/transcript/:hash/speakers` reports no backends, the `speaker` on each
+`GET …/transcript/speakers` reports no backends, the `speaker` on each
 transcript segment is dropped from the response, and the toggle, the overlay and
 the detected-speaker count are not rendered.
 

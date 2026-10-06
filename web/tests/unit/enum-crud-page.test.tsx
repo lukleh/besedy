@@ -4,7 +4,6 @@ import { Mic } from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EnumCrudPage } from "@/components/settings/enum-crud-page";
-import { useActiveGroup } from "@/hooks/use-active-group";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 vi.mock("next-intl", () => ({
@@ -14,10 +13,6 @@ vi.mock("next-intl", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
-}));
-
-vi.mock("@/hooks/use-active-group", () => ({
-  useActiveGroup: vi.fn(),
 }));
 
 vi.mock("@/lib/api/fetch-json", () => ({
@@ -32,12 +27,13 @@ const item = {
   _count: { audioMetadata: 0 },
 };
 
-function Page() {
+function Page({ catalogId }: { catalogId: string }) {
   return (
     <EnumCrudPage
+      catalogId={catalogId}
       config={{
         entityName: "recorder",
-        apiPath: "/api/metadata/recorders",
+        resource: "recorders",
         icon: Mic,
         queryKey: ["metadata", "recorders"],
       }}
@@ -45,63 +41,50 @@ function Page() {
   );
 }
 
-function renderPage() {
+function renderPage(catalogId = "catalog-a") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <Page />
+      <Page catalogId={catalogId} />
     </QueryClientProvider>
   );
   return { ...view, queryClient };
 }
 
 describe("EnumCrudPage catalog scoping", () => {
-  const useActiveGroupMock = vi.mocked(useActiveGroup);
   const fetchJsonMock = vi.mocked(fetchJson);
-  let activeGroupId = "catalog-a";
 
   beforeEach(() => {
     vi.clearAllMocks();
-    activeGroupId = "catalog-a";
-    useActiveGroupMock.mockImplementation(
-      () =>
-        ({
-          activeGroupId,
-          groupKey: activeGroupId,
-          activeGroup: null,
-          isLoading: false,
-        }) as ReturnType<typeof useActiveGroup>
-    );
     fetchJsonMock.mockImplementation(async (_path, init) =>
       init?.method ? ({} as never) : ([item] as never)
     );
   });
 
-  it("keeps reads cached separately when the active catalog changes", async () => {
+  it("keeps reads cached separately when the catalog in the path changes", async () => {
     const view = renderPage();
 
     await waitFor(() =>
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        "/api/metadata/recorders?group=catalog-a"
+        "/api/catalogs/catalog-a/metadata/recorders"
       )
     );
 
-    activeGroupId = "catalog-b";
     view.rerender(
       <QueryClientProvider client={view.queryClient}>
-        <Page />
+        <Page catalogId="catalog-b" />
       </QueryClientProvider>
     );
     await waitFor(() =>
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        "/api/metadata/recorders?group=catalog-b"
+        "/api/catalogs/catalog-b/metadata/recorders"
       )
     );
   });
 
-  it("sends create, update, and delete to the explicit active catalog", async () => {
+  it("sends create, update, and delete to the catalog in the path", async () => {
     renderPage();
     await screen.findByText("Recorder One");
 
@@ -111,7 +94,7 @@ describe("EnumCrudPage catalog scoping", () => {
     fireEvent.click(screen.getByRole("button", { name: "add" }));
     await waitFor(() =>
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        "/api/metadata/recorders?group=catalog-a",
+        "/api/catalogs/catalog-a/metadata/recorders",
         expect.objectContaining({ method: "POST" })
       )
     );
@@ -123,7 +106,7 @@ describe("EnumCrudPage catalog scoping", () => {
     fireEvent.click(screen.getByRole("button", { name: "save" }));
     await waitFor(() =>
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        "/api/metadata/recorders/7?group=catalog-a",
+        "/api/catalogs/catalog-a/metadata/recorders/7",
         expect.objectContaining({ method: "PUT" })
       )
     );
@@ -133,7 +116,7 @@ describe("EnumCrudPage catalog scoping", () => {
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
     await waitFor(() =>
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        "/api/metadata/recorders/7?group=catalog-a",
+        "/api/catalogs/catalog-a/metadata/recorders/7",
         expect.objectContaining({ method: "DELETE" })
       )
     );

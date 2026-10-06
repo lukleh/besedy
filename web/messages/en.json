@@ -570,7 +570,6 @@
       "users": "Users",
       "catalogs": "Catalogs",
       "ingest": "Ingest",
-      "metadata": "Catalog Enums",
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
       "auditLog": "Audit Log",
@@ -1463,8 +1462,6 @@
     "transcriptStreamUnavailable": "Transcript stream unavailable",
     "transcriptStreamUnavailableDescription": "No transcript timeline found for this recording.",
     "showTranscript": "Show",
-    "source": "Audio variant",
-    "saved": "(saved)",
     "sourcesTitle": "Sources",
     "sourcesDescription": "Links and files related to this recording.",
     "sourcesAddTitle": "Add source",
@@ -1767,6 +1764,10 @@
     "title": "{name} Settings",
     "titleDefault": "Catalog Settings",
     "description": "Manage catalog configuration and access",
+    "lookups": {
+      "title": "Catalog lookups",
+      "description": "Recorders, locations and albums that this catalog's metadata picks from."
+    },
     "searchPlaceholder": "Search by name or email...",
     "searchClear": "Clear search",
     "notFound": {

@@ -5,7 +5,7 @@ import {
 } from "@/lib/access/capabilities";
 import { logAccessDenied } from "@/lib/audit/logger";
 import { requireAuth } from "@/lib/auth/permissions";
-import { resolveActiveGroup } from "@/lib/catalog/resolve-group";
+import { findActiveCatalog } from "@/lib/catalog/resolve-group";
 import { resolveTranscriptsPath } from "@/lib/paths";
 import { TRANSCRIPT_ACCESS_DENIED_MESSAGE } from "@/lib/access/messages";
 
@@ -27,7 +27,8 @@ export interface TranscriptRouteAccessFailure {
 }
 
 interface TranscriptRouteAccessOptions {
-  groupOverride: string | null;
+  /** The catalog named in the route path (`/api/catalogs/:id/...`). */
+  catalogId: string;
   hash: string;
   accessDeniedMessage: string;
   requireDownload?: boolean;
@@ -40,15 +41,12 @@ export async function resolveTranscriptRouteAccess(
   options: TranscriptRouteAccessOptions
 ): Promise<TranscriptRouteAccessSuccess | TranscriptRouteAccessFailure> {
   const userId = await requireAuth();
-  const group = await resolveActiveGroup(options.groupOverride, userId);
+  const group = await findActiveCatalog(options.catalogId);
 
   if (!group) {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "No workflow group configured" },
-        { status: 404 }
-      ),
+      response: NextResponse.json({ error: "Catalog not found" }, { status: 404 }),
     };
   }
 

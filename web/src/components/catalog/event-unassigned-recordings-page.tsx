@@ -77,12 +77,11 @@ export function EventUnassignedRecordingsPage({
     queryKey,
     queryFn: () => {
       const params = new URLSearchParams({
-        group: catalogId,
         page: String(page),
         limit: String(PAGE_SIZE),
       });
       return fetchJson<UnassignedResponse>(
-        `/api/catalog-events/unassigned?${params.toString()}`
+        `/api/catalogs/${catalogId}/events/unassigned?${params.toString()}`
       );
     },
   });
@@ -107,12 +106,11 @@ export function EventUnassignedRecordingsPage({
       intent?: typeof CREATE_DISTINCT_EVENT_INTENT;
     }) => {
       return fetchJson<CreateEventFromRecordingResponse>(
-        "/api/catalog-events/from-recording",
+        `/api/catalogs/${catalogId}/events/from-recording`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            workflowGroupId: catalogId,
             audioHash: entry.audioHash,
             ...(intent !== undefined ? { intent } : {}),
           }),

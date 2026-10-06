@@ -103,7 +103,6 @@ export const eventListResponseSchema = z.object({
 });
 
 export interface CreateEventPayload {
-  workflowGroupId: string;
   locationId: number;
   dateYear: number;
   dateMonth?: number | null;

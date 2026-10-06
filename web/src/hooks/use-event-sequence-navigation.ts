@@ -132,11 +132,11 @@ async function fetchSequence(
   eventId: number,
   state: EventListQueryState,
 ) {
-  const params = buildEventListParams(catalogId, 1, 0, state);
+  const params = buildEventListParams(1, 0, state);
   params.set('sequence', 'true');
   params.set('current', String(eventId));
   return fetchJson<z.infer<typeof sequenceResponseSchema>>(
-    `/api/catalog-events?${params.toString()}`,
+    `/api/catalogs/${catalogId}/events?${params.toString()}`,
     { schema: sequenceResponseSchema },
   );
 }

@@ -1,9 +1,5 @@
 import prisma from "@/lib/db";
-import {
-  getAdminCapability,
-  getCatalogCapability,
-  getCatalogDiscoveryCapability,
-} from "@/lib/access/capabilities";
+import { getAdminCapability, getCatalogCapability } from "@/lib/access/capabilities";
 
 // Use Prisma's inference for the return type
 type WorkflowGroup = NonNullable<
@@ -11,88 +7,16 @@ type WorkflowGroup = NonNullable<
 >;
 
 /**
- * Resolve the active workflow group following the resolution rules:
- * 1. If group override provided, use it
- * 2. Else use user preference active_group
- * 3. Else use default group
- * 4. Else use most recent accessible group
- * 5. Fallback for admins/superadmins: Most recent group (they have implicit access)
- * 6. Return null if no accessible group found
+ * Load the active catalog a route names in its path (`/api/catalogs/:id/...`).
  *
- * This is a read: it never writes the user's preferences, so a request for one
- * catalog cannot change what a later request without a group resolves to. The
- * saved active group is written only by an explicit `PATCH /api/preferences`,
- * which `useCatalogContext` sends when the catalog list, a recording or the
- * catalog settings open.
- *
- * Note: This function returns the resolved group but downstream routes must still
- * check access permissions. The group override is returned even without access,
- * allowing proper "access denied" messages rather than silent fallback.
- *
- * @param groupOverride - Optional group ID from query param
- * @param userId - Current user ID (null for unauthenticated requests)
- * @returns The resolved WorkflowGroup or null if none found/accessible
+ * Returns null when the catalog does not exist or is inactive. It does not check
+ * access: callers answer "not found" for null and check access themselves, so a
+ * catalog the user cannot open gets a proper "access denied".
  */
-export async function resolveActiveGroup(
-  groupOverride?: string | null,
-  userId?: string | null
-): Promise<WorkflowGroup | null> {
-  const effectiveUserId = userId || "local";
-
-  // 1. Group override. Returned even without access, so downstream routes can
-  // answer "access denied" instead of silently falling back.
-  if (groupOverride) {
-    const group = await prisma.workflowGroup.findFirst({
-      where: { id: groupOverride, isActive: true },
-    });
-    if (group) {
-      return group;
-    }
-  }
-
-  // 2. User preference
-  const prefs = await prisma.userPreferences.findUnique({
-    where: { userId: effectiveUserId },
-    include: { activeGroup: true },
+export async function findActiveCatalog(catalogId: string): Promise<WorkflowGroup | null> {
+  return prisma.workflowGroup.findFirst({
+    where: { id: catalogId, isActive: true },
   });
-  if (prefs?.activeGroup?.isActive) {
-    return prefs.activeGroup;
-  }
-
-  // 3. Default group
-  const defaultGroup = await prisma.workflowGroup.findFirst({
-    where: { isDefault: true, isActive: true },
-  });
-  if (defaultGroup) {
-    return defaultGroup;
-  }
-
-  // 4. Most recent accessible group (respects user's catalog access)
-  const discovery = await getCatalogDiscoveryCapability(userId || undefined);
-  const accessibleGroups = discovery.accessibleCatalogIds;
-  if (accessibleGroups.length > 0) {
-    return prisma.workflowGroup.findFirst({
-      where: { id: { in: accessibleGroups }, isActive: true },
-      orderBy: { id: "desc" },
-    });
-  }
-
-  // 5. Fallback: Only for admins/superadmins (who have implicit access to all catalogs)
-  // Regular users with no catalog access should get null, not a random group
-  if (userId) {
-    const adminCapability = await getAdminCapability(userId);
-    if (!adminCapability.canAccessAdmin) {
-      return null;
-    }
-
-    return prisma.workflowGroup.findFirst({
-      where: { isActive: true },
-      orderBy: { id: "desc" },
-    });
-  }
-
-  // No accessible group found for this user
-  return null;
 }
 
 export interface ResolvedGroupAccess {
@@ -101,17 +25,16 @@ export interface ResolvedGroupAccess {
 }
 
 /**
- * Resolve active group and evaluate whether the user can access it.
+ * Load the catalog a route names and evaluate whether the user can access it.
  *
- * This keeps resolveActiveGroup behavior intact (it may return an inaccessible
- * group for downstream "403" handling) while giving callers a consistent
- * explicit access check result.
+ * Admins have implicit access to every catalog; everyone else needs a catalog
+ * grant.
  */
-export async function resolveActiveGroupWithAccess(
-  groupOverride: string | null | undefined,
+export async function resolveCatalogWithAccess(
+  catalogId: string,
   userId: string
 ): Promise<ResolvedGroupAccess> {
-  const group = await resolveActiveGroup(groupOverride, userId);
+  const group = await findActiveCatalog(catalogId);
   if (!group) {
     return { group: null, hasAccess: false };
   }

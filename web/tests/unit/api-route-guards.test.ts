@@ -40,14 +40,24 @@ const DELEGATED: Record<string, { module: string; handlers: string[] }> = {
     module: CATALOG_PENDING,
     handlers: ["deletePendingCatalogRecord", "updatePendingCatalogRecord"],
   },
-  "metadata/albums": { module: CRUD_FACTORY, handlers: ["albumCollectionHandlers"] },
-  "metadata/albums/[id]": { module: CRUD_FACTORY, handlers: ["albumItemHandlers"] },
-  "metadata/artists": { module: CRUD_FACTORY, handlers: ["artistsHandler"] },
-  "metadata/duplicate-counts": { module: CRUD_FACTORY, handlers: ["duplicateCountsHandler"] },
-  "metadata/locations": { module: CRUD_FACTORY, handlers: ["locationCollectionHandlers"] },
-  "metadata/locations/[id]": { module: CRUD_FACTORY, handlers: ["locationItemHandlers"] },
-  "metadata/recorders": { module: CRUD_FACTORY, handlers: ["recorderCollectionHandlers"] },
-  "metadata/recorders/[id]": { module: CRUD_FACTORY, handlers: ["recorderItemHandlers"] },
+  "catalogs/[id]/metadata/albums": { module: CRUD_FACTORY, handlers: ["albumCollectionHandlers"] },
+  "catalogs/[id]/metadata/albums/[itemId]": { module: CRUD_FACTORY, handlers: ["albumItemHandlers"] },
+  "catalogs/[id]/metadata/locations": {
+    module: CRUD_FACTORY,
+    handlers: ["locationCollectionHandlers"],
+  },
+  "catalogs/[id]/metadata/locations/[itemId]": {
+    module: CRUD_FACTORY,
+    handlers: ["locationItemHandlers"],
+  },
+  "catalogs/[id]/metadata/recorders": {
+    module: CRUD_FACTORY,
+    handlers: ["recorderCollectionHandlers"],
+  },
+  "catalogs/[id]/metadata/recorders/[itemId]": {
+    module: CRUD_FACTORY,
+    handlers: ["recorderItemHandlers"],
+  },
 };
 
 // Routes that refuse by hand rather than through a guard helper.

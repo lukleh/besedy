@@ -160,7 +160,7 @@ export interface CatalogEntryWithPermissions {
 }
 
 /**
- * Response from /api/catalog (list endpoint)
+ * Response from /api/catalogs/:id/recordings (list endpoint)
  */
 export interface CatalogListResponse {
   groupId: string;

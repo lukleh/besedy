@@ -12,7 +12,7 @@ import type {
   PaginationInfo,
 } from "../types";
 import { catalogResponseSchema } from "../types";
-import { buildCatalogParams } from "../utils";
+import { buildCatalogParams, catalogRecordingsUrl } from "../utils";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 interface UseLoadMoreOptions {
@@ -220,8 +220,10 @@ export function useLoadMore(options: UseLoadMoreOptions): UseLoadMoreReturn {
     setError(null);
 
     try {
-      const params = buildCatalogParams(createFilterParams(), nextPage, 50);
-      const data = await fetchJson<CatalogResponse>(`/api/catalog?${params.toString()}`, {
+      const filterParams = createFilterParams();
+      const params = buildCatalogParams(filterParams, nextPage, 50);
+      const url = catalogRecordingsUrl(filterParams.activeCatalogId, params);
+      const data = await fetchJson<CatalogResponse>(url, {
         signal: controller.signal,
         schema: catalogResponseSchema,
       });
@@ -296,8 +298,10 @@ export function useLoadMore(options: UseLoadMoreOptions): UseLoadMoreReturn {
 
     try {
       // Fetch all entries with limit=0
-      const params = buildCatalogParams(createFilterParams(), 1, 0);
-      const data = await fetchJson<CatalogResponse>(`/api/catalog?${params.toString()}`, {
+      const filterParams = createFilterParams();
+      const params = buildCatalogParams(filterParams, 1, 0);
+      const url = catalogRecordingsUrl(filterParams.activeCatalogId, params);
+      const data = await fetchJson<CatalogResponse>(url, {
         signal: controller.signal,
         schema: catalogResponseSchema,
       });

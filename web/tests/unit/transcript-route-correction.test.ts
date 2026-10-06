@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getTranscript } from "@/app/api/transcript/[hash]/route";
+import { GET as getTranscript } from "@/app/api/catalogs/[id]/recordings/[hash]/transcript/route";
 
 vi.mock("@/lib/auth/permissions", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/permissions")>(
@@ -14,7 +14,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroup: vi.fn(),
+  findActiveCatalog: vi.fn(),
 }));
 
 vi.mock("@/lib/audit/logger", () => ({
@@ -60,19 +60,19 @@ const PROGRESS = {
 
 function request(backend?: string): NextRequest {
   const suffix = backend ? `?backend=${encodeURIComponent(backend)}` : "";
-  return new NextRequest(`http://localhost/api/transcript/${VALID_HASH}${suffix}`);
+  return new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript${suffix}`);
 }
 
 function call(backend?: string) {
   return getTranscript(request(backend), {
-    params: Promise.resolve({ hash: VALID_HASH }),
+    params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
   });
 }
 
 describe("transcript route under the publication gate", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getRecordingCapability: ReturnType<typeof vi.fn>;
-  let resolveActiveGroup: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
   let getAvailableTranscripts: ReturnType<typeof vi.fn>;
   let loadTranscript: ReturnType<typeof vi.fn>;
   let listTranscriptBackendPriorities: ReturnType<typeof vi.fn>;
@@ -86,8 +86,8 @@ describe("transcript route under the publication gate", () => {
       .requireAuth as ReturnType<typeof vi.fn>;
     getRecordingCapability = (await import("@/lib/access/capabilities"))
       .getRecordingCapability as ReturnType<typeof vi.fn>;
-    resolveActiveGroup = (await import("@/lib/catalog/resolve-group"))
-      .resolveActiveGroup as ReturnType<typeof vi.fn>;
+    findActiveCatalog = (await import("@/lib/catalog/resolve-group"))
+      .findActiveCatalog as ReturnType<typeof vi.fn>;
     const transcriptModule = await import("@/lib/transcript");
     getAvailableTranscripts = transcriptModule.getAvailableTranscripts as ReturnType<
       typeof vi.fn
@@ -106,7 +106,7 @@ describe("transcript route under the publication gate", () => {
     >;
 
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+    findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
     listTranscriptBackendPriorities.mockResolvedValue({});
     getAvailableTranscripts.mockResolvedValue({
       hash: VALID_HASH,

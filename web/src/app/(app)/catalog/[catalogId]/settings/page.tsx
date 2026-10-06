@@ -29,6 +29,7 @@ export default async function CatalogSettingsPage({
     configuration: capability.canManageCatalogConfiguration,
     eventHealth: features.features.events.canEdit,
     access: capability.canManageAccess,
+    lookups: capability.canManageLookups,
   };
 
   if (!Object.values(cards).some(Boolean)) {
