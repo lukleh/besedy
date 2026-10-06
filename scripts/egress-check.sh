@@ -11,7 +11,9 @@
 # images need no probe tools) and expects:
 #   blocked  - the host on every attached network gateway and on its LAN
 #              address, the LAN router, libvirt, and the tailnet
-#   open     - an internet address
+#   open     - an internet address, DNS through Docker's resolver, and the
+#              east-west paths in east_west below (web -> db, jobs API,
+#              ColBERT; worker -> Prefect, web) when both ends are running
 # A dropped connection times out; a refused or accepted one means the packet
 # got past the policy. All probes run in parallel. Exits non-zero on any
 # failure.
@@ -25,6 +27,20 @@ fi
 
 timeout_s="${EGRESS_PROBE_TIMEOUT:-2}"
 internet_target="${EGRESS_INTERNET_TARGET:-1.1.1.1:443}"
+dns_name="${EGRESS_DNS_NAME:-example.com}"
+
+# Paths that must stay open: "<source> <destination>:<port>". Pairs whose
+# containers are not both running are skipped.
+east_west=(
+  "besedy-production-web besedy-production-db:5432"
+  "besedy-production-web besedy-prod-jobs-api:8390"
+  "besedy-production-web besedy-colbert:8192"
+  "besedy-prod-prefect-worker besedy-prefect-server:4200"
+  "besedy-prod-prefect-worker besedy-production-web:3000"
+  "besedy-development-web besedy-development-db:5432"
+  "besedy-development-web besedy-dev-jobs-api:8390"
+  "besedy-test-web besedy-test-db:5432"
+)
 failures=0
 results_dir="$(mktemp -d)"
 trap 'rm -rf "$results_dir"' EXIT
@@ -44,6 +60,25 @@ probe() {
     124) echo blocked ;;
     *) echo "answered ($(sed -n 's/.*connect: //p' <<<"$output" | head -n 1))" ;;
   esac
+}
+
+# Prints open or failed for a lookup through Docker's embedded resolver. It
+# depends on the host's resolver: Docker forwards from the host namespace only
+# for a loopback upstream such as systemd-resolved (docs/web/egress-isolation.md).
+probe_dns() {
+  local pid="$1" answer
+  answer="$(nsenter -t "$pid" -n dig +short +time="$timeout_s" +tries=1 @127.0.0.11 "$dns_name" 2>/dev/null || true)"
+  if [[ -n "$answer" && "$answer" != *";;"* ]]; then echo open; else echo failed; fi
+}
+
+# Prints the IP of container $2 on a network it shares with container $1.
+shared_ip() {
+  local network
+  for network in $(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$1" 2>/dev/null); do
+    docker inspect --format "{{with index .NetworkSettings.Networks \"$network\"}}{{.IPAddress}}{{end}}" "$2" 2>/dev/null \
+      | grep . && return 0
+  done
+  return 1
 }
 
 # Prints "<rule> <packets>" for each commented counter in the policy.
@@ -117,7 +152,29 @@ while IFS= read -r container; do
       printf '%s|%s|%s|%s\n' "$container" "$target" "$expected" "$result"
     } >"$results_dir/$job" &
   done
+  if command -v dig >/dev/null 2>&1; then
+    job=$((job + 1))
+    printf '%s|%s|open|%s\n' "$container" "DNS $dns_name" "$(probe_dns "$pid")" >"$results_dir/$job" &
+  fi
 done < <(if (( $# > 0 )); then printf '%s\n' "$@"; else docker ps --format '{{.Names}}' | sort; fi)
+
+# East-west paths only when the whole host is checked.
+if (( $# == 0 )); then
+  for pair in "${east_west[@]}"; do
+    read -r source destination <<<"$pair"
+    pid="$(docker inspect --format '{{if .State.Running}}{{.State.Pid}}{{end}}' "$source" 2>/dev/null || true)"
+    [[ -n "$pid" ]] || continue
+    docker inspect --format '{{.State.Running}}' "${destination%:*}" 2>/dev/null | grep -q true || continue
+    if ! ip="$(shared_ip "$source" "${destination%:*}")"; then
+      fail "$source and ${destination%:*} share no network"
+      continue
+    fi
+    job=$((job + 1))
+    {
+      printf '%s|%s|open|%s\n' "$source" "$destination" "$(probe "$pid" "$ip" "${destination##*:}")"
+    } >"$results_dir/$job" &
+  done
+fi
 wait
 
 while IFS='|' read -r container target expected result; do

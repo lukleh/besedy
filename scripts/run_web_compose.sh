@@ -237,7 +237,7 @@ MSG
   exit "$compose_status"
 fi
 printf '%s\n' "$rendered_config" \
-  | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network"
+  | "$script_dir/validate_web_compose_config.sh" "$mode" "$instance" "$internal_network" "$changes_resources"
 
 # Keys nothing uses any more are usually renamed ones, which Compose ignores
 # silently. Warn only when containers are created or changed (up, create, run,

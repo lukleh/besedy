@@ -78,8 +78,12 @@ Why this shape:
   network talk over the bridge without reaching IP `prerouting` while
   `br_netfilter` is not loaded, which is the case on this host. Docker's own
   network isolation is not touched.
-- **DNS needs no exception.** Docker's embedded resolver forwards queries from
-  the host's network namespace, not through the container's bridge.
+- **DNS needs no exception here.** When the host's resolver is on loopback
+  (systemd-resolved's `127.0.0.53`, as on this host), Docker's embedded
+  resolver forwards queries from the host's network namespace, not through the
+  container's bridge. On a host whose `/etc/resolv.conf` lists a LAN DNS server
+  directly, Docker forwards from the container's namespace and the policy
+  drops it; `egress-check` probes DNS from every container to catch that.
 - **Atomic, persistent, no reconciler.** `nft -f` replaces the table in one
   transaction and changes nothing if the file does not parse. The table
   survives Docker restarts, `ufw reload`, and network recreation (it matches
@@ -105,11 +109,12 @@ over `besedy-internal` (step 2) before production web is checked.
 1. Update the env files that set `RAG_COLBERT_URL` (the resolved
    `web.env.prod`, `web.env.dev`, `web.env.test`) to
    `http://besedy-colbert:8192/query`. They override the compose default.
-   `scripts/run_web_compose.sh` refuses every command while a web env value
-   still names `host.docker.internal`, so a checkout with this change cannot
-   deploy web against an old env file. Stop the host ingest worker for the
-   window: its ColBERT index updates run the `colbert` service, which needs
-   `besedy-internal` to exist.
+   `scripts/run_web_compose.sh` refuses to create or change containers while a
+   web env value still names `host.docker.internal`, so a checkout with this
+   change cannot deploy web against an old env file; `ps`, `logs`, `exec`,
+   `down`, and the cron monitors keep working. Stop the host ingest worker for
+   the window: its ColBERT index updates run the `colbert` service from its own
+   checkout.
 2. Recreate every Besedy network so it gets its bridge name. Bridge names are
    set only at creation, and the shared networks can only be removed once every
    container has left them. From the deploy checkout of each stack:
@@ -127,7 +132,10 @@ over `besedy-internal` (step 2) before production web is checked.
 
    Then bring the stacks back with the usual `up`/`deploy` recipes; they create
    the networks with the new names. `scripts/docker_network.sh ensure` warns
-   about any shared network that still has an old `br-<id>` bridge.
+   about any shared network that still has an old `br-<id>` bridge. Finish with
+   `just ingest-worker-deploy <sha>`: the ingest worker's checkout must carry
+   the same `rag-services/docker-compose.yml`, or its ColBERT index updates
+   render the rag network with the old options.
 3. Install and start the policy:
 
    ```bash
@@ -138,7 +146,9 @@ over `besedy-internal` (step 2) before production web is checked.
    ```
 
 4. Verify: `just egress-check`, then web search, MCP search, sign-in, and a
-   deep-search job.
+   deep-search job. Run `just egress-check` again after `sudo ufw reload`, a
+   Tailscale restart (`sudo systemctl restart tailscaled`), a Docker restart,
+   and a reboot.
 
 To change the policy later, install the new file and run
 `sudo systemctl reload besedy-container-egress.service`.
@@ -160,7 +170,12 @@ running container on a `besedy*` network it:
   LAN router, libvirt and the host's tailnet address, Tailscale's
   `100.100.100.100`, and a port the host publishes on all interfaces. A refused
   or accepted connection means the packet got past the policy;
-- expects an internet address (`1.1.1.1:443`) to connect.
+- expects an internet address (`1.1.1.1:443`) to connect and a DNS lookup
+  through Docker's resolver (`dig @127.0.0.11`, run in the container's network
+  namespace) to answer;
+- when the whole host is checked, expects the east-west paths listed in the
+  script to connect: web to its database, jobs API, and ColBERT; the
+  production worker to the Prefect server and production web.
 
 All probes run in parallel, so the check takes about one probe timeout (2 s).
 The `host` and `private` drop counters must grow during the run, so a policy
@@ -186,9 +201,5 @@ script exits non-zero on any failure.
   (and so `just prod-status`) fails until it is loaded. Do not enable the
   stock `nftables.service` on this host: Ubuntu's `/etc/nftables.conf` starts
   with `flush ruleset`, which would also delete this table.
-- The Python ColBERT runtime runs `docker compose ... run colbert` directly,
-  so its index updates fail with "network besedy-internal ... could not be
-  found" on a host where no web, jobs, or ColBERT recipe has created that
-  network yet.
 - Internet egress is not allowlisted. Exfiltration over the internet is out of
   scope; restricting it would need an egress proxy.

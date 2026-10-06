@@ -333,9 +333,11 @@ def _with_ipv6(config: dict[str, object]) -> dict[str, object]:
     return config
 
 
-def validate_compose_config(config: dict[str, object], mode: str) -> subprocess.CompletedProcess[str]:
+def validate_compose_config(
+    config: dict[str, object], mode: str, *extra_args: str
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(COMPOSE_VALIDATOR), mode, mode, "besedy-internal"],
+        ["bash", str(COMPOSE_VALIDATOR), mode, mode, "besedy-internal", *extra_args],
         cwd=REPO_ROOT,
         input=json.dumps(config),
         capture_output=True,
@@ -630,6 +632,15 @@ printf 'BESEDY_JOBS_API_HOST=%s\\n' "${{BESEDY_JOBS_API_HOST-unset}}"
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == f"BESEDY_JOBS_API_HOST={jobs_api_host}"
+
+
+def test_compose_validator_allows_a_host_alias_for_commands_that_change_nothing() -> None:
+    # ps, logs, exec, and down (and the cron monitors that use them) keep working
+    # while an env file still names host.docker.internal; up and run refuse it.
+    config = compose_config("development", jobs_api_base_url="http://host.docker.internal:8390")
+
+    assert validate_compose_config(config, "development", "false").returncode == 0
+    assert validate_compose_config(config, "development", "true").returncode == 1
 
 
 @pytest.mark.parametrize(

@@ -278,6 +278,7 @@ def _run_colbert_worker_in_docker_one_shot(
     live_output_callback: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     _check_colbert_docker_service_defined(COLBERT_DOCKER_SERVICE)
+    _ensure_colbert_docker_network()
     argv = [
         "docker",
         "compose",
@@ -325,6 +326,29 @@ def _run_colbert_worker_in_docker_one_shot(
         result.stdout,
         error_prefix="ColBERT Docker one-shot worker",
     )
+
+
+def _ensure_colbert_docker_network() -> None:
+    """Create the shared network the colbert service joins if it is missing.
+
+    Compose refuses to run a service whose external network does not exist, and
+    this runtime calls Compose directly rather than through
+    scripts/run_rag_services_compose.sh (docs/web/egress-isolation.md).
+    """
+
+    network = os.environ.get("BESEDY_INTERNAL_NETWORK") or "besedy-internal"
+    result = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "scripts" / "docker_network.sh"), "ensure", network],
+        text=True,
+        capture_output=True,
+        cwd=PROJECT_ROOT,
+        check=False,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Could not create Docker network {network}: {message}")
+    if result.stderr.strip():
+        print(result.stderr.strip(), file=sys.stderr)
 
 
 def _check_colbert_docker_binary_ready() -> None:

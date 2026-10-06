@@ -5,9 +5,12 @@ set -euo pipefail
 mode="${1:-}"
 instance="${2:-}"
 expected_internal_network="${3:-}"
+# false for commands that never create or change containers (ps, logs, exec,
+# down), so they keep working while an env file still needs migrating.
+changes_resources="${4:-true}"
 
 if [[ -z "$mode" || -z "$instance" || -z "$expected_internal_network" ]]; then
-  echo "Usage: $0 <development|production|test> <compose-instance> <internal-network>" >&2
+  echo "Usage: $0 <development|production|test> <compose-instance> <internal-network> [changes-resources]" >&2
   exit 1
 fi
 
@@ -52,11 +55,14 @@ jq -e '.networks.default.enable_ipv6 == false' <<<"$config" >/dev/null \
   || fail "default network must set enable_ipv6: false"
 
 # Containers cannot reach the host (docs/web/egress-isolation.md), and web no
-# longer maps host.docker.internal; an env file that still names it would only
-# time out. RAG_COLBERT_URL is now http://besedy-colbert:8192/query.
-host_alias_keys="$(jq -r '.services.web.environment // {} | to_entries[] | select((.value // "") | tostring | contains("host.docker.internal")) | .key' <<<"$config" | paste -sd, -)"
-[[ -z "$host_alias_keys" ]] \
-  || fail "web environment still points at host.docker.internal ($host_alias_keys); containers cannot reach the host, use the container name on besedy-internal"
+# longer maps host.docker.internal; a container created from an env file that
+# still names it would only time out. RAG_COLBERT_URL is now
+# http://besedy-colbert:8192/query.
+if [[ "$changes_resources" == true ]]; then
+  host_alias_keys="$(jq -r '.services.web.environment // {} | to_entries[] | select((.value // "") | tostring | contains("host.docker.internal")) | .key' <<<"$config" | paste -sd, -)"
+  [[ -z "$host_alias_keys" ]] \
+    || fail "web environment still points at host.docker.internal ($host_alias_keys); containers cannot reach the host, use the container name on besedy-internal"
+fi
 
 actual_internal_network="$(jq -r '.networks.besedy_internal.name // empty' <<<"$config")"
 [[ "$actual_internal_network" == "$expected_internal_network" ]] \
