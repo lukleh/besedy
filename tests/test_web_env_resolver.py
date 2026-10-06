@@ -661,6 +661,11 @@ printf 'BESEDY_JOBS_API_HOST=%s\\n' "${{BESEDY_JOBS_API_HOST-unset}}"
             "http://besedy-test-jobs-api:8390/",
             "names another environment's jobs runtime; use http://besedy-prod-jobs-api:8390",
         ),
+        (
+            "development",
+            "http://host.docker.internal:8390",
+            "web environment still points at host.docker.internal (JOBS_API_BASE_URL)",
+        ),
     ],
 )
 def test_compose_validator_rejects_jobs_api_names_of_other_runtimes(
@@ -680,7 +685,7 @@ def test_compose_validator_rejects_jobs_api_names_of_other_runtimes(
         ("production", "http://besedy-prod-jobs-api:8390"),
         ("test", "http://besedy-test-jobs-api:8390"),
         ("development", "http://besedy-jobs-api:8390"),
-        ("development", "http://host.docker.internal:8390"),
+        ("development", "http://jobs.example.test:8390"),
         ("production", "https://jobs.example.internal/"),
         ("test", None),
     ],

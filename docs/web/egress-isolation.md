@@ -52,8 +52,10 @@ Two parts, both static:
    loaded by `besedy-container-egress.service`. Its single chain hooks
    `prerouting` at priority `mangle` and, for packets arriving on `br-bsdy*`:
    drops all IPv6; accepts replies (`ct state established,related`); drops new
-   connections to any local address of the host (`fib daddr type local`); drops
-   new connections to the private ranges above.
+   connections to any local address of the host and to broadcast and multicast
+   addresses (`fib daddr type { local, broadcast, multicast }`, which also keeps
+   containers away from host daemons such as nmbd and avahi); drops new
+   connections to the private ranges above.
 
 Why this shape:
 
@@ -103,6 +105,11 @@ over `besedy-internal` (step 2) before production web is checked.
 1. Update the env files that set `RAG_COLBERT_URL` (the resolved
    `web.env.prod`, `web.env.dev`, `web.env.test`) to
    `http://besedy-colbert:8192/query`. They override the compose default.
+   `scripts/run_web_compose.sh` refuses every command while a web env value
+   still names `host.docker.internal`, so a checkout with this change cannot
+   deploy web against an old env file. Stop the host ingest worker for the
+   window: its ColBERT index updates run the `colbert` service, which needs
+   `besedy-internal` to exist.
 2. Recreate every Besedy network so it gets its bridge name. Bridge names are
    set only at creation, and the shared networks can only be removed once every
    container has left them. From the deploy checkout of each stack:
@@ -155,9 +162,12 @@ running container on a `besedy*` network it:
   or accepted connection means the packet got past the policy;
 - expects an internet address (`1.1.1.1:443`) to connect.
 
-Afterwards the `host` and `private` drop counters must be non-zero, so a
-policy that matches nothing (the failure of the retired control) cannot
-report healthy. The script exits non-zero on any failure.
+All probes run in parallel, so the check takes about one probe timeout (2 s).
+The `host` and `private` drop counters must grow during the run, so a policy
+that matches nothing (the failure of the retired control) cannot report
+healthy because of timeouts caused elsewhere. A container that cannot be
+entered (stopped or restarting) is reported as such, not as a bypass. The
+script exits non-zero on any failure.
 
 ## Assumptions and Residual Risk
 
@@ -171,5 +181,14 @@ report healthy. The script exits non-zero on any failure.
   query the shared ColBERT and talk to every jobs API on `besedy-internal`, and
   every Prefect client reaches the shared Prefect server. These are deliberate
   east-west paths, not host or LAN access.
+- The unit only orders itself before `docker.service`. If the table fails to
+  load at boot, containers start without the policy; `just egress-check`
+  (and so `just prod-status`) fails until it is loaded. Do not enable the
+  stock `nftables.service` on this host: Ubuntu's `/etc/nftables.conf` starts
+  with `flush ruleset`, which would also delete this table.
+- The Python ColBERT runtime runs `docker compose ... run colbert` directly,
+  so its index updates fail with "network besedy-internal ... could not be
+  found" on a host where no web, jobs, or ColBERT recipe has created that
+  network yet.
 - Internet egress is not allowlisted. Exfiltration over the internet is out of
   scope; restricting it would need an egress proxy.

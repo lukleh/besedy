@@ -51,6 +51,13 @@ actual_default_bridge="$(jq -r '.networks.default.driver_opts["com.docker.networ
 jq -e '.networks.default.enable_ipv6 == false' <<<"$config" >/dev/null \
   || fail "default network must set enable_ipv6: false"
 
+# Containers cannot reach the host (docs/web/egress-isolation.md), and web no
+# longer maps host.docker.internal; an env file that still names it would only
+# time out. RAG_COLBERT_URL is now http://besedy-colbert:8192/query.
+host_alias_keys="$(jq -r '.services.web.environment // {} | to_entries[] | select((.value // "") | tostring | contains("host.docker.internal")) | .key' <<<"$config" | paste -sd, -)"
+[[ -z "$host_alias_keys" ]] \
+  || fail "web environment still points at host.docker.internal ($host_alias_keys); containers cannot reach the host, use the container name on besedy-internal"
+
 actual_internal_network="$(jq -r '.networks.besedy_internal.name // empty' <<<"$config")"
 [[ "$actual_internal_network" == "$expected_internal_network" ]] \
   || fail "internal network is '$actual_internal_network', expected '$expected_internal_network'"

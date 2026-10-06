@@ -44,7 +44,9 @@ table inet besedy_egress {
 		# LAN to a published port, host CLI to ColBERT).
 		ct state established,related accept
 
-		fib daddr type local counter drop comment "host"
+		# The host's own addresses, and broadcast and multicast, which reach
+		# host daemons on 0.0.0.0 (nmbd, avahi) without a local address.
+		fib daddr type { local, broadcast, multicast } counter drop comment "host"
 		ip daddr @blocked_v4 counter drop comment "private"
 	}
 }
