@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -12,6 +15,13 @@ import pytest
 # at import time: some modules evaluate workflow config when test modules are
 # collected. This also keeps besedy.toml.example load-tested.
 os.environ["BESEDY_CONFIG"] = str(Path(__file__).parents[1] / "besedy.toml.example")
+
+# Keep runtime state (logs, scratch dirs, the ColBERT index root) out of the
+# operator's ~/.local/state/lukleh/besedy. Also at import time: the ffmpeg log
+# directory is resolved when besedy.core.paths_runtime is first imported.
+_STATE_HOME = Path(tempfile.mkdtemp(prefix="besedy-test-state-"))
+os.environ["BESEDY_STATE_HOME"] = str(_STATE_HOME)
+atexit.register(shutil.rmtree, _STATE_HOME, ignore_errors=True)
 
 
 @pytest.fixture(scope="session", autouse=True)
