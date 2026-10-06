@@ -1,0 +1,109 @@
+name: Nightly E2E
+
+# The browser end-to-end suite and the MCP smoke test need the whole web stack
+# (production build, Postgres, mock OAuth), so they run nightly instead of on
+# every PR. The pull_request trigger fires only for changes to this workflow
+# and to what it runs on (setup action, compose wrapper and files, the
+# test-up/test-down/mcp-smoke recipes, Playwright configs, the test env
+# template, the web package manifest, the production image, the OAuth and
+# ColBERT mocks, the E2E harness), so such a change is tried on its own PR
+# before it lands. Spec and app changes are left to the nightly run.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/e2e-nightly.yml
+      - .github/actions/setup-web/**
+      - Justfile
+      - scripts/run_web_compose.sh
+      - web/docker-compose.yml
+      - web/docker-compose.secure.yml
+      - web/playwright.config.ts
+      - web/playwright.mcp.config.ts
+      - web/.env.test.example
+      - web/package.json
+      - web/package-lock.json
+      - web/Dockerfile
+      - web/docker-entrypoint.sh
+      - web/tests/e2e/oauth-mock/**
+      - web/tests/e2e/rag-mock/**
+      - web/tests/e2e/global-setup.ts
+      - web/tests/e2e/global-teardown.ts
+      - web/tests/e2e/scripts/**
+      - web/tests/e2e/helpers/**
+
+# Read-only token; no job needs write access.
+permissions:
+  contents: read
+
+# A newer push to a PR supersedes its run; a manual run never cancels the
+# scheduled one on main (or the other way round).
+concurrency:
+  group: e2e-nightly-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    name: Web E2E smoke and MCP smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # The template has throwaway secrets only and points every data path at
+      # web/tests/e2e/fixtures, so the runner needs nothing from a real host.
+      BESEDY_WEB_ENV_TEST: web/.env.test.example
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step needs git auth, and the PR run executes PR code.
+          persist-credentials: false
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+      - uses: ./.github/actions/setup-web
+      # Read by Playwright on the host; the compose wrapper does not pass it
+      # into the containers, whose own logs stay in the runner's home.
+      - name: Put the Playwright report in the runner's temp dir
+        run: echo "BESEDY_STATE_HOME=$RUNNER_TEMP/besedy-state" >> "$GITHUB_ENV"
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Generate the Prisma client
+        working-directory: web
+        run: npx prisma generate
+      - name: Install Chromium for Playwright
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      # Before the stack starts, so the web container sees its catalog data.
+      - name: Generate test fixtures
+        working-directory: web
+        run: npm run test:e2e:generate
+      - name: Start the test stack
+        run: just test-up
+      # CI=true gives every test two retries; a test that only passes on a
+      # retry still fails the night, so flakiness is not hidden.
+      - name: Playwright smoke (@smoke, Desktop Chrome)
+        working-directory: web
+        run: npm run test:e2e:smoke -- --fail-on-flaky-tests
+      - name: Test stack logs
+        if: failure()
+        working-directory: web
+        run: bash ../scripts/run_web_compose.sh test logs --no-color --tail 300
+      - name: Stop the test stack
+        if: ${{ !cancelled() }}
+        run: just test-down
+      # Runs its own stack instance with a ColBERT mock and tears it down; on
+      # failure the recipe prints that stack's logs first.
+      - name: MCP smoke
+        if: ${{ !cancelled() }}
+        run: just mcp-smoke
+      - name: Upload the Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          # The main suite's report, results and artifacts; the MCP run keeps
+          # Playwright's default output dir (traces, screenshots on failure).
+          path: |
+            ${{ runner.temp }}/besedy-state/web/test-output
+            web/test-results
+          if-no-files-found: warn
+          retention-days: 14

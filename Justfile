@@ -1182,6 +1182,14 @@ mcp-smoke:
     runtime_dir="$repo_root/web/.playwright-mcp/$BESEDY_WEB_COMPOSE_INSTANCE"
     rag_container="besedy-mcp-rag-${RANDOM}-$$"
     cleanup() {
+      local status=$?
+      # The stack and its logs are gone after the teardown below, so show them
+      # first when the smoke run failed.
+      if [[ $status -ne 0 ]]; then
+        echo "MCP smoke failed (exit $status); last MCP test stack logs:" >&2
+        (cd "$repo_root/web" && bash ../scripts/run_web_compose.sh test logs --no-color --tail 200) >&2 || true
+        docker logs --tail 50 "$rag_container" >&2 || true
+      fi
       docker rm -f "$rag_container" > /dev/null 2>&1 || true
       (cd "$repo_root/web" && bash ../scripts/run_web_compose.sh test down -v --rmi local) > /dev/null 2>&1 || true
       rm -rf "$runtime_dir"
@@ -1239,7 +1247,7 @@ mcp-smoke:
     for i in {1..60}; do
       if curl -sf "$PLAYWRIGHT_BASE_URL/api/health" > /dev/null 2>&1; then
         cd web
-        npm run test:e2e:mcp
+        npm run test:e2e:mcp -- --fail-on-flaky-tests
         exit 0
       fi
       sleep 1
