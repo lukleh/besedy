@@ -1,11 +1,12 @@
 # Exact package set of the besedy/faster-whisper:local image built on 2026-06-14
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
+# 2026-10-06: security patch bumps of non-model packages, pip check clean.
 # Top-level: torch torchaudio torchvision (cu128 index); faster-whisper==1.2.1
 # silero-vad==6.2.0 ctranslate2 safetensors numpy python-dotenv pyyaml scipy
 # sentencepiece soundfile transformers tqdm
 --extra-index-url https://download.pytorch.org/whl/cu128
 annotated-doc==0.0.4
-anyio==4.13.0
+anyio==4.14.2
 av==17.1.0
 certifi==2026.5.20
 cffi==2.0.0
@@ -17,7 +18,7 @@ cuda-toolkit==12.8.1
 faster-whisper==1.2.1
 filelock==3.29.0
 flatbuffers==25.12.19
-fsspec==2026.4.0
+fsspec==2026.6.0
 h11==0.16.0
 hf-xet==1.5.1
 httpcore==1.0.9
@@ -48,8 +49,8 @@ nvidia-nvshmem-cu12==3.4.5
 nvidia-nvtx-cu12==12.8.90
 onnxruntime==1.26.0
 packaging==26.2
-pillow==12.2.0
-pip==26.1.2
+pillow==12.3.0
+pip==26.2
 protobuf==7.35.1
 pycparser==3.0
 Pygments==2.20.0
@@ -60,7 +61,7 @@ rich==15.0.0
 safetensors==0.8.0
 scipy==1.17.1
 sentencepiece==0.2.1
-setuptools==70.2.0
+setuptools==81.0.0
 shellingham==1.5.4
 silero-vad==6.2.0
 soundfile==0.14.0
