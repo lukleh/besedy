@@ -8,6 +8,11 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+# Exit code of a step that ran but skipped some rows (a missing source, an
+# undecodable file, an unreadable transcript). 1 means the step itself failed.
+# run-pipeline continues past it, so one bad row cannot block every other row.
+EXIT_ROWS_SKIPPED = 2
+
 
 @dataclass(frozen=True)
 class WorkflowCommand:

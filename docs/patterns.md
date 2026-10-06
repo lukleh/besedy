@@ -142,8 +142,10 @@ Before writing code, determine:
 ### CLI/Pipeline Changes
 
 Keep argument parsing in `besedy/cli/*.py`, business logic in
-`besedy/commands/*`. Return integer exit codes. Use Rich for user-facing output.
-Add parser coverage in `tests/test_cli_parser.py`.
+`besedy/commands/*`. Return integer exit codes: 0 for success, 1 when the
+command failed, and `EXIT_ROWS_SKIPPED` (2, `besedy/lib/workflow/common.py`) when a
+per-row step ran but skipped some rows. `run-pipeline` continues past a 2. Use Rich
+for user-facing output. Add parser coverage in `tests/test_cli_parser.py`.
 
 ### Workflow/Backend Changes
 

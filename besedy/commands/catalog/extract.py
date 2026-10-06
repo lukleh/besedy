@@ -23,6 +23,7 @@ from besedy.lib.analysis.stats import extract_transcript_text
 from besedy.lib.analysis.subtitles import render_srt, render_vtt
 from besedy.lib.analysis.timeline import Segment, extract_segments
 from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 
 @dataclass
@@ -184,7 +185,9 @@ def handle_export_transcripts(
     _print_stats(stats, console)
 
     if stats["errors"]:
-        return 1
+        # Transcripts that could not be read or written are skipped; the rest
+        # were exported.
+        return EXIT_ROWS_SKIPPED
 
     return 0
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from besedy.lib.audio.types import PreparedEntry, SkippedEntry
 from besedy.lib.catalog.manager import METADATA_TAG_COLUMNS, FileRecord
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 # Canonical column order for duplicates CSV
 DUPLICATES_CSV_COLUMNS = (
@@ -92,9 +93,9 @@ def print_workflow_summary(
     """Summarise workflow outcomes without implying work ran when it didn't.
 
     ``skipped`` holds only rows that could not be processed; any non-empty value
-    means the command exits non-zero. Rows whose outputs already existed are the
-    common case on re-runs and are reported as a single ``already_complete``
-    count rather than one line per row.
+    means the command exits with ``EXIT_ROWS_SKIPPED``. Rows whose outputs
+    already existed are the common case on re-runs and are reported as a single
+    ``already_complete`` count rather than one line per row.
     """
 
     print("\n=== Summary ===")
@@ -124,9 +125,15 @@ def print_workflow_summary(
 
     if skipped:
         if staged:
-            print("Workflows completed with skipped rows; command will exit with status 1.")
+            print(
+                "Workflows completed with skipped rows; "
+                f"command will exit with status {EXIT_ROWS_SKIPPED}."
+            )
         else:
-            print("No workflows completed successfully; command will exit with status 1.")
+            print(
+                "No rows were processed, only skipped; "
+                f"command will exit with status {EXIT_ROWS_SKIPPED}."
+            )
     elif staged:
         print("All workflows completed successfully.")
     elif already_complete:

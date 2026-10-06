@@ -25,6 +25,7 @@ from besedy.core.symlinks import (
 from besedy.lib.audio.normalize import stage_audio_files
 from besedy.lib.audio.types import ManifestWriter
 from besedy.lib.data.atomic_io import atomic_path
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 
 @dataclass
@@ -351,4 +352,4 @@ def handle_stage_audio(
 
     print_workflow_summary(prepared, skipped, [])
 
-    return 1 if skipped else 0
+    return EXIT_ROWS_SKIPPED if skipped else 0
