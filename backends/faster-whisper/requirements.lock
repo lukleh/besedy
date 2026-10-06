@@ -50,7 +50,7 @@ nvidia-nvtx-cu12==12.8.90
 onnxruntime==1.26.0
 packaging==26.2
 pillow==12.3.0
-pip==26.2.0
+pip==26.2
 protobuf==7.35.1
 pycparser==3.0
 Pygments==2.20.0
