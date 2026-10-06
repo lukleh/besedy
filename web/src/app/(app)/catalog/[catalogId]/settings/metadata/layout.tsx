@@ -10,13 +10,12 @@ interface MetadataLayoutProps {
 /**
  * The catalog's lookup lists (recorders, locations, albums). They open for the
  * same people the lookup routes let edit them: `manage_lookups` on this catalog
- * (ADR 0007). Everyone else goes back to the catalog.
+ * (ADR 0007). Everyone else goes back to the catalog. Like those routes, they
+ * serve active catalogs only.
  */
 export default async function MetadataLayout({ children, params }: MetadataLayoutProps) {
   const { catalogId } = await params;
-  const { capability } = await requireCatalogPageAccess(catalogId, {
-    activeCatalogOnly: false,
-  });
+  const { capability } = await requireCatalogPageAccess(catalogId);
   if (!capability.canManageLookups) {
     redirect(`/catalog/${catalogId}`);
   }

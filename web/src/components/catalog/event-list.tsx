@@ -73,6 +73,7 @@ import {
   locationItemSchema,
   toPaginationInfo,
 } from "./event-list-types";
+import { catalogLookupsApiPath } from "@/lib/catalog/lookup-paths";
 
 interface EventHealthResponse {
   unassignedRecordings: number;
@@ -327,7 +328,7 @@ export function EventList({
   const { data: metadataLocations = [] } = useQuery<LocationItem[]>({
     queryKey: ["locations", catalogId],
     queryFn: () =>
-      fetchJson<LocationItem[]>(`/api/catalogs/${catalogId}/metadata/locations`, {
+      fetchJson<LocationItem[]>(catalogLookupsApiPath(catalogId, "locations"), {
         schema: z.array(locationItemSchema),
       }),
   });

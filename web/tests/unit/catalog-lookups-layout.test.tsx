@@ -54,9 +54,8 @@ describe("catalog lookups layout", () => {
 
     expect(screen.getByTestId("lookups-layout")).toHaveAttribute("data-catalog-id", catalogId);
     expect(screen.getByText("lookup list")).toBeInTheDocument();
-    expect(mocks.requireCatalogPageAccessMock).toHaveBeenCalledWith(catalogId, {
-      activeCatalogOnly: false,
-    });
+    // Active catalogs only, as the lookup routes behind the pages.
+    expect(mocks.requireCatalogPageAccessMock).toHaveBeenCalledWith(catalogId);
   });
 
   it("sends everyone else back to the catalog", async () => {

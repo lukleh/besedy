@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import CatalogSettingsContent from "./catalog-settings-content";
 import type { CatalogSettingsCards } from "./catalog-settings-content-types";
 import { requireCatalogPageAccess } from "@/lib/access/catalog-page-access";
+import { findActiveCatalog } from "@/lib/catalog/resolve-group";
 import { getCatalogFeaturesForUser } from "@/lib/features/capabilities";
 
 interface CatalogSettingsPageProps {
@@ -29,7 +30,8 @@ export default async function CatalogSettingsPage({
     configuration: capability.canManageCatalogConfiguration,
     eventHealth: features.features.events.canEdit,
     access: capability.canManageAccess,
-    lookups: capability.canManageLookups,
+    // The lookup routes serve active catalogs only.
+    lookups: capability.canManageLookups && (await findActiveCatalog(catalogId)) !== null,
   };
 
   if (!Object.values(cards).some(Boolean)) {

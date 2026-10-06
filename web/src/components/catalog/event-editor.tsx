@@ -38,6 +38,7 @@ import {
   type UnassignedResponse,
 } from "@/components/catalog/unassigned-recordings-table";
 import { SessionOrdinalBadge } from "./session-ordinal-badge";
+import { catalogLookupsApiPath } from "@/lib/catalog/lookup-paths";
 
 interface EventDetailProps {
   catalogId: string;
@@ -126,7 +127,7 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
 
   const { data: locations = [] } = useQuery<LocationItem[]>({
     queryKey: ["locations", catalogId],
-    queryFn: () => fetchJson<LocationItem[]>(`/api/catalogs/${catalogId}/metadata/locations`),
+    queryFn: () => fetchJson<LocationItem[]>(catalogLookupsApiPath(catalogId, "locations")),
   });
 
   const refreshEvent = () => {

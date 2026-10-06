@@ -207,7 +207,7 @@ describe("catalog API routes (access gating)", () => {
     ];
   }
 
-  it("GET /api/catalog returns 403 when user lacks catalog access", async () => {
+  it("GET /api/catalogs/:id/recordings returns 403 when user lacks catalog access", async () => {
     requireAuth.mockResolvedValue("user-1");
     findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
     getCatalogCapability.mockResolvedValue({ hasAccess: false });
@@ -220,7 +220,7 @@ describe("catalog API routes (access gating)", () => {
     expect(body.error).toMatch(/Access denied/);
   });
 
-  it("GET /api/catalog/filter-options returns 403 when user lacks catalog access", async () => {
+  it("GET /api/catalogs/:id/recordings/filter-options returns 403 when user lacks catalog access", async () => {
     requireAuth.mockResolvedValue("user-1");
     findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
     getCatalogCapability.mockResolvedValue({ hasAccess: false });
@@ -233,7 +233,7 @@ describe("catalog API routes (access gating)", () => {
     expect(body.error).toMatch(/Access denied/);
   });
 
-  it("GET /api/catalog scopes listener rows, counts, and filters to visible entries", async () => {
+  it("GET /api/catalogs/:id/recordings scopes listener rows, counts, and filters to visible entries", async () => {
     requireAuth.mockResolvedValue("listener-1");
     findActiveCatalog.mockResolvedValue({
       id: "20251225_120000",
@@ -306,7 +306,7 @@ describe("catalog API routes (access gating)", () => {
     expect(body.entries[0].hasOriginalAudio).toBe(true);
   });
 
-  it("GET /api/catalog/filter-options scopes listener options to visible entries", async () => {
+  it("GET /api/catalogs/:id/recordings/filter-options scopes listener options to visible entries", async () => {
     requireAuth.mockResolvedValue("listener-1");
     findActiveCatalog.mockResolvedValue({
       id: "20251225_120000",
@@ -364,7 +364,7 @@ describe("catalog API routes (access gating)", () => {
     ["dateYear=2024&dateMonth=5&dateDay=10", ["b".repeat(64)]],
     ["duplicates=3", ["b".repeat(64)]],
     ["actionable=true", ["b".repeat(64), "a".repeat(64)]],
-  ])("GET /api/catalog applies filter %s", async (query, expectedHashes) => {
+  ])("GET /api/catalogs/:id/recordings applies filter %s", async (query, expectedHashes) => {
     mockAccessibleCatalog(createMatrixEntries());
 
     const request = new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings?${query}`);
@@ -375,7 +375,7 @@ describe("catalog API routes (access gating)", () => {
     expect(body.entries.map((entry: { hash: string }) => entry.hash)).toEqual(expectedHashes);
   });
 
-  it("GET /api/catalog sorts by duplicates descending", async () => {
+  it("GET /api/catalogs/:id/recordings sorts by duplicates descending", async () => {
     mockAccessibleCatalog(createMatrixEntries());
 
     const request = new NextRequest(
@@ -409,7 +409,7 @@ describe("catalog API routes (access gating)", () => {
     ["dir", "sideways"],
     ["actionable", "yes"],
   ])(
-    "GET /api/catalog ignores invalid %s query values",
+    "GET /api/catalogs/:id/recordings ignores invalid %s query values",
     async (param, value) => {
       mockAccessibleCatalog(createMatrixEntries());
 

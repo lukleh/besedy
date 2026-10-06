@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { catalogLookupsApiPath, type CatalogLookupResource } from "@/lib/catalog/lookup-paths";
 
 export interface MetadataRecorder {
   id: number;
@@ -24,17 +25,16 @@ const metadataEnumSchema = z.object({
 
 const metadataEnumsSchema = z.array(metadataEnumSchema);
 
-type MetadataEnumResource = "recorders" | "locations" | "albums";
 type MetadataEnumItem = z.infer<typeof metadataEnumSchema>;
 
 /** Lookup list of one catalog; waits until the catalog id is known. */
-function useMetadataEnumQuery(resource: MetadataEnumResource, catalogId: string | undefined) {
+function useMetadataEnumQuery(resource: CatalogLookupResource, catalogId: string | undefined) {
   return useQuery<MetadataEnumItem[]>({
     queryKey: ["metadata", resource, catalogId],
     queryFn: async () => {
       try {
         return await fetchJson<MetadataEnumItem[]>(
-          `/api/catalogs/${catalogId}/metadata/${resource}`,
+          catalogLookupsApiPath(catalogId!, resource),
           { schema: metadataEnumsSchema }
         );
       } catch {

@@ -863,7 +863,7 @@ describe('offline shell routing', () => {
 
   it('does not intercept JSON API reads', () => {
     const { fetchHandler } = loadScript();
-    const event = createEvent(`/api/transcript/${HASH}`);
+    const event = createEvent(`/api/catalogs/cat/recordings/${HASH}/transcript`);
     fetchHandler(event);
     expect(event.respondWith).not.toHaveBeenCalled();
   });
