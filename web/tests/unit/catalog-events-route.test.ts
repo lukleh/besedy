@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getCatalogEvents } from "@/app/api/catalog-events/route";
+import { GET as getCatalogEventsRoute } from "@/app/api/catalogs/[id]/events/route";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
+
+const getCatalogEvents = (request: NextRequest) =>
+  getCatalogEventsRoute(request, { params: Promise.resolve({ id: "20260201_120000" }) });
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -139,7 +142,7 @@ describe("catalog events route", () => {
   });
 
   it("keeps draft events visible for curator listings", async () => {
-    const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
+    const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalogs/${catalogId}/events`));
 
     expect(response.status).toBe(200);
     expect(getPublishedVisibleEventIds).not.toHaveBeenCalled();
@@ -179,7 +182,7 @@ describe("catalog events route", () => {
     });
     canViewEventArtworkCandidates.mockReturnValue(false);
 
-    const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}`));
+    const response = await getCatalogEvents(new NextRequest(`http://localhost/api/catalogs/${catalogId}/events`));
 
     expect(response.status).toBe(200);
     expect(getPublishedVisibleEventIds).toHaveBeenCalledWith(prisma, catalogId);
@@ -194,7 +197,7 @@ describe("catalog events route", () => {
 
   it("applies the text search filter to event title and location name", async () => {
     const response = await getCatalogEvents(
-      new NextRequest(`http://localhost/api/catalog-events?group=${catalogId}&search=%20Praha%20`)
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events?search=%20Praha%20`)
     );
 
     expect(response.status).toBe(200);
@@ -234,7 +237,7 @@ describe("catalog events route", () => {
     ]);
     const response = await getCatalogEvents(
       new NextRequest(
-        `http://localhost/api/catalog-events?group=${catalogId}&sequence=true&current=7&sort=date&dir=asc`
+        `http://localhost/api/catalogs/${catalogId}/events?sequence=true&current=7&sort=date&dir=asc`
       )
     );
 

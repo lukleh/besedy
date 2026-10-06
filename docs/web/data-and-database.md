@@ -102,7 +102,8 @@ parameter:
 The retired `listening` source (and its `variant` parameter) is still accepted
 from old clients and served as archived.
 
-Per-recording source preferences are stored in `user_preferences.settings.audioSources`.
+There is no per-recording source preference any more. Older rows may still carry
+`user_preferences.settings.audioSources`; nothing reads or writes it.
 
 Independently of the source, `format` picks the file: `webm` (default), the Opus
 archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,

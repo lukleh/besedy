@@ -20,11 +20,6 @@ export function buildAudioSourcesUrl(catalogId: string, hash: string): string {
   return `/api/catalogs/${catalogId}/recordings/${hash}/audio/sources`;
 }
 
-export function buildAudioSourcePreferenceUrl(catalogId: string, hash: string): string {
-  const params = new URLSearchParams({ hash, group: catalogId });
-  return `/api/preferences/audio-source?${params.toString()}`;
-}
-
 export function buildPlaybackProgressUrl(catalogId: string, hash: string): string {
   return `/api/catalogs/${catalogId}/recordings/${hash}/progress`;
 }
@@ -60,36 +55,41 @@ export function buildAudioDownloadUrl(catalogId: string, hash: string, source: "
   return `/api/catalogs/${catalogId}/recordings/${hash}/audio?${params.toString()}`;
 }
 
-function withGroup(params: URLSearchParams, groupId: string | null | undefined): URLSearchParams {
-  if (groupId) {
-    params.set("group", groupId);
-  }
-  return params;
+export function buildTranscriptBackendsUrl(catalogId: string, hash: string): string {
+  return `/api/catalogs/${catalogId}/recordings/${hash}/transcript`;
 }
 
-export function buildTranscriptBackendsUrl(hash: string, groupId?: string | null): string {
-  const suffix = withGroup(new URLSearchParams(), groupId).toString();
-  return `/api/transcript/${hash}${suffix ? `?${suffix}` : ""}`;
+export function buildTranscriptUrl(catalogId: string, hash: string, backend: string): string {
+  const params = new URLSearchParams({ backend });
+  return `${buildTranscriptBackendsUrl(catalogId, hash)}?${params.toString()}`;
 }
 
-export function buildTranscriptUrl(hash: string, groupId: string | null | undefined, backend: string): string {
-  const params = withGroup(new URLSearchParams({ backend }), groupId);
-  return `/api/transcript/${hash}?${params.toString()}`;
+export function buildTranscriptFormatsUrl(catalogId: string, hash: string, backend: string): string {
+  const params = new URLSearchParams({ backend });
+  return `${buildTranscriptBackendsUrl(catalogId, hash)}/formats?${params.toString()}`;
 }
 
-export function buildTranscriptFormatsUrl(hash: string, groupId: string | null | undefined, backend: string): string {
-  const params = withGroup(new URLSearchParams({ backend }), groupId);
-  return `/api/transcript/${hash}/formats?${params.toString()}`;
+export function buildTranscriptDownloadUrl(
+  catalogId: string,
+  hash: string,
+  backend: string,
+  format: string
+): string {
+  const params = new URLSearchParams({ backend, format });
+  return `${buildTranscriptBackendsUrl(catalogId, hash)}/download?${params.toString()}`;
 }
 
-export function buildDiarizationBackendsUrl(hash: string, groupId?: string | null): string {
-  const suffix = withGroup(new URLSearchParams(), groupId).toString();
-  return `/api/transcript/${hash}/speakers${suffix ? `?${suffix}` : ""}`;
+export function buildTranscriptCompareUrl(catalogId: string, hash: string): string {
+  return `${buildTranscriptBackendsUrl(catalogId, hash)}/compare`;
 }
 
-export function buildDiarizationUrl(hash: string, groupId: string | null | undefined, backend: string): string {
-  const params = withGroup(new URLSearchParams({ backend }), groupId);
-  return `/api/transcript/${hash}/speakers?${params.toString()}`;
+export function buildDiarizationBackendsUrl(catalogId: string, hash: string): string {
+  return `${buildTranscriptBackendsUrl(catalogId, hash)}/speakers`;
+}
+
+export function buildDiarizationUrl(catalogId: string, hash: string, backend: string): string {
+  const params = new URLSearchParams({ backend });
+  return `${buildDiarizationBackendsUrl(catalogId, hash)}?${params.toString()}`;
 }
 
 export function buildEventDetailUrl(catalogId: string, eventId: number): string {

@@ -99,10 +99,10 @@ describe("EventUnassignedRecordingsPage", () => {
   it("attaches the selected recording directly to a matching event", async () => {
     fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.startsWith("/api/catalog-events/unassigned?")) {
+      if (url.startsWith(`/api/catalogs/${catalogId}/events/unassigned?`)) {
         return unassignedResponse;
       }
-      if (url === "/api/catalog-events/from-recording") {
+      if (url === `/api/catalogs/${catalogId}/events/from-recording`) {
         throw new ApiError("Choose a destination", 409, conflictPayload);
       }
       if (url === `/api/catalogs/${catalogId}/events/88/recordings`) {
@@ -127,16 +127,15 @@ describe("EventUnassignedRecordingsPage", () => {
   it("confirms semantic intent while the server allocates the session", async () => {
     fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.startsWith("/api/catalog-events/unassigned?")) {
+      if (url.startsWith(`/api/catalogs/${catalogId}/events/unassigned?`)) {
         return unassignedResponse;
       }
-      if (url === "/api/catalog-events/from-recording") {
+      if (url === `/api/catalogs/${catalogId}/events/from-recording`) {
         const body = JSON.parse(String(init?.body));
         if (body.intent !== "create_distinct") {
           throw new ApiError("Choose a destination", 409, conflictPayload);
         }
         expect(body).toEqual({
-          workflowGroupId: catalogId,
           audioHash,
           intent: "create_distinct",
         });

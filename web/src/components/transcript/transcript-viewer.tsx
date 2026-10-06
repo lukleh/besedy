@@ -33,6 +33,7 @@ import {
   buildDiarizationBackendsUrl,
   buildDiarizationUrl,
   buildTranscriptBackendsUrl,
+  buildTranscriptDownloadUrl,
   buildTranscriptFormatsUrl,
   buildTranscriptUrl,
 } from "@/lib/api/recording-urls";
@@ -135,7 +136,7 @@ export function TranscriptViewer({
         withLocalFallback(
           () =>
             fetchJson<AvailableTranscripts>(
-              buildTranscriptBackendsUrl(hash, groupId),
+              buildTranscriptBackendsUrl(groupId, hash),
               {
                 schema: availableTranscriptsSchema,
               }
@@ -176,7 +177,7 @@ export function TranscriptViewer({
       withLocalFallback(
         () =>
           fetchJson<AvailableFormats>(
-            buildTranscriptFormatsUrl(hash, groupId, effectiveBackend ?? ""),
+            buildTranscriptFormatsUrl(groupId, hash, effectiveBackend ?? ""),
             {
               schema: availableFormatsSchema,
             }
@@ -192,17 +193,7 @@ export function TranscriptViewer({
   const handleTranscriptDownload = useCallback(
     (format: TranscriptFormat) => {
       if (!effectiveBackend) return;
-      const params = new URLSearchParams({
-        backend: effectiveBackend,
-        format,
-      });
-      if (groupId) {
-        params.set("group", groupId);
-      }
-      window.open(
-        `/api/transcript/${hash}/download?${params.toString()}`,
-        "_blank"
-      );
+      window.open(buildTranscriptDownloadUrl(groupId, hash, effectiveBackend, format), "_blank");
     },
     [hash, effectiveBackend, groupId]
   );
@@ -215,7 +206,7 @@ export function TranscriptViewer({
         withLocalFallback(
           () =>
             fetchJson<Transcript>(
-              buildTranscriptUrl(hash, groupId, effectiveBackend ?? ""),
+              buildTranscriptUrl(groupId, hash, effectiveBackend ?? ""),
               {
                 schema: transcriptSchema,
               }
@@ -282,7 +273,7 @@ export function TranscriptViewer({
         return await withLocalFallback(
           () =>
             fetchJson<AvailableDiarizations>(
-              buildDiarizationBackendsUrl(hash, groupId),
+              buildDiarizationBackendsUrl(groupId, hash),
               {
                 schema: availableDiarizationsSchema,
               }
@@ -311,7 +302,7 @@ export function TranscriptViewer({
       withLocalFallback(
         () =>
           fetchJson<Diarization>(
-            buildDiarizationUrl(hash, groupId, effectiveDiarizationBackend ?? ""),
+            buildDiarizationUrl(groupId, hash, effectiveDiarizationBackend ?? ""),
             {
               schema: diarizationSchema,
             }

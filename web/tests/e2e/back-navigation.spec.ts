@@ -28,8 +28,8 @@ async function getEventIdByTitle(
   request: APIRequestContext,
   title: string,
 ): Promise<number> {
-  const params = new URLSearchParams({ group: TEST_CATALOG_ID, search: title, limit: '50' });
-  const response = await request.get(`/api/catalog-events?${params.toString()}`);
+  const params = new URLSearchParams({ search: title, limit: '50' });
+  const response = await request.get(`/api/catalogs/${TEST_CATALOG_ID}/events?${params.toString()}`);
   expect(response.ok()).toBe(true);
   const body = (await response.json()) as { events: Array<{ id: number; title: string | null }> };
   const event = body.events.find((item) => item.title === title);

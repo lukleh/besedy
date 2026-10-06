@@ -22,6 +22,8 @@ import { OFFLINE_CACHE_NAMES } from '@/lib/offline/cache-names';
 const HASH = 'c'.repeat(64);
 const OTHER_HASH = 'd'.repeat(64);
 const CATALOG = '20260101_000000';
+// Only the catalog-scoped transcript routes; the removed /api/transcript/:hash gets no answer.
+const TRANSCRIPT_PATH = new RegExp(`^/api/catalogs/${CATALOG}/recordings/[a-f0-9]{64}/transcript(/|$)`);
 const CHUNK = 2 * 1024 * 1024;
 const AUDIO_SIZE = CHUNK * 2 + 1234;
 
@@ -170,9 +172,6 @@ function createFakeServer(options: FakeServerOptions = {}) {
           defaultSource: 'archived',
         });
       }
-      if (pathname === '/api/preferences/audio-source') {
-        return json({ hash: HASH, sourceId: null });
-      }
       if (pathname.endsWith('/progress')) {
         return json({ progress: null });
       }
@@ -204,7 +203,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
           },
         });
       }
-      if (pathname.startsWith('/api/transcript/')) {
+      if (TRANSCRIPT_PATH.test(pathname)) {
         if (pathname.endsWith('/speakers'))
           return json({ hash: HASH, backends: [] });
         if (pathname.endsWith('/formats'))
@@ -444,7 +443,7 @@ describe('download manager', () => {
               ? input.toString()
               : input.url,
           window.location.origin,
-        ).pathname.startsWith('/api/transcript/'),
+        ).pathname.includes('/transcript'),
       ),
     ).toBe(false);
 

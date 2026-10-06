@@ -15,7 +15,6 @@ import {
   GitCommit,
   AlertTriangle,
   FolderCog,
-  ListPlus,
   ListOrdered,
   RefreshCw,
   Bot,
@@ -54,11 +53,6 @@ const navItems = [
     titleKey: "nav.ingest" as const,
     href: "/admin/ingest",
     icon: Upload,
-  },
-  {
-    titleKey: "nav.metadata" as const,
-    href: "/admin/metadata",
-    icon: ListPlus,
   },
   {
     titleKey: "nav.transcripts" as const,
@@ -156,7 +150,6 @@ function Breadcrumb() {
       users: t("nav.users"),
       catalogs: t("nav.catalogs"),
       ingest: t("nav.ingest"),
-      metadata: t("nav.metadata"),
       "transcript-order": t("nav.transcripts"),
       audit: t("nav.auditLog"),
       mcp: t("nav.mcpUsage"),

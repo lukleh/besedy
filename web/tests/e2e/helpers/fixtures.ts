@@ -52,10 +52,6 @@ export const URLS = {
   settings: "/settings",
   admin: "/admin",
   adminCatalogs: "/admin/catalogs",
-  adminMetadata: "/admin/metadata",
-  adminMetadataLocations: "/admin/metadata/locations",
-  adminMetadataRecorders: "/admin/metadata/recorders",
-  adminMetadataAlbums: "/admin/metadata/albums",
   adminUsers: "/admin/users",
   adminPendingAdmissions: "/admin/users?status=PENDING", // Pending admissions are managed on the users page
   adminAudit: "/admin/audit",

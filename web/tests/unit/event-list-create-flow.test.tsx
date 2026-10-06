@@ -106,7 +106,7 @@ describe("EventList create flow", () => {
     vi.clearAllMocks();
     fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.startsWith("/api/catalog-events?")) {
+      if (url.startsWith(`/api/catalogs/${catalogId}/events?`)) {
         return {
           events: [],
           filterOptions: { years: [], locations: [] },
@@ -119,13 +119,13 @@ describe("EventList create flow", () => {
           },
         };
       }
-      if (url === `/api/metadata/locations?group=${catalogId}`) {
+      if (url === `/api/catalogs/${catalogId}/metadata/locations`) {
         return [{ id: 7, name: "Praha" }];
       }
       if (url === `/api/catalogs/${catalogId}/events/health`) {
         return { unassignedRecordings: 0 };
       }
-      if (url === "/api/catalog-events" && init?.method === "POST") {
+      if (url === `/api/catalogs/${catalogId}/events` && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
         if (body.intent !== "create_distinct") {
           throw new ApiError("Choose an event", 409, conflictPayload);
@@ -154,11 +154,12 @@ describe("EventList create flow", () => {
     await waitFor(() => {
       const createCalls = fetchJsonMock.mock.calls.filter(
         ([url, init]) =>
-          url === "/api/catalog-events" && init?.method === "POST"
+          url === `/api/catalogs/${catalogId}/events` && init?.method === "POST"
       );
       expect(createCalls).toHaveLength(2);
-      expect(JSON.parse(String(createCalls[1][1]?.body))).toMatchObject({
-        workflowGroupId: catalogId,
+      const body = JSON.parse(String(createCalls[1][1]?.body));
+      expect(body).not.toHaveProperty("workflowGroupId");
+      expect(body).toMatchObject({
         locationId: 7,
         dateYear: 2024,
         intent: "create_distinct",

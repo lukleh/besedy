@@ -106,28 +106,28 @@ Per-catalog authorization no longer uses an ordered access-level scale. An actor
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalog` | `browse_recordings` | List entries with filters |
-| GET | `/api/catalog/filter-options` | `browse_recordings` | Dynamic filter values/counts |
+| GET | `/api/catalogs/:id/recordings` | `browse_recordings` | List entries with filters |
+| GET | `/api/catalogs/:id/recordings/filter-options` | `browse_recordings` | Dynamic filter values/counts |
 | GET | `/api/catalogs/:id/recordings/:hash/entry` | Catalog access, release-scoped | Single enriched entry |
 | GET | `/api/catalogs/:id/recordings/:hash/details` | `edit_metadata` | Full source details for edit UI |
 | GET | `/api/catalogs/:id/recordings/:hash/audio/sources` | Catalog access, release-scoped | Audio source options and the `formats` each can be served in |
 | GET | `/api/catalogs/:id/recordings/:hash/audio` | Catalog access, release-scoped to stream; `download_audio` to force a download; `original` source additionally requires `download_original_audio` | Stream or download audio; `format=aac` serves the AAC-in-MP4 copy or `404` |
 
 - "Catalog access, release-scoped" means: the actor holds a grant on the catalog, and if that grant lacks `see_unreleased` the recording must also be published and actionable (`status=ready`); no unpublished or non-actionable rows otherwise. `browse_recordings` is carried by `curator` and `catalog_admin` by default and can otherwise only be granted as a named extra -- `listener`, `reader`, `corrector` and `host` do not have it out of the box.
-- `/api/catalog/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). Requests from a grant without `see_unreleased` are visibility-scoped before counts.
+- `/api/catalogs/:id/recordings/filter-options`: each filter uses all OTHER applied filters for available values. Date filters are hierarchical (months after year, days after year+month). Requests from a grant without `see_unreleased` are visibility-scoped before counts.
 
 ### Event Endpoints
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalog-events?group=:id` | Catalog access | List visible events |
-| POST | `/api/catalog-events` | `manage_events` | Create event |
+| GET | `/api/catalogs/:id/events` | Catalog access | List visible events |
+| POST | `/api/catalogs/:id/events` | `manage_events` | Create event |
 | GET | `/api/catalogs/:id/events/:eventId` | Catalog access | Event detail |
 | PATCH/DELETE | `/api/catalogs/:id/events/:eventId` | `manage_events`; a PATCH that changes `released` additionally requires `release_events` | Update/delete event |
 | POST | `/api/catalogs/:id/events/:eventId/recordings` | `manage_events` | Attach recordings |
 | DELETE | `/api/catalogs/:id/events/:eventId/recordings/:audioHash` | `manage_events` | Detach recording |
 | POST | `/api/catalogs/:id/events/:eventId/recordings/:audioHash/set-primary` | `manage_events` | Set primary recording |
-| GET | `/api/catalog-events/unassigned?group=:id` | `manage_events` | Unassigned actionable entries |
+| GET | `/api/catalogs/:id/events/unassigned` | `manage_events` | Unassigned actionable entries |
 | GET | `/api/catalogs/:id/events/health` | `manage_events` | Event health counters |
 | GET/POST | `/api/catalogs/:id/events/:eventId/sources` | `manage_event_sources` | List or add event source records |
 | GET/PATCH/DELETE | `/api/catalogs/:id/events/:eventId/sources/:sourceId` | `manage_event_sources` | Open, edit or remove an event source |
@@ -143,10 +143,10 @@ All four routes first require the recording itself be visible (catalog access, r
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/transcript/:hash` | `read_transcripts`; a non-default backend additionally requires `see_transcript_variants`; the `speaker` field on segments additionally requires `see_speakers`. For a recording in correction scope (ADR 0006) the default is the published corrected transcript, `corrected/published`; before publication the listing carries correction progress and no text | Transcript or available backends |
-| GET | `/api/transcript/:hash/speakers` | `read_transcripts` + `see_speakers` | Diarization or available backends |
-| GET | `/api/transcript/:hash/formats` | `read_transcripts` | Available download formats |
-| GET | `/api/transcript/:hash/download` | `read_transcripts` + `download_transcripts`; `original=1` additionally requires `download_original_transcript` and delivers the machine text underneath, or the frozen source once correction started | Download transcript sidecar |
+| GET | `/api/catalogs/:id/recordings/:hash/transcript` | `read_transcripts`; a non-default backend additionally requires `see_transcript_variants`; the `speaker` field on segments additionally requires `see_speakers`. For a recording in correction scope (ADR 0006) the default is the published corrected transcript, `corrected/published`; before publication the listing carries correction progress and no text | Transcript or available backends |
+| GET | `/api/catalogs/:id/recordings/:hash/transcript/speakers` | `read_transcripts` + `see_speakers` | Diarization or available backends |
+| GET | `/api/catalogs/:id/recordings/:hash/transcript/formats` | `read_transcripts` | Available download formats |
+| GET | `/api/catalogs/:id/recordings/:hash/transcript/download` | `read_transcripts` + `download_transcripts`; `original=1` additionally requires `download_original_transcript` and delivers the machine text underneath, or the frozen source once correction started | Download transcript sidecar |
 
 Semantic search is catalog-wide rather than per recording:
 
@@ -164,12 +164,12 @@ Semantic search is catalog-wide rather than per recording:
 | GET | `/api/catalogs/:id/recordings/:hash/metadata` | Catalog access, release-scoped | Get curated metadata |
 | PUT | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Upsert curated metadata |
 | DELETE | `/api/catalogs/:id/recordings/:hash/metadata` | `edit_metadata` | Delete curated metadata |
-| GET/POST | `/api/metadata/recorders` | Catalog access / `manage_lookups` | List or create recorders |
-| GET/PUT/DELETE | `/api/metadata/recorders/:id` | Catalog access / `manage_lookups` | Manage recorder |
-| GET/POST | `/api/metadata/locations` | Catalog access / `manage_lookups` | List or create locations |
-| GET/PUT/DELETE | `/api/metadata/locations/:id` | Catalog access / `manage_lookups` | Manage location |
-| GET/POST | `/api/metadata/albums` | Catalog access / `manage_lookups` | List or create albums |
-| GET/PUT/DELETE | `/api/metadata/albums/:id` | Catalog access / `manage_lookups` | Manage album |
+| GET/POST | `/api/catalogs/:id/metadata/recorders` | Catalog access / `manage_lookups` | List or create recorders |
+| GET/PUT/DELETE | `/api/catalogs/:id/metadata/recorders/:itemId` | Catalog access / `manage_lookups` | Manage recorder |
+| GET/POST | `/api/catalogs/:id/metadata/locations` | Catalog access / `manage_lookups` | List or create locations |
+| GET/PUT/DELETE | `/api/catalogs/:id/metadata/locations/:itemId` | Catalog access / `manage_lookups` | Manage location |
+| GET/POST | `/api/catalogs/:id/metadata/albums` | Catalog access / `manage_lookups` | List or create albums |
+| GET/PUT/DELETE | `/api/catalogs/:id/metadata/albums/:itemId` | Catalog access / `manage_lookups` | Manage album |
 
 ### Transcript Correction Endpoints
 
@@ -192,8 +192,6 @@ requires the named catalog permission.
 | POST | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Publish or republish; resumes a publication that stalled |
 | DELETE | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Unpublish: clears the reader pointer, search keeps the snapshot |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/publication/recover` | `manage_catalog_config` | Reconcile or roll back a publication, or withdraw corrected text from search |
-| GET | `/api/metadata/artists` | Catalog access | Distinct artist values for filter |
-| GET | `/api/metadata/duplicate-counts` | Catalog access | Duplicate count options for filter |
 
 `edit_metadata` (curated metadata of one recording) and `manage_lookups` (the recorder, location and album rows, per [ADR 0007](../adr/0007-per-catalog-lookups.md)) are both carried only by `curator` and `catalog_admin`, and neither can be granted as an extra. "Catalog access" for a plain read means any active grant on the catalog, or `isCatalogAdmin` -- there is no per-recording release scoping on the lookup/filter endpoints.
 
@@ -251,14 +249,11 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 |--------|----------|--------|-------------|
 | * | `/api/auth/*` | Public | Better Auth (session, signin, callback) |
 | GET/PATCH | `/api/preferences` | Auth | Get/update preferences |
-| GET/PUT/DELETE | `/api/preferences/audio-source` | Auth | Audio source preferences |
 | GET/PUT | `/api/preferences/labs` | Auth | Besedy Labs toggle |
 | GET | `/api/me/permissions` | Auth | Current user's permission flags |
 | GET | `/api/health` | Public | Health check |
 | GET | `/api/version` | Public | Build version and commit info |
 | POST | `/api/csp-report` | Public | CSP violation reports |
-
-- Audio source preferences use scoped key `<group>:<hash>`; server keeps only the most recent 100 entries.
 
 ### Further Endpoints
 
@@ -278,8 +273,8 @@ call it. Endpoints not listed above:
 | GET | `/api/catalogs/:id/transcript-export` | Download the catalog's visible transcripts (`zip` or `txt`) |
 | GET/PUT | `/api/catalogs/:id/recordings/:hash/progress` | Playback progress |
 | PATCH | `/api/catalogs/:id/recordings/:hash/ready` | Manual publication toggle (`publish_recording`) |
-| POST | `/api/catalog-events/from-recording` | Create an event from a recording |
-| GET | `/api/transcript/:hash/compare` | All transcript lanes for timeline comparison |
+| POST | `/api/catalogs/:id/events/from-recording` | Create an event from a recording |
+| GET | `/api/catalogs/:id/recordings/:hash/transcript/compare` | All transcript lanes for timeline comparison |
 | GET/POST | `/api/catalogs/:id/deep-search/jobs` | List and start deep-search jobs |
 | GET | `/api/catalogs/:id/deep-search/jobs/:jobId` | Job status; `/history`, `/result.pdf` and `/share-users` sit below it |
 | POST | `/api/catalogs/:id/deep-search/jobs/:jobId/cancel` | Cancel a job |
@@ -303,7 +298,7 @@ call it. Endpoints not listed above:
 
 ### Common Query Params
 
-- `group`: catalog ID override (defaults to the saved active group, then the default catalog, then the latest accessible one). Reading never changes the saved active group; the client saves it with `PATCH /api/preferences` when the catalog list, a recording or the catalog settings open.
+- Catalog-scoped routes take the catalog from the path (`/api/catalogs/:id/…`) and answer `404` for an unknown or inactive catalog. None reads a `group` query parameter or falls back to another catalog.
 - `page`, `limit`: pagination. `sort`, `dir`: sorting.
 
 ### Error Responses
@@ -366,7 +361,8 @@ Features can be gated behind the Besedy Labs toggle using a three-layer model: r
 | Recording | `/catalog/[catalogId]/recording/[hash]` | Catalog access, release-scoped (transcripts: `read_transcripts`) |
 | Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | `edit_metadata` |
 | Correction | `/catalog/[catalogId]/recording/[hash]/correction` | `correct_transcripts`; the working surface for a recording in correction scope (ADR 0006) |
-| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config` |
+| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config`; lookups card needs `manage_lookups` and an active catalog |
+| Catalog Lookups | `/catalog/[catalogId]/settings/metadata/{recorders,locations,albums}` | `manage_lookups` on an active catalog; without it redirects to `/catalog/[catalogId]`; an inactive catalog is not found |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
 | Admin Ingest | `/admin/ingest` | Admin |

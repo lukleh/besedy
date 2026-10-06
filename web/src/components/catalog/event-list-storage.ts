@@ -44,13 +44,11 @@ export function clearStoredEventListState(catalogId: string): void {
 }
 
 export function buildEventListParams(
-  catalogId: string,
   page: number,
   limit: number,
   state: EventListQueryState,
 ): URLSearchParams {
   const params = new URLSearchParams({
-    group: catalogId,
     page: String(page),
     limit: String(limit),
     sort: state.sortKey,

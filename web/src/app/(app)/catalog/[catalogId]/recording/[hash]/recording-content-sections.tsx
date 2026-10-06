@@ -3,17 +3,10 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, Download, FileAudio, Mic, Music, Pencil, SquarePen } from "lucide-react";
+import { ArrowLeft, Download, FileAudio, Mic, Pencil, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import {
-  ResponsiveSelect,
-  ResponsiveSelectContent,
-  ResponsiveSelectItem,
-  ResponsiveSelectTrigger,
-  ResponsiveSelectValue,
-} from "@/components/ui/responsive-select";
 import { AudioPlayer } from "@/components/player/audio-player";
 import { TranscriptStreamViewer } from "@/components/transcript/transcript-stream-viewer";
 import { TranscriptViewer, type Transcript } from "@/components/transcript/transcript-viewer";
@@ -33,12 +26,6 @@ interface RecordingPermissions {
   canDownloadAudio?: boolean;
   canDownloadOriginalAudio?: boolean;
   canEditMetadata?: boolean;
-}
-
-interface RecordingAudioSourceOption {
-  available: boolean;
-  id: string;
-  label: string;
 }
 
 type RecordingPageStateVariant = "catalogNotFound" | "recordingNotFound" | "recordingUnavailable";
@@ -72,7 +59,6 @@ interface RecordingHeaderProps {
 interface RecordingAudioSectionProps {
   beforeAudioPlayer?: ReactNode;
   afterAudioPlayer?: ReactNode;
-  audioSource: string;
   audioUrl: string;
   autoPlayOnSeek: boolean;
   /** Shown under the player's own controls. */
@@ -92,12 +78,9 @@ interface RecordingAudioSectionProps {
   onDurationChange: (duration: number) => void;
   onPlayingChange: (playing: boolean) => void;
   onSeek: (time: number) => void;
-  onSourceChange: (sourceId: string) => void;
   permissions: RecordingPermissions;
   recording: CatalogEntryResponse;
-  savedSourceId: string | null;
   seekRequest?: RecordingSeekRequest;
-  sources: RecordingAudioSourceOption[];
 }
 
 interface RecordingTranscriptSectionProps {
@@ -259,7 +242,6 @@ export function RecordingHeader({
 export function RecordingAudioSection({
   beforeAudioPlayer,
   afterAudioPlayer,
-  audioSource,
   audioUrl,
   autoPlayOnSeek,
   bookmarksPanel,
@@ -276,12 +258,9 @@ export function RecordingAudioSection({
   onDurationChange,
   onPlayingChange,
   onSeek,
-  onSourceChange,
   permissions,
   recording,
-  savedSourceId,
   seekRequest,
-  sources,
 }: RecordingAudioSectionProps) {
   const t = useTranslations();
   const { headingText } = useRecordingHeading(recording, hash, headingContext);
@@ -289,30 +268,6 @@ export function RecordingAudioSection({
 
   return (
     <div className="space-y-4 mb-6">
-      {sources.length > 1 && (
-        <div className="flex items-center gap-2">
-          <Music className="h-4 w-4 text-muted-foreground" />
-          <ResponsiveSelect value={audioSource} onValueChange={onSourceChange}>
-            <ResponsiveSelectTrigger className="w-[180px] h-8 text-sm" aria-label={t("recording.source")}>
-              <ResponsiveSelectValue
-                placeholder={t("recording.source")}
-                displayValue={sources.find((source) => source.id === audioSource)?.label}
-              />
-            </ResponsiveSelectTrigger>
-            <ResponsiveSelectContent title={t("recording.source")}>
-              {sources.map((source) => (
-                <ResponsiveSelectItem key={source.id} value={source.id} disabled={!source.available}>
-                  {source.label}
-                  {source.id === savedSourceId && (
-                    <span className="ml-2 text-xs text-muted-foreground">{t("recording.saved")}</span>
-                  )}
-                </ResponsiveSelectItem>
-              ))}
-            </ResponsiveSelectContent>
-          </ResponsiveSelect>
-        </div>
-      )}
-
       {beforeAudioPlayer}
 
       <AudioPlayer

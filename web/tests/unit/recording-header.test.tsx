@@ -185,7 +185,6 @@ describe("RecordingAudioSection lock-screen metadata", () => {
 
     render(
       <RecordingAudioSection
-        audioSource="archived"
         audioUrl="/audio"
         autoPlayOnSeek={false}
         catalogId="c"
@@ -196,11 +195,8 @@ describe("RecordingAudioSection lock-screen metadata", () => {
         onDurationChange={noop}
         onPlayingChange={noop}
         onSeek={noop}
-        onSourceChange={noop}
         permissions={{}}
         recording={recording}
-        savedSourceId={null}
-        sources={[]}
       />,
     );
 
@@ -219,7 +215,6 @@ describe("RecordingAudioSection metadata edit", () => {
   function renderSection(hideMetadataEdit?: boolean) {
     render(
       <RecordingAudioSection
-        audioSource="archived"
         audioUrl="/audio"
         autoPlayOnSeek={false}
         catalogId="c"
@@ -231,11 +226,8 @@ describe("RecordingAudioSection metadata edit", () => {
         onDurationChange={noop}
         onPlayingChange={noop}
         onSeek={noop}
-        onSourceChange={noop}
         permissions={{ canEditMetadata: true }}
         recording={recording}
-        savedSourceId={null}
-        sources={[]}
       />,
     );
   }

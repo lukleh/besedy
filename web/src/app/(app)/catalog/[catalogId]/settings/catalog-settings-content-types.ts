@@ -233,6 +233,7 @@ export interface CatalogSettingsCards {
   configuration: boolean;
   eventHealth: boolean;
   access: boolean;
+  lookups: boolean;
 }
 
 export interface CatalogSettingsContentProps {

@@ -47,6 +47,7 @@ import { CatalogSettingsAccessSummary } from "./catalog-settings-access-summary"
 import { CatalogSettingsConfigCard } from "./catalog-settings-config-card";
 import { CatalogSettingsCorrectionGuideCard } from "./catalog-settings-correction-guide-card";
 import { CatalogSettingsEventHealthCard } from "./catalog-settings-event-health-card";
+import { CatalogSettingsLookupsCard } from "./catalog-settings-lookups-card";
 import { CatalogSettingsPendingUsersCard } from "./catalog-settings-pending-users-card";
 import { CatalogSettingsTranscriptExportsCard } from "./catalog-settings-transcript-exports-card";
 import {
@@ -599,6 +600,8 @@ export default function CatalogSettingsContent({
           onDownload={handleTranscriptExportDownload}
         />
       )}
+
+      {cards.lookups && <CatalogSettingsLookupsCard catalogId={catalogId} />}
 
       {cards.correctionGuide && (
         <CatalogSettingsCorrectionGuideCard catalogId={catalogId} />

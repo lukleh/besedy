@@ -16,7 +16,6 @@
 import { createClientLogger } from '@/lib/log/client';
 import { browserPrefersAacAudio } from '@/lib/audio-format';
 import {
-  buildAudioSourcePreferenceUrl,
   buildAudioSourcesUrl,
   buildAudioUrl,
   buildDiarizationBackendsUrl,
@@ -178,10 +177,6 @@ function warmDownloadsShell(): Promise<void> {
 interface SourcesResponse {
   sources: AudioSourceOption[];
   defaultSource: string;
-}
-
-interface PreferenceResponse {
-  sourceId: string | null;
 }
 
 interface TranscriptBackendsResponse {
@@ -1374,19 +1369,10 @@ class DownloadManager {
         buildAudioSourcesUrl(catalogId, hash),
         signal,
       );
-      const preference = await tryFetchJson<PreferenceResponse>(
-        buildAudioSourcePreferenceUrl(catalogId, hash),
-        signal,
-      );
 
+      // Each recording has one source, the archived copy (#318).
       const availableSources = sources?.sources ?? [];
-      const preferredSource =
-        preference?.sourceId &&
-        availableSources.some((source) => source.id === preference.sourceId)
-          ? preference.sourceId
-          : null;
-      const audioSource =
-        preferredSource ?? sources?.defaultSource ?? 'archived';
+      const audioSource = sources?.defaultSource ?? 'archived';
       // The same file the page plays: the AAC-in-MP4 copy on WebKit when
       // this source has one (#291), keyed by format in the audio cache. A
       // WebM download paused before the copy existed therefore restarts as
@@ -1522,12 +1508,12 @@ class DownloadManager {
   > {
     const [backends, diarizations] = await Promise.all([
       tryFetchJson<TranscriptBackendsResponse>(
-        buildTranscriptBackendsUrl(hash, catalogId),
+        buildTranscriptBackendsUrl(catalogId, hash),
         signal,
       ),
       includeDiarization
         ? tryFetchJson<DiarizationBackendsResponse>(
-            buildDiarizationBackendsUrl(hash, catalogId),
+            buildDiarizationBackendsUrl(catalogId, hash),
             signal,
           )
         : Promise.resolve(null),
@@ -1542,12 +1528,12 @@ class DownloadManager {
       : diarizations?.backends[0];
     const [transcript, diarization] = await Promise.all([
       tryFetchJson<Transcript>(
-        buildTranscriptUrl(hash, catalogId, backend),
+        buildTranscriptUrl(catalogId, hash, backend),
         signal,
       ),
       diarizationBackend
         ? tryFetchJson<Diarization>(
-            buildDiarizationUrl(hash, catalogId, diarizationBackend),
+            buildDiarizationUrl(catalogId, hash, diarizationBackend),
             signal,
           )
         : Promise.resolve(null),

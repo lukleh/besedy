@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { POST as createCatalogEvent } from "@/app/api/catalog-events/route";
+import { POST as createCatalogEventRoute } from "@/app/api/catalogs/[id]/events/route";
+
+const createCatalogEvent = (request: NextRequest) =>
+  createCatalogEventRoute(request, { params: Promise.resolve({ id: "20260201_120000" }) });
 
 vi.mock("@/lib/catalog-events/access", () => ({
   requireCatalogEventsAccess: vi.fn(),
@@ -53,11 +56,10 @@ describe("catalog events create route", () => {
   };
 
   function buildRequest(body: Record<string, unknown>) {
-    return new NextRequest("http://localhost/api/catalog-events", {
+    return new NextRequest(`http://localhost/api/catalogs/${catalogId}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        workflowGroupId: catalogId,
         locationId: 7,
         dateYear: 2024,
         dateMonth: 4,

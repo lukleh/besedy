@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
@@ -13,7 +13,6 @@ import { browserPrefersAacAudio } from "@/lib/audio-format";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
-  buildAudioSourcePreferenceUrl,
   buildAudioSourcesUrl,
   buildAudioUrl,
 } from "@/lib/api/recording-urls";
@@ -70,11 +69,6 @@ interface AudioSourcesResponse {
   defaultSource: string;
 }
 
-interface AudioSourcePreference {
-  hash: string;
-  sourceId: string | null;
-}
-
 const audioSourceSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -87,11 +81,6 @@ const audioSourcesResponseSchema = z.object({
   hash: z.string(),
   sources: z.array(audioSourceSchema),
   defaultSource: z.string(),
-});
-
-const audioSourcePreferenceSchema = z.object({
-  hash: z.string(),
-  sourceId: z.string().nullable(),
 });
 
 /** Longest the player waits for the audio format before it plays the WebM. */
@@ -128,7 +117,6 @@ export default function RecordingContent({
   // playback behavior and view sections live in sibling modules.
   const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
-  const queryClient = useQueryClient();
   // Keep the legacy key so existing users keep their saved transcript view preference.
   // Reading is the default view. The stream is the administrative one, and is
   // only reachable by an account that may see the transcripts behind it.
@@ -174,21 +162,6 @@ export default function RecordingContent({
   // Build back link URL - filters are restored from localStorage automatically
   const backToListUrl = `/catalog/${catalogId}`;
 
-  // Fetch saved audio source preference from database
-  const { data: savedPreference, isLoading: preferenceLoading } = useQuery<AudioSourcePreference>({
-    queryKey: ["audio-source-preference", hash, groupKey],
-    queryFn: async () => {
-      try {
-        return await fetchJson<AudioSourcePreference>(buildAudioSourcePreferenceUrl(catalogId, hash), {
-          schema: audioSourcePreferenceSchema,
-        });
-      } catch {
-        return { hash, sourceId: null };
-      }
-    },
-    enabled: !catalogNotFound && !catalogValidationLoading,
-  });
-
   // Fetch available audio sources
   const { data: sourcesData, isLoading: sourcesLoading } = useQuery<AudioSourcesResponse>({
     queryKey: ["audio-variants", hash, groupKey],
@@ -204,30 +177,9 @@ export default function RecordingContent({
     enabled: !catalogNotFound && !catalogValidationLoading,
   });
 
-  // Mutation to save audio source preference
-  const savePreference = useMutation({
-    mutationFn: async (sourceId: string) => {
-      return fetchJson("/api/preferences/audio-source", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hash, sourceId, group: catalogId }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["audio-source-preference", hash, groupKey],
-      });
-    },
-  });
-
-  // Determine current audio source (saved preference or default)
+  // Each recording has one source, the archived copy (#318).
   const availableSources = sourcesData?.sources ?? [];
-  const availableSourceIds = availableSources.map((source) => source.id);
-  const preferredSource =
-    savedPreference?.sourceId && availableSourceIds.includes(savedPreference.sourceId)
-      ? savedPreference.sourceId
-      : null;
-  const audioSource = preferredSource || sourcesData?.defaultSource || "archived";
+  const audioSource = sourcesData?.defaultSource || "archived";
   // WebKit browsers get the AAC-in-MP4 copy when this source has one (#291).
   const selectedAudioUrl = buildAudioUrl(catalogId, hash, audioSource, availableSources, {
     preferAac: browserPrefersAacAudio(),
@@ -240,10 +192,6 @@ export default function RecordingContent({
   const downloadRecord = useDownloadRecord(catalogId, hash);
   const formatUpgrade =
     useAacUpgradeAvailable(downloadRecord, availableSources) && localAudioSrc !== null;
-
-  const handleSourceChange = (sourceId: string) => {
-    savePreference.mutate(sourceId);
-  };
 
   // Fetch single catalog entry with permissions
   const { data, cachedData, isLoading, isValidatingAccess, error, isError } = useRecordingEntry({
@@ -263,7 +211,7 @@ export default function RecordingContent({
   // the WebM Safari cannot stream. A local package does not depend on them.
   const awaitingFormat = useBoundedWait(
     browserPrefersAacAudio() &&
-      (sourcesLoading === true || preferenceLoading === true) &&
+      sourcesLoading === true &&
       !localAudioSrc,
     hash
   );
@@ -340,7 +288,6 @@ export default function RecordingContent({
           )
         }
         afterAudioPlayer={afterAudioPlayer}
-        audioSource={audioSource}
         audioUrl={audioUrl}
         autoPlayOnSeek={autoPlayOnSeek}
         bookmarkMarkers={bookmarkMarkers}
@@ -365,13 +312,10 @@ export default function RecordingContent({
         onDurationChange={handleDurationChange}
         onPlayingChange={handlePlayingChange}
         onSeek={handlePlayerSeek}
-        onSourceChange={handleSourceChange}
         permissions={data ?? {}}
         hideMetadataEdit={hideMetadataEdit}
         recording={recording}
-        savedSourceId={savedPreference?.sourceId ?? null}
         seekRequest={seekRequest}
-        sources={availableSources}
       />
       {data?.canViewTranscripts && (
         <RecordingTranscriptSection

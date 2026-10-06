@@ -188,41 +188,6 @@ export async function countDuplicatesByHash(groupId: string): Promise<Map<string
   return counts;
 }
 
-export async function getDistinctDuplicateCounts(groupId: string): Promise<number[]> {
-  const rows = await prisma.catalogEntry.findMany({
-    where: { workflowGroupId: groupId },
-    select: { duplicateCount: true },
-    distinct: ["duplicateCount"],
-  });
-  const uniqueCounts = new Set<number>();
-  uniqueCounts.add(0);
-  for (const row of rows) {
-    uniqueCounts.add(row.duplicateCount);
-  }
-  return Array.from(uniqueCounts).sort((a, b) => a - b);
-}
-
-export async function getDistinctArtists(groupId: string): Promise<string[]> {
-  const rows = await prisma.catalogEntry.groupBy({
-    by: ["sourceArtist"],
-    where: {
-      workflowGroupId: groupId,
-      hasMetadata: true,
-      sourceArtist: { not: null },
-    },
-  });
-
-  const artists = Array.from(
-    new Set(
-      rows
-        .map((row) => row.sourceArtist?.trim())
-        .filter((artist): artist is string => !!artist),
-    ),
-  );
-  artists.sort((a, b) => a.localeCompare(b));
-  return artists;
-}
-
 export async function getDistinctAlbums(groupId: string): Promise<string[]> {
   const rows = await prisma.catalogEntry.groupBy({
     by: ["sourceAlbum"],

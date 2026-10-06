@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   }),
   requireCatalogPageAccessMock: vi.fn(),
   getCatalogFeaturesForUserMock: vi.fn(),
+  findActiveCatalogMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -21,6 +22,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/access/catalog-page-access", () => ({
   requireCatalogPageAccess: mocks.requireCatalogPageAccessMock,
+}));
+
+vi.mock("@/lib/catalog/resolve-group", () => ({
+  findActiveCatalog: mocks.findActiveCatalogMock,
 }));
 
 vi.mock("@/lib/features/capabilities", () => ({
@@ -64,6 +69,7 @@ describe("CatalogSettingsPage", () => {
     canManageCatalogConfiguration: false,
     canManageAccess: false,
     canEditCorrectionGuide: false,
+    canManageLookups: false,
     ...overrides,
   });
 
@@ -93,8 +99,10 @@ describe("CatalogSettingsPage", () => {
       canManageCatalogConfiguration: true,
       canManageAccess: true,
       canEditCorrectionGuide: true,
+      canManageLookups: true,
     });
     withEventEditing(true);
+    mocks.findActiveCatalogMock.mockResolvedValue({ id: catalogId, isActive: true });
   });
 
   it("redirects unauthenticated users to sign-in", async () => {
@@ -142,7 +150,7 @@ describe("CatalogSettingsPage", () => {
     });
     expect(content).toHaveAttribute(
       "data-cards",
-      "access,configuration,correctionGuide,eventHealth,transcriptExports"
+      "access,configuration,correctionGuide,eventHealth,lookups,transcriptExports"
     );
   });
 
@@ -184,7 +192,22 @@ describe("CatalogSettingsPage", () => {
       events: false,
       cards: "correctionGuide",
     },
+    {
+      name: "lookups",
+      capability: { canManageLookups: true },
+      events: false,
+      cards: "lookups",
+    },
   ];
+
+  it("leaves the lookups card out for an inactive catalog, whose lookup routes answer 404", async () => {
+    mocks.findActiveCatalogMock.mockResolvedValue(null);
+
+    expect(await renderPage()).toHaveAttribute(
+      "data-cards",
+      "access,configuration,correctionGuide,eventHealth,transcriptExports"
+    );
+  });
 
   it.each(singleCardCases)("opens the page for $name alone", async ({ capability, events, cards }) => {
     withCapability(capability);

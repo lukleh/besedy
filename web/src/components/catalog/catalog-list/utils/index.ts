@@ -1,4 +1,4 @@
-export { buildCatalogParams } from "./build-catalog-params";
+export { buildCatalogParams, catalogRecordingsUrl } from "./build-catalog-params";
 export type { CatalogFilterParams } from "./build-catalog-params";
 export {
   includeSelectedNamedOption,

@@ -73,6 +73,7 @@ import {
   locationItemSchema,
   toPaginationInfo,
 } from "./event-list-types";
+import { catalogLookupsApiPath } from "@/lib/catalog/lookup-paths";
 
 interface EventHealthResponse {
   unassignedRecordings: number;
@@ -305,9 +306,9 @@ export function EventList({
   const { data, isLoading, isFetching, error } = useQuery<EventListResponse>({
     queryKey: listQueryKey,
     queryFn: async () => {
-      const params = buildEventListParams(catalogId, page, 50, queryState);
+      const params = buildEventListParams(page, 50, queryState);
       return fetchJson<EventListResponse>(
-        `/api/catalog-events?${params.toString()}`,
+        `/api/catalogs/${catalogId}/events?${params.toString()}`,
         {
           schema: eventListResponseSchema,
         }
@@ -327,7 +328,7 @@ export function EventList({
   const { data: metadataLocations = [] } = useQuery<LocationItem[]>({
     queryKey: ["locations", catalogId],
     queryFn: () =>
-      fetchJson<LocationItem[]>(`/api/metadata/locations?group=${catalogId}`, {
+      fetchJson<LocationItem[]>(catalogLookupsApiPath(catalogId, "locations"), {
         schema: z.array(locationItemSchema),
       }),
   });
@@ -381,7 +382,7 @@ export function EventList({
 
   const createMutation = useMutation({
     mutationFn: async (payload: CreateEventPayload) => {
-      return fetchJson("/api/catalog-events", {
+      return fetchJson(`/api/catalogs/${catalogId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -471,9 +472,9 @@ export function EventList({
     setLoadMoreError(null);
 
     try {
-      const params = buildEventListParams(catalogId, nextPage, 50, queryState);
+      const params = buildEventListParams(nextPage, 50, queryState);
       const nextData = await fetchJson<EventListResponse>(
-        `/api/catalog-events?${params.toString()}`,
+        `/api/catalogs/${catalogId}/events?${params.toString()}`,
         {
           schema: eventListResponseSchema,
         }
@@ -508,9 +509,9 @@ export function EventList({
     setLoadMoreError(null);
 
     try {
-      const params = buildEventListParams(catalogId, 1, 0, queryState);
+      const params = buildEventListParams(1, 0, queryState);
       const allData = await fetchJson<EventListResponse>(
-        `/api/catalog-events?${params.toString()}`,
+        `/api/catalogs/${catalogId}/events?${params.toString()}`,
         {
           schema: eventListResponseSchema,
         }
@@ -563,7 +564,6 @@ export function EventList({
       return;
     }
     createMutation.mutate({
-      workflowGroupId: catalogId,
       locationId: parsedLocationId,
       dateYear: parsedDateYear,
       dateMonth: parsedDateMonth,

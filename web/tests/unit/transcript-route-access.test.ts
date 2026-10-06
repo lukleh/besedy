@@ -6,7 +6,7 @@ vi.mock("@/lib/auth/permissions", () => ({
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroup: vi.fn(),
+  findActiveCatalog: vi.fn(),
 }));
 
 vi.mock("@/lib/access/capabilities", () => ({
@@ -23,7 +23,7 @@ vi.mock("@/lib/paths", () => ({
 
 describe("transcript route access", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
-  let resolveActiveGroup: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
   let getRecordingCapability: ReturnType<typeof vi.fn>;
   let logAccessDenied: ReturnType<typeof vi.fn>;
   let resolveTranscriptsPath: ReturnType<typeof vi.fn>;
@@ -34,9 +34,9 @@ describe("transcript route access", () => {
     requireAuth = (await import("@/lib/auth/permissions")).requireAuth as ReturnType<
       typeof vi.fn
     >;
-    resolveActiveGroup = (
+    findActiveCatalog = (
       await import("@/lib/catalog/resolve-group")
-    ).resolveActiveGroup as ReturnType<typeof vi.fn>;
+    ).findActiveCatalog as ReturnType<typeof vi.fn>;
     getRecordingCapability = (
       await import("@/lib/access/capabilities")
     ).getRecordingCapability as ReturnType<typeof vi.fn>;
@@ -47,12 +47,12 @@ describe("transcript route access", () => {
     ).resolveTranscriptsPath as ReturnType<typeof vi.fn>;
   });
 
-  it("returns 404 when no workflow group is configured", async () => {
+  it("returns 404 when the catalog in the path does not exist", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue(null);
+    findActiveCatalog.mockResolvedValue(null);
 
     const result = await resolveTranscriptRouteAccess({
-      groupOverride: null,
+      catalogId: "catalog-1",
       hash: "a".repeat(64),
       accessDeniedMessage: "Access denied to this transcript",
     });
@@ -63,13 +63,13 @@ describe("transcript route access", () => {
     }
     expect(result.response.status).toBe(404);
     await expect(result.response.json()).resolves.toEqual({
-      error: "No workflow group configured",
+      error: "Catalog not found",
     });
   });
 
   it("returns 403 and logs when recording access is denied", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "catalog-1" });
+    findActiveCatalog.mockResolvedValue({ id: "catalog-1" });
     getRecordingCapability.mockResolvedValue({
       canAccessRecording: false,
       canViewRecordingTranscripts: false,
@@ -78,7 +78,7 @@ describe("transcript route access", () => {
     });
 
     const result = await resolveTranscriptRouteAccess({
-      groupOverride: null,
+      catalogId: "catalog-1",
       hash: "a".repeat(64),
       accessDeniedMessage: "Access denied to this transcript",
       auditResource: "transcript",
@@ -102,7 +102,7 @@ describe("transcript route access", () => {
 
   it("returns 403 when transcript viewing is denied", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "catalog-1" });
+    findActiveCatalog.mockResolvedValue({ id: "catalog-1" });
     getRecordingCapability.mockResolvedValue({
       canAccessRecording: true,
       canViewRecordingTranscripts: false,
@@ -111,7 +111,7 @@ describe("transcript route access", () => {
     });
 
     const result = await resolveTranscriptRouteAccess({
-      groupOverride: null,
+      catalogId: "catalog-1",
       hash: "a".repeat(64),
       accessDeniedMessage: "Access denied to this transcript",
     });
@@ -128,7 +128,7 @@ describe("transcript route access", () => {
 
   it("returns 403 when download is required but not allowed", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "catalog-1" });
+    findActiveCatalog.mockResolvedValue({ id: "catalog-1" });
     getRecordingCapability.mockResolvedValue({
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
@@ -137,7 +137,7 @@ describe("transcript route access", () => {
     });
 
     const result = await resolveTranscriptRouteAccess({
-      groupOverride: null,
+      catalogId: "catalog-1",
       hash: "a".repeat(64),
       accessDeniedMessage: "Access denied to this transcript",
       requireDownload: true,
@@ -155,7 +155,7 @@ describe("transcript route access", () => {
 
   it("returns the shared transcript route context on success", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "catalog-1" });
+    findActiveCatalog.mockResolvedValue({ id: "catalog-1" });
     getRecordingCapability.mockResolvedValue({
       canAccessRecording: true,
       canViewRecordingTranscripts: true,
@@ -165,7 +165,7 @@ describe("transcript route access", () => {
     resolveTranscriptsPath.mockReturnValue("/transcripts/catalog-1");
 
     const result = await resolveTranscriptRouteAccess({
-      groupOverride: "catalog-1",
+      catalogId: "catalog-1",
       hash: "a".repeat(64),
       accessDeniedMessage: "Access denied to this transcript",
       requireDownload: true,

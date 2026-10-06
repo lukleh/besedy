@@ -78,13 +78,13 @@ interface CuratedMetadata {
 interface MetadataEditorProps {
   hash: string;
   source: SourceMetadata;
-  groupId?: string;
+  groupId: string;
 }
 
 interface MetadataEditorFormProps {
   hash: string;
   source: SourceMetadata;
-  groupId?: string;
+  groupId: string;
   groupKey: string;
   curated: CuratedMetadata;
   recorders: MetadataRecorder[];
@@ -100,13 +100,11 @@ export function MetadataEditor({ hash, source, groupId }: MetadataEditorProps) {
   const { data: locations } = useLocations(groupId);
   const { data: albums } = useAlbums(groupId);
 
-  // Fetch curated metadata - use nested catalog path when groupId is available
+  // Fetch curated metadata
   const { data: curated, isLoading } = useQuery<CuratedMetadata>({
     queryKey: ["recording-metadata", hash, groupKey],
     queryFn: async () => {
-      const url = groupId
-        ? `/api/catalogs/${groupId}/recordings/${hash}/metadata`
-        : `/api/metadata/${hash}`;
+      const url = `/api/catalogs/${groupId}/recordings/${hash}/metadata`;
       return fetchJson<CuratedMetadata>(url);
     },
   });
@@ -198,12 +196,10 @@ function MetadataEditorForm({
     }
   }, [hash, toast, tCommon]);
 
-  // Save mutation - use nested catalog path when groupId is available
+  // Save mutation
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<CuratedMetadata>) => {
-      const url = groupId
-        ? `/api/catalogs/${groupId}/recordings/${hash}/metadata`
-        : `/api/metadata/${hash}`;
+      const url = `/api/catalogs/${groupId}/recordings/${hash}/metadata`;
       return fetchJson(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

@@ -55,7 +55,7 @@ describe('metadata enum hooks', () => {
 
     await waitFor(() => {
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        `/api/metadata/${resource}?group=catalog-a`,
+        `/api/catalogs/catalog-a/metadata/${resource}`,
         expect.any(Object),
       );
     });
@@ -64,7 +64,7 @@ describe('metadata enum hooks', () => {
 
     await waitFor(() => {
       expect(fetchJsonMock).toHaveBeenCalledWith(
-        `/api/metadata/${resource}?group=catalog-b`,
+        `/api/catalogs/catalog-b/metadata/${resource}`,
         expect.any(Object),
       );
     });

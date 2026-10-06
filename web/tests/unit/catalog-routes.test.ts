@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getCatalog } from "@/app/api/catalog/route";
-import { GET as getFilterOptions } from "@/app/api/catalog/filter-options/route";
+import { GET as getCatalogRoute } from "@/app/api/catalogs/[id]/recordings/route";
+import { GET as getFilterOptionsRoute } from "@/app/api/catalogs/[id]/recordings/filter-options/route";
 import type { EnrichedCatalogEntry } from "@/lib/catalog";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
+
+const CATALOG = "20251225_120000";
+const getCatalog = (request: NextRequest) =>
+  getCatalogRoute(request, { params: Promise.resolve({ id: CATALOG }) });
+const getFilterOptions = (request: NextRequest) =>
+  getFilterOptionsRoute(request, { params: Promise.resolve({ id: CATALOG }) });
 
 vi.mock("@/lib/auth/permissions", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/permissions")>(
@@ -30,7 +36,7 @@ vi.mock("@/lib/catalog", async () => {
 });
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroup: vi.fn(),
+  findActiveCatalog: vi.fn(),
 }));
 
 vi.mock("@/lib/audit/logger", () => ({
@@ -88,7 +94,7 @@ function createEntry(overrides: Partial<EnrichedCatalogEntry> = {}): EnrichedCat
 describe("catalog API routes (access gating)", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
-  let resolveActiveGroup: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
   let loadEnrichedCatalogEntries: ReturnType<typeof vi.fn>;
   let prisma: {
     recorder: { findMany: ReturnType<typeof vi.fn> };
@@ -104,7 +110,7 @@ describe("catalog API routes (access gating)", () => {
     getCatalogCapability =
       accessModule.getCatalogCapability as ReturnType<typeof vi.fn>;
     const groupModule = await import("@/lib/catalog/resolve-group");
-    resolveActiveGroup = groupModule.resolveActiveGroup as ReturnType<typeof vi.fn>;
+    findActiveCatalog = groupModule.findActiveCatalog as ReturnType<typeof vi.fn>;
     const catalogModule = await import("@/lib/catalog");
     loadEnrichedCatalogEntries =
       catalogModule.loadEnrichedCatalogEntries as ReturnType<typeof vi.fn>;
@@ -113,7 +119,7 @@ describe("catalog API routes (access gating)", () => {
 
   function mockAccessibleCatalog(entries: EnrichedCatalogEntry[]) {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({
+    findActiveCatalog.mockResolvedValue({
       id: "20251225_120000",
       label: "Winter Catalog",
       createdAt: new Date("2025-12-25T12:00:00.000Z"),
@@ -201,12 +207,12 @@ describe("catalog API routes (access gating)", () => {
     ];
   }
 
-  it("GET /api/catalog returns 403 when user lacks catalog access", async () => {
+  it("GET /api/catalogs/:id/recordings returns 403 when user lacks catalog access", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+    findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
     getCatalogCapability.mockResolvedValue({ hasAccess: false });
 
-    const request = new NextRequest("http://localhost/api/catalog");
+    const request = new NextRequest("http://localhost/api/catalogs/20251225_120000/recordings");
     const response = await getCatalog(request);
 
     expect(response.status).toBe(403);
@@ -214,12 +220,12 @@ describe("catalog API routes (access gating)", () => {
     expect(body.error).toMatch(/Access denied/);
   });
 
-  it("GET /api/catalog/filter-options returns 403 when user lacks catalog access", async () => {
+  it("GET /api/catalogs/:id/recordings/filter-options returns 403 when user lacks catalog access", async () => {
     requireAuth.mockResolvedValue("user-1");
-    resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+    findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
     getCatalogCapability.mockResolvedValue({ hasAccess: false });
 
-    const request = new NextRequest("http://localhost/api/catalog/filter-options");
+    const request = new NextRequest("http://localhost/api/catalogs/20251225_120000/recordings/filter-options");
     const response = await getFilterOptions(request);
 
     expect(response.status).toBe(403);
@@ -227,9 +233,9 @@ describe("catalog API routes (access gating)", () => {
     expect(body.error).toMatch(/Access denied/);
   });
 
-  it("GET /api/catalog scopes listener rows, counts, and filters to visible entries", async () => {
+  it("GET /api/catalogs/:id/recordings scopes listener rows, counts, and filters to visible entries", async () => {
     requireAuth.mockResolvedValue("listener-1");
-    resolveActiveGroup.mockResolvedValue({
+    findActiveCatalog.mockResolvedValue({
       id: "20251225_120000",
       label: "Winter Catalog",
       createdAt: new Date("2025-12-25T12:00:00.000Z"),
@@ -277,7 +283,7 @@ describe("catalog API routes (access gating)", () => {
     ]);
 
     const request = new NextRequest(
-      "http://localhost/api/catalog?group=20251225_120000&status=incomplete"
+      "http://localhost/api/catalogs/20251225_120000/recordings?status=incomplete"
     );
     const response = await getCatalog(request);
 
@@ -300,9 +306,9 @@ describe("catalog API routes (access gating)", () => {
     expect(body.entries[0].hasOriginalAudio).toBe(true);
   });
 
-  it("GET /api/catalog/filter-options scopes listener options to visible entries", async () => {
+  it("GET /api/catalogs/:id/recordings/filter-options scopes listener options to visible entries", async () => {
     requireAuth.mockResolvedValue("listener-1");
-    resolveActiveGroup.mockResolvedValue({
+    findActiveCatalog.mockResolvedValue({
       id: "20251225_120000",
       label: "Winter Catalog",
       createdAt: new Date("2025-12-25T12:00:00.000Z"),
@@ -332,7 +338,7 @@ describe("catalog API routes (access gating)", () => {
     prisma.album.findMany.mockResolvedValue([]);
 
     const request = new NextRequest(
-      "http://localhost/api/catalog/filter-options?group=20251225_120000"
+      "http://localhost/api/catalogs/20251225_120000/recordings/filter-options"
     );
     const response = await getFilterOptions(request);
 
@@ -358,10 +364,10 @@ describe("catalog API routes (access gating)", () => {
     ["dateYear=2024&dateMonth=5&dateDay=10", ["b".repeat(64)]],
     ["duplicates=3", ["b".repeat(64)]],
     ["actionable=true", ["b".repeat(64), "a".repeat(64)]],
-  ])("GET /api/catalog applies filter %s", async (query, expectedHashes) => {
+  ])("GET /api/catalogs/:id/recordings applies filter %s", async (query, expectedHashes) => {
     mockAccessibleCatalog(createMatrixEntries());
 
-    const request = new NextRequest(`http://localhost/api/catalog?${query}`);
+    const request = new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings?${query}`);
     const response = await getCatalog(request);
 
     expect(response.status).toBe(200);
@@ -369,11 +375,11 @@ describe("catalog API routes (access gating)", () => {
     expect(body.entries.map((entry: { hash: string }) => entry.hash)).toEqual(expectedHashes);
   });
 
-  it("GET /api/catalog sorts by duplicates descending", async () => {
+  it("GET /api/catalogs/:id/recordings sorts by duplicates descending", async () => {
     mockAccessibleCatalog(createMatrixEntries());
 
     const request = new NextRequest(
-      "http://localhost/api/catalog?sort=duplicates&dir=desc"
+      "http://localhost/api/catalogs/20251225_120000/recordings?sort=duplicates&dir=desc"
     );
     const response = await getCatalog(request);
 
@@ -403,12 +409,12 @@ describe("catalog API routes (access gating)", () => {
     ["dir", "sideways"],
     ["actionable", "yes"],
   ])(
-    "GET /api/catalog ignores invalid %s query values",
+    "GET /api/catalogs/:id/recordings ignores invalid %s query values",
     async (param, value) => {
       mockAccessibleCatalog(createMatrixEntries());
 
       const request = new NextRequest(
-        `http://localhost/api/catalog?${param}=${encodeURIComponent(value)}`
+        `http://localhost/api/catalogs/20251225_120000/recordings?${param}=${encodeURIComponent(value)}`
       );
       const response = await getCatalog(request);
 

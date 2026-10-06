@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as downloadTranscript } from "@/app/api/transcript/[hash]/download/route";
+import { GET as downloadTranscript } from "@/app/api/catalogs/[id]/recordings/[hash]/transcript/download/route";
 
 // Correction resolution is exercised in its own tests; these route tests cover
 // recordings outside correction scope, where the machine transcript is served.
@@ -26,7 +26,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroup: vi.fn(),
+  findActiveCatalog: vi.fn(),
 }));
 
 vi.mock("@/lib/transcript", () => ({
@@ -60,7 +60,7 @@ const VALID_HASH = "a".repeat(64);
 describe("transcript download route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getRecordingCapability: ReturnType<typeof vi.fn>;
-  let resolveActiveGroup: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
   let readTranscriptFile: ReturnType<typeof vi.fn>;
   let resolveTranscriptsPath: ReturnType<typeof vi.fn>;
 
@@ -72,7 +72,7 @@ describe("transcript download route", () => {
     getRecordingCapability =
       accessModule.getRecordingCapability as ReturnType<typeof vi.fn>;
     const groupModule = await import("@/lib/catalog/resolve-group");
-    resolveActiveGroup = groupModule.resolveActiveGroup as ReturnType<typeof vi.fn>;
+    findActiveCatalog = groupModule.findActiveCatalog as ReturnType<typeof vi.fn>;
     const transcriptModule = await import("@/lib/transcript");
     readTranscriptFile = transcriptModule.readTranscriptFile as ReturnType<typeof vi.fn>;
     const pathsModule = await import("@/lib/paths");
@@ -87,10 +87,10 @@ describe("transcript download route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}/download?group=20251225_120000&backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
       );
       const response = await downloadTranscript(request, {
-        params: Promise.resolve({ hash: VALID_HASH }),
+        params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
       });
 
       expect(response.status).toBe(401);
@@ -106,13 +106,13 @@ describe("transcript download route", () => {
         canDownloadRecording: false,
         canDownloadTranscripts: false,
       });
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000", isActive: true });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}/download?group=20251225_120000&backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
       );
       const response = await downloadTranscript(request, {
-        params: Promise.resolve({ hash: VALID_HASH }),
+        params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
       });
 
       expect(response.status).toBe(403);
@@ -128,13 +128,13 @@ describe("transcript download route", () => {
         canDownloadRecording: false,
         canDownloadTranscripts: false,
       });
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000", isActive: true });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}/download?group=20251225_120000&backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
       );
       const response = await downloadTranscript(request, {
-        params: Promise.resolve({ hash: VALID_HASH }),
+        params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
       });
 
       expect(response.status).toBe(403);
@@ -150,7 +150,7 @@ describe("transcript download route", () => {
         canDownloadRecording: true,
         canDownloadTranscripts: true,
       });
-      resolveActiveGroup.mockResolvedValue({
+      findActiveCatalog.mockResolvedValue({
         id: "20251225_120000",
         isActive: true,
         transcriptsPath: "/transcripts",
@@ -161,10 +161,10 @@ describe("transcript download route", () => {
       );
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}/download?group=20251225_120000&backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
       );
       const response = await downloadTranscript(request, {
-        params: Promise.resolve({ hash: VALID_HASH }),
+        params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
       });
 
       // Should return 200 with file content
@@ -179,10 +179,10 @@ describe("transcript download route", () => {
       requireAuth.mockResolvedValue("user-1");
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}/download?group=20251225_120000&backend=invalid-backend&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=invalid-backend&format=json`
       );
       const response = await downloadTranscript(request, {
-        params: Promise.resolve({ hash: VALID_HASH }),
+        params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
       });
 
       expect(response.status).toBe(400);
@@ -194,10 +194,10 @@ describe("transcript download route", () => {
       requireAuth.mockResolvedValue("user-1");
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}/download?group=20251225_120000&backend=faster-whisper/large-v3@silero_vad_v6&format=invalid-format`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=invalid-format`
       );
       const response = await downloadTranscript(request, {
-        params: Promise.resolve({ hash: VALID_HASH }),
+        params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
       });
 
       expect(response.status).toBe(400);
@@ -218,7 +218,7 @@ describe("transcript download route under the reading gate", () => {
   async function arrange(capability: Record<string, boolean>) {
     const { requireAuth } = await import("@/lib/auth/permissions");
     const { getRecordingCapability } = await import("@/lib/access/capabilities");
-    const { resolveActiveGroup } = await import("@/lib/catalog/resolve-group");
+    const { findActiveCatalog } = await import("@/lib/catalog/resolve-group");
     const { resolveTranscriptsPath } = await import("@/lib/paths");
     const { readTranscriptFile } = await import("@/lib/transcript");
     vi.mocked(requireAuth).mockResolvedValue("user-1");
@@ -229,7 +229,7 @@ describe("transcript download route under the reading gate", () => {
       canDownloadTranscripts: true,
       ...capability,
     } as never);
-    vi.mocked(resolveActiveGroup).mockResolvedValue({ id: GROUP, isActive: true } as never);
+    vi.mocked(findActiveCatalog).mockResolvedValue({ id: GROUP, isActive: true } as never);
     vi.mocked(resolveTranscriptsPath).mockResolvedValue("/transcripts" as never);
     vi.mocked(readTranscriptFile).mockResolvedValue({
       content: JSON.stringify({ segments: [] }),
@@ -239,8 +239,8 @@ describe("transcript download route under the reading gate", () => {
 
   function run(query: string) {
     return downloadTranscript(
-      new NextRequest(`http://localhost/api/transcript/${VALID_HASH}/download?group=${GROUP}&${query}`),
-      { params: Promise.resolve({ hash: VALID_HASH }) }
+      new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?${query}`),
+      { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
     );
   }
 

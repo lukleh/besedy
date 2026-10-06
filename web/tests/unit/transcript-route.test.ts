@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as getTranscript } from "@/app/api/transcript/[hash]/route";
+import { GET as getTranscript } from "@/app/api/catalogs/[id]/recordings/[hash]/transcript/route";
 
 // Correction resolution is exercised in its own tests; these route tests cover
 // recordings outside correction scope, where the machine transcript is served.
@@ -39,7 +39,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroup: vi.fn(),
+  findActiveCatalog: vi.fn(),
 }));
 
 vi.mock("@/lib/audit/logger", () => ({
@@ -65,7 +65,7 @@ const VALID_HASH = "a".repeat(64);
 describe("transcript route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getRecordingCapability: ReturnType<typeof vi.fn>;
-  let resolveActiveGroup: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
   let getAvailableTranscripts: ReturnType<typeof vi.fn>;
   let loadTranscript: ReturnType<typeof vi.fn>;
   let listTranscriptBackendPriorities: ReturnType<typeof vi.fn>;
@@ -79,7 +79,7 @@ describe("transcript route", () => {
     getRecordingCapability =
       accessModule.getRecordingCapability as ReturnType<typeof vi.fn>;
     const groupModule = await import("@/lib/catalog/resolve-group");
-    resolveActiveGroup = groupModule.resolveActiveGroup as ReturnType<typeof vi.fn>;
+    findActiveCatalog = groupModule.findActiveCatalog as ReturnType<typeof vi.fn>;
     const transcriptModule = await import("@/lib/transcript");
     getAvailableTranscripts = transcriptModule.getAvailableTranscripts as ReturnType<typeof vi.fn>;
     loadTranscript = transcriptModule.loadTranscript as ReturnType<typeof vi.fn>;
@@ -94,14 +94,14 @@ describe("transcript route", () => {
   describe("access control", () => {
     it("denies transcript access for LISTENER users", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: false,
       });
 
-      const request = new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`);
-      const response = await getTranscript(request, { params: Promise.resolve({ hash: VALID_HASH }) });
+      const request = new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`);
+      const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
       expect(response.status).toBe(403);
       const body = await response.json();
@@ -114,7 +114,7 @@ describe("transcript route", () => {
     // unevaluated model output, and an ordinary reader reads the one default.
     it("lists only the default transcript without the administrative view", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
@@ -127,8 +127,8 @@ describe("transcript route", () => {
       });
 
       const response = await getTranscript(
-        new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
-        { params: Promise.resolve({ hash: VALID_HASH }) }
+        new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`),
+        { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
       );
 
       expect(response.status).toBe(200);
@@ -139,7 +139,7 @@ describe("transcript route", () => {
 
     it("lists every transcript for the administrative view", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
@@ -152,8 +152,8 @@ describe("transcript route", () => {
       });
 
       const response = await getTranscript(
-        new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
-        { params: Promise.resolve({ hash: VALID_HASH }) }
+        new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`),
+        { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
       );
 
       expect(response.status).toBe(200);
@@ -170,7 +170,7 @@ describe("transcript route", () => {
       process.env.RAG_BACKEND_KEY = "whisperx/large-v3@pyannote_v3";
       try {
         requireAuth.mockResolvedValue("user-1");
-        resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+        findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
         getRecordingCapability.mockResolvedValue({
           canAccessRecording: true,
           canViewRecordingTranscripts: true,
@@ -183,8 +183,8 @@ describe("transcript route", () => {
         });
 
         const admin = await getTranscript(
-          new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
-          { params: Promise.resolve({ hash: VALID_HASH }) }
+          new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`),
+          { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
         );
         await expect(admin.json()).resolves.toMatchObject({
           backends: ["whisperx/large-v3@pyannote_v3", "faster-whisper/large-v3@silero_vad_v6"],
@@ -196,8 +196,8 @@ describe("transcript route", () => {
           canSeeTranscriptVariants: false,
         });
         const reader = await getTranscript(
-          new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`),
-          { params: Promise.resolve({ hash: VALID_HASH }) }
+          new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`),
+          { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
         );
         await expect(reader.json()).resolves.toMatchObject({
           backends: ["whisperx/large-v3@pyannote_v3"],
@@ -210,7 +210,7 @@ describe("transcript route", () => {
 
     it("refuses a transcript other than the default without the administrative view", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
@@ -224,9 +224,9 @@ describe("transcript route", () => {
 
       const response = await getTranscript(
         new NextRequest(
-          `http://localhost/api/transcript/${VALID_HASH}?backend=whisperx/large-v3@pyannote_v3`
+          `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=whisperx/large-v3@pyannote_v3`
         ),
-        { params: Promise.resolve({ hash: VALID_HASH }) }
+        { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
       );
 
       expect(response.status).toBe(403);
@@ -235,7 +235,7 @@ describe("transcript route", () => {
 
     it("strips the speaker on each segment without the speaker view", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
@@ -254,9 +254,9 @@ describe("transcript route", () => {
 
       const response = await getTranscript(
         new NextRequest(
-          `http://localhost/api/transcript/${VALID_HASH}?backend=faster-whisper/large-v3@silero_vad_v6`
+          `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=faster-whisper/large-v3@silero_vad_v6`
         ),
-        { params: Promise.resolve({ hash: VALID_HASH }) }
+        { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
       );
 
       expect(response.status).toBe(200);
@@ -266,14 +266,14 @@ describe("transcript route", () => {
 
     it("denies access when user cannot access the audio hash", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: false,
         canViewRecordingTranscripts: false,
       });
 
-      const request = new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`);
-      const response = await getTranscript(request, { params: Promise.resolve({ hash: VALID_HASH }) });
+      const request = new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`);
+      const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
       expect(response.status).toBe(403);
       const body = await response.json();
@@ -282,7 +282,7 @@ describe("transcript route", () => {
 
     it("allows VIEWER to access transcript", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
@@ -298,9 +298,9 @@ describe("transcript route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=faster-whisper/large-v3@silero_vad_v6`
       );
-      const response = await getTranscript(request, { params: Promise.resolve({ hash: VALID_HASH }) });
+      const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
       expect(response.status).toBe(200);
       const body = await response.json();
@@ -313,8 +313,8 @@ describe("transcript route", () => {
     it("rejects invalid hash format", async () => {
       requireAuth.mockResolvedValue("user-1");
 
-      const request = new NextRequest("http://localhost/api/transcript/invalid-hash");
-      const response = await getTranscript(request, { params: Promise.resolve({ hash: "invalid-hash" }) });
+      const request = new NextRequest("http://localhost/api/catalogs/20251225_120000/recordings/invalid-hash/transcript");
+      const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: "invalid-hash" }) });
 
       expect(response.status).toBe(400);
       const body = await response.json();
@@ -323,16 +323,16 @@ describe("transcript route", () => {
 
     it("rejects invalid backend parameter", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue({ id: "20251225_120000" });
+      findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
         canAccessRecording: true,
         canViewRecordingTranscripts: true,
       });
 
       const request = new NextRequest(
-        `http://localhost/api/transcript/${VALID_HASH}?backend=invalid-backend`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=invalid-backend`
       );
-      const response = await getTranscript(request, { params: Promise.resolve({ hash: VALID_HASH }) });
+      const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
       expect(response.status).toBe(400);
       const body = await response.json();
@@ -341,16 +341,16 @@ describe("transcript route", () => {
   });
 
   describe("group resolution", () => {
-    it("returns 404 when no workflow group is configured", async () => {
+    it("returns 404 when the catalog in the path does not exist", async () => {
       requireAuth.mockResolvedValue("user-1");
-      resolveActiveGroup.mockResolvedValue(null);
+      findActiveCatalog.mockResolvedValue(null);
 
-      const request = new NextRequest(`http://localhost/api/transcript/${VALID_HASH}`);
-      const response = await getTranscript(request, { params: Promise.resolve({ hash: VALID_HASH }) });
+      const request = new NextRequest(`http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript`);
+      const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
       expect(response.status).toBe(404);
       const body = await response.json();
-      expect(body.error).toMatch(/No workflow group/);
+      expect(body.error).toMatch(/Catalog not found/);
     });
   });
 });

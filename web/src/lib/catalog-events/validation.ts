@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IntIdSchema } from "@/lib/api/validation";
-import { HashSchema, TimestampIdSchema } from "@/lib/validation/schemas";
+import { HashSchema } from "@/lib/validation/schemas";
 import { CREATE_DISTINCT_EVENT_INTENT } from "@/lib/catalog-events/create-conflict";
 
 const EventTitleSchema = z.string().trim().min(1).max(255);
@@ -31,13 +31,9 @@ export const CatalogEventRecordingParamSchema = z.object({
   audioHash: HashSchema,
 });
 
-export const CatalogEventsGroupQuerySchema = z.object({
-  group: TimestampIdSchema,
-});
-
+// The catalog comes from the route path (/api/catalogs/:id/events).
 export const CreateCatalogEventSchema = z
   .object({
-    workflowGroupId: TimestampIdSchema,
     locationId: z.number().int().positive(),
     dateYear: z.number().int().min(1900).max(2100),
     dateMonth: z.number().int().min(1).max(12).nullable().optional(),
@@ -70,7 +66,6 @@ export const UpdateCatalogEventSchema = z
   });
 
 export const CreateCatalogEventFromRecordingSchema = z.object({
-  workflowGroupId: TimestampIdSchema,
   audioHash: HashSchema,
   intent: EventCreationIntentSchema.optional(),
 });

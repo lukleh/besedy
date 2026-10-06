@@ -58,7 +58,7 @@ describe("fetchJson auth redirect behavior", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: "Access denied" }));
 
     await expect(
-      fetchJson("/api/transcript/hash/formats?backend=test/model")
+      fetchJson("/api/catalogs/cat/recordings/hash/transcript/formats?backend=test/model")
     ).rejects.toBeInstanceOf(ApiError);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

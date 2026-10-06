@@ -336,7 +336,7 @@ export async function waitForDialogClose(page: Page, timeout = 5000): Promise<vo
  */
 export async function waitForFilterOptions(page: Page, timeout = 10000): Promise<void> {
   await page.waitForResponse(
-    response => response.url().includes('/api/catalog/filter-options'),
+    response => response.url().includes('/recordings/filter-options'),
     { timeout }
   ).catch(() => {});
 }

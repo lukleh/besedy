@@ -414,7 +414,7 @@ export function useCatalogListController({
     enabled:
       !catalogNotFound &&
       !catalogValidationLoading &&
-      (!!activeCatalogId || !loadingPreferences) &&
+      !!activeCatalogId &&
       filtersReady,
   });
 

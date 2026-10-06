@@ -27,7 +27,7 @@ vi.mock("@/lib/access/capabilities", () => ({
 vi.mock("@/lib/catalog", () => ({ loadCatalogHashes: vi.fn() }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveActiveGroupWithAccess: vi.fn(),
+  resolveCatalogWithAccess: vi.fn(),
 }));
 
 import {
@@ -49,9 +49,9 @@ const db = prisma as unknown as {
 };
 
 function deleteRequest() {
-  return new NextRequest("http://localhost/api/x/5", { method: "DELETE" });
+  return new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/x/5", { method: "DELETE" });
 }
-const params = () => ({ params: Promise.resolve({ id: "5" }) });
+const params = () => ({ params: Promise.resolve({ id: "20251222_144441", itemId: "5" }) });
 
 describe("CRUD delete referential-integrity guards", () => {
   beforeEach(async () => {
@@ -60,11 +60,11 @@ describe("CRUD delete referential-integrity guards", () => {
     const { requireAuth } = await import("@/lib/auth/permissions");
     const { getCatalogCapability } = await import("@/lib/access/capabilities");
     const { loadCatalogHashes } = await import("@/lib/catalog");
-    const { resolveActiveGroupWithAccess } = await import("@/lib/catalog/resolve-group");
+    const { resolveCatalogWithAccess } = await import("@/lib/catalog/resolve-group");
     // Holds manage_lookups on the one catalog the row lives in; the guards
     // under test are referential, not authorizational.
     asMock(requireAuth).mockResolvedValue("user-1");
-    asMock(resolveActiveGroupWithAccess).mockResolvedValue({
+    asMock(resolveCatalogWithAccess).mockResolvedValue({
       group: { id: "20251222_144441" },
       hasAccess: true,
     });

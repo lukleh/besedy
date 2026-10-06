@@ -46,12 +46,11 @@ async function getEventIdByTitle(
   title: string,
 ): Promise<number> {
   const params = new URLSearchParams({
-    group: TEST_CATALOG_ID,
     search: title,
     limit: '50',
   });
   const response = await request.get(
-    `/api/catalog-events?${params.toString()}`,
+    `/api/catalogs/${TEST_CATALOG_ID}/events?${params.toString()}`,
   );
   expect(response.ok()).toBe(true);
   const body = (await response.json()) as {

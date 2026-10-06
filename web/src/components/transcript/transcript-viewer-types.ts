@@ -127,7 +127,7 @@ export const availableTranscriptsSchema = z.object({
 
 export interface TranscriptViewerProps {
   hash: string;
-  groupId?: string;
+  groupId: string;
   /** Offers the correction surface from the progress panel */
   canCorrectTranscripts?: boolean;
   currentTime?: number;

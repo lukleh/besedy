@@ -155,7 +155,7 @@ test.describe('Mobile event listening flow', () => {
     expect(locationId).not.toBe('all');
 
     const eventsResponse = await page.request.get(
-      `/api/catalog-events?group=${TEST_CATALOG_ID}&limit=200&sort=date&dir=desc&location=${locationId}`,
+      `/api/catalogs/${TEST_CATALOG_ID}/events?limit=200&sort=date&dir=desc&location=${locationId}`,
     );
     expect(eventsResponse.ok()).toBeTruthy();
     const eventList = (await eventsResponse.json()) as {

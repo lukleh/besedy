@@ -140,7 +140,7 @@ test.describe("Smoke Tests @smoke", () => {
     // The fixtures must sit where the app resolves transcripts; the access
     // checks in security.spec.ts pass wherever they are.
     const response = await page.request.get(
-      `/api/transcript/${FIRST_RECORDING.hash}?group=${TEST_CATALOG_ID}`
+      `/api/catalogs/${TEST_CATALOG_ID}/recordings/${FIRST_RECORDING.hash}/transcript`
     );
     expect(response.status()).toBe(200);
     const { backends } = await response.json();
@@ -162,7 +162,7 @@ test.describe("Smoke Tests @smoke", () => {
     // until a corrected transcript is published there is no text to read.
     const primary = TEST_AUDIO_FILES[4]; // ab00005eaf, primary of the first event
     const response = await page.request.get(
-      `/api/transcript/${primary.hash}?group=${TEST_CATALOG_ID}`
+      `/api/catalogs/${TEST_CATALOG_ID}/recordings/${primary.hash}/transcript`
     );
     expect(response.status()).toBe(200);
     const body = await response.json();
