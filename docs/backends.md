@@ -128,16 +128,18 @@ bundle:
 - `index_meta.json`
 - `chunk_store.sqlite`
 
-All three web environments reach ColBERT via
-`RAG_COLBERT_URL=http://host.docker.internal:8192/query`.
+All three web environments reach ColBERT over the shared `besedy-internal`
+network via `RAG_COLBERT_URL=http://besedy-colbert:8192/query`. The host port
+binds `127.0.0.1` only; containers cannot reach host ports
+([egress-isolation.md](web/egress-isolation.md)).
 
 ### Web Environment Integration
 
-All three web environments (dev, test, prod) use the same host-level services.
+All three web environments (dev, test, prod) use the same shared ColBERT container.
 The web container does not need filesystem access to bundles; the RAG services
 stack resolves and serves them. Key env vars:
 
-- `RAG_COLBERT_URL=http://host.docker.internal:8192/query`
+- `RAG_COLBERT_URL=http://besedy-colbert:8192/query`
 - `RAG_COLBERT_ROOT_DIR=/workspace/besedy/tmp/rag_colbert`
 - `RAG_COLBERT_TIMEOUT_MS=8000` (timeout for each request to the sidecar)
 

@@ -65,8 +65,10 @@ ruff-format *args:
 
 rag_services_compose := "bash scripts/run_rag_services_compose.sh"
 
-ensure_internal_network := "docker network inspect \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\" >/dev/null"
-ensure_prefect_network := "docker network inspect \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null 2>&1 || docker network create --driver bridge \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\" >/dev/null"
+# Shared networks get a br-bsdy* bridge name so the host egress policy covers
+# them (docs/web/egress-isolation.md).
+ensure_internal_network := "bash scripts/docker_network.sh ensure \"${BESEDY_INTERNAL_NETWORK:-besedy-internal}\""
+ensure_prefect_network := "bash scripts/docker_network.sh ensure \"${BESEDY_PREFECT_NETWORK:-besedy-prefect}\""
 ensure_prefect_volume := "docker volume inspect \"${BESEDY_PREFECT_POSTGRES_VOLUME:-besedy_prefect_postgres}\" >/dev/null 2>&1 || docker volume create \"${BESEDY_PREFECT_POSTGRES_VOLUME:-besedy_prefect_postgres}\" >/dev/null"
 
 prefect_compose := "docker compose --env-file \"$(bash scripts/resolve_jobs_env_file.sh prefect)\" -f jobs-service/docker-compose.prefect.yml"
@@ -993,9 +995,15 @@ prod-migrate:
         -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO besedy_app;" \
         -c "REVOKE DELETE ON TABLE public.audit_log FROM besedy_app;"
 
-# Show container status
+# Show container status and verify the container egress policy
 prod-status:
     cd web && {{ prod_compose }} ps
+    just egress-check
+
+# Probe the container egress policy with real packets (docs/web/egress-isolation.md).
+# Needs sudo for nsenter; with container names, only those are probed.
+egress-check *containers:
+    sudo bash scripts/egress-check.sh {{ containers }}
 
 # Monitor session/auth health (run after deployment)
 prod-monitor *args:

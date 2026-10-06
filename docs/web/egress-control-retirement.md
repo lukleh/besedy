@@ -1,7 +1,8 @@
 # Docker LAN Egress Control Retirement
 
-**Status:** Retired on 2026-09-17. Besedy does not currently install or claim a
-host firewall rule that blocks containers from reaching private LAN addresses.
+**Status:** Retired on 2026-09-17. Superseded by
+[Container Egress Isolation](egress-isolation.md), which addresses the
+requirements below.
 
 This record explains what the removed control attempted, why it did not provide
 the protection described in the security documentation, and what a future

@@ -102,8 +102,6 @@ services:
       - ${BESEDY_CONFIG_FILE:-${HOME}/.config/lukleh/besedy/besedy.toml}:${BESEDY_CONFIG_CONTAINER:-/run/besedy/config/besedy.toml}:ro
       - ${BESEDY_STATE_HOME:-${HOME}/.local/state/lukleh/besedy}/deep-search:/state/lukleh/besedy/deep-search:rw
       - ${CODEX_HOST_AUTH_DIR:-${HOME}/.codex}:${CODEX_HOME:-/run/codex}:rw
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - default
       - besedy_internal
@@ -111,6 +109,12 @@ services:
     restart: unless-stopped
 
 networks:
+  default:
+    enable_ipv6: false
+    driver_opts:
+      # The host egress policy covers every br-bsdy* bridge
+      # (docs/web/egress-isolation.md).
+      com.docker.network.bridge.name: br-bsdy-jtest
   besedy_internal:
     name: ${BESEDY_INTERNAL_NETWORK:-besedy-internal}
     external: true

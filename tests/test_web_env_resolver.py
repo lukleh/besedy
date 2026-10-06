@@ -134,10 +134,10 @@ if [[ " $* " == *" config --format json "* ]]; then
     external=false
   fi
   volume_target="/var/lib/postgresql"
-  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default"},"besedy_internal":{"name":"%s","external":true}}}\n' \
+  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default","driver_opts":{"com.docker.network.bridge.name":"%s"},"enable_ipv6":false},"besedy_internal":{"name":"%s","external":true}}}\n' \
     "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
     "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external" \
-    "$COMPOSE_PROJECT_NAME" "$BESEDY_INTERNAL_NETWORK"
+    "$COMPOSE_PROJECT_NAME" "$BESEDY_WEB_BRIDGE_NAME" "$BESEDY_INTERNAL_NETWORK"
   exit 0
 fi
 printf 'APP_ENV=%s\n' "$APP_ENV"
@@ -307,10 +307,30 @@ def compose_config(
             }
         },
         "networks": {
-            "default": {"name": f"besedy-{instance}_default"},
+            "default": {
+                "name": f"besedy-{instance}_default",
+                "driver_opts": {"com.docker.network.bridge.name": "br-bsdy-wtest"},
+                "enable_ipv6": False,
+            },
             "besedy_internal": {"name": internal_network, "external": True},
         },
     }
+
+
+def _default_network(config: dict[str, object]) -> dict[str, object]:
+    networks = config["networks"]
+    assert isinstance(networks, dict)
+    return networks["default"]
+
+
+def _without_bridge_name(config: dict[str, object]) -> dict[str, object]:
+    del _default_network(config)["driver_opts"]
+    return config
+
+
+def _with_ipv6(config: dict[str, object]) -> dict[str, object]:
+    _default_network(config)["enable_ipv6"] = True
+    return config
 
 
 def validate_compose_config(config: dict[str, object], mode: str) -> subprocess.CompletedProcess[str]:
@@ -348,6 +368,16 @@ def test_compose_validator_allows_production_text_in_non_resource_paths() -> Non
                 "test", db_networks={"besedy_internal": None, "default": None}
             ),
             "database must only join the project default network",
+        ),
+        (
+            "test",
+            _without_bridge_name(compose_config("test")),
+            "default network bridge name is '', expected a br-bsdy* name",
+        ),
+        (
+            "test",
+            _with_ipv6(compose_config("test")),
+            "default network must set enable_ipv6: false",
         ),
     ],
 )
@@ -424,7 +454,11 @@ def _bind_config(mode: str, root: Path) -> dict[str, object]:
         },
         "volumes": {"postgres_data": {"name": volume_name, "external": mode == "production"}},
         "networks": {
-            "default": {"name": f"{project}_default"},
+            "default": {
+                "name": f"{project}_default",
+                "driver_opts": {"com.docker.network.bridge.name": "br-bsdy-wtest"},
+                "enable_ipv6": False,
+            },
             "besedy_internal": {"name": "besedy-internal", "external": True},
         },
     }

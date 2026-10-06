@@ -137,8 +137,6 @@ services:
         target: /state/lukleh/besedy/deep-search
         bind:
           create_host_path: false
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - default
       - besedy_internal
@@ -146,6 +144,12 @@ services:
     restart: unless-stopped
 
 networks:
+  default:
+    enable_ipv6: false
+    driver_opts:
+      # The host egress policy covers every br-bsdy* bridge
+      # (docs/web/egress-isolation.md).
+      com.docker.network.bridge.name: br-bsdy-jprod
   besedy_internal:
     name: ${BESEDY_INTERNAL_NETWORK:-besedy-internal}
     external: true

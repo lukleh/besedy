@@ -9,7 +9,12 @@
 # that holds COLBERT_PRELOAD_INDEX_DIR (template: rag-services/.env.example).
 #
 # Endpoints:
-#   ColBERT:    http://127.0.0.1:8192 (default startup, internal warm-query service)
+#   ColBERT:    http://127.0.0.1:8192 from the host (loopback only)
+#               http://besedy-colbert:8192 from containers on besedy-internal
+#
+# Containers cannot reach host ports (docs/web/egress-isolation.md), so web
+# reaches ColBERT over the shared besedy-internal network. Searching from
+# outside Besedy goes through the MCP server, which applies catalog ACLs.
 #
 # Models are cached in named volumes so they survive container restarts.
 
@@ -23,7 +28,10 @@ services:
       dockerfile: rag-services/colbert/Dockerfile
     container_name: besedy-colbert
     ports:
-      - "${COLBERT_HOST_BIND:-0.0.0.0}:${COLBERT_HOST_PORT:-8192}:8192"
+      - "${COLBERT_HOST_BIND:-127.0.0.1}:${COLBERT_HOST_PORT:-8192}:8192"
+    networks:
+      - default
+      - besedy_internal
     working_dir: /workspace/besedy
     command:
       - python
@@ -89,6 +97,17 @@ services:
       TEMP: ${TMPDIR:-/tmp}
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+
+networks:
+  default:
+    enable_ipv6: false
+    driver_opts:
+      # The host egress policy covers every br-bsdy* bridge
+      # (docs/web/egress-isolation.md).
+      com.docker.network.bridge.name: br-bsdy-rag
+  besedy_internal:
+    name: ${BESEDY_INTERNAL_NETWORK:-besedy-internal}
+    external: true
 
 volumes:
   colbert_model_cache:

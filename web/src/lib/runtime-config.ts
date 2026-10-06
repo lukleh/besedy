@@ -14,7 +14,7 @@ export const RAG_DEFAULTS = {
   RELATIVE_SCORE_CUTOFF: 0,
   TIMEOUT_MS: 8000,
   BACKEND_KEY: "faster-whisper/large-v3@silero_vad_v6@lang-cs",
-  COLBERT_URL: "http://host.docker.internal:8192/query",
+  COLBERT_URL: "http://besedy-colbert:8192/query",
   COLBERT_TOP_K: 200,
   COLBERT_MODEL: "jinaai/jina-colbert-v2",
   COLBERT_ROOT_DIR: "/data/state/rag_colbert",

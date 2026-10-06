@@ -150,6 +150,8 @@ clean_env=(
   "BESEDY_COMPOSE_INSTANCE=$instance"
   "BESEDY_INTERNAL_NETWORK=$internal_network"
   "COMPOSE_PROJECT_NAME=besedy-$instance"
+  # The egress policy covers bridges named br-bsdy*; see scripts/docker_network.sh.
+  "BESEDY_WEB_BRIDGE_NAME=$("$script_dir/docker_network.sh" bridge-name "besedy-${instance}_default")"
   # Every jobs runtime's API answers to the shared service name jobs-api on the
   # internal network, so web defaults to the container of its own runtime.
   "BESEDY_JOBS_API_HOST=besedy-$jobs_runtime-jobs-api"
@@ -276,9 +278,8 @@ if [[ "$changes_resources" == true && "$dry_run" == false && "$mode" != "product
 fi
 
 if [[ "$changes_resources" == true ]]; then
-  if [[ "$dry_run" == false ]] && ! "${clean_env[@]}" docker network inspect "$internal_network" >/dev/null 2>&1; then
-    "${clean_env[@]}" docker network create --driver bridge "$internal_network" >/dev/null \
-      || "${clean_env[@]}" docker network inspect "$internal_network" >/dev/null
+  if [[ "$dry_run" == false ]]; then
+    "${clean_env[@]}" "$script_dir/docker_network.sh" ensure "$internal_network"
   fi
 fi
 

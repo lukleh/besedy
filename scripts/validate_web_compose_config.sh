@@ -44,6 +44,13 @@ actual_default_network="$(jq -r '.networks.default.name // empty' <<<"$config")"
 [[ "$actual_default_network" == "${expected_project}_default" ]] \
   || fail "default network is '$actual_default_network', expected '${expected_project}_default'"
 
+# The host egress policy matches br-bsdy* bridges only (docs/web/egress-isolation.md).
+actual_default_bridge="$(jq -r '.networks.default.driver_opts["com.docker.network.bridge.name"] // empty' <<<"$config")"
+[[ "$actual_default_bridge" == br-bsdy* ]] \
+  || fail "default network bridge name is '$actual_default_bridge', expected a br-bsdy* name"
+jq -e '.networks.default.enable_ipv6 == false' <<<"$config" >/dev/null \
+  || fail "default network must set enable_ipv6: false"
+
 actual_internal_network="$(jq -r '.networks.besedy_internal.name // empty' <<<"$config")"
 [[ "$actual_internal_network" == "$expected_internal_network" ]] \
   || fail "internal network is '$actual_internal_network', expected '$expected_internal_network'"
