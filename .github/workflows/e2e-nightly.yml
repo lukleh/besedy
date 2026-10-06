@@ -5,7 +5,9 @@ name: Nightly E2E
 # every PR. The pull_request trigger fires only for changes to this workflow
 # and to what it runs on (setup action, compose wrapper and files, the
 # test-up/test-down/mcp-smoke recipes, Playwright configs, the test env
-# template), so such a change is tried on its own PR before it lands.
+# template, the web package manifest, the production image, the OAuth and
+# ColBERT mocks, the E2E harness), so such a change is tried on its own PR
+# before it lands. Spec and app changes are left to the nightly run.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -21,6 +23,16 @@ on:
       - web/playwright.config.ts
       - web/playwright.mcp.config.ts
       - web/.env.test.example
+      - web/package.json
+      - web/package-lock.json
+      - web/Dockerfile
+      - web/docker-entrypoint.sh
+      - web/tests/e2e/oauth-mock/**
+      - web/tests/e2e/rag-mock/**
+      - web/tests/e2e/global-setup.ts
+      - web/tests/e2e/global-teardown.ts
+      - web/tests/e2e/scripts/**
+      - web/tests/e2e/helpers/**
 
 # Read-only token; no job needs write access.
 permissions:
