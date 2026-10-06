@@ -6,16 +6,19 @@ import re
 from pathlib import Path
 
 from besedy.core.paths import (
+    extract_timestamp_from_catalog,
+    hash_component_from_sha,
     iter_transcript_paths,
     parse_transcript_components,
     require_valid_hash_stem,
+    resolve_transcripts_parent,
     sanitize_component,
 )
 from besedy.core.paths import (
     resolve_transcripts_root as core_resolve_transcripts_root,
 )
 
-from .config import WorkflowConfig, get_workflow_config
+from .config import WorkflowConfig, get_transcription_workflows, get_workflow_config
 
 __all__ = [
     # Sanitization functions
@@ -30,6 +33,7 @@ __all__ = [
     "artifact_matches",
     "artifact_exists",
     "get_transcript_backend_paths",
+    "missing_pipeline_transcripts",
     # Diarization helpers
     "setup_diarization_output_dir",
 ]
@@ -262,3 +266,23 @@ def setup_diarization_output_dir(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     return output_dir, hash_component
+
+
+def missing_pipeline_transcripts(csv_path: Path, audio_hash: str) -> list[Path]:
+    """Return the transcript.json files run-pipeline should have written for one hash.
+
+    Only the missing ones are returned, so an empty list means every pipeline
+    transcription workflow has a transcript for that recording. The paths are
+    resolved the way run-pipeline and transcribe resolve them:
+    ``transcripts_<catalog timestamp>/<workflow>/<component>/<hash>/``.
+    """
+    timestamp = extract_timestamp_from_catalog(csv_path.resolve())
+    if not timestamp:
+        raise ValueError(f"Catalog CSV is not timestamped: {csv_path}")
+    transcripts_run_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
+    hash_component = hash_component_from_sha(audio_hash)
+    expected = [
+        path_builder(workflow).artifact_path(hash_component, transcripts_run_root)
+        for workflow in get_transcription_workflows(pipeline_only=True)
+    ]
+    return [path for path in expected if not path.is_file()]

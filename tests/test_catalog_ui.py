@@ -42,7 +42,7 @@ class TestPrintWorkflowSummary:
         captured = capsys.readouterr()
 
         assert "All workflows completed successfully." not in captured.out
-        assert "command will exit with status 1" in captured.out
+        assert "command will exit with status 2" in captured.out
 
     def test_keeps_success_message_for_already_complete_rows(self, capsys):
         """Rows whose outputs already exist do not spoil a successful run."""
@@ -85,5 +85,5 @@ class TestPrintWorkflowSummary:
         assert "Already complete: 1" in captured.out
         assert f"{'b' * 64}: file not found" in captured.out
         assert (
-            "No workflows completed successfully; command will exit with status 1." in captured.out
+            "No rows were processed, only skipped; command will exit with status 2." in captured.out
         )

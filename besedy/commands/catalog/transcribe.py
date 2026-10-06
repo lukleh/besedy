@@ -20,7 +20,7 @@ from besedy.commands.catalog.workflow_setup import (
 )
 from besedy.core.paths import SHA256_HASH_PATTERN, hash_component_from_sha
 from besedy.lib.audio.types import SkippedEntry
-from besedy.lib.workflow.common import CsvAudioRow
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED, CsvAudioRow
 from besedy.lib.workflow.config import (
     WorkflowConfig,
     get_transcription_workflows,
@@ -447,7 +447,7 @@ def handle_transcribe(
     if not prepared:
         print("No staged audio files passed validation; nothing to do.")
         print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
-        return 1 if skipped_total else 0
+        return EXIT_ROWS_SKIPPED if skipped_total else 0
 
     transcription_jobs: list[TranscriptionJob] = []
     for cfg in selected_configs:
@@ -483,10 +483,12 @@ def handle_transcribe(
     if not workflows:
         print("No workflows to run.")
         print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
-        return 1 if skipped_total else 0
+        return EXIT_ROWS_SKIPPED if skipped_total else 0
 
     base_env = prepare_workflow_env()
     failures = launch_workflows(workflows, base_env)
 
     print_workflow_summary(prepared, skipped_total, failures, already_complete=already_complete)
-    return 0 if not failures and not skipped_total else 1
+    if failures:
+        return 1
+    return EXIT_ROWS_SKIPPED if skipped_total else 0
