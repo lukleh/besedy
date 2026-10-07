@@ -18,6 +18,7 @@ import {
   buildCorrectionPagePath,
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
+import { formatHoursMinutes } from "@/lib/correction/format";
 import {
   inOverviewTab,
   isReadyToPublish,
@@ -32,14 +33,6 @@ import {
 
 interface CorrectionOverviewPageProps {
   catalogId: string;
-}
-
-export function formatHours(seconds: number): string {
-  const totalMinutes = Math.round(Math.max(0, seconds) / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes} min`;
-  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
 }
 
 /** Whatever part of the date the event has: 2026, 2026-03 or 2026-03-14. */
@@ -121,7 +114,7 @@ function SummaryTile({
   return (
     <div className="rounded-lg border p-4">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-medium tabular-nums">{formatHours(seconds)}</p>
+      <p className="mt-1 text-2xl font-medium tabular-nums">{formatHoursMinutes(seconds)}</p>
       <p className="text-sm text-muted-foreground">{t("recordingCount", { count })}</p>
     </div>
   );
@@ -149,7 +142,7 @@ function OverviewRow({
     eventName,
     formatEventDate(recording),
     recording.locationName,
-    formatHours(recording.durationSeconds),
+    formatHoursMinutes(recording.durationSeconds),
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
@@ -335,6 +328,13 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
             <SummaryTile label={t("summary.toPublish")} {...sum("to_publish")} />
             <SummaryTile label={t("summary.published")} {...sum("published")} />
           </div>
+          {/* The tiles count the same groups as the tabs, so the figures do not
+              add up to the total: a published recording that is corrected again
+              is in progress and published at once. Say so rather than leave a
+              reader to wonder where the hours went. */}
+          <p className="-mt-3 text-xs text-muted-foreground" data-testid="correction-overview-overlap">
+            {t("summary.overlap")}
+          </p>
 
           <div className="flex flex-wrap gap-2" role="group" aria-label={t("filtersLabel")}>
             {OVERVIEW_TABS.map((candidate) => (

@@ -510,7 +510,8 @@
         "notStarted": "Nezačato",
         "inProgress": "Rozpracováno",
         "toPublish": "Ke zveřejnění",
-        "published": "Zveřejněno"
+        "published": "Zveřejněno",
+        "overlap": "Jedna nahrávka může být ve více skupinách: zveřejněná nahrávka, která se znovu opravuje, je rozpracovaná i zveřejněná zároveň, takže součet nemusí dát celek."
       },
       "filters": {
         "mine": "Moje",

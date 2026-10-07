@@ -1,7 +1,7 @@
 import { Prisma, type TranscriptPublicationStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { loadActorNames } from "@/lib/correction/actor-names";
-import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-service";
+import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-status";
 import { eligibilityOfAggregate } from "@/lib/correction/publication-eligibility";
 import { loadWorkspaceAggregates, type WorkspaceAggregate } from "@/lib/correction/span-queries";
 import type { SpanState } from "@/lib/correction/span-state";

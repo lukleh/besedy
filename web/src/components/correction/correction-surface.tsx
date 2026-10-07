@@ -22,6 +22,7 @@ import {
   buildCorrectionStripUrl,
 } from "@/lib/api/recording-urls";
 import { AudioPlayer } from "@/components/player/audio-player";
+import { formatClock } from "@/lib/correction/format";
 import { CorrectionStrip } from "./correction-strip";
 import {
   nextSpanSchema,
@@ -76,13 +77,6 @@ interface SpanCommandInput {
   text?: string;
   /** Minted when the person acts, so a retried request replays rather than repeats */
   idempotencyKey: string;
-}
-
-function formatClock(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${minutes}:${String(secs).padStart(2, "0")}`;
 }
 
 function stateVariant(state: SpanState): "default" | "secondary" | "destructive" | "outline" {

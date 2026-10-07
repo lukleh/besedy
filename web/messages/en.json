@@ -510,7 +510,8 @@
         "notStarted": "Not started",
         "inProgress": "In progress",
         "toPublish": "To publish",
-        "published": "Published"
+        "published": "Published",
+        "overlap": "A recording can be in more than one group: a published recording that is being corrected again is both in progress and published, so the figures need not add up to the total."
       },
       "filters": {
         "mine": "Mine",

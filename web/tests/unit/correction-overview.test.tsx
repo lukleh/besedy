@@ -5,11 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CorrectionOverviewPage,
   formatEventDate,
-  formatHours,
   orderForTab,
 } from "@/components/correction/correction-overview";
 import type { OverviewItem } from "@/components/correction/correction-types";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { formatClock, formatHoursMinutes } from "@/lib/correction/format";
 import {
   deriveReaderState,
   deriveWorkStage,
@@ -135,10 +135,19 @@ describe("deriveReaderState", () => {
 
 describe("formatting", () => {
   it("writes lengths in hours and minutes", () => {
-    expect(formatHours(0)).toBe("0 min");
-    expect(formatHours(40 * 60)).toBe("40 min");
-    expect(formatHours(3 * 3600)).toBe("3 h");
-    expect(formatHours(3 * 3600 + 25 * 60)).toBe("3 h 25 min");
+    expect(formatHoursMinutes(0)).toBe("0 min");
+    expect(formatHoursMinutes(40 * 60)).toBe("40 min");
+    expect(formatHoursMinutes(3 * 3600)).toBe("3 h");
+    expect(formatHoursMinutes(3 * 3600 + 25 * 60)).toBe("3 h 25 min");
+  });
+
+  it("writes a position in a recording with hours only once it passes one", () => {
+    expect(formatClock(0)).toBe("0:00");
+    expect(formatClock(65.9)).toBe("1:05");
+    expect(formatClock(3599)).toBe("59:59");
+    expect(formatClock(3600)).toBe("1:00:00");
+    expect(formatClock(3 * 3600 + 7 * 60 + 5)).toBe("3:07:05");
+    expect(formatClock(-4)).toBe("0:00");
   });
 
   it("writes as much of the event date as is known", () => {
@@ -352,6 +361,14 @@ describe("CorrectionOverviewPage", () => {
 
     expect(screen.getByText("empty.published")).toBeInTheDocument();
     expect(screen.queryByTestId("correction-overview-row")).not.toBeInTheDocument();
+  });
+
+  it("says that the groups overlap, so the tiles need not add up", async () => {
+    fetchJsonMock.mockResolvedValue(overview([item("a")]));
+
+    renderPage();
+
+    expect(await screen.findByTestId("correction-overview-overlap")).toHaveTextContent("summary.overlap");
   });
 
   it("totals the hours per stage in the summary", async () => {

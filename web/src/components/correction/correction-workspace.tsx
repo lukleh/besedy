@@ -21,6 +21,7 @@ import {
   buildRecordingEntryUrl,
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
+import { formatHoursMinutes } from "@/lib/correction/format";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionSurface } from "./correction-surface";
 import { useLandscapeWorkspace } from "./use-landscape-workspace";
@@ -36,13 +37,6 @@ interface CorrectionWorkspaceProps {
   hash: string;
   userId: string;
   canPublish: boolean;
-}
-
-function formatDuration(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
 }
 
 export function CorrectionWorkspace({
@@ -362,7 +356,7 @@ export function CorrectionWorkspace({
 
           <p className="text-xs text-muted-foreground">
             {t("frozenSource", { backend: state.workspace.sourceBackend })} ·{" "}
-            {formatDuration(state.workspace.spanDurationSeconds)}
+            {formatHoursMinutes(state.workspace.spanDurationSeconds)}
           </p>
 
           <CorrectionSurface
