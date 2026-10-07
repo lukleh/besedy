@@ -60,6 +60,14 @@ function formatWhen(iso: string, locale: string): string {
   return formatter.format(0, "minute");
 }
 
+/** The tabs the summary tiles total; "mine" is a person's slice, not a group. */
+const SUMMARY_TABS: OverviewTab[] = ["not_started", "in_progress", "to_publish", "published"];
+
+/** Whether some recording counts under more than one summary tile. */
+export function summaryOverlaps(items: readonly OverviewItem[]): boolean {
+  return items.some((item) => SUMMARY_TABS.filter((tab) => inOverviewTab(item, tab)).length > 1);
+}
+
 /**
  * The order of a tab. What is under way lists the recordings that still want
  * this person first, then the most recently active; every other tab keeps
@@ -328,13 +336,16 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
             <SummaryTile label={t("summary.toPublish")} {...sum("to_publish")} />
             <SummaryTile label={t("summary.published")} {...sum("published")} />
           </div>
-          {/* The tiles count the same groups as the tabs, so the figures do not
-              add up to the total: a published recording that is corrected again
-              is in progress and published at once. Say so rather than leave a
-              reader to wonder where the hours went. */}
-          <p className="-mt-3 text-xs text-muted-foreground" data-testid="correction-overview-overlap">
-            {t("summary.overlap")}
-          </p>
+          {/* The tiles count the same groups as the tabs, so when a recording
+              is in two of them (a published recording that is corrected again
+              is in progress and published at once) the figures do not add up.
+              Say so then, rather than leave a reader to wonder where the hours
+              went; when nothing overlaps there is nothing to explain. */}
+          {summaryOverlaps(data.workspaces) && (
+            <p className="-mt-3 text-xs text-muted-foreground" data-testid="correction-overview-overlap">
+              {t("summary.overlap")}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2" role="group" aria-label={t("filtersLabel")}>
             {OVERVIEW_TABS.map((candidate) => (

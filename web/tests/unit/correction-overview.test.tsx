@@ -363,12 +363,23 @@ describe("CorrectionOverviewPage", () => {
     expect(screen.queryByTestId("correction-overview-row")).not.toBeInTheDocument();
   });
 
-  it("says that the groups overlap, so the tiles need not add up", async () => {
-    fetchJsonMock.mockResolvedValue(overview([item("a")]));
+  it("says that the groups overlap when a recording is in two of them", async () => {
+    fetchJsonMock.mockResolvedValue(overview([item("a", { work: "in_progress", reader: "stale" })]));
 
     renderPage();
 
     expect(await screen.findByTestId("correction-overview-overlap")).toHaveTextContent("summary.overlap");
+  });
+
+  it("says nothing about overlap when every recording is in one group", async () => {
+    fetchJsonMock.mockResolvedValue(
+      overview([item("a"), item("b", { work: "done" }), item("c", { work: "done", reader: "current" })])
+    );
+
+    renderPage();
+    await screen.findByTestId("correction-overview-summary");
+
+    expect(screen.queryByTestId("correction-overview-overlap")).not.toBeInTheDocument();
   });
 
   it("totals the hours per stage in the summary", async () => {

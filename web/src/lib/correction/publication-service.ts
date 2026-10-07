@@ -45,7 +45,6 @@ function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
-
 async function manifestMatchesPublication(
   publicationId: string,
   manifest: readonly ManifestEntry[],
