@@ -88,7 +88,7 @@ describe("admin users route", () => {
     ]);
 
     const response = await getAdminUsers(
-      new NextRequest("http://localhost/api/admin/users")
+      new NextRequest("http://localhost/api/admin/users?include=activity")
     );
 
     expect(response.status).toBe(200);
@@ -115,12 +115,53 @@ describe("admin users route", () => {
     prisma.user.findMany.mockResolvedValue([]);
 
     const response = await getAdminUsers(
-      new NextRequest("http://localhost/api/admin/users?search=nobody")
+      new NextRequest(
+        "http://localhost/api/admin/users?search=nobody&include=activity"
+      )
     );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([]);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("leaves activity out unless it is requested", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: "user-1",
+        name: "Listener",
+        email: "listener@example.com",
+        image: null,
+        status: "ACTIVE",
+        isSuperadmin: false,
+        isAdmin: false,
+        lastLoginAt: null,
+        createdAt: new Date("2026-04-01T08:00:00.000Z"),
+        activatedAt: null,
+        catalogAccess: [],
+      },
+    ]);
+
+    const response = await getAdminUsers(
+      new NextRequest("http://localhost/api/admin/users")
+    );
+
+    const [user] = await response.json();
+    expect(user).not.toHaveProperty("lastPlayedAt");
+    expect(user).not.toHaveProperty("lastActivityAt");
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown include value", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+
+    const response = await getAdminUsers(
+      new NextRequest("http://localhost/api/admin/users?include=everything")
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 
   it("returns unordered catalog roles and catalog names", async () => {
@@ -205,8 +246,6 @@ describe("admin users route", () => {
         createdAt: "2026-03-10T10:00:00.000Z",
         activatedAt: null,
         type: "user",
-        lastPlayedAt: null,
-        lastActivityAt: null,
         catalogRoles: [],
         catalogNames: [],
       },

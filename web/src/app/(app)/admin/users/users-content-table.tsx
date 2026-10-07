@@ -97,11 +97,18 @@ export function UsersTable({
     direction: SortDirection;
   }>({ key: "lastActivityAt", direction: "desc" });
 
-  // Pending admissions have no activity, so they keep the API order.
+  // Only the Pending view lists admissions. They have no activity, so they
+  // keep the API order.
   const sortedItems = useMemo(
     () =>
       usersOrAdmissions && !isPendingView
-        ? sortUsersByActivity(usersOrAdmissions, sort.key, sort.direction)
+        ? sortUsersByActivity(
+            usersOrAdmissions.filter(
+              (item): item is User => !isPendingPortalAdmission(item)
+            ),
+            sort.key,
+            sort.direction
+          )
         : usersOrAdmissions,
     [isPendingView, sort, usersOrAdmissions]
   );

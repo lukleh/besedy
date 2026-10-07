@@ -92,18 +92,16 @@ export type SortDirection = "asc" | "desc";
  * Sorts users by one activity timestamp. Users with no timestamp stay last in
  * either direction, and ties keep the order the API returned.
  */
-export function sortUsersByActivity<T extends UserOrPortalAdmission>(
-  items: T[],
+export function sortUsersByActivity(
+  users: User[],
   key: UserActivitySortKey,
   direction: SortDirection
-): T[] {
-  const timeOf = (item: T) => {
-    if (isPendingPortalAdmission(item)) return null;
-    const value = item[key];
-    return value ? Date.parse(value) : null;
-  };
-  return items
-    .map((item, index) => ({ item, index, time: timeOf(item) }))
+): User[] {
+  return users
+    .map((item, index) => {
+      const value = item[key];
+      return { item, index, time: value ? Date.parse(value) : null };
+    })
     .sort((a, b) => {
       if (a.time === null || b.time === null) {
         if (a.time === b.time) return a.index - b.index;

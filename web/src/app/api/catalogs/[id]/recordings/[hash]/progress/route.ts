@@ -17,6 +17,32 @@ import { CatalogHashParamSchema } from '@/lib/validation/schemas';
 
 export const dynamic = 'force-dynamic';
 
+// The player also saves when its page closes or its tab is hidden, which
+// re-sends a position the row already has. The admin users list reads
+// updated_at as the last time a user played something, so such a save must
+// leave the row untouched. Media elements can report a restored position
+// with float noise, hence the tolerance.
+const UNCHANGED_PROGRESS_TOLERANCE_SEC = 0.5;
+
+function isUnchangedProgress(
+  existing: { positionSec: number; durationSec: number | null },
+  positionSec: number,
+  durationSec: number | null,
+): boolean {
+  if (
+    Math.abs(existing.positionSec - positionSec) >=
+    UNCHANGED_PROGRESS_TOLERANCE_SEC
+  ) {
+    return false;
+  }
+  if (durationSec === null) return true;
+  return (
+    existing.durationSec !== null &&
+    Math.abs(existing.durationSec - durationSec) <
+      UNCHANGED_PROGRESS_TOLERANCE_SEC
+  );
+}
+
 interface RouteParams {
   params: Promise<{ id: string; hash: string }>;
 }
@@ -108,6 +134,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // request was lost or the position came from browser-only storage.
     const completed =
       bodyResult.data.completed || isAtPlaybackEnd(positionSec, durationSec);
+    if (!completed) {
+      const existing = await prisma.recordingPlaybackProgress.findUnique({
+        where: { userId_audioHash: { userId, audioHash: hash } },
+        select: { positionSec: true, durationSec: true, completedAt: true },
+      });
+      if (existing && isUnchangedProgress(existing, positionSec, durationSec)) {
+        return NextResponse.json({
+          progress: { ...existing, completed: existing.completedAt !== null },
+        });
+      }
+    }
     const now = new Date();
     const progress = await prisma.recordingPlaybackProgress.upsert({
       where: { userId_audioHash: { userId, audioHash: hash } },

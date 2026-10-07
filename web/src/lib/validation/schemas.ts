@@ -320,6 +320,8 @@ export const UpdateAdminRoleSchema = z.object({
 export const UserListQuerySchema = z.object({
   status: UserStatusSchema.optional(),
   search: z.string().max(100).optional(),
+  /** Adds lastPlayedAt and lastActivityAt, which the users table shows. */
+  include: z.literal("activity").optional(),
 });
 
 /**

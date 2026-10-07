@@ -42,7 +42,29 @@ describe("recording playback progress route", () => {
       capability: { canAccessRecording: true },
     });
     mocks.requireCatalogRecordingAccess.mockResolvedValue(null);
+    mocks.findUnique.mockResolvedValue(null);
   });
+
+  function putProgress(body: {
+    positionSec: number;
+    durationSec: number | null;
+    completed: boolean;
+  }) {
+    return PUT(
+      new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/progress`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "http://localhost",
+          },
+          body: JSON.stringify(body),
+        },
+      ),
+      { params },
+    );
+  }
 
   it("returns the current user's progress", async () => {
     mocks.findUnique.mockResolvedValue({
@@ -224,5 +246,84 @@ describe("recording playback progress route", () => {
         update: expect.objectContaining({ durationSec: undefined }),
       }),
     );
+  });
+
+  describe("re-sent positions", () => {
+    const saved = { positionSec: 42, durationSec: 100, completedAt: null };
+
+    beforeEach(() => {
+      mocks.findUnique.mockResolvedValue(saved);
+      mocks.upsert.mockImplementation(async ({ update }) => ({
+        ...saved,
+        ...update,
+      }));
+    });
+
+    it("leaves the row untouched when the position is already saved", async () => {
+      const response = await putProgress({
+        positionSec: 42.2,
+        durationSec: 100,
+        completed: false,
+      });
+
+      expect(response.status).toBe(200);
+      expect(mocks.upsert).not.toHaveBeenCalled();
+      expect(await response.json()).toMatchObject({
+        progress: { positionSec: 42, durationSec: 100, completed: false },
+      });
+    });
+
+    it("leaves the row untouched when only a missing duration is re-sent", async () => {
+      await putProgress({ positionSec: 42, durationSec: null, completed: false });
+
+      expect(mocks.upsert).not.toHaveBeenCalled();
+    });
+
+    it("reports a completed row as completed without rewriting it", async () => {
+      mocks.findUnique.mockResolvedValue({
+        ...saved,
+        completedAt: new Date("2026-10-01T10:00:00Z"),
+      });
+
+      const response = await putProgress({
+        positionSec: 42,
+        durationSec: 100,
+        completed: false,
+      });
+
+      expect(mocks.upsert).not.toHaveBeenCalled();
+      expect(await response.json()).toMatchObject({
+        progress: { completed: true },
+      });
+    });
+
+    it("saves a position that moved", async () => {
+      await putProgress({ positionSec: 57, durationSec: 100, completed: false });
+
+      expect(mocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ positionSec: 57 }),
+        }),
+      );
+    });
+
+    it("saves a newly known duration", async () => {
+      mocks.findUnique.mockResolvedValue({ ...saved, durationSec: null });
+
+      await putProgress({ positionSec: 42, durationSec: 100, completed: false });
+
+      expect(mocks.upsert).toHaveBeenCalled();
+    });
+
+    it("always saves a completion", async () => {
+      await putProgress({ positionSec: 42, durationSec: 100, completed: true });
+
+      expect(mocks.findUnique).not.toHaveBeenCalled();
+      expect(mocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ completedAt: expect.any(Date) }),
+        }),
+      );
+    });
   });
 });

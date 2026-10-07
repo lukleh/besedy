@@ -53,7 +53,7 @@ async function getUserActivity(userIds: string[]) {
 
 /**
  * GET /api/admin/users - List real portal users
- * Query params: ?status=PENDING|ACTIVE|BLOCKED&search=email
+ * Query params: ?status=PENDING|ACTIVE|BLOCKED&search=email&include=activity
  */
 export async function GET(request: NextRequest) {
   try {
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       UserListQuerySchema
     );
     if (!queryResult.success) return queryResult.response;
-    const { status, search } = queryResult.data;
+    const { status, search, include } = queryResult.data;
 
     const where: {
       status?: UserStatus;
@@ -112,7 +112,10 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: "desc" },
     });
-    const activity = await getUserActivity(users.map((user) => user.id));
+    const activity =
+      include === "activity"
+        ? await getUserActivity(users.map((user) => user.id))
+        : null;
 
     // Roles are deliberately not ordered. Return the distinct roles rather
     // than inventing a misleading "highest" one.
@@ -131,8 +134,10 @@ export async function GET(request: NextRequest) {
       return {
         ...userWithoutAccess,
         type: "user" as const,
-        lastPlayedAt: activity.get(user.id)?.last_played_at ?? null,
-        lastActivityAt: activity.get(user.id)?.last_activity_at ?? null,
+        ...(activity && {
+          lastPlayedAt: activity.get(user.id)?.last_played_at ?? null,
+          lastActivityAt: activity.get(user.id)?.last_activity_at ?? null,
+        }),
         catalogRoles: Array.from(catalogRoles),
         catalogNames,
       };
