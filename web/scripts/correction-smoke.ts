@@ -1467,21 +1467,52 @@ async function main() {
     const bobAggregate = (await loadWorkspaceAggregates([stateWorkspace.id], "bob")).get(stateWorkspace.id);
     check("a different person sees their own share", bobAggregate?.mine.approved === 3, bobAggregate?.mine);
 
-    const mineOpen = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", { offset: 0, limit: 50 });
+    const mineOpen = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", {
+      afterOrdinal: -1,
+      limit: 50,
+    });
     check(
       "the mine-open filter lists what still wants this person",
-      mineOpen.total === 2 &&
+      mineOpen.ids.length === 2 &&
         mineOpen.ids.includes(untouched.span.id) &&
-        mineOpen.ids.includes(revived.span.id),
+        mineOpen.ids.includes(revived.span.id) &&
+        !mineOpen.hasMore,
       mineOpen
     );
     const attention = await listFilteredSpanIds(stateWorkspace.id, "alice", "needs_attention", {
-      offset: 0,
+      afterOrdinal: -1,
       limit: 50,
     });
     check("the attention filter lists the disputed span", attention.ids.join() === outvoted.span.id, attention);
-    const pastEnd = await listFilteredSpanIds(stateWorkspace.id, "alice", "not_reviewed", { offset: 50, limit: 50 });
-    check("an offset past the end still reports the total", pastEnd.ids.length === 0 && pastEnd.total === 2, pastEnd);
+
+    // Pages follow a cursor, because the selection changes with every decision.
+    const firstPage = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", {
+      afterOrdinal: -1,
+      limit: 1,
+    });
+    check("a page that is not the last says so", firstPage.ids.length === 1 && firstPage.hasMore, firstPage);
+
+    // Somebody finishes the first span between the two page fetches. With an
+    // offset the second page would now start one span too late.
+    await decide(untouched.span.id, untouched.revision.id, "alice", "APPROVE");
+    const secondPage = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", {
+      afterOrdinal: untouched.span.ordinal,
+      limit: 1,
+    });
+    check(
+      "the next page starts after the last span shown, whatever changed meanwhile",
+      secondPage.ids.join() === revived.span.id && !secondPage.hasMore,
+      secondPage
+    );
+    const beyond = await listFilteredSpanIds(stateWorkspace.id, "alice", "not_reviewed", {
+      afterOrdinal: 999,
+      limit: 50,
+    });
+    check("a cursor past the end is an empty last page", beyond.ids.length === 0 && !beyond.hasMore, beyond);
+    // Put the fixture back for the walk below.
+    await prisma.transcriptSpanDecision.deleteMany({
+      where: { spanId: untouched.span.id, actorKey: "alice" },
+    });
 
     const next = await findNextOpenSpan(stateWorkspace.id, "alice");
     check("resuming opens the first span that wants this person", next?.spanId === untouched.span.id, next);

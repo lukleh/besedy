@@ -5,7 +5,13 @@
 // one deliberate command carrying the revision they were looking at.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Check, MessageSquare, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -137,26 +143,35 @@ export function CorrectionSurface({
     key: string;
   } | null>(null);
 
-  const spansQuery = useInfiniteQuery<SpanPage>({
+  // A page of the whole recording is positioned by offset, which is stable
+  // because spans never come or go. A filtered page is positioned by the
+  // ordinal of the last span shown: the selection changes with every decision,
+  // and an offset into it would skip or repeat a span after a refresh.
+  const spansQuery = useInfiniteQuery<SpanPage, Error, InfiniteData<SpanPage, number>, unknown[], number>({
     queryKey: ["correction-spans", catalogId, hash, workspace.id, filter, initialOffset],
-    initialPageParam: initialOffset,
+    initialPageParam: filter === "all" ? initialOffset : -1,
     queryFn: async ({ pageParam }) =>
       fetchJson<SpanPage>(
         buildCorrectionSpansUrl(catalogId, hash, {
-          offset: pageParam as number,
+          ...(filter === "all" ? { offset: pageParam } : { after: pageParam }),
           limit: PAGE_SIZE,
           filter,
         }),
         { schema: spanPageSchema }
       ),
     getNextPageParam: (lastPage) => {
-      const next = lastPage.offset + lastPage.spans.length;
-      return next < lastPage.total ? next : undefined;
+      if (!lastPage.hasMore) return undefined;
+      return filter === "all"
+        ? lastPage.offset + lastPage.spans.length
+        : lastPage.spans.at(-1)?.ordinal;
     },
     // The list can start in the middle of the recording, so it loads in both
-    // directions: pages before the resume position are reachable too.
+    // directions: pages before the resume position are reachable too. A
+    // filtered list always starts at its top.
     getPreviousPageParam: (firstPage) =>
-      firstPage.offset > 0 ? Math.max(0, firstPage.offset - PAGE_SIZE) : undefined,
+      filter === "all" && firstPage.offset > 0
+        ? Math.max(0, firstPage.offset - PAGE_SIZE)
+        : undefined,
   });
 
   const spans = useMemo(
@@ -167,6 +182,23 @@ export function CorrectionSurface({
   const selected = useMemo(
     () => spans.find((span) => span.id === selectedSpanId) ?? spans[0] ?? null,
     [spans, selectedSpanId]
+  );
+
+  // Changing the filter must not move the person off the segment they are
+  // working on. Going back to the whole recording reopens the list on that
+  // segment's page; without it the list would restart from wherever it opened,
+  // the segment would not be in it, and the editor would silently switch.
+  const changeFilter = useCallback(
+    (next: SpanFilter) => {
+      if (selected) {
+        setSelectedSpanId(selected.id);
+        if (next === "all") {
+          setAnchorOffset(Math.floor(selected.ordinal / PAGE_SIZE) * PAGE_SIZE);
+        }
+      }
+      setFilter(next);
+    },
+    [selected]
   );
 
   // A fresh selection starts from the stored text and positions the audio on
@@ -464,7 +496,7 @@ export function CorrectionSurface({
               variant={candidate === filter ? "default" : "outline"}
               className="h-7 px-2 text-xs"
               aria-pressed={candidate === filter}
-              onClick={() => setFilter(candidate)}
+              onClick={() => changeFilter(candidate)}
               data-testid={`correction-filter-${candidate}`}
             >
               {t(`filters.${candidate}`)}

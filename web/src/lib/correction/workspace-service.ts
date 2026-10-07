@@ -302,36 +302,51 @@ function buildSpanRows(segments: readonly CanonicalSegment[]): ImportedSpan[] {
 
 export interface SpanPage {
   spans: SpanView[];
-  total: number;
+  /** Every span of the recording; null when a filter selected the page */
+  total: number | null;
+  hasMore: boolean;
 }
 
 /**
  * Spans with their derived state.
  *
  * Only decisions bound to each span's current revision count, so a
- * superseded approval cannot leak into the state. `total` is the size of what
- * was asked for: every span, or the spans a filter selects.
+ * superseded approval cannot leak into the state. Unfiltered pages are
+ * positioned by offset, which is stable because spans never come or go; a
+ * filtered page is positioned by the ordinal of the last span shown, because
+ * the selection changes with every decision.
  */
 export async function listSpans(
   workspaceId: string,
-  options: { offset?: number; limit?: number; filter?: SpanFilter; actorKey?: string } = {}
+  options: {
+    offset?: number;
+    limit?: number;
+    filter?: SpanFilter;
+    afterOrdinal?: number;
+    actorKey?: string;
+  } = {}
 ): Promise<SpanPage> {
   const filter = options.filter ?? "all";
-  const offset = options.offset ?? 0;
 
-  let total: number;
+  let total: number | null;
+  let hasMore: boolean;
   let spans: SpanSummaryRow[];
   if (filter === "all") {
-    [total, spans] = await Promise.all([
+    const offset = options.offset ?? 0;
+    let counted: number;
+    [counted, spans] = await Promise.all([
       prisma.transcriptSpan.count({ where: { workspaceId } }),
       loadSpanSummaries(workspaceId, { offset, limit: options.limit }),
     ]);
+    total = counted;
+    hasMore = offset + spans.length < counted;
   } else {
     const selected = await listFilteredSpanIds(workspaceId, options.actorKey ?? "", filter, {
-      offset,
+      afterOrdinal: options.afterOrdinal ?? -1,
       limit: options.limit ?? 200,
     });
-    total = selected.total;
+    total = null;
+    hasMore = selected.hasMore;
     spans = await loadSpanSummaries(workspaceId, { spanIds: selected.ids });
   }
 
@@ -347,6 +362,7 @@ export async function listSpans(
 
   return {
     total,
+    hasMore,
     spans: spans.map((span) => toSpanView(span, commentCountBySpan.get(span.id) ?? 0)),
   };
 }

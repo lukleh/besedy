@@ -181,33 +181,35 @@ export async function findNextOpenSpan(
   return rows[0] ?? null;
 }
 
-/** The ids of the spans a filter selects, in source order, one page of them. */
+/**
+ * One page of the spans a filter selects, in source order, after a cursor.
+ *
+ * The page is positioned by the ordinal of the last span already shown, not by
+ * an offset. What a filter selects changes with every approval, so an offset
+ * into it would skip or repeat a span the moment an earlier page was
+ * refreshed; an ordinal still names the same place in the recording.
+ */
 export async function listFilteredSpanIds(
   workspaceId: string,
   actorKey: string,
   filter: SpanFilter,
-  options: { offset: number; limit: number }
-): Promise<{ ids: string[]; total: number }> {
-  const rows = await prisma.$queryRaw<Array<{ spanId: string; total: bigint }>>(Prisma.sql`
-    SELECT span_id AS "spanId", count(*) OVER () AS total
+  options: { afterOrdinal: number; limit: number }
+): Promise<{ ids: string[]; hasMore: boolean }> {
+  // One row more than asked for says whether another page exists, without a
+  // second pass over the workspace to count.
+  const rows = await prisma.$queryRaw<Array<{ spanId: string }>>(Prisma.sql`
+    SELECT span_id AS "spanId"
     FROM (${workspaceStates([workspaceId])}) states
     WHERE ${filterSql(filter, actorKey)}
+      AND ordinal > ${options.afterOrdinal}::int
     ORDER BY ordinal
-    OFFSET ${options.offset}::int
-    LIMIT ${options.limit}::int
+    LIMIT ${options.limit + 1}::int
   `);
 
-  if (rows.length > 0) {
-    return { ids: rows.map((row) => row.spanId), total: Number(rows[0].total) };
-  }
-
-  // An offset past the end returns no rows, and the window count with them.
-  const count = await prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
-    SELECT count(*) AS total
-    FROM (${workspaceStates([workspaceId])}) states
-    WHERE ${filterSql(filter, actorKey)}
-  `);
-  return { ids: [], total: Number(count[0]?.total ?? 0) };
+  return {
+    ids: rows.slice(0, options.limit).map((row) => row.spanId),
+    hasMore: rows.length > options.limit,
+  };
 }
 
 export interface StripSpan {

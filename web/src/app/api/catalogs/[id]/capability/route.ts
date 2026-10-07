@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth/permissions";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { handlePrismaError, notFound, validateParams } from "@/lib/api";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
+import { findActiveCatalog } from "@/lib/catalog/resolve-group";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       canManageAccess: capability.canManageAccess,
       canAccessSettings: capability.canAccessSettings,
       // Who the correction overview is for: everyone who corrects or publishes.
+      // This route resolves access for inactive catalogs too, which the
+      // overview page and API do not serve, so the link follows their rule.
       canViewCorrectionOverview:
-        capability.canCorrectTranscripts || capability.canPublishTranscript,
+        (capability.canCorrectTranscripts || capability.canPublishTranscript) &&
+        (await findActiveCatalog(catalogId)) !== null,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog capability", "fetch");

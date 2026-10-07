@@ -21,6 +21,8 @@ const QuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(500).default(200),
   filter: z.enum(SPAN_FILTERS).default("all"),
+  /** Cursor for a filtered page: the ordinal of the last span already shown */
+  after: z.coerce.number().int().min(-1).default(-1),
 });
 
 /**
@@ -28,8 +30,9 @@ const QuerySchema = z.object({
  *
  * Paged, because a three-hour recording runs to several hundred spans and the
  * surface has to be able to stop and resume inside one. A filter narrows the
- * list to the spans that want attention; `total` is then the size of that
- * selection, and the page is positioned within it.
+ * list to the spans that want attention. Its pages follow a cursor (`after`,
+ * an ordinal) rather than an offset, because the selection changes with every
+ * decision; `hasMore` says whether another page exists.
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -44,6 +47,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       offset: searchParams.get("offset") ?? undefined,
       limit: searchParams.get("limit") ?? undefined,
       filter: searchParams.get("filter") ?? undefined,
+      after: searchParams.get("after") ?? undefined,
     });
     if (!query.success) {
       return NextResponse.json({ error: "Invalid paging" }, { status: 400 });
@@ -54,6 +58,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       offset: query.data.offset,
       limit: query.data.limit,
       filter: query.data.filter,
+      afterOrdinal: query.data.after,
       actorKey: userId,
     });
 

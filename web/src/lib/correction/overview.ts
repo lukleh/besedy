@@ -178,9 +178,10 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
         AND w.status = 'ACTIVE'
         AND ${visible}
     `),
-    prisma.$queryRaw<Array<RawRecording & { total: bigint }>>(Prisma.sql`
+    prisma.$queryRaw<Array<RawRecording & { total: bigint; totalSeconds: number | bigint }>>(Prisma.sql`
       SELECT ${RECORDING_COLUMNS_SQL},
-             count(*) OVER () AS total
+             count(*) OVER () AS total,
+             sum(${DURATION_SECONDS_SQL}) OVER () AS "totalSeconds"
       FROM catalog_event_recording pr
       JOIN catalog_entry ce
         ON ce.workflow_group_id = pr.workflow_group_id AND ce.audio_hash = pr.audio_hash
@@ -297,9 +298,17 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
       OVERVIEW_STATUSES.map((status) => [status, { count: 0, seconds: 0 }])
     ) as OverviewSummary["byStatus"],
   };
-  for (const item of [...workspaces, ...notStarted]) {
+  for (const item of workspaces) {
     summary.byStatus[item.status].count += 1;
     summary.byStatus[item.status].seconds += item.recording.durationSeconds;
+  }
+  // The list of recordings nobody started is capped, the total is not: the
+  // summary describes all of them.
+  if (notStartedRows.length > 0) {
+    summary.byStatus.not_started = {
+      count: Number(notStartedRows[0].total),
+      seconds: Number(notStartedRows[0].totalSeconds),
+    };
   }
 
   return {

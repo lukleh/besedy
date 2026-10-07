@@ -76,7 +76,7 @@ function span(ordinal: number, overrides: Partial<Record<string, unknown>> = {})
 }
 
 function page(offset: number, count: number, total: number, spans = Array.from({ length: count }, (_, i) => span(offset + i))) {
-  return { workspaceId: WORKSPACE.id, offset, limit: 200, total, spans };
+  return { workspaceId: WORKSPACE.id, offset, limit: 200, total, hasMore: offset + spans.length < total, spans };
 }
 
 function renderSurface(resume: { spanId: string; ordinal: number } | null) {
@@ -432,6 +432,7 @@ describe("CorrectionSurface", () => {
       if (url.includes("filter=needs_attention")) {
         return {
           ...page(0, 1, 1, [span(7, { state: "needs_attention", text: "disputed" })]),
+          total: null,
           filter: "needs_attention",
         };
       }
@@ -507,5 +508,74 @@ describe("CorrectionSurface", () => {
 
     expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
     await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(true));
+  });
+
+  // Leaving a filter has to put the list back where the person is working. If
+  // it reopened at the page it first loaded, the segment would not be in it
+  // and the editor would switch to a different one.
+  it("returns from a filter to the page of the segment being worked on", async () => {
+    const urls: string[] = [];
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("filter=needs_attention")) {
+        return { ...page(0, 1, 1, [span(50, { state: "needs_attention" })]), total: null };
+      }
+      if (url.includes("/spans?offset=400")) return page(400, 200, 600);
+      if (url.includes("/spans?offset=0")) return page(0, 200, 600);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface({ spanId: "span-450", ordinal: 450 });
+    await screen.findByDisplayValue("machine 450");
+
+    await userEvent.click(screen.getByTestId("correction-filter-needs_attention"));
+    expect(await screen.findByDisplayValue("machine 50")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("machine 450")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("correction-filter-all"));
+
+    expect(await screen.findByDisplayValue("machine 50")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("machine 400")).not.toBeInTheDocument();
+    expect(urls.filter((url) => url.includes("/spans?offset=0")).length).toBeGreaterThan(0);
+  });
+
+  // The selection changes with every decision, so a later page of a filtered
+  // list is asked for by the ordinal of the last span shown, not by a count.
+  it("pages a filtered list by cursor", async () => {
+    const urls: string[] = [];
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("filter=needs_attention&after=-1")) {
+        return {
+          ...page(0, 2, 0, [span(3, { state: "needs_attention" }), span(9, { state: "needs_attention" })]),
+          total: null,
+          hasMore: true,
+        };
+      }
+      if (url.includes("filter=needs_attention&after=9")) {
+        return {
+          ...page(0, 1, 0, [span(14, { state: "needs_attention", text: "late dispute" })]),
+          total: null,
+          hasMore: false,
+        };
+      }
+      if (url.includes("/spans?offset=0")) return page(0, 3, 3);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await userEvent.click(screen.getByTestId("correction-filter-needs_attention"));
+
+    await userEvent.click(await screen.findByRole("button", { name: "loadLater" }));
+
+    expect(await screen.findByText("late dispute")).toBeInTheDocument();
+    expect(urls.some((url) => url.includes("after=9"))).toBe(true);
+    expect(urls.some((url) => /filter=needs_attention.*offset=/.test(url))).toBe(false);
+    expect(screen.queryByRole("button", { name: "loadLater" })).not.toBeInTheDocument();
   });
 });

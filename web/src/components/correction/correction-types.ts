@@ -32,7 +32,9 @@ export const spanPageSchema = z.object({
   workspaceId: z.string(),
   offset: z.number(),
   limit: z.number(),
-  total: z.number(),
+  /** Every span of the recording; null on a page a filter selected */
+  total: z.number().nullable(),
+  hasMore: z.boolean(),
   spans: z.array(spanViewSchema),
 });
 

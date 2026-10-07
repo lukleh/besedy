@@ -10,9 +10,14 @@ vi.mock("@/lib/access/capabilities", () => ({
   getCatalogCapability: vi.fn(),
 }));
 
+vi.mock("@/lib/catalog/resolve-group", () => ({
+  findActiveCatalog: vi.fn(),
+}));
+
 describe("catalog capability route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
+  let findActiveCatalog: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -22,6 +27,9 @@ describe("catalog capability route", () => {
     getCatalogCapability = (
       await import("@/lib/access/capabilities")
     ).getCatalogCapability as ReturnType<typeof vi.fn>;
+    findActiveCatalog = (await import("@/lib/catalog/resolve-group"))
+      .findActiveCatalog as ReturnType<typeof vi.fn>;
+    findActiveCatalog.mockResolvedValue({ id: "20260201_120000" });
   });
 
   it("returns 404 when catalog does not exist", async () => {
@@ -129,5 +137,30 @@ describe("catalog capability route", () => {
     );
 
     await expect(response.json()).resolves.toMatchObject({ canViewCorrectionOverview: false });
+  });
+
+  // The overview serves active catalogs only; a link to it from an inactive
+  // one would open a page that answers 404.
+  it("does not offer the correction overview for an inactive catalog", async () => {
+    requireAuth.mockResolvedValue("user-1");
+    findActiveCatalog.mockResolvedValue(null);
+    getCatalogCapability.mockResolvedValue({
+      catalogExists: true,
+      hasAccess: true,
+      canManageAccess: true,
+      canAccessSettings: true,
+      canCorrectTranscripts: true,
+      canPublishTranscript: true,
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/catalogs/20260201_120000/capability"),
+      { params: Promise.resolve({ id: "20260201_120000" }) }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      canManageAccess: true,
+      canViewCorrectionOverview: false,
+    });
   });
 });

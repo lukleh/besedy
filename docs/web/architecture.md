@@ -185,7 +185,7 @@ requires the named catalog permission.
 | POST | `/api/catalogs/:id/recordings/:hash/correction` | `correct_transcripts` | Start correction: freeze the default machine transcript and import its segments |
 | DELETE | `/api/catalogs/:id/recordings/:hash/correction` | `manage_catalog_config` | Archive the workspace with a reason so a new one can be started |
 | GET | `/api/catalogs/:id/correction/overview` | `correct_transcripts` or `publish_transcript` | Correction across the catalog: every live workspace with its progress, this person's share and publication status, plus the primary recordings nobody has started. Limited to the recordings the caller may see |
-| GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state; `filter=` narrows to `mine_open`, `needs_attention`, `needs_second_approval` or `not_reviewed` |
+| GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state; `filter=` narrows to `mine_open`, `needs_attention`, `needs_second_approval` or `not_reviewed`. Filtered pages follow a cursor (`after=<ordinal>`) and report `hasMore`, because the selection changes with every decision; unfiltered pages use `offset` |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/strip` | `correct_transcripts` | Every span's position and state, without text, for the strip over the whole recording |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/next` | `correct_transcripts` | The next span that still wants this person after `after=<ordinal>`, wrapping to the start |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Span history: revisions, decisions, comments |
