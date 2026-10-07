@@ -110,6 +110,41 @@ describe("admin users route", () => {
     ]);
   });
 
+  it("counts audited streams and downloads toward last played", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: "user-1",
+        name: "Listener",
+        email: "listener@example.com",
+        image: null,
+        status: "ACTIVE",
+        isSuperadmin: false,
+        isAdmin: false,
+        lastLoginAt: null,
+        createdAt: new Date("2026-04-01T08:00:00.000Z"),
+        activatedAt: null,
+        catalogAccess: [],
+      },
+    ]);
+
+    await getAdminUsers(
+      new NextRequest("http://localhost/api/admin/users?include=activity")
+    );
+
+    const [strings, ...values] = prisma.$queryRaw.mock.calls[0];
+    const sql = (strings as string[]).join("?").replace(/\s+/g, " ");
+    expect(sql).toContain(
+      "GREATEST(s.last_progress_at, s.last_audio_at) AS last_played_at"
+    );
+    expect(sql).toMatch(
+      /a\.action IN \( \?::"AuditAction", \?::"AuditAction" \)\) AS last_audio_at/
+    );
+    expect(values).toEqual(
+      expect.arrayContaining(["AUDIO_STREAMED", "AUDIO_DOWNLOADED"])
+    );
+  });
+
   it("skips the activity query when no users match", async () => {
     requireAuth.mockResolvedValue("admin-1");
     prisma.user.findMany.mockResolvedValue([]);
