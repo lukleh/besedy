@@ -3,7 +3,7 @@
 import { signOutAndRedirect } from "@/lib/auth/client";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Download, LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react";
+import { LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react";
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 import { useAdminStatus } from "@/hooks/use-admin-status";
@@ -11,7 +11,6 @@ import { useActiveGroup } from "@/hooks/use-active-group";
 import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
 import { useReturnHref } from "@/hooks/use-return-href";
-import { DOWNLOADS_PATH } from "@/lib/offline/cache-names";
 import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -68,7 +67,6 @@ export function UserMenu() {
   const adminStatus = useAdminStatus();
   const { updateAvailable, wasDismissed, applyState, applyUpdate } = useServiceWorker();
   const route = useCatalogRouteState();
-  const downloadsHref = useReturnHref(DOWNLOADS_PATH);
   const settingsHref = useReturnHref("/settings");
 
   // Don't show anything on auth pages
@@ -192,18 +190,8 @@ export function UserMenu() {
         <LanguageMenuItem />
         <TextSizeMenuItem />
 
-        {/* Downloads & Settings */}
+        {/* Settings */}
         <ResponsiveMenuSeparator />
-        <ResponsiveMenuItem asChild>
-          <Link
-            href={downloadsHref}
-            className="flex items-center gap-2 cursor-pointer"
-            data-testid="user-menu-downloads"
-          >
-            <Download className="h-4 w-4 shrink-0" />
-            {t("nav.downloads")}
-          </Link>
-        </ResponsiveMenuItem>
         <ResponsiveMenuItem asChild>
           <Link href={settingsHref} className="flex items-center gap-2 cursor-pointer">
             <Settings className="h-4 w-4 shrink-0" />

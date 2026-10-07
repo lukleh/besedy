@@ -3,8 +3,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { CalendarDays, ChevronDown, FileText, FolderOpen, Image as ImageIcon, Pencil } from "lucide-react";
+import { CalendarDays, ChevronDown, FileText, FolderOpen, Image as ImageIcon, Pencil, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -24,6 +25,8 @@ interface EventEditMenuProps {
   /** Draft or missing artwork, worth noticing before opening the artwork page. */
   artworkHint?: string | null;
   canManageSources: boolean;
+  /** The recording whose transcript can be corrected, or null when there is none or correcting it is not allowed. */
+  correctionHash?: string | null;
 }
 
 interface EditMenuItem {
@@ -47,6 +50,7 @@ export function EventEditMenu({
   canEditArtwork,
   artworkHint,
   canManageSources,
+  correctionHash = null,
 }: EventEditMenuProps) {
   const t = useTranslations("events.detail");
   const eventPath = `/catalog/${catalogId}/event/${eventId}`;
@@ -66,6 +70,13 @@ export function EventEditMenu({
       icon: <FileText className={iconClass} />,
       label: t("editMenu.recordingMetadata"),
       hint: metadataRecorderName,
+    });
+  }
+  if (correctionHash) {
+    items.push({
+      href: buildCorrectionPagePath(catalogId, correctionHash),
+      icon: <SquarePen className={iconClass} />,
+      label: t("editMenu.correction"),
     });
   }
   if (canEditArtwork) {

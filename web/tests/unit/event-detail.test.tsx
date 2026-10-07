@@ -9,9 +9,14 @@ const CATALOG_ID = "20260101_120000";
 const EVENT_ID = 7;
 const useQueryMock = vi.fn();
 const recordingContentMock = vi.fn();
+const useRecordingEntryMock = vi.fn();
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => useQueryMock(options),
+}));
+
+vi.mock("@/hooks/use-recording-entry", () => ({
+  useRecordingEntry: (params: unknown) => useRecordingEntryMock(params),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -100,6 +105,12 @@ function eventDetail(overrides: Partial<EventDetailResponse> = {}): EventDetailR
   };
 }
 
+function grantCorrection(correctionEligible = true, isActionable = true) {
+  useRecordingEntryMock.mockReturnValue({
+    data: { entry: { isActionable }, canCorrectTranscripts: true, correctionEligible },
+  });
+}
+
 function renderEventDetail(data: EventDetailResponse, canEdit = false) {
   useQueryMock.mockReturnValue({ data, isLoading: false, error: null });
   renderComponent(canEdit);
@@ -125,6 +136,7 @@ function renderComponent(canEdit = false) {
 describe("EventDetail recording heading", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useRecordingEntryMock.mockReturnValue({ data: undefined });
   });
 
   it("heads the selected recording with the event's date and location", () => {
@@ -231,6 +243,7 @@ describe("EventDetail edit menu", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useRecordingEntryMock.mockReturnValue({ data: undefined });
   });
 
   function linkHrefs() {
@@ -259,6 +272,52 @@ describe("EventDetail edit menu", () => {
     expect(screen.getByRole("link", { name: /editMenu.artwork/ })).toHaveTextContent("recording.noArtwork");
     // The menu replaces the player's own metadata button.
     expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({ hideMetadataEdit: true }));
+  });
+
+  it("offers transcript correction from the menu instead of the transcript heading", () => {
+    grantCorrection();
+    renderEventDetail(eventDetail());
+
+    expect(linkHrefs()).toEqual([`/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`]);
+    expect(screen.getByRole("link", { name: /editMenu.correction/ })).toBeInTheDocument();
+    expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({ hideCorrectionLink: true }));
+  });
+
+  it("leaves correction out of the menu for a recording outside correction scope", () => {
+    grantCorrection(false);
+    renderEventDetail(eventDetail());
+
+    expect(linkHrefs()).toEqual([]);
+  });
+
+  it("leaves correction out of the menu for a recording that is not available", () => {
+    grantCorrection(true, false);
+    renderEventDetail(eventDetail());
+
+    expect(linkHrefs()).toEqual([]);
+  });
+
+  it("offers correction for the primary recording of an event with several", () => {
+    const recording = eventDetail().recordings[0];
+    grantCorrection();
+    renderEventDetail(
+      eventDetail({
+        recordings: [
+          { ...recording, audioHash: "b".repeat(64), isPrimary: false, sortOrder: 0 },
+          { ...recording, sortOrder: 1 },
+        ],
+      })
+    );
+
+    expect(linkHrefs()).toEqual([`/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`]);
+  });
+
+  it("leaves correction out of the menu when the selected recording is not the primary", () => {
+    const recording = eventDetail().recordings[0];
+    grantCorrection();
+    renderEventDetail(eventDetail({ recordings: [{ ...recording, isPrimary: false }] }));
+
+    expect(linkHrefs()).toEqual([]);
   });
 
   it("names the recorder whose metadata is edited when the event has several", () => {

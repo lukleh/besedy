@@ -1655,6 +1655,7 @@
       "editMenu": {
         "eventDetails": "Údaje o události",
         "recordingMetadata": "Metadata nahrávky",
+        "correction": "Korektura přepisu",
         "artwork": "Obálka",
         "sources": "Zdroje"
       },
