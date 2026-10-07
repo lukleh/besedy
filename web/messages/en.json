@@ -1656,6 +1656,7 @@
       "editMenu": {
         "eventDetails": "Event details",
         "recordingMetadata": "Recording metadata",
+        "correction": "Transcript correction",
         "artwork": "Artwork",
         "sources": "Sources"
       },

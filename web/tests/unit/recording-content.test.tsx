@@ -231,6 +231,38 @@ describe("RecordingContent transcript toggle", () => {
     ).toHaveAttribute("href", `/catalog/${CATALOG_ID}/recording/${HASH}/correction`);
   });
 
+  it("leaves the correction link to an embedding page that offers it elsewhere", () => {
+    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
+    useRecordingEntryMock.mockReturnValue({
+      data: {
+        entry: {
+          hash: HASH,
+          filename: "recording.wav",
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: true,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownload: false,
+        canCorrectTranscripts: true,
+        correctionEligible: true,
+      },
+      isLoading: false,
+      error: null,
+      isError: false,
+    });
+
+    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} hideCorrectionLink />);
+
+    expect(
+      screen.queryByRole("link", { name: "correction.openSurface" })
+    ).not.toBeInTheDocument();
+  });
+
   it("does not offer the correction surface for a recording outside correction scope", () => {
     useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useRecordingEntryMock.mockReturnValue({

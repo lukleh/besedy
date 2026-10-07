@@ -14,6 +14,7 @@ import { clearLastRoute } from "@/lib/pwa/last-route";
 import { buildEventDetailUrl } from "@/lib/api/recording-urls";
 import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
+import { useRecordingEntry } from "@/hooks/use-recording-entry";
 import type { EventDetailResponse } from "@/types/event-detail";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +88,20 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     () => data?.recordings.find((recording) => recording.audioHash === activeSelectedHash) ?? null,
     [data, activeSelectedHash]
   );
+
+  // The recording page asks for the same entry, so this shares its cache. It
+  // is where the right to correct the transcript, and whether this recording
+  // is in correction scope, are reported.
+  const { data: selectedEntry } = useRecordingEntry({
+    catalogId,
+    hash: activeSelectedHash,
+    groupKey: catalogId,
+    enabled: !!selectedRecording,
+  });
+  const correctionHash =
+    selectedRecording && selectedEntry?.canCorrectTranscripts && selectedEntry.correctionEligible
+      ? selectedRecording.audioHash
+      : null;
 
   useEffect(() => {
     const readOnlyFlag = searchParams.get("readOnly");
@@ -228,6 +243,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
       canEditArtwork={canViewArtworkCandidates}
       artworkHint={artworkHint}
       canManageSources={canManageSources}
+      correctionHash={correctionHash}
     />
   );
 
@@ -305,6 +321,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         headerIdentity={eventHeaderIdentity}
         hideDefaultRecorder
         hideMetadataEdit
+        hideCorrectionLink
         // The event route already validated catalog access on the server.
         skipCatalogValidation
         beforeAudioPlayer={artworkPicture}

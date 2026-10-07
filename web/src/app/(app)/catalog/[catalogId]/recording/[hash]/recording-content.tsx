@@ -46,6 +46,7 @@ interface RecordingContentProps {
   hideDefaultRecorder?: boolean;
   /** The page offers metadata editing elsewhere, as the event page's edit menu does. */
   hideMetadataEdit?: boolean;
+  hideCorrectionLink?: boolean;
   skipCatalogValidation?: boolean;
 }
 
@@ -111,6 +112,7 @@ export default function RecordingContent({
   headerIdentity,
   hideDefaultRecorder = false,
   hideMetadataEdit = false,
+  hideCorrectionLink = false,
   skipCatalogValidation = false,
 }: RecordingContentProps) {
   // Owns recording-detail query orchestration and state selection, while
@@ -324,6 +326,7 @@ export default function RecordingContent({
           canSeeTranscriptVariants={data.canSeeTranscriptVariants ?? false}
           canCorrectTranscripts={data.canCorrectTranscripts ?? false}
           correctionEligible={data.correctionEligible ?? false}
+          hideCorrectionLink={hideCorrectionLink}
           catalogId={catalogId}
           currentTime={currentTime}
           hash={hash}

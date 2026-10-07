@@ -89,6 +89,8 @@ interface RecordingTranscriptSectionProps {
   canSeeTranscriptVariants?: boolean;
   canCorrectTranscripts?: boolean;
   correctionEligible?: boolean;
+  /** An embedding page offers correction from its own menu instead. */
+  hideCorrectionLink?: boolean;
   catalogId: string;
   currentTime: number;
   hash: string;
@@ -345,6 +347,7 @@ export function RecordingTranscriptSection({
   canSeeTranscriptVariants = false,
   canCorrectTranscripts = false,
   correctionEligible = false,
+  hideCorrectionLink = false,
   catalogId,
   currentTime,
   hash,
@@ -370,7 +373,7 @@ export function RecordingTranscriptSection({
           progress panel carries the same link, but that panel disappears the
           moment there is a transcript to read.
         */}
-        {canCorrectTranscripts && correctionEligible && (
+        {canCorrectTranscripts && correctionEligible && !hideCorrectionLink && (
           <Button asChild variant="outline" size="sm" className="gap-2">
             <Link href={buildCorrectionPagePath(catalogId, hash)}>
               <SquarePen className="h-4 w-4" />
