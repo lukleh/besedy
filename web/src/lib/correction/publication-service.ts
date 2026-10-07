@@ -17,6 +17,7 @@ import {
   writeIndexPointer,
   readIndexPointer,
 } from "@/lib/correction/storage";
+import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-status";
 import { REQUIRED_APPROVALS } from "@/lib/correction/span-state";
 import { evaluateWorkspace, type ManifestEntry } from "@/lib/correction/publication-eligibility";
 import { fingerprintContent } from "@/lib/correction/text";
@@ -43,8 +44,6 @@ const MAX_ERROR_MESSAGE_LENGTH = 2000;
 function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
-
-const IN_FLIGHT_PUBLICATION_STATUSES: TranscriptPublicationStatus[] = ["PENDING", "ACTIVATING", "ROLLING_BACK"];
 
 async function manifestMatchesPublication(
   publicationId: string,

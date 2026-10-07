@@ -184,7 +184,10 @@ requires the named catalog permission.
 | GET | `/api/catalogs/:id/recordings/:hash/correction` | `correct_transcripts` | Correction state: workspace, progress, resume position, publication eligibility, in-flight publication |
 | POST | `/api/catalogs/:id/recordings/:hash/correction` | `correct_transcripts` | Start correction: freeze the default machine transcript and import its segments |
 | DELETE | `/api/catalogs/:id/recordings/:hash/correction` | `manage_catalog_config` | Archive the workspace with a reason so a new one can be started |
+| GET | `/api/catalogs/:id/correction/overview` | `correct_transcripts` | Correction across the catalog: every live workspace with its progress, this person's share, its work stage and what readers see, plus the primary recordings nobody has started. Limited to the recordings and released events the caller may see |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state |
+| GET | `/api/catalogs/:id/recordings/:hash/correction/strip` | `correct_transcripts` | Every span's position, state and whether it still wants this person, without text, for the strip over the whole recording |
+| GET | `/api/catalogs/:id/recordings/:hash/correction/next` | `correct_transcripts` | The next span of `kind=` (`mine_open`, the default, `needs_attention`, `needs_second_approval` or `not_reviewed`) after `after=<ordinal>`, wrapping to the start |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Span history: revisions, decisions, comments |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Approve, disapprove, withdraw, or save and approve, against an expected revision |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId/comments` | `correct_transcripts` | Add a comment |
@@ -192,6 +195,8 @@ requires the named catalog permission.
 | POST | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Publish or republish; resumes a publication that stalled |
 | DELETE | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Unpublish: clears the reader pointer, search keeps the snapshot |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/publication/recover` | `manage_catalog_config` | Reconcile or roll back a publication, or withdraw corrected text from search |
+
+A span's state is derived in one SQL query, `spanStatesSql` in `web/src/lib/correction/span-state-sql.ts`. The span listing, the progress and resume figures, the publication check, the overview, "next" and the strip all read it, so no second statement of the two-approval rule exists in application code. It is exercised against a real database by `npm run test:correction-smoke`.
 
 `edit_metadata` (curated metadata of one recording) and `manage_lookups` (the recorder, location and album rows, per [ADR 0007](../adr/0007-per-catalog-lookups.md)) are both carried only by `curator` and `catalog_admin`, and neither can be granted as an extra. "Catalog access" for a plain read means any active grant on the catalog, or `isCatalogAdmin` -- there is no per-recording release scoping on the lookup/filter endpoints.
 

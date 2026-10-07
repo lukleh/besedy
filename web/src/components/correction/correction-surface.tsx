@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, MessageSquare, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, MessageSquare, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,22 +15,51 @@ import { useToast } from "@/hooks/use-toast";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioUrl,
+  buildCorrectionNextUrl,
   buildCorrectionSpanCommentsUrl,
   buildCorrectionSpanUrl,
   buildCorrectionSpansUrl,
+  buildCorrectionStripUrl,
 } from "@/lib/api/recording-urls";
 import { AudioPlayer } from "@/components/player/audio-player";
+import { formatClock } from "@/lib/correction/format";
+import { CorrectionStrip } from "./correction-strip";
 import {
+  nextSpanSchema,
   spanCommandResultSchema,
   spanHistorySchema,
+  spanKindSchema,
   spanPageSchema,
+  spanStripSchema,
+  type SpanKind,
   type SpanPage,
   type SpanState,
   type SpanView,
+  type StripSpan,
   type WorkspaceSummary,
 } from "./correction-types";
 
 const PAGE_SIZE = 200;
+
+const KINDS = spanKindSchema.options;
+
+/**
+ * How many spans of each kind the strip holds. `wantsMe` comes from the
+ * server, so the rule for what still wants a person is not restated here.
+ */
+export function countKinds(spans: readonly StripSpan[]): Record<SpanKind, number> {
+  const counts: Record<SpanKind, number> = {
+    mine_open: 0,
+    needs_attention: 0,
+    needs_second_approval: 0,
+    not_reviewed: 0,
+  };
+  for (const span of spans) {
+    if (span.wantsMe) counts.mine_open += 1;
+    if (span.state !== "done") counts[span.state] += 1;
+  }
+  return counts;
+}
 
 interface CorrectionSurfaceProps {
   catalogId: string;
@@ -48,13 +77,6 @@ interface SpanCommandInput {
   text?: string;
   /** Minted when the person acts, so a retried request replays rather than repeats */
   idempotencyKey: string;
-}
-
-function formatClock(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${minutes}:${String(secs).padStart(2, "0")}`;
 }
 
 function stateVariant(state: SpanState): "default" | "secondary" | "destructive" | "outline" {
@@ -88,11 +110,14 @@ export function CorrectionSurface({
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(
     resume?.spanId ?? null
   );
-  // Captured once: the resume position moves as work is done, and following
-  // it would restart the list from a different page under the person.
-  const [initialOffset] = useState(() =>
+  // Where the list starts. Captured at first: the resume position moves as
+  // work is done, and following it would restart the list from a different
+  // page under the person. Only a deliberate jump moves it.
+  const [anchorOffset, setAnchorOffset] = useState(() =>
     resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
   );
+  // A jump to a segment that is not loaded yet plays it once it arrives.
+  const [playOnArrival, setPlayOnArrival] = useState(false);
   const [draft, setDraft] = useState("");
   // Set when the stored text moved under a draft. It stays until the person
   // acts or moves on, and while it is set the current stored text is shown
@@ -120,9 +145,13 @@ export function CorrectionSurface({
     key: string;
   } | null>(null);
 
+  // The list always holds the whole recording, so the segment being worked on
+  // is always in it. Finding the segments that want attention is the job of
+  // "next" and the strip, not of a narrower list whose members would change
+  // with every decision.
   const spansQuery = useInfiniteQuery<SpanPage>({
-    queryKey: ["correction-spans", catalogId, hash, workspace.id, initialOffset],
-    initialPageParam: initialOffset,
+    queryKey: ["correction-spans", catalogId, hash, workspace.id, anchorOffset],
+    initialPageParam: anchorOffset,
     queryFn: async ({ pageParam }) =>
       fetchJson<SpanPage>(
         buildCorrectionSpansUrl(catalogId, hash, {
@@ -178,9 +207,10 @@ export function CorrectionSurface({
           time: selected.startSeconds,
           end: selected.endSeconds,
           key: (seekRequest?.key ?? 0) + 1,
-          autoPlay: false,
+          autoPlay: playOnArrival,
         });
       }
+      if (playOnArrival) setPlayOnArrival(false);
     } else if (draft.trim() === selected.text.trim()) {
       // The new revision says what the draft says: this person's own save
       // landing, or somebody saving the same wording. Nothing to flag.
@@ -226,6 +256,30 @@ export function CorrectionSurface({
     [playSpan]
   );
 
+  const stripQuery = useQuery({
+    queryKey: ["correction-strip", catalogId, hash, workspace.id],
+    queryFn: async () =>
+      fetchJson(buildCorrectionStripUrl(catalogId, hash), { schema: spanStripSchema }),
+  });
+
+  const kindCounts = useMemo(() => countKinds(stripQuery.data?.spans ?? []), [stripQuery.data]);
+
+  // Go to a segment wherever it is. One already in the list is just selected;
+  // one that is not reloads the list around its page.
+  const jumpTo = useCallback(
+    (target: { spanId: string; ordinal: number }) => {
+      const loaded = spans.find((span) => span.id === target.spanId);
+      if (loaded) {
+        selectSpan(loaded);
+        return;
+      }
+      setAnchorOffset(Math.floor(target.ordinal / PAGE_SIZE) * PAGE_SIZE);
+      setSelectedSpanId(target.spanId);
+      setPlayOnArrival(true);
+    },
+    [spans, selectSpan]
+  );
+
   // Move on from the span a command was issued on. Anchored on that span
   // rather than on whatever is selected now, and only while it is still the
   // selection: the sidebar stays clickable during a command, and somebody who
@@ -258,6 +312,9 @@ export function CorrectionSurface({
     });
     await queryClient.invalidateQueries({
       queryKey: ["correction-span-history", catalogId, hash],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["correction-strip", catalogId, hash],
     });
     onChanged();
   }, [queryClient, catalogId, hash, workspace.id, onChanged]);
@@ -351,6 +408,25 @@ export function CorrectionSurface({
       }),
   });
 
+  // The next span of a kind after the one on screen, wrapping round. The
+  // server answers, so a decision somebody else made a moment ago counts.
+  const goNext = useMutation({
+    mutationFn: async (kind: SpanKind) =>
+      fetchJson(
+        buildCorrectionNextUrl(catalogId, hash, { after: selected?.ordinal ?? -1, kind }),
+        { schema: nextSpanSchema }
+      ),
+    onSuccess: (result, kind) => {
+      if (result.next) jumpTo(result.next);
+      else toast({ description: kind === "mine_open" ? t("nothingLeft") : t("jump.none") });
+    },
+    onError: (error) =>
+      toast({
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
 
   const runPrimary = useCallback(() => {
@@ -384,7 +460,37 @@ export function CorrectionSurface({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="lg:col-span-2">
+        <CorrectionStrip
+          spans={stripQuery.data?.spans ?? []}
+          selectedOrdinal={selected?.ordinal ?? null}
+          onJump={(span: StripSpan) => jumpTo(span)}
+        />
+      </div>
       <aside className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
+        <div
+          role="group"
+          aria-label={t("jump.label")}
+          className="sticky top-0 z-10 -mx-2 -mt-2 mb-1 flex flex-wrap items-center gap-1 border-b bg-background p-2"
+        >
+          <span className="w-full text-xs text-muted-foreground">{t("jump.label")}</span>
+          {KINDS.map((kind) => (
+            <Button
+              key={kind}
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 px-2 text-xs"
+              disabled={goNext.isPending || (stripQuery.isSuccess && kindCounts[kind] === 0)}
+              onClick={() => goNext.mutate(kind)}
+              data-testid={`correction-jump-${kind}`}
+            >
+              {t(`jump.${kind}`)}
+              {stripQuery.isSuccess && (
+                <span className="tabular-nums opacity-70">{kindCounts[kind]}</span>
+              )}
+            </Button>
+          ))}
+        </div>
         {spansQuery.hasPreviousPage && (
           <Button
             variant="ghost"
@@ -455,7 +561,7 @@ export function CorrectionSurface({
               <span>
                 {t("spanOf", {
                   index: selected.ordinal + 1,
-                  total: spansQuery.data?.pages[0]?.total ?? spans.length,
+                  total: workspace.spanCount,
                 })}
               </span>
               <span className="font-mono">
@@ -522,6 +628,16 @@ export function CorrectionSurface({
                   {t("withdraw")}
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                className="gap-2"
+                disabled={command.isPending || goNext.isPending}
+                onClick={() => goNext.mutate("mine_open")}
+                data-testid="correction-next-open"
+              >
+                <SkipForward className="h-4 w-4" />
+                {t("nextOpen")}
+              </Button>
             </div>
 
             <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>

@@ -83,7 +83,7 @@ function renderSurface(resume: { spanId: string; ordinal: number } | null) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <CorrectionSurface
         catalogId={CATALOG_ID}
@@ -95,6 +95,7 @@ function renderSurface(resume: { spanId: string; ordinal: number } | null) {
       />
     </QueryClientProvider>
   );
+  return { ...rendered, queryClient };
 }
 
 const fetchJsonMock = vi.mocked(fetchJson);
@@ -420,5 +421,131 @@ describe("CorrectionSurface", () => {
     await userEvent.click(screen.getByRole("button", { name: "addComment" }));
     expect(await screen.findByDisplayValue("third")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+  });
+
+  // "Next to resolve" has to reach a segment that is not in the loaded pages,
+  // and it has to play it, or the person lands on a silent, unrelated list.
+  it("jumps to the next segment that wants this person, loading its page", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/next?after=")) return { next: { spanId: "span-230", ordinal: 230 } };
+      if (url.includes("/spans?offset=200")) return page(200, 50, 250);
+      if (url.includes("/spans?offset=0")) return page(0, 200, 250);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    await userEvent.click(screen.getByTestId("correction-next-open"));
+
+    expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(lastPlayerProps().autoPlayOnSeek).toBe(true);
+      expect(lastPlayerProps().seekTo).toBe(2300);
+    });
+  });
+
+  it("jumps from the strip to a segment and plays it", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) {
+        return {
+          workspaceId: WORKSPACE.id,
+          spans: Array.from({ length: 3 }, (_, i) => ({
+            spanId: `span-${i}`,
+            ordinal: i,
+            startSeconds: i * 10,
+            endSeconds: i * 10 + 10,
+            state: i === 2 ? "needs_attention" : "done",
+            wantsMe: false,
+          })),
+        };
+      }
+      if (url.includes("/spans?offset=0")) return page(0, 3, 3);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await screen.findByTestId("correction-strip");
+
+    // The last bucket belongs to the disputed segment at the end.
+    const buckets = screen.getByTestId("correction-strip").querySelectorAll("button");
+    await userEvent.click(buckets[buckets.length - 1]);
+
+    expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
+    await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(true));
+  });
+
+  // The jump buttons count from the strip and ask the server for the next
+  // span of their kind after the one on screen; the list itself stays whole.
+  it("jumps to the next segment of a kind, counted from the strip", async () => {
+    const urls: string[] = [];
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith("/strip")) {
+        return {
+          workspaceId: WORKSPACE.id,
+          spans: Array.from({ length: 3 }, (_, i) => ({
+            spanId: `span-${i}`,
+            ordinal: i,
+            startSeconds: i * 10,
+            endSeconds: i * 10 + 10,
+            state: i === 2 ? "needs_attention" : "done",
+            wantsMe: i === 2,
+          })),
+        };
+      }
+      if (url.includes("/next?")) return { next: { spanId: "span-2", ordinal: 2 } };
+      if (url.includes("/spans?offset=0")) return page(0, 3, 3);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    const attention = screen.getByTestId("correction-jump-needs_attention");
+    await waitFor(() => expect(attention).toHaveTextContent("1"));
+    expect(screen.getByTestId("correction-jump-not_reviewed")).toBeDisabled();
+
+    await userEvent.click(attention);
+
+    expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
+    expect(urls.some((url) => url.includes("/next?after=0&kind=needs_attention"))).toBe(true);
+    // Every segment is still listed: the jump did not narrow the list.
+    expect(screen.getByText("machine 1")).toBeInTheDocument();
+  });
+
+  // Nothing about finding work may move the person off the segment they are
+  // typing into: the list never drops it, so the draft survives a refresh.
+  it("keeps the draft when the list refreshes under it", async () => {
+    let refreshed = false;
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return refreshed
+          ? page(0, 3, 3, [span(0), span(1, { state: "done" }), span(2)])
+          : page(0, 3, 3);
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const { queryClient } = renderSurface({ spanId: "span-1", ordinal: 1 });
+    const editor = await screen.findByDisplayValue("machine 1");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my wording");
+
+    refreshed = true;
+    await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+
+    await waitFor(() => expect(screen.getAllByText("stateDone").length).toBeGreaterThan(0));
+    expect(screen.getByDisplayValue("my wording")).toBeInTheDocument();
   });
 });

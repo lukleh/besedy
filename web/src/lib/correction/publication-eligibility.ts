@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { loadSpanSummaries, type SpanSummaryRow } from "@/lib/correction/span-summaries";
+import type { WorkspaceAggregate } from "@/lib/correction/span-queries";
 
 export interface ManifestEntry {
   spanId: string;
@@ -22,6 +23,23 @@ export interface PublicationEligibility {
 export interface WorkspaceEvaluation extends PublicationEligibility {
   manifest: ManifestEntry[];
   durationSeconds: number;
+}
+
+/**
+ * The publication rule, stated once: every span is done *and* carries a
+ * revision. A span without a current revision cannot appear in a manifest, so
+ * counting it as eligible would publish a transcript with a hole in it.
+ */
+export function isPublishable(counts: {
+  spanCount: number;
+  doneSpanCount: number;
+  spansWithRevision: number;
+}): boolean {
+  return (
+    counts.spanCount > 0 &&
+    counts.doneSpanCount === counts.spanCount &&
+    counts.spansWithRevision === counts.spanCount
+  );
 }
 
 /**
@@ -69,10 +87,11 @@ export function evaluateSpanSummaries(spans: readonly SpanSummaryRow[]): Workspa
   }
 
   return {
-    // Every span must be done *and* carry a revision to publish. A span
-    // without a current revision cannot appear in a manifest, so counting it
-    // as eligible would publish a transcript with a hole in it.
-    eligible: spans.length > 0 && doneSpanCount === spans.length && manifest.length === spans.length,
+    eligible: isPublishable({
+      spanCount: spans.length,
+      doneSpanCount,
+      spansWithRevision: manifest.length,
+    }),
     spanCount: spans.length,
     doneSpanCount,
     blockedSpanCount,
@@ -98,6 +117,33 @@ export function eligibilityOf(evaluation: WorkspaceEvaluation): PublicationEligi
     blockedSpanCount: evaluation.blockedSpanCount,
     unreviewedSpanCount: evaluation.unreviewedSpanCount,
     awaitingSecondApprovalCount: evaluation.awaitingSecondApprovalCount,
+  };
+}
+
+/** The same rule over a workspace's counts, for pages that only need the verdict. */
+export function eligibilityOfAggregate(aggregate: WorkspaceAggregate | undefined): PublicationEligibility {
+  if (!aggregate) {
+    return {
+      eligible: false,
+      spanCount: 0,
+      doneSpanCount: 0,
+      blockedSpanCount: 0,
+      unreviewedSpanCount: 0,
+      awaitingSecondApprovalCount: 0,
+    };
+  }
+
+  return {
+    eligible: isPublishable({
+      spanCount: aggregate.spanCount,
+      doneSpanCount: aggregate.counts.done,
+      spansWithRevision: aggregate.spanCount - aggregate.spansWithoutRevision,
+    }),
+    spanCount: aggregate.spanCount,
+    doneSpanCount: aggregate.counts.done,
+    blockedSpanCount: aggregate.counts.needs_attention,
+    unreviewedSpanCount: aggregate.counts.not_reviewed,
+    awaitingSecondApprovalCount: aggregate.counts.needs_second_approval,
   };
 }
 

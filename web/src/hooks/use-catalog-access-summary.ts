@@ -7,6 +7,7 @@ import { AUTH_SENSITIVE_QUERY_OPTIONS } from "@/lib/query/auth-sensitive";
 
 const CatalogAccessSummarySchema = z.object({
   canManageAccess: z.boolean(),
+  canViewCorrectionOverview: z.boolean().default(false),
 });
 
 export type CatalogAccessSummary = z.infer<typeof CatalogAccessSummarySchema>;
@@ -23,7 +24,7 @@ export function useCatalogAccessSummary(
     queryKey: ["catalog-access-summary", catalogId],
     queryFn: async () => {
       if (!catalogId) {
-        return { canManageAccess: false };
+        return { canManageAccess: false, canViewCorrectionOverview: false };
       }
 
       try {
@@ -32,7 +33,7 @@ export function useCatalogAccessSummary(
           { schema: CatalogAccessSummarySchema }
         );
       } catch {
-        return { canManageAccess: false };
+        return { canManageAccess: false, canViewCorrectionOverview: false };
       }
     },
     enabled: (options?.enabled ?? true) && !!catalogId,
