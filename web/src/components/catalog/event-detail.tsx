@@ -98,8 +98,12 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     groupKey: catalogId,
     enabled: !!selectedRecording,
   });
+  // An unavailable recording renders no transcript, so it offers no correction either.
   const correctionHash =
-    selectedRecording && selectedEntry?.canCorrectTranscripts && selectedEntry.correctionEligible
+    selectedRecording &&
+    selectedEntry?.entry.isActionable &&
+    selectedEntry.canCorrectTranscripts &&
+    selectedEntry.correctionEligible
       ? selectedRecording.audioHash
       : null;
 

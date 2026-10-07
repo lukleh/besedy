@@ -105,8 +105,10 @@ function eventDetail(overrides: Partial<EventDetailResponse> = {}): EventDetailR
   };
 }
 
-function grantCorrection(correctionEligible = true) {
-  useRecordingEntryMock.mockReturnValue({ data: { canCorrectTranscripts: true, correctionEligible } });
+function grantCorrection(correctionEligible = true, isActionable = true) {
+  useRecordingEntryMock.mockReturnValue({
+    data: { entry: { isActionable }, canCorrectTranscripts: true, correctionEligible },
+  });
 }
 
 function renderEventDetail(data: EventDetailResponse, canEdit = false) {
@@ -282,6 +284,13 @@ describe("EventDetail edit menu", () => {
 
   it("leaves correction out of the menu for a recording outside correction scope", () => {
     grantCorrection(false);
+    renderEventDetail(eventDetail());
+
+    expect(linkHrefs()).toEqual([]);
+  });
+
+  it("leaves correction out of the menu for a recording that is not available", () => {
+    grantCorrection(true, false);
     renderEventDetail(eventDetail());
 
     expect(linkHrefs()).toEqual([]);
