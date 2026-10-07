@@ -7,12 +7,11 @@ import type { SpanState } from "@/lib/correction/span-state";
  * Counts and positions read straight from the reduced span states.
  *
  * Everything here sits on `spanStatesSql`, the single derivation of what makes
- * a span done, so the overview, the page header, the segment list, the strip
- * and the publication check cannot disagree about it.
+ * a span done, so the overview, the page header, the strip, "next" and the
+ * publication check cannot disagree about it.
  */
 
-export const SPAN_FILTERS = [
-  "all",
+export const SPAN_KINDS = [
   "mine_open",
   "needs_attention",
   "needs_second_approval",
@@ -20,25 +19,21 @@ export const SPAN_FILTERS = [
 ] as const;
 
 /**
- * Which spans the segment list shows.
+ * Which spans "next" walks.
  *
  * `mine_open` is what still wants this person: the span is not done and they
  * have not approved it. One they objected to still counts, because it is
- * theirs to withdraw or have addressed. It is the same set the resume position
- * and "next to resolve" walk.
+ * theirs to withdraw or have addressed. It is also where the work resumes.
+ * The other kinds are span states.
  */
-export type SpanFilter = (typeof SPAN_FILTERS)[number];
+export type SpanKind = (typeof SPAN_KINDS)[number];
 
-function filterSql(filter: SpanFilter, actorKey: string): Prisma.Sql {
-  switch (filter) {
+function kindSql(kind: SpanKind, actorKey: string): Prisma.Sql {
+  switch (kind) {
     case "mine_open":
       return Prisma.sql`state <> 'done' AND NOT (${actorKey}::text = ANY(approver_ids))`;
-    case "needs_attention":
-    case "needs_second_approval":
-    case "not_reviewed":
-      return Prisma.sql`state = ${filter}`;
     default:
-      return Prisma.sql`TRUE`;
+      return Prisma.sql`state = ${kind}`;
   }
 }
 
@@ -114,9 +109,7 @@ export async function loadWorkspaceAggregates(
       count(*) FILTER (
         WHERE state = 'needs_second_approval' AND ${actor}::text = ANY(approver_ids)
       ) AS "myWaitingOnOthersCount",
-      count(*) FILTER (
-        WHERE state <> 'done' AND NOT (${actor}::text = ANY(approver_ids))
-      ) AS "myOpenCount"
+      count(*) FILTER (WHERE ${kindSql("mine_open", actor)}) AS "myOpenCount"
     FROM (${workspaceStates(workspaceIds)}) states
     GROUP BY workspace_id
   `);
@@ -157,59 +150,30 @@ export interface SpanPosition {
 }
 
 /**
- * The next span that still wants this person, after `afterOrdinal` and
- * wrapping round to the start of the recording.
+ * The next span of a kind after `afterOrdinal`, wrapping round to the start of
+ * the recording.
  *
- * With the default it is where to pick the work up: a three-hour recording
+ * With the defaults it is where to pick the work up: a three-hour recording
  * runs to several hundred spans and nobody finishes one in a sitting, so
  * opening at the first span every time would make resuming a scrolling
  * exercise. A span others have finished is not their problem, and one they
  * objected to still is.
  */
-export async function findNextOpenSpan(
+export async function findNextSpan(
   workspaceId: string,
   actorKey: string,
-  afterOrdinal = -1
+  options: { kind?: SpanKind; afterOrdinal?: number } = {}
 ): Promise<SpanPosition | null> {
+  const kind = options.kind ?? "mine_open";
+  const afterOrdinal = options.afterOrdinal ?? -1;
   const rows = await prisma.$queryRaw<Array<{ spanId: string; ordinal: number }>>(Prisma.sql`
     SELECT span_id AS "spanId", ordinal
     FROM (${workspaceStates([workspaceId])}) states
-    WHERE ${filterSql("mine_open", actorKey)}
+    WHERE ${kindSql(kind, actorKey)}
     ORDER BY (ordinal <= ${afterOrdinal}::int), ordinal
     LIMIT 1
   `);
   return rows[0] ?? null;
-}
-
-/**
- * One page of the spans a filter selects, in source order, after a cursor.
- *
- * The page is positioned by the ordinal of the last span already shown, not by
- * an offset. What a filter selects changes with every approval, so an offset
- * into it would skip or repeat a span the moment an earlier page was
- * refreshed; an ordinal still names the same place in the recording.
- */
-export async function listFilteredSpanIds(
-  workspaceId: string,
-  actorKey: string,
-  filter: SpanFilter,
-  options: { afterOrdinal: number; limit: number }
-): Promise<{ ids: string[]; hasMore: boolean }> {
-  // One row more than asked for says whether another page exists, without a
-  // second pass over the workspace to count.
-  const rows = await prisma.$queryRaw<Array<{ spanId: string }>>(Prisma.sql`
-    SELECT span_id AS "spanId"
-    FROM (${workspaceStates([workspaceId])}) states
-    WHERE ${filterSql(filter, actorKey)}
-      AND ordinal > ${options.afterOrdinal}::int
-    ORDER BY ordinal
-    LIMIT ${options.limit + 1}::int
-  `);
-
-  return {
-    ids: rows.slice(0, options.limit).map((row) => row.spanId),
-    hasMore: rows.length > options.limit,
-  };
 }
 
 export interface StripSpan {
@@ -218,10 +182,8 @@ export interface StripSpan {
   startSeconds: number;
   endSeconds: number;
   state: SpanState;
-  /** This person currently approves it */
-  approvedByMe: boolean;
-  /** This person currently objects to it */
-  disapprovedByMe: boolean;
+  /** It still wants this person: the `mine_open` kind */
+  wantsMe: boolean;
 }
 
 /** Every span's position and state, for the strip over the whole recording. */
@@ -237,8 +199,7 @@ export async function loadSpanStrip(
            start_seconds AS "startSeconds",
            end_seconds AS "endSeconds",
            state,
-           (${actorKey}::text = ANY(approver_ids)) AS "approvedByMe",
-           (${actorKey}::text = ANY(disapprover_ids)) AS "disapprovedByMe"
+           (${kindSql("mine_open", actorKey)}) AS "wantsMe"
     FROM (${workspaceStates([workspaceId])}) states
     ORDER BY ordinal
   `);

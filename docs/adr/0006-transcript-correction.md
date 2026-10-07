@@ -384,15 +384,20 @@ the pilot to settle. A recording-level surface must at least support stopping
 and resuming within a multi-hour recording.
 
 *Added 2026-10-07.* The catalog overview (`/catalog/<id>/correction`) is the
-cross-recording view. It stores nothing: stage, progress, this person's share
-and whether a published snapshot has been edited since are all read from the
-same derived span states as the working surface. A recording is in progress,
-ready (every span done, nothing published), publishing, published, or
-published with later edits; primary recordings without a workspace are listed
-as not started. Inside a recording, the segment list can be filtered to what
-still wants the person, a "next to resolve" action walks that set, and a strip
-over the whole recording shows where the gaps and disputes are. Per-person
-unread comments, assignments and notifications remain deferred.
+cross-recording view. It stores nothing: progress, this person's share and
+whether a published snapshot has been edited since are all read from the same
+derived span states as the working surface. A recording stands on two
+independent axes: the work (not started, in progress, done) and what readers
+see (the machine transcript, a publication on its way, a current snapshot, or
+a snapshot the live text has moved past). They are kept apart because a
+published recording can be corrected again, and that work belongs with the
+rest of the work in progress. Inside a recording, the segment list always
+holds the whole recording; "next" walks the spans of one kind (what still
+wants the person, or one state), and a strip over the whole recording shows
+where the gaps and disputes are. A filtered list was tried and dropped: its
+members changed with every decision, so the segment being edited could drop
+out of it. Per-person unread comments, assignments and notifications remain
+deferred.
 
 ### Readers see two progress measures before first publication
 

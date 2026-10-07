@@ -2,15 +2,18 @@ import { Prisma, type TranscriptPublicationStatus } from "@/generated/prisma/cli
 import prisma from "@/lib/db";
 import { loadActorNames } from "@/lib/correction/actor-names";
 import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-service";
+import { eligibilityOfAggregate } from "@/lib/correction/publication-eligibility";
 import { loadWorkspaceAggregates, type WorkspaceAggregate } from "@/lib/correction/span-queries";
 import type { SpanState } from "@/lib/correction/span-state";
 import {
-  deriveOverviewStatus,
-  OVERVIEW_STATUSES,
-  type OverviewStatus,
+  deriveReaderState,
+  deriveWorkStage,
+  inOverviewTab,
+  OVERVIEW_TABS,
+  type OverviewTab,
+  type ReaderState,
+  type WorkStage,
 } from "@/lib/correction/overview-status";
-
-export { OVERVIEW_STATUSES, deriveOverviewStatus, type OverviewStatus };
 
 /**
  * The catalog-wide view of correction: which recordings are being corrected,
@@ -39,7 +42,8 @@ export interface OverviewProgress {
 }
 
 export interface OverviewItem {
-  status: OverviewStatus;
+  work: WorkStage;
+  reader: ReaderState;
   recording: OverviewRecording;
   workspaceId: string | null;
   progress: OverviewProgress | null;
@@ -49,8 +53,6 @@ export interface OverviewItem {
   touchedByMe: boolean;
   lastActivity: { at: Date; actorName: string | null } | null;
   myLastActivityAt: Date | null;
-  /** Every span is done: the transcript can be published or republished */
-  eligible: boolean;
   /** Spans edited since the snapshot readers see */
   changedSinceReaderPublication: number;
   publication: {
@@ -62,7 +64,8 @@ export interface OverviewItem {
 }
 
 export interface OverviewSummary {
-  byStatus: Record<OverviewStatus, { count: number; seconds: number }>;
+  /** Recordings and hours under each tab; a recording can count under more than one */
+  byTab: Record<OverviewTab, { count: number; seconds: number }>;
 }
 
 export interface CorrectionOverview {
@@ -104,16 +107,27 @@ const RECORDING_COLUMNS_SQL = Prisma.sql`
   ${DURATION_SECONDS_SQL} AS "durationSeconds"
 `;
 
-const RECORDING_JOINS_SQL = Prisma.sql`
-  LEFT JOIN audio_metadata am
-    ON am.workflow_group_id = ce.workflow_group_id AND am.audio_hash = ce.audio_hash
-  LEFT JOIN catalog_event_recording cer
-    ON cer.workflow_group_id = ce.workflow_group_id AND cer.audio_hash = ce.audio_hash
-  LEFT JOIN catalog_event ev
-    ON ev.id = cer.event_id AND ev.workflow_group_id = cer.workflow_group_id
-  LEFT JOIN locations loc
-    ON loc.id = ev.location_id
-`;
+/**
+ * The recording's metadata, and its event when the actor may see that event.
+ *
+ * A published recording can belong to an event that is not released yet.
+ * Someone who may not see unreleased material can still correct the
+ * recording, but learns nothing about the event here: its title, date and
+ * place stay hidden, as they are on the event pages.
+ */
+function recordingJoinsSql(canSeeUnreleased: boolean): Prisma.Sql {
+  const eventVisible = canSeeUnreleased ? Prisma.sql`` : Prisma.sql`AND ev.released`;
+  return Prisma.sql`
+    LEFT JOIN audio_metadata am
+      ON am.workflow_group_id = ce.workflow_group_id AND am.audio_hash = ce.audio_hash
+    LEFT JOIN catalog_event_recording cer
+      ON cer.workflow_group_id = ce.workflow_group_id AND cer.audio_hash = ce.audio_hash
+    LEFT JOIN catalog_event ev
+      ON ev.id = cer.event_id AND ev.workflow_group_id = cer.workflow_group_id ${eventVisible}
+    LEFT JOIN locations loc
+      ON loc.id = ev.location_id
+  `;
+}
 
 interface RawRecording {
   audioHash: string;
@@ -163,6 +177,7 @@ export interface OverviewInput {
 export async function loadCorrectionOverview(input: OverviewInput): Promise<CorrectionOverview> {
   const { catalogId, actorKey } = input;
   const visible = visibleSql(input.canSeeUnreleased);
+  const joins = recordingJoinsSql(input.canSeeUnreleased);
 
   const [workspaceRows, notStartedRows] = await Promise.all([
     prisma.$queryRaw<RawWorkspace[]>(Prisma.sql`
@@ -173,7 +188,7 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
       FROM transcript_workspace w
       JOIN catalog_entry ce
         ON ce.workflow_group_id = w.workflow_group_id AND ce.audio_hash = w.audio_hash
-      ${RECORDING_JOINS_SQL}
+      ${joins}
       WHERE w.workflow_group_id = ${catalogId}
         AND w.status = 'ACTIVE'
         AND ${visible}
@@ -185,7 +200,7 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
       FROM catalog_event_recording pr
       JOIN catalog_entry ce
         ON ce.workflow_group_id = pr.workflow_group_id AND ce.audio_hash = pr.audio_hash
-      ${RECORDING_JOINS_SQL}
+      ${joins}
       WHERE pr.workflow_group_id = ${catalogId}
         AND pr.is_primary
         AND ce.is_actionable
@@ -226,15 +241,13 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
     const activity = activityByWorkspace.get(row.workspaceId);
     const flight = inFlightByWorkspace.get(row.workspaceId);
     const changed = changedRows.get(row.workspaceId) ?? 0;
-    const eligible =
-      !!aggregate &&
-      aggregate.spanCount > 0 &&
-      aggregate.counts.done === aggregate.spanCount &&
-      aggregate.spansWithoutRevision === 0;
 
     return {
-      status: deriveOverviewStatus({
-        eligible,
+      work: deriveWorkStage({
+        hasWorkspace: true,
+        eligible: eligibilityOfAggregate(aggregate).eligible,
+      }),
+      reader: deriveReaderState({
         readerPublished: row.readerPublicationId !== null,
         inFlight: flight !== undefined,
         changedSinceReaderPublication: changed,
@@ -260,7 +273,6 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
         ? { at: activity.lastAt, actorName: names.get(activity.lastActorKey) ?? null }
         : null,
       myLastActivityAt: activity?.myLastAt ?? null,
-      eligible,
       changedSinceReaderPublication: changed,
       publication: {
         inFlight: flight
@@ -280,7 +292,8 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
   );
 
   const notStarted: OverviewItem[] = notStartedRows.map((row) => ({
-    status: "not_started",
+    work: "not_started",
+    reader: "unpublished",
     recording: toRecording(row),
     workspaceId: null,
     progress: null,
@@ -288,24 +301,26 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
     touchedByMe: false,
     lastActivity: null,
     myLastActivityAt: null,
-    eligible: false,
     changedSinceReaderPublication: 0,
     publication: null,
   }));
 
   const summary: OverviewSummary = {
-    byStatus: Object.fromEntries(
-      OVERVIEW_STATUSES.map((status) => [status, { count: 0, seconds: 0 }])
-    ) as OverviewSummary["byStatus"],
+    byTab: Object.fromEntries(
+      OVERVIEW_TABS.map((tab) => [tab, { count: 0, seconds: 0 }])
+    ) as OverviewSummary["byTab"],
   };
   for (const item of workspaces) {
-    summary.byStatus[item.status].count += 1;
-    summary.byStatus[item.status].seconds += item.recording.durationSeconds;
+    for (const tab of OVERVIEW_TABS) {
+      if (!inOverviewTab(item, tab)) continue;
+      summary.byTab[tab].count += 1;
+      summary.byTab[tab].seconds += item.recording.durationSeconds;
+    }
   }
   // The list of recordings nobody started is capped, the total is not: the
   // summary describes all of them.
   if (notStartedRows.length > 0) {
-    summary.byStatus.not_started = {
+    summary.byTab.not_started = {
       count: Number(notStartedRows[0].total),
       seconds: Number(notStartedRows[0].totalSeconds),
     };
@@ -321,14 +336,21 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
   };
 }
 
-/** Last action in each workspace, and the last by this person. */
+/**
+ * Last action in each workspace, and the last by this person. Starting the
+ * workspace counts: whoever started a recording has taken it up.
+ */
 async function loadActivity(workspaceIds: readonly string[], actorKey: string): Promise<RawActivity[]> {
   if (workspaceIds.length === 0) return [];
   const ids = [...workspaceIds];
 
   return prisma.$queryRaw<RawActivity[]>(Prisma.sql`
     WITH events AS (
-      SELECT workspace_id, actor_key, created_at AS at
+      SELECT id AS workspace_id, started_by AS actor_key, created_at AS at
+      FROM transcript_workspace
+      WHERE id = ANY(${ids}::uuid[]) AND started_by IS NOT NULL
+      UNION ALL
+      SELECT workspace_id, actor_key, created_at
       FROM transcript_span_revision
       WHERE workspace_id = ANY(${ids}::uuid[]) AND actor_key IS NOT NULL
       UNION ALL

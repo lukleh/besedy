@@ -9,8 +9,7 @@ function strip(ordinal: number, start: number, end: number, state: StripSpan["st
     startSeconds: start,
     endSeconds: end,
     state,
-    approvedByMe: false,
-    disapprovedByMe: false,
+    wantsMe: false,
   };
 }
 
@@ -50,6 +49,22 @@ describe("bucketStrip", () => {
 
     expect(buckets[0].state).toBe("needs_attention");
     expect(buckets[1].state).toBe("done");
+  });
+
+  it("lands a click on the span that gave the bucket its colour", () => {
+    const buckets = bucketStrip(
+      [
+        strip(0, 0, 3, "done"),
+        strip(1, 3, 5, "needs_attention"),
+        strip(2, 5, 8, "needs_attention"),
+        strip(3, 8, 10, "not_reviewed"),
+      ],
+      10,
+      1
+    );
+
+    expect(buckets[0].state).toBe("needs_attention");
+    expect(buckets[0].spanId).toBe("span-1");
   });
 
   it("ranks an unreviewed span above a half-approved one", () => {

@@ -35,7 +35,10 @@ function clock(seconds: number): string {
 
 export interface StripBucket {
   state: SpanState | null;
-  /** First span in the bucket, where a click lands */
+  /**
+   * Where a click lands: the first span of the state the bucket shows, so a
+   * click on a red stretch opens the disputed span, not a finished neighbour.
+   */
   spanId: string | null;
 }
 
@@ -61,9 +64,9 @@ export function bucketStrip(
 
     for (let index = first; index <= last; index += 1) {
       const bucket = buckets[index];
-      bucket.spanId ??= span.spanId;
       if (bucket.state === null || URGENCY.indexOf(span.state) < URGENCY.indexOf(bucket.state)) {
         bucket.state = span.state;
+        bucket.spanId = span.spanId;
       }
     }
   }

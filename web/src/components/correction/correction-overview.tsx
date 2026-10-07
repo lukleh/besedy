@@ -19,15 +19,16 @@ import {
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
 import {
+  inOverviewTab,
+  isReadyToPublish,
+  OVERVIEW_TABS,
+  type OverviewTab,
+} from "@/lib/correction/overview-status";
+import {
   correctionOverviewSchema,
   type CorrectionOverview,
   type OverviewItem,
-  type OverviewStatus,
 } from "./correction-types";
-
-type OverviewFilter = "mine" | "in_progress" | "to_publish" | "published" | "not_started";
-
-const FILTERS: OverviewFilter[] = ["mine", "in_progress", "to_publish", "published", "not_started"];
 
 interface CorrectionOverviewPageProps {
   catalogId: string;
@@ -66,24 +67,17 @@ function formatWhen(iso: string, locale: string): string {
   return formatter.format(0, "minute");
 }
 
-/** Which tabs a recording appears under; one recording can be in more than one. */
-export function matchesFilter(item: OverviewItem, filter: OverviewFilter): boolean {
-  switch (filter) {
-    case "mine":
-      return item.touchedByMe && (item.mine?.open ?? 0) > 0;
-    case "in_progress":
-      return item.status === "in_progress";
-    case "to_publish":
-      return (
-        item.status === "ready" ||
-        item.status === "publishing" ||
-        (item.status === "published_changed" && item.eligible)
-      );
-    case "published":
-      return item.status === "published" || item.status === "published_changed";
-    case "not_started":
-      return item.status === "not_started";
-  }
+/**
+ * The order of a tab. What is under way lists the recordings that still want
+ * this person first, then the most recently active; every other tab keeps
+ * the most recently active first, as the server sends it.
+ */
+export function orderForTab(items: readonly OverviewItem[], tab: OverviewTab): OverviewItem[] {
+  const rows = items.filter((item) => inOverviewTab(item, tab));
+  if (tab !== "in_progress") return rows;
+  const wantsMe = (item: OverviewItem) => ((item.mine?.open ?? 0) > 0 ? 1 : 0);
+  // Array.prototype.sort is stable, so equal rows keep the server's order.
+  return rows.sort((a, b) => wantsMe(b) - wantsMe(a));
 }
 
 const SEGMENTS: Array<{ state: keyof NonNullable<OverviewItem["progress"]>["seconds"]; className: string }> = [
@@ -112,18 +106,6 @@ function ProgressBar({ item, label }: { item: OverviewItem; label: string }) {
       ))}
     </div>
   );
-}
-
-function statusVariant(status: OverviewStatus): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "published":
-      return "default";
-    case "ready":
-    case "published_changed":
-      return "secondary";
-    default:
-      return "outline";
-  }
 }
 
 function SummaryTile({
@@ -173,21 +155,36 @@ function OverviewRow({
     .join(" · ");
 
   const inFlight = item.publication?.inFlight ?? null;
-  const statusLabel =
-    item.status === "publishing"
+  const readyToPublish = isReadyToPublish(item);
+
+  // Two badges, because the work and what readers see move independently: a
+  // published recording can be under correction again.
+  const workBadge: { label: string; variant: "secondary" | "outline" } | null =
+    item.work === "not_started"
+      ? { label: to("work.not_started"), variant: "outline" }
+      : item.work === "in_progress"
+        ? { label: to("work.in_progress"), variant: "outline" }
+        : readyToPublish
+          ? { label: to("work.ready"), variant: "secondary" }
+          : null;
+  const readerBadge: { label: string; variant: "default" | "secondary" | "destructive" } | null =
+    item.reader === "publishing"
       ? inFlight?.error
-        ? to("status.publishingStalled")
-        : to("status.publishing")
-      : to(`status.${item.status}`);
+        ? { label: to("reader.publishingStalled"), variant: "destructive" }
+        : { label: to("reader.publishing"), variant: "secondary" }
+      : item.reader === "current"
+        ? { label: to("reader.current"), variant: "default" }
+        : item.reader === "stale"
+          ? { label: to("reader.stale"), variant: "secondary" }
+          : null;
 
   const correctionHref = buildCorrectionPagePath(catalogId, recording.audioHash);
 
-  let action: { label: string; primary: boolean } | null = null;
-  if (item.status === "not_started") action = { label: to("actions.start"), primary: false };
+  let action: { label: string; primary: boolean };
+  if (item.work === "not_started") action = { label: to("actions.start"), primary: false };
   else if (item.touchedByMe && (mine?.open ?? 0) > 0) action = { label: to("actions.continue"), primary: true };
-  else if (canPublish && (item.status === "ready" || (item.status === "published_changed" && item.eligible))) {
-    action = { label: to("actions.publish"), primary: true };
-  } else action = { label: to("actions.open"), primary: false };
+  else if (canPublish && readyToPublish) action = { label: to("actions.publish"), primary: true };
+  else action = { label: to("actions.open"), primary: false };
 
   // Only what is true: a row of zeros says nothing the bar does not.
   const mineParts =
@@ -208,7 +205,8 @@ function OverviewRow({
     <li
       className="grid gap-3 rounded-lg border p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto] md:items-center"
       data-testid="correction-overview-row"
-      data-status={item.status}
+      data-work={item.work}
+      data-reader={item.reader}
     >
       <div className="min-w-0">
         <Link
@@ -222,8 +220,9 @@ function OverviewRow({
 
       <div className="min-w-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={inFlight?.error ? "destructive" : statusVariant(item.status)}>{statusLabel}</Badge>
-          {item.status === "published_changed" && (
+          {workBadge && <Badge variant={workBadge.variant}>{workBadge.label}</Badge>}
+          {readerBadge && <Badge variant={readerBadge.variant}>{readerBadge.label}</Badge>}
+          {item.reader === "stale" && (
             <span className="text-xs text-muted-foreground">
               {to("changedSincePublication", { count: item.changedSinceReaderPublication })}
             </span>
@@ -278,7 +277,7 @@ function OverviewRow({
 
 export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProps) {
   const t = useTranslations("correction.overview");
-  const [chosenFilter, setChosenFilter] = useState<OverviewFilter | null>(null);
+  const [chosenTab, setChosenTab] = useState<OverviewTab | null>(null);
 
   const query = useQuery<CorrectionOverview>({
     queryKey: ["correction-overview", catalogId],
@@ -295,30 +294,23 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
   );
 
   const counts = useMemo(() => {
-    const result = {} as Record<OverviewFilter, number>;
-    for (const filter of FILTERS) {
-      result[filter] =
-        filter === "not_started" && data
+    const result = {} as Record<OverviewTab, number>;
+    for (const tab of OVERVIEW_TABS) {
+      result[tab] =
+        tab === "not_started" && data
           ? data.notStarted.total
-          : all.filter((item) => matchesFilter(item, filter)).length;
+          : all.filter((item) => inOverviewTab(item, tab)).length;
     }
     return result;
   }, [all, data]);
 
   // Land on the work that wants this person, and on what is under way when
   // nothing does.
-  const filter: OverviewFilter = chosenFilter ?? (counts.mine > 0 ? "mine" : "in_progress");
-  const rows = all.filter((item) => matchesFilter(item, filter));
+  const tab: OverviewTab = chosenTab ?? (counts.mine > 0 ? "mine" : "in_progress");
+  const rows = orderForTab(all, tab);
 
-  const summary = data?.summary.byStatus;
-  const sum = (...statuses: OverviewStatus[]) =>
-    statuses.reduce(
-      (total, status) => ({
-        count: total.count + (summary?.[status]?.count ?? 0),
-        seconds: total.seconds + (summary?.[status]?.seconds ?? 0),
-      }),
-      { count: 0, seconds: 0 }
-    );
+  const summary = data?.summary.byTab;
+  const sum = (summaryTab: OverviewTab) => summary?.[summaryTab] ?? { count: 0, seconds: 0 };
 
   return (
     <div className="container mx-auto space-y-6 px-4 py-6">
@@ -340,18 +332,18 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="correction-overview-summary">
             <SummaryTile label={t("summary.notStarted")} {...sum("not_started")} />
             <SummaryTile label={t("summary.inProgress")} {...sum("in_progress")} />
-            <SummaryTile label={t("summary.toPublish")} {...sum("ready", "publishing")} />
-            <SummaryTile label={t("summary.published")} {...sum("published", "published_changed")} />
+            <SummaryTile label={t("summary.toPublish")} {...sum("to_publish")} />
+            <SummaryTile label={t("summary.published")} {...sum("published")} />
           </div>
 
           <div className="flex flex-wrap gap-2" role="group" aria-label={t("filtersLabel")}>
-            {FILTERS.map((candidate) => (
+            {OVERVIEW_TABS.map((candidate) => (
               <Button
                 key={candidate}
                 size="sm"
-                variant={candidate === filter ? "default" : "outline"}
-                aria-pressed={candidate === filter}
-                onClick={() => setChosenFilter(candidate)}
+                variant={candidate === tab ? "default" : "outline"}
+                aria-pressed={candidate === tab}
+                onClick={() => setChosenTab(candidate)}
                 data-testid={`correction-overview-filter-${candidate}`}
               >
                 {t(`filters.${candidate}`)}
@@ -360,7 +352,7 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
             ))}
           </div>
 
-          {filter === "not_started" && (
+          {tab === "not_started" && (
             <p className="text-sm text-muted-foreground">
               {t("notStartedNote")}
               {data.notStarted.total > data.notStarted.items.length &&
@@ -373,7 +365,7 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
 
           {rows.length === 0 ? (
             <div className="rounded-lg border bg-muted/50 p-6 text-sm text-muted-foreground">
-              {t(`empty.${filter}`)}
+              {t(`empty.${tab}`)}
             </div>
           ) : (
             <ul className="space-y-3">

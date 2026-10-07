@@ -101,7 +101,7 @@ describe("catalog capability route", () => {
     );
   });
 
-  it("offers the correction overview to publishers who do not correct", async () => {
+  it("follows the correction page, which publishing alone does not open", async () => {
     requireAuth.mockResolvedValue("user-1");
     getCatalogCapability.mockResolvedValue({
       catalogExists: true,
@@ -117,7 +117,7 @@ describe("catalog capability route", () => {
       { params: Promise.resolve({ id: "20260201_120000" }) }
     );
 
-    await expect(response.json()).resolves.toMatchObject({ canViewCorrectionOverview: true });
+    await expect(response.json()).resolves.toMatchObject({ canViewCorrectionOverview: false });
   });
 
   it("keeps the correction overview from everybody else", async () => {

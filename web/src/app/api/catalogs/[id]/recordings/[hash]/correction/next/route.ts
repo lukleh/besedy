@@ -4,7 +4,7 @@ import { validateParams } from "@/lib/api/validation";
 import { CatalogHashParamSchema } from "@/lib/validation/schemas";
 import { requireCorrectionAccess } from "@/lib/correction/access";
 import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
-import { findNextOpenSpan } from "@/lib/correction/span-queries";
+import { findNextSpan, SPAN_KINDS } from "@/lib/correction/span-queries";
 import { requireActiveWorkspace } from "@/lib/correction/workspace-service";
 
 export const runtime = "nodejs";
@@ -16,11 +16,13 @@ interface RouteParams {
 
 const QuerySchema = z.object({
   after: z.coerce.number().int().min(-1).default(-1),
+  kind: z.enum(SPAN_KINDS).default("mine_open"),
 });
 
 /**
- * GET - the next span that still wants this person, after the given ordinal
- * and wrapping round to the start. `null` means nothing is left for them.
+ * GET - the next span of a kind after the given ordinal, wrapping round to the
+ * start. The default kind is what still wants this person. `null` means no
+ * span of that kind is left.
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -30,8 +32,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { userId } = await requireCorrectionAccess(catalogId, hash, "correct");
 
+    const { searchParams } = new URL(request.url);
     const query = QuerySchema.safeParse({
-      after: new URL(request.url).searchParams.get("after") ?? undefined,
+      after: searchParams.get("after") ?? undefined,
+      kind: searchParams.get("kind") ?? undefined,
     });
     if (!query.success) {
       return NextResponse.json({ error: "Invalid position" }, { status: 400 });
@@ -39,7 +43,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const workspace = await requireActiveWorkspace(catalogId, hash);
     return NextResponse.json({
-      next: await findNextOpenSpan(workspace.id, userId, query.data.after),
+      next: await findNextSpan(workspace.id, userId, {
+        kind: query.data.kind,
+        afterOrdinal: query.data.after,
+      }),
     });
   } catch (error) {
     return handleCorrectionRouteError(error, "fetch");

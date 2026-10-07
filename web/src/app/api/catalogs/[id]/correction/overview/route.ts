@@ -17,9 +17,10 @@ interface RouteParams {
  * GET - correction across the whole catalog: what is in progress, what still
  * wants this person, what a curator can publish and what nobody has started.
  *
- * Open to everyone who corrects or publishes, and limited to the recordings
- * they may see: a corrector who cannot see unreleased material does not learn
- * of it here either.
+ * Open to everyone who corrects, which is everyone the correction page it
+ * links to is open to; publishing is never granted without correcting. It is
+ * limited to the recordings and events they may see: a corrector who cannot
+ * see unreleased material does not learn of it here either.
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -32,7 +33,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!capability.catalogExists || !capability.hasAccess) {
       throw new AuthError("Catalog not found", 404);
     }
-    if (!capability.canCorrectTranscripts && !capability.canPublishTranscript) {
+    if (!capability.canCorrectTranscripts) {
       throw new AuthError("Access denied to the correction overview", 403);
     }
 

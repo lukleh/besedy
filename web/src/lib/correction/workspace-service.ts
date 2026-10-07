@@ -10,14 +10,15 @@ import { fingerprintContent, hashSpanText, normalizeSpanText } from "@/lib/corre
 import type { SpanState } from "@/lib/correction/span-state";
 import { loadSpanSummaries, type SpanSummaryRow } from "@/lib/correction/span-summaries";
 import {
-  findNextOpenSpan,
-  listFilteredSpanIds,
+  findNextSpan,
   loadWorkspaceAggregates,
-  type SpanFilter,
   type SpanPosition,
   type WorkspaceAggregate,
 } from "@/lib/correction/span-queries";
-import type { PublicationEligibility } from "@/lib/correction/publication-eligibility";
+import {
+  eligibilityOfAggregate,
+  type PublicationEligibility,
+} from "@/lib/correction/publication-eligibility";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 export interface WorkspaceSummary {
@@ -302,53 +303,23 @@ function buildSpanRows(segments: readonly CanonicalSegment[]): ImportedSpan[] {
 
 export interface SpanPage {
   spans: SpanView[];
-  /** Every span of the recording; null when a filter selected the page */
-  total: number | null;
-  hasMore: boolean;
+  total: number;
 }
 
 /**
  * Spans with their derived state.
  *
  * Only decisions bound to each span's current revision count, so a
- * superseded approval cannot leak into the state. Unfiltered pages are
- * positioned by offset, which is stable because spans never come or go; a
- * filtered page is positioned by the ordinal of the last span shown, because
- * the selection changes with every decision.
+ * superseded approval cannot leak into the state.
  */
 export async function listSpans(
   workspaceId: string,
-  options: {
-    offset?: number;
-    limit?: number;
-    filter?: SpanFilter;
-    afterOrdinal?: number;
-    actorKey?: string;
-  } = {}
+  options: { offset?: number; limit?: number } = {}
 ): Promise<SpanPage> {
-  const filter = options.filter ?? "all";
-
-  let total: number | null;
-  let hasMore: boolean;
-  let spans: SpanSummaryRow[];
-  if (filter === "all") {
-    const offset = options.offset ?? 0;
-    let counted: number;
-    [counted, spans] = await Promise.all([
-      prisma.transcriptSpan.count({ where: { workspaceId } }),
-      loadSpanSummaries(workspaceId, { offset, limit: options.limit }),
-    ]);
-    total = counted;
-    hasMore = offset + spans.length < counted;
-  } else {
-    const selected = await listFilteredSpanIds(workspaceId, options.actorKey ?? "", filter, {
-      afterOrdinal: options.afterOrdinal ?? -1,
-      limit: options.limit ?? 200,
-    });
-    total = null;
-    hasMore = selected.hasMore;
-    spans = await loadSpanSummaries(workspaceId, { spanIds: selected.ids });
-  }
+  const [total, spans] = await Promise.all([
+    prisma.transcriptSpan.count({ where: { workspaceId } }),
+    loadSpanSummaries(workspaceId, { offset: options.offset, limit: options.limit }),
+  ]);
 
   const commentCounts =
     spans.length === 0
@@ -362,7 +333,6 @@ export async function listSpans(
 
   return {
     total,
-    hasMore,
     spans: spans.map((span) => toSpanView(span, commentCountBySpan.get(span.id) ?? 0)),
   };
 }
@@ -511,41 +481,12 @@ export async function archiveWorkspace(input: ArchiveWorkspaceInput): Promise<Wo
 
 export type ResumePosition = SpanPosition;
 
-/** Where this person should pick the work up; see `findNextOpenSpan`. */
+/** Where this person should pick the work up; see `findNextSpan`. */
 export async function findResumePosition(
   workspaceId: string,
   actorKey: string
 ): Promise<ResumePosition | null> {
-  return findNextOpenSpan(workspaceId, actorKey);
-}
-
-/** Whether a workspace's counts say every span is done and publishable. */
-export function eligibilityOfAggregate(aggregate: WorkspaceAggregate | undefined): PublicationEligibility {
-  if (!aggregate) {
-    return {
-      eligible: false,
-      spanCount: 0,
-      doneSpanCount: 0,
-      blockedSpanCount: 0,
-      unreviewedSpanCount: 0,
-      awaitingSecondApprovalCount: 0,
-    };
-  }
-
-  return {
-    // Every span must be done *and* carry a revision to publish. A span
-    // without a current revision cannot appear in a manifest, so counting it
-    // as eligible would publish a transcript with a hole in it.
-    eligible:
-      aggregate.spanCount > 0 &&
-      aggregate.counts.done === aggregate.spanCount &&
-      aggregate.spansWithoutRevision === 0,
-    spanCount: aggregate.spanCount,
-    doneSpanCount: aggregate.counts.done,
-    blockedSpanCount: aggregate.counts.needs_attention,
-    unreviewedSpanCount: aggregate.counts.not_reviewed,
-    awaitingSecondApprovalCount: aggregate.counts.needs_second_approval,
-  };
+  return findNextSpan(workspaceId, actorKey);
 }
 
 export interface WorkspaceSummaryForActor {
@@ -565,7 +506,7 @@ export async function summarizeWorkspace(
 ): Promise<WorkspaceSummaryForActor> {
   const [aggregates, resume] = await Promise.all([
     loadWorkspaceAggregates([workspaceId], actorKey),
-    findNextOpenSpan(workspaceId, actorKey),
+    findNextSpan(workspaceId, actorKey),
   ]);
   const aggregate = aggregates.get(workspaceId);
   return {

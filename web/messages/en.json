@@ -485,14 +485,13 @@
     "nextOpen": "Next to resolve",
     "nothingLeft": "Nothing else is waiting for you.",
     "overviewLink": "Correction overview",
-    "filters": {
-      "label": "Which segments to show",
-      "all": "All",
+    "jump": {
+      "label": "Go to the next segment",
       "mine_open": "Waiting for me",
       "needs_attention": "Needs attention",
       "needs_second_approval": "Needs second approval",
       "not_reviewed": "Not reviewed",
-      "empty": "No segment matches this filter."
+      "none": "No other segment of this kind."
     },
     "strip": {
       "label": "Correction progress across the whole recording; click to jump",
@@ -520,14 +519,16 @@
         "published": "Published",
         "not_started": "Not started"
       },
-      "status": {
+      "work": {
         "not_started": "Not started",
         "in_progress": "In progress",
-        "ready": "Ready to publish",
+        "ready": "Ready to publish"
+      },
+      "reader": {
         "publishing": "Publishing",
         "publishingStalled": "Publishing stalled",
-        "published": "Published",
-        "published_changed": "Published, edited since"
+        "current": "Published",
+        "stale": "Published, edited since"
       },
       "changedSincePublication": "{count, plural, one {# segment} other {# segments}} changed since publication",
       "awaitingSecond": "{count, plural, one {# awaiting a second approval} other {# awaiting a second approval}}",

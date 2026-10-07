@@ -121,7 +121,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
             </Button>
           )}
 
-          {/* Correction overview - for everyone who corrects or publishes */}
+          {/* Correction overview - for everyone who corrects */}
           {!isAuthPage && effectiveCatalogId && catalogAccess?.canViewCorrectionOverview && (
             <Button
               variant="ghost"

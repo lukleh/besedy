@@ -10,9 +10,10 @@ export default async function CorrectionOverviewRoute({ params }: CorrectionOver
   const { catalogId } = await params;
   const { capability } = await requireCatalogPageAccess(catalogId);
 
-  // The overview is for people who correct or publish; the reader panel on a
-  // recording is what everybody else sees of the work.
-  if (!capability.canCorrectTranscripts && !capability.canPublishTranscript) {
+  // The overview is for people who correct, like the correction page every
+  // row leads to; the reader panel on a recording is what everybody else sees
+  // of the work.
+  if (!capability.canCorrectTranscripts) {
     notFound();
   }
 

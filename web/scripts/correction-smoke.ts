@@ -1292,8 +1292,7 @@ async function main() {
   {
     const { loadSpanSummaries } = await import("@/lib/correction/span-summaries");
     const {
-      findNextOpenSpan,
-      listFilteredSpanIds,
+      findNextSpan,
       loadSpanStrip,
       loadWorkspaceAggregates,
     } = await import("@/lib/correction/span-queries");
@@ -1439,7 +1438,7 @@ async function main() {
     const replayed = await loadSpanDecisionSummariesFor(revived.span.id, revived.revision.id);
     check("a named revision keeps the decisions it was given", replayed === "done", replayed);
 
-    // Aggregates, filters, the strip and the next-open walk read the same states.
+    // Aggregates, the strip and the walk to the next span read the same states.
     const aggregate = (await loadWorkspaceAggregates([stateWorkspace.id], "alice")).get(stateWorkspace.id);
     check("the aggregate counts every span", aggregate?.spanCount === nextOrdinal, aggregate?.spanCount);
     check(
@@ -1467,69 +1466,55 @@ async function main() {
     const bobAggregate = (await loadWorkspaceAggregates([stateWorkspace.id], "bob")).get(stateWorkspace.id);
     check("a different person sees their own share", bobAggregate?.mine.approved === 3, bobAggregate?.mine);
 
-    const mineOpen = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", {
-      afterOrdinal: -1,
-      limit: 50,
-    });
-    check(
-      "the mine-open filter lists what still wants this person",
-      mineOpen.ids.length === 2 &&
-        mineOpen.ids.includes(untouched.span.id) &&
-        mineOpen.ids.includes(revived.span.id) &&
-        !mineOpen.hasMore,
-      mineOpen
-    );
-    const attention = await listFilteredSpanIds(stateWorkspace.id, "alice", "needs_attention", {
-      afterOrdinal: -1,
-      limit: 50,
-    });
-    check("the attention filter lists the disputed span", attention.ids.join() === outvoted.span.id, attention);
-
-    // Pages follow a cursor, because the selection changes with every decision.
-    const firstPage = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", {
-      afterOrdinal: -1,
-      limit: 1,
-    });
-    check("a page that is not the last says so", firstPage.ids.length === 1 && firstPage.hasMore, firstPage);
-
-    // Somebody finishes the first span between the two page fetches. With an
-    // offset the second page would now start one span too late.
-    await decide(untouched.span.id, untouched.revision.id, "alice", "APPROVE");
-    const secondPage = await listFilteredSpanIds(stateWorkspace.id, "alice", "mine_open", {
-      afterOrdinal: untouched.span.ordinal,
-      limit: 1,
-    });
-    check(
-      "the next page starts after the last span shown, whatever changed meanwhile",
-      secondPage.ids.join() === revived.span.id && !secondPage.hasMore,
-      secondPage
-    );
-    const beyond = await listFilteredSpanIds(stateWorkspace.id, "alice", "not_reviewed", {
-      afterOrdinal: 999,
-      limit: 50,
-    });
-    check("a cursor past the end is an empty last page", beyond.ids.length === 0 && !beyond.hasMore, beyond);
-    // Put the fixture back for the walk below.
-    await prisma.transcriptSpanDecision.deleteMany({
-      where: { spanId: untouched.span.id, actorKey: "alice" },
-    });
-
-    const next = await findNextOpenSpan(stateWorkspace.id, "alice");
+    const next = await findNextSpan(stateWorkspace.id, "alice");
     check("resuming opens the first span that wants this person", next?.spanId === untouched.span.id, next);
-    const afterFirst = await findNextOpenSpan(stateWorkspace.id, "alice", untouched.span.ordinal);
+    const afterFirst = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: untouched.span.ordinal });
     check("next opens the following span that wants this person", afterFirst?.spanId === revived.span.id, afterFirst);
-    const wrapped = await findNextOpenSpan(stateWorkspace.id, "alice", revived.span.ordinal);
+    const wrapped = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: revived.span.ordinal });
     check("next wraps round to the start", wrapped?.spanId === untouched.span.id, wrapped);
+
+    const attention = await findNextSpan(stateWorkspace.id, "alice", { kind: "needs_attention" });
+    check("next of a state finds the disputed span", attention?.spanId === outvoted.span.id, attention);
+    const attentionAgain = await findNextSpan(stateWorkspace.id, "alice", {
+      kind: "needs_attention",
+      afterOrdinal: outvoted.span.ordinal,
+    });
+    check(
+      "the only span of a kind is found again from itself",
+      attentionAgain?.spanId === outvoted.span.id,
+      attentionAgain
+    );
+    const unreviewed = await findNextSpan(stateWorkspace.id, "alice", {
+      kind: "not_reviewed",
+      afterOrdinal: untouched.span.ordinal,
+    });
+    check("next of a state skips spans of other states", unreviewed?.spanId === revived.span.id, unreviewed);
+
+    // Somebody finishes a span between two steps: the walk asks the database
+    // each time, so it moves on from where the person is, not from a stale list.
+    const revivedNow = await prisma.transcriptSpan.findUniqueOrThrow({
+      where: { id: revived.span.id },
+      select: { currentRevisionId: true },
+    });
+    await decide(revived.span.id, revivedNow.currentRevisionId as string, "alice", "APPROVE");
+    const afterDecision = await findNextSpan(stateWorkspace.id, "alice", {
+      afterOrdinal: untouched.span.ordinal,
+    });
+    check("a decision made meanwhile is taken into account", afterDecision?.spanId === untouched.span.id, afterDecision);
+    await prisma.transcriptSpanDecision.deleteMany({
+      where: { spanId: revived.span.id, revisionId: revivedNow.currentRevisionId as string, actorKey: "alice" },
+    });
 
     const strip = await loadSpanStrip(stateWorkspace.id, "alice");
     check(
-      "the strip carries every span in order with this person's marks",
+      "the strip carries every span in order, and what still wants this person",
       strip.length === nextOrdinal &&
         strip[0].spanId === untouched.span.id &&
         strip[0].state === "not_reviewed" &&
-        strip[1].approvedByMe &&
+        strip[0].wantsMe &&
+        !strip[1].wantsMe &&
         strip[4].state === "needs_attention" &&
-        !strip[4].disapprovedByMe,
+        strip.filter((row) => row.wantsMe).length === aggregate?.mine.open,
       strip.slice(0, 5)
     );
 
@@ -1583,7 +1568,11 @@ async function main() {
       "an archived workspace is not listed",
       !overview.workspaces.some((item) => item.workspaceId === workspace.id)
     );
-    check("a workspace with unfinished spans is in progress", live?.status === "in_progress", live?.status);
+    check(
+      "a workspace with unfinished spans is in progress and unpublished",
+      live?.work === "in_progress" && live.reader === "unpublished",
+      live
+    );
     check(
       "the overview reports the same progress as the page",
       live?.progress?.spanCount === 2 && live.progress.totalSeconds === 12,
@@ -1595,7 +1584,7 @@ async function main() {
     const unstarted = overview.notStarted.items.find((item) => item.recording.audioHash === unstartedHash);
     check(
       "a primary recording nobody started is listed as not started",
-      unstarted?.status === "not_started" && overview.notStarted.total === 1,
+      unstarted?.work === "not_started" && overview.notStarted.total === 1,
       overview.notStarted
     );
     check("its length comes from the catalog row", unstarted?.recording.durationSeconds === 5405, unstarted?.recording);
@@ -1604,13 +1593,13 @@ async function main() {
       !overview.notStarted.items.some((item) => item.recording.audioHash === AUDIO_HASH)
     );
     check(
-      "the summary counts hours per status",
-      overview.summary.byStatus.not_started.count === 1 &&
-        overview.summary.byStatus.not_started.seconds === 5405 &&
-        overview.summary.byStatus.in_progress.count === overview.workspaces.length &&
-        overview.summary.byStatus.in_progress.seconds ===
+      "the summary counts hours per tab",
+      overview.summary.byTab.not_started.count === 1 &&
+        overview.summary.byTab.not_started.seconds === 5405 &&
+        overview.summary.byTab.in_progress.count === overview.workspaces.length &&
+        overview.summary.byTab.in_progress.seconds ===
           overview.workspaces.reduce((sum, item) => sum + item.recording.durationSeconds, 0),
-      overview.summary.byStatus
+      overview.summary.byTab
     );
 
     const limited = await loadCorrectionOverview({
@@ -1623,6 +1612,40 @@ async function main() {
       limited.notStarted.total === 0 && limited.workspaces.some((item) => item.recording.audioHash === AUDIO_HASH),
       limited.notStarted
     );
+
+    // The recording is published to listeners but its event is not released:
+    // it can be corrected, and nothing about the event is given away.
+    const limitedLive = limited.workspaces.find((item) => item.recording.audioHash === AUDIO_HASH);
+    check(
+      "an unreleased event is not named to someone who may not see it",
+      limitedLive?.recording.eventId === null &&
+        limitedLive.recording.eventTitle === null &&
+        limitedLive.recording.locationName === null &&
+        limitedLive.recording.dateYear === null,
+      limitedLive?.recording
+    );
+    await prisma.catalogEvent.update({ where: { id: event.id }, data: { released: true } });
+    const released = (
+      await loadCorrectionOverview({ catalogId: CATALOG_ID, actorKey: alice.id, canSeeUnreleased: false })
+    ).workspaces.find((item) => item.recording.audioHash === AUDIO_HASH);
+    check(
+      "a released event is named to everyone",
+      released?.recording.eventId === event.id && released.recording.locationName === "Test place",
+      released?.recording
+    );
+    await prisma.catalogEvent.update({ where: { id: event.id }, data: { released: false } });
+
+    // Whoever started a recording has taken it up, before any decision.
+    await prisma.transcriptWorkspace.update({ where: { id: restarted.id }, data: { startedById: alice.id } });
+    const started = (
+      await loadCorrectionOverview({ catalogId: CATALOG_ID, actorKey: alice.id, canSeeUnreleased: true })
+    ).workspaces.find((item) => item.workspaceId === restarted.id);
+    check(
+      "starting a workspace counts as this person's activity",
+      started?.touchedByMe === true && started.myLastActivityAt !== null,
+      started
+    );
+    await prisma.transcriptWorkspace.update({ where: { id: restarted.id }, data: { startedById: null } });
 
     // Touching the workspace makes it this person's, and makes them the last actor.
     const touchedSpan = (await listSpans(restarted.id)).spans[1];
@@ -1673,8 +1696,14 @@ async function main() {
         (item) => item.workspaceId === restarted.id
       );
 
+    // Published with spans still open: the two axes move independently, so
+    // the recording is both what readers see and work in progress.
     const published = await statusNow();
-    check("a snapshot that matches the live text is published", published?.status === "published", published?.status);
+    check(
+      "a snapshot that matches the live text is current, and the work goes on",
+      published?.reader === "current" && published.work === "in_progress",
+      published
+    );
 
     const first = (await listSpans(restarted.id)).spans[0];
     await saveAndApprove({
@@ -1687,12 +1716,12 @@ async function main() {
     const changed = await statusNow();
     check(
       "an edit after publication marks the recording as changed",
-      changed?.status === "published_changed" && changed.changedSinceReaderPublication === 1,
-      changed?.status
+      changed?.reader === "stale" && changed.changedSinceReaderPublication === 1,
+      changed
     );
 
     await prisma.transcriptPublication.update({ where: { id: publication.id }, data: { status: "ACTIVATING" } });
-    check("a publication on its way is reported as publishing", (await statusNow())?.status === "publishing");
+    check("a publication on its way is reported as publishing", (await statusNow())?.reader === "publishing");
 
     await prisma.transcriptWorkspace.update({ where: { id: restarted.id }, data: { readerPublicationId: null } });
     await prisma.transcriptPublication.delete({ where: { id: publication.id } });

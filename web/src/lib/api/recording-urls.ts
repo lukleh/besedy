@@ -142,12 +142,10 @@ export function buildCorrectionUrl(catalogId: string, hash: string): string {
 export function buildCorrectionSpansUrl(
   catalogId: string,
   hash: string,
-  options: { offset?: number; after?: number; limit?: number; filter?: string } = {}
+  options: { offset?: number; limit?: number } = {}
 ): string {
   const params = new URLSearchParams();
-  if (options.filter && options.filter !== "all") params.set("filter", options.filter);
   if (options.offset !== undefined) params.set("offset", String(options.offset));
-  if (options.after !== undefined) params.set("after", String(options.after));
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
   return `${buildCorrectionUrl(catalogId, hash)}/spans${query ? `?${query}` : ""}`;
@@ -157,8 +155,13 @@ export function buildCorrectionStripUrl(catalogId: string, hash: string): string
   return `${buildCorrectionUrl(catalogId, hash)}/strip`;
 }
 
-export function buildCorrectionNextUrl(catalogId: string, hash: string, after: number): string {
-  return `${buildCorrectionUrl(catalogId, hash)}/next?after=${after}`;
+export function buildCorrectionNextUrl(
+  catalogId: string,
+  hash: string,
+  options: { after: number; kind: string }
+): string {
+  const params = new URLSearchParams({ after: String(options.after), kind: options.kind });
+  return `${buildCorrectionUrl(catalogId, hash)}/next?${params.toString()}`;
 }
 
 export function buildCorrectionOverviewUrl(catalogId: string): string {

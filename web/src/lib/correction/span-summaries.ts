@@ -83,20 +83,11 @@ const NO_DECISIONS: SpanDecisionSummary = {
  */
 export async function loadSpanSummaries(
   workspaceId: string,
-  options: {
-    offset?: number;
-    limit?: number;
-    client?: Prisma.TransactionClient;
-    /** Restrict to these spans, in source order */
-    spanIds?: readonly string[];
-  } = {}
+  options: { offset?: number; limit?: number; client?: Prisma.TransactionClient } = {}
 ): Promise<SpanSummaryRow[]> {
   const client = options.client ?? prisma;
   const spans = await client.transcriptSpan.findMany({
-    where: {
-      workspaceId,
-      ...(options.spanIds ? { id: { in: [...options.spanIds] } } : {}),
-    },
+    where: { workspaceId },
     orderBy: { ordinal: "asc" },
     skip: options.offset,
     take: options.limit,

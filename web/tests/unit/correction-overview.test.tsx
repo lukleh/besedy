@@ -6,11 +6,16 @@ import {
   CorrectionOverviewPage,
   formatEventDate,
   formatHours,
-  matchesFilter,
+  orderForTab,
 } from "@/components/correction/correction-overview";
 import type { OverviewItem } from "@/components/correction/correction-types";
 import { fetchJson } from "@/lib/api/fetch-json";
-import { deriveOverviewStatus } from "@/lib/correction/overview-status";
+import {
+  deriveReaderState,
+  deriveWorkStage,
+  inOverviewTab,
+  OVERVIEW_TABS,
+} from "@/lib/correction/overview-status";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
@@ -30,7 +35,8 @@ const zeroStates = { needs_attention: 0, done: 0, needs_second_approval: 0, not_
 
 function item(hash: string, overrides: Partial<OverviewItem> = {}): OverviewItem {
   return {
-    status: "in_progress",
+    work: "in_progress",
+    reader: "unpublished",
     recording: {
       audioHash: hash.padEnd(64, "0"),
       title: `Recording ${hash}`,
@@ -53,7 +59,6 @@ function item(hash: string, overrides: Partial<OverviewItem> = {}): OverviewItem
     touchedByMe: false,
     lastActivity: null,
     myLastActivityAt: null,
-    eligible: false,
     changedSinceReaderPublication: 0,
     publication: { inFlight: null },
     ...overrides,
@@ -61,20 +66,20 @@ function item(hash: string, overrides: Partial<OverviewItem> = {}): OverviewItem
 }
 
 function overview(workspaces: OverviewItem[], notStarted: OverviewItem[] = [], canPublish = true) {
-  const byStatus = Object.fromEntries(
-    ["not_started", "in_progress", "ready", "publishing", "published", "published_changed"].map((status) => [
-      status,
-      { count: 0, seconds: 0 },
-    ])
+  const byTab = Object.fromEntries(
+    OVERVIEW_TABS.map((tab) => [tab, { count: 0, seconds: 0 }])
   ) as Record<string, { count: number; seconds: number }>;
   for (const entry of [...workspaces, ...notStarted]) {
-    byStatus[entry.status].count += 1;
-    byStatus[entry.status].seconds += entry.recording.durationSeconds;
+    for (const tab of OVERVIEW_TABS) {
+      if (!inOverviewTab(entry, tab)) continue;
+      byTab[tab].count += 1;
+      byTab[tab].seconds += entry.recording.durationSeconds;
+    }
   }
   return {
     catalogId: CATALOG_ID,
     canPublish,
-    summary: { byStatus },
+    summary: { byTab },
     workspaces,
     notStarted: { total: notStarted.length, items: notStarted },
   };
@@ -93,32 +98,37 @@ beforeEach(() => {
   fetchJsonMock.mockReset();
 });
 
-describe("deriveOverviewStatus", () => {
-  const base = { eligible: false, readerPublished: false, inFlight: false, changedSinceReaderPublication: 0 };
-
-  it("is in progress until every span is done", () => {
-    expect(deriveOverviewStatus(base)).toBe("in_progress");
+describe("deriveWorkStage", () => {
+  it("is not started without a workspace", () => {
+    expect(deriveWorkStage({ hasWorkspace: false, eligible: false })).toBe("not_started");
   });
 
-  it("is ready once every span is done and nothing is published", () => {
-    expect(deriveOverviewStatus({ ...base, eligible: true })).toBe("ready");
+  it("is in progress until every span is done, and done after", () => {
+    expect(deriveWorkStage({ hasWorkspace: true, eligible: false })).toBe("in_progress");
+    expect(deriveWorkStage({ hasWorkspace: true, eligible: true })).toBe("done");
+  });
+});
+
+describe("deriveReaderState", () => {
+  const base = { readerPublished: false, inFlight: false, changedSinceReaderPublication: 0 };
+
+  it("is unpublished until a snapshot reaches readers", () => {
+    expect(deriveReaderState(base)).toBe("unpublished");
   });
 
-  it("is published when the snapshot matches the live text", () => {
-    expect(deriveOverviewStatus({ ...base, readerPublished: true, eligible: true })).toBe("published");
+  it("is current when the snapshot matches the live text", () => {
+    expect(deriveReaderState({ ...base, readerPublished: true })).toBe("current");
   });
 
   // Readers see the old snapshot while the live text moves on; a curator has
   // to be able to tell, or an edit after publication would go unnoticed.
   it("notices edits made after publication", () => {
-    expect(
-      deriveOverviewStatus({ ...base, readerPublished: true, changedSinceReaderPublication: 3 })
-    ).toBe("published_changed");
+    expect(deriveReaderState({ ...base, readerPublished: true, changedSinceReaderPublication: 3 })).toBe("stale");
   });
 
   it("reports a publication on its way before anything else", () => {
     expect(
-      deriveOverviewStatus({ ...base, inFlight: true, readerPublished: true, changedSinceReaderPublication: 2 })
+      deriveReaderState({ ...base, inFlight: true, readerPublished: true, changedSinceReaderPublication: 2 })
     ).toBe("publishing");
   });
 });
@@ -140,29 +150,56 @@ describe("formatting", () => {
   });
 });
 
-describe("matchesFilter", () => {
+describe("inOverviewTab", () => {
   it("lists what still wants this person under mine, and nothing they have finished", () => {
     const wants = item("a", { touchedByMe: true, mine: { approved: 3, disapproved: 0, waitingOnOthers: 3, open: 97 } });
     const finished = item("b", { touchedByMe: true, mine: { approved: 100, disapproved: 0, waitingOnOthers: 0, open: 0 } });
     const untouched = item("c", { mine: { approved: 0, disapproved: 0, waitingOnOthers: 0, open: 100 } });
 
-    expect(matchesFilter(wants, "mine")).toBe(true);
-    expect(matchesFilter(finished, "mine")).toBe(false);
-    expect(matchesFilter(untouched, "mine")).toBe(false);
+    expect(inOverviewTab(wants, "mine")).toBe(true);
+    expect(inOverviewTab(finished, "mine")).toBe(false);
+    expect(inOverviewTab(untouched, "mine")).toBe(false);
   });
 
-  it("offers a curator what is ready, on its way or edited after publication", () => {
-    expect(matchesFilter(item("a", { status: "ready", eligible: true }), "to_publish")).toBe(true);
-    expect(matchesFilter(item("b", { status: "publishing" }), "to_publish")).toBe(true);
-    expect(matchesFilter(item("c", { status: "published_changed", eligible: true }), "to_publish")).toBe(true);
+  it("offers a curator what is ready, on its way or finished again after publication", () => {
+    expect(inOverviewTab(item("a", { work: "done" }), "to_publish")).toBe(true);
+    expect(inOverviewTab(item("b", { reader: "publishing" }), "to_publish")).toBe(true);
+    expect(inOverviewTab(item("c", { work: "done", reader: "stale" }), "to_publish")).toBe(true);
     // Edited again but not finished: nothing to publish yet.
-    expect(matchesFilter(item("d", { status: "published_changed", eligible: false }), "to_publish")).toBe(false);
-    expect(matchesFilter(item("e", { status: "in_progress" }), "to_publish")).toBe(false);
+    expect(inOverviewTab(item("d", { work: "in_progress", reader: "stale" }), "to_publish")).toBe(false);
+    expect(inOverviewTab(item("e", { work: "done", reader: "current" }), "to_publish")).toBe(false);
+    expect(inOverviewTab(item("f"), "to_publish")).toBe(false);
+  });
+
+  // The reason the status has two axes: correcting a published recording
+  // again is work in progress, and has to be found where that work is listed.
+  it("lists a published recording that is being corrected again as in progress", () => {
+    const reopened = item("a", { work: "in_progress", reader: "stale" });
+    const disputed = item("b", { work: "in_progress", reader: "current" });
+
+    expect(inOverviewTab(reopened, "in_progress")).toBe(true);
+    expect(inOverviewTab(reopened, "published")).toBe(true);
+    expect(inOverviewTab(disputed, "in_progress")).toBe(true);
+    expect(inOverviewTab(item("c", { work: "done", reader: "current" }), "in_progress")).toBe(false);
   });
 
   it("keeps a recording that was edited after publication among the published", () => {
-    expect(matchesFilter(item("a", { status: "published_changed" }), "published")).toBe(true);
-    expect(matchesFilter(item("b", { status: "published" }), "published")).toBe(true);
+    expect(inOverviewTab(item("a", { work: "done", reader: "stale" }), "published")).toBe(true);
+    expect(inOverviewTab(item("b", { work: "done", reader: "current" }), "published")).toBe(true);
+  });
+});
+
+describe("orderForTab", () => {
+  it("puts what still wants this person first among the work in progress", () => {
+    const quiet = item("quiet");
+    const wanted = item("wanted", { mine: { approved: 0, disapproved: 0, waitingOnOthers: 0, open: 5 } });
+    const alsoQuiet = item("also");
+
+    expect(orderForTab([quiet, wanted, alsoQuiet], "in_progress").map((row) => row.workspaceId)).toEqual([
+      "ws-wanted",
+      "ws-quiet",
+      "ws-also",
+    ]);
   });
 });
 
@@ -240,8 +277,8 @@ describe("CorrectionOverviewPage", () => {
   it("counts every tab, and shows the recordings nobody has started", async () => {
     fetchJsonMock.mockResolvedValue(
       overview(
-        [item("a"), item("b", { status: "ready", eligible: true }), item("c", { status: "published" })],
-        [item("n", { status: "not_started", workspaceId: null, progress: null, mine: null })]
+        [item("a"), item("b", { work: "done" }), item("c", { work: "done", reader: "current" })],
+        [item("n", { work: "not_started", workspaceId: null, progress: null, mine: null })]
       )
     );
 
@@ -257,12 +294,12 @@ describe("CorrectionOverviewPage", () => {
 
     const rows = screen.getAllByTestId("correction-overview-row");
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveAttribute("data-status", "not_started");
+    expect(rows[0]).toHaveAttribute("data-work", "not_started");
     expect(within(rows[0]).getByRole("link", { name: "actions.start" })).toBeInTheDocument();
   });
 
   it("offers publishing to a publisher and only opening to everyone else", async () => {
-    const ready = item("ready", { status: "ready", eligible: true });
+    const ready = item("ready", { work: "done" });
 
     fetchJsonMock.mockResolvedValue(overview([ready], [], true));
     const { unmount } = renderPage();
@@ -281,7 +318,8 @@ describe("CorrectionOverviewPage", () => {
     fetchJsonMock.mockResolvedValue(
       overview([
         item("a", {
-          status: "publishing",
+          work: "done",
+          reader: "publishing",
           publication: { inFlight: { status: "ACTIVATING", error: { code: "INDEX_FAILED", message: "boom" } } },
         }),
       ])
@@ -290,7 +328,20 @@ describe("CorrectionOverviewPage", () => {
     renderPage();
     await userEvent.click(await screen.findByTestId("correction-overview-filter-to_publish"));
 
-    expect(screen.getByText("status.publishingStalled")).toBeInTheDocument();
+    expect(screen.getByText("reader.publishingStalled")).toBeInTheDocument();
+  });
+
+  it("shows the work and what readers see side by side", async () => {
+    fetchJsonMock.mockResolvedValue(
+      overview([item("a", { work: "in_progress", reader: "stale", changedSinceReaderPublication: 2 })])
+    );
+
+    renderPage();
+    const [row] = await screen.findAllByTestId("correction-overview-row");
+
+    expect(within(row).getByText("work.in_progress")).toBeInTheDocument();
+    expect(within(row).getByText("reader.stale")).toBeInTheDocument();
+    expect(within(row).getByText('changedSincePublication {"count":2}')).toBeInTheDocument();
   });
 
   it("explains an empty tab instead of showing nothing", async () => {
@@ -305,7 +356,10 @@ describe("CorrectionOverviewPage", () => {
 
   it("totals the hours per stage in the summary", async () => {
     fetchJsonMock.mockResolvedValue(
-      overview([item("a"), item("b", { status: "published", recording: { ...item("b").recording, durationSeconds: 7200 } })])
+      overview([
+        item("a"),
+        item("b", { work: "done", reader: "current", recording: { ...item("b").recording, durationSeconds: 7200 } }),
+      ])
     );
 
     renderPage();

@@ -33,12 +33,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       canManageAccess: capability.canManageAccess,
       canAccessSettings: capability.canAccessSettings,
-      // Who the correction overview is for: everyone who corrects or publishes.
-      // This route resolves access for inactive catalogs too, which the
-      // overview page and API do not serve, so the link follows their rule.
+      // Who the correction overview is for: everyone who corrects. This route
+      // resolves access for inactive catalogs too, which the overview page and
+      // API do not serve, so the link follows their rule.
       canViewCorrectionOverview:
-        (capability.canCorrectTranscripts || capability.canPublishTranscript) &&
-        (await findActiveCatalog(catalogId)) !== null,
+        capability.canCorrectTranscripts && (await findActiveCatalog(catalogId)) !== null,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog capability", "fetch");

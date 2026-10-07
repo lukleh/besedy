@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OVERVIEW_TABS, READER_STATES, WORK_STAGES } from "@/lib/correction/overview-status";
 
 export const spanStateSchema = z.enum([
   "needs_attention",
@@ -32,9 +33,7 @@ export const spanPageSchema = z.object({
   workspaceId: z.string(),
   offset: z.number(),
   limit: z.number(),
-  /** Every span of the recording; null on a page a filter selected */
-  total: z.number().nullable(),
-  hasMore: z.boolean(),
+  total: z.number(),
   spans: z.array(spanViewSchema),
 });
 
@@ -158,15 +157,15 @@ export const spanHistorySchema = z.object({
 
 export type SpanHistory = z.infer<typeof spanHistorySchema>;
 
-export const spanFilterSchema = z.enum([
-  "all",
+/** What "next" walks: what still wants this person, or one span state. */
+export const spanKindSchema = z.enum([
   "mine_open",
   "needs_attention",
   "needs_second_approval",
   "not_reviewed",
 ]);
 
-export type SpanFilter = z.infer<typeof spanFilterSchema>;
+export type SpanKind = z.infer<typeof spanKindSchema>;
 
 export const stripSpanSchema = z.object({
   spanId: z.string(),
@@ -174,8 +173,8 @@ export const stripSpanSchema = z.object({
   startSeconds: z.number(),
   endSeconds: z.number(),
   state: spanStateSchema,
-  approvedByMe: z.boolean(),
-  disapprovedByMe: z.boolean(),
+  /** It still wants this person, as the server decides it */
+  wantsMe: z.boolean(),
 });
 
 export type StripSpan = z.infer<typeof stripSpanSchema>;
@@ -189,16 +188,8 @@ export const nextSpanSchema = z.object({
   next: z.object({ spanId: z.string(), ordinal: z.number() }).nullable(),
 });
 
-export const overviewStatusSchema = z.enum([
-  "not_started",
-  "in_progress",
-  "ready",
-  "publishing",
-  "published",
-  "published_changed",
-]);
-
-export type OverviewStatus = z.infer<typeof overviewStatusSchema>;
+export const workStageSchema = z.enum(WORK_STAGES);
+export const readerStateSchema = z.enum(READER_STATES);
 
 const stateCountsSchema = z.object({
   needs_attention: z.number(),
@@ -208,7 +199,8 @@ const stateCountsSchema = z.object({
 });
 
 export const overviewItemSchema = z.object({
-  status: overviewStatusSchema,
+  work: workStageSchema,
+  reader: readerStateSchema,
   recording: z.object({
     audioHash: z.string(),
     title: z.string().nullable(),
@@ -240,7 +232,6 @@ export const overviewItemSchema = z.object({
   touchedByMe: z.boolean(),
   lastActivity: z.object({ at: z.string(), actorName: z.string().nullable() }).nullable(),
   myLastActivityAt: z.string().nullable(),
-  eligible: z.boolean(),
   changedSinceReaderPublication: z.number(),
   publication: z
     .object({
@@ -260,7 +251,7 @@ export const correctionOverviewSchema = z.object({
   catalogId: z.string(),
   canPublish: z.boolean(),
   summary: z.object({
-    byStatus: z.record(overviewStatusSchema, z.object({ count: z.number(), seconds: z.number() })),
+    byTab: z.record(z.enum(OVERVIEW_TABS), z.object({ count: z.number(), seconds: z.number() })),
   }),
   workspaces: z.array(overviewItemSchema),
   notStarted: z.object({ total: z.number(), items: z.array(overviewItemSchema) }),
