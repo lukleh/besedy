@@ -379,10 +379,25 @@ all write commands still enforce permission, revision and workflow invariants
 on the server.
 
 The larger corrector dashboard—how people see all of their work, what remains,
-other people's decisions and discussion across recordings—is intentionally not
-settled here. The pilot should determine what overview is actually useful. A
-recording-level surface must at least support stopping and resuming within a
-multi-hour recording.
+other people's decisions and discussion across recordings—was left open for
+the pilot to settle. A recording-level surface must at least support stopping
+and resuming within a multi-hour recording.
+
+*Added 2026-10-07.* The catalog overview (`/catalog/<id>/correction`) is the
+cross-recording view. It stores nothing: progress, this person's share and
+whether a published snapshot has been edited since are all read from the same
+derived span states as the working surface. A recording stands on two
+independent axes: the work (not started, in progress, done) and what readers
+see (the machine transcript, a publication on its way, a current snapshot, or
+a snapshot the live text has moved past). They are kept apart because a
+published recording can be corrected again, and that work belongs with the
+rest of the work in progress. Inside a recording, the segment list always
+holds the whole recording; "next" walks the spans of one kind (what still
+wants the person, or one state), and a strip over the whole recording shows
+where the gaps and disputes are. A filtered list was tried and dropped: its
+members changed with every decision, so the segment being edited could drop
+out of it. Per-person unread comments, assignments and notifications remain
+deferred.
 
 ### Readers see two progress measures before first publication
 
@@ -686,8 +701,9 @@ that gate.
 - Whether correction should later expand beyond primary event recordings, and
   how newly eligible recordings would enter the publication gate without
   unexpectedly losing their existing machine-transcript reader access.
-- The cross-recording corrector overview: personal work, remaining work,
-  disagreements and discussion.
+- Discussion across recordings: which comments are new to a person. The
+  overview shows personal work, remaining work and disagreements, but nothing
+  records what a person has already read.
 - The detailed recording navigation and comment-thread presentation beyond the
   persistence and workflow rules fixed here.
 - Whether a larger, less personal correction corps eventually needs assignments,

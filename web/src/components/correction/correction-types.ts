@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OVERVIEW_TABS, READER_STATES, WORK_STAGES } from "@/lib/correction/overview-status";
 
 export const spanStateSchema = z.enum([
   "needs_attention",
@@ -155,3 +156,105 @@ export const spanHistorySchema = z.object({
 });
 
 export type SpanHistory = z.infer<typeof spanHistorySchema>;
+
+/** What "next" walks: what still wants this person, or one span state. */
+export const spanKindSchema = z.enum([
+  "mine_open",
+  "needs_attention",
+  "needs_second_approval",
+  "not_reviewed",
+]);
+
+export type SpanKind = z.infer<typeof spanKindSchema>;
+
+export const stripSpanSchema = z.object({
+  spanId: z.string(),
+  ordinal: z.number(),
+  startSeconds: z.number(),
+  endSeconds: z.number(),
+  state: spanStateSchema,
+  /** It still wants this person, as the server decides it */
+  wantsMe: z.boolean(),
+});
+
+export type StripSpan = z.infer<typeof stripSpanSchema>;
+
+export const spanStripSchema = z.object({
+  workspaceId: z.string(),
+  spans: z.array(stripSpanSchema),
+});
+
+export const nextSpanSchema = z.object({
+  next: z.object({ spanId: z.string(), ordinal: z.number() }).nullable(),
+});
+
+export const workStageSchema = z.enum(WORK_STAGES);
+export const readerStateSchema = z.enum(READER_STATES);
+
+const stateCountsSchema = z.object({
+  needs_attention: z.number(),
+  done: z.number(),
+  needs_second_approval: z.number(),
+  not_reviewed: z.number(),
+});
+
+export const overviewItemSchema = z.object({
+  work: workStageSchema,
+  reader: readerStateSchema,
+  recording: z.object({
+    audioHash: z.string(),
+    title: z.string().nullable(),
+    eventId: z.number().nullable(),
+    eventTitle: z.string().nullable(),
+    locationName: z.string().nullable(),
+    dateYear: z.number().nullable(),
+    dateMonth: z.number().nullable(),
+    dateDay: z.number().nullable(),
+    durationSeconds: z.number(),
+  }),
+  workspaceId: z.string().nullable(),
+  progress: z
+    .object({
+      spanCount: z.number(),
+      totalSeconds: z.number(),
+      counts: stateCountsSchema,
+      seconds: stateCountsSchema,
+    })
+    .nullable(),
+  mine: z
+    .object({
+      approved: z.number(),
+      disapproved: z.number(),
+      waitingOnOthers: z.number(),
+      open: z.number(),
+    })
+    .nullable(),
+  touchedByMe: z.boolean(),
+  lastActivity: z.object({ at: z.string(), actorName: z.string().nullable() }).nullable(),
+  myLastActivityAt: z.string().nullable(),
+  changedSinceReaderPublication: z.number(),
+  publication: z
+    .object({
+      inFlight: z
+        .object({
+          status: z.enum(["PENDING", "ACTIVATING", "ROLLING_BACK", "SUCCEEDED", "FAILED", "ROLLED_BACK"]),
+          error: publicationErrorSchema.nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+});
+
+export type OverviewItem = z.infer<typeof overviewItemSchema>;
+
+export const correctionOverviewSchema = z.object({
+  catalogId: z.string(),
+  canPublish: z.boolean(),
+  summary: z.object({
+    byTab: z.record(z.enum(OVERVIEW_TABS), z.object({ count: z.number(), seconds: z.number() })),
+  }),
+  workspaces: z.array(overviewItemSchema),
+  notStarted: z.object({ total: z.number(), items: z.array(overviewItemSchema) }),
+});
+
+export type CorrectionOverview = z.infer<typeof correctionOverviewSchema>;

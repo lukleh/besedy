@@ -8,18 +8,20 @@ import Link from "next/link";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
+import { ChevronLeft, Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
+  buildCorrectionOverviewPath,
   buildCorrectionPublicationUrl,
   buildCorrectionUrl,
   buildRecordingEntryUrl,
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
+import { formatHoursMinutes } from "@/lib/correction/format";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionSurface } from "./correction-surface";
 import { useLandscapeWorkspace } from "./use-landscape-workspace";
@@ -35,13 +37,6 @@ interface CorrectionWorkspaceProps {
   hash: string;
   userId: string;
   canPublish: boolean;
-}
-
-function formatDuration(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
 }
 
 export function CorrectionWorkspace({
@@ -174,6 +169,14 @@ export function CorrectionWorkspace({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div>
+            <Link
+              href={buildCorrectionOverviewPath(catalogId)}
+              className="mb-1 inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+              data-testid="correction-overview-link"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              {t("overviewLink")}
+            </Link>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t("pageTitle")}
             </p>
@@ -353,7 +356,7 @@ export function CorrectionWorkspace({
 
           <p className="text-xs text-muted-foreground">
             {t("frozenSource", { backend: state.workspace.sourceBackend })} ·{" "}
-            {formatDuration(state.workspace.spanDurationSeconds)}
+            {formatHoursMinutes(state.workspace.spanDurationSeconds)}
           </p>
 
           <CorrectionSurface

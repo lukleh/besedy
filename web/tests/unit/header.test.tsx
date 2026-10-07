@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   search: "tab=events",
   backTargetUrl: null as string | null,
   routeOptions: undefined as { downloadsIsHome?: boolean; offline?: boolean } | undefined,
+  catalogId: null as string | null,
+  access: null as { canManageAccess: boolean; canViewCorrectionOverview: boolean } | null,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -56,11 +58,11 @@ vi.mock("@/hooks/use-active-group", () => ({
 }));
 
 vi.mock("@/hooks/use-effective-catalog-id", () => ({
-  useEffectiveCatalogId: () => ({ effectiveCatalogId: null }),
+  useEffectiveCatalogId: () => ({ effectiveCatalogId: mocks.catalogId }),
 }));
 
 vi.mock("@/hooks/use-catalog-access-summary", () => ({
-  useCatalogAccessSummary: () => ({ data: null }),
+  useCatalogAccessSummary: () => ({ data: mocks.access }),
 }));
 
 vi.mock("@/hooks/use-downloads", () => ({
@@ -98,6 +100,27 @@ describe("Header", () => {
     mocks.search = "tab=events";
     mocks.backTargetUrl = null;
     mocks.routeOptions = undefined;
+    mocks.catalogId = null;
+    mocks.access = null;
+  });
+
+  it("links to the correction overview for people who correct or publish", () => {
+    mocks.catalogId = "c1";
+    mocks.access = { canManageAccess: false, canViewCorrectionOverview: true };
+    render(<Header />);
+
+    expect(screen.getByTestId("header-correction-overview")).toHaveAttribute(
+      "href",
+      expect.stringContaining("/catalog/c1/correction")
+    );
+  });
+
+  it("keeps the correction overview from everybody else", () => {
+    mocks.catalogId = "c1";
+    mocks.access = { canManageAccess: true, canViewCorrectionOverview: false };
+    render(<Header />);
+
+    expect(screen.queryByTestId("header-correction-overview")).not.toBeInTheDocument();
   });
 
   it("shows the back control in place of the logo when the page has a back target", () => {
