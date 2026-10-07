@@ -1,8 +1,12 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Ban,
   Eye,
   FolderKey,
@@ -15,7 +19,7 @@ import {
   Trash2,
   UserCheck,
 } from "lucide-react";
-import { formatRelativeTime } from "@/lib/date-format";
+import { formatLocalDate, formatRelativeTime } from "@/lib/date-format";
 import { PermissionIcons } from "@/components/catalog/permission-icons";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -39,10 +43,13 @@ import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import {
   getUserInitials,
   isPendingPortalAdmission,
+  sortUsersByActivity,
   statusConfig,
   summarizeCatalogNames,
   type PendingPortalAdmission,
+  type SortDirection,
   type User,
+  type UserActivitySortKey,
   type UserOrPortalAdmission,
 } from "./users-content-types";
 
@@ -83,6 +90,72 @@ export function UsersTable({
 }: UsersTableProps) {
   const locale = useLocale();
   const t = useTranslations("admin");
+  const isPendingView = statusFilter === "PENDING";
+  const columnCount = isPendingView ? 6 : 7;
+  const [sort, setSort] = useState<{
+    key: UserActivitySortKey;
+    direction: SortDirection;
+  }>({ key: "lastActivityAt", direction: "desc" });
+
+  // Only the Pending view lists admissions. They have no activity, so they
+  // keep the API order.
+  const sortedItems = useMemo(
+    () =>
+      usersOrAdmissions && !isPendingView
+        ? sortUsersByActivity(
+            usersOrAdmissions.filter(
+              (item): item is User => !isPendingPortalAdmission(item)
+            ),
+            sort.key,
+            sort.direction
+          )
+        : usersOrAdmissions,
+    [isPendingView, sort, usersOrAdmissions]
+  );
+
+  const handleSort = (key: UserActivitySortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === "desc" ? "asc" : "desc" }
+        : { key, direction: "desc" }
+    );
+  };
+
+  const renderSortableHead = (
+    key: UserActivitySortKey,
+    label: string,
+    className: string
+  ) => {
+    const active = sort.key === key;
+    const SortIcon = !active
+      ? ArrowUpDown
+      : sort.direction === "asc"
+        ? ArrowUp
+        : ArrowDown;
+    return (
+      <TableHead
+        className={className}
+        aria-sort={
+          !active ? "none" : sort.direction === "asc" ? "ascending" : "descending"
+        }
+      >
+        <button
+          type="button"
+          className="inline-flex items-center gap-1"
+          onClick={() => handleSort(key)}
+        >
+          {label}
+          <SortIcon
+            className={
+              active
+                ? "h-3.5 w-3.5 text-foreground"
+                : "h-3.5 w-3.5 text-muted-foreground"
+            }
+          />
+        </button>
+      </TableHead>
+    );
+  };
 
   return (
     <div className="rounded-md border">
@@ -103,31 +176,44 @@ export function UsersTable({
             <TableHead className="hidden lg:table-cell">
               {t("users.table.catalogs")}
             </TableHead>
-            <TableHead className="hidden xl:table-cell">
-              {statusFilter === "PENDING"
-                ? t("users.table.added")
-                : t("users.table.lastLogin")}
-            </TableHead>
+            {isPendingView ? (
+              <TableHead className="hidden xl:table-cell">
+                {t("users.table.added")}
+              </TableHead>
+            ) : (
+              <>
+                {renderSortableHead(
+                  "lastActivityAt",
+                  t("users.table.lastActivity"),
+                  "hidden lg:table-cell"
+                )}
+                {renderSortableHead(
+                  "lastPlayedAt",
+                  t("users.table.lastPlayed"),
+                  "hidden xl:table-cell"
+                )}
+              </>
+            )}
             <TableHead className="w-[50px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-8">
+              <TableCell colSpan={columnCount} className="text-center py-8">
                 {t("users.loading")}
               </TableCell>
             </TableRow>
-          ) : usersOrAdmissions?.length === 0 ? (
+          ) : sortedItems?.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-8">
+              <TableCell colSpan={columnCount} className="text-center py-8">
                 {statusFilter === "PENDING"
                   ? t("users.noPendingAdmissionsFound")
                   : t("users.noUsersFound")}
               </TableCell>
             </TableRow>
           ) : (
-            usersOrAdmissions?.map((item) =>
+            sortedItems?.map((item) =>
               isPendingPortalAdmission(item) ? (
                 <PendingAdmissionRow
                   key={item.id}
@@ -367,11 +453,16 @@ function UserRow({
           <span className="text-muted-foreground">-</span>
         )}
       </TableCell>
-      <TableCell className="hidden xl:table-cell text-muted-foreground">
-        {user.lastLoginAt
-          ? formatRelativeTime(user.lastLoginAt, locale)
-          : t("users.never")}
-      </TableCell>
+      <ActivityTimeCell
+        className="hidden lg:table-cell"
+        locale={locale}
+        value={user.lastActivityAt}
+      />
+      <ActivityTimeCell
+        className="hidden xl:table-cell"
+        locale={locale}
+        value={user.lastPlayedAt}
+      />
       <TableCell>
         <ResponsiveMenu>
           <ResponsiveMenuTrigger asChild>
@@ -439,5 +530,28 @@ function UserRow({
         </ResponsiveMenu>
       </TableCell>
     </TableRow>
+  );
+}
+
+function ActivityTimeCell({
+  className,
+  locale,
+  value,
+}: {
+  className: string;
+  locale: string;
+  value: string | null;
+}) {
+  const t = useTranslations("admin");
+  return (
+    <TableCell className={`${className} text-muted-foreground`}>
+      {value ? (
+        <span title={formatLocalDate(value, locale, "PPpp")}>
+          {formatRelativeTime(value, locale)}
+        </span>
+      ) : (
+        t("users.never")
+      )}
+    </TableCell>
   );
 }

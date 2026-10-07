@@ -158,6 +158,7 @@ export default function UsersPageContent() {
       if (statusFilter && statusFilter !== "all") {
         params.set("status", statusFilter);
       }
+      params.set("include", "activity");
       return fetchJson<UserOrPortalAdmission[]>(
         `/api/admin/users?${params.toString()}`
       );

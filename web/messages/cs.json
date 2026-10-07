@@ -873,7 +873,8 @@
         "role": "Role",
         "access": "Přístup",
         "catalogs": "Katalogy",
-        "lastLogin": "Poslední přihlášení",
+        "lastActivity": "Poslední aktivita",
+        "lastPlayed": "Naposledy přehráno",
         "added": "Přidáno",
         "actions": "Akce"
       },

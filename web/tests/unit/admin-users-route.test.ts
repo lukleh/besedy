@@ -21,6 +21,7 @@ vi.mock("@/lib/db", () => ({
     user: {
       findMany: vi.fn(),
     },
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -31,6 +32,7 @@ describe("admin users route", () => {
     user: {
       findMany: ReturnType<typeof vi.fn>;
     };
+    $queryRaw: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(async () => {
@@ -43,6 +45,123 @@ describe("admin users route", () => {
     requireAuth = permissionsModule.requireAuth as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
+    prisma.$queryRaw.mockResolvedValue([]);
+  });
+
+  it("adds last played and last activity times from the activity query", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: "user-1",
+        name: "Listener",
+        email: "listener@example.com",
+        image: null,
+        status: "ACTIVE",
+        isSuperadmin: false,
+        isAdmin: false,
+        lastLoginAt: new Date("2026-05-01T08:00:00.000Z"),
+        createdAt: new Date("2026-04-01T08:00:00.000Z"),
+        activatedAt: null,
+        catalogAccess: [],
+      },
+      {
+        id: "user-2",
+        name: "Idle",
+        email: "idle@example.com",
+        image: null,
+        status: "ACTIVE",
+        isSuperadmin: false,
+        isAdmin: false,
+        lastLoginAt: null,
+        createdAt: new Date("2026-04-01T08:00:00.000Z"),
+        activatedAt: null,
+        catalogAccess: [],
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: "user-1",
+        last_played_at: new Date("2026-10-01T18:30:00.000Z"),
+        last_activity_at: new Date("2026-10-02T09:15:00.000Z"),
+      },
+      { id: "user-2", last_played_at: null, last_activity_at: null },
+    ]);
+
+    const response = await getAdminUsers(
+      new NextRequest("http://localhost/api/admin/users?include=activity")
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body[0]).toMatchObject({
+      id: "user-1",
+      lastPlayedAt: "2026-10-01T18:30:00.000Z",
+      lastActivityAt: "2026-10-02T09:15:00.000Z",
+    });
+    expect(body[1]).toMatchObject({
+      id: "user-2",
+      lastPlayedAt: null,
+      lastActivityAt: null,
+    });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw.mock.calls[0]).toContainEqual([
+      "user-1",
+      "user-2",
+    ]);
+  });
+
+  it("skips the activity query when no users match", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+    prisma.user.findMany.mockResolvedValue([]);
+
+    const response = await getAdminUsers(
+      new NextRequest(
+        "http://localhost/api/admin/users?search=nobody&include=activity"
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("leaves activity out unless it is requested", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: "user-1",
+        name: "Listener",
+        email: "listener@example.com",
+        image: null,
+        status: "ACTIVE",
+        isSuperadmin: false,
+        isAdmin: false,
+        lastLoginAt: null,
+        createdAt: new Date("2026-04-01T08:00:00.000Z"),
+        activatedAt: null,
+        catalogAccess: [],
+      },
+    ]);
+
+    const response = await getAdminUsers(
+      new NextRequest("http://localhost/api/admin/users")
+    );
+
+    const [user] = await response.json();
+    expect(user).not.toHaveProperty("lastPlayedAt");
+    expect(user).not.toHaveProperty("lastActivityAt");
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown include value", async () => {
+    requireAuth.mockResolvedValue("admin-1");
+
+    const response = await getAdminUsers(
+      new NextRequest("http://localhost/api/admin/users?include=everything")
+    );
+
+    expect(response.status).toBe(400);
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 
   it("returns unordered catalog roles and catalog names", async () => {

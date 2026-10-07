@@ -873,7 +873,8 @@
         "role": "Role",
         "access": "Access",
         "catalogs": "Catalogs",
-        "lastLogin": "Last Login",
+        "lastActivity": "Last Activity",
+        "lastPlayed": "Last Played",
         "added": "Added",
         "actions": "Actions"
       },

@@ -4,6 +4,7 @@ import {
   getPendingPortalAdmissionMutationPath,
   getUserInitials,
   isPendingPortalAdmission,
+  sortUsersByActivity,
   summarizeCatalogNames,
   type PendingPortalAdmission,
   type User,
@@ -18,6 +19,8 @@ const baseUser: User = {
   isSuperadmin: false,
   isAdmin: false,
   lastLoginAt: null,
+  lastPlayedAt: null,
+  lastActivityAt: null,
   createdAt: "2026-03-10T00:00:00.000Z",
   activatedAt: null,
   catalogRoles: [],
@@ -91,5 +94,58 @@ describe("users content helper types", () => {
         id: "pending@example.com",
       })
     ).toBe("/api/admin/portal-admissions/pending@example.com");
+  });
+
+  describe("sortUsersByActivity", () => {
+    const users: User[] = [
+      { ...baseUser, id: "never" },
+      {
+        ...baseUser,
+        id: "old",
+        lastActivityAt: "2026-09-01T10:00:00.000Z",
+        lastPlayedAt: "2026-10-03T10:00:00.000Z",
+      },
+      {
+        ...baseUser,
+        id: "recent",
+        lastActivityAt: "2026-10-05T10:00:00.000Z",
+        lastPlayedAt: "2026-08-01T10:00:00.000Z",
+      },
+      {
+        ...baseUser,
+        id: "tie",
+        lastActivityAt: "2026-10-05T10:00:00.000Z",
+      },
+    ];
+    const ids = (items: User[]) => items.map((user) => user.id);
+
+    it("puts the most recent activity first and users without any last", () => {
+      expect(ids(sortUsersByActivity(users, "lastActivityAt", "desc"))).toEqual(
+        ["recent", "tie", "old", "never"]
+      );
+    });
+
+    it("keeps users without a time last when sorting oldest first", () => {
+      expect(ids(sortUsersByActivity(users, "lastActivityAt", "asc"))).toEqual([
+        "old",
+        "recent",
+        "tie",
+        "never",
+      ]);
+    });
+
+    it("sorts by last played independently of last activity", () => {
+      expect(ids(sortUsersByActivity(users, "lastPlayedAt", "desc"))).toEqual([
+        "old",
+        "recent",
+        "never",
+        "tie",
+      ]);
+    });
+
+    it("does not reorder the input array", () => {
+      sortUsersByActivity(users, "lastActivityAt", "desc");
+      expect(ids(users)).toEqual(["never", "old", "recent", "tie"]);
+    });
   });
 });
