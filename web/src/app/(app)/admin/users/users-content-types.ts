@@ -33,6 +33,8 @@ export interface User {
   isSuperadmin: boolean;
   isAdmin: boolean;
   lastLoginAt: string | null;
+  lastPlayedAt: string | null;
+  lastActivityAt: string | null;
   createdAt: string;
   activatedAt: string | null;
   catalogRoles: CatalogRole[];
@@ -81,6 +83,36 @@ export function isPendingPortalAdmission(
   item: UserOrPortalAdmission
 ): item is PendingPortalAdmission {
   return item.type === "portal_admission";
+}
+
+export type UserActivitySortKey = "lastActivityAt" | "lastPlayedAt";
+export type SortDirection = "asc" | "desc";
+
+/**
+ * Sorts users by one activity timestamp. Users with no timestamp stay last in
+ * either direction, and ties keep the order the API returned.
+ */
+export function sortUsersByActivity<T extends UserOrPortalAdmission>(
+  items: T[],
+  key: UserActivitySortKey,
+  direction: SortDirection
+): T[] {
+  const timeOf = (item: T) => {
+    if (isPendingPortalAdmission(item)) return null;
+    const value = item[key];
+    return value ? Date.parse(value) : null;
+  };
+  return items
+    .map((item, index) => ({ item, index, time: timeOf(item) }))
+    .sort((a, b) => {
+      if (a.time === null || b.time === null) {
+        if (a.time === b.time) return a.index - b.index;
+        return a.time === null ? 1 : -1;
+      }
+      const diff = direction === "asc" ? a.time - b.time : b.time - a.time;
+      return diff || a.index - b.index;
+    })
+    .map(({ item }) => item);
 }
 
 export function getUserInitials(name: string | null, email: string) {
