@@ -243,6 +243,7 @@ describe("EventDetail edit menu", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useRecordingEntryMock.mockReturnValue({ data: undefined });
   });
 
   function linkHrefs() {
@@ -292,6 +293,29 @@ describe("EventDetail edit menu", () => {
   it("leaves correction out of the menu for a recording that is not available", () => {
     grantCorrection(true, false);
     renderEventDetail(eventDetail());
+
+    expect(linkHrefs()).toEqual([]);
+  });
+
+  it("offers correction for the primary recording of an event with several", () => {
+    const recording = eventDetail().recordings[0];
+    grantCorrection();
+    renderEventDetail(
+      eventDetail({
+        recordings: [
+          { ...recording, audioHash: "b".repeat(64), isPrimary: false, sortOrder: 0 },
+          { ...recording, sortOrder: 1 },
+        ],
+      })
+    );
+
+    expect(linkHrefs()).toEqual([`/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`]);
+  });
+
+  it("leaves correction out of the menu when the selected recording is not the primary", () => {
+    const recording = eventDetail().recordings[0];
+    grantCorrection();
+    renderEventDetail(eventDetail({ recordings: [{ ...recording, isPrimary: false }] }));
 
     expect(linkHrefs()).toEqual([]);
   });
