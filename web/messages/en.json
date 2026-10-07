@@ -950,7 +950,7 @@
         "access": "Access",
         "catalogs": "Catalogs",
         "lastActivity": "Last Activity",
-        "lastPlayed": "Last Played",
+        "lastPlayed": "Last Audio Access",
         "added": "Added",
         "actions": "Actions"
       },

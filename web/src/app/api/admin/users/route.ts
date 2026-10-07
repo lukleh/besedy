@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { UserStatus } from "@/generated/prisma/client";
+import { AuditAction } from "@/generated/prisma/enums";
 import { UserListQuerySchema } from "@/lib/validation/schemas";
 import { validateSearchParams, handlePrismaError } from "@/lib/api";
 import { requireAdminCapability } from "@/lib/access/require-admin";
@@ -14,19 +15,25 @@ interface UserActivityRow {
 }
 
 /**
- * Last played is the latest playback progress save: the player saves every
- * few seconds while a recording plays, and offline listening saves when it
- * syncs. Last activity also counts audited actions (user_id is always the
- * actor), MCP tool calls, and the last sign-in. GREATEST ignores NULLs.
+ * Last played (shown as "Last Audio Access") is the later of the latest
+ * playback progress save and the latest audited audio stream or download.
+ * The player saves progress every few seconds while a recording plays, and
+ * offline listening saves when it syncs, but progress rows only exist since
+ * they were introduced, and radio playback never saves them. The audit
+ * entries cover those plays, but also the player's metadata preload when a
+ * recording page opens, radio prefetches and downloads, so the column means
+ * the last audio access, not a confirmed play. Last activity also counts
+ * audited actions (user_id is always the actor), MCP tool calls, and the
+ * last sign-in. GREATEST ignores NULLs.
  */
 async function getUserActivity(userIds: string[]) {
   if (userIds.length === 0) return new Map<string, UserActivityRow>();
   const rows = await prisma.$queryRaw<UserActivityRow[]>`
     SELECT
       s.id,
-      s.last_played_at,
+      GREATEST(s.last_progress_at, s.last_audio_at) AS last_played_at,
       GREATEST(
-        s.last_played_at,
+        s.last_progress_at,
         s.last_login_at,
         s.last_audit_at,
         s.last_mcp_at,
@@ -37,7 +44,13 @@ async function getUserActivity(userIds: string[]) {
         u.id,
         u.last_login_at,
         (SELECT max(p.updated_at) FROM recording_playback_progress p
-          WHERE p.user_id = u.id) AS last_played_at,
+          WHERE p.user_id = u.id) AS last_progress_at,
+        (SELECT max(a.created_at) FROM audit_log a
+          WHERE a.user_id = u.id
+            AND a.action IN (
+              ${AuditAction.AUDIO_STREAMED}::"AuditAction",
+              ${AuditAction.AUDIO_DOWNLOADED}::"AuditAction"
+            )) AS last_audio_at,
         (SELECT max(a.created_at) FROM audit_log a
           WHERE a.user_id = u.id) AS last_audit_at,
         (SELECT max(m.created_at) FROM mcp_tool_invocation m
