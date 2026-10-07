@@ -426,7 +426,9 @@ export function RecordingTranscriptSection({
           canDownload={canDownloadTranscripts}
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}
-          canCorrectTranscripts={canCorrectTranscripts}
+          // Only the progress panel's link reads this, and the embedding page's
+          // menu replaces it along with the heading button.
+          canCorrectTranscripts={canCorrectTranscripts && !hideCorrectionLink}
           onTranscriptChange={onTranscriptChange}
         />
       )}

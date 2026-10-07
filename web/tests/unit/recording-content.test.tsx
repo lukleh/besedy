@@ -13,6 +13,7 @@ const useOnlineStatusMock = vi.fn();
 const useRecordingPlaybackMock = vi.fn();
 const useDownloadRecordMock = vi.fn();
 const audioPlayerMock = vi.fn();
+const transcriptViewerMock = vi.fn();
 const useSessionMock = vi.fn();
 const useRecordingBookmarksMock = vi.fn();
 
@@ -109,7 +110,10 @@ vi.mock("@/components/transcript/transcript-stream-viewer", () => ({
 }));
 
 vi.mock("@/components/transcript/transcript-viewer", () => ({
-  TranscriptViewer: () => <div data-testid="transcript-viewer" />,
+  TranscriptViewer: (props: unknown) => {
+    transcriptViewerMock(props);
+    return <div data-testid="transcript-viewer" />;
+  },
 }));
 
 describe("RecordingContent transcript toggle", () => {
@@ -261,6 +265,10 @@ describe("RecordingContent transcript toggle", () => {
     expect(
       screen.queryByRole("link", { name: "correction.openSurface" })
     ).not.toBeInTheDocument();
+    // Nor from the progress panel shown before a transcript is published.
+    expect(transcriptViewerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ canCorrectTranscripts: false })
+    );
   });
 
   it("does not offer the correction surface for a recording outside correction scope", () => {
