@@ -7,13 +7,17 @@ import { isCorrectionEligibleRecording } from "@/lib/correction/eligibility";
 import { readMachineSource, resolveConfiguredDefaultBackend, type CanonicalSegment } from "@/lib/correction/source";
 import { resolveWorkspaceDir, resolveWorkspaceSourcePath, writeFileAtomic } from "@/lib/correction/storage";
 import { fingerprintContent, hashSpanText, normalizeSpanText } from "@/lib/correction/text";
-import { hasBeenReviewed, type SpanState } from "@/lib/correction/span-state";
+import type { SpanState } from "@/lib/correction/span-state";
 import { loadSpanSummaries, type SpanSummaryRow } from "@/lib/correction/span-summaries";
 import {
-  eligibilityOf,
-  evaluateSpanSummaries,
-  type PublicationEligibility,
-} from "@/lib/correction/publication-eligibility";
+  findNextOpenSpan,
+  listFilteredSpanIds,
+  loadWorkspaceAggregates,
+  type SpanFilter,
+  type SpanPosition,
+  type WorkspaceAggregate,
+} from "@/lib/correction/span-queries";
+import type { PublicationEligibility } from "@/lib/correction/publication-eligibility";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 export interface WorkspaceSummary {
@@ -304,17 +308,32 @@ export interface SpanPage {
 /**
  * Spans with their derived state.
  *
- * Only decisions bound to each span's current revision are loaded, so a
- * superseded approval cannot leak into the count.
+ * Only decisions bound to each span's current revision count, so a
+ * superseded approval cannot leak into the state. `total` is the size of what
+ * was asked for: every span, or the spans a filter selects.
  */
 export async function listSpans(
   workspaceId: string,
-  options: { offset?: number; limit?: number } = {}
+  options: { offset?: number; limit?: number; filter?: SpanFilter; actorKey?: string } = {}
 ): Promise<SpanPage> {
-  const [total, spans] = await Promise.all([
-    prisma.transcriptSpan.count({ where: { workspaceId } }),
-    loadSpanSummaries(workspaceId, { offset: options.offset, limit: options.limit }),
-  ]);
+  const filter = options.filter ?? "all";
+  const offset = options.offset ?? 0;
+
+  let total: number;
+  let spans: SpanSummaryRow[];
+  if (filter === "all") {
+    [total, spans] = await Promise.all([
+      prisma.transcriptSpan.count({ where: { workspaceId } }),
+      loadSpanSummaries(workspaceId, { offset, limit: options.limit }),
+    ]);
+  } else {
+    const selected = await listFilteredSpanIds(workspaceId, options.actorKey ?? "", filter, {
+      offset,
+      limit: options.limit ?? 200,
+    });
+    total = selected.total;
+    spans = await loadSpanSummaries(workspaceId, { spanIds: selected.ids });
+  }
 
   const commentCounts =
     spans.length === 0
@@ -357,39 +376,34 @@ function toSpanView(span: SpanSummaryRow, commentCount: number): SpanView {
  *
  * Machine segments vary from a word to a paragraph, so counting them would
  * describe the work badly; the reader panel and the publication check both
- * reason in seconds of audio.
+ * reason in seconds of audio. "Reviewed" means somebody has taken a position,
+ * which is every state but not reviewed.
  */
-export function progressOf(spans: readonly SpanSummaryRow[]): CorrectionProgress {
-  let totalDurationSeconds = 0;
-  let reviewedOnceDurationSeconds = 0;
-  let fullyApprovedDurationSeconds = 0;
-  let doneSpanCount = 0;
-  let blockedSpanCount = 0;
-
-  for (const span of spans) {
-    const duration = Math.max(0, span.endSeconds - span.startSeconds);
-    totalDurationSeconds += duration;
-
-    if (hasBeenReviewed(span.summary)) reviewedOnceDurationSeconds += duration;
-    if (span.summary.isDone) {
-      fullyApprovedDurationSeconds += duration;
-      doneSpanCount += 1;
-    }
-    if (span.summary.state === "needs_attention") blockedSpanCount += 1;
+export function progressOfAggregate(aggregate: WorkspaceAggregate | undefined): CorrectionProgress {
+  if (!aggregate) {
+    return {
+      spanCount: 0,
+      totalDurationSeconds: 0,
+      reviewedOnceDurationSeconds: 0,
+      fullyApprovedDurationSeconds: 0,
+      doneSpanCount: 0,
+      blockedSpanCount: 0,
+    };
   }
 
   return {
-    spanCount: spans.length,
-    totalDurationSeconds,
-    reviewedOnceDurationSeconds,
-    fullyApprovedDurationSeconds,
-    doneSpanCount,
-    blockedSpanCount,
+    spanCount: aggregate.spanCount,
+    totalDurationSeconds: aggregate.totalSeconds,
+    reviewedOnceDurationSeconds: aggregate.totalSeconds - aggregate.seconds.not_reviewed,
+    fullyApprovedDurationSeconds: aggregate.seconds.done,
+    doneSpanCount: aggregate.counts.done,
+    blockedSpanCount: aggregate.counts.needs_attention,
   };
 }
 
 export async function computeProgress(workspaceId: string): Promise<CorrectionProgress> {
-  return progressOf(await loadSpanSummaries(workspaceId));
+  const aggregates = await loadWorkspaceAggregates([workspaceId], null);
+  return progressOfAggregate(aggregates.get(workspaceId));
 }
 
 export interface ArchiveWorkspaceInput {
@@ -479,38 +493,43 @@ export async function archiveWorkspace(input: ArchiveWorkspaceInput): Promise<Wo
   return toSummary(archived);
 }
 
-export interface ResumePosition {
-  spanId: string;
-  ordinal: number;
-}
+export type ResumePosition = SpanPosition;
 
-/**
- * Where this person should pick the work up.
- *
- * A three-hour recording runs to several hundred spans and nobody finishes one
- * in a sitting, so opening at the first span every time would make resuming a
- * scrolling exercise. This answers "what still wants me": the earliest span
- * that is not done and that this person has not already approved. A span
- * others have finished is not their problem, and one they objected to still
- * is, because it is theirs to withdraw or have addressed.
- */
-export function resumePositionOf(
-  spans: readonly SpanSummaryRow[],
-  actorKey: string
-): ResumePosition | null {
-  for (const span of spans) {
-    if (span.summary.isDone) continue;
-    if (span.summary.approverIds.includes(actorKey)) continue;
-    return { spanId: span.id, ordinal: span.ordinal };
-  }
-  return null;
-}
-
+/** Where this person should pick the work up; see `findNextOpenSpan`. */
 export async function findResumePosition(
   workspaceId: string,
   actorKey: string
 ): Promise<ResumePosition | null> {
-  return resumePositionOf(await loadSpanSummaries(workspaceId), actorKey);
+  return findNextOpenSpan(workspaceId, actorKey);
+}
+
+/** Whether a workspace's counts say every span is done and publishable. */
+export function eligibilityOfAggregate(aggregate: WorkspaceAggregate | undefined): PublicationEligibility {
+  if (!aggregate) {
+    return {
+      eligible: false,
+      spanCount: 0,
+      doneSpanCount: 0,
+      blockedSpanCount: 0,
+      unreviewedSpanCount: 0,
+      awaitingSecondApprovalCount: 0,
+    };
+  }
+
+  return {
+    // Every span must be done *and* carry a revision to publish. A span
+    // without a current revision cannot appear in a manifest, so counting it
+    // as eligible would publish a transcript with a hole in it.
+    eligible:
+      aggregate.spanCount > 0 &&
+      aggregate.counts.done === aggregate.spanCount &&
+      aggregate.spansWithoutRevision === 0,
+    spanCount: aggregate.spanCount,
+    doneSpanCount: aggregate.counts.done,
+    blockedSpanCount: aggregate.counts.needs_attention,
+    unreviewedSpanCount: aggregate.counts.not_reviewed,
+    awaitingSecondApprovalCount: aggregate.counts.needs_second_approval,
+  };
 }
 
 export interface WorkspaceSummaryForActor {
@@ -520,19 +539,22 @@ export interface WorkspaceSummaryForActor {
 }
 
 /**
- * Progress, where to resume, and whether the transcript can be published, from
- * one scan of the workspace. The correction page asks for all three on every
- * load and after every command, and a multi-hour workspace is not something
- * to reduce three times per request.
+ * Progress, where to resume, and whether the transcript can be published.
+ * The correction page asks for all three on every load and after every
+ * command; the counts come from one aggregate over the reduced span states.
  */
 export async function summarizeWorkspace(
   workspaceId: string,
   actorKey: string
 ): Promise<WorkspaceSummaryForActor> {
-  const spans = await loadSpanSummaries(workspaceId);
+  const [aggregates, resume] = await Promise.all([
+    loadWorkspaceAggregates([workspaceId], actorKey),
+    findNextOpenSpan(workspaceId, actorKey),
+  ]);
+  const aggregate = aggregates.get(workspaceId);
   return {
-    progress: progressOf(spans),
-    resume: resumePositionOf(spans, actorKey),
-    publication: eligibilityOf(evaluateSpanSummaries(spans)),
+    progress: progressOfAggregate(aggregate),
+    resume,
+    publication: eligibilityOfAggregate(aggregate),
   };
 }

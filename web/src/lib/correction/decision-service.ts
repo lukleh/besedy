@@ -3,7 +3,9 @@ import { Prisma, type TranscriptDecisionKind } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
 import { hashSpanText, normalizeSpanText } from "@/lib/correction/text";
-import { summarizeSpanDecisions, type SpanState } from "@/lib/correction/span-state";
+import type { SpanState } from "@/lib/correction/span-state";
+import { loadActorNames } from "@/lib/correction/actor-names";
+import { loadSpanDecisionSummaries } from "@/lib/correction/span-summaries";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
 
 export interface SpanCommandResult {
@@ -191,19 +193,18 @@ async function summarizeSpan(
   spanId: string,
   revisionId: string
 ): Promise<Omit<SpanCommandResult, "replayed">> {
-  const [revision, decisions] = await Promise.all([
+  const [revision, summaries] = await Promise.all([
     tx.transcriptSpanRevision.findUniqueOrThrow({
       where: { id: revisionId },
       select: { id: true, text: true },
     }),
-    tx.transcriptSpanDecision.findMany({
-      where: { revisionId },
-      select: { actorKey: true, kind: true, createdAt: true },
-      orderBy: { sequence: "asc" },
-    }),
+    loadSpanDecisionSummaries([spanId], { client: tx, revisionId }),
   ]);
 
-  const summary = summarizeSpanDecisions(decisions);
+  const summary = summaries.get(spanId);
+  if (!summary) {
+    throw new Error(`Span ${spanId} disappeared while its decision was being summarized`);
+  }
 
   return {
     spanId,
@@ -489,21 +490,8 @@ export async function listSpanHistory(workspaceId: string, spanId: string): Prom
     })),
   ];
 
-  // Correctors are not anonymous to one another: this group resolves
-  // disagreement by talking, which needs names rather than opaque ids. A
-  // deleted account keeps its place in the history and simply has no name.
-  const actorKeys = [...new Set(entries.map((entry) => entry.userId).filter((id): id is string => id !== null))];
-  const actors =
-    actorKeys.length === 0
-      ? []
-      : await prisma.user.findMany({
-          where: { id: { in: actorKeys } },
-          select: { id: true, name: true, email: true },
-        });
-  // A display name, or the part of the address before the @ when the account
-  // never set one; never the full address, which every corrector would see.
-  const nameByKey = new Map(
-    actors.map((actor) => [actor.id, actor.name ?? actor.email?.split("@")[0] ?? null])
+  const nameByKey = await loadActorNames(
+    entries.map((entry) => entry.userId).filter((id): id is string => id !== null)
   );
 
   for (const entry of entries) {

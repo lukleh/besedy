@@ -31,7 +31,8 @@
     "signOut": "Odhlásit",
     "toggleTheme": "Přepnout téma",
     "contactSupport": "Kontaktovat podporu",
-    "account": "Účet"
+    "account": "Účet",
+    "correction": "Korektury"
   },
   "theme": {
     "light": "Světlý",
@@ -480,7 +481,80 @@
     "rollbackInFlight": "Vrací se zpět: vyhledávací index se vrací k předchozímu textu.",
     "publishInterrupted": "Zveřejnění bylo přerušeno dřív, než se dostalo k vyhledávacímu indexu.",
     "publishStalled": "Zveřejnění se zastavilo: {code}. {message}",
-    "publishFailed": "Zveřejnění selhalo"
+    "publishFailed": "Zveřejnění selhalo",
+    "nextOpen": "Další k řešení",
+    "nothingLeft": "Nic dalšího na vás nečeká.",
+    "overviewLink": "Přehled korektur",
+    "filters": {
+      "label": "Které segmenty zobrazit",
+      "all": "Všechny",
+      "mine_open": "Čeká na mě",
+      "needs_attention": "Vyžaduje pozornost",
+      "needs_second_approval": "Chybí druhé schválení",
+      "not_reviewed": "Nezkontrolováno",
+      "empty": "Žádný segment tomuto filtru neodpovídá."
+    },
+    "strip": {
+      "label": "Průběh korektury po celé nahrávce; kliknutím skočíte na místo",
+      "done": "Hotovo",
+      "needs_second_approval": "Chybí druhé schválení",
+      "needs_attention": "Vyžaduje pozornost",
+      "not_reviewed": "Nezkontrolováno"
+    },
+    "overview": {
+      "title": "Korektury přepisů",
+      "description": "Co se právě opravuje, co čeká na vás a co lze zveřejnit.",
+      "loadFailed": "Přehled se nepodařilo načíst.",
+      "filtersLabel": "Které nahrávky zobrazit",
+      "recordingCount": "{count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}}",
+      "summary": {
+        "notStarted": "Nezačato",
+        "inProgress": "Rozpracováno",
+        "toPublish": "Ke zveřejnění",
+        "published": "Zveřejněno"
+      },
+      "filters": {
+        "mine": "Moje",
+        "in_progress": "Rozpracované",
+        "to_publish": "Ke zveřejnění",
+        "published": "Zveřejněné",
+        "not_started": "Nezačaté"
+      },
+      "status": {
+        "not_started": "Nezačato",
+        "in_progress": "Probíhá",
+        "ready": "Připraveno ke zveřejnění",
+        "publishing": "Zveřejňuje se",
+        "publishingStalled": "Zveřejnění se zastavilo",
+        "published": "Zveřejněno",
+        "published_changed": "Zveřejněno, od té doby upraveno"
+      },
+      "changedSincePublication": "{count, plural, one {# segment změněn} few {# segmenty změněny} other {# segmentů změněno}} od zveřejnění",
+      "awaitingSecond": "{count, plural, one {# čeká na druhé schválení} few {# čekají na druhé schválení} other {# čeká na druhé schválení}}",
+      "mine": {
+        "label": "Vy:",
+        "approved": "schváleno {count}",
+        "waiting": "čeká na druhého {count}",
+        "disapproved": "vámi neschváleno {count}",
+        "open": "čeká na vás {count}"
+      },
+      "lastActivity": "Poslední změna: {name}, {when}",
+      "actions": {
+        "start": "Začít korekturu",
+        "continue": "Pokračovat",
+        "publish": "Zveřejnit",
+        "open": "Otevřít"
+      },
+      "notStartedNote": "Hlavní nahrávky událostí, u kterých korektura ještě nezačala. Nejnovější jsou nahoře.",
+      "notStartedShown": "Zobrazeno {shown} z {total}.",
+      "empty": {
+        "mine": "Nic na vás nečeká. Podívejte se mezi rozpracované nebo nezačaté nahrávky.",
+        "in_progress": "Nic se právě neopravuje.",
+        "to_publish": "Zatím není nic připraveno ke zveřejnění.",
+        "published": "Zatím není nic zveřejněno.",
+        "not_started": "Každá hlavní nahrávka už má začatou korekturu."
+      }
+    }
   },
   "metadata": {
     "title": "Metadata",

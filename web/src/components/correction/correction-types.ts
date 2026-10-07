@@ -155,3 +155,113 @@ export const spanHistorySchema = z.object({
 });
 
 export type SpanHistory = z.infer<typeof spanHistorySchema>;
+
+export const spanFilterSchema = z.enum([
+  "all",
+  "mine_open",
+  "needs_attention",
+  "needs_second_approval",
+  "not_reviewed",
+]);
+
+export type SpanFilter = z.infer<typeof spanFilterSchema>;
+
+export const stripSpanSchema = z.object({
+  spanId: z.string(),
+  ordinal: z.number(),
+  startSeconds: z.number(),
+  endSeconds: z.number(),
+  state: spanStateSchema,
+  approvedByMe: z.boolean(),
+  disapprovedByMe: z.boolean(),
+});
+
+export type StripSpan = z.infer<typeof stripSpanSchema>;
+
+export const spanStripSchema = z.object({
+  workspaceId: z.string(),
+  spans: z.array(stripSpanSchema),
+});
+
+export const nextSpanSchema = z.object({
+  next: z.object({ spanId: z.string(), ordinal: z.number() }).nullable(),
+});
+
+export const overviewStatusSchema = z.enum([
+  "not_started",
+  "in_progress",
+  "ready",
+  "publishing",
+  "published",
+  "published_changed",
+]);
+
+export type OverviewStatus = z.infer<typeof overviewStatusSchema>;
+
+const stateCountsSchema = z.object({
+  needs_attention: z.number(),
+  done: z.number(),
+  needs_second_approval: z.number(),
+  not_reviewed: z.number(),
+});
+
+export const overviewItemSchema = z.object({
+  status: overviewStatusSchema,
+  recording: z.object({
+    audioHash: z.string(),
+    title: z.string().nullable(),
+    eventId: z.number().nullable(),
+    eventTitle: z.string().nullable(),
+    locationName: z.string().nullable(),
+    dateYear: z.number().nullable(),
+    dateMonth: z.number().nullable(),
+    dateDay: z.number().nullable(),
+    durationSeconds: z.number(),
+  }),
+  workspaceId: z.string().nullable(),
+  progress: z
+    .object({
+      spanCount: z.number(),
+      totalSeconds: z.number(),
+      counts: stateCountsSchema,
+      seconds: stateCountsSchema,
+    })
+    .nullable(),
+  mine: z
+    .object({
+      approved: z.number(),
+      disapproved: z.number(),
+      waitingOnOthers: z.number(),
+      open: z.number(),
+    })
+    .nullable(),
+  touchedByMe: z.boolean(),
+  lastActivity: z.object({ at: z.string(), actorName: z.string().nullable() }).nullable(),
+  myLastActivityAt: z.string().nullable(),
+  eligible: z.boolean(),
+  changedSinceReaderPublication: z.number(),
+  publication: z
+    .object({
+      inFlight: z
+        .object({
+          status: z.enum(["PENDING", "ACTIVATING", "ROLLING_BACK", "SUCCEEDED", "FAILED", "ROLLED_BACK"]),
+          error: publicationErrorSchema.nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+});
+
+export type OverviewItem = z.infer<typeof overviewItemSchema>;
+
+export const correctionOverviewSchema = z.object({
+  catalogId: z.string(),
+  canPublish: z.boolean(),
+  summary: z.object({
+    byStatus: z.record(overviewStatusSchema, z.object({ count: z.number(), seconds: z.number() })),
+  }),
+  workspaces: z.array(overviewItemSchema),
+  notStarted: z.object({ total: z.number(), items: z.array(overviewItemSchema) }),
+});
+
+export type CorrectionOverview = z.infer<typeof correctionOverviewSchema>;

@@ -421,4 +421,91 @@ describe("CorrectionSurface", () => {
     expect(await screen.findByDisplayValue("third")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
   });
+
+  // The segment list is hundreds long; a filter has to narrow it on the
+  // server, and "total" must still describe the whole recording.
+  it("asks the server for the filtered segments and keeps the recording's size", async () => {
+    const urls: string[] = [];
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("filter=needs_attention")) {
+        return {
+          ...page(0, 1, 1, [span(7, { state: "needs_attention", text: "disputed" })]),
+          filter: "needs_attention",
+        };
+      }
+      if (url.includes("/spans?offset=0")) return page(0, 3, 250);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    await userEvent.click(screen.getByTestId("correction-filter-needs_attention"));
+
+    expect(await screen.findByDisplayValue("disputed")).toBeInTheDocument();
+    expect(screen.queryByText("machine 1")).not.toBeInTheDocument();
+    expect(urls.some((url) => url.includes("filter=needs_attention"))).toBe(true);
+    expect(screen.getByTestId("correction-filter-needs_attention")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  // "Next to resolve" has to reach a segment that is not in the loaded pages,
+  // and it has to play it, or the person lands on a silent, unrelated list.
+  it("jumps to the next segment that wants this person, loading its page", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/next?after=")) return { next: { spanId: "span-230", ordinal: 230 } };
+      if (url.includes("/spans?offset=200")) return page(200, 50, 250);
+      if (url.includes("/spans?offset=0")) return page(0, 200, 250);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    await userEvent.click(screen.getByTestId("correction-next-open"));
+
+    expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(lastPlayerProps().autoPlayOnSeek).toBe(true);
+      expect(lastPlayerProps().seekTo).toBe(2300);
+    });
+  });
+
+  it("jumps from the strip to a segment and plays it", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) {
+        return {
+          workspaceId: WORKSPACE.id,
+          spans: Array.from({ length: 3 }, (_, i) => ({
+            spanId: `span-${i}`,
+            ordinal: i,
+            startSeconds: i * 10,
+            endSeconds: i * 10 + 10,
+            state: i === 2 ? "needs_attention" : "done",
+            approvedByMe: false,
+            disapprovedByMe: false,
+          })),
+        };
+      }
+      if (url.includes("/spans?offset=0")) return page(0, 3, 3);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await screen.findByTestId("correction-strip");
+
+    // The last bucket belongs to the disputed segment at the end.
+    const buckets = screen.getByTestId("correction-strip").querySelectorAll("button");
+    await userEvent.click(buckets[buckets.length - 1]);
+
+    expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
+    await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(true));
+  });
 });

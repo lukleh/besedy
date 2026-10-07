@@ -32,6 +32,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       canManageAccess: capability.canManageAccess,
       canAccessSettings: capability.canAccessSettings,
+      // Who the correction overview is for: everyone who corrects or publishes.
+      canViewCorrectionOverview:
+        capability.canCorrectTranscripts || capability.canPublishTranscript,
     });
   } catch (error) {
     return handlePrismaError(error, "catalog capability", "fetch");

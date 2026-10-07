@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Bookmark, Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
+import { Bookmark, ClipboardCheck, Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
 import { openSupportEmail } from "@/lib/support-email";
 import { useSession } from "@/contexts/session-context";
 import { useCatalogs } from "@/hooks/use-catalogs";
@@ -85,6 +85,7 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
     enabled: !isAuthPage,
   });
   const catalogSettingsHref = useReturnHref(`/catalog/${effectiveCatalogId}/settings`);
+  const correctionOverviewHref = useReturnHref(`/catalog/${effectiveCatalogId}/correction`);
 
   return (
     <>
@@ -116,6 +117,21 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
               <Link href={catalogSettingsHref}>
                 {t("nav.catalogSettings")}
                 <Wrench className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+
+          {/* Correction overview - for everyone who corrects or publishes */}
+          {!isAuthPage && effectiveCatalogId && catalogAccess?.canViewCorrectionOverview && (
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              className="hidden md:flex landscape-mobile:hidden gap-1.5"
+            >
+              <Link href={correctionOverviewHref} data-testid="header-correction-overview">
+                {t("nav.correction")}
+                <ClipboardCheck className="h-4 w-4" />
               </Link>
             </Button>
           )}

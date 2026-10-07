@@ -8,13 +8,14 @@ import Link from "next/link";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
+import { ChevronLeft, Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
+  buildCorrectionOverviewPath,
   buildCorrectionPublicationUrl,
   buildCorrectionUrl,
   buildRecordingEntryUrl,
@@ -174,6 +175,14 @@ export function CorrectionWorkspace({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div>
+            <Link
+              href={buildCorrectionOverviewPath(catalogId)}
+              className="mb-1 inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+              data-testid="correction-overview-link"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              {t("overviewLink")}
+            </Link>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t("pageTitle")}
             </p>

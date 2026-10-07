@@ -69,6 +69,8 @@ describe("catalog capability route", () => {
       hasAccess: true,
       canManageAccess: true,
       canAccessSettings: true,
+      canCorrectTranscripts: true,
+      canPublishTranscript: false,
     });
 
     const response = await GET(
@@ -82,11 +84,50 @@ describe("catalog capability route", () => {
     await expect(response.json()).resolves.toEqual({
       canManageAccess: true,
       canAccessSettings: true,
+      canViewCorrectionOverview: true,
     });
     expect(getCatalogCapability).toHaveBeenCalledWith(
       "20260201_120000",
       "user-1",
       { activeCatalogOnly: false }
     );
+  });
+
+  it("offers the correction overview to publishers who do not correct", async () => {
+    requireAuth.mockResolvedValue("user-1");
+    getCatalogCapability.mockResolvedValue({
+      catalogExists: true,
+      hasAccess: true,
+      canManageAccess: false,
+      canAccessSettings: false,
+      canCorrectTranscripts: false,
+      canPublishTranscript: true,
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/catalogs/20260201_120000/capability"),
+      { params: Promise.resolve({ id: "20260201_120000" }) }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({ canViewCorrectionOverview: true });
+  });
+
+  it("keeps the correction overview from everybody else", async () => {
+    requireAuth.mockResolvedValue("user-1");
+    getCatalogCapability.mockResolvedValue({
+      catalogExists: true,
+      hasAccess: true,
+      canManageAccess: false,
+      canAccessSettings: false,
+      canCorrectTranscripts: false,
+      canPublishTranscript: false,
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/catalogs/20260201_120000/capability"),
+      { params: Promise.resolve({ id: "20260201_120000" }) }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({ canViewCorrectionOverview: false });
   });
 });

@@ -31,7 +31,8 @@
     "signOut": "Sign Out",
     "toggleTheme": "Toggle theme",
     "contactSupport": "Contact Support",
-    "account": "Account"
+    "account": "Account",
+    "correction": "Corrections"
   },
   "theme": {
     "light": "Light",
@@ -480,7 +481,80 @@
     "rollbackInFlight": "Rolling back: the search index is being returned to the previous text.",
     "publishInterrupted": "Publication was interrupted before it reached the search index.",
     "publishStalled": "Publication stopped: {code}. {message}",
-    "publishFailed": "Publication failed"
+    "publishFailed": "Publication failed",
+    "nextOpen": "Next to resolve",
+    "nothingLeft": "Nothing else is waiting for you.",
+    "overviewLink": "Correction overview",
+    "filters": {
+      "label": "Which segments to show",
+      "all": "All",
+      "mine_open": "Waiting for me",
+      "needs_attention": "Needs attention",
+      "needs_second_approval": "Needs second approval",
+      "not_reviewed": "Not reviewed",
+      "empty": "No segment matches this filter."
+    },
+    "strip": {
+      "label": "Correction progress across the whole recording; click to jump",
+      "done": "Done",
+      "needs_second_approval": "Needs second approval",
+      "needs_attention": "Needs attention",
+      "not_reviewed": "Not reviewed"
+    },
+    "overview": {
+      "title": "Transcript corrections",
+      "description": "What is being corrected, what is waiting for you and what can be published.",
+      "loadFailed": "The overview could not be loaded.",
+      "filtersLabel": "Which recordings to show",
+      "recordingCount": "{count, plural, one {# recording} other {# recordings}}",
+      "summary": {
+        "notStarted": "Not started",
+        "inProgress": "In progress",
+        "toPublish": "To publish",
+        "published": "Published"
+      },
+      "filters": {
+        "mine": "Mine",
+        "in_progress": "In progress",
+        "to_publish": "To publish",
+        "published": "Published",
+        "not_started": "Not started"
+      },
+      "status": {
+        "not_started": "Not started",
+        "in_progress": "In progress",
+        "ready": "Ready to publish",
+        "publishing": "Publishing",
+        "publishingStalled": "Publishing stalled",
+        "published": "Published",
+        "published_changed": "Published, edited since"
+      },
+      "changedSincePublication": "{count, plural, one {# segment} other {# segments}} changed since publication",
+      "awaitingSecond": "{count, plural, one {# awaiting a second approval} other {# awaiting a second approval}}",
+      "mine": {
+        "label": "You:",
+        "approved": "{count} approved",
+        "waiting": "{count} waiting for a second",
+        "disapproved": "{count} you objected to",
+        "open": "{count} waiting for you"
+      },
+      "lastActivity": "Last activity: {name}, {when}",
+      "actions": {
+        "start": "Start correction",
+        "continue": "Continue",
+        "publish": "Publish",
+        "open": "Open"
+      },
+      "notStartedNote": "Primary recordings of events whose correction has not started. Newest first.",
+      "notStartedShown": "Showing {shown} of {total}.",
+      "empty": {
+        "mine": "Nothing is waiting for you. Look among the recordings in progress or not yet started.",
+        "in_progress": "Nothing is being corrected right now.",
+        "to_publish": "Nothing is ready to publish yet.",
+        "published": "Nothing is published yet.",
+        "not_started": "Every primary recording already has correction under way."
+      }
+    }
   },
   "metadata": {
     "title": "Metadata",

@@ -379,10 +379,20 @@ all write commands still enforce permission, revision and workflow invariants
 on the server.
 
 The larger corrector dashboard—how people see all of their work, what remains,
-other people's decisions and discussion across recordings—is intentionally not
-settled here. The pilot should determine what overview is actually useful. A
-recording-level surface must at least support stopping and resuming within a
-multi-hour recording.
+other people's decisions and discussion across recordings—was left open for
+the pilot to settle. A recording-level surface must at least support stopping
+and resuming within a multi-hour recording.
+
+*Added 2026-10-07.* The catalog overview (`/catalog/<id>/correction`) is the
+cross-recording view. It stores nothing: stage, progress, this person's share
+and whether a published snapshot has been edited since are all read from the
+same derived span states as the working surface. A recording is in progress,
+ready (every span done, nothing published), publishing, published, or
+published with later edits; primary recordings without a workspace are listed
+as not started. Inside a recording, the segment list can be filtered to what
+still wants the person, a "next to resolve" action walks that set, and a strip
+over the whole recording shows where the gaps and disputes are. Per-person
+unread comments, assignments and notifications remain deferred.
 
 ### Readers see two progress measures before first publication
 
@@ -686,8 +696,9 @@ that gate.
 - Whether correction should later expand beyond primary event recordings, and
   how newly eligible recordings would enter the publication gate without
   unexpectedly losing their existing machine-transcript reader access.
-- The cross-recording corrector overview: personal work, remaining work,
-  disagreements and discussion.
+- Discussion across recordings: which comments are new to a person. The
+  overview shows personal work, remaining work and disagreements, but nothing
+  records what a person has already read.
 - The detailed recording navigation and comment-thread presentation beyond the
   persistence and workflow rules fixed here.
 - Whether a larger, less personal correction corps eventually needs assignments,

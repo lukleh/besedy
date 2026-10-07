@@ -44,7 +44,7 @@ function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
-const IN_FLIGHT_PUBLICATION_STATUSES: TranscriptPublicationStatus[] = ["PENDING", "ACTIVATING", "ROLLING_BACK"];
+export const IN_FLIGHT_PUBLICATION_STATUSES: TranscriptPublicationStatus[] = ["PENDING", "ACTIVATING", "ROLLING_BACK"];
 
 async function manifestMatchesPublication(
   publicationId: string,

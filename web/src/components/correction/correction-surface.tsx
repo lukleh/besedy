@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, MessageSquare, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, MessageSquare, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,22 +15,32 @@ import { useToast } from "@/hooks/use-toast";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioUrl,
+  buildCorrectionNextUrl,
   buildCorrectionSpanCommentsUrl,
   buildCorrectionSpanUrl,
   buildCorrectionSpansUrl,
+  buildCorrectionStripUrl,
 } from "@/lib/api/recording-urls";
 import { AudioPlayer } from "@/components/player/audio-player";
+import { CorrectionStrip } from "./correction-strip";
 import {
+  nextSpanSchema,
   spanCommandResultSchema,
+  spanFilterSchema,
   spanHistorySchema,
   spanPageSchema,
+  spanStripSchema,
+  type SpanFilter,
   type SpanPage,
   type SpanState,
   type SpanView,
+  type StripSpan,
   type WorkspaceSummary,
 } from "./correction-types";
 
 const PAGE_SIZE = 200;
+
+const FILTERS = spanFilterSchema.options;
 
 interface CorrectionSurfaceProps {
   catalogId: string;
@@ -88,11 +98,18 @@ export function CorrectionSurface({
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(
     resume?.spanId ?? null
   );
-  // Captured once: the resume position moves as work is done, and following
-  // it would restart the list from a different page under the person.
-  const [initialOffset] = useState(() =>
+  // Where the list starts. Captured at first: the resume position moves as
+  // work is done, and following it would restart the list from a different
+  // page under the person. Only a deliberate jump moves it.
+  const [anchorOffset, setAnchorOffset] = useState(() =>
     resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
   );
+  // Which segments the list shows; it never changes what is selected.
+  const [filter, setFilter] = useState<SpanFilter>("all");
+  // A jump to a segment that is not loaded yet plays it once it arrives.
+  const [playOnArrival, setPlayOnArrival] = useState(false);
+  // A filtered list is positioned within the selection, so it starts at its top.
+  const initialOffset = filter === "all" ? anchorOffset : 0;
   const [draft, setDraft] = useState("");
   // Set when the stored text moved under a draft. It stays until the person
   // acts or moves on, and while it is set the current stored text is shown
@@ -121,13 +138,14 @@ export function CorrectionSurface({
   } | null>(null);
 
   const spansQuery = useInfiniteQuery<SpanPage>({
-    queryKey: ["correction-spans", catalogId, hash, workspace.id, initialOffset],
+    queryKey: ["correction-spans", catalogId, hash, workspace.id, filter, initialOffset],
     initialPageParam: initialOffset,
     queryFn: async ({ pageParam }) =>
       fetchJson<SpanPage>(
         buildCorrectionSpansUrl(catalogId, hash, {
           offset: pageParam as number,
           limit: PAGE_SIZE,
+          filter,
         }),
         { schema: spanPageSchema }
       ),
@@ -178,9 +196,10 @@ export function CorrectionSurface({
           time: selected.startSeconds,
           end: selected.endSeconds,
           key: (seekRequest?.key ?? 0) + 1,
-          autoPlay: false,
+          autoPlay: playOnArrival,
         });
       }
+      if (playOnArrival) setPlayOnArrival(false);
     } else if (draft.trim() === selected.text.trim()) {
       // The new revision says what the draft says: this person's own save
       // landing, or somebody saving the same wording. Nothing to flag.
@@ -226,6 +245,30 @@ export function CorrectionSurface({
     [playSpan]
   );
 
+  const stripQuery = useQuery({
+    queryKey: ["correction-strip", catalogId, hash, workspace.id],
+    queryFn: async () =>
+      fetchJson(buildCorrectionStripUrl(catalogId, hash), { schema: spanStripSchema }),
+  });
+
+  // Go to a segment wherever it is. One already in the list is just selected;
+  // one that is not reloads the list around it, from the whole recording, so a
+  // jump never lands on a list that cannot show where it went.
+  const jumpTo = useCallback(
+    (target: { spanId: string; ordinal: number }) => {
+      const loaded = spans.find((span) => span.id === target.spanId);
+      if (loaded) {
+        selectSpan(loaded);
+        return;
+      }
+      setFilter("all");
+      setAnchorOffset(Math.floor(target.ordinal / PAGE_SIZE) * PAGE_SIZE);
+      setSelectedSpanId(target.spanId);
+      setPlayOnArrival(true);
+    },
+    [spans, selectSpan]
+  );
+
   // Move on from the span a command was issued on. Anchored on that span
   // rather than on whatever is selected now, and only while it is still the
   // selection: the sidebar stays clickable during a command, and somebody who
@@ -258,6 +301,9 @@ export function CorrectionSurface({
     });
     await queryClient.invalidateQueries({
       queryKey: ["correction-span-history", catalogId, hash],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["correction-strip", catalogId, hash],
     });
     onChanged();
   }, [queryClient, catalogId, hash, workspace.id, onChanged]);
@@ -351,6 +397,20 @@ export function CorrectionSurface({
       }),
   });
 
+  const goNext = useMutation({
+    mutationFn: async (afterOrdinal: number) =>
+      fetchJson(buildCorrectionNextUrl(catalogId, hash, afterOrdinal), { schema: nextSpanSchema }),
+    onSuccess: (result) => {
+      if (result.next) jumpTo(result.next);
+      else toast({ description: t("nothingLeft") });
+    },
+    onError: (error) =>
+      toast({
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
 
   const runPrimary = useCallback(() => {
@@ -384,7 +444,36 @@ export function CorrectionSurface({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="lg:col-span-2">
+        <CorrectionStrip
+          spans={stripQuery.data?.spans ?? []}
+          selectedOrdinal={selected?.ordinal ?? null}
+          onJump={(span: StripSpan) => jumpTo(span)}
+        />
+      </div>
       <aside className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
+        <div
+          role="group"
+          aria-label={t("filters.label")}
+          className="sticky top-0 z-10 -mx-2 -mt-2 mb-1 flex flex-wrap gap-1 border-b bg-background p-2"
+        >
+          {FILTERS.map((candidate) => (
+            <Button
+              key={candidate}
+              size="sm"
+              variant={candidate === filter ? "default" : "outline"}
+              className="h-7 px-2 text-xs"
+              aria-pressed={candidate === filter}
+              onClick={() => setFilter(candidate)}
+              data-testid={`correction-filter-${candidate}`}
+            >
+              {t(`filters.${candidate}`)}
+            </Button>
+          ))}
+        </div>
+        {spans.length === 0 && !spansQuery.isLoading && (
+          <p className="px-2 py-3 text-sm text-muted-foreground">{t("filters.empty")}</p>
+        )}
         {spansQuery.hasPreviousPage && (
           <Button
             variant="ghost"
@@ -455,7 +544,7 @@ export function CorrectionSurface({
               <span>
                 {t("spanOf", {
                   index: selected.ordinal + 1,
-                  total: spansQuery.data?.pages[0]?.total ?? spans.length,
+                  total: workspace.spanCount,
                 })}
               </span>
               <span className="font-mono">
@@ -522,6 +611,16 @@ export function CorrectionSurface({
                   {t("withdraw")}
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                className="gap-2"
+                disabled={command.isPending || goNext.isPending}
+                onClick={() => goNext.mutate(selected.ordinal)}
+                data-testid="correction-next-open"
+              >
+                <SkipForward className="h-4 w-4" />
+                {t("nextOpen")}
+              </Button>
             </div>
 
             <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>
