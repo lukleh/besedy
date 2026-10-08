@@ -120,7 +120,8 @@ catalogs, transcripts, and audio from mounted host paths.
 
 `just prod-deploy` also performs the first deployment; these are the one-time
 steps before it. Paths below use the default config home
-(`~/.config/lukleh/besedy`).
+(`~/.config/lukleh/besedy`). [bootstrap.md](../bootstrap.md) places this
+section in the order of a whole new host, GPU backends and ingest included.
 
 1. **Host tools:** Docker Engine with Compose v2 and BuildKit, `just`, `uv`,
    `jq`, `git`, and Node.js 24 with npm. The deploy runs Prisma migrations and

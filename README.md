@@ -163,8 +163,8 @@ The above covers the core CLI. Transcription and diarization have extra
 requirements (GPU, Docker, a Hugging Face token) — see
 [Backends](#backends). The web app additionally needs Docker Engine with
 Compose v2, Node.js 24 with npm, and `jq` — see [web/README.md](web/README.md)
-and, for a new production host,
-[docs/web/operations.md](docs/web/operations.md#production-deploy).
+and, for a new production host, [docs/bootstrap.md](docs/bootstrap.md) (the
+full step order, GPU prerequisites, and an acceptance checklist).
 
 ### Setup
 
