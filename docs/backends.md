@@ -140,7 +140,8 @@ The web container does not need filesystem access to bundles; the RAG services
 stack resolves and serves them. Key env vars:
 
 - `RAG_COLBERT_URL=http://besedy-colbert:8192/query`
-- `RAG_COLBERT_ROOT_DIR=/workspace/besedy/tmp/rag_colbert`
+- `RAG_COLBERT_ROOT_DIR=/data/state/rag_colbert` (the bundle root as the
+  ColBERT container mounts it; the default when unset)
 - `RAG_COLBERT_TIMEOUT_MS=8000` (timeout for each request to the sidecar)
 
 ### Retrieval Flow
