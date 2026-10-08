@@ -198,7 +198,9 @@ Deep Search, recording ingest, and the Cloudflare Tunnel are set up separately
 - [ ] `POSTGRES_PASSWORD`, `MIGRATE_PASSWORD`, `APP_PASSWORD`
 - [ ] `DATABASE_URL` using least-privilege app user
 - [ ] `AUTH_SECRET`
-- [ ] `AUTH_URL` (must match domain and OAuth redirect URI)
+- [ ] `AUTH_URL` (must match domain and OAuth redirect URI, and use `https://`:
+      production accepts only the `__Secure-` session cookie, which is issued
+      only for an `https://` `AUTH_URL`)
 - [ ] `NEXT_PUBLIC_APP_URL` matches `AUTH_URL`
 - [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`,
       `CORRECTIONS_DIR`
