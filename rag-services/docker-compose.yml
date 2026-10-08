@@ -22,7 +22,10 @@ name: besedy-rag-services
 
 services:
   colbert:
+    # Built from this checkout only: never pull this tag from a registry (Compose's
+    # default tries a pull before building a missing image).
     image: "${COLBERT_IMAGE:-besedy/colbert:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: rag-services/colbert/Dockerfile
@@ -69,6 +72,7 @@ services:
 
   colbert-indexer:
     image: "${COLBERT_IMAGE:-besedy/colbert:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: rag-services/colbert/Dockerfile

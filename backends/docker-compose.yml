@@ -2,7 +2,10 @@ name: besedy-backends
 
 services:
   faster-whisper:
+    # Built from this checkout only: never pull this tag from a registry (Compose's
+    # default tries a pull before building a missing image).
     image: "${BESEDY_FASTER_WHISPER_IMAGE:-besedy/faster-whisper:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: backends/faster-whisper/Dockerfile
@@ -10,6 +13,7 @@ services:
     gpus: all
   nemo:
     image: "${BESEDY_NEMO_IMAGE:-besedy/nemo:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: backends/nemo/Dockerfile
@@ -17,6 +21,7 @@ services:
     gpus: all
   qwen3-asr:
     image: "${BESEDY_QWEN3_ASR_IMAGE:-besedy/qwen3-asr:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: backends/qwen3-asr/Dockerfile
@@ -24,6 +29,7 @@ services:
     gpus: all
   whisperx:
     image: "${BESEDY_WHISPERX_IMAGE:-besedy/whisperx:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: backends/whisperx/Dockerfile
@@ -31,6 +37,7 @@ services:
     gpus: all
   pyannote:
     image: "${BESEDY_PYANNOTE_IMAGE:-besedy/pyannote:local}"
+    pull_policy: never
     build:
       context: ..
       dockerfile: backends/pyannote/Dockerfile
