@@ -176,6 +176,49 @@ def _run_whisperx(
 
 MAX_CONSECUTIVE_RETRY_FAILURES = 3
 
+SILERO_HUB_REPO = "snakers4/silero-vad"
+SILERO_FETCH_TIMEOUT_SECONDS = 60.0
+
+
+def _ensure_silero_vad_cached(timeout_seconds: float = SILERO_FETCH_TIMEOUT_SECONDS) -> bool:
+    """Fetch WhisperX's Silero VAD repository into the torch.hub cache.
+
+    WhisperX loads Silero through ``torch.hub``, which downloads the repository's
+    default-branch zipball with no network timeout; on a fresh host a stalled
+    GitHub download hangs the run indefinitely. Fetching it here first, under a
+    socket timeout, turns a stall into a failure that names the manual fix. A
+    cached repository is left alone, so hosts that already have it run unchanged.
+    """
+    import socket
+
+    import torch
+
+    hub_dir = Path(torch.hub.get_dir())
+    owner, name = SILERO_HUB_REPO.split("/")
+    if any((hub_dir / f"{owner}_{name}_{ref}").is_dir() for ref in ("main", "master")):
+        return True
+
+    logging.info("Fetching %s into %s (first WhisperX run on this host).", SILERO_HUB_REPO, hub_dir)
+    previous_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout_seconds)
+    try:
+        # list() fills the cache like WhisperX's load() would, without loading a model.
+        torch.hub.list(SILERO_HUB_REPO, trust_repo=True)
+    except Exception as exc:
+        logging.error(
+            "Could not fetch %s (no data for %ss or a network error): %s. "
+            "Fetch it manually, then rerun: git clone --depth 1 https://github.com/%s.git %s",
+            SILERO_HUB_REPO,
+            timeout_seconds,
+            exc,
+            SILERO_HUB_REPO,
+            hub_dir / f"{owner}_{name}_master",
+        )
+        return False
+    finally:
+        socket.setdefaulttimeout(previous_timeout)
+    return True
+
 
 def _retry_missing_outputs_individually(
     audio_paths: list[Path],
@@ -325,6 +368,9 @@ def main() -> int:
         compute_type=DEFAULT_COMPUTE_TYPE,
         batch_size=DEFAULT_BATCH_SIZE,
     )
+    if vad_model == "silero" and not _ensure_silero_vad_cached():
+        return 1
+
     logging.info("Running WhisperX on %d file(s).", len(audio_paths))
     exit_code = _run_whisperx(audio_paths, raw_dir, **run_kwargs)
     if exit_code != 0:
