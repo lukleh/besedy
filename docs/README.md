@@ -1,6 +1,6 @@
 # Besedy Documentation
 
-> **Last Updated:** 2026-09-17
+> **Last Updated:** 2026-10-08
 
 AGENTS.md is the starting point. These docs extend it with context that is not obvious from the code.
 
@@ -9,6 +9,7 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 - [data-model.md](data-model.md) -- data contracts: storage layout, transcript/diarization schemas, directory structure
 - [patterns.md](patterns.md) -- development guardrails: error handling, CLI output, feature checklist, testing, common pitfalls
 - [troubleshooting.md](troubleshooting.md) -- operator runbook: common pipeline errors, causes, and debug commands
+- [bootstrap.md](bootstrap.md) -- new host from `git clone`: step order, GPU prerequisites, sizing, first catalog, acceptance checklist
 - [rag-system.md](rag-system.md) -- ColBERT retrieval architecture and incremental sync
 - [rag-oblique-eval.md](rag-oblique-eval.md) -- time-grounded evaluation for implicit retrieval queries
 - [backends.md](backends.md) -- ML backend infrastructure: serving, config tuning, verification

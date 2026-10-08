@@ -20,6 +20,7 @@ DOCS_TO_CHECK = [
     REPO_ROOT / "docs" / "patterns.md",
     REPO_ROOT / "docs" / "rag-system.md",
     REPO_ROOT / "docs" / "backends.md",
+    REPO_ROOT / "docs" / "bootstrap.md",
     REPO_ROOT / "docs" / "web" / "architecture.md",
     REPO_ROOT / "docs" / "web" / "data-and-database.md",
     REPO_ROOT / "docs" / "web" / "security.md",

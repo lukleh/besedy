@@ -120,7 +120,8 @@ catalogs, transcripts, and audio from mounted host paths.
 
 `just prod-deploy` also performs the first deployment; these are the one-time
 steps before it. Paths below use the default config home
-(`~/.config/lukleh/besedy`).
+(`~/.config/lukleh/besedy`). [bootstrap.md](../bootstrap.md) places this
+section in the order of a whole new host, GPU backends and ingest included.
 
 1. **Host tools:** Docker Engine with Compose v2 and BuildKit, `just`, `uv`,
    `jq`, `git`, and Node.js 24 with npm. The deploy runs Prisma migrations and
@@ -197,7 +198,9 @@ Deep Search, recording ingest, and the Cloudflare Tunnel are set up separately
 - [ ] `POSTGRES_PASSWORD`, `MIGRATE_PASSWORD`, `APP_PASSWORD`
 - [ ] `DATABASE_URL` using least-privilege app user
 - [ ] `AUTH_SECRET`
-- [ ] `AUTH_URL` (must match domain and OAuth redirect URI)
+- [ ] `AUTH_URL` (must match domain and OAuth redirect URI, and use `https://`:
+      production accepts only the `__Secure-` session cookie, which is issued
+      only for an `https://` `AUTH_URL`)
 - [ ] `NEXT_PUBLIC_APP_URL` matches `AUTH_URL`
 - [ ] `TEXT_DATA_DIR`, `ARTWORK_DIR`, `SOURCES_DIR`, `UPLOADS_DIR`, `UPLOADS_GID`,
       `CORRECTIONS_DIR`
