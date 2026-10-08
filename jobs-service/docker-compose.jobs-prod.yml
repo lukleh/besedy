@@ -25,7 +25,10 @@ services:
   jobs-api:
     <<: *jobs-hardening
     container_name: besedy-prod-jobs-api
+    # Built from this checkout only: never pull this tag from a registry (Compose's
+    # default tries a pull before building a missing image).
     image: ${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}
+    pull_policy: never
     build: *jobs-build
     command:
       - python
@@ -92,6 +95,7 @@ services:
     <<: *jobs-hardening
     container_name: besedy-prod-prefect-worker
     image: ${BESEDY_JOBS_IMAGE:-besedy-jobs:prod}
+    pull_policy: never
     build: *jobs-build
     command:
       - prefect
