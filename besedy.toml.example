@@ -96,7 +96,9 @@ workflow_id = "faster-whisper"
 workflow_label = "faster-whisper"
 model = "large-v3"
 vad_model = "silero_vad_v6"
-language = "auto"
+# RAG_BACKEND_KEY in the web and ingest-worker env templates names this
+# workflow's `@lang-cs` output; change both together.
+language = "cs"
 
 # Optional local Czech-tuned model example. Replace the placeholder before an
 # explicit run; it is deliberately excluded from the default pipeline.

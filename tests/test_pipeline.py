@@ -715,7 +715,7 @@ class TestPipelineRagIndexing:
         monkeypatch.setattr(
             pipeline,
             "_resolve_pipeline_rag_backend_key",
-            lambda _args: default_pipeline_rag_backend_key(),
+            lambda _args: rag_backend_key_for_workflow(faster_workflow),
         )
 
         args = _pipeline_args(
@@ -920,7 +920,7 @@ class TestPipelineRagIndexing:
         monkeypatch.setattr(
             pipeline,
             "_resolve_pipeline_rag_backend_key",
-            lambda _args: default_pipeline_rag_backend_key(),
+            lambda _args: rag_backend_key_for_workflow(workflow),
         )
 
         assert handle_run_pipeline(_pipeline_args()) == 0
@@ -971,7 +971,7 @@ class TestPipelineRagIndexing:
         monkeypatch.setattr(
             pipeline,
             "_resolve_pipeline_rag_backend_key",
-            lambda _args: default_pipeline_rag_backend_key(),
+            lambda _args: rag_backend_key_for_workflow(workflow),
         )
 
         assert (
