@@ -6,8 +6,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from dotenv import dotenv_values
 
 import besedy.config.settings as config_settings
+from besedy.commands.catalog.rag_backend import rag_backend_key_for_workflow
 from besedy.lib.workflow.config import (
     WorkflowConfig,
     get_diarization_workflows,
@@ -115,6 +117,27 @@ class TestWorkflowConfig:
         assert config.align_model is None
         component = config.output_component(sanitize_model_identifier)
         assert component == "large-v3@silero@lang-auto"
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "web/.env.dev.example",
+            "web/.env.test.example",
+            "web/.env.prod.example",
+            "jobs-service/host-worker/ingest-worker.env.example",
+        ],
+    )
+    def test_template_rag_backend_matches_example_pipeline(self, monkeypatch, template):
+        """run-pipeline refuses a RAG_BACKEND_KEY that no pipeline workflow produces."""
+        root = Path(__file__).parents[1]
+        monkeypatch.setenv("BESEDY_CONFIG", str(root / "besedy.toml.example"))
+        monkeypatch.setattr(config_settings, "_CONFIG", None)
+
+        pipeline_keys = {
+            rag_backend_key_for_workflow(workflow)
+            for workflow in get_transcription_workflows(pipeline_only=True)
+        }
+        assert dotenv_values(root / template)["RAG_BACKEND_KEY"] in pipeline_keys
 
     def test_output_component_identifies_czech_and_other_languages(
         self,

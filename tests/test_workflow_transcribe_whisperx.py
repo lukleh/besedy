@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import socket
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
+from besedy.workflows import transcribe_whisperx
 from besedy.workflows.transcribe_whisperx import (
     MAX_CONSECUTIVE_RETRY_FAILURES,
+    SILERO_HUB_REPO,
+    _ensure_silero_vad_cached,
     _resolve_whisperx_cli,
     _retry_missing_outputs_individually,
     _run_whisperx,
@@ -170,3 +176,88 @@ def test_run_whisperx_auto_language_uses_upstream_detection_and_alignment(
     assert result == 0
     assert "--language" not in captured["cmd"]
     assert "--align_model" not in captured["cmd"]
+
+
+class TestEnsureSileroVadCached:
+    """WhisperX's torch.hub Silero download gets a timeout and a clear failure."""
+
+    @staticmethod
+    def _fake_torch(monkeypatch: pytest.MonkeyPatch, hub_dir: Path, list_fn) -> list[str]:
+        calls: list[str] = []
+
+        def fake_list(repo: str, *, trust_repo: bool) -> list[str]:
+            assert trust_repo is True
+            calls.append(repo)
+            return list_fn(repo)
+
+        hub = types.SimpleNamespace(get_dir=lambda: str(hub_dir), list=fake_list)
+        monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(hub=hub))
+        return calls
+
+    def test_cached_repository_skips_the_network(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        (tmp_path / "snakers4_silero-vad_master").mkdir()
+        calls = self._fake_torch(monkeypatch, tmp_path, lambda _repo: [])
+
+        assert _ensure_silero_vad_cached() is True
+        assert calls == []
+
+    def test_fetch_runs_under_socket_timeout_and_restores_it(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        seen: list[float | None] = []
+        calls = self._fake_torch(
+            monkeypatch,
+            tmp_path,
+            lambda _repo: seen.append(socket.getdefaulttimeout()) or ["silero_vad"],
+        )
+        previous = socket.getdefaulttimeout()
+
+        assert _ensure_silero_vad_cached(timeout_seconds=5.0) is True
+        assert calls == [SILERO_HUB_REPO]
+        assert seen == [5.0]
+        assert socket.getdefaulttimeout() == previous
+
+    def test_failed_fetch_names_the_manual_clone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        def stalled(_repo: str) -> list[str]:
+            raise TimeoutError("timed out")
+
+        self._fake_torch(monkeypatch, tmp_path, stalled)
+        previous = socket.getdefaulttimeout()
+
+        assert _ensure_silero_vad_cached(timeout_seconds=5.0) is False
+        assert socket.getdefaulttimeout() == previous
+        assert "git clone --depth 1 https://github.com/snakers4/silero-vad.git" in caplog.text
+        assert str(tmp_path / "snakers4_silero-vad_master") in caplog.text
+
+    def test_main_stops_before_whisperx_when_fetch_fails(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        audio = tmp_path / f"{'a' * 64}.wav"
+        audio.touch()
+        runs: list[object] = []
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "transcribe_whisperx.py",
+                "--audio",
+                str(audio),
+                "--output-dir",
+                str(tmp_path / "out"),
+            ],
+        )
+        monkeypatch.setattr(transcribe_whisperx, "install_signal_handlers", lambda: None)
+        monkeypatch.setattr(transcribe_whisperx, "_ensure_silero_vad_cached", lambda: False)
+        monkeypatch.setattr(
+            transcribe_whisperx, "_run_whisperx", lambda *args, **kwargs: runs.append(args) or 0
+        )
+
+        assert transcribe_whisperx.main() == 1
+        assert runs == []
