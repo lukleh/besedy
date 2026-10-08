@@ -227,7 +227,11 @@ Language is configured per `[[transcription_workflows]]` entry in
 the code automatically). Use `language = "auto"` for backends that support
 language detection, such as faster-whisper, WhisperX, and Qwen3-ASR. Canary
 prompts require a concrete language code, so the example configuration keeps
-`language = "cs"` for Canary.
+`language = "cs"` for Canary. The pipeline faster-whisper workflow also feeds
+search, so switching it to `"auto"` means setting
+`RAG_BACKEND_KEY=faster-whisper/large-v3@silero_vad_v6@lang-auto` in the web and
+ingest-worker env files as well (see [web/README.md](web/README.md));
+`run-pipeline` refuses a key that no pipeline workflow produces.
 
 Entries that omit `language` keep the historical forced-Czech behavior
 (`"cs"`) and write `@lang-cs` output paths. Older unsuffixed Czech transcripts
