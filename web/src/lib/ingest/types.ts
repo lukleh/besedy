@@ -68,6 +68,7 @@ export const recordingIntakeSchema = z.object({
   progressLabel: z.string().nullable().optional(),
   progressStepStartedAt: z.string().nullable().optional(),
   prefectStateName: z.string().nullable().optional(),
+  jobStateUnavailable: z.boolean().optional(),
 });
 
 export type RecordingIntakeDto = z.infer<typeof recordingIntakeSchema>;

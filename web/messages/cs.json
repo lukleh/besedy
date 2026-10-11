@@ -680,6 +680,9 @@
         "retrySubmit": "Znovu odeslat",
         "remove": "Odebrat nahrávku",
         "loadError": "Seznam zpracování se nepodařilo načíst.",
+        "refreshError": "Seznam se nepodařilo obnovit; zobrazuje poslední načtený stav.",
+        "statusStale": "Stav se neaktualizuje",
+        "jobStateUnavailable": "Služba úloh není dostupná; průběh se nekontroluje.",
         "columns": {
           "file": "Soubor",
           "catalog": "Katalog",

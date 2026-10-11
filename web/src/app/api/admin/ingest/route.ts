@@ -44,8 +44,8 @@ export async function GET(request: NextRequest) {
 
     const reconciled = await reconcileActiveIntakes(rows);
     return NextResponse.json({
-      intakes: reconciled.map(({ row, prefectStateName }) =>
-        serializeIntake(row, { prefectStateName })
+      intakes: reconciled.map(({ row, prefectStateName, jobStateUnavailable }) =>
+        serializeIntake(row, { prefectStateName, jobStateUnavailable })
       ),
     });
   } catch (error) {

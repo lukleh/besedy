@@ -604,6 +604,30 @@ describe('admin ingest routes', () => {
     );
   });
 
+  it('keeps an unreachable job active and flags its state as unchecked', async () => {
+    const running = baseRow({
+      status: 'RUNNING',
+      jobId: JOB_ID,
+      receivedBytes: BigInt(10),
+    });
+    const finished = baseRow({ id: 'cmf9finishedintake0000000', status: 'SUCCEEDED' });
+    prisma.recordingIntake.findMany.mockResolvedValue([running, finished]);
+    const { JobsApiError } = await import('@/lib/jobs-api/server');
+    fetchJobsApi.mockRejectedValue(new JobsApiError('jobs api down', 503, null));
+
+    const response = await listIntakes(
+      new NextRequest('http://localhost/api/admin/ingest?limit=5'),
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.intakes).toMatchObject([
+      { status: 'RUNNING', jobStateUnavailable: true },
+      { status: 'SUCCEEDED', jobStateUnavailable: false },
+    ]);
+    expect(prisma.recordingIntake.updateMany).not.toHaveBeenCalled();
+  });
+
   it('recovers an outcome the worker could not deliver and syncs on success', async () => {
     const running = baseRow({
       status: 'RUNNING',
