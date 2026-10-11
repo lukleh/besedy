@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -49,7 +49,7 @@ export function IntakeStatus({
   const warning = !active
     ? null
     : connectionLost
-      ? t("jobs.connectionLost")
+      ? t("jobs.statusStale")
       : intake.jobStateUnavailable
         ? t("jobs.jobStateUnavailable")
         : null;
@@ -118,8 +118,8 @@ function StatusIcon({
       );
     case "REJECTED":
       return (
-        <AlertTriangle
-          className={`${ICON_CLASS} text-amber-600 dark:text-amber-500`}
+        <Ban
+          className={`${ICON_CLASS} text-destructive`}
           aria-hidden="true"
           data-testid="ingest-status-icon-rejected"
         />

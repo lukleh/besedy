@@ -442,6 +442,11 @@ export default function IngestContent() {
           </Button>
         </CardHeader>
         <CardContent>
+          {connectionLost && intakesQuery.data && (
+            <p className="mb-3 text-sm text-destructive" data-testid="ingest-refresh-error">
+              {t("jobs.refreshError")}
+            </p>
+          )}
           {intakesQuery.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-full" />

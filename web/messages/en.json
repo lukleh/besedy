@@ -680,7 +680,8 @@
         "retrySubmit": "Retry submit",
         "remove": "Remove recording",
         "loadError": "Ingest jobs could not be loaded.",
-        "connectionLost": "Connection lost, retrying…",
+        "refreshError": "The list could not be refreshed; it shows the last state that loaded.",
+        "statusStale": "Status is not updating",
         "jobStateUnavailable": "The jobs service cannot be reached; progress is not being checked.",
         "columns": {
           "file": "File",

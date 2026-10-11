@@ -67,7 +67,7 @@ describe("IntakeStatus", () => {
 
     expect(iconTestIds()).toEqual(["ingest-status-icon-warning"]);
     expect(screen.getByTestId("ingest-intake-warning")).toHaveTextContent(
-      "Connection lost, retrying…"
+      "Status is not updating"
     );
   });
 
