@@ -1648,6 +1648,9 @@
       "deleteFailed": "Could not delete artwork candidate",
       "confirmDeleteTitle": "Delete this candidate?",
       "confirmDeleteDescription": "{label} and both of its images will be permanently deleted.",
+      "enlarge": "Enlarge image: {title}",
+      "imageName": "{label} – {variant}",
+      "close": "Close",
       "cancel": "Cancel",
       "invalidEvent": "Invalid event.",
       "loadFailed": "Could not load event artwork."

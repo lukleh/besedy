@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ArtworkLightboxImage } from "@/components/catalog/artwork-lightbox-image";
 import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
@@ -350,11 +351,13 @@ export default function EventArtworkPage({ params }: EventArtworkPageProps) {
                 <div className="grid gap-4 md:grid-cols-[9fr_16fr]">
                   <CandidateImage
                     title={t("square")}
+                    imageName={t("imageName", { label: candidate.label || t("unnamed"), variant: t("square") })}
                     src={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "square")}
                     aspectClass="aspect-square"
                   />
                   <CandidateImage
                     title={t("landscape")}
+                    imageName={t("imageName", { label: candidate.label || t("unnamed"), variant: t("landscape") })}
                     src={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "landscape")}
                     aspectClass="aspect-video"
                   />
@@ -447,14 +450,21 @@ function ArtworkFileInput({
   );
 }
 
-function CandidateImage({ title, src, aspectClass }: { title: string; src: string; aspectClass: string }) {
+function CandidateImage({
+  title,
+  imageName,
+  src,
+  aspectClass,
+}: {
+  title: string;
+  imageName: string;
+  src: string;
+  aspectClass: string;
+}) {
   return (
     <figure className="space-y-2">
       <figcaption className="text-sm font-medium">{title}</figcaption>
-      <div className={`${aspectClass} overflow-hidden rounded-lg border bg-muted`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={title} className="h-full w-full object-contain" />
-      </div>
+      <ArtworkLightboxImage src={src} title={imageName} className={aspectClass} />
     </figure>
   );
 }

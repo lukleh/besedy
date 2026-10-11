@@ -1647,6 +1647,9 @@
       "deleteFailed": "Návrh obálky se nepodařilo smazat",
       "confirmDeleteTitle": "Smazat tento návrh?",
       "confirmDeleteDescription": "{label} a oba jeho obrázky budou trvale smazány.",
+      "enlarge": "Zvětšit obrázek: {title}",
+      "imageName": "{label} – {variant}",
+      "close": "Zavřít",
       "cancel": "Zrušit",
       "invalidEvent": "Neplatná událost.",
       "loadFailed": "Obálku události se nepodařilo načíst."
