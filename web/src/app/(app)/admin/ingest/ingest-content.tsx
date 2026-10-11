@@ -15,7 +15,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,10 +46,9 @@ import {
   isRemovableIntakeStatus,
   recordingIntakeListSchema,
   type RecordingIntakeDto,
-  type RecordingIntakeStatus,
 } from "@/lib/ingest/types";
 import { finalizeUpload, uploadRecording } from "@/lib/ingest/upload-client";
-import { IntakeProgress } from "./intake-progress";
+import { IntakeStatus } from "./intake-status";
 
 const INTAKES_QUERY_KEY = ["admin-ingest-intakes"];
 const ACTIVE_POLL_INTERVAL_MS = 5000;
@@ -67,23 +65,6 @@ interface UploadItem {
 
 function isFileDrag(event: { dataTransfer: DataTransfer | null }): boolean {
   return event.dataTransfer?.types.includes("Files") ?? false;
-}
-
-function statusVariant(
-  status: RecordingIntakeStatus
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "SUCCEEDED":
-      return "default";
-    case "FAILED":
-    case "REJECTED":
-      return "destructive";
-    case "CANCELLED":
-    case "REMOVED":
-      return "outline";
-    default:
-      return "secondary";
-  }
 }
 
 export default function IngestContent() {
@@ -300,6 +281,9 @@ export default function IngestContent() {
   };
 
   const intakes = intakesQuery.data?.intakes ?? [];
+  // The last poll failed, or is waiting for the browser to come back online;
+  // the list shown is the last one that loaded.
+  const connectionLost = intakesQuery.isRefetchError || intakesQuery.isPaused;
   const selectedCatalog = catalogs?.find((catalog) => catalog.id === catalogId);
 
   return (
@@ -463,7 +447,7 @@ export default function IngestContent() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : intakesQuery.error ? (
+          ) : intakesQuery.error && !intakesQuery.data ? (
             <p className="text-sm text-destructive">{t("jobs.loadError")}</p>
           ) : intakes.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("jobs.empty")}</p>
@@ -500,10 +484,7 @@ export default function IngestContent() {
                         {new Date(intake.createdAt).toLocaleString()}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(intake.status)}>
-                          {t(`status.${intake.status}`)}
-                        </Badge>
-                        <IntakeProgress intake={intake} />
+                        <IntakeStatus intake={intake} connectionLost={connectionLost} />
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="space-y-1">

@@ -219,7 +219,7 @@ export async function recoverAcceptedIntakeAudioHash(
 
 export function serializeIntake(
   row: IntakeRow,
-  extra?: { prefectStateName?: string | null },
+  extra?: { prefectStateName?: string | null; jobStateUnavailable?: boolean },
 ): RecordingIntakeDto {
   return {
     id: row.id,
@@ -252,6 +252,7 @@ export function serializeIntake(
       ? row.progressStepStartedAt.toISOString()
       : null,
     prefectStateName: extra?.prefectStateName ?? null,
+    jobStateUnavailable: extra?.jobStateUnavailable ?? false,
   };
 }
 
@@ -432,6 +433,8 @@ async function applyJobState(
 export interface ReconciledIntake {
   row: IntakeRow;
   prefectStateName: string | null;
+  /** An active row whose job state could not be read this time. */
+  jobStateUnavailable: boolean;
 }
 
 /**
@@ -445,6 +448,7 @@ export async function reconcileActiveIntakes(
   const results: ReconciledIntake[] = rows.map((row) => ({
     row,
     prefectStateName: null,
+    jobStateUnavailable: false,
   }));
   const active = results
     .filter(
@@ -465,6 +469,7 @@ export async function reconcileActiveIntakes(
       });
     } catch (error) {
       if (error instanceof JobsApiConfigurationError) {
+        for (const unchecked of active) unchecked.jobStateUnavailable = true;
         return results;
       }
       if (error instanceof JobsApiError && error.status === 404) {
@@ -476,6 +481,8 @@ export async function reconcileActiveIntakes(
             errorMessage: 'The ingest job no longer exists in Prefect.',
           }),
         );
+      } else {
+        entry.jobStateUnavailable = true;
       }
       continue;
     }

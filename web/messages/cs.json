@@ -680,6 +680,8 @@
         "retrySubmit": "Znovu odeslat",
         "remove": "Odebrat nahrávku",
         "loadError": "Seznam zpracování se nepodařilo načíst.",
+        "connectionLost": "Spojení ztraceno, zkouším znovu…",
+        "jobStateUnavailable": "Služba úloh není dostupná; průběh se nekontroluje.",
         "columns": {
           "file": "Soubor",
           "catalog": "Katalog",

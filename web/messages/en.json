@@ -680,6 +680,8 @@
         "retrySubmit": "Retry submit",
         "remove": "Remove recording",
         "loadError": "Ingest jobs could not be loaded.",
+        "connectionLost": "Connection lost, retrying…",
+        "jobStateUnavailable": "The jobs service cannot be reached; progress is not being checked.",
         "columns": {
           "file": "File",
           "catalog": "Catalog",
