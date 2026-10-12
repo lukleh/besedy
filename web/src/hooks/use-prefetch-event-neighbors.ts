@@ -24,7 +24,9 @@ const FULL_PREFETCH = { kind: 'full' as PrefetchOptions['kind'] };
 /** Queries normally drop their data once nothing shows it; preloaded data has
  * to survive until the next event mounts, which still refetches it. */
 const PRELOAD_LIFETIME_MS = 60_000;
-const RETAINED_IMAGE_LIMIT = 4;
+// Enough for the two current neighbors; the one opened next is on the page by
+// then and no longer needs the reference.
+const RETAINED_IMAGE_LIMIT = 2;
 
 // A loaded image stays reusable for the document while it is referenced.
 const retainedImages = new Map<string, HTMLImageElement>();
@@ -58,7 +60,8 @@ function whenIdle(callback: () => void): () => void {
 
 /** Loads what the previous and next events need to appear complete at once:
  * the route, the event, its first recording's entry and sources, its own
- * neighbors and its artwork. Audio and transcripts load only once shown. */
+ * neighbors and its artwork. Audio and transcripts load only once shown, and
+ * nothing loads ahead when the device asks to save data. */
 export function usePrefetchEventNeighbors(
   catalogId: string,
   neighborIds: number[],
@@ -70,7 +73,8 @@ export function usePrefetchEventNeighbors(
 
   useEffect(() => {
     const ids = idsKey ? idsKey.split(',').map(Number) : [];
-    if (ids.length === 0) return;
+    // A device asking to save data gets no background loading at all.
+    if (ids.length === 0 || prefersSavingData()) return;
     let cancelled = false;
     const keep = { staleTime: PRELOAD_LIFETIME_MS, gcTime: PRELOAD_LIFETIME_MS };
 
@@ -101,7 +105,7 @@ export function usePrefetchEventNeighbors(
               });
             }
             const artwork = selectShownEventArtwork(detail);
-            if (artwork && !prefersSavingData()) {
+            if (artwork) {
               retainImage(
                 buildEventArtworkPictureUrl(
                   catalogId,

@@ -113,12 +113,18 @@ describe('usePrefetchEventNeighbors', () => {
     expect(sequenceUrls.some((url) => url.includes('location=7'))).toBe(true);
   });
 
-  it('skips the artwork image when the device asks to save data', async () => {
-    setSaveData(true);
-    const queryClient = setup(8);
+  it('loads nothing ahead when the device asks to save data', async () => {
+    vi.useFakeTimers();
+    try {
+      setSaveData(true);
+      setup(8);
+      await vi.advanceTimersByTimeAsync(5000);
+    } finally {
+      vi.useRealTimers();
+    }
 
-    await waitFor(() => expect(queryClient.getQueryData(['catalog-event-detail', 8])).toBeDefined());
-    await waitFor(() => expect(mocks.fetchJson).toHaveBeenCalledTimes(4));
+    expect(mocks.prefetch).not.toHaveBeenCalled();
+    expect(mocks.fetchJson).not.toHaveBeenCalled();
     expect(mocks.imageUrls).toEqual([]);
   });
 });
