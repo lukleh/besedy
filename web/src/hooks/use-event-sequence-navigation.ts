@@ -141,6 +141,20 @@ async function fetchSequence(
   );
 }
 
+/** The sequence request for one event in one list order, shared by the
+ * hook and by neighbor preloading. */
+export function eventSequenceQueryOptions(
+  catalogId: string,
+  eventId: number,
+  state: EventListQueryState,
+) {
+  return {
+    queryKey: sequenceQueryKey(catalogId, eventId, state),
+    queryFn: () => fetchSequence(catalogId, eventId, state),
+    ...SEQUENCE_QUERY_PROFILE,
+  };
+}
+
 export function useEventSequenceNavigation(
   catalogId: string,
   eventId: number,
@@ -178,10 +192,8 @@ export function useEventSequenceNavigation(
   ]);
   const primaryState = sequenceState ?? DEFAULT_SEQUENCE_STATE;
   const primaryQuery = useQuery({
-    queryKey: sequenceQueryKey(catalogId, eventId, primaryState),
-    queryFn: () => fetchSequence(catalogId, eventId, primaryState),
+    ...eventSequenceQueryOptions(catalogId, eventId, primaryState),
     enabled: sequenceState !== null,
-    ...SEQUENCE_QUERY_PROFILE,
   });
 
   const needsFallback =
@@ -190,12 +202,21 @@ export function useEventSequenceNavigation(
     primaryQuery.data.position === null &&
     !isDefaultSequenceState(primaryState);
   const fallbackQuery = useQuery({
-    queryKey: sequenceQueryKey(catalogId, eventId, DEFAULT_SEQUENCE_STATE),
-    queryFn: () => fetchSequence(catalogId, eventId, DEFAULT_SEQUENCE_STATE),
+    ...eventSequenceQueryOptions(catalogId, eventId, DEFAULT_SEQUENCE_STATE),
     enabled: needsFallback,
-    ...SEQUENCE_QUERY_PROFILE,
   });
   const query = needsFallback ? fallbackQuery : primaryQuery;
+  // The list orders a neighbor's page asks for, in order: the saved one, then
+  // the full list when this event fell back to it. Empty until known.
+  const sequenceStates = useMemo(
+    () =>
+      sequenceState === null
+        ? []
+        : needsFallback
+          ? [primaryState, DEFAULT_SEQUENCE_STATE]
+          : [primaryState],
+    [needsFallback, primaryState, sequenceState],
+  );
 
   return {
     ...query,
@@ -203,5 +224,6 @@ export function useEventSequenceNavigation(
     next: query.data?.next ?? null,
     position: query.data?.position ?? null,
     total: query.data?.total ?? 0,
+    sequenceStates,
   };
 }

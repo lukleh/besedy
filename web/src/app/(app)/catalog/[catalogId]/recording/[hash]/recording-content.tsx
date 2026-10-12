@@ -2,7 +2,6 @@
 
 import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
 import { useAacUpgradeAvailable } from "@/hooks/use-aac-upgrade-available";
@@ -10,10 +9,8 @@ import { useDownloadRecord } from "@/hooks/use-downloads";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
 import { FormatUpgradeNotice } from "@/components/offline/format-upgrade-notice";
 import { browserPrefersAacAudio } from "@/lib/audio-format";
-import { fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioDownloadUrl,
-  buildAudioSourcesUrl,
   buildAudioUrl,
 } from "@/lib/api/recording-urls";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
@@ -34,6 +31,7 @@ import {
   type RecordingHeadingContext,
 } from "./recording-content-sections";
 import { useRecordingPlayback } from "./use-recording-playback";
+import { audioSourcesQueryOptions } from "./audio-sources-query";
 
 interface RecordingContentProps {
   params: Promise<{ catalogId: string; hash: string }> | { catalogId: string; hash: string };
@@ -55,34 +53,6 @@ function isPromiseParams(
 ): value is Promise<{ catalogId: string; hash: string }> {
   return typeof (value as { then?: unknown }).then === "function";
 }
-
-interface AudioSource {
-  id: string;
-  label: string;
-  type: "archived";
-  available: boolean;
-  formats?: string[];
-}
-
-interface AudioSourcesResponse {
-  hash: string;
-  sources: AudioSource[];
-  defaultSource: string;
-}
-
-const audioSourceSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  type: z.literal("archived"),
-  available: z.boolean(),
-  formats: z.array(z.string()).optional(),
-});
-
-const audioSourcesResponseSchema = z.object({
-  hash: z.string(),
-  sources: z.array(audioSourceSchema),
-  defaultSource: z.string(),
-});
 
 /** Longest the player waits for the audio format before it plays the WebM. */
 export const FORMAT_WAIT_TIMEOUT_MS = 3000;
@@ -165,17 +135,8 @@ export default function RecordingContent({
   const backToListUrl = `/catalog/${catalogId}`;
 
   // Fetch available audio sources
-  const { data: sourcesData, isLoading: sourcesLoading } = useQuery<AudioSourcesResponse>({
-    queryKey: ["audio-variants", hash, groupKey],
-    queryFn: async () => {
-      try {
-        return await fetchJson<AudioSourcesResponse>(buildAudioSourcesUrl(catalogId, hash), {
-          schema: audioSourcesResponseSchema,
-        });
-      } catch {
-        return { hash, sources: [], defaultSource: "archived" };
-      }
-    },
+  const { data: sourcesData, isLoading: sourcesLoading } = useQuery({
+    ...audioSourcesQueryOptions(catalogId, hash, groupKey),
     enabled: !catalogNotFound && !catalogValidationLoading,
   });
 

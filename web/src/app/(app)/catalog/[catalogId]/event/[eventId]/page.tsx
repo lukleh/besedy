@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { EventDetail } from "@/components/catalog/event-detail";
+import { EventPageTransition } from "@/components/catalog/event-page-transition";
 import { getSession } from "@/lib/auth/session";
 import { getCatalogFeaturesForUser } from "@/lib/features/capabilities";
 
@@ -28,12 +29,14 @@ export default async function EventDetailPage({
   }
 
   return (
-    <EventDetail
-      catalogId={catalogId}
-      eventId={parsedEventId}
-      canEdit={featureData.data.features.events.canEdit}
-      showAllColumns={featureData.data.features.events.showAllColumns}
-      showReleaseState={featureData.data.features.events.showReleaseState}
-    />
+    <EventPageTransition eventId={parsedEventId}>
+      <EventDetail
+        catalogId={catalogId}
+        eventId={parsedEventId}
+        canEdit={featureData.data.features.events.canEdit}
+        showAllColumns={featureData.data.features.events.showAllColumns}
+        showReleaseState={featureData.data.features.events.showReleaseState}
+      />
+    </EventPageTransition>
   );
 }

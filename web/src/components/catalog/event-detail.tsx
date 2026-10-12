@@ -8,11 +8,9 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw } from "lucide-react";
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
-import { fetchJson, isNetworkFailure } from "@/lib/api/fetch-json";
+import { isNetworkFailure } from "@/lib/api/fetch-json";
 import { isAccessDeniedError } from "@/lib/query/auth-sensitive";
 import { clearLastRoute } from "@/lib/pwa/last-route";
-import { buildEventDetailUrl } from "@/lib/api/recording-urls";
-import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
 import { useRecordingEntry } from "@/hooks/use-recording-entry";
 import type { EventDetailResponse } from "@/types/event-detail";
@@ -24,6 +22,7 @@ import { EmptyState } from "@/components/empty-state";
 import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
 import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture";
 import { EventArtworkSwipe } from "@/components/catalog/event-artwork-swipe";
+import { eventDetailQueryOptions, selectShownEventArtwork } from "@/components/catalog/event-detail-query";
 import { EventEditMenu } from "@/components/catalog/event-edit-menu";
 import {
   ResponsiveMenu,
@@ -54,17 +53,9 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const [selectedHash, setSelectedHash] = useState<string>("");
   const handledReadOnlyRef = useRef<string | null>(null);
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery<EventDetailResponse>({
-    queryKey: ["catalog-event-detail", eventId],
-    networkMode: "offlineFirst",
-    // Network first; a complete local package answers when the request itself
-    // cannot be made, so the same page renders online and offline.
-    queryFn: () =>
-      withLocalFallback(
-        () => fetchJson<EventDetailResponse>(buildEventDetailUrl(catalogId, eventId)),
-        () => readLocalEventDetail(catalogId, eventId)
-      ),
-  });
+  const { data, isLoading, error, refetch, isFetching } = useQuery<EventDetailResponse>(
+    eventDetailQueryOptions(catalogId, eventId)
+  );
   // A hidden event is not worth resuming on at the next launch; the route was
   // recorded before this client-side answer arrived.
   const isHidden = isAccessDeniedError(error);
@@ -206,20 +197,21 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         : tRoot("recording.noArtwork");
 
   const artworkAlt = data.title ?? t("eventFallbackTitle", { id: data.id });
-  const artworkImage = publishedArtwork ? (
+  const shownArtwork = selectShownEventArtwork(data);
+  const artworkImage = shownArtwork?.source === "published" ? (
     <EventArtworkPicture
       catalogId={catalogId}
       eventId={eventId}
-      artworkId={publishedArtwork.id}
+      artworkId={shownArtwork.artworkId}
       alt={artworkAlt}
       fallbackSrc={localArtworkUrl}
     />
-  ) : canViewArtworkCandidates && latestDraftCandidate ? (
+  ) : shownArtwork?.source === "candidate" ? (
     <div className="relative">
       <EventArtworkPicture
         catalogId={catalogId}
         eventId={eventId}
-        artworkId={latestDraftCandidate.id}
+        artworkId={shownArtwork.artworkId}
         alt={artworkAlt}
         source="candidate"
       />

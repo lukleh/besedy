@@ -185,28 +185,68 @@
   animation: pulse-radio 1.5s ease-in-out infinite;
 }
 
-/* View Transitions - Progressive enhancement */
-@supports (view-transition-name: none) {
-  ::view-transition-old(root) {
-    animation: fade-slide-out 200ms ease-out both;
-  }
+/* View transitions animate only named content, such as the event slide
+ * below; the rest of the page switches at once. Normal blending keeps the
+ * default additive mix of two full-opacity snapshots from lightening it. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
 
-  ::view-transition-new(root) {
-    animation: fade-slide-in 200ms ease-out both;
-  }
+/* Event sequence: the event content slides in the direction of travel
+ * (event-page-transition.tsx). */
 
-  @keyframes fade-slide-out {
-    to {
-      transform: translateX(-10px);
-      opacity: 0;
-    }
-  }
+::view-transition-old(.event-next) {
+  animation: 160ms ease-in both event-slide-to-left;
+}
 
-  @keyframes fade-slide-in {
-    from {
-      transform: translateX(10px);
-      opacity: 0;
-    }
+::view-transition-new(.event-next) {
+  animation: 220ms ease-out both event-slide-from-right;
+}
+
+::view-transition-old(.event-previous) {
+  animation: 160ms ease-in both event-slide-to-right;
+}
+
+::view-transition-new(.event-previous) {
+  animation: 220ms ease-out both event-slide-from-left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(.event-next),
+  ::view-transition-new(.event-next),
+  ::view-transition-old(.event-previous),
+  ::view-transition-new(.event-previous) {
+    animation: none;
+  }
+}
+
+@keyframes event-slide-to-left {
+  to {
+    transform: translateX(-25%);
+    opacity: 0;
+  }
+}
+
+@keyframes event-slide-from-right {
+  from {
+    transform: translateX(25%);
+    opacity: 0;
+  }
+}
+
+@keyframes event-slide-to-right {
+  to {
+    transform: translateX(25%);
+    opacity: 0;
+  }
+}
+
+@keyframes event-slide-from-left {
+  from {
+    transform: translateX(-25%);
+    opacity: 0;
   }
 }
 

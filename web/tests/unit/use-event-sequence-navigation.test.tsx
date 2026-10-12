@@ -112,6 +112,32 @@ describe('useEventSequenceNavigation', () => {
     expect(String(mocks.fetchJson.mock.calls[1][0])).toContain('current=2');
   });
 
+  it('reports both list orders for neighbor preloading when the saved filter excludes this event', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+      key === STORAGE_KEY ? JSON.stringify({ locationFilter: '7' }) : null,
+    );
+    mocks.fetchJson
+      .mockResolvedValueOnce({ previous: null, next: null, position: null, total: 0 })
+      .mockResolvedValueOnce(sequence);
+    const { result } = renderHook(
+      () => useEventSequenceNavigation(CATALOG_ID, 1, LIST_CAPABILITIES),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.position).toBe(1));
+    expect(result.current.sequenceStates.map((state) => state.locationFilter)).toEqual(['7', 'all']);
+  });
+
+  it('reports the saved list order alone when this event is in it', async () => {
+    const { result } = renderHook(
+      () => useEventSequenceNavigation(CATALOG_ID, 1, LIST_CAPABILITIES),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.position).toBe(1));
+    expect(result.current.sequenceStates).toHaveLength(1);
+  });
+
   it('drops filters and sorts that are not visible to the current user', async () => {
     mocks.isDesktop = true;
     vi.mocked(localStorage.getItem).mockImplementation((key: string) =>

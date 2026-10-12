@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
+import { useEffect, useRef, useState, useTransition, type ReactNode, type TouchEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAudioPlayback } from '@/contexts/audio-playback-context';
 import { useEventSequenceNavigation } from '@/hooks/use-event-sequence-navigation';
 import { buildEventPagePath } from '@/lib/api/recording-urls';
+import { eventTransitionTypes } from '@/lib/event-navigation-transition';
+import { cn } from '@/lib/utils';
 
 /** Swipes starting this close to a screen edge belong to the browser's own
  * back/forward gesture. */
@@ -63,6 +65,8 @@ export function EventArtworkSwipe({
     showAllColumns,
     showReleaseState,
   });
+  // Pending while an event that was not preloaded yet is still loading.
+  const [isPending, startTransition] = useTransition();
   const startRef = useRef<Point | null>(null);
   // Until the new event renders, previous/next still describe this one, so a
   // second swipe would push the same page again.
@@ -70,6 +74,17 @@ export function EventArtworkSwipe({
   useEffect(() => {
     navigatedFromRef.current = null;
   }, [eventId]);
+  // A zoomed page needs sideways drags for panning, so it keeps the browser's
+  // own touch handling there.
+  const [isZoomed, setIsZoomed] = useState(false);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => setIsZoomed(viewport.scale > 1);
+    update();
+    viewport.addEventListener('resize', update);
+    return () => viewport.removeEventListener('resize', update);
+  }, []);
 
   const onTouchStart = (event: TouchEvent) => {
     // A second finger means pinch-zoom, not a swipe.
@@ -91,14 +106,29 @@ export function EventArtworkSwipe({
       window.innerWidth,
     );
     const target = direction === 'next' ? next : direction === 'previous' ? previous : null;
-    if (!target) return;
+    if (!direction || !target) return;
     navigatedFromRef.current = eventId;
-    router.push(buildEventPagePath(catalogId, target.id));
+    startTransition(() => {
+      // Keeping the scroll position puts the next artwork under the finger.
+      router.push(buildEventPagePath(catalogId, target.id), {
+        scroll: false,
+        transitionTypes: eventTransitionTypes(direction),
+      });
+    });
   };
 
   return (
     <div
       data-testid="event-artwork-swipe"
+      className={cn(
+        'transition-opacity',
+        // Sideways movement here is the swipe; without this, Chrome on a touch
+        // screen also turns it into history back/forward.
+        !isZoomed && 'touch-pan-y touch-pinch-zoom',
+        // Dim only a wait long enough to notice, so a preloaded event does not
+        // slide out half dimmed.
+        isPending && 'opacity-60 delay-150',
+      )}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}

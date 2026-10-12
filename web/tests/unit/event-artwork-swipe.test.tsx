@@ -56,6 +56,13 @@ function renderSwipe() {
   return { target: screen.getByTestId('event-artwork-swipe'), rerender: view.rerender };
 }
 
+function setZoom(scale: number) {
+  Object.defineProperty(window, 'visualViewport', {
+    configurable: true,
+    value: { scale, addEventListener: vi.fn(), removeEventListener: vi.fn() },
+  });
+}
+
 function swipe(target: HTMLElement, fromX: number, toX: number) {
   fireEvent.touchStart(target, { touches: [{ clientX: fromX, clientY: 200 }] });
   fireEvent.touchEnd(target, { touches: [], changedTouches: [{ clientX: toX, clientY: 200 }] });
@@ -67,17 +74,23 @@ describe('EventArtworkSwipe', () => {
     mocks.sequence = { previous: { id: 4 }, next: { id: 6 } };
     mocks.isRecordingPlaying = false;
     window.innerWidth = WIDTH;
-    Object.defineProperty(window, 'visualViewport', { configurable: true, value: { scale: 1 } });
+    setZoom(1);
   });
 
-  it('opens the next event on a swipe left', () => {
+  it('opens the next event on a swipe left, sliding forward in place', () => {
     swipe(renderSwipe().target, 300, 150);
-    expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/6');
+    expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/6', {
+      scroll: false,
+      transitionTypes: ['event-next'],
+    });
   });
 
-  it('opens the previous event on a swipe right', () => {
+  it('opens the previous event on a swipe right, sliding back in place', () => {
     swipe(renderSwipe().target, 100, 250);
-    expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/4');
+    expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/4', {
+      scroll: false,
+      transitionTypes: ['event-previous'],
+    });
   });
 
   it('opens one page per event, however often it is swiped before the next one loads', () => {
@@ -106,9 +119,18 @@ describe('EventArtworkSwipe', () => {
   });
 
   it('leaves a one-finger drag on a zoomed page to panning', () => {
-    Object.defineProperty(window, 'visualViewport', { configurable: true, value: { scale: 2 } });
+    setZoom(2);
     swipe(renderSwipe().target, 300, 150);
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('keeps sideways drags from the browser history gesture', () => {
+    expect(renderSwipe().target).toHaveClass('touch-pan-y', 'touch-pinch-zoom');
+  });
+
+  it('leaves sideways drags to panning while the page is zoomed', () => {
+    setZoom(2);
+    expect(renderSwipe().target).not.toHaveClass('touch-pan-y');
   });
 
   it('ignores a gesture that used a second finger', () => {
