@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventDetail } from "@/components/catalog/event-detail";
@@ -35,11 +35,12 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content", () => ({
-  default: (props: { afterAudioPlayer?: ReactNode; headerActions?: ReactNode }) => {
+  default: (props: { beforeAudioPlayer?: ReactNode; afterAudioPlayer?: ReactNode; headerActions?: ReactNode }) => {
     recordingContentMock(props);
     return (
       <div data-testid="recording-content">
         <div data-testid="header-actions">{props.headerActions}</div>
+        {props.beforeAudioPlayer}
         {props.afterAudioPlayer}
       </div>
     );
@@ -73,6 +74,14 @@ vi.mock("@/components/offline/download-button", () => ({
 
 vi.mock("@/components/catalog/event-sequence-navigation", () => ({
   EventSequenceNavigation: () => null,
+}));
+
+vi.mock("@/components/catalog/event-artwork-picture", () => ({
+  EventArtworkPicture: ({ artworkId }: { artworkId: string }) => <span data-testid="event-artwork">{artworkId}</span>,
+}));
+
+vi.mock("@/components/catalog/event-artwork-swipe", () => ({
+  EventArtworkSwipe: ({ children }: { children: ReactNode }) => <div data-testid="event-artwork-swipe">{children}</div>,
 }));
 
 function eventDetail(overrides: Partial<EventDetailResponse> = {}): EventDetailResponse {
@@ -339,6 +348,26 @@ describe("EventDetail edit menu", () => {
     renderEventDetail(eventDetail({ canViewArtworkCandidates: true, artworkStatus: "published" }));
 
     expect(linkHrefs()).toEqual([`${eventPath}/artwork`]);
+  });
+
+  it("makes the published artwork swipeable", () => {
+    renderEventDetail(
+      eventDetail({
+        publishedArtwork: {
+          id: "art-1",
+          publishedAt: "2026-01-01T00:00:00.000Z",
+          assets: { square: { bytes: 1, sha256: "a" }, landscape: { bytes: 1, sha256: "b" } },
+        },
+      })
+    );
+
+    expect(within(screen.getByTestId("event-artwork-swipe")).getByTestId("event-artwork")).toHaveTextContent("art-1");
+  });
+
+  it("has nothing to swipe without artwork", () => {
+    renderEventDetail(eventDetail());
+
+    expect(screen.queryByTestId("event-artwork-swipe")).not.toBeInTheDocument();
   });
 
   it("shows no edit menu to a reader", () => {

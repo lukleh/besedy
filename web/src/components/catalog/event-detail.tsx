@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { EventSequenceNavigation } from "@/components/catalog/event-sequence-navigation";
 import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture";
+import { EventArtworkSwipe } from "@/components/catalog/event-artwork-swipe";
 import { EventEditMenu } from "@/components/catalog/event-edit-menu";
 import {
   ResponsiveMenu,
@@ -205,7 +206,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         : tRoot("recording.noArtwork");
 
   const artworkAlt = data.title ?? t("eventFallbackTitle", { id: data.id });
-  const artworkPicture = publishedArtwork ? (
+  const artworkImage = publishedArtwork ? (
     <EventArtworkPicture
       catalogId={catalogId}
       eventId={eventId}
@@ -226,6 +227,16 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
         {t("draftArtworkAvailable")}
       </Badge>
     </div>
+  ) : null;
+  const artworkPicture = artworkImage ? (
+    <EventArtworkSwipe
+      catalogId={catalogId}
+      eventId={eventId}
+      showAllColumns={showAllColumns}
+      showReleaseState={showReleaseState}
+    >
+      {artworkImage}
+    </EventArtworkSwipe>
   ) : null;
 
   // Released is the usual state, so only its absence is worth a badge.
