@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { type Stats } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import sharp, { type Metadata } from "sharp";
@@ -8,10 +9,17 @@ import { validatePath } from "@/lib/security/path-validation";
 export const ARTWORK_VARIANTS = ["square", "landscape"] as const;
 export type ArtworkVariant = (typeof ARTWORK_VARIANTS)[number];
 export type ArtworkExtension = ".jpg" | ".png";
+export const ARTWORK_SIZES = ["web", "original"] as const;
+export type ArtworkSize = (typeof ARTWORK_SIZES)[number];
+export const WEB_ARTWORK_EXTENSION = ".webp";
+export const WEB_ARTWORK_MIME_TYPE = "image/webp";
 
 export const MAX_ARTWORK_UPLOAD_BYTES = 30 * 1024 * 1024;
 export const MAX_ARTWORK_INPUT_PIXELS = 50_000_000;
 const ASPECT_RATIO_TOLERANCE = 0.025;
+// Same pixel size as the stored original so pinch-zoom stays sharp; only the
+// encoding is lossy.
+const WEB_ARTWORK_QUALITY = 85;
 const SHARED_ARTWORK_DIR_MODE = 0o2770;
 const SHARED_ARTWORK_FILE_MODE = 0o660;
 
@@ -27,6 +35,8 @@ export interface ArtworkUploadInput {
 
 export interface ProcessedArtworkAsset {
   bytes: Buffer;
+  /** Audience-facing WebP copy of `bytes`, written beside the original. */
+  webBytes: Buffer;
   extension: ArtworkExtension;
   mimeType: "image/jpeg" | "image/png";
   originalName: string;
@@ -69,6 +79,26 @@ export function resolveEventArtworkAssetPath(
   extension: ArtworkExtension
 ): string {
   return path.join(resolveEventArtworkDir(catalogId, eventId, artworkId), `${variant}${extension}`);
+}
+
+export function resolveEventArtworkWebAssetPath(
+  catalogId: string,
+  eventId: number,
+  artworkId: string,
+  variant: ArtworkVariant
+): string {
+  return path.join(
+    resolveEventArtworkDir(catalogId, eventId, artworkId),
+    webArtworkFileName(variant)
+  );
+}
+
+function webArtworkFileName(variant: ArtworkVariant): string {
+  return `${variant}.web${WEB_ARTWORK_EXTENSION}`;
+}
+
+export function createWebArtworkBytes(bytes: Buffer): Promise<Buffer> {
+  return sharp(bytes).webp({ quality: WEB_ARTWORK_QUALITY }).toBuffer();
 }
 
 export function getArtworkContentType(extension: string): string {
@@ -155,9 +185,13 @@ export async function processArtworkAsset(
     throw new ArtworkAssetError("Artwork contains invalid image data", "INVALID_FILE");
   }
 
+  // Not blamed on the upload: the original was just encoded successfully, so a
+  // failure here is a server fault.
+  const webBytes = await createWebArtworkBytes(bytes);
   const outputMetadata = await sharp(bytes).metadata();
   return {
     bytes,
+    webBytes,
     extension,
     mimeType,
     originalName: path.basename(input.originalName).slice(0, 255),
@@ -195,14 +229,18 @@ export async function writeArtworkCandidateAssets(options: {
   try {
     const squarePath = path.join(tempDir, `square${options.square.extension}`);
     const landscapePath = path.join(tempDir, `landscape${options.landscape.extension}`);
-    await Promise.all([
-      fs.writeFile(squarePath, options.square.bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE }),
-      fs.writeFile(landscapePath, options.landscape.bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE }),
-    ]);
-    await Promise.all([
-      fs.chmod(squarePath, SHARED_ARTWORK_FILE_MODE),
-      fs.chmod(landscapePath, SHARED_ARTWORK_FILE_MODE),
-    ]);
+    const squareWebPath = path.join(tempDir, webArtworkFileName("square"));
+    const landscapeWebPath = path.join(tempDir, webArtworkFileName("landscape"));
+    const files = [
+      [squarePath, options.square.bytes],
+      [landscapePath, options.landscape.bytes],
+      [squareWebPath, options.square.webBytes],
+      [landscapeWebPath, options.landscape.webBytes],
+    ] as const;
+    await Promise.all(
+      files.map(([filePath, bytes]) => fs.writeFile(filePath, bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE }))
+    );
+    await Promise.all(files.map(([filePath]) => fs.chmod(filePath, SHARED_ARTWORK_FILE_MODE)));
     await fs.rename(tempDir, finalDir);
     return finalDir;
   } catch (error) {
@@ -316,6 +354,76 @@ export async function readArtworkAsset(filePath: string): Promise<{ bytes: Buffe
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export interface ArtworkWebBackfillResult {
+  created: number;
+  existing: number;
+  /** "<event>/<artwork>/<variant>: <reason>" for each original that could not be converted. */
+  failed: string[];
+}
+
+/**
+ * Add the WebP copy beside every stored original of a catalog that lacks one.
+ * Originals are never touched, and a second run skips finished files.
+ */
+export async function backfillArtworkWebAssets(catalogId: string): Promise<ArtworkWebBackfillResult> {
+  const result: ArtworkWebBackfillResult = { created: 0, existing: 0, failed: [] };
+  const eventsRoot = resolveEventArtworksPath(catalogId);
+  const subdirectories = async (dir: string) =>
+    (await fs.readdir(dir, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name)
+      .sort();
+
+  for (const eventEntry of await subdirectories(eventsRoot)) {
+    const eventDir = path.join(eventsRoot, eventEntry);
+    for (const artworkEntry of await subdirectories(eventDir)) {
+      const artworkDir = path.join(eventDir, artworkEntry);
+      for (const variant of ARTWORK_VARIANTS) {
+        const webPath = path.join(artworkDir, webArtworkFileName(variant));
+        try {
+          if (await fs.stat(webPath).then(() => true, () => false)) {
+            result.existing += 1;
+            continue;
+          }
+          const original =
+            (await readArtworkAsset(path.join(artworkDir, `${variant}.png`))) ??
+            (await readArtworkAsset(path.join(artworkDir, `${variant}.jpg`)));
+          if (!original) continue;
+          await writeArtworkFileAtomically(
+            webPath,
+            await createWebArtworkBytes(original.bytes),
+            await fs.stat(original.resolvedPath)
+          );
+          result.created += 1;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          result.failed.push(`${path.join(eventEntry, artworkEntry, variant)}: ${reason}`);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Write beside `like` with its group and permission bits, so the copy is
+ * readable by exactly the processes that can read the original. When the group
+ * cannot be applied the file is not put in place at all.
+ */
+async function writeArtworkFileAtomically(filePath: string, bytes: Buffer, like: Stats): Promise<void> {
+  const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.tmp-${randomUUID()}`);
+  try {
+    await fs.writeFile(tempPath, bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE });
+    const written = await fs.stat(tempPath);
+    if (written.gid !== like.gid) await fs.chown(tempPath, -1, like.gid);
+    await fs.chmod(tempPath, like.mode & 0o777);
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
     throw error;
   }
 }
