@@ -6,6 +6,7 @@ import {
   GET as listArtworkCandidates,
   POST as createArtworkCandidate,
 } from "@/app/api/catalogs/[id]/events/[eventId]/artworks/route";
+import { GET as getCandidateImage } from "@/app/api/catalogs/[id]/events/[eventId]/artworks/[artworkId]/image/route";
 import {
   DELETE as unpublishArtwork,
   PUT as publishArtwork,
@@ -85,6 +86,7 @@ describe("catalog event artwork routes", () => {
       contentType: "image/jpeg",
       artworkId: "4b58cb81-ad10-4b7f-98ca-f05946711b37",
       sha256: "abc123",
+      served: "web",
     });
     listEventArtworkCandidates.mockResolvedValue([]);
     createEventArtworkCandidate.mockResolvedValue({
@@ -114,6 +116,66 @@ describe("catalog event artwork routes", () => {
       eventId,
       variant: "square",
       publishedOnly: true,
+    });
+  });
+
+  describe("candidate image size", () => {
+    const artworkId = "4b58cb81-ad10-4b7f-98ca-f05946711b37";
+    const candidateContext = {
+      params: Promise.resolve({ id: catalogId, eventId: String(eventId), artworkId }),
+    };
+    const candidateUrl = (query: string) =>
+      new NextRequest(`http://localhost/api/catalogs/${catalogId}/events/${eventId}/artworks/${artworkId}/image?${query}`);
+
+    it("serves the web size unless the original is requested", async () => {
+      const response = await getCandidateImage(candidateUrl("variant=square"), candidateContext);
+
+      expect(response.status).toBe(200);
+      expect(loadEventArtworkAsset).toHaveBeenCalledWith({
+        catalogId,
+        eventId,
+        artworkId,
+        variant: "square",
+        publishedOnly: false,
+        size: "web",
+      });
+    });
+
+    it("serves the original when requested", async () => {
+      await getCandidateImage(candidateUrl("variant=landscape&size=original"), candidateContext);
+
+      expect(loadEventArtworkAsset).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: "landscape", size: "original" })
+      );
+    });
+
+    it("lets the browser keep an exact match for a year", async () => {
+      const response = await getCandidateImage(candidateUrl("variant=square"), candidateContext);
+
+      expect(response.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    });
+
+    it("does not pin the original as the web image while no WebP copy exists", async () => {
+      loadEventArtworkAsset.mockResolvedValue({
+        bytes: Buffer.from("original"),
+        contentType: "image/png",
+        artworkId,
+        sha256: "def456",
+        served: "original",
+      });
+
+      const fallback = await getCandidateImage(candidateUrl("variant=square"), candidateContext);
+      const requestedOriginal = await getCandidateImage(candidateUrl("variant=square&size=original"), candidateContext);
+
+      expect(fallback.headers.get("cache-control")).toBe("private, no-cache");
+      expect(requestedOriginal.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    });
+
+    it("rejects an unknown size", async () => {
+      const response = await getCandidateImage(candidateUrl("variant=square&size=huge"), candidateContext);
+
+      expect(response.status).toBe(400);
+      expect(loadEventArtworkAsset).not.toHaveBeenCalled();
     });
   });
 

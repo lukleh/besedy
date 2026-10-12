@@ -353,12 +353,14 @@ export default function EventArtworkPage({ params }: EventArtworkPageProps) {
                     title={t("square")}
                     imageName={t("imageName", { label: candidate.label || t("unnamed"), variant: t("square") })}
                     src={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "square")}
+                    fullSrc={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "square", "original")}
                     aspectClass="aspect-square"
                   />
                   <CandidateImage
                     title={t("landscape")}
                     imageName={t("imageName", { label: candidate.label || t("unnamed"), variant: t("landscape") })}
                     src={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "landscape")}
+                    fullSrc={buildEventArtworkCandidateImageUrl(catalogId, parsedEventId, candidate.id, "landscape", "original")}
                     aspectClass="aspect-video"
                   />
                 </div>
@@ -454,17 +456,19 @@ function CandidateImage({
   title,
   imageName,
   src,
+  fullSrc,
   aspectClass,
 }: {
   title: string;
   imageName: string;
   src: string;
+  fullSrc: string;
   aspectClass: string;
 }) {
   return (
     <figure className="space-y-2">
       <figcaption className="text-sm font-medium">{title}</figcaption>
-      <ArtworkLightboxImage src={src} title={imageName} className={aspectClass} />
+      <ArtworkLightboxImage src={src} fullSrc={fullSrc} title={imageName} className={aspectClass} />
     </figure>
   );
 }

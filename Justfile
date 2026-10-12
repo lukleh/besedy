@@ -689,9 +689,9 @@ prod-build:
         echo "A coordinated deployment will build and retain the jobs image before downtime." >&2
     fi
 
-# Stop the web writer and scheduled backup, create a verified backup, migrate,
-# and start the image previously produced by prod-build. A failure deliberately
-# leaves web and the scheduled backup stopped.
+# Stop the web writer, create a verified backup, migrate, and start the image
+# previously produced by prod-build. A failure deliberately leaves web stopped.
+# The daily database dump is a host job; pause it separately during maintenance.
 prod-apply:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -716,8 +716,8 @@ prod-apply:
     # permission migrations change constraints as well as adding columns, so
     # neither the old nor new process may write while the schema is between
     # versions.
-    echo "Stopping web and scheduled backup for database maintenance..."
-    {{ prod_compose }} stop web backup
+    echo "Stopping web for database maintenance..."
+    {{ prod_compose }} stop web
     # On a fresh host nothing has started the database yet. --no-recreate
     # leaves an existing database container untouched.
     echo "Ensuring the database is running..."
@@ -726,8 +726,8 @@ prod-apply:
     just prod-backup
     echo "Running migrations..."
     just prod-migrate
-    echo "Starting the migrated web service and scheduled backup..."
-    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web backup
+    echo "Starting the migrated web service..."
+    {{ prod_compose }} up -d --no-deps --no-build --remove-orphans web
     # Authoritative deploy record: what actually went live, and when -- as
     # opposed to a commit's timestamp, which only says when the code changed.
     # Best-effort and non-fatal: the deploy above already succeeded, so a
@@ -860,7 +860,7 @@ prod-restore *args:
         exit 1
     fi
     if [ -n "$({{ prod_compose }} ps --services --status running backup)" ]; then
-        echo "Stop the production scheduled backup service before restoring." >&2
+        echo "Wait for the running production backup dump to finish before restoring." >&2
         exit 1
     fi
     cd ..
@@ -904,14 +904,14 @@ _prod-rollback jobs_start commit backup:
     docker image inspect "besedy-jobs:$commit" >/dev/null
     just jobs-prod-check-idle
     cd web
-    {{ prod_compose }} stop web backup
+    {{ prod_compose }} stop web
     cd ..
     {{ jobs_prod_compose }} stop jobs-api prefect-worker
     echo "Preserving the current failed state before restoring..."
     just prod-backup
     CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
     cd web
-    BESEDY_WEB_IMAGE="besedy-web:$commit" {{ prod_compose }} up -d --no-deps --no-build web backup
+    BESEDY_WEB_IMAGE="besedy-web:$commit" {{ prod_compose }} up -d --no-deps --no-build web
     cd ..
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just "$jobs_start"
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-deploy

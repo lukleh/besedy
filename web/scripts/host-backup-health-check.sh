@@ -280,9 +280,9 @@ check_remote_sync() {
 
 # Emit one "start|end|file_count" line per successful remote sync in the log.
 # The file count comes from the rsync --stats "Number of files:" line.
-# back_up.sh rotates the log to <log>.<timestamp>.gz, so the newest rotated
+# rsnapshot-backup.sh rotates the log to <log>.<timestamp>.gz, so the newest rotated
 # file is read first to keep a baseline available right after a rotation.
-# A back_up.sh retry is timed from the first attempt (that is how long the run
+# A rsnapshot-backup.sh retry is timed from the first attempt (that is how long the run
 # held the backup lock), and RSYNC_DRY_RUN runs are skipped.
 successful_sync_records() {
     local log_file="$1"
@@ -401,6 +401,15 @@ check_extra_db_dump() {
     info+=("extra_latest_db_dump=$LATEST_EXTRA_DB_DUMP")
 }
 
+check_nas_db_dump() {
+    local result
+    if result="$(bash "$SCRIPT_DIR/db-snapshot-hook.sh" check 2>&1)"; then
+        info+=("$result")
+    else
+        failures+=("NAS database verification failed: $result")
+    fi
+}
+
 if ! is_positive_int "$MAX_AGE_HOURS"; then
     echo "MAX_AGE_HOURS must be a positive integer, got: $MAX_AGE_HOURS" >&2
     exit 1
@@ -428,6 +437,7 @@ check_remote_sync "extra" "$EXTRA_LOG_FILE"
 check_remote_sync_trend "project" "$PROJECT_LOG_FILE"
 check_remote_sync_trend "extra" "$EXTRA_LOG_FILE"
 check_extra_db_dump
+check_nas_db_dump
 
 suggested_checks=" - ls -lah $PROJECT_SNAPSHOT_ROOT
  - ls -lah $EXTRA_SNAPSHOT_ROOT

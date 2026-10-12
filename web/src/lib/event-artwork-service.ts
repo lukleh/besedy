@@ -9,10 +9,13 @@ import {
   readArtworkAsset,
   removeArtworkCandidateAssets,
   resolveEventArtworkAssetPath,
+  resolveEventArtworkWebAssetPath,
   restoreStagedEventArtworkAssets,
   stageArtworkCandidateAssetsRemoval,
   writeArtworkCandidateAssets,
+  WEB_ARTWORK_MIME_TYPE,
   type ArtworkExtension,
+  type ArtworkSize,
   type ArtworkUploadInput,
   type ArtworkVariant,
   type StagedArtworkCandidateAssetsRemoval,
@@ -449,14 +452,33 @@ export async function loadEventArtworkAsset(options: {
   artworkId?: string;
   variant: ArtworkVariant;
   publishedOnly: boolean;
+  /** "web" (default) serves the WebP copy, falling back to the stored original
+   * when that copy has not been generated; "original" serves the original. */
+  size?: ArtworkSize;
 }): Promise<{
   bytes: Buffer;
   contentType: string;
   artworkId: string;
   sha256: string;
+  /** What was actually read: "web" requests can fall back to the original. */
+  served: ArtworkSize;
 } | null> {
   const artwork = await findArtworkAssetRecord(options);
   if (!artwork) return null;
+  if (options.size !== "original") {
+    const webAsset = await readArtworkAsset(
+      resolveEventArtworkWebAssetPath(options.catalogId, options.eventId, artwork.id, options.variant)
+    );
+    if (webAsset) {
+      return {
+        bytes: webAsset.bytes,
+        contentType: WEB_ARTWORK_MIME_TYPE,
+        artworkId: artwork.id,
+        sha256: createAssetEtag(webAsset.bytes),
+        served: "web",
+      };
+    }
+  }
   const extension = (
     options.variant === "square" ? artwork.squareExtension : artwork.landscapeExtension
   ) as ArtworkExtension;
@@ -474,6 +496,7 @@ export async function loadEventArtworkAsset(options: {
     contentType: getArtworkContentType(extension),
     artworkId: artwork.id,
     sha256: createAssetEtag(asset.bytes),
+    served: "original",
   };
 }
 

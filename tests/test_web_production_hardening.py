@@ -111,7 +111,7 @@ def test_prod_apply_refuses_an_image_from_a_different_checkout_before_downtime()
     assert 'resolve_web_env_file.sh production' in apply_recipe
     assert 'if [ "$image_commit" != "$git_commit" ]' in apply_recipe
     assert "Run just prod-build from this checkout before applying it." in apply_recipe
-    assert apply_recipe.index(label) < apply_recipe.index("stop web backup")
+    assert apply_recipe.index(label) < apply_recipe.index("{{ prod_compose }} stop web\n")
 
 
 def test_prod_build_reads_jobs_image_without_polluting_web_validation() -> None:
@@ -370,15 +370,16 @@ def test_database_healthcheck_waits_for_the_tcp_listener() -> None:
     assert "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-besedy}" in compose
 
 
-def test_database_maintenance_quiesces_scheduled_backups() -> None:
+def test_database_maintenance_never_starts_the_one_shot_backup() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
     restore_recipe = justfile.split("prod-restore *args:", maxsplit=1)[1].split(
         "\n# Restore a retained database backup", maxsplit=1
     )[0]
 
-    assert "{{ prod_compose }} stop web backup" in justfile
+    # Starting the one-shot service runs an unscheduled dump; the host job owns the schedule.
+    assert "web backup" not in justfile
     assert "ps --services --status running backup" in restore_recipe
-    assert "scheduled backup service before restoring" in restore_recipe
+    assert "running production backup dump to finish before restoring" in restore_recipe
 
 
 def test_rollback_preserves_optional_codex_auth_overlay() -> None:

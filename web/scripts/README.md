@@ -7,7 +7,7 @@ Canonical documentation:
 
 - [docs/web/operations.md](../../docs/web/operations.md)
 - [web/setup/backup/README.md](../setup/backup/README.md) for the separate
-  host-side `back_up.sh` rsnapshot jobs
+  host-side `rsnapshot-backup.sh` rsnapshot jobs
 
 `backup-health-check.sh`, `host-backup-health-check.sh`, and `weekly-report.sh`
 require an ops env file for their filesystem paths: copy

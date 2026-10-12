@@ -17,7 +17,7 @@ flowchart LR
   subgraph ProdWeb["Production web stack: besedy-production"]
     ProdWebApp[besedy-production-web]
     ProdDb[besedy-production-db]
-    ProdBackup[besedy-production-backup]
+    ProdBackup["besedy-production-backup (one-shot)"]
   end
 
   subgraph DevWeb["Development web stack: besedy-development"]
@@ -121,7 +121,7 @@ cannot redirect a test command to production resources.
 | --- | --- | --- | --- | --- |
 | Development | `besedy-development-web`, `besedy-development-db`, `besedy-development-oauth` | `besedy-development_default` | web `3001`, DB `5433` | `besedy_development_postgres` |
 | Test | `besedy-test-web`, `besedy-test-db`, `besedy-test-oauth` | `besedy-test_default` | web `3002`, DB `5434` | `besedy_test_postgres` |
-| Production | `besedy-production-web`, `besedy-production-db`, `besedy-production-backup` | `besedy-production_default` | web `127.0.0.1:3000`, DB `127.0.0.1:5432` | `besedy_production_postgres` |
+| Production | `besedy-production-web`, `besedy-production-db`, `besedy-production-backup` (one-shot) | `besedy-production_default` | web `127.0.0.1:3000`, DB `127.0.0.1:5432` | `besedy_production_postgres` |
 
 All web database volumes mount at `/var/lib/postgresql`, the PostgreSQL 18 parent
 data directory. The production volume is external; development and test volumes
@@ -411,7 +411,7 @@ After the Deep Search production deployment:
 | --- | --- | --- |
 | `besedy-production-web` | `besedy-production_default`, `besedy-internal` | No, production-specific |
 | `besedy-production-db` | `besedy-production_default` | No, production-specific |
-| `besedy-production-backup` | `besedy-production_default` | No, production-specific |
+| `besedy-production-backup` (one-shot, run by the host daily snapshot job) | `besedy-production_default` | No, production-specific |
 | production jobs API | production runtime network, `besedy-internal`, shared Prefect network | No, production-specific |
 | production Prefect worker | production runtime network, `besedy-internal`, shared Prefect network | No, production-specific |
 | `besedy-prefect-server` | shared Prefect network | Yes |

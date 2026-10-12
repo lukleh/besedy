@@ -266,13 +266,14 @@ just prod-deploy
 ```
 
 `prod-deploy` builds and checks the new image while the old service is still
-running. It then stops `web` and the scheduled backup service, creates and
-validates an immediate database backup, applies migrations, and starts the
-already-built image plus scheduled backups. The maintenance window is
-deliberate: neither old nor new code writes while the schema is between
-versions, and a scheduled `pg_dump` cannot hold locks across the migration. If
-backup or migration fails, the recipe exits with `web` and scheduled backups
-stopped; inspect the error and restore or retry before starting them again.
+running. It then stops `web`, creates and validates an immediate database
+backup, applies migrations, and starts the already-built image. The maintenance
+window is deliberate: neither old nor new code writes while the schema is
+between versions. The daily database dump runs from the host snapshot job, not
+from a container, so pause that job around a deployment that could overlap it
+(see [Automatic Backups](#automatic-backups)). If backup or migration fails, the
+recipe exits with `web` stopped; inspect the error and restore or retry before
+starting it again.
 
 The host ingest worker is not part of `prod-deploy`. After a web release,
 redeploy it at the same commit so the flows and the web completion callback
@@ -346,7 +347,21 @@ just artwork publish --catalog <catalog-id> --event <event-id> --actor <email-or
 just artwork unpublish --catalog <catalog-id> --event <event-id> --actor <email-or-id> --prod --yes
 just artwork delete --catalog <catalog-id> --event <event-id> --actor <email-or-id> \
   --artwork <artwork-id> --prod --yes
+just artwork optimize --catalog <catalog-id> --prod --yes
 ```
+
+Each artwork directory holds the stored originals (`square.png|jpg`,
+`landscape.png|jpg`) and, beside them, a WebP copy at the same pixel size
+(`square.web.webp`, `landscape.web.webp`; quality 85, roughly a seventh of the
+PNG size). New uploads get both. The audience pages and offline downloads serve
+the WebP copy and fall back to the original when it does not exist; the artwork
+edit page shows the WebP thumbnails and opens the original when enlarged. Run
+`just artwork optimize` once per catalog to add the WebP copy to artwork
+uploaded earlier. It needs no database access or actor and never touches the
+originals. Each copy gets its original's group and permission bits, so it is
+readable wherever the original is; if the group cannot be applied the file is
+reported as failed instead of being left in place. Finished files are skipped,
+and the exit status is non-zero when a file could not be converted.
 
 `ARTWORK_DIR` must belong to the shared `UPLOADS_GID` group and have mode
 `2770`. Artwork writes preserve that shared group on descendant directories and
@@ -509,14 +524,14 @@ CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
 ```
 
 The recipe verifies both retained images and that Prefect is idle, stops all
-writers and the scheduled backup service, creates another retained backup of
-the failed state, validates and restores the selected archive into a fresh
-database, then starts the exact previous web/jobs images, restarts scheduled
-backups, and re-registers that jobs deployment. A missing image, active job, bad
+writers, creates another retained backup of the failed state, validates and
+restores the selected archive into a fresh database, then starts the exact
+previous web/jobs images and re-registers that jobs deployment. Pause the host
+daily snapshot job first so its dump does not run during the restore. A missing image, active job, bad
 archive, or mismatched confirmation stops before the database is replaced.
 
-For a database-only restore, stop web, the scheduled backup service, the jobs
-API, and the worker first, then repeat the exact archive path in the
+For a database-only restore, stop web, the jobs API, and the worker, and pause
+the host daily snapshot job first, then repeat the exact archive path in the
 confirmation:
 
 ```bash
@@ -898,7 +913,7 @@ than `REMOTE_SYNC_MAX_DURATION_MINUTES` (default 120) or its synced file count
 grew more than `REMOTE_SYNC_MAX_GROWTH_PERCENT` (default 25) against the last
 successful sync at least `REMOTE_SYNC_GROWTH_WINDOW_DAYS` (default 7) earlier.
 Those are the signs that preceded the September 2026 remote sync overruns.
-Both checks read the newest rotated `back_up.sh` log, time a retried sync from
+Both checks read the newest rotated snapshot-runner log, time a retried sync from
 its first attempt, and ignore `RSYNC_DRY_RUN` runs (which also log a success
 line without copying anything). A slow sync stays slow for days, so the
 warning email is repeated only when the set of warning kinds changes or
@@ -963,8 +978,12 @@ script without sending email. Output goes to stdout.
 
 ### Automatic Backups
 
-The `backup` compose service creates daily `besedy_YYYYMMDD_HHMMSS.sql.gz` files
-and retains seven days. Files land in the host path configured by `BACKUP_DIR`.
+The `backup` Compose service creates one `besedy_YYYYMMDD_HHMMSS.sql.gz` file
+per invocation and retains the newest seven automatic dump files. The host's
+daily extra snapshot job invokes it before snapshotting and syncing, rather
+than relying on a container sleep loop. Files land in the host path configured
+by `BACKUP_DIR`; dump filenames use UTC timestamps. Install the daily hooks and
+NAS verification settings in [the backup setup instructions](../../web/setup/backup/README.md#daily-database-backup).
 Maintenance deployments additionally create
 `deploy/besedy_deploy_<commit>_<timestamp>.sql.gz`. The daily rotation does not
 touch that subdirectory; deployment backups are removed only by an operator
@@ -981,27 +1000,32 @@ Host-side rsnapshot coverage is intentionally split:
   - backs up non-project Besedy paths via [web/setup/backup/besedy-extra.paths.example](../../web/setup/backup/besedy-extra.paths.example) (copy to the gitignored `besedy-extra.paths`)
   - includes `audio/besedy_audio`, `audio/original`, `state/db_dumps`, `config/lukleh_besedy`, and `state/web_logs`
 
-Both roots are synced off-host by `/home/<user>/projects/back_up.sh`.
+Both roots are synced off-host by [the versioned snapshot runner](../../web/scripts/rsnapshot-backup.sh).
+Give each root a private profile based on
+[snapshot.env.example](../../web/setup/backup/snapshot.env.example), and keep real
+host paths, NAS destinations, credentials, and recipients outside the repository.
 
 Example host crontab entries for the Besedy extra snapshot root:
 
 ```cron
-0 15 * * *   SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh daily
-10 15 * * 0  SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh weekly
-20 15 1 * *  SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh monthly
-30 15 1 1 *  SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh yearly
+0 15 * * * SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh daily
+10 15 * * 0 SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh weekly
+20 15 1 * * SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh monthly
+30 15 1 1 * SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh yearly
 ```
 
 ### Backup Verification
 
 `backup-health-check.sh` (daily at 06:45) validates freshness, file integrity,
-minimum sizes, SQL content markers, and backup container status. Failures trigger
-an alert email.
+minimum sizes, and SQL content markers. The backup service is one-shot;
+it need not have a running container. Failures trigger an alert email.
 
 `host-backup-health-check.sh` (daily at 07:05) validates Besedy coverage across
 both rsnapshot roots, including the extra non-project paths and recent remote
 sync success, and warns early when the remote sync gets slow or the synced file
-count jumps.
+count jumps. It also retrieves the NAS dump recorded by the daily job, verifies
+its checksum and gzip integrity, and fails if its recovery point is over 24 hours
+old. The daily job alerts immediately when dump creation or NAS verification fails.
 
 ### Restore Procedure
 

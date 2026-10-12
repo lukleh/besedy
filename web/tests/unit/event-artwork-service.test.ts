@@ -28,9 +28,11 @@ const { prisma, tx, logAuditEvent, storage } = vi.hoisted(() => {
       readArtworkAsset: vi.fn(),
       removeArtworkCandidateAssets: vi.fn(),
       resolveEventArtworkAssetPath: vi.fn(),
+      resolveEventArtworkWebAssetPath: vi.fn(),
       restoreStagedEventArtworkAssets: vi.fn(),
       stageArtworkCandidateAssetsRemoval: vi.fn(),
       writeArtworkCandidateAssets: vi.fn(),
+      WEB_ARTWORK_MIME_TYPE: "image/webp",
     },
   };
 });
@@ -222,5 +224,53 @@ describe("event artwork service", () => {
         publishedOnly: false,
       })
     ).resolves.toBeNull();
+  });
+
+  describe("asset size", () => {
+    const base = { catalogId: "20260101_000000", eventId: 7, artworkId: "artwork-1", variant: "square" as const, publishedOnly: false };
+
+    beforeEach(() => {
+      prisma.catalogEventArtwork.findFirst.mockResolvedValue({
+        id: "artwork-1",
+        squareExtension: ".png",
+        landscapeExtension: ".png",
+      });
+      storage.getArtworkContentType.mockReturnValue("image/png");
+      storage.resolveEventArtworkAssetPath.mockReturnValue("/artworks/square.png");
+      storage.resolveEventArtworkWebAssetPath.mockReturnValue("/artworks/square.web.webp");
+    });
+
+    it("serves the WebP copy by default", async () => {
+      storage.readArtworkAsset.mockResolvedValue({ bytes: Buffer.from("web"), resolvedPath: "/artworks/square.web.webp" });
+
+      await expect(loadEventArtworkAsset(base)).resolves.toMatchObject({
+        bytes: Buffer.from("web"),
+        contentType: "image/webp",
+        served: "web",
+      });
+      expect(storage.readArtworkAsset).toHaveBeenCalledWith("/artworks/square.web.webp");
+    });
+
+    it("falls back to the original when no WebP copy exists yet", async () => {
+      storage.readArtworkAsset.mockImplementation(async (filePath: string) =>
+        filePath.endsWith(".png") ? { bytes: Buffer.from("png"), resolvedPath: filePath } : null
+      );
+
+      await expect(loadEventArtworkAsset(base)).resolves.toMatchObject({
+        bytes: Buffer.from("png"),
+        contentType: "image/png",
+        served: "original",
+      });
+    });
+
+    it("serves the original when asked, without reading the WebP copy", async () => {
+      storage.readArtworkAsset.mockResolvedValue({ bytes: Buffer.from("png"), resolvedPath: "/artworks/square.png" });
+
+      await expect(loadEventArtworkAsset({ ...base, size: "original" })).resolves.toMatchObject({
+        contentType: "image/png",
+      });
+      expect(storage.readArtworkAsset).toHaveBeenCalledTimes(1);
+      expect(storage.readArtworkAsset).toHaveBeenCalledWith("/artworks/square.png");
+    });
   });
 });

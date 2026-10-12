@@ -8,7 +8,7 @@ import {
   redactDatabaseUrl,
 } from "../src/lib/script-env";
 
-type Command = "list" | "create" | "publish" | "unpublish" | "delete";
+type Command = "list" | "create" | "publish" | "unpublish" | "delete" | "optimize";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,6 +32,7 @@ function usage(): never {
   npm run artwork -- publish --catalog <id> --event <id> --actor <email-or-id> --artwork <id> [--prod] [--yes]
   npm run artwork -- unpublish --catalog <id> --event <id> --actor <email-or-id> [--prod] [--yes]
   npm run artwork -- delete --catalog <id> --event <id> --actor <email-or-id> --artwork <id> [--prod] [--yes]
+  npm run artwork -- optimize --catalog <id> [--prod] [--yes]    add missing WebP copies; originals are untouched
 
 Production mutations require --yes.`);
   process.exit(0);
@@ -39,7 +40,7 @@ Production mutations require --yes.`);
 
 function parseArgs(argv: string[]): Args {
   const command = argv[0] as Command | undefined;
-  const commands: Command[] = ["list", "create", "publish", "unpublish", "delete"];
+  const commands: Command[] = ["list", "create", "publish", "unpublish", "delete", "optimize"];
   if (!command || !commands.includes(command) || argv.includes("--help") || argv.includes("-h")) {
     return usage();
   }
@@ -101,6 +102,19 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const mode = args.prod ? "production" : "development";
   const envFile = loadScriptEnv(mode);
+  if (args.command === "optimize") {
+    if (args.prod && !args.yes) {
+      throw new Error("Production artwork mutations require --yes");
+    }
+    const catalogCheck = (await import("../src/lib/validation/schemas")).TimestampIdSchema.safeParse(args.catalogId);
+    if (!catalogCheck.success) throw new Error("--catalog must be a catalog id such as 20260101_120000");
+    console.log(`[artwork] mode=${mode} env=${envFile ?? "environment"}`);
+    const { backfillArtworkWebAssets } = await import("../src/lib/event-artwork-storage");
+    const result = await backfillArtworkWebAssets(args.catalogId);
+    console.log(JSON.stringify(result, null, 2));
+    if (result.failed.length > 0) process.exitCode = 1;
+    return;
+  }
   const databaseUrl = getHostDatabaseUrlOrThrow();
   process.env.DATABASE_URL = databaseUrl;
   console.log(`[artwork] mode=${mode} env=${envFile ?? "environment"}`);
