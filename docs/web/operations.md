@@ -266,13 +266,14 @@ just prod-deploy
 ```
 
 `prod-deploy` builds and checks the new image while the old service is still
-running. It then stops `web` and the scheduled backup service, creates and
-validates an immediate database backup, applies migrations, and starts the
-already-built image plus scheduled backups. The maintenance window is
-deliberate: neither old nor new code writes while the schema is between
-versions, and a scheduled `pg_dump` cannot hold locks across the migration. If
-backup or migration fails, the recipe exits with `web` and scheduled backups
-stopped; inspect the error and restore or retry before starting them again.
+running. It then stops `web`, creates and validates an immediate database
+backup, applies migrations, and starts the already-built image. The maintenance
+window is deliberate: neither old nor new code writes while the schema is
+between versions. The daily database dump runs from the host snapshot job, not
+from a container, so pause that job around a deployment that could overlap it
+(see [Automatic Backups](#automatic-backups)). If backup or migration fails, the
+recipe exits with `web` stopped; inspect the error and restore or retry before
+starting it again.
 
 The host ingest worker is not part of `prod-deploy`. After a web release,
 redeploy it at the same commit so the flows and the web completion callback
@@ -509,14 +510,14 @@ CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
 ```
 
 The recipe verifies both retained images and that Prefect is idle, stops all
-writers and the scheduled backup service, creates another retained backup of
-the failed state, validates and restores the selected archive into a fresh
-database, then starts the exact previous web/jobs images, restarts scheduled
-backups, and re-registers that jobs deployment. A missing image, active job, bad
+writers, creates another retained backup of the failed state, validates and
+restores the selected archive into a fresh database, then starts the exact
+previous web/jobs images and re-registers that jobs deployment. Pause the host
+daily snapshot job first so its dump does not run during the restore. A missing image, active job, bad
 archive, or mismatched confirmation stops before the database is replaced.
 
-For a database-only restore, stop web, the scheduled backup service, the jobs
-API, and the worker first, then repeat the exact archive path in the
+For a database-only restore, stop web, the jobs API, and the worker, and pause
+the host daily snapshot job first, then repeat the exact archive path in the
 confirmation:
 
 ```bash
@@ -1002,7 +1003,7 @@ Example host crontab entries for the Besedy extra snapshot root:
 ### Backup Verification
 
 `backup-health-check.sh` (daily at 06:45) validates freshness, file integrity,
-minimum sizes, and SQL content markers. The scheduled backup service is one-shot;
+minimum sizes, and SQL content markers. The backup service is one-shot;
 it need not have a running container. Failures trigger an alert email.
 
 `host-backup-health-check.sh` (daily at 07:05) validates Besedy coverage across

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Daily rsnapshot hooks and a read-only check of the NAS database recovery point.
-# before/after are called by back_up.sh while it holds its snapshot lock.
+# before/after are called by rsnapshot-backup.sh while it holds its snapshot lock.
 set -euo pipefail
 umask 077
 

@@ -280,9 +280,9 @@ check_remote_sync() {
 
 # Emit one "start|end|file_count" line per successful remote sync in the log.
 # The file count comes from the rsync --stats "Number of files:" line.
-# back_up.sh rotates the log to <log>.<timestamp>.gz, so the newest rotated
+# rsnapshot-backup.sh rotates the log to <log>.<timestamp>.gz, so the newest rotated
 # file is read first to keep a baseline available right after a rotation.
-# A back_up.sh retry is timed from the first attempt (that is how long the run
+# A rsnapshot-backup.sh retry is timed from the first attempt (that is how long the run
 # held the backup lock), and RSYNC_DRY_RUN runs are skipped.
 successful_sync_records() {
     local log_file="$1"
