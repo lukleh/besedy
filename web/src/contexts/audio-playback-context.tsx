@@ -27,6 +27,10 @@ interface AudioPlaybackContextValue {
    */
   isAudioPlaying: boolean;
   /**
+   * True while the recording page's own player is playing (radio excluded)
+   */
+  isRecordingPlaying: boolean;
+  /**
    * Called by recording detail page to report its playback state
    */
   setRecordingPlaying: (playing: boolean) => void;
@@ -55,7 +59,7 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AudioPlaybackContext.Provider value={{ isAudioPlaying, setRecordingPlaying }}>
+    <AudioPlaybackContext.Provider value={{ isAudioPlaying, isRecordingPlaying, setRecordingPlaying }}>
       {children}
     </AudioPlaybackContext.Provider>
   );
