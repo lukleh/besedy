@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 interface ArtworkLightboxImageProps {
   src: string;
+  /** Shown enlarged instead of `src`, e.g. the stored original behind a web thumbnail. */
+  fullSrc?: string;
   /** Names the image for the enlarge button, the dialog and the alt text. */
   title: string;
   /** Sizes the thumbnail frame, e.g. an aspect-ratio class. */
@@ -16,7 +18,7 @@ interface ArtworkLightboxImageProps {
 
 /** A thumbnail that opens the image fitted to the whole screen. Any click or
  * Escape closes it; the URL does not change. */
-export function ArtworkLightboxImage({ src, title, className }: ArtworkLightboxImageProps) {
+export function ArtworkLightboxImage({ src, fullSrc = src, title, className }: ArtworkLightboxImageProps) {
   const t = useTranslations("events.artwork");
   const [open, setOpen] = useState(false);
 
@@ -46,7 +48,7 @@ export function ArtworkLightboxImage({ src, title, className }: ArtworkLightboxI
           <DialogTitle className="sr-only">{title}</DialogTitle>
           {/* Fills the viewport box and keeps the aspect ratio, so the image never scrolls. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={title} className="h-full w-full object-contain" />
+          <img src={fullSrc} alt={title} className="h-full w-full object-contain" />
           <DialogClose className="sr-only">{t("close")}</DialogClose>
         </DialogPrimitive.Content>
       </DialogPortal>

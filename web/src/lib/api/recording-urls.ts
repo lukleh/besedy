@@ -118,9 +118,11 @@ export function buildEventArtworkCandidateImageUrl(
   catalogId: string,
   eventId: number,
   artworkId: string,
-  variant: "square" | "landscape"
+  variant: "square" | "landscape",
+  size: "web" | "original" = "web"
 ): string {
-  return `${buildEventArtworkCandidateUrl(catalogId, eventId, artworkId)}/image?variant=${variant}`;
+  const sizeSuffix = size === "original" ? "&size=original" : "";
+  return `${buildEventArtworkCandidateUrl(catalogId, eventId, artworkId)}/image?variant=${variant}${sizeSuffix}`;
 }
 
 export function buildEventArtworkPublicationUrl(catalogId: string, eventId: number): string {

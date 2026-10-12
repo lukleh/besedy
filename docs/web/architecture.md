@@ -284,8 +284,8 @@ call it. Endpoints not listed above:
 | GET | `/api/catalogs/:id/deep-search/jobs/:jobId` | Job status; `/history`, `/result.pdf` and `/share-users` sit below it |
 | POST | `/api/catalogs/:id/deep-search/jobs/:jobId/cancel` | Cancel a job |
 | GET/POST | `/api/catalogs/:id/deep-search/jobs/:jobId/shares` | List and add job shares; `DELETE …/shares/:userId` removes one |
-| GET | `/api/catalogs/:id/events/:eventId/artwork` | The event's published artwork |
-| GET/POST | `/api/catalogs/:id/events/:eventId/artworks` | List and add artwork candidates; `…/artworks/:artworkId` (DELETE) and `…/image` (GET) sit below it |
+| GET | `/api/catalogs/:id/events/:eventId/artwork` | The event's published artwork (WebP copy; the stored original when no copy exists) |
+| GET/POST | `/api/catalogs/:id/events/:eventId/artworks` | List and add artwork candidates; `…/artworks/:artworkId` (DELETE) and `…/image` (GET; `?size=original` for the stored original) sit below it |
 | PUT/DELETE | `/api/catalogs/:id/events/:eventId/artwork-publication` | Publish or unpublish artwork |
 | GET/POST | `/api/mcp` | MCP server endpoint (when MCP is enabled) |
 | POST | `/api/internal/deep-search/{search,citation,metadata}` | Service-to-service calls from the jobs runtime (bearer secret) |

@@ -50,4 +50,18 @@ describe("ArtworkLightboxImage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await expectClosed(trigger);
   });
+
+  it("enlarges the full-size image while the thumbnail keeps the web image", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ArtworkLightboxImage src="/api/square.web" fullSrc="/api/square.original" title="Blue version – Square" />
+      </NextIntlClientProvider>
+    );
+    const trigger = screen.getByRole("button", { name: "Enlarge image: Blue version – Square" });
+    expect(trigger.querySelector("img")).toHaveAttribute("src", "/api/square.web");
+
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Blue version – Square" });
+    expect(dialog.querySelector("img")).toHaveAttribute("src", "/api/square.original");
+  });
 });
