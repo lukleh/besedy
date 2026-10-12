@@ -7,7 +7,7 @@ COMPOSE_DIR="${BESEDY_COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && p
 PROJECT_DIR="$(cd "$COMPOSE_DIR/.." && pwd)"
 ENV_FILE="$("$PROJECT_DIR/scripts/resolve_web_env_file.sh" production)"
 ALERT_EMAIL="${ALERT_EMAIL:-${REPORT_EMAIL:-}}"
-MAX_AGE_HOURS="${MAX_AGE_HOURS:-30}"
+MAX_AGE_HOURS="${MAX_AGE_HOURS:-24}"
 MIN_GZIP_SIZE_BYTES="${MIN_GZIP_SIZE_BYTES:-50000}"
 MIN_SQL_SIZE_BYTES="${MIN_SQL_SIZE_BYTES:-200000}"
 TAG="besedy-backup"
@@ -28,10 +28,6 @@ if [ -f "$OPS_ENV_FILE" ]; then
 fi
 
 : "${BACKUP_DIR:?is not set — add it to ops.env (see web/setup/backup/ops.env.example)}"
-
-compose_cmd() {
-    "$PROJECT_DIR/scripts/run_web_compose.sh" production "$@"
-}
 
 send_alert() {
     local subject="$1"
@@ -85,7 +81,7 @@ else
         info+=("age_hours=$age_hours")
         info+=("gzip_size_bytes=$gzip_size")
 
-        if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
+        if [ "$(( now_epoch - latest_epoch ))" -gt "$(( MAX_AGE_HOURS * 3600 ))" ]; then
             failures+=("Latest backup is too old: ${age_hours}h (threshold ${MAX_AGE_HOURS}h)")
         fi
         if [ "$gzip_size" -lt "$MIN_GZIP_SIZE_BYTES" ]; then
@@ -112,16 +108,9 @@ else
     fi
 fi
 
-backup_cid="$(compose_cmd ps -q backup 2>/dev/null | head -n1 || true)"
-if [ -z "$backup_cid" ]; then
-    failures+=("Backup service is not running (docker compose service: backup)")
-else
-    status="$(docker inspect -f '{{.State.Status}}' "$backup_cid" 2>/dev/null || echo unknown)"
-    info+=("backup_container_status=$status")
-    if [ "$status" != "running" ]; then
-        failures+=("Backup service container state is $status")
-    fi
-fi
+# This is a one-shot service invoked by the daily host backup, not a daemon.
+# Fresh valid dump files are the evidence; an absent/stopped container is normal.
+info+=("backup_schedule=host_daily_snapshot")
 
 if [ "${#failures[@]}" -gt 0 ]; then
     body="Besedy DB backup health check failed on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S %Z').
@@ -134,7 +123,7 @@ $(printf ' - %s\n' "${info[@]}")
 
 Suggested checks:
  - cd $PROJECT_DIR && just prod-status
- - docker logs besedy-production-backup --tail=100
+ - tail -n 100 ${EXTRA_LOG_FILE:-/path/to/besedy_extra_rsnapshot.log}
  - ls -lah $BACKUP_DIR"
 
     send_alert "[Besedy] DB backup health check FAILED" "$body"

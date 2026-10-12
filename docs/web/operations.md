@@ -898,7 +898,7 @@ than `REMOTE_SYNC_MAX_DURATION_MINUTES` (default 120) or its synced file count
 grew more than `REMOTE_SYNC_MAX_GROWTH_PERCENT` (default 25) against the last
 successful sync at least `REMOTE_SYNC_GROWTH_WINDOW_DAYS` (default 7) earlier.
 Those are the signs that preceded the September 2026 remote sync overruns.
-Both checks read the newest rotated `back_up.sh` log, time a retried sync from
+Both checks read the newest rotated snapshot-runner log, time a retried sync from
 its first attempt, and ignore `RSYNC_DRY_RUN` runs (which also log a success
 line without copying anything). A slow sync stays slow for days, so the
 warning email is repeated only when the set of warning kinds changes or
@@ -963,8 +963,12 @@ script without sending email. Output goes to stdout.
 
 ### Automatic Backups
 
-The `backup` compose service creates daily `besedy_YYYYMMDD_HHMMSS.sql.gz` files
-and retains seven days. Files land in the host path configured by `BACKUP_DIR`.
+The `backup` Compose service creates one `besedy_YYYYMMDD_HHMMSS.sql.gz` file
+per invocation and retains the newest seven automatic dump files. The host's
+daily extra snapshot job invokes it before snapshotting and syncing, rather
+than relying on a container sleep loop. Files land in the host path configured
+by `BACKUP_DIR`; dump filenames use UTC timestamps. Install the daily hooks and
+NAS verification settings in [the backup setup instructions](../../web/setup/backup/README.md#daily-database-backup).
 Maintenance deployments additionally create
 `deploy/besedy_deploy_<commit>_<timestamp>.sql.gz`. The daily rotation does not
 touch that subdirectory; deployment backups are removed only by an operator
@@ -981,27 +985,32 @@ Host-side rsnapshot coverage is intentionally split:
   - backs up non-project Besedy paths via [web/setup/backup/besedy-extra.paths.example](../../web/setup/backup/besedy-extra.paths.example) (copy to the gitignored `besedy-extra.paths`)
   - includes `audio/besedy_audio`, `audio/original`, `state/db_dumps`, `config/lukleh_besedy`, and `state/web_logs`
 
-Both roots are synced off-host by `/home/<user>/projects/back_up.sh`.
+Both roots are synced off-host by [the versioned snapshot runner](../../web/scripts/rsnapshot-backup.sh).
+Give each root a private profile based on
+[snapshot.env.example](../../web/setup/backup/snapshot.env.example), and keep real
+host paths, NAS destinations, credentials, and recipients outside the repository.
 
 Example host crontab entries for the Besedy extra snapshot root:
 
 ```cron
-0 15 * * *   SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh daily
-10 15 * * 0  SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh weekly
-20 15 1 * *  SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh monthly
-30 15 1 1 *  SNAPSHOT_MAP_FILE=".../web/setup/backup/besedy-extra.paths" SNAPSHOT_ROOT="/mnt/data/<user>/Backups/rsnapshot_besedy_extra" RSNAPSHOT_CONFIG="/home/<user>/.config/rsnapshot_besedy_extra.conf" LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.log" DETAIL_LOG_FILE="/home/<user>/logs/besedy_extra_rsnapshot.detail.log" LOCK_FILE="/tmp/besedy_extra_rsnapshot.lock" RSNAPSHOT_LOCK_FILE="/tmp/besedy_extra_rsnapshot.pid" SYNC_TARGET="<backup-user>@<backup-host>::LinuxBackups/rsnapshot_besedy_extra/" ALERT_EMAIL="..." /home/<user>/projects/back_up.sh yearly
+0 15 * * * SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh daily
+10 15 * * 0 SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh weekly
+20 15 1 * * SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh monthly
+30 15 1 1 * SNAPSHOT_ENV_FILE="/path/to/private/extra.env" bash /path/to/besedy/web/scripts/rsnapshot-backup.sh yearly
 ```
 
 ### Backup Verification
 
 `backup-health-check.sh` (daily at 06:45) validates freshness, file integrity,
-minimum sizes, SQL content markers, and backup container status. Failures trigger
-an alert email.
+minimum sizes, and SQL content markers. The scheduled backup service is one-shot;
+it need not have a running container. Failures trigger an alert email.
 
 `host-backup-health-check.sh` (daily at 07:05) validates Besedy coverage across
 both rsnapshot roots, including the extra non-project paths and recent remote
 sync success, and warns early when the remote sync gets slow or the synced file
-count jumps.
+count jumps. It also retrieves the NAS dump recorded by the daily job, verifies
+its checksum and gzip integrity, and fails if its recovery point is over 24 hours
+old. The daily job alerts immediately when dump creation or NAS verification fails.
 
 ### Restore Procedure
 
