@@ -356,9 +356,11 @@ PNG size). New uploads get both. The audience pages and offline downloads serve
 the WebP copy and fall back to the original when it does not exist; the artwork
 edit page shows the WebP thumbnails and opens the original when enlarged. Run
 `just artwork optimize` once per catalog to add the WebP copy to artwork
-uploaded earlier. It needs no database access or actor, never touches the
-originals, skips finished files, and exits non-zero when a file could not be
-converted.
+uploaded earlier. It needs no database access or actor and never touches the
+originals. Each copy gets its original's group and permission bits, so it is
+readable wherever the original is; if the group cannot be applied the file is
+reported as failed instead of being left in place. Finished files are skipped,
+and the exit status is non-zero when a file could not be converted.
 
 `ARTWORK_DIR` must belong to the shared `UPLOADS_GID` group and have mode
 `2770`. Artwork writes preserve that shared group on descendant directories and

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { type Stats } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import sharp, { type Metadata } from "sharp";
@@ -392,7 +393,11 @@ export async function backfillArtworkWebAssets(catalogId: string): Promise<Artwo
             (await readArtworkAsset(path.join(artworkDir, `${variant}.png`))) ??
             (await readArtworkAsset(path.join(artworkDir, `${variant}.jpg`)));
           if (!original) continue;
-          await writeArtworkFileAtomically(webPath, await createWebArtworkBytes(original.bytes));
+          await writeArtworkFileAtomically(
+            webPath,
+            await createWebArtworkBytes(original.bytes),
+            await fs.stat(original.resolvedPath)
+          );
           result.created += 1;
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
@@ -404,11 +409,18 @@ export async function backfillArtworkWebAssets(catalogId: string): Promise<Artwo
   return result;
 }
 
-async function writeArtworkFileAtomically(filePath: string, bytes: Buffer): Promise<void> {
+/**
+ * Write beside `like` with its group and permission bits, so the copy is
+ * readable by exactly the processes that can read the original. When the group
+ * cannot be applied the file is not put in place at all.
+ */
+async function writeArtworkFileAtomically(filePath: string, bytes: Buffer, like: Stats): Promise<void> {
   const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.tmp-${randomUUID()}`);
   try {
     await fs.writeFile(tempPath, bytes, { flag: "wx", mode: SHARED_ARTWORK_FILE_MODE });
-    await fs.chmod(tempPath, SHARED_ARTWORK_FILE_MODE);
+    const written = await fs.stat(tempPath);
+    if (written.gid !== like.gid) await fs.chown(tempPath, -1, like.gid);
+    await fs.chmod(tempPath, like.mode & 0o777);
     await fs.rename(tempPath, filePath);
   } catch (error) {
     await fs.rm(tempPath, { force: true }).catch(() => undefined);

@@ -176,6 +176,34 @@ describe("event artwork storage", () => {
     await expect(backfillArtworkWebAssets(catalogId)).resolves.toEqual({ created: 0, existing: 2, failed: [] });
   });
 
+  it("gives the WebP copy the original's permission bits under a restrictive umask", async () => {
+    const catalogId = "20260919_120000";
+    const artworkDir = path.join(resolveEventArtworksPath(catalogId), "7", "00000000-0000-4000-8000-000000000007");
+    await fs.mkdir(artworkDir, { recursive: true });
+    const squarePath = path.join(artworkDir, "square.png");
+    const landscapePath = path.join(artworkDir, "landscape.png");
+    await fs.writeFile(squarePath, await png(800, 800));
+    await fs.writeFile(landscapePath, await png(1600, 900));
+    await fs.chmod(squarePath, 0o640);
+    await fs.chmod(landscapePath, 0o664);
+    const originalUmask = process.umask(0o077);
+
+    try {
+      await backfillArtworkWebAssets(catalogId);
+    } finally {
+      process.umask(originalUmask);
+    }
+
+    const [square, landscape, original] = await Promise.all([
+      fs.stat(path.join(artworkDir, "square.web.webp")),
+      fs.stat(path.join(artworkDir, "landscape.web.webp")),
+      fs.stat(squarePath),
+    ]);
+    expect(square.mode & 0o777).toBe(0o640);
+    expect(landscape.mode & 0o777).toBe(0o664);
+    expect(square.gid).toBe(original.gid);
+  });
+
   it("reports an original that cannot be converted", async () => {
     const catalogId = "20260919_120000";
     const artworkDir = path.join(resolveEventArtworksPath(catalogId), "7", "00000000-0000-4000-8000-000000000007");
