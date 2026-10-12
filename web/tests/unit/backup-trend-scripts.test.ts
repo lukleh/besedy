@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -93,16 +94,52 @@ const DAY = 24 * 60;
 
 function runHealthCheck(
   projectRecords: SyncRecord[],
-  options: { env?: Record<string, string>; projectTrailer?: string; requiredPath?: string } = {},
+  options: {
+    env?: Record<string, string>;
+    projectTrailer?: string;
+    requiredPath?: string;
+    nasState?: 'healthy' | 'missing_receipt' | 'missing_dump' | 'stale' | 'corrupt' | 'changed';
+  } = {},
 ) {
   const projectRoot = join(root, 'rsnapshot');
   const extraRoot = join(root, 'rsnapshot_extra');
   mkdirSync(join(projectRoot, 'daily.0', 'projects', 'besedy'), { recursive: true });
   mkdirSync(join(extraRoot, 'daily.0', 'audio', 'x'), { recursive: true });
   mkdirSync(join(extraRoot, 'daily.0', 'state', 'db_dumps'), { recursive: true });
-  writeFileSync(
-    join(extraRoot, 'daily.0', 'state', 'db_dumps', 'besedy_20260101_000000.sql.gz'),
-    '',
+  const dumpName = 'besedy_20000101_000000.sql.gz';
+  const dump = gzipSync('COPY public.catalog_entry fixture;\n');
+  const checksum = createHash('sha256').update(dump).digest('hex');
+  const backupDir = join(root, 'db_backups');
+  const remoteDir = join(root, 'fake_nas');
+  mkdirSync(backupDir, { recursive: true });
+  mkdirSync(remoteDir, { recursive: true });
+  writeFileSync(join(extraRoot, 'daily.0', 'state', 'db_dumps', dumpName), dump);
+  const remoteDump = join(remoteDir, dumpName);
+  writeFileSync(remoteDump, dump);
+  const target = 'fixture::module/extra/';
+  const passwordFile = join(root, 'rsync-password');
+  writeFileSync(passwordFile, 'fixture-only\n', { mode: 0o600 });
+  const receipt = join(backupDir, '.nas-verified.tsv');
+  const now = Math.floor(Date.now() / 1000);
+  const dumpEpoch = now - (options.nasState === 'stale' ? 25 * 3600 : 3600);
+  writeFileSync(receipt, `${dumpName}\t${dumpEpoch}\t${checksum}\t${now}\t${target}\n`, {
+    mode: 0o600,
+  });
+  if (options.nasState === 'missing_receipt') rmSync(receipt);
+  if (options.nasState === 'missing_dump') rmSync(remoteDump);
+  if (options.nasState === 'corrupt') writeFileSync(remoteDump, 'not gzip');
+  if (options.nasState === 'changed') writeFileSync(remoteDump, gzipSync('different SQL\n'));
+  // Readback is confined to this fixture; no rsync daemon or real NAS is contacted.
+  writeExecutable(
+    join(fakeBin, 'rsync'),
+    `#!/usr/bin/env bash
+set -eu
+args=("$@")
+source="\${args[\${#args[@]}-2]}"
+destination="\${args[\${#args[@]}-1]}"
+[ "$source" = '${target}daily.0/state/db_dumps/${dumpName}' ] || exit 64
+cp '${remoteDump}' "$destination"
+`,
   );
   const mapFile = join(root, 'extra.paths');
   writeFileSync(mapFile, '/src/x|audio/x\n');
@@ -116,6 +153,10 @@ function runHealthCheck(
   writeFileSync(
     opsEnv,
     [
+      `BACKUP_DIR=${backupDir}`,
+      `DB_BACKUP_REMOTE_TARGET=${target}`,
+      `DB_BACKUP_PASSWORD_FILE=${passwordFile}`,
+      'DB_BACKUP_MAX_AGE_HOURS=24',
       `PROJECT_SNAPSHOT_ROOT=${projectRoot}`,
       `EXTRA_SNAPSHOT_ROOT=${extraRoot}`,
       `PROJECT_LOG_FILE=${projectLog}`,
@@ -391,6 +432,34 @@ describe('host-backup-health-check.sh remote sync trend', () => {
     expect(result.stderr).toContain(
       'REMOTE_SYNC_MAX_GROWTH_PERCENT must be a positive integer',
     );
+  });
+});
+
+describe('host-backup-health-check.sh NAS database verification', () => {
+  it('retrieves and verifies the recorded fresh NAS recovery point', () => {
+    const result = runHealthCheck([{ endMinutesAgo: 60, durationMinutes: 30, files: 1000 }]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('DB NAS backup OK');
+    expect(result.stdout).toContain('remote=fixture::module/extra/daily.0/state/db_dumps/');
+  });
+
+  it.each([
+    ['missing_receipt', 'Missing receipt'],
+    ['missing_dump', 'fake_nas'],
+    ['stale', 'recovery point is overdue'],
+    ['corrupt', 'gzip'],
+    ['changed', 'different checksum'],
+  ] as const)('fails and alerts for %s', (nasState, expectedError) => {
+    const result = runHealthCheck(
+      [{ endMinutesAgo: 60, durationMinutes: 30, files: 1000 }],
+      { nasState, env: { ALERT_EMAIL: 'ops@example.com' } },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('NAS database verification failed');
+    expect(result.stdout).toContain(expectedError);
+    expect(sentMailSubjects()).toEqual(['[Besedy] Host backup coverage check FAILED']);
   });
 });
 

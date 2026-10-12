@@ -206,8 +206,8 @@ just prod-down       # Stop
 
 ### Backups
 
-Backups are stored in `${BACKUP_DIR}` (default: `${HOME}/.local/state/lukleh/besedy/web/backups`). The backup service:
-- Runs daily
+Backups are stored in `${BACKUP_DIR}` (default: `${HOME}/.local/state/lukleh/besedy/web/backups`). The one-shot backup service:
+- Runs once per invocation; the host's daily snapshot job invokes it (see `setup/backup/README.md`)
 - Creates timestamped `.sql.gz` files
 - Retains the last 7 backups
 
