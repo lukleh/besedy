@@ -184,7 +184,7 @@ Additional constraints:
 
 - Schema drift check: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` (exit code 2 means the database and the schema differ). CI runs it on a freshly migrated database. It covers what Prisma models; triggers, views and CHECK constraints that exist only in migration SQL are outside it.
 - If "relation does not exist" errors appear, run `npx prisma migrate deploy` against the target environment
-- Backups: daily `besedy_YYYYMMDD_HHMMSS.sql.gz` into `BACKUP_DIR` via the backup service
+- Backups: daily `besedy_YYYYMMDD_HHMMSS.sql.gz` into `BACKUP_DIR` via the one-shot backup service, run by the host snapshot job (see `web/setup/backup/README.md`)
 
 ### Key Tables
 
