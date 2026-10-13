@@ -92,13 +92,15 @@ export function BufferIndicator({
           className="stroke-muted"
           strokeWidth={strokeWidth}
         />
-        {/* Progress - lighter muted color */}
+        {/* Progress - lighter muted color. No transition: the value changes on
+            every time update, so an eased ring would animate, and keep the
+            page redrawing, for as long as audio plays. */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
           fill="none"
-          className="stroke-muted-foreground/50 transition-all duration-300"
+          className="stroke-muted-foreground/50"
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
