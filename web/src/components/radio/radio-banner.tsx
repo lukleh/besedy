@@ -126,10 +126,11 @@ export function RadioBanner() {
         "sm:top-auto sm:bottom-0 sm:border-b-0 sm:border-t sm:safe-bottom sm:slide-in-from-bottom"
       )}
     >
-      {/* Progress bar at top */}
+      {/* Progress bar at top. No transition: the width changes on every time
+          update, so an eased bar would keep the page redrawing during playback. */}
       <div className="h-2 w-full bg-muted overflow-hidden">
         <div
-          className="h-full bg-primary transition-all duration-150"
+          className="h-full bg-primary"
           style={{ width: `${progress}%` }}
         />
       </div>
