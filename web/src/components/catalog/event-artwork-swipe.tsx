@@ -36,7 +36,9 @@ const FLICK_MIN_PX = 40;
 const VELOCITY_WINDOW_MS = 100;
 /** Without an event in that direction the artwork follows only partly. */
 const END_RESISTANCE = 0.3;
-/** Space between the artwork and its neighbours beside it (Tailwind's 4). */
+/** Space between the artwork and its neighbours beside it; in pixels on both
+ * sides (NeighborArtwork's classes), since a rem follows the browser's font
+ * size and the move would then stop short of the neighbour. */
 const NEIGHBOR_GAP_PX = 16;
 /** How long a released artwork takes to move its neighbour fully into place,
  * and how much later the event opens anyway if the end is never reported. */
@@ -103,7 +105,8 @@ function NeighborArtwork({
       data-testid={`event-artwork-neighbor-${side}`}
       className={cn(
         'pointer-events-none absolute inset-y-0 w-full',
-        side === 'left' ? 'right-[calc(100%+1rem)]' : 'left-[calc(100%+1rem)]',
+        // Keep in step with NEIGHBOR_GAP_PX.
+        side === 'left' ? 'right-[calc(100%+16px)]' : 'left-[calc(100%+16px)]',
       )}
     >
       <EventArtworkPicture
