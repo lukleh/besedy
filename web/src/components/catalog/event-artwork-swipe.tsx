@@ -2,10 +2,21 @@
 
 import { useEffect, useRef, useState, useTransition, type ReactNode, type TouchEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { EventArtworkPicture } from '@/components/catalog/event-artwork-picture';
+import {
+  eventDetailQueryOptions,
+  selectShownEventArtwork,
+  type ShownEventArtwork,
+} from '@/components/catalog/event-detail-query';
+import { EventArtworkTransition } from '@/components/catalog/event-page-transition';
 import { useAudioPlayback } from '@/contexts/audio-playback-context';
 import { useEventSequenceNavigation } from '@/hooks/use-event-sequence-navigation';
 import { buildEventPagePath } from '@/lib/api/recording-urls';
-import { eventTransitionTypes } from '@/lib/event-navigation-transition';
+import {
+  EVENT_ARTWORK_CARRIED_TRANSITION,
+  eventTransitionTypes,
+} from '@/lib/event-navigation-transition';
 import { cn } from '@/lib/utils';
 
 /** Swipes starting this close to a screen edge belong to the browser's own
@@ -25,6 +36,14 @@ const FLICK_MIN_PX = 40;
 const VELOCITY_WINDOW_MS = 100;
 /** Without an event in that direction the artwork follows only partly. */
 const END_RESISTANCE = 0.3;
+/** Space between the artwork and its neighbours beside it; in pixels on both
+ * sides (NeighborArtwork's classes), since a rem follows the browser's font
+ * size and the move would then stop short of the neighbour. */
+const NEIGHBOR_GAP_PX = 16;
+/** How long a released artwork takes to move its neighbour fully into place,
+ * and how much later the event opens anyway if the end is never reported. */
+const FINISH_MS = 180;
+const FINISH_FALLBACK_MS = 300;
 
 type Direction = 'next' | 'previous';
 
@@ -54,6 +73,53 @@ function isPageZoomed() {
   return (window.visualViewport?.scale ?? 1) > 1;
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** A neighbour's artwork, when its event is already loaded (preloaded or
+ * visited); nothing is requested for it here. */
+function useLoadedArtwork(catalogId: string, eventId: number | undefined) {
+  const { data } = useQuery({
+    ...eventDetailQueryOptions(catalogId, eventId ?? -1),
+    enabled: false,
+    select: selectShownEventArtwork,
+  });
+  return eventId === undefined ? null : (data ?? null);
+}
+
+function NeighborArtwork({
+  catalogId,
+  eventId,
+  artwork,
+  side,
+}: {
+  catalogId: string;
+  eventId: number;
+  artwork: ShownEventArtwork;
+  side: 'left' | 'right';
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid={`event-artwork-neighbor-${side}`}
+      className={cn(
+        'pointer-events-none absolute inset-y-0 w-full',
+        // Keep in step with NEIGHBOR_GAP_PX.
+        side === 'left' ? 'right-[calc(100%+16px)]' : 'left-[calc(100%+16px)]',
+      )}
+    >
+      <EventArtworkPicture
+        catalogId={catalogId}
+        eventId={eventId}
+        artworkId={artwork.artworkId}
+        source={artwork.source}
+        alt=""
+      />
+    </div>
+  );
+}
+
 interface Sample {
   x: number;
   t: number;
@@ -76,9 +142,10 @@ interface EventArtworkSwipeProps {
 }
 
 /** Opens the previous or next event when the artwork is dragged sideways; the
- * artwork follows the finger and springs back when let go too early. Touch
- * only; the sequence buttons stay the visible and accessible way. Ignored
- * while the recording plays, since leaving the event stops it. */
+ * artwork follows the finger with its neighbours' artwork beside it, and
+ * springs back when let go too early. Touch only; the sequence buttons stay
+ * the visible and accessible way. Ignored while the recording plays, since
+ * leaving the event stops it. */
 export function EventArtworkSwipe({
   catalogId,
   eventId,
@@ -97,6 +164,10 @@ export function EventArtworkSwipe({
   const areaRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  const finishTimerRef = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(finishTimerRef.current), []);
+  const previousArtwork = useLoadedArtwork(catalogId, previous?.id);
+  const nextArtwork = useLoadedArtwork(catalogId, next?.id);
   // Until the new event renders, previous/next still describe this one, so a
   // second swipe would push the same page again.
   const navigatedFromRef = useRef<number | null>(null);
@@ -201,43 +272,86 @@ export function EventArtworkSwipe({
       return;
     }
     navigatedFromRef.current = eventId;
-    // The artwork stays where it was let go; the event slide carries it on
-    // from there, and the next event mounts a fresh, centred one.
-    startTransition(() => {
-      // Keeping the scroll position puts the next artwork under the finger.
-      router.push(buildEventPagePath(catalogId, target.id), {
-        scroll: false,
-        transitionTypes: eventTransitionTypes(direction),
+    const open = (transitionTypes: string[]) => {
+      startTransition(() => {
+        // Keeping the scroll position puts the next artwork under the finger.
+        router.push(buildEventPagePath(catalogId, target.id), {
+          scroll: false,
+          transitionTypes,
+        });
       });
-    });
+    };
+    const track = trackRef.current;
+    const neighborArtwork = direction === 'next' ? nextArtwork : previousArtwork;
+    if (!neighborArtwork || !track) {
+      // The artwork stays where it was let go; the event slide carries it on
+      // from there, and the next event mounts a fresh, centred one.
+      open(eventTransitionTypes(direction));
+      return;
+    }
+    // Move the neighbour fully into place first; the next event then keeps it
+    // there while the rest of the page slides.
+    const types = [...eventTransitionTypes(direction), EVENT_ARTWORK_CARRIED_TRANSITION];
+    const offset = (direction === 'next' ? -1 : 1) * (width + NEIGHBOR_GAP_PX);
+    const animate = !prefersReducedMotion();
+    track.style.transition = animate ? `transform ${FINISH_MS}ms ease-out` : 'none';
+    track.style.transform = `translateX(${offset}px)`;
+    if (!animate) {
+      open(types);
+      return;
+    }
+    // Opening before the move has painted its last frame would make the
+    // artwork jump, so wait for its end; a busy phone can run late.
+    let opened = false;
+    const openOnce = () => {
+      if (opened) return;
+      opened = true;
+      track.removeEventListener('transitionend', onMoveEnd);
+      window.clearTimeout(finishTimerRef.current);
+      open(types);
+    };
+    // Transitions inside the artwork report their end here too.
+    const onMoveEnd = (event: globalThis.TransitionEvent) => {
+      if (event.target === track) openOnce();
+    };
+    track.addEventListener('transitionend', onMoveEnd);
+    finishTimerRef.current = window.setTimeout(openOnce, FINISH_FALLBACK_MS);
   };
 
   return (
-    <div
-      ref={areaRef}
-      data-testid="event-artwork-swipe"
-      className={cn(
-        // The dragged artwork moves inside its own place on the page.
-        'overflow-hidden rounded-xl transition-opacity',
-        // Sideways movement here is the swipe; without this, Chrome on a touch
-        // screen also turns it into history back/forward.
-        !isZoomed && 'touch-pan-y touch-pinch-zoom',
-        // Dim only a wait long enough to notice, so a preloaded event does not
-        // slide out half dimmed.
-        isPending && 'opacity-60 delay-150',
-      )}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={cancelGesture}
-    >
+    <EventArtworkTransition>
       <div
-        ref={trackRef}
-        data-testid="event-artwork-track"
-        className="transition-transform duration-200 ease-out motion-reduce:transition-none"
+        ref={areaRef}
+        data-testid="event-artwork-swipe"
+        className={cn(
+          // The dragged artwork moves inside its own place on the page.
+          'overflow-hidden rounded-xl transition-opacity',
+          // Sideways movement here is the swipe; without this, Chrome on a touch
+          // screen also turns it into history back/forward.
+          !isZoomed && 'touch-pan-y touch-pinch-zoom',
+          // Dim only a wait long enough to notice, so a preloaded event does not
+          // slide out half dimmed.
+          isPending && 'opacity-60 delay-150',
+        )}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={cancelGesture}
       >
-        {children}
+        <div
+          ref={trackRef}
+          data-testid="event-artwork-track"
+          className="relative transition-transform duration-200 ease-out motion-reduce:transition-none"
+        >
+          {children}
+          {previous && previousArtwork && (
+            <NeighborArtwork catalogId={catalogId} eventId={previous.id} artwork={previousArtwork} side="left" />
+          )}
+          {next && nextArtwork && (
+            <NeighborArtwork catalogId={catalogId} eventId={next.id} artwork={nextArtwork} side="right" />
+          )}
+        </div>
       </div>
-    </div>
+    </EventArtworkTransition>
   );
 }

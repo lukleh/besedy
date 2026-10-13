@@ -213,7 +213,19 @@
   animation: 220ms ease-out both event-slide-from-left;
 }
 
+/* A dragged artwork is already where the next event shows it, so the new one
+ * simply replaces it (event-artwork-swipe.tsx). */
+::view-transition-old(.event-artwork-carried) {
+  animation: none;
+  opacity: 0;
+}
+
+::view-transition-new(.event-artwork-carried) {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(.event-artwork-carried),
   ::view-transition-old(.event-next),
   ::view-transition-new(.event-next),
   ::view-transition-old(.event-previous),

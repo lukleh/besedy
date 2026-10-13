@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   directionOfDrag,
@@ -26,6 +28,11 @@ vi.mock('@/contexts/audio-playback-context', () => ({
 
 vi.mock('@/hooks/use-event-sequence-navigation', () => ({
   useEventSequenceNavigation: () => mocks.sequence,
+}));
+
+// The test React build has no ViewTransition.
+vi.mock('@/components/catalog/event-page-transition', () => ({
+  EventArtworkTransition: ({ children }: { children: ReactNode }) => children,
 }));
 
 const WIDTH = 390;
@@ -65,12 +72,40 @@ function swipeArea(eventId: number) {
   );
 }
 
+let queryClient: QueryClient;
+
+function withQueryClient(ui: ReactNode) {
+  return <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>;
+}
+
+/** Marks a neighbour's event as already loaded, with published artwork. */
+function loadEvent(eventId: number) {
+  queryClient.setQueryData(['catalog-event-detail', eventId], {
+    publishedArtwork: { id: `art-${eventId}` },
+    canViewArtworkCandidates: false,
+    latestDraftCandidate: null,
+  });
+}
+
+function setReducedMotion(reduce: boolean) {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: reduce && query.includes('prefers-reduced-motion'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }) as unknown as MediaQueryList,
+  );
+}
+
 function renderSwipe() {
-  const view = render(swipeArea(5));
+  const view = render(withQueryClient(swipeArea(5)));
   return {
     target: screen.getByTestId('event-artwork-swipe'),
     track: screen.getByTestId('event-artwork-track'),
-    rerender: view.rerender,
+    rerender: (ui: ReactNode) => view.rerender(withQueryClient(ui)),
+    unmount: view.unmount,
   };
 }
 
@@ -112,10 +147,14 @@ describe('EventArtworkSwipe', () => {
     setZoom(1);
     now = 1000;
     vi.spyOn(performance, 'now').mockImplementation(() => now);
+    queryClient = new QueryClient();
+    setReducedMotion(false);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
+    queryClient.clear();
   });
 
   it('moves the artwork with the finger', () => {
@@ -260,5 +299,93 @@ describe('EventArtworkSwipe', () => {
     expect(track.style.transform).toBe('');
     fireEvent.touchEnd(target, { touches: [] });
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  describe('with the neighbours already loaded', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
+
+    it('shows their artwork beside it, hidden from assistive technology', () => {
+      loadEvent(4);
+      loadEvent(6);
+      renderSwipe();
+      const left = screen.getByTestId('event-artwork-neighbor-left');
+      const right = screen.getByTestId('event-artwork-neighbor-right');
+      expect(left).toHaveAttribute('aria-hidden', 'true');
+      expect(right).toHaveAttribute('aria-hidden', 'true');
+      expect(left.querySelector('img')?.getAttribute('src')).toContain('art-4');
+      expect(right.querySelector('img')?.getAttribute('src')).toContain('art-6');
+    });
+
+    it('shows nothing beside it for events not loaded yet', () => {
+      renderSwipe();
+      expect(screen.queryByTestId('event-artwork-neighbor-left')).toBeNull();
+      expect(screen.queryByTestId('event-artwork-neighbor-right')).toBeNull();
+    });
+
+    it('brings the next artwork into place before opening its event', () => {
+      loadEvent(6);
+      const { target, track } = renderSwipe();
+      drag(target, [300, 250, 200, 150]);
+      expect(track.style.transform).toBe('translateX(-406px)');
+      expect(mocks.push).not.toHaveBeenCalled();
+
+      // Something inside the artwork finishing does not count.
+      fireEvent.transitionEnd(track.firstElementChild!);
+      expect(mocks.push).not.toHaveBeenCalled();
+
+      fireEvent.transitionEnd(track);
+      expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/6', {
+        scroll: false,
+        transitionTypes: ['event-next', 'event-artwork-carried'],
+      });
+      // The fallback does not open it a second time.
+      vi.advanceTimersByTime(300);
+      expect(mocks.push).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the event anyway when the end of the move is never reported', () => {
+      loadEvent(6);
+      const { target } = renderSwipe();
+      drag(target, [300, 250, 200, 150]);
+      vi.advanceTimersByTime(299);
+      expect(mocks.push).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(mocks.push).toHaveBeenCalledTimes(1);
+    });
+
+    it('brings the previous artwork into place from the other side', () => {
+      loadEvent(4);
+      const { target, track } = renderSwipe();
+      drag(target, [100, 150, 200, 250]);
+      expect(track.style.transform).toBe('translateX(406px)');
+      fireEvent.transitionEnd(track);
+      expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/4', {
+        scroll: false,
+        transitionTypes: ['event-previous', 'event-artwork-carried'],
+      });
+    });
+
+    it('opens at once under reduced motion', () => {
+      setReducedMotion(true);
+      loadEvent(6);
+      const { target, track } = renderSwipe();
+      drag(target, [300, 250, 200, 150]);
+      expect(track.style.transition).toBe('none');
+      expect(mocks.push).toHaveBeenCalledWith('/catalog/cat/event/6', {
+        scroll: false,
+        transitionTypes: ['event-next', 'event-artwork-carried'],
+      });
+    });
+
+    it('opens nothing once the page has left the event', () => {
+      loadEvent(6);
+      const { target, unmount } = renderSwipe();
+      drag(target, [300, 250, 200, 150]);
+      unmount();
+      vi.advanceTimersByTime(300);
+      expect(mocks.push).not.toHaveBeenCalled();
+    });
   });
 });
