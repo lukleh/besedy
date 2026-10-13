@@ -9,6 +9,9 @@ import {
   useEventSequenceNavigation,
   type EventSequenceItem,
 } from '@/hooks/use-event-sequence-navigation';
+import { usePrefetchEventNeighbors } from '@/hooks/use-prefetch-event-neighbors';
+import { buildEventPagePath } from '@/lib/api/recording-urls';
+import { eventTransitionTypes } from '@/lib/event-navigation-transition';
 
 interface EventSequenceNavigationProps {
   catalogId: string;
@@ -26,15 +29,22 @@ export function EventSequenceNavigation({
   const locale = useLocale();
   const router = useRouter();
   const t = useTranslations('events.navigation');
-  const { previous, next, position, total, isLoading } =
+  const { previous, next, position, total, isLoading, sequenceStates } =
     useEventSequenceNavigation(catalogId, eventId, {
       showAllColumns,
       showReleaseState,
     });
+  usePrefetchEventNeighbors(
+    catalogId,
+    [previous?.id, next?.id].filter((id): id is number => id !== undefined),
+    sequenceStates,
+  );
 
-  const openEvent = (item: EventSequenceItem | null) => {
+  const openEvent = (item: EventSequenceItem | null, direction: 'next' | 'previous') => {
     if (!item) return;
-    router.push(`/catalog/${catalogId}/event/${item.id}`);
+    router.push(buildEventPagePath(catalogId, item.id), {
+      transitionTypes: eventTransitionTypes(direction),
+    });
   };
   const describe = (item: EventSequenceItem | null) => {
     if (!item) return undefined;
@@ -55,7 +65,7 @@ export function EventSequenceNavigation({
         variant="ghost"
         className="h-auto min-h-10 justify-start px-2"
         disabled={!previous || isLoading}
-        onClick={() => openEvent(previous)}
+        onClick={() => openEvent(previous, 'previous')}
         title={describe(previous)}
       >
         <ChevronLeft className="mr-1 h-4 w-4 shrink-0" />
@@ -69,7 +79,7 @@ export function EventSequenceNavigation({
         variant="ghost"
         className="h-auto min-h-10 justify-end px-2"
         disabled={!next || isLoading}
-        onClick={() => openEvent(next)}
+        onClick={() => openEvent(next, 'next')}
         title={describe(next)}
       >
         <span className="truncate">{t('next')}</span>

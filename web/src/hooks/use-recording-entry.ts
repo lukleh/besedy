@@ -41,16 +41,16 @@ const catalogEntryWithPermissionsSchema = z.object({
   canSeeSpeakers: z.boolean().optional(),
 }).passthrough();
 
-export function useRecordingEntry({
-  catalogId,
-  hash,
-  groupKey,
-  enabled,
-}: UseRecordingEntryParams) {
-  const query = useQuery<CatalogEntryWithPermissions>({
-    queryKey: ["catalog-entry", hash, groupKey],
+/** The entry request, shared by the page and by neighbor preloading. */
+export function recordingEntryQueryOptions(
+  catalogId: string,
+  hash: string,
+  groupKey: string | null | undefined
+) {
+  return {
+    queryKey: ["catalog-entry", hash, groupKey] as const,
     // Run the request even offline so its local-package fallback can answer.
-    networkMode: "offlineFirst",
+    networkMode: "offlineFirst" as const,
     queryFn: async () =>
       withLocalFallback(
         () =>
@@ -62,6 +62,17 @@ export function useRecordingEntry({
           ),
         () => readLocalRecordingEntry(catalogId, hash)
       ),
+  };
+}
+
+export function useRecordingEntry({
+  catalogId,
+  hash,
+  groupKey,
+  enabled,
+}: UseRecordingEntryParams) {
+  const query = useQuery<CatalogEntryWithPermissions>({
+    ...recordingEntryQueryOptions(catalogId, hash, groupKey),
     enabled,
     // The page cannot play until this answers, so a failure shows at once
     // instead of after the retry backoff (also for 5xx and network errors).
