@@ -1,7 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatTimestamp } from "@/lib/utils";
@@ -109,8 +109,17 @@ export function TranscriptContent({
     }
   }, [scrollToTime, segments, onScrollComplete]);
 
-  const hasWordTimestamps = segments.some(
-    (segment) => segment.words && segment.words.length > 0,
+  // Rows keep one seek handler for their lifetime, so a parent passing a new
+  // function on every render does not re-render the whole transcript.
+  const onSeekRef = useRef(onSeek);
+  useEffect(() => {
+    onSeekRef.current = onSeek;
+  }, [onSeek]);
+  const seek = useCallback((time: number) => onSeekRef.current?.(time), []);
+
+  const hasWordTimestamps = useMemo(
+    () => segments.some((segment) => segment.words && segment.words.length > 0),
+    [segments],
   );
   const speakerLabels = useMemo(() => {
     if (!diarization) return segments.map(() => null);
@@ -118,6 +127,17 @@ export function TranscriptContent({
       findSpeakerAtTime(segment.start, diarization.segments),
     );
   }, [segments, diarization]);
+  // Colours are assigned in the order speakers first appear, so they are
+  // worked out for the whole transcript at once rather than per row.
+  const speakerLabelClasses = useMemo(
+    () =>
+      speakerLabels.map((speaker, idx) =>
+        speaker && speaker !== (idx > 0 ? speakerLabels[idx - 1] : null)
+          ? getSpeakerColor(speaker, speakerColorMap)
+          : null,
+      ),
+    [speakerLabels, speakerColorMap],
+  );
 
   if (!hasWordTimestamps && segments.length > VIRTUAL_SCROLL_THRESHOLD) {
     return (
@@ -139,89 +159,130 @@ export function TranscriptContent({
       <div className="leading-relaxed">
         {segments.map((segment, segmentIdx) => {
           const segmentActive = currentTime >= segment.start && currentTime < segment.end;
-          const segmentSpeaker = speakerLabels[segmentIdx];
-          const previousSpeaker = segmentIdx > 0 ? speakerLabels[segmentIdx - 1] : null;
-          const showSpeakerLabel = !!segmentSpeaker && segmentSpeaker !== previousSpeaker;
-
-          if (hasWordTimestamps && segment.words && segment.words.length > 0) {
-            return (
-              <div
-                key={segmentIdx}
-                data-segment-index={segmentIdx}
-                className={`py-1 ${showSpeakerLabel ? "mt-3 pt-2 border-t border-muted/30" : ""}`}
-              >
-                {showSpeakerLabel && (
-                  <span
-                    className={`inline-block text-xs px-1.5 py-0.5 rounded mr-1 font-medium ${getSpeakerColor(segmentSpeaker, speakerColorMap)}`}
-                  >
-                    {segmentSpeaker}
-                  </span>
-                )}
-                {showTimestamps && (
-                  <span className="text-sm font-mono bg-sky-50 text-sky-700 dark:bg-sky-900 dark:text-sky-300 px-1.5 py-0.5 rounded mr-2">
-                    [{formatTimestamp(segment.start)}]
-                  </span>
-                )}
-                {segment.words.map((word, wordIdx) => {
-                  const wordActive = currentTime >= word.start && currentTime < word.end;
-                  return (
-                    <span key={`${segmentIdx}-${wordIdx}`}>
-                      <span
-                        ref={wordActive ? activeElementRef : undefined}
-                        className={`cursor-pointer transition-colors ${
-                          wordActive
-                            ? "bg-primary/30 rounded px-0.5 font-medium"
-                            : segmentActive
-                              ? "bg-primary/10 rounded px-0.5"
-                              : "hover:bg-muted/50 rounded px-0.5"
-                        }`}
-                        onClick={() => onSeek?.(word.start)}
-                      >
-                        {word.word}
-                      </span>{" "}
-                    </span>
-                  );
-                })}
-              </div>
-            );
-          }
-
           return (
-            <div
+            <TranscriptSegmentRow
               key={segmentIdx}
-              data-segment-index={segmentIdx}
-              className={`py-1 ${showSpeakerLabel ? "mt-3 pt-2 border-t border-muted/30" : ""}`}
-            >
-              {showSpeakerLabel && (
-                <span
-                  className={`inline-block text-xs px-1.5 py-0.5 rounded mr-1 font-medium ${getSpeakerColor(segmentSpeaker, speakerColorMap)}`}
-                >
-                  {segmentSpeaker}
-                </span>
-              )}
-              {showTimestamps && (
-                <span className="text-sm font-mono bg-sky-50 text-sky-700 dark:bg-sky-900 dark:text-sky-300 px-1.5 py-0.5 rounded mr-2">
-                  [{formatTimestamp(segment.start)}]
-                </span>
-              )}
-              <span
-                ref={segmentActive ? activeElementRef : undefined}
-                className={`cursor-pointer break-words transition-colors ${
-                  segmentActive
-                    ? "bg-primary/20 rounded px-1"
-                    : "hover:bg-muted rounded px-1"
-                }`}
-                onClick={() => onSeek?.(segment.start)}
-              >
-                {segment.text}
-              </span>
-            </div>
+              segment={segment}
+              segmentIdx={segmentIdx}
+              // Only an active row sees the playback time, so the rest of a
+              // long transcript is not re-rendered on every time update.
+              activeTime={segmentActive ? currentTime : null}
+              speaker={speakerLabels[segmentIdx]}
+              speakerLabelClass={speakerLabelClasses[segmentIdx]}
+              showTimestamps={showTimestamps}
+              showWords={hasWordTimestamps}
+              activeElementRef={activeElementRef}
+              onSeek={seek}
+            />
           );
         })}
       </div>
     </ScrollArea>
   );
 }
+
+interface TranscriptSegmentRowProps {
+  segment: TranscriptSegment;
+  segmentIdx: number;
+  /** The playback time while this segment is active, otherwise null. */
+  activeTime: number | null;
+  speaker: string | null;
+  /** Set where the speaker label is shown: the first segment of a speaker turn. */
+  speakerLabelClass: string | null;
+  showTimestamps: boolean;
+  showWords: boolean;
+  activeElementRef: RefObject<HTMLSpanElement | null>;
+  onSeek: (time: number) => void;
+}
+
+const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
+  segment,
+  segmentIdx,
+  activeTime,
+  speaker,
+  speakerLabelClass,
+  showTimestamps,
+  showWords,
+  activeElementRef,
+  onSeek,
+}: TranscriptSegmentRowProps) {
+  const segmentActive = activeTime !== null;
+  const showSpeakerLabel = !!speaker && !!speakerLabelClass;
+
+  if (showWords && segment.words && segment.words.length > 0) {
+    return (
+      <div
+        data-segment-index={segmentIdx}
+        className={`py-1 ${showSpeakerLabel ? "mt-3 pt-2 border-t border-muted/30" : ""}`}
+      >
+        {showSpeakerLabel && (
+          <span
+            className={`inline-block text-xs px-1.5 py-0.5 rounded mr-1 font-medium ${speakerLabelClass}`}
+          >
+            {speaker}
+          </span>
+        )}
+        {showTimestamps && (
+          <span className="text-sm font-mono bg-sky-50 text-sky-700 dark:bg-sky-900 dark:text-sky-300 px-1.5 py-0.5 rounded mr-2">
+            [{formatTimestamp(segment.start)}]
+          </span>
+        )}
+        {segment.words.map((word, wordIdx) => {
+          const wordActive =
+            activeTime !== null && activeTime >= word.start && activeTime < word.end;
+          return (
+            <span key={`${segmentIdx}-${wordIdx}`}>
+              <span
+                ref={wordActive ? activeElementRef : undefined}
+                className={`cursor-pointer transition-colors ${
+                  wordActive
+                    ? "bg-primary/30 rounded px-0.5 font-medium"
+                    : segmentActive
+                      ? "bg-primary/10 rounded px-0.5"
+                      : "hover:bg-muted/50 rounded px-0.5"
+                }`}
+                onClick={() => onSeek(word.start)}
+              >
+                {word.word}
+              </span>{" "}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-segment-index={segmentIdx}
+      className={`py-1 ${showSpeakerLabel ? "mt-3 pt-2 border-t border-muted/30" : ""}`}
+    >
+      {showSpeakerLabel && (
+        <span
+          className={`inline-block text-xs px-1.5 py-0.5 rounded mr-1 font-medium ${speakerLabelClass}`}
+        >
+          {speaker}
+        </span>
+      )}
+      {showTimestamps && (
+        <span className="text-sm font-mono bg-sky-50 text-sky-700 dark:bg-sky-900 dark:text-sky-300 px-1.5 py-0.5 rounded mr-2">
+          [{formatTimestamp(segment.start)}]
+        </span>
+      )}
+      <span
+        ref={segmentActive ? activeElementRef : undefined}
+        className={`cursor-pointer break-words transition-colors ${
+          segmentActive
+            ? "bg-primary/20 rounded px-1"
+            : "hover:bg-muted rounded px-1"
+        }`}
+        onClick={() => onSeek(segment.start)}
+      >
+        {segment.text}
+      </span>
+    </div>
+  );
+});
 
 interface VirtualizedASRTranscriptProps extends Omit<TranscriptContentProps, "transcript"> {
   segments: TranscriptSegment[];

@@ -1,7 +1,14 @@
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptContent } from "@/components/transcript/transcript-viewer-content";
 import type { Transcript } from "@/components/transcript/transcript-viewer-types";
+import { formatTimestamp } from "@/lib/utils";
+
+// Each row renders its timestamp through this, so the calls count row renders.
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/utils")>();
+  return { ...actual, formatTimestamp: vi.fn(actual.formatTimestamp) };
+});
 
 const VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]';
 const VIEWPORT_RECT = { top: 100, bottom: 500, height: 400 };
@@ -235,5 +242,68 @@ describe("TranscriptContent scrolling", () => {
     await waitFor(() => expect(onScrollComplete).toHaveBeenCalled());
     // Visible band 100-400: 430 - 250
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 180, behavior: "smooth" });
+  });
+});
+
+describe("TranscriptContent playback updates", () => {
+  const longTranscript: Transcript = {
+    backend: "whisperx",
+    segments: Array.from({ length: 50 }, (_, idx) => ({
+      text: `word${idx}a word${idx}b`,
+      start: idx * 2,
+      end: idx * 2 + 2,
+      words: [
+        { word: `word${idx}a`, start: idx * 2, end: idx * 2 + 1 },
+        { word: `word${idx}b`, start: idx * 2 + 1, end: idx * 2 + 2 },
+      ],
+    })),
+  };
+
+  afterEach(() => {
+    vi.mocked(formatTimestamp).mockClear();
+  });
+
+  it("re-renders only the segments whose highlight changes", () => {
+    const { rerender } = render(
+      <TranscriptContent transcript={longTranscript} currentTime={10.5} showTimestamps />,
+    );
+    expect(formatTimestamp).toHaveBeenCalledTimes(50);
+
+    vi.mocked(formatTimestamp).mockClear();
+    // Same segment, next word.
+    rerender(<TranscriptContent transcript={longTranscript} currentTime={11.5} showTimestamps />);
+    expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10]]);
+
+    vi.mocked(formatTimestamp).mockClear();
+    // Next segment: the one left behind and the one entered.
+    rerender(<TranscriptContent transcript={longTranscript} currentTime={12.5} showTimestamps />);
+    expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10], [12]]);
+  });
+
+  it("moves the word highlight as playback advances", () => {
+    const { rerender } = render(
+      <TranscriptContent transcript={longTranscript} currentTime={10.5} />,
+    );
+    expect(screen.getByText("word5a")).toHaveClass("font-medium");
+
+    rerender(<TranscriptContent transcript={longTranscript} currentTime={12.5} />);
+    expect(screen.getByText("word5a")).not.toHaveClass("font-medium");
+    expect(screen.getByText("word5a")).not.toHaveClass("bg-primary/10");
+    expect(screen.getByText("word6a")).toHaveClass("font-medium");
+    expect(screen.getByText("word6b")).toHaveClass("bg-primary/10");
+  });
+
+  it("seeks through the latest handler after the parent re-renders", () => {
+    const first = vi.fn();
+    const latest = vi.fn();
+    const { rerender } = render(
+      <TranscriptContent transcript={longTranscript} currentTime={0} onSeek={first} />,
+    );
+    rerender(<TranscriptContent transcript={longTranscript} currentTime={0} onSeek={latest} />);
+
+    fireEvent.click(screen.getByText("word30b"));
+
+    expect(first).not.toHaveBeenCalled();
+    expect(latest).toHaveBeenCalledWith(61);
   });
 });
