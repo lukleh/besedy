@@ -203,7 +203,6 @@ vi.mock("@/hooks/use-catalog-context", () => ({
   useCatalogContext: () => ({
     catalogId: "catalog-1",
     activeGroup: { id: "catalog-1", label: "Catalog 1" },
-    groupKey: "catalog-1",
     isLoading: false,
     catalogNotFound: false,
     catalogValidationLoading: false,

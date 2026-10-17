@@ -85,7 +85,6 @@ interface MetadataEditorFormProps {
   hash: string;
   source: SourceMetadata;
   groupId: string;
-  groupKey: string;
   curated: CuratedMetadata;
   recorders: MetadataRecorder[];
   locations: MetadataLocation[];
@@ -93,8 +92,6 @@ interface MetadataEditorFormProps {
 }
 
 export function MetadataEditor({ hash, source, groupId }: MetadataEditorProps) {
-  const groupKey = groupId || "default";
-
   // Fetch enum data for dropdowns
   const { data: recorders } = useRecorders(groupId);
   const { data: locations } = useLocations(groupId);
@@ -102,7 +99,7 @@ export function MetadataEditor({ hash, source, groupId }: MetadataEditorProps) {
 
   // Fetch curated metadata
   const { data: curated, isLoading } = useQuery<CuratedMetadata>({
-    queryKey: ["recording-metadata", hash, groupKey],
+    queryKey: ["recording-metadata", hash, groupId],
     queryFn: async () => {
       const url = `/api/catalogs/${groupId}/recordings/${hash}/metadata`;
       return fetchJson<CuratedMetadata>(url);
@@ -123,11 +120,10 @@ export function MetadataEditor({ hash, source, groupId }: MetadataEditorProps) {
 
   return (
     <MetadataEditorForm
-      key={`${groupKey}:${hash}`}
+      key={`${groupId}:${hash}`}
       hash={hash}
       source={source}
       groupId={groupId}
-      groupKey={groupKey}
       curated={curated}
       recorders={recorders ?? []}
       locations={locations ?? []}
@@ -140,7 +136,6 @@ function MetadataEditorForm({
   hash,
   source,
   groupId,
-  groupKey,
   curated,
   recorders,
   locations,
@@ -207,8 +202,8 @@ function MetadataEditorForm({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recording-metadata", hash, groupKey] });
-      queryClient.invalidateQueries({ queryKey: ["catalog", groupKey] });
+      queryClient.invalidateQueries({ queryKey: ["recording-metadata", hash, groupId] });
+      queryClient.invalidateQueries({ queryKey: ["catalog", groupId] });
       toast({
         title: t("saved"),
         description: t("savedDescription"),

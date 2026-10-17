@@ -196,6 +196,6 @@ export interface StoredFilters {
 }
 
 export interface CatalogListProps {
-  catalogId?: string;
+  catalogId: string;
   deepSearchHref?: string;
 }

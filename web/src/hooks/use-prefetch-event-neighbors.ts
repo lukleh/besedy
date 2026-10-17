@@ -95,12 +95,12 @@ export function usePrefetchEventNeighbors(
               detail.recordings.find((candidate) => candidate.isPrimary) ?? detail.recordings[0];
             if (recording) {
               void queryClient.prefetchQuery({
-                ...recordingEntryQueryOptions(catalogId, recording.audioHash, catalogId),
+                ...recordingEntryQueryOptions(catalogId, recording.audioHash),
                 retry: false,
                 ...keep,
               });
               void queryClient.prefetchQuery({
-                ...audioSourcesQueryOptions(catalogId, recording.audioHash, catalogId),
+                ...audioSourcesQueryOptions(catalogId, recording.audioHash),
                 ...keep,
               });
             }
