@@ -96,12 +96,10 @@ def test_whisperx_rejects_auto_language_with_fixed_alignment_model() -> None:
         )
 
 
-def test_config_with_the_retired_decoded_audio_dir_key_still_loads(
+def test_config_rejects_the_retired_decoded_audio_dir_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The path helpers in besedy/core/paths_runtime.py turn any config-load
-    # error into a "root is required" message or a silent default, so a
-    # restored older config must keep loading rather than fail on this key.
+    # Removed settings must be removed from configuration rather than ignored.
     example = (Path(__file__).parents[1] / "besedy.toml.example").read_text(encoding="utf-8")
     config_path = tmp_path / "besedy.toml"
     config_path.write_text(
@@ -110,9 +108,8 @@ def test_config_with_the_retired_decoded_audio_dir_key_still_loads(
     )
     monkeypatch.setenv("BESEDY_CONFIG", str(config_path))
 
-    paths = _load_config().paths
-
-    assert not hasattr(paths, "decoded_audio_dir")
+    with pytest.raises(TypeError, match="decoded_audio_dir"):
+        _load_config()
 
 
 class TestNormalizeConfigLanguage:

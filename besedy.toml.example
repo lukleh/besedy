@@ -158,25 +158,6 @@ filter_enabled = true
 # Request word-level timestamps from ASR models
 word_timestamps = true
 
-[diarization]
-# Expected speaker count range for pyannote diarization
-min_speakers = 2
-max_speakers = 10
-# Spectral clustering p-value for speaker separation.
-# Lower = more aggressive separation (more speakers), higher = more conservative.
-# Typical range: 0.1-0.5. Default 0.22 works well for 2-4 speakers.
-spectral_p_value = 0.22
-
-[analysis]
-# Maximum cross-model comparisons per analysis run (limits memory usage)
-cross_model_limit = 10
-# Number of files to sample for aggregate statistics
-sample_files = 100
-# Number of audio hashes to sample for detailed analysis
-sample_hashes = 10
-# Maximum words per file for word-level analysis (truncates long transcripts)
-max_words_per_file = 500
-
 [nemo]
 # Minimum silence duration (seconds) for NeMo's internal VAD.
 # Affects segment boundary detection. Range: 0.05-0.5.
