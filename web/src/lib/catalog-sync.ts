@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import prisma from '@/lib/db';
 import fs from 'fs/promises';
+import { syncCatalogEntries } from '@/lib/catalog-sync/entries';
 import { readSourceSnapshot } from '@/lib/catalog-sync/source-snapshot';
 import { rewritePath } from '@/lib/security/path-validation';
 
@@ -762,7 +763,6 @@ async function syncCatalogGroupAttempt(
         }
 
         let existingDuplicateCounts = new Map<string, number>();
-        let existingPublicationByHash = new Map<string, boolean>();
         if (baseChanged && !duplicatesChanged) {
           const grouped = await tx.catalogDuplicate.groupBy({
             by: ['audioHash'],
@@ -771,15 +771,6 @@ async function syncCatalogGroupAttempt(
           });
           existingDuplicateCounts = new Map(
             grouped.map((row) => [row.audioHash, row._count._all]),
-          );
-        }
-        if (baseChanged) {
-          const publicationRows = await tx.catalogEntry.findMany({
-            where: { workflowGroupId: groupId },
-            select: { audioHash: true, isPublished: true },
-          });
-          existingPublicationByHash = new Map(
-            publicationRows.map((row) => [row.audioHash, row.isPublished]),
           );
         }
 
@@ -802,7 +793,6 @@ async function syncCatalogGroupAttempt(
           hasArchived: boolean;
           hasMetadata: boolean;
           isActionable: boolean;
-          isPublished: boolean;
           duplicateCount: number;
         }> = [];
 
@@ -869,7 +859,6 @@ async function syncCatalogGroupAttempt(
               hasArchived: !!archived,
               hasMetadata: !!metadata,
               isActionable: !!archived && !!metadata,
-              isPublished: existingPublicationByHash.get(audioHash) ?? false,
               duplicateCount: duplicateCounts.get(audioHash) ?? 0,
             });
           }
@@ -878,12 +867,7 @@ async function syncCatalogGroupAttempt(
         const syncedAt = new Date();
 
         if (baseChanged) {
-          await tx.catalogEntry.deleteMany({
-            where: { workflowGroupId: groupId },
-          });
-          if (entryRows.length > 0) {
-            await tx.catalogEntry.createMany({ data: entryRows });
-          }
+          await syncCatalogEntries(tx, groupId, entryRows, syncedAt);
         }
 
         if (duplicatesChanged) {
