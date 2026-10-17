@@ -76,4 +76,16 @@ describe("virtualized transcript playback", () => {
     expect(first).not.toHaveBeenCalled();
     expect(latest).toHaveBeenCalledWith(2);
   });
+
+  it("preserves highlighting for overlapping active segments", () => {
+    const overlapping = {
+      ...transcript,
+      segments: transcript.segments.map((segment, index) =>
+        index === 0 ? { ...segment, end: 2 } : segment,
+      ),
+    };
+    render(<TranscriptContent transcript={overlapping} currentTime={1.5} />);
+    expect(screen.getByText("segment 0")).toHaveClass("bg-primary/20");
+    expect(screen.getByText("segment 1")).toHaveClass("bg-primary/20");
+  });
 });

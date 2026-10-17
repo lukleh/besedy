@@ -346,18 +346,21 @@ function VirtualizedASRTranscript({
           position: "relative",
         }}
       >
-        {virtualizer.getVirtualItems().map((virtualItem) => (
-          <VirtualizedASRRow
-            key={virtualItem.key}
-            segment={segments[virtualItem.index]}
-            top={virtualItem.start}
-            isActive={virtualItem.index === activeIndex}
-            speaker={speakerLabels[virtualItem.index]}
-            speakerLabelClass={speakerLabelClasses[virtualItem.index]}
-            showTimestamps={showTimestamps}
-            onSeek={onSeek}
-          />
-        ))}
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const segment = segments[virtualItem.index];
+          return (
+            <VirtualizedASRRow
+              key={virtualItem.key}
+              segment={segment}
+              top={virtualItem.start}
+              isActive={currentTime >= segment.start && currentTime < segment.end}
+              speaker={speakerLabels[virtualItem.index]}
+              speakerLabelClass={speakerLabelClasses[virtualItem.index]}
+              showTimestamps={showTimestamps}
+              onSeek={onSeek}
+            />
+          );
+        })}
       </div>
     </div>
   );
