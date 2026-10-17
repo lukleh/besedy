@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,62 +61,6 @@ class StageAudioRequest:
             ffmpeg_binary=getattr(args, "ffmpeg_binary", "ffmpeg"),
             no_symlink=bool(getattr(args, "no_symlink", False)),
         )
-
-
-def infer_staging_dir_from_normalized_csv(csv_path: Path) -> tuple[Path | None, str | None]:
-    """Infer staging directory from an existing normalized catalog CSV.
-
-    Rules:
-    - All files must have the same parent directory
-    - The directory must contain only files (no subdirectories)
-
-    Args:
-        csv_path: Path to the normalized catalog CSV.
-
-    Returns:
-        Tuple of (staging_dir, error_message). If successful, error is None.
-    """
-    if not csv_path.exists():
-        return None, None  # No existing CSV, not an error
-
-    try:
-        with csv_path.open("r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            if "Full Path" not in (reader.fieldnames or []):
-                return None, f"Normalized CSV missing 'Full Path' column: {csv_path}"
-
-            parents = set()
-            for row in reader:
-                full_path = row.get("Full Path", "").strip()
-                if full_path:
-                    parents.add(Path(full_path).parent)
-
-    except Exception as exc:
-        return None, f"Failed to read normalized CSV {csv_path}: {exc}"
-
-    if not parents:
-        return None, f"No file paths found in normalized CSV: {csv_path}"
-
-    if len(parents) > 1:
-        return None, (
-            f"Staging directory cannot be inferred: files in normalized CSV "
-            f"have different parent directories ({len(parents)} found)"
-        )
-
-    staging_dir = parents.pop()
-
-    if not staging_dir.exists():
-        return None, f"Inferred staging directory does not exist: {staging_dir}"
-
-    # Check that directory contains only files, no subdirectories
-    for item in staging_dir.iterdir():
-        if item.is_dir():
-            return None, (
-                f"Staging directory contains subdirectories, which is not allowed: "
-                f"{staging_dir} (found: {item.name})"
-            )
-
-    return staging_dir, None
 
 
 def register_parser(
