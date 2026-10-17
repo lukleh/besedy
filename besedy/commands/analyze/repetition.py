@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections import Counter
 from typing import Any, TypedDict
@@ -19,6 +20,7 @@ from rich.progress import (
 from besedy.lib.analysis.repetition import RepeatFinding, detect_all_repetitions
 
 from .common import TranscriptRecord, coerce_float, load_transcript_records, transcript_duration
+from .parser import register_analysis_parser
 
 
 class OverlapEvent(TypedDict):
@@ -772,3 +774,26 @@ def cmd_repetition(
 
 
 __all__ = ["cmd_repetition"]
+
+
+def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Register the repetition analysis command."""
+    parser = register_analysis_parser(
+        subparsers,
+        "repetition",
+        help="Measure repetition severity in transcript text",
+        handler=cmd_repetition,
+        extra_fields=("min_repeats", "include_char_repeats"),
+    )
+    parser.add_argument(
+        "--min-repeats",
+        type=int,
+        default=2,
+        help="Minimum repeats for a finding (default: 2)",
+    )
+    parser.add_argument(
+        "--include-char-repeats",
+        action="store_true",
+        help="Enable character-level repeat detection (slower on large transcripts)",
+    )
+    return parser

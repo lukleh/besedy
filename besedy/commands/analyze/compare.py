@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from difflib import SequenceMatcher
 from statistics import mean
@@ -14,6 +15,7 @@ from besedy.lib.analysis.comparison import (
 )
 
 from .common import extract_segments, group_by_audio_hash, load_transcript_records
+from .parser import register_analysis_parser
 
 
 def _pairwise_similarity(transcripts: dict[str, list]) -> list[dict[str, Any]]:
@@ -174,3 +176,21 @@ def cmd_compare(
 
 
 __all__ = ["cmd_compare"]
+
+
+def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Register the compare analysis command."""
+    parser = register_analysis_parser(
+        subparsers,
+        "compare",
+        help="Cross-model comparison on shared audio hashes",
+        handler=cmd_compare,
+        extra_fields=("min_models",),
+    )
+    parser.add_argument(
+        "--min-models",
+        type=int,
+        default=2,
+        help="Minimum models required per audio hash (default: 2)",
+    )
+    return parser
