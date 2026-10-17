@@ -251,10 +251,6 @@ def handle_loudness(
         print(f"Error reading {catalog_path}: {exc}", file=sys.stderr)
         return 1
 
-    if not rows:
-        print("Catalog is empty, nothing to analyze.")
-        return 0
-
     # Find hash column
     hash_column = "Hash"
     if hash_column not in columns:
@@ -331,16 +327,15 @@ def handle_loudness(
         print(f"Skipping {skipped_existing} files with existing loudness data")
 
     if not work_items:
-        print("All files already have loudness data. Nothing to analyze.")
-        return 0
-
-    print(f"Analyzing {len(work_items)} files for loudness...")
+        print("No new loudness analyses needed; refreshing catalog rows.")
+    else:
+        print(f"Analyzing {len(work_items)} files for loudness...")
 
     # === Phase 3: Parallel Execution ===
     # Process files with parallel workers
     cpu_limit = max(1, detect_logical_cpus())
     parallel_limit = request.parallel if request.parallel is not None else cpu_limit
-    workers = min(cpu_limit, len(work_items), max(1, parallel_limit))
+    workers = max(1, min(cpu_limit, len(work_items), max(1, parallel_limit)))
     console = Console(force_terminal=use_color)
     console.print(f"[cyan]Using {workers} worker(s) for loudness analysis[/cyan]")
 
@@ -442,11 +437,15 @@ def handle_loudness(
         for idx, row in enumerate(rows):
             if idx not in work_item_indices:
                 row_hash = row.get(hash_column, "").strip()
-                # Use existing loudness data if available
+                # Cache measurements by audio identity, not the source row:
+                # paths, tags and catalog columns may have changed since then.
+                result_row = dict(row)
                 if row_hash in existing_loudness:
-                    writer.writerow(existing_loudness[row_hash])
-                else:
-                    writer.writerow(row)
+                    cached = existing_loudness[row_hash]
+                    result_row.update(
+                        {col: cached[col] for col in LOUDNESS_COLUMNS if col in cached}
+                    )
+                writer.writerow(result_row)
 
     if need_symlink:
         create_or_update_symlink(symlink_path, output_path, description="loudness catalog")
