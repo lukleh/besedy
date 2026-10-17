@@ -123,43 +123,6 @@ class VadConfig:
 
 
 @dataclass
-class DiarizationConfig:
-    """Speaker diarization configuration for pyannote.
-
-    Attributes:
-        min_speakers: Minimum expected number of speakers.
-        max_speakers: Maximum expected number of speakers.
-        spectral_p_value: Spectral clustering p-value for speaker separation.
-            Lower = more aggressive separation (more speakers detected).
-            Higher = more conservative (fewer speakers). Range: 0.1-0.5.
-            Default 0.22 works well for 2-4 speaker recordings.
-    """
-
-    min_speakers: int
-    max_speakers: int
-    spectral_p_value: float
-
-
-@dataclass
-class AnalysisConfig:
-    """Configuration for analysis commands.
-
-    Attributes:
-        cross_model_limit: Maximum cross-model comparisons per run.
-            Limits memory usage for large datasets.
-        sample_files: Number of files to sample for aggregate statistics.
-        sample_hashes: Number of audio hashes to sample for detailed analysis.
-        max_words_per_file: Maximum words per file for word-level analysis.
-            Truncates long transcripts to limit memory usage.
-    """
-
-    cross_model_limit: int
-    sample_files: int
-    sample_hashes: int
-    max_words_per_file: int
-
-
-@dataclass
 class NemoConfig:
     """NeMo-specific configuration.
 
@@ -302,8 +265,6 @@ class Config:
         audio: Audio processing settings.
         transcription_workflows: Configured transcription workflow variants.
         vad: Voice Activity Detection settings.
-        diarization: Speaker diarization settings.
-        analysis: Analysis command settings.
         nemo: NeMo-specific settings.
         web: Web-facing settings used by the web app and jobs service.
         rag: RAG model settings (optional).
@@ -313,8 +274,6 @@ class Config:
     audio: AudioConfig
     transcription_workflows: list[TranscriptionWorkflowConfig]
     vad: VadConfig
-    diarization: DiarizationConfig
-    analysis: AnalysisConfig
     nemo: NemoConfig
     web: WebConfig
     rag: RagConfig = field(default_factory=RagConfig)
@@ -375,13 +334,12 @@ def _load_config() -> Config:
     # Key from the removed enhancement pipeline; tolerated so older configs load.
     paths_data.pop("decoded_audio_dir", None)
 
+    # Legacy [diarization] and [analysis] sections are accepted but unused.
     return Config(
         paths=PathsConfig(**paths_data),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),
-        diarization=DiarizationConfig(**data["diarization"]),
-        analysis=AnalysisConfig(**data["analysis"]),
         nemo=NemoConfig(**data["nemo"]),
         web=WebConfig(**data.get("web", {})),
         rag=RagConfig(**data.get("rag", {})),

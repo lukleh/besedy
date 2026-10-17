@@ -200,15 +200,14 @@ transcriptions.
 | Rapid speech | 200--300 ms | More, shorter segments |
 | Sparse dialogue | 800--1000 ms | Fewer, longer segments |
 
-### Diarization (`[diarization]`)
+### Diarization speaker limits
 
-`spectral_p_value` controls speaker separation aggressiveness (default: 0.22).
+`catalog diarize --pyannote-min-speakers` and `--pyannote-max-speakers` set
+optional speaker-count bounds. Without these flags, pyannote estimates the
+speaker count. The pipeline also leaves these bounds unset.
 
-| Range | Behavior |
-|-------|----------|
-| 0.1--0.15 | Aggressive separation, may over-segment |
-| 0.22 | Balanced, works for 2--4 speakers |
-| 0.3--0.5 | Conservative, may under-segment |
+The legacy `[diarization]` and `[analysis]` TOML sections are ignored and can be
+removed from existing configuration files.
 
 ### ColBERT Indexing
 
