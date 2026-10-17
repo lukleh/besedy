@@ -193,21 +193,6 @@ def _docker_runtime_ready(
     return True, None
 
 
-def check_python_backend_runtime_ready(
-    *,
-    display_name: str,
-    docker_service: str | None = None,
-    compose_file: Path = DEFAULT_BACKENDS_COMPOSE_FILE,
-) -> tuple[bool, str | None]:
-    """Check whether the Docker runtime is ready for a Python backend."""
-
-    return _docker_runtime_ready(
-        display_name=display_name,
-        docker_service=docker_service,
-        compose_file=compose_file,
-    )
-
-
 def _validate_docker_gpu_request(
     *,
     backend_id: str,
