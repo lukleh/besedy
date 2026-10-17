@@ -332,13 +332,6 @@ def handle_loudness(
         print(f"Analyzing {len(work_items)} files for loudness...")
 
     # === Phase 3: Parallel Execution ===
-    # Process files with parallel workers
-    cpu_limit = max(1, detect_logical_cpus())
-    parallel_limit = request.parallel if request.parallel is not None else cpu_limit
-    workers = max(1, min(cpu_limit, len(work_items), max(1, parallel_limit)))
-    console = Console(force_terminal=use_color)
-    console.print(f"[cyan]Using {workers} worker(s) for loudness analysis[/cyan]")
-
     # Track processed rows and errors
     processed_indices: set[int] = set()
     errors: list[tuple[int, str, str]] = []
@@ -355,80 +348,87 @@ def handle_loudness(
         writer = csv.DictWriter(handle, fieldnames=output_columns, quoting=csv.QUOTE_MINIMAL)
         writer.writeheader()
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False,
-        ) as progress:
-            task = progress.add_task("Analyzing loudness", total=len(work_items))
+        if work_items:
+            cpu_limit = max(1, detect_logical_cpus())
+            parallel_limit = request.parallel if request.parallel is not None else cpu_limit
+            workers = min(cpu_limit, len(work_items), max(1, parallel_limit))
+            console = Console(force_terminal=use_color)
+            console.print(f"[cyan]Using {workers} worker(s) for loudness analysis[/cyan]")
 
-            with (
-                ThreadPoolExecutor(max_workers=workers) as executor,
-                _cancel_queued_on_error(executor),
-            ):
-                futures = {
-                    executor.submit(
-                        get_loudness_metrics,
-                        file_path,
-                        request.ffmpeg_binary,
-                        request.ffprobe_binary,
-                    ): (idx, row, file_path)
-                    for idx, row, file_path in work_items
-                }
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TextColumn("{task.completed}/{task.total}"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False,
+            ) as progress:
+                task = progress.add_task("Analyzing loudness", total=len(work_items))
 
-                for future in as_completed(futures):
-                    idx, row, file_path = futures[future]
-                    try:
-                        metrics, error = future.result()
-                    except Exception as exc:
-                        metrics = None
-                        error = str(exc)
+                with (
+                    ThreadPoolExecutor(max_workers=workers) as executor,
+                    _cancel_queued_on_error(executor),
+                ):
+                    futures = {
+                        executor.submit(
+                            get_loudness_metrics,
+                            file_path,
+                            request.ffmpeg_binary,
+                            request.ffprobe_binary,
+                        ): (idx, row, file_path)
+                        for idx, row, file_path in work_items
+                    }
 
-                    if error:
-                        errors.append((idx, file_path.name, error))
-                        progress.console.print(
-                            f"  [red]\u2717[/red] {rich_escape(file_path.name)}: {error}",
-                            highlight=False,
-                        )
-                    else:
-                        progress.console.print(
-                            f"  [green]\u2713[/green] {rich_escape(file_path.name)}",
-                            highlight=False,
-                        )
+                    for future in as_completed(futures):
+                        idx, row, file_path = futures[future]
+                        try:
+                            metrics, error = future.result()
+                        except Exception as exc:
+                            metrics = None
+                            error = str(exc)
 
-                    # Build result row
-                    result_row = dict(row)
-                    if metrics:
-                        # All metrics are strings from AudioQualityMetrics
-                        result_row["sample_rate"] = metrics.sample_rate or ""
-                        result_row["bit_depth"] = metrics.bit_depth or ""
-                        result_row["channels"] = metrics.channels or ""
-                        result_row["bitrate_kbps"] = metrics.bitrate_kbps or ""
-                        result_row["codec_profile"] = metrics.codec_profile or ""
-                        result_row["integrated_loudness_lufs"] = (
-                            metrics.integrated_loudness_lufs or ""
-                        )
-                        result_row["true_peak_db"] = metrics.true_peak_db or ""
-                        result_row["loudness_range_lu"] = metrics.loudness_range_lu or ""
-                        result_row["input_thresh"] = metrics.input_thresh or ""
-                        result_row["target_offset"] = metrics.target_offset or ""
-                        result_row["needs_normalization"] = (
-                            "yes" if metrics.needs_normalization == "yes" else "no"
-                        )
+                        if error:
+                            errors.append((idx, file_path.name, error))
+                            progress.console.print(
+                                f"  [red]\u2717[/red] {rich_escape(file_path.name)}: {error}",
+                                highlight=False,
+                            )
+                        else:
+                            progress.console.print(
+                                f"  [green]\u2713[/green] {rich_escape(file_path.name)}",
+                                highlight=False,
+                            )
 
-                    # Write immediately with lock for thread safety
-                    with write_lock:
-                        writer.writerow(result_row)
-                        processed_indices.add(idx)
+                        # Build result row
+                        result_row = dict(row)
                         if metrics:
-                            analyzed_count += 1
+                            # All metrics are strings from AudioQualityMetrics
+                            result_row["sample_rate"] = metrics.sample_rate or ""
+                            result_row["bit_depth"] = metrics.bit_depth or ""
+                            result_row["channels"] = metrics.channels or ""
+                            result_row["bitrate_kbps"] = metrics.bitrate_kbps or ""
+                            result_row["codec_profile"] = metrics.codec_profile or ""
+                            result_row["integrated_loudness_lufs"] = (
+                                metrics.integrated_loudness_lufs or ""
+                            )
+                            result_row["true_peak_db"] = metrics.true_peak_db or ""
+                            result_row["loudness_range_lu"] = metrics.loudness_range_lu or ""
+                            result_row["input_thresh"] = metrics.input_thresh or ""
+                            result_row["target_offset"] = metrics.target_offset or ""
+                            result_row["needs_normalization"] = (
+                                "yes" if metrics.needs_normalization == "yes" else "no"
+                            )
 
-                    progress.advance(task)
+                        # Write immediately with lock for thread safety
+                        with write_lock:
+                            writer.writerow(result_row)
+                            processed_indices.add(idx)
+                            if metrics:
+                                analyzed_count += 1
+
+                        progress.advance(task)
 
         # === Phase 4: Backfill non-work items ===
         # Write rows that weren't in work_items (missing files, existing data, etc.)
