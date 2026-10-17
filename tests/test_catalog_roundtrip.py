@@ -5,8 +5,6 @@ Tests CSV reading, writing, and merging without requiring external tools.
 
 from __future__ import annotations
 
-import csv
-
 import pytest
 
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS
