@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections import Counter, defaultdict
 from typing import Any
 
 from .common import coerce_float, load_transcript_records, transcript_duration
+from .parser import register_analysis_parser
 
 
 def _severity_from_issues(issues: dict[str, int]) -> str:
@@ -246,4 +248,17 @@ def cmd_validate(
     return 0
 
 
-__all__ = ["cmd_validate"]
+def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Register the validate analysis command."""
+    parser = register_analysis_parser(
+        subparsers,
+        "validate",
+        help="Basic transcript validation checks (JSON source files)",
+        handler=cmd_validate,
+        extra_fields=(),
+        backend_help="Filter to backend(s), e.g. faster-whisper (can repeat)",
+    )
+    return parser
+
+
+__all__ = ["cmd_validate", "register_parser"]
