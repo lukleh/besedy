@@ -30,7 +30,6 @@ const mockTx: any = {
     deleteMany: vi.fn(),
     createMany: vi.fn(),
     updateMany: vi.fn(),
-    findMany: vi.fn(),
     count: vi.fn(),
   },
   catalogSyncState: {
@@ -96,7 +95,6 @@ describe('catalog-sync', () => {
     mockTx.catalogEntry.deleteMany.mockResolvedValue({ count: 0 });
     mockTx.catalogEntry.createMany.mockResolvedValue({ count: 0 });
     mockTx.catalogEntry.updateMany.mockResolvedValue({ count: 0 });
-    mockTx.catalogEntry.findMany.mockResolvedValue([]);
     mockTx.catalogEntry.count.mockResolvedValue(0);
     mockTx.catalogSyncState.upsert.mockResolvedValue({});
     mockTx.catalogDuplicate.deleteMany.mockResolvedValue({ count: 0 });
