@@ -175,9 +175,6 @@ def cmd_compare(
     return 0
 
 
-__all__ = ["cmd_compare"]
-
-
 def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the compare analysis command."""
     parser = register_analysis_parser(
@@ -194,3 +191,6 @@ def register_parser(subparsers: argparse._SubParsersAction) -> argparse.Argument
         help="Minimum models required per audio hash (default: 2)",
     )
     return parser
+
+
+__all__ = ["cmd_compare", "register_parser"]

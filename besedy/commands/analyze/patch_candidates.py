@@ -222,9 +222,6 @@ def cmd_patch_candidates(
     return 0
 
 
-__all__ = ["cmd_patch_candidates"]
-
-
 def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the patch-candidates analysis command."""
     parser = register_analysis_parser(
@@ -253,3 +250,6 @@ def register_parser(subparsers: argparse._SubParsersAction) -> argparse.Argument
         help="Minimum time-overlap ratio for replacement candidates (default: 0.5)",
     )
     return parser
+
+
+__all__ = ["cmd_patch_candidates", "register_parser"]

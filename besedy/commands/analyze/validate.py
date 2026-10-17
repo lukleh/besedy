@@ -248,9 +248,6 @@ def cmd_validate(
     return 0
 
 
-__all__ = ["cmd_validate"]
-
-
 def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the validate analysis command."""
     parser = register_analysis_parser(
@@ -262,3 +259,6 @@ def register_parser(subparsers: argparse._SubParsersAction) -> argparse.Argument
         backend_help="Filter to backend(s), e.g. faster-whisper (can repeat)",
     )
     return parser
+
+
+__all__ = ["cmd_validate", "register_parser"]

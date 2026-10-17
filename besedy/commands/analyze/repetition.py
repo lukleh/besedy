@@ -773,9 +773,6 @@ def cmd_repetition(
     return 0
 
 
-__all__ = ["cmd_repetition"]
-
-
 def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the repetition analysis command."""
     parser = register_analysis_parser(
@@ -797,3 +794,6 @@ def register_parser(subparsers: argparse._SubParsersAction) -> argparse.Argument
         help="Enable character-level repeat detection (slower on large transcripts)",
     )
     return parser
+
+
+__all__ = ["cmd_repetition", "register_parser"]
