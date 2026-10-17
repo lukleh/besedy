@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, cast
 
@@ -328,15 +328,18 @@ def _load_config() -> Config:
     with open(config_path, "rb") as f:
         data = tomllib.load(f)
 
+    unsupported_sections = sorted(data.keys() - {item.name for item in fields(Config)})
+    if unsupported_sections:
+        raise ValueError(
+            "Unsupported configuration sections: "
+            + ", ".join(f"[{name}]" for name in unsupported_sections)
+            + ". Remove them from besedy.toml."
+        )
+
     transcription_workflows = _load_transcription_workflows(data)
 
-    paths_data = dict(data["paths"])
-    # Key from the removed enhancement pipeline; tolerated so older configs load.
-    paths_data.pop("decoded_audio_dir", None)
-
-    # Legacy [diarization] and [analysis] sections are accepted but unused.
     return Config(
-        paths=PathsConfig(**paths_data),
+        paths=PathsConfig(**data["paths"]),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),
