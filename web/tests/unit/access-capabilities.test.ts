@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAdminCapability,
   getCatalogCapability,
+  getCatalogDiscoveryCapability,
   getPortalCapability,
   getRecordingCapability,
 } from "@/lib/access/capabilities";
@@ -64,6 +65,26 @@ describe("access capabilities", () => {
       canEnterPortal: false,
     });
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not discover catalogs for an unauthenticated user", async () => {
+    vi.mocked(session.getCurrentUserId).mockResolvedValue(null);
+    const result = await getCatalogDiscoveryCapability();
+    expect(result.accessibleCatalogIds).toEqual([]);
+    expect(result.canDiscoverCatalogs).toBe(false);
+    expect(prisma.catalogAccess.findMany).not.toHaveBeenCalled();
+  });
+
+  it("discovers the active catalog grants for a regular user", async () => {
+    prisma.user.findUnique.mockResolvedValue({ status: "ACTIVE", isAdmin: false, isSuperadmin: false });
+    prisma.catalogAccess.findMany.mockResolvedValue([{ catalogId: "catalog-1" }, { catalogId: "catalog-2" }]);
+    const result = await getCatalogDiscoveryCapability("user-1");
+    expect(result.accessibleCatalogIds).toEqual(["catalog-1", "catalog-2"]);
+    expect(result.canDiscoverCatalogs).toBe(true);
+    expect(prisma.catalogAccess.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", status: "ACTIVE" },
+      select: { catalogId: true },
+    });
   });
 
   it("returns admin capability flags for an active admin", async () => {
