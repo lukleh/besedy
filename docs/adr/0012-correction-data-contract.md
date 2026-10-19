@@ -202,9 +202,14 @@ A text revision stores:
 **The corrector's text is the truth.** A corrector writes what is heard in the
 span. The guide recommends, with examples, how to write it.
 
-- **Fillers are not written.** This covers sounds such as "ehm", "hm" and "ééé".
-  The model hardly writes them either: about 160 in 4.6 million words of the
-  default transcript.
+- **Fillers are written as heard, using a fixed set of spellings:** "ehm",
+  "eee", "hm" and "mhm". "No" and "jo" are ordinary words and are always
+  written.
+  - Whether fillers stay in training labels is decided by export policy after
+    the first corrections, not here. Written fillers can always be stripped
+    later. Unwritten ones could only be recovered by correcting again.
+  - The model hardly writes fillers today: about 160 in 4.6 million words of the
+    default transcript.
 - **Cut words, restarts and repetitions are written as heard.** Example: "Šli
   jsme do pro- protože pršelo." or "Já jsem šel, já jsem jel do Prahy." Speakers
   do this all the time, and the transcript keeps it.
@@ -316,9 +321,9 @@ may only be extended.
   training. Unclear speech is flagged, not disapproved.
 - Playback coverage is recorded with each decision and is never approval.
 - Each revision records its origin and the active guide revision.
-- The corrector's text is the truth. Fillers are not written; cut words and
-  repetitions are written as heard; numbers use digits; foreign words keep their
-  spelling. These conventions are fixed before the first correction, and only
+- The corrector's text is the truth and records the audio as heard. Fillers use
+  a fixed set of spellings; cut words and repetitions are written as heard;
+  numbers use digits; foreign words keep their spelling. These conventions are fixed before the first correction, and only
   clarifications follow.
 - Contributor consent is recorded before any write.
 - This version records nothing about speakers.
@@ -331,5 +336,7 @@ may only be extended.
 - How the UI presents the 1,981 spans that stay under 2 s because merging
   would pass 30 s, for example a quick "nothing said here" confirmation.
 - Whether speaker consent or attribution is needed in a later version.
+- Whether training labels keep or strip fillers, decided after the first
+  corrections.
 - Suggestions from other backends for spans without machine text.
 - Forced alignment of corrected text for word-level reader highlighting.
