@@ -87,7 +87,6 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const { data: selectedEntry } = useRecordingEntry({
     catalogId,
     hash: activeSelectedHash,
-    groupKey: catalogId,
     enabled: !!selectedRecording,
   });
   // Correction belongs to the event's primary recording, so the menu offers it

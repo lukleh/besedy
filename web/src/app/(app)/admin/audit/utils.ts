@@ -131,15 +131,6 @@ export function formatDomainLabel(domain: string): string {
     .join(" ");
 }
 
-export function formatUserAgent(ua: string | null): string {
-  if (!ua) return "-";
-  if (ua.includes("Chrome")) return "Chrome";
-  if (ua.includes("Firefox")) return "Firefox";
-  if (ua.includes("Safari")) return "Safari";
-  if (ua.includes("Edge")) return "Edge";
-  return ua.slice(0, 30) + "...";
-}
-
 export function formatActionLabel(action: string): string {
   return action
     .split("_")

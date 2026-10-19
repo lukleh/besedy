@@ -96,7 +96,7 @@ export default function RecordingContent({
     "besedy-transcript-enabled",
     false
   );
-  const { groupKey, catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
+  const { catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
     skipCatalogValidation,
   });
   const {
@@ -136,7 +136,7 @@ export default function RecordingContent({
 
   // Fetch available audio sources
   const { data: sourcesData, isLoading: sourcesLoading } = useQuery({
-    ...audioSourcesQueryOptions(catalogId, hash, groupKey),
+    ...audioSourcesQueryOptions(catalogId, hash),
     enabled: !catalogNotFound && !catalogValidationLoading,
   });
 
@@ -160,7 +160,6 @@ export default function RecordingContent({
   const { data, cachedData, isLoading, isValidatingAccess, error, isError } = useRecordingEntry({
     catalogId,
     hash,
-    groupKey,
     enabled: !catalogNotFound && !catalogValidationLoading,
   });
 
