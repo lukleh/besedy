@@ -133,7 +133,6 @@ describe("RecordingContent transcript toggle", () => {
       }
     );
     useCatalogContextMock.mockReturnValue({
-      groupKey: CATALOG_ID,
       catalogNotFound: false,
       catalogValidationLoading: false,
     });
@@ -703,7 +702,6 @@ describe("RecordingContent transcript toggle", () => {
 
   it("shows the invalid catalog state when catalog validation fails", () => {
     useCatalogContextMock.mockReturnValue({
-      groupKey: CATALOG_ID,
       catalogNotFound: true,
       catalogValidationLoading: false,
     });

@@ -5,7 +5,6 @@ from besedy.lib.runtime.backend_runtime import (
     BackendRuntimeUnavailableError,
     build_command_backend_process,
     build_python_backend_process,
-    check_python_backend_runtime_ready,
     forward_host_env,
     resolve_local_model_path,
 )
@@ -18,7 +17,6 @@ __all__ = [
     "build_command_backend_process",
     "build_path_map",
     "build_python_backend_process",
-    "check_python_backend_runtime_ready",
     "collapse_mounts",
     "forward_host_env",
     "make_mount",

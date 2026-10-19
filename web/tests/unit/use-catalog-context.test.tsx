@@ -28,7 +28,6 @@ describe("useCatalogContext", () => {
     useActiveGroupMock.mockReturnValue({
       activeGroupId: null,
       activeGroup: null,
-      groupKey: "default",
       isLoading: false,
       isSuccess: true,
     } as ReturnType<typeof useActiveGroup>);
@@ -123,7 +122,6 @@ describe("useCatalogContext", () => {
     useActiveGroupMock.mockReturnValue({
       activeGroupId: null,
       activeGroup: null,
-      groupKey: "default",
       isLoading: false,
       isSuccess: false,
     } as ReturnType<typeof useActiveGroup>);
@@ -135,5 +133,23 @@ describe("useCatalogContext", () => {
     renderHook(() => useCatalogContext("catalog-1", { skipCatalogValidation: true }));
 
     expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the route catalog while the saved preference points elsewhere", () => {
+    useActiveGroupMock.mockReturnValue({
+      activeGroupId: "saved-catalog",
+      activeGroup: null,
+      isLoading: false,
+      isSuccess: true,
+    } as ReturnType<typeof useActiveGroup>);
+    useCatalogsMock.mockReturnValue({
+      data: [{ id: "route-catalog", label: "Route" }],
+      isLoading: false,
+    } as ReturnType<typeof useCatalogs>);
+
+    const { result } = renderHook(() => useCatalogContext("route-catalog"));
+
+    expect(result.current.catalogId).toBe("route-catalog");
+    expect(mutateMock).toHaveBeenCalledWith("route-catalog");
   });
 });
