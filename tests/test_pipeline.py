@@ -20,6 +20,7 @@ from besedy.commands.catalog.pipeline import (
 from besedy.commands.catalog.pipeline_rag import default_pipeline_rag_backend_key
 from besedy.commands.catalog.rag_colbert_index import RagColbertIndexRequest
 from besedy.lib.rag_chunk_corpus import slugify_backend_key
+from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from tests.helpers.workflows import make_workflow_config
 
@@ -247,6 +248,41 @@ def test_run_pipeline_exits_1_when_a_failure_follows_skipped_rows(
 
     assert result == 1
     assert calls == ALL_STEPS
+
+
+@pytest.mark.parametrize("failing_step", ["transcribe", "diarize"])
+@pytest.mark.parametrize("continue_on_error", [True, False])
+def test_unavailable_backend_runtime_fails_only_its_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failing_step: str,
+    continue_on_error: bool,
+) -> None:
+    calls = _stub_every_step(tmp_path, monkeypatch, {})
+    handler = "handle_transcribe" if failing_step == "transcribe" else "handle_diarize"
+
+    def unavailable(_request):
+        calls.append(failing_step)
+        raise BackendRuntimeUnavailableError("WhisperX Docker runtime is unavailable.")
+
+    monkeypatch.setattr(pipeline, handler, unavailable)
+
+    result = handle_run_pipeline(
+        _pipeline_args(
+            continue_on_error=continue_on_error, skip_derived=False, skip_rag_colbert_index=True
+        )
+    )
+
+    assert result == 1
+    expected = ALL_STEPS if continue_on_error else ALL_STEPS[: ALL_STEPS.index(failing_step) + 1]
+    assert calls == expected
+    captured = capsys.readouterr()
+    assert "Error: WhisperX Docker runtime is unavailable." in captured.err
+    if continue_on_error:
+        assert f"  - {failing_step} (" in captured.out.split("step(s) had issues:")[-1]
+    else:
+        assert f"Pipeline stopped: {failing_step}" in captured.out
 
 
 def test_run_pipeline_requires_audio_artifacts_root_before_loudness(
