@@ -48,6 +48,12 @@ Sync triggers:
 
 `--force` bypasses fingerprint checks and rebuilds all tracked sources for the scope.
 
+Every reconciliation also removes orphaned event-recording assignments and
+repairs events that lost their primary recording, even when all source bytes
+are unchanged. A cleanup failure returns an error while preserving the committed
+source fingerprints; the next normal reconciliation retries cleanup without
+requiring `--force` or another CSV change.
+
 ### CSV Contract With the Python Writers
 
 The columns the sync reads from each CSV kind are listed in

@@ -194,7 +194,7 @@ describe('catalog-sync', () => {
     const result = await syncCatalogGroup('20251222_144441');
 
     expect(result.status).toBe('skipped');
-    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(3);
     expect(mockReadFile).toHaveBeenCalledTimes(4);
     expect(mockTx.catalogSyncState.upsert).not.toHaveBeenCalled();
   });
@@ -338,6 +338,52 @@ describe('catalog-sync', () => {
       );
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  it('reports a cleanup failure and repairs the orphan on an unchanged retry', async () => {
+    setupBaseChangedWithBaseline(0);
+    parseBaseRows(0);
+    const states = new Map<string, Record<string, unknown>>();
+    mockTx.catalogSyncState.upsert.mockImplementation(async ({ create }: any) => {
+      states.set(create.sourceKey, create);
+      return create;
+    });
+    mockTx.$queryRaw.mockRejectedValueOnce(new Error('temporary database failure'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      const first = await syncCatalogGroup('20251222_144441');
+      expect(first.status).toBe('error');
+      expect(first.error).toContain('Orphan cleanup failed');
+      expect(first.error).toContain('temporary database failure');
+      expect(states.size).toBe(2);
+
+      // Source generations were committed before cleanup failed. No CSV change
+      // or force option should be needed to retry the remaining work.
+      states.set('duplicates', {
+        sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>', rowCount: 0,
+      });
+      mockTx.catalogSyncState.findMany.mockResolvedValue([...states.values()]);
+      mockTx.$queryRaw
+        .mockResolvedValueOnce([{ eventId: 7 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ eventId: 7, isPrimary: true }]);
+      mockReplaceLostPrimaryRecording.mockResolvedValue({ kind: 'unreleased' });
+      mockParse.mockClear();
+      mockTx.catalogSyncState.upsert.mockClear();
+
+      const retry = await syncCatalogGroup('20251222_144441');
+
+      expect(retry.status).toBe('skipped');
+      expect(mockParse).not.toHaveBeenCalled();
+      expect(mockTx.catalogSyncState.upsert).not.toHaveBeenCalled();
+      expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(mockTx, '20251222_144441', 7);
+    } finally {
+      errorLog.mockRestore();
+      warnLog.mockRestore();
     }
   });
 
