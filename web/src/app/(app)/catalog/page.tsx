@@ -65,7 +65,7 @@ export default async function CatalogIndexPage({
   const accessibleIds = discovery.accessibleCatalogIds;
 
   // No catalog access - redirect to no-access page
-  // (admins/superadmins always have access via getAccessibleWorkflowGroups)
+  // (admins/superadmins always have access via catalog discovery)
   if (accessibleIds.length === 0) {
     if (adminCapability.canAccessAdmin) {
       // Admins without explicit access can still manage catalogs
