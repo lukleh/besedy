@@ -31,14 +31,17 @@ describe('syncCatalogEntries', () => {
       (field) => !NOT_CSV_OWNED.has(field),
     );
 
+    const recordset = sql.slice(sql.indexOf('AS source(') + 'AS source('.length, sql.indexOf(')', sql.indexOf('AS source(')));
+    const recordsetFields = recordset
+      .split(',')
+      .map((column) => column.trim().split(' ')[0].replaceAll('"', ''));
+
     // A column added to the model must also be added to the bulk UPDATE, or
     // existing rows would keep its first value forever.
     for (const field of csvOwned) {
       const recordsetName = field === field.toLowerCase() ? field : `"${field}"`;
       expect(sql, `${field} is missing from SET`).toContain(`${toColumn(field)} = source.${recordsetName}`);
-      expect(sql, `${field} is missing from the recordset`).toMatch(
-        new RegExp(`${recordsetName.replace(/"/g, '\\"')} [a-z]+`),
-      );
+      expect(recordsetFields, `${field} is missing from the recordset`).toContain(field);
     }
   });
 
