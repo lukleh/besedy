@@ -91,16 +91,30 @@ recordings found 0 ms offset, at most about 5 ms for Opus.
 - A **span** is the unit of correction. It is a run of consecutive regions inside
   one chunk, split wherever the silence between two regions is at least 1 s. A
   run still longer than 30 s from first region start to last region end is split
-  at its longest internal gap, recursively.
+  at its longest internal gap, recursively. A run shorter than 2 s is then merged
+  into its neighbour in the same chunk, across the shorter gap first, whenever
+  the merged run stays within 30 s. Repeat until nothing changes.
+
+Merging short runs only changes how a chunk is divided among correctors. The
+chunk, which is the training input, stays the same. Spans of one or two seconds
+mostly hold a sentence fragment cut off by a pause, such as "A…", or a sound
+without words, and are not worth correcting on their own.
 
 **A span never crosses a chunk boundary.** A corrector hears a contiguous piece
 of audio of at most 30 s and writes what is heard in it. The texts of a chunk's
 spans, in order, are the exact label for the exact model input.
 
-On the production data this gives 162,438 spans, all at most 30 s. The median is
-14.8 s and the median chunk has one span. 2.3 % of spans are shorter than 1 s,
-mostly without words, and 9,786 spans start without machine text. Every VAD
-region belongs to exactly one span, so spans cover all detected speech.
+On the production data of 2026-10-19 (90,461 chunks), this gives 152,623 spans.
+All are at most 30 s and the median is 16.5 s. Silence inside a span has a
+median of 0.13 s and a 99th percentile of 4.2 s.
+
+Without the merge, 12,666 spans were shorter than 2 s and 3,725 shorter than
+1 s. After it, 1,981 and 510 remain; these cannot merge without passing 30 s.
+Of the 1 s spans before merging, 77 % had no machine words. Their median
+loudness was only 7 dB below the recording's speech, so they are not silence.
+
+Every chunk's spans cover exactly its regions in order. Every VAD region belongs
+to exactly one span, so spans cover all detected speech.
 
 This replaces ADR 0006's import of source segments as spans. Boundaries stay
 fixed once imported, as before: there is no split, merge or boundary editing.
@@ -111,8 +125,8 @@ Starting a workspace stores, in addition to ADR 0006's frozen source copy and
 fingerprint:
 
 - **On the workspace:**
-  - the segmentation version and its parameters (`chunks-v1`, gap 1 s, maximum
-    30 s);
+  - the segmentation version and its parameters (`chunks-v1`: split gap 1 s,
+    maximum 30 s, merge below 2 s);
   - the source chunk count;
   - the identity of the staged audio: path, byte size and SHA-256.
 - **On each span:**
@@ -183,19 +197,33 @@ A text revision stores:
   suggestions from other backends be offered later;
 - **the active guide revision** at the time it was written.
 
-### The guide fixes deterministic conventions before the first correction
+### The guide fixes the conventions before the first correction
 
-The guide in force when correction starts states rules that need no judgement:
+**The corrector's text is the truth.** A corrector writes what is heard in the
+span. The guide recommends, with examples, how to write it.
 
-- how fillers, false starts and repetitions are written;
-- how numbers are written;
-- how foreign words and names are spelled;
-- a cut word belongs to the span where most of it is heard;
-- an empty span means that nothing was said.
+- **Fillers are not written.** This covers sounds such as "ehm", "hm" and "ééé".
+  The model hardly writes them either: about 160 in 4.6 million words of the
+  default transcript.
+- **Cut words, restarts and repetitions are written as heard.** Example: "Šli
+  jsme do pro- protože pršelo." or "Já jsem šel, já jsem jel do Prahy." Speakers
+  do this all the time, and the transcript keeps it.
+- **Numbers are written as digits.** Examples: "2 hodiny", "v roce 1989",
+  "7. června", "v 8:30", "50 %", "3. kapitola".
+  - "jeden", "jedna" and "jedno" stay words, as do fixed expressions such as
+    "jednou" or "ani jeden".
+  - The default transcript mixes the two today: about 3,700 numbers in digits
+    against about 7,800 in words.
+- **Foreign words keep their original spelling, with Czech endings.** Examples:
+  "mindfulness", "na workshopu". Loanwords the Czech dictionary spells in Czech
+  stay Czech, such as "víkend".
+- **A word cut at a span boundary** belongs to the span where most of it is
+  heard.
+- **An empty span means that nothing was said.**
 
-After the first correction, the guide may be clarified with examples. Its rules
-may not change. A rule change would make earlier corrections inconsistent
-labels.
+After the first correction the guide may gain clarifications and examples. Its
+conventions may not change, because a change would make earlier corrections
+inconsistent labels.
 
 ### Corrector consent is recorded before any writing
 
@@ -204,9 +232,8 @@ The terms cover publishing their corrections and using them to train and
 evaluate models. Acceptance is stored with the terms version and time. The
 correction write commands refuse without it.
 
-Permission to train on the speakers' voices is a matter between the project and
-the speakers or organisers, outside this system. Training export runs only for
-catalogs where that permission has been confirmed, and records who confirmed it.
+This version records nothing about the speakers on the recordings: no consent
+and no speaker attribution.
 
 ### The contract is append-only
 
@@ -261,8 +288,8 @@ may only be extended.
 
 - Correctors hear all speech the model heard. Dropped speech appears as spans
   without text, and the reader gets it once corrected.
-- Spans are shorter and more numerous than source segments (162,438 instead of
-  90,054), but each is a contiguous piece of at most 30 s.
+- Spans are more numerous than source segments (152,623 spans for 90,461
+  chunks), but each is a contiguous piece of at most 30 s.
 - Publication still emits one segment per span, with the span's start and end,
   `confidence: null` and `words: []`. Reader progress is still measured by
   duration.
@@ -273,14 +300,15 @@ may only be extended.
   does.
 - The schema gains workspace segmentation and audio identity, span chunk and
   region data, flag events, decision playback, revision origin and guide,
-  contributor consent and catalog training permission.
+  and contributor consent.
 - The UI can show VAD regions, machine words and speech without text, because
   that data is stored per span.
 
 ## Settled points
 
-- Spans are runs of VAD regions inside one decoded chunk, split at silences of
-  at least 1 s, never longer than 30 s and never across a chunk boundary.
+- Spans are runs of VAD regions inside one decoded chunk. They are split at
+  silences of at least 1 s, and runs under 2 s are merged into a neighbour.
+  They are never longer than 30 s and never cross a chunk boundary.
 - The model input and its label can be rebuilt exactly from stored data.
 - Workspaces refuse sources without VAD regions, and staged audio under a live
   workspace is protected.
@@ -288,18 +316,20 @@ may only be extended.
   training. Unclear speech is flagged, not disapproved.
 - Playback coverage is recorded with each decision and is never approval.
 - Each revision records its origin and the active guide revision.
-- Guide rules are fixed before the first correction. Only clarifications follow.
+- The corrector's text is the truth. Fillers are not written; cut words and
+  repetitions are written as heard; numbers use digits; foreign words keep their
+  spelling. These conventions are fixed before the first correction, and only
+  clarifications follow.
 - Contributor consent is recorded before any write.
-- Training export runs only for catalogs with confirmed speaker permission.
+- This version records nothing about speakers.
 - The correction data is append-only, checked in CI and every night.
 - Training eligibility lives in export code.
 
 ## Deferred questions
 
-- The exact contributor terms and the speaker-permission record.
-- The guide's concrete conventions for fillers, numbers and foreign words,
-  decided before acceptance of this record.
-- Whether very short spans (2.3 % under 1 s) should be confirmed in bulk or
-  merged with a neighbour inside their chunk. The pilot decides.
+- The exact wording of the contributor terms.
+- How the UI presents the 1,981 spans that stay under 2 s because merging
+  would pass 30 s, for example a quick "nothing said here" confirmation.
+- Whether speaker consent or attribution is needed in a later version.
 - Suggestions from other backends for spans without machine text.
 - Forced alignment of corrected text for word-level reader highlighting.
