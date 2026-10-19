@@ -19,7 +19,6 @@ import {
 } from "@/lib/query/auth-sensitive";
 
 interface UseCatalogDataOptions {
-  groupKey: string | null | undefined;
   activeCatalogId: string | null | undefined;
   statusFilter: StatusFilter;
   durationFilter: DurationFilter;
@@ -41,7 +40,6 @@ interface UseCatalogDataOptions {
 }
 
 export function useCatalogData({
-  groupKey,
   activeCatalogId,
   statusFilter,
   durationFilter,
@@ -64,7 +62,7 @@ export function useCatalogData({
   const query = useQuery<CatalogResponse>({
     queryKey: [
       "catalog",
-      groupKey,
+      activeCatalogId,
       page,
       statusFilter,
       durationFilter,

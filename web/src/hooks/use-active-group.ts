@@ -19,12 +19,10 @@ export function useActiveGroup(options?: { enabled?: boolean }) {
   const activeGroupId = query.data?.activeGroupId ?? null;
   const activeGroup: WorkflowGroupSummary | null =
     query.data?.activeGroup ?? null;
-  const groupKey = activeGroupId || "default";
 
   return {
     ...query,
     activeGroupId,
     activeGroup,
-    groupKey,
   };
 }

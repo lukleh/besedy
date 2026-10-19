@@ -37,7 +37,7 @@ export default function EditMetadataContent({
   // already established catalog and recording edit access.
   const t = useTranslations();
   const router = useRouter();
-  const { groupKey, catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
+  const { catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
     skipCatalogValidation,
   });
 
@@ -45,14 +45,13 @@ export default function EditMetadataContent({
   const { data, cachedData, isLoading, isValidatingAccess, error } = useRecordingEntry({
     catalogId,
     hash,
-    groupKey,
     enabled: !catalogNotFound && !catalogValidationLoading,
   });
   const resolvedData = data ?? (isValidatingAccess ? cachedData : undefined);
 
   // Fetch full recording details (source data + duplicates)
   const detailsQuery = useQuery<RecordingDetails>({
-    queryKey: ["recording-details", hash, groupKey],
+    queryKey: ["recording-details", hash, catalogId],
     queryFn: async () => {
       return fetchJson<RecordingDetails>(
         `/api/catalogs/${catalogId}/recordings/${hash}/details`

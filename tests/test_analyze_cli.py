@@ -3,12 +3,39 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from besedy.cli.analyze import main
 from besedy.commands.analyze import (
     cmd_compare,
     cmd_patch_candidates,
     cmd_repetition,
     cmd_validate,
 )
+
+
+@pytest.mark.parametrize("output_format", ["text", "json"])
+@pytest.mark.parametrize(
+    "command, options",
+    [
+        ("validate", []),
+        ("compare", ["--min-models", "1"]),
+        ("repetition", ["--min-repeats", "3", "--include-char-repeats"]),
+        ("patch-candidates", ["--min-models", "1", "--min-repeats", "3", "--min-overlap", "0.7"]),
+    ],
+)
+def test_cli_dispatches_each_command_in_both_output_formats(
+    tmp_path, capsys, command, options, output_format
+):
+    result = main([command, "--root", str(tmp_path), "--format", output_format, *options])
+    output = capsys.readouterr().out
+    assert result == 0
+    assert output
+    if output_format == "json":
+        payload = json.loads(output)
+        assert payload["name"] == command
+        assert payload["status"] == "success"
+        assert isinstance(payload["result"], dict)
 
 
 def _write_transcript(
