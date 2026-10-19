@@ -78,6 +78,17 @@ projection is running or degraded. Requiring readiness while setting
 `CATALOG_SYNC_STARTUP_ENABLED=false` is invalid and stops startup with a clear
 configuration error.
 
+### Correction Segmentation Contract
+
+Correction spans are cut from the chunks a transcript was decoded in
+(ADR 0012). `contracts/correction-segmentation.json` holds the algorithm
+version, its parameters, text-normalization examples and worked cases.
+`tests/test_correction_segmentation.py` checks the Python reference
+(`besedy/lib/correction_segmentation.py`, used by training export), and
+`web/tests/unit/correction-segmentation-contract.test.ts` checks the web port
+(`web/src/lib/correction/segmentation.ts`, used by workspace import). Change
+all three together and bump `SEGMENTATION_VERSION` when the output changes.
+
 ### CatalogEntry Join Contract
 
 `catalog_entry` is materialized by sync as a full-outer-join of the metadata and archived CSVs:
