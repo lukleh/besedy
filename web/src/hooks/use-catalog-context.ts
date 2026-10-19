@@ -8,7 +8,7 @@ interface UseCatalogContextOptions {
 }
 
 export function useCatalogContext(
-  catalogId?: string,
+  catalogId: string,
   options?: UseCatalogContextOptions
 ) {
   const skipCatalogValidation = options?.skipCatalogValidation ?? false;
@@ -57,13 +57,9 @@ export function useCatalogContext(
     syncPreferenceMutate,
   ]);
 
-  const effectiveCatalogId = catalogId ?? active.activeGroupId;
-  const groupKey = effectiveCatalogId || "default";
-
   return {
     ...active,
-    catalogId: effectiveCatalogId,
-    groupKey,
+    catalogId,
     syncingPreferences: syncPreferencePending,
     catalogNotFound,
     catalogValidationLoading,

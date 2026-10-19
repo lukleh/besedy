@@ -88,7 +88,7 @@ describe('usePrefetchEventNeighbors', () => {
     await waitFor(() =>
       expect(queryClient.getQueryData(['catalog-entry', HASH, CATALOG])).toEqual({ entry: { hash: HASH } }),
     );
-    expect(queryClient.getQueryData(['catalog-event-detail', 6])).toEqual(eventDetail(6));
+    expect(queryClient.getQueryData(['catalog-event-detail', CATALOG, 6])).toEqual(eventDetail(6));
     expect(queryClient.getQueryData(['audio-variants', HASH, CATALOG])).toMatchObject({ hash: HASH });
   });
 

@@ -119,12 +119,6 @@ function isRowCountDropAllowedByEnv(): boolean {
   return raw === 'true' || raw === '1';
 }
 
-function shouldRunOrphanCleanup(result: CatalogSyncResult): boolean {
-  if (result.status !== 'success') return false;
-  const changed = new Set(result.changedSources);
-  return changed.has('metadata') || changed.has('archived');
-}
-
 // Deletes event assignments whose recording left the catalog. An event that
 // loses its primary recording this way gets its next playable recording as
 // primary, or is unreleased when none is left (see replaceLostPrimaryRecording).
@@ -950,15 +944,15 @@ async function syncCatalogGroupAttempt(
       },
     );
 
-    if (shouldRunOrphanCleanup(result)) {
-      try {
-        await cleanupOrphanEventRecordings(groupId);
-      } catch (cleanupError) {
-        console.error(
-          `[catalog-sync] Orphan cleanup failed for ${groupId}:`,
-          cleanupError,
-        );
-      }
+    // Fingerprints are already committed. Reconcile even when the source bytes
+    // were unchanged so a failed cleanup (or a crash before it) is retried.
+    try {
+      await cleanupOrphanEventRecordings(groupId);
+    } catch (cleanupError) {
+      const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+      const error = `Orphan cleanup failed for ${groupId}: ${detail}`;
+      console.error(`[catalog-sync] ${error}`, cleanupError);
+      return { ...result, status: 'error', error };
     }
 
     return result;

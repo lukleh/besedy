@@ -96,7 +96,6 @@ export function TranscriptViewer({
 }: TranscriptViewerProps) {
   const t = useTranslations("transcript");
   const { toast } = useToast();
-  const groupKey = groupId || "default";
   const [selectedBackend, setSelectedBackend] =
     useState<TranscriptBackend | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -124,13 +123,10 @@ export function TranscriptViewer({
   }, []);
 
   // Every transcript request goes to the network first and falls back to the
-  // transcript stored with a completed download of this recording. The local
-  // source needs the catalog; without one there is nothing to fall back to.
-  const localCatalogId = groupId ?? null;
-
+  // transcript stored with a completed download of this recording.
   const { data: available, isLoading: loadingBackends } =
     useQuery<AvailableTranscripts>({
-      queryKey: ["transcript-backends", hash, groupKey],
+      queryKey: ["transcript-backends", hash, groupId],
       networkMode: "offlineFirst",
       queryFn: async () =>
         withLocalFallback(
@@ -141,10 +137,7 @@ export function TranscriptViewer({
                 schema: availableTranscriptsSchema,
               }
             ),
-          () =>
-            localCatalogId
-              ? readLocalTranscriptBackends(localCatalogId, hash)
-              : Promise.resolve(null)
+          () => readLocalTranscriptBackends(groupId, hash)
         ),
     });
 
@@ -171,7 +164,7 @@ export function TranscriptViewer({
   }, []);
 
   const { data: availableFormats } = useQuery<AvailableFormats>({
-    queryKey: ["transcript-formats", hash, groupKey, effectiveBackend],
+    queryKey: ["transcript-formats", hash, groupId, effectiveBackend],
     networkMode: "offlineFirst",
     queryFn: async () =>
       withLocalFallback(
@@ -182,10 +175,7 @@ export function TranscriptViewer({
               schema: availableFormatsSchema,
             }
           ),
-        () =>
-          localCatalogId
-            ? readLocalTranscriptFormats(localCatalogId, hash, effectiveBackend ?? "")
-            : Promise.resolve(null)
+        () => readLocalTranscriptFormats(groupId, hash, effectiveBackend ?? "")
       ),
     enabled: !!effectiveBackend,
   });
@@ -200,7 +190,7 @@ export function TranscriptViewer({
 
   const { data: transcript, isLoading: loadingTranscript } =
     useQuery<Transcript>({
-      queryKey: ["transcript", hash, groupKey, effectiveBackend],
+      queryKey: ["transcript", hash, groupId, effectiveBackend],
       networkMode: "offlineFirst",
       queryFn: async () =>
         withLocalFallback(
@@ -211,10 +201,7 @@ export function TranscriptViewer({
                 schema: transcriptSchema,
               }
             ),
-          () =>
-            localCatalogId
-              ? readLocalTranscript(localCatalogId, hash)
-              : Promise.resolve(null)
+          () => readLocalTranscript(groupId, hash)
         ),
       enabled: !!effectiveBackend,
     });
@@ -266,7 +253,7 @@ export function TranscriptViewer({
   }, [transcriptPlainText, toast, t]);
 
   const { data: availableDiarizations } = useQuery<AvailableDiarizations>({
-    queryKey: ["diarization-backends", hash, groupKey],
+    queryKey: ["diarization-backends", hash, groupId],
     networkMode: "offlineFirst",
     queryFn: async () => {
       try {
@@ -278,10 +265,7 @@ export function TranscriptViewer({
                 schema: availableDiarizationsSchema,
               }
             ),
-          () =>
-            localCatalogId
-              ? readLocalDiarizationBackends(localCatalogId, hash)
-              : Promise.resolve(null)
+          () => readLocalDiarizationBackends(groupId, hash)
         );
       } catch {
         return { hash, backends: [] };
@@ -296,7 +280,7 @@ export function TranscriptViewer({
     : availableDiarizations?.backends[0] || null;
 
   const { data: diarization } = useQuery<Diarization>({
-    queryKey: ["diarization", hash, groupKey, effectiveDiarizationBackend],
+    queryKey: ["diarization", hash, groupId, effectiveDiarizationBackend],
     networkMode: "offlineFirst",
     queryFn: async () =>
       withLocalFallback(
@@ -307,10 +291,7 @@ export function TranscriptViewer({
               schema: diarizationSchema,
             }
           ),
-        () =>
-          localCatalogId
-            ? readLocalDiarization(localCatalogId, hash)
-            : Promise.resolve(null)
+        () => readLocalDiarization(groupId, hash)
       ),
     enabled: !!effectiveDiarizationBackend && speakersVisible,
   });
