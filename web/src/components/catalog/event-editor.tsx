@@ -1,5 +1,7 @@
 "use client";
 
+import { eventDetailQueryKey } from "@/components/catalog/event-detail-query";
+
 import { useCallback, useMemo, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -105,8 +107,8 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
   const [editDescription, setEditDescription] = useState("");
 
   const detailQueryKey = useMemo(
-    () => ["catalog-event-detail", eventId] as const,
-    [eventId]
+    () => eventDetailQueryKey(catalogId, eventId),
+    [catalogId, eventId]
   );
 
   const { data, isLoading, error } = useQuery<EventDetailResponse>({

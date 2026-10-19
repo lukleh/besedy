@@ -62,7 +62,6 @@ export function TranscriptContent({
 }: TranscriptContentProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const activeElementRef = useRef<HTMLSpanElement>(null);
-  const speakerColorMap = useMemo(() => new Map<string, number>(), []);
   const { segments } = transcript;
 
   useEffect(() => {
@@ -129,24 +128,24 @@ export function TranscriptContent({
   }, [segments, diarization]);
   // Colours are assigned in the order speakers first appear, so they are
   // worked out for the whole transcript at once rather than per row.
-  const speakerLabelClasses = useMemo(
-    () =>
-      speakerLabels.map((speaker, idx) =>
-        speaker && speaker !== (idx > 0 ? speakerLabels[idx - 1] : null)
-          ? getSpeakerColor(speaker, speakerColorMap)
-          : null,
-      ),
-    [speakerLabels, speakerColorMap],
-  );
+  const speakerLabelClasses = useMemo(() => {
+    const speakerColorMap = new Map<string, number>();
+    return speakerLabels.map((speaker, idx) =>
+      speaker && speaker !== (idx > 0 ? speakerLabels[idx - 1] : null)
+        ? getSpeakerColor(speaker, speakerColorMap)
+        : null,
+    );
+  }, [speakerLabels]);
 
   if (!hasWordTimestamps && segments.length > VIRTUAL_SCROLL_THRESHOLD) {
     return (
       <VirtualizedASRTranscript
         segments={segments}
         currentTime={currentTime}
-        onSeek={onSeek}
+        onSeek={seek}
         autoScroll={autoScroll}
-        diarization={diarization}
+        speakerLabels={speakerLabels}
+        speakerLabelClasses={speakerLabelClasses}
         showTimestamps={showTimestamps}
         scrollToTime={scrollToTime}
         onScrollComplete={onScrollComplete}
@@ -284,8 +283,11 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   );
 });
 
-interface VirtualizedASRTranscriptProps extends Omit<TranscriptContentProps, "transcript"> {
+interface VirtualizedASRTranscriptProps extends Omit<TranscriptContentProps, "transcript" | "diarization" | "onSeek"> {
   segments: TranscriptSegment[];
+  speakerLabels: (string | null)[];
+  speakerLabelClasses: (string | null)[];
+  onSeek: (time: number) => void;
 }
 
 function VirtualizedASRTranscript({
@@ -293,13 +295,13 @@ function VirtualizedASRTranscript({
   currentTime,
   onSeek,
   autoScroll = false,
-  diarization,
+  speakerLabels,
+  speakerLabelClasses,
   showTimestamps = false,
   scrollToTime,
   onScrollComplete,
 }: VirtualizedASRTranscriptProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const speakerColorMap = useMemo(() => new Map<string, number>(), []);
 
   const activeIndex = segments.findIndex(
     (segment) => currentTime >= segment.start && currentTime < segment.end,
@@ -332,19 +334,6 @@ function VirtualizedASRTranscript({
     }
   }, [scrollToTime, segments, virtualizer, onScrollComplete]);
 
-  const speakerAtIndex = (index: number): string | null => {
-    if (!diarization) return null;
-    const segment = segments[index];
-    return findSpeakerAtTime(segment.start, diarization.segments);
-  };
-
-  const speakerChangedAt = (index: number): boolean => {
-    if (index === 0) return speakerAtIndex(0) !== null;
-    const currentSpeaker = speakerAtIndex(index);
-    const prevSpeaker = speakerAtIndex(index - 1);
-    return currentSpeaker !== null && currentSpeaker !== prevSpeaker;
-  };
-
   return (
     <div
       ref={parentRef}
@@ -359,51 +348,78 @@ function VirtualizedASRTranscript({
       >
         {virtualizer.getVirtualItems().map((virtualItem) => {
           const segment = segments[virtualItem.index];
-          const isActive = currentTime >= segment.start && currentTime < segment.end;
-          const speaker = speakerAtIndex(virtualItem.index);
-          const showSpeakerLabel = speakerChangedAt(virtualItem.index);
-
           return (
-            <div
+            <VirtualizedASRRow
               key={virtualItem.key}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-              className={`flex items-start gap-2 py-1.5 ${showSpeakerLabel ? "pt-3 border-t border-muted/30" : ""}`}
-            >
-              {showSpeakerLabel && speaker && (
-                <span
-                  className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${getSpeakerColor(speaker, speakerColorMap)}`}
-                >
-                  {speaker}
-                </span>
-              )}
-              {showTimestamps && (
-                <span className="text-sm font-mono bg-sky-50 text-sky-700 dark:bg-sky-900 dark:text-sky-300 px-1.5 py-0.5 rounded flex-shrink-0">
-                  [{formatTimestamp(segment.start)}]
-                </span>
-              )}
-              <span
-                className={`cursor-pointer transition-colors break-words ${
-                  isActive
-                    ? "bg-primary/20 rounded px-1"
-                    : "hover:bg-muted rounded px-1"
-                }`}
-                onClick={() => onSeek?.(segment.start)}
-              >
-                {segment.text}
-              </span>
-            </div>
+              segment={segment}
+              top={virtualItem.start}
+              isActive={currentTime >= segment.start && currentTime < segment.end}
+              speaker={speakerLabels[virtualItem.index]}
+              speakerLabelClass={speakerLabelClasses[virtualItem.index]}
+              showTimestamps={showTimestamps}
+              onSeek={onSeek}
+            />
           );
         })}
       </div>
     </div>
   );
 }
+
+interface VirtualizedASRRowProps {
+  segment: TranscriptSegment;
+  top: number;
+  isActive: boolean;
+  speaker: string | null;
+  speakerLabelClass: string | null;
+  showTimestamps: boolean;
+  onSeek: (time: number) => void;
+}
+
+const VirtualizedASRRow = memo(function VirtualizedASRRow({
+  segment,
+  top,
+  isActive,
+  speaker,
+  speakerLabelClass,
+  showTimestamps,
+  onSeek,
+}: VirtualizedASRRowProps) {
+  const showSpeakerLabel = !!speaker && !!speakerLabelClass;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        transform: `translateY(${top}px)`,
+      }}
+      className={`flex items-start gap-2 py-1.5 ${showSpeakerLabel ? "pt-3 border-t border-muted/30" : ""}`}
+    >
+      {showSpeakerLabel && (
+        <span
+          className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${speakerLabelClass}`}
+        >
+          {speaker}
+        </span>
+      )}
+      {showTimestamps && (
+        <span className="text-sm font-mono bg-sky-50 text-sky-700 dark:bg-sky-900 dark:text-sky-300 px-1.5 py-0.5 rounded flex-shrink-0">
+          [{formatTimestamp(segment.start)}]
+        </span>
+      )}
+      <span
+        className={`cursor-pointer transition-colors break-words ${
+          isActive ? "bg-primary/20 rounded px-1" : "hover:bg-muted rounded px-1"
+        }`}
+        onClick={() => onSeek(segment.start)}
+      >
+        {segment.text}
+      </span>
+    </div>
+  );
+});
 
 export function TranscriptSkeleton() {
   return (
