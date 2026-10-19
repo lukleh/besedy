@@ -339,9 +339,8 @@ Completed September 2026; see [ADR 0011](../adr/0011-poster-to-artwork-rename.md
 `besedy.toml` rejects the retired `[diarization]` and `[analysis]` sections and
 `[paths].decoded_audio_dir`, while earlier revisions require both sections, so no
 configuration file works with both the old and the new code. One file is shared
-by the host CLI,
-the host ingest worker, the production jobs containers, and the RAG services;
-upgrade the file and all of them in one window:
+by the host CLI, the host ingest worker, the production jobs containers, and
+the RAG services; upgrade the file and all of them in one window:
 
 1. `just jobs-prod-check-idle && just jobs-prod-stop`. Once `/admin/ingest`
    shows no running ingest, `systemctl --user stop besedy-ingest-worker`;
