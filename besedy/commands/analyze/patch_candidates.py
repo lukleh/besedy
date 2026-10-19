@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from difflib import SequenceMatcher
 from statistics import mean
@@ -16,6 +17,7 @@ from .common import (
     overlap_ratio,
     span_text,
 )
+from .parser import register_analysis_parser
 from .repetition import _merge_spans
 
 
@@ -220,4 +222,34 @@ def cmd_patch_candidates(
     return 0
 
 
-__all__ = ["cmd_patch_candidates"]
+def register_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Register the patch-candidates analysis command."""
+    parser = register_analysis_parser(
+        subparsers,
+        "patch-candidates",
+        help="Suggest replacement text spans for repetitive regions",
+        handler=cmd_patch_candidates,
+        extra_fields=("min_models", "min_repeats", "min_overlap"),
+    )
+    parser.add_argument(
+        "--min-models",
+        type=int,
+        default=2,
+        help="Minimum models required per audio hash (default: 2)",
+    )
+    parser.add_argument(
+        "--min-repeats",
+        type=int,
+        default=2,
+        help="Minimum repeats to consider span repetitive (default: 2)",
+    )
+    parser.add_argument(
+        "--min-overlap",
+        type=float,
+        default=0.5,
+        help="Minimum time-overlap ratio for replacement candidates (default: 0.5)",
+    )
+    return parser
+
+
+__all__ = ["cmd_patch_candidates", "register_parser"]
