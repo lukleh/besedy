@@ -11,8 +11,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from besedy.cli import transcribe_oneoff
-from besedy.cli.transcribe_oneoff import (
+from besedy.cli.transcribe_oneoff import main
+from besedy.commands import transcribe_oneoff
+from besedy.commands.transcribe_oneoff import (
     MissingFasterWhisperRuntimeError,
     OneOffDefaults,
     OutputPaths,
@@ -128,7 +129,7 @@ def test_main_reuses_existing_json_without_loading_runtime(tmp_path: Path, monke
     monkeypatch.setattr(transcribe_oneoff, "_load_faster_whisper_helpers", fail_runtime_load)
     monkeypatch.setattr(transcribe_oneoff, "resolve_defaults", lambda: OneOffDefaults())
 
-    result = transcribe_oneoff.main([str(audio)])
+    result = main([str(audio)])
 
     assert result == 0
     assert (tmp_path / "recording.transcript.txt").read_text(encoding="utf-8") == "Ahoj svete\n"
@@ -147,7 +148,7 @@ def test_main_rejects_duplicate_output_paths(tmp_path: Path, monkeypatch) -> Non
 
     monkeypatch.setattr(transcribe_oneoff, "resolve_defaults", lambda: OneOffDefaults())
 
-    result = transcribe_oneoff.main([str(audio_a), str(audio_b), "--output-dir", str(output_dir)])
+    result = main([str(audio_a), str(audio_b), "--output-dir", str(output_dir)])
 
     assert result == 1
 
@@ -213,7 +214,7 @@ def test_main_transcribes_with_mocked_faster_whisper_runtime(
         ),
     )
 
-    result = transcribe_oneoff.main([str(audio), "--device", "cpu", "--compute-type", "int8"])
+    result = main([str(audio), "--device", "cpu", "--compute-type", "int8"])
 
     assert result == 0
     assert calls["model_reference"] == "resolved:large-v3"
@@ -271,7 +272,7 @@ def test_main_runs_against_the_real_workflow_helper_module(
     monkeypatch.setattr(transcribe_oneoff, "_load_faster_whisper_helpers", lambda: helpers)
     monkeypatch.setattr(transcribe_oneoff, "resolve_defaults", lambda: OneOffDefaults())
 
-    result = transcribe_oneoff.main([str(audio), "--device", "cpu", "--compute-type", "int8"])
+    result = main([str(audio), "--device", "cpu", "--compute-type", "int8"])
 
     assert result == 0
     payload = json.loads((tmp_path / "recording.transcript.json").read_text(encoding="utf-8"))
@@ -301,7 +302,7 @@ def test_main_auto_falls_back_to_docker_when_host_runtime_is_missing(
     monkeypatch.setattr(transcribe_oneoff, "run_in_faster_whisper_docker", fake_docker)
     monkeypatch.setattr(transcribe_oneoff, "resolve_defaults", lambda: OneOffDefaults())
 
-    result = transcribe_oneoff.main([str(audio)])
+    result = main([str(audio)])
 
     assert result == 23
     assert captured["runtime"] == "auto"
@@ -327,6 +328,6 @@ def test_main_runtime_docker_bypasses_host_runtime(
     )
     monkeypatch.setattr(transcribe_oneoff, "resolve_defaults", lambda: OneOffDefaults())
 
-    result = transcribe_oneoff.main([str(audio), "--runtime", "docker"])
+    result = main([str(audio), "--runtime", "docker"])
 
     assert result == 0

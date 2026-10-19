@@ -205,7 +205,6 @@ describe('downloaded readers after going offline', () => {
         useRecordingEntry({
           catalogId: CATALOG,
           hash: HASH,
-          groupKey: CATALOG,
           enabled: true,
         }),
       { wrapper: wrapper() },
@@ -223,7 +222,6 @@ describe('downloaded readers after going offline', () => {
         useRecordingEntry({
           catalogId: CATALOG,
           hash: HASH,
-          groupKey: CATALOG,
           enabled: true,
         }),
       { wrapper: wrapper() },

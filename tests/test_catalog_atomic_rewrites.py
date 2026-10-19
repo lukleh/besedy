@@ -101,6 +101,83 @@ class TestLoudness:
         )
         return catalog
 
+    @pytest.mark.parametrize("with_new_analysis", [False, True])
+    def test_cached_measurements_use_current_paths_and_metadata(
+        self, catalog: Path, monkeypatch: pytest.MonkeyPatch, with_new_analysis: bool
+    ) -> None:
+        moved = catalog.parent / "moved.wav"
+        (catalog.parent / "a.wav").rename(moved)
+        rows = [{"Hash": HASH_A, "Full Path": str(moved), "title": "Current title"}]
+        if with_new_analysis:
+            rows.append(
+                {"Hash": HASH_B, "Full Path": str(catalog.parent / "b.wav"), "title": "New"}
+            )
+        _write_csv(catalog, ["Hash", "Full Path", "title"], rows)
+        loudness_csv = catalog.with_name(f"audio_catalog_{TS}_loudness.csv")
+        # The old catalog also had a column removed from the current schema.
+        _write_csv(
+            loudness_csv,
+            ["Hash", "Full Path", "title", "old_column", "integrated_loudness_lufs"],
+            [
+                {
+                    "Hash": HASH_A,
+                    "Full Path": "/missing/old.wav",
+                    "title": "Old title",
+                    "old_column": "obsolete",
+                    "integrated_loudness_lufs": "-18.0",
+                }
+            ],
+        )
+        analyzed = []
+
+        def analyze(path, *_args):
+            analyzed.append(path)
+            return None, "no audio stream"
+
+        monkeypatch.setattr(loudness_command, "get_loudness_metrics", analyze)
+
+        assert handle_loudness(LoudnessRequest(csv=catalog, no_color=True)) == 0
+
+        actual = {row["Hash"]: row for row in _read_rows(loudness_csv)}
+        assert actual[HASH_A]["Full Path"] == str(moved)
+        assert actual[HASH_A]["title"] == "Current title"
+        assert actual[HASH_A]["integrated_loudness_lufs"] == "-18.0"
+        assert "old_column" not in actual[HASH_A]
+        assert analyzed == ([catalog.parent / "b.wav"] if with_new_analysis else [])
+        assert (catalog.parent / "audio_catalog_loudness.csv").resolve() == loudness_csv
+
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_refresh_prunes_removed_recordings_without_new_analysis(
+        self, catalog: Path, monkeypatch: pytest.MonkeyPatch, empty: bool
+    ) -> None:
+        loudness_csv = catalog.with_name(f"audio_catalog_{TS}_loudness.csv")
+        rows = _read_rows(loudness_csv)
+        _write_csv(
+            catalog,
+            ["Hash", "Full Path"],
+            [] if empty else [{key: row[key] for key in ["Hash", "Full Path"]} for row in rows],
+        )
+        _write_csv(
+            loudness_csv,
+            ["Hash", "Full Path", "integrated_loudness_lufs"],
+            [
+                *rows,
+                {"Hash": HASH_B, "Full Path": "/removed.wav", "integrated_loudness_lufs": "-20"},
+            ],
+        )
+        monkeypatch.setattr(
+            loudness_command,
+            "get_loudness_metrics",
+            lambda *_: pytest.fail("cached/removed recordings must not be analyzed"),
+        )
+
+        assert handle_loudness(LoudnessRequest(csv=catalog, no_color=True)) == 0
+
+        actual = _read_rows(loudness_csv)
+        assert [row["Hash"] for row in actual] == ([] if empty else [HASH_A])
+        if actual:
+            assert actual[0]["integrated_loudness_lufs"] == "-18.0"
+
     def test_interrupted_run_keeps_previous_loudness_csv(
         self, catalog: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

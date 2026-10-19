@@ -1,5 +1,7 @@
 "use client";
 
+import { eventDetailQueryKey } from "@/components/catalog/event-detail-query";
+
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -64,7 +66,7 @@ export default function EventSourcesPage({ params }: EventSourcesPageProps) {
   const [file, setFile] = useState<File | null>(null);
 
   const { data: eventData, isLoading: eventLoading, error: eventError } = useQuery<EventDetailResponse>({
-    queryKey: ["catalog-event-detail", parsedEventId],
+    queryKey: eventDetailQueryKey(catalogId, parsedEventId),
     queryFn: () => fetchJson(`/api/catalogs/${catalogId}/events/${parsedEventId}`),
   });
 

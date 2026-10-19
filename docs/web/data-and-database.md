@@ -40,6 +40,11 @@ unchanged; `v4` added the AAC copy columns (#291).
 | Changed metadata or archived CSV | Rebuild `catalog_entry`                                  |
 | Changed duplicates CSV           | Rebuild `catalog_duplicate`, recompute `duplicate_count` |
 
+Refreshing `catalog_entry` updates CSV-owned fields in place and removes only
+recordings absent from both base sources. Existing publication flags and creation
+timestamps are preserved, including publication changes committed during sync;
+new recordings start unpublished.
+
 Sync triggers:
 
 - Startup reconciliation (web runtime, runs in the background after bootstrap)
@@ -47,6 +52,12 @@ Sync triggers:
 - CLI: `npm run catalog:sync [-- --group <id>] [--force]`
 
 `--force` bypasses fingerprint checks and rebuilds all tracked sources for the scope.
+
+Every reconciliation also removes orphaned event-recording assignments and
+repairs events that lost their primary recording, even when all source bytes
+are unchanged. A cleanup failure returns an error while preserving the committed
+source fingerprints; the next normal reconciliation retries cleanup without
+requiring `--force` or another CSV change.
 
 ### CSV Contract With the Python Writers
 

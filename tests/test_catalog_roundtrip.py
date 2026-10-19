@@ -5,8 +5,6 @@ Tests CSV reading, writing, and merging without requiring external tools.
 
 from __future__ import annotations
 
-import csv
-
 import pytest
 
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS
@@ -16,16 +14,15 @@ from besedy.lib.catalog.manager import (
     catalog_fieldnames,
     collect_hashes,
     extend_with_quality_columns,
-    file_mtime_to_iso8601,
     file_record_to_row,
     format_size,
     get_iso8601_timestamp,
     load_csv,
     merge_catalogs,
     resolve_hash_column,
-    write_catalog_csv,
     write_merged_csv,
 )
+from tests.helpers.catalog_csv import write_catalog_csv
 from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
 
@@ -148,80 +145,6 @@ class TestFileRecordToRow:
         row = file_record_to_row(sample_record, columns)
 
         assert row["nonexistent_column"] == ""
-
-
-class TestWriteCatalogCsv:
-    """Tests for write_catalog_csv()."""
-
-    def test_creates_csv_file(self, tmp_path):
-        """Creates a CSV file at the specified path."""
-        csv_path = tmp_path / "catalog.csv"
-        record = FileRecord(
-            hash="abc123",
-            filename="audio.wav",
-            full_path=tmp_path / "audio.wav",
-            hash_file=tmp_path / "audio.wav.audiohash",
-            exists=True,
-            size_bytes=1024,
-            size_human="1.0 KB",
-            status="EXISTS",
-            extension="wav",
-        )
-
-        write_catalog_csv([record], csv_path)
-
-        assert csv_path.exists()
-
-    def test_csv_has_header(self, tmp_path):
-        """CSV file has header row."""
-        csv_path = tmp_path / "catalog.csv"
-        write_catalog_csv([], csv_path)
-
-        with csv_path.open() as f:
-            reader = csv.DictReader(f)
-            assert "Hash" in reader.fieldnames
-            assert "Filename" in reader.fieldnames
-
-    def test_csv_can_include_quality_columns(self, tmp_path):
-        """CSV can include audio quality columns when requested."""
-        csv_path = tmp_path / "catalog.csv"
-        write_catalog_csv([], csv_path, include_quality=True)
-
-        with csv_path.open() as f:
-            reader = csv.DictReader(f)
-            assert "sample_rate" in reader.fieldnames
-
-    def test_csv_contains_record_data(self, tmp_path):
-        """CSV contains the record data."""
-        csv_path = tmp_path / "catalog.csv"
-        record = FileRecord(
-            hash="test_hash_123",
-            filename="test_audio.mp3",
-            full_path=tmp_path / "test_audio.mp3",
-            hash_file=tmp_path / "test_audio.mp3.audiohash",
-            exists=True,
-            size_bytes=2048,
-            size_human="2.0 KB",
-            status="EXISTS",
-            extension="mp3",
-        )
-
-        write_catalog_csv([record], csv_path)
-
-        with csv_path.open() as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-
-        assert len(rows) == 1
-        assert rows[0]["Hash"] == "test_hash_123"
-        assert rows[0]["Filename"] == "test_audio.mp3"
-
-    def test_creates_parent_directories(self, tmp_path):
-        """Creates parent directories if needed."""
-        csv_path = tmp_path / "nested" / "dir" / "catalog.csv"
-        write_catalog_csv([], csv_path)
-
-        assert csv_path.exists()
 
 
 class TestLoadCsv:
@@ -565,24 +488,3 @@ class TestTimestampHelpers:
         ts = get_iso8601_timestamp()
         parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         assert parsed.tzinfo == timezone.utc
-
-    def test_file_mtime_to_iso8601_existing_file(self, tmp_path):
-        """Returns mtime for existing file."""
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("content")
-
-        ts = file_mtime_to_iso8601(test_file)
-        assert ts.endswith("Z")
-        assert "T" in ts
-        assert len(ts) == 20
-
-    def test_file_mtime_to_iso8601_missing_file(self, tmp_path):
-        """Returns empty string for missing file."""
-        ts = file_mtime_to_iso8601(tmp_path / "missing.txt")
-        assert ts == ""
-
-    def test_file_mtime_to_iso8601_directory(self, tmp_path):
-        """Returns mtime for directory."""
-        ts = file_mtime_to_iso8601(tmp_path)
-        assert ts.endswith("Z")
-        assert "T" in ts

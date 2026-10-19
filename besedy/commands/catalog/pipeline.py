@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from besedy.commands.catalog import pipeline_rag as _pipeline_rag
 from besedy.commands.catalog.archive import ArchiveRequest, handle_archive
@@ -38,6 +39,7 @@ from besedy.core.paths import (
     sanitize_component,
 )
 from besedy.lib.rag_colbert import check_colbert_runtime_ready, default_colbert_index_runtime
+from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from besedy.lib.workflow.config import (
     WorkflowConfig,
@@ -45,21 +47,9 @@ from besedy.lib.workflow.config import (
     get_transcription_workflows,
 )
 
-# Pipeline step definitions (for documentation/reference only)
-CORE_STEPS = [
-    ("loudness", "Analyzing audio loudness"),
-    ("stage-audio", "Normalizing audio files"),
-    ("archive", "Compressing to Opus"),
-    ("transcribe", "Running transcription"),
-    ("diarize", "Running diarization"),
-]
-
-DERIVED_STEPS = [
-    ("export-transcripts", "Exporting transcript sidecars"),
-    ("cluster-speakers", "Clustering speakers"),
-]
-
 logger = logging.getLogger(__name__)
+
+_Request = TypeVar("_Request")
 
 
 def resolve_pipeline_workflows() -> tuple[list[WorkflowConfig], list[str]]:
@@ -67,32 +57,6 @@ def resolve_pipeline_workflows() -> tuple[list[WorkflowConfig], list[str]]:
     transcription_workflows = get_transcription_workflows(pipeline_only=True)
     diarization_workflow_ids = [w.workflow_id for w in get_diarization_workflows()]
     return transcription_workflows, diarization_workflow_ids
-
-
-def derive_staging_dir_from_normalized_csv(csv_path: Path) -> Path | None:
-    """Derive the staging directory from the normalized CSV's Full Path column.
-
-    Returns the parent directory of the first entry's Full Path, or None if
-    the CSV doesn't exist or has no entries.
-    """
-    if not csv_path.exists():
-        return None
-
-    try:
-        with csv_path.open("r", encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                full_path = row.get("Full Path", "")
-                if full_path:
-                    staged_file = Path(full_path)
-                    if staged_file.exists():
-                        return staged_file.parent
-                    # Even if file doesn't exist, derive from path
-                    return staged_file.parent
-    except Exception as exc:
-        logger.debug("failed to derive staging dir from %s: %s", csv_path, exc)
-
-    return None
 
 
 def print_step(step_num: int, total: int, name: str, detail: str = "") -> None:
@@ -315,6 +279,19 @@ Example:
     return parser
 
 
+def _run_backend_step(handler: Callable[[_Request], int], request: _Request) -> int:
+    """Run a backend step; a missing backend runtime fails only that step.
+
+    Returning 1 lets the caller record the failure and honour
+    ``--continue-on-error`` instead of aborting the whole pipeline.
+    """
+    try:
+        return handler(request)
+    except BackendRuntimeUnavailableError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
 def handle_run_pipeline(args: argparse.Namespace) -> int:
     """Execute the full pipeline: stage -> transcribe -> diarize -> derived artifacts."""
 
@@ -532,7 +509,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
             nemo_beam_max_generation_delta=None,
         )
 
-        result = handle_transcribe(transcribe_args)
+        result = _run_backend_step(handle_transcribe, transcribe_args)
         if result == EXIT_ROWS_SKIPPED:
             skipped_steps.append(f"transcribe ({workflow})")
         elif result != 0:
@@ -598,7 +575,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
             pyannote_clustering_threshold=None,
         )
 
-        result = handle_diarize(diarize_args)
+        result = _run_backend_step(handle_diarize, diarize_args)
         if result == EXIT_ROWS_SKIPPED:
             skipped_steps.append(f"diarize ({workflow})")
         elif result != 0:
