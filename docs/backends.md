@@ -206,14 +206,9 @@ transcriptions.
 optional speaker-count bounds. Without these flags, pyannote estimates the
 speaker count. The pipeline also leaves these bounds unset.
 
-Remove the retired `[diarization]` and `[analysis]` TOML sections and
-`[paths].decoded_audio_dir` when upgrading. Unsupported settings are rejected;
-there is no compatibility adapter.
-
-Upgrade the configuration and every Python runtime that consumes it together.
-The host ingest worker has its own deployed checkout and must be upgraded
-separately from the web app. Stop affected workers while switching their code
-and configuration, then restart them on the matching revision.
+The retired `[diarization]` and `[analysis]` TOML sections are rejected; see
+[Retired configuration cutover](web/operations.md#retired-configuration-cutover)
+for the upgrade.
 
 ### ColBERT Indexing
 
