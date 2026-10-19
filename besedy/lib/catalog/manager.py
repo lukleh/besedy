@@ -70,24 +70,6 @@ def get_iso8601_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def file_mtime_to_iso8601(path: Path) -> str:
-    """Convert file modification time to ISO 8601 format.
-
-    Used when backfilling timestamps for existing files.
-
-    Args:
-        path: Path to file
-
-    Returns:
-        ISO 8601 timestamp string, or empty string if file doesn't exist.
-    """
-    try:
-        mtime = path.stat().st_mtime
-        return datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    except OSError:
-        return ""
-
-
 @dataclass
 class FileRecord:
     hash: str
@@ -287,27 +269,6 @@ def audio_content_sha256sum(
             proc.kill()
             proc.wait()
         return None
-
-
-def resolve_full_path(dirpath: Path, name: str) -> tuple[Path, str, bool]:
-    candidates: list[str] = []
-
-    def add_candidate(value: str) -> None:
-        if value not in candidates:
-            candidates.append(value)
-
-    add_candidate(unicodedata.normalize("NFC", name))
-    add_candidate(name)
-    add_candidate(unicodedata.normalize("NFD", name))
-
-    for candidate in candidates:
-        candidate_path = dirpath / candidate
-        if candidate_path.is_file():
-            resolved_name = unicodedata.normalize("NFC", candidate_path.name)
-            return candidate_path, resolved_name, True
-
-    fallback_name = unicodedata.normalize("NFC", name)
-    return dirpath / fallback_name, fallback_name, False
 
 
 def check_ffprobe(binary: str) -> bool:
@@ -586,31 +547,6 @@ def file_record_to_row(record: FileRecord, columns: Sequence[str]) -> dict[str, 
     return {column: str(base.get(column, "")) for column in columns}
 
 
-def write_catalog_csv(
-    records: list[FileRecord],
-    csv_path: Path,
-    *,
-    include_quality: bool = False,
-) -> None:
-    """Write audio catalog records to a CSV file.
-
-    Creates parent directories if needed. Uses UTF-8 encoding and minimal
-    quoting for CSV compatibility.
-
-    Args:
-        records: List of FileRecord objects to write.
-        csv_path: Output path for the CSV file.
-        include_quality: If True, include audio quality columns in the output schema.
-    """
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = catalog_fieldnames(include_quality=include_quality)
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL)
-        writer.writeheader()
-        for record in records:
-            writer.writerow(file_record_to_row(record, fieldnames))
-
-
 def load_csv(path: Path, *, encoding: str) -> tuple[Sequence[str], list[dict[str, str]]]:
     """Load a CSV file and return its headers and rows.
 
@@ -846,26 +782,6 @@ def extend_with_quality_columns(columns: Sequence[str]) -> list[str]:
     for column in AUDIO_QUALITY_COLUMNS:
         if column not in updated:
             updated.append(column)
-    return updated
-
-
-def ensure_quality_columns(
-    *,
-    path: Path,
-    rows: list[dict[str, str]],
-    columns: Sequence[str],
-    encoding: str,
-    rewrite: bool,
-) -> list[str]:
-    updated = extend_with_quality_columns(columns)
-    missing = [column for column in AUDIO_QUALITY_COLUMNS if column not in columns]
-    if missing and rewrite:
-        logging.info(
-            "Upgrading catalog schema at %s with columns: %s",
-            path,
-            ", ".join(missing),
-        )
-        write_merged_csv(path, rows, columns=updated, encoding=encoding)
     return updated
 
 
