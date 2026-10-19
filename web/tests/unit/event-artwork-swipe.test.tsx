@@ -80,7 +80,7 @@ function withQueryClient(ui: ReactNode) {
 
 /** Marks a neighbour's event as already loaded, with published artwork. */
 function loadEvent(eventId: number) {
-  queryClient.setQueryData(['catalog-event-detail', eventId], {
+  queryClient.setQueryData(['catalog-event-detail', 'cat', eventId], {
     publishedArtwork: { id: `art-${eventId}` },
     canViewArtworkCandidates: false,
     latestDraftCandidate: null,
