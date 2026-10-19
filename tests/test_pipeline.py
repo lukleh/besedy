@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import logging
 from pathlib import Path
 
 import pytest
 
 from besedy.commands.catalog import pipeline
 from besedy.commands.catalog.pipeline import (
-    CORE_STEPS,
-    DERIVED_STEPS,
     WorkflowConfig,
-    derive_staging_dir_from_normalized_csv,
     handle_run_pipeline,
     print_step,
     rag_backend_key_for_workflow,
@@ -26,57 +22,6 @@ from besedy.commands.catalog.rag_colbert_index import RagColbertIndexRequest
 from besedy.lib.rag_chunk_corpus import slugify_backend_key
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from tests.helpers.workflows import make_workflow_config
-
-
-class TestDeriveStagingDir:
-    """Tests for staging directory derivation."""
-
-    def test_derives_from_full_path(self, tmp_path):
-        """Derives parent directory from Full Path column."""
-        csv_path = tmp_path / "normalized.csv"
-        csv_path.write_text("Hash,Full Path\nabc123,/staging/dir/file.wav\n")
-        result = derive_staging_dir_from_normalized_csv(csv_path)
-        assert result == Path("/staging/dir")
-
-    def test_returns_none_for_missing_file(self, tmp_path):
-        """Returns None when CSV file doesn't exist."""
-        csv_path = tmp_path / "nonexistent.csv"
-        result = derive_staging_dir_from_normalized_csv(csv_path)
-        assert result is None
-
-    def test_returns_none_for_empty_csv(self, tmp_path):
-        """Returns None for CSV with header only."""
-        csv_path = tmp_path / "empty.csv"
-        csv_path.write_text("Hash,Full Path\n")
-        result = derive_staging_dir_from_normalized_csv(csv_path)
-        assert result is None
-
-    def test_uses_first_row_with_full_path(self, tmp_path):
-        """Uses the first row that has a Full Path value."""
-        csv_path = tmp_path / "normalized.csv"
-        csv_path.write_text(
-            "Hash,Full Path\nhash1,/staging/first/file1.wav\nhash2,/staging/second/file2.wav\n"
-        )
-        result = derive_staging_dir_from_normalized_csv(csv_path)
-        assert result == Path("/staging/first")
-
-    def test_handles_empty_full_path(self, tmp_path):
-        """Skips rows with empty Full Path."""
-        csv_path = tmp_path / "normalized.csv"
-        csv_path.write_text("Hash,Full Path\nhash1,\nhash2,/staging/dir/file.wav\n")
-        result = derive_staging_dir_from_normalized_csv(csv_path)
-        assert result == Path("/staging/dir")
-
-    def test_logs_debug_when_csv_cannot_be_read(self, tmp_path, caplog):
-        """Logs a debug message and returns None for malformed CSV input."""
-        csv_path = tmp_path / "normalized.csv"
-        csv_path.write_bytes(b"Hash,Full Path\nabc,\xff\n")
-
-        with caplog.at_level(logging.DEBUG, logger=pipeline.__name__):
-            result = derive_staging_dir_from_normalized_csv(csv_path)
-
-        assert result is None
-        assert f"failed to derive staging dir from {csv_path}" in caplog.text
 
 
 class TestPrintStep:
@@ -94,38 +39,6 @@ class TestPrintStep:
         print_step(2, 10, "transcribe", "faster-whisper")
         captured = capsys.readouterr()
         assert "[2/10] transcribe (faster-whisper)" in captured.out
-
-
-class TestStepDefinitions:
-    """Tests for pipeline step constants."""
-
-    def test_core_steps_count(self):
-        """CORE_STEPS has expected number of steps."""
-        assert len(CORE_STEPS) == 5
-
-    def test_core_steps_names(self):
-        """CORE_STEPS contains expected step names."""
-        step_names = [s[0] for s in CORE_STEPS]
-        assert "loudness" in step_names
-        assert "stage-audio" in step_names
-        assert "transcribe" in step_names
-        assert "diarize" in step_names
-
-    def test_derived_steps_count(self):
-        """DERIVED_STEPS has expected number of steps."""
-        assert len(DERIVED_STEPS) == 2
-
-    def test_derived_steps_names(self):
-        """DERIVED_STEPS contains expected step names."""
-        step_names = [s[0] for s in DERIVED_STEPS]
-        assert "export-transcripts" in step_names
-        assert "cluster-speakers" in step_names
-
-    def test_steps_have_descriptions(self):
-        """All steps have non-empty descriptions."""
-        for name, description in CORE_STEPS + DERIVED_STEPS:
-            assert name, "Step name should not be empty"
-            assert description, f"Step {name} should have a description"
 
 
 class TestWorkflowConfiguration:
@@ -168,30 +81,6 @@ class TestWorkflowConfiguration:
         _, diarization_workflow_ids = resolve_pipeline_workflows()
         actual = set(diarization_workflow_ids)
         assert expected == actual, f"Expected {expected}, got {actual}"
-
-
-class TestStepNumberingCalculation:
-    """Tests for dynamic step counting logic."""
-
-    def test_total_steps_with_derived(self):
-        """Total steps includes all workflows and derived steps."""
-        transcription_workflows, diarization_workflow_ids = resolve_pipeline_workflows()
-        total = (
-            3
-            + len(transcription_workflows)
-            + len(diarization_workflow_ids)
-            + len(DERIVED_STEPS)
-        )
-        assert total == (
-            3 + len(transcription_workflows) + len(diarization_workflow_ids) + 2
-        )
-
-    def test_total_steps_without_derived(self):
-        """Total steps without derived is fewer."""
-        transcription_workflows, diarization_workflow_ids = resolve_pipeline_workflows()
-        total = 3 + len(transcription_workflows) + len(diarization_workflow_ids)
-        total_with_derived = total + len(DERIVED_STEPS)
-        assert total_with_derived - total == len(DERIVED_STEPS)
 
 
 def _pipeline_args(**overrides) -> argparse.Namespace:
@@ -974,9 +863,7 @@ class TestPipelineRagIndexing:
             lambda _args: rag_backend_key_for_workflow(workflow),
         )
 
-        assert (
-            handle_run_pipeline(_pipeline_args(rag_colbert_runtime="docker-indexer")) == 0
-        )
+        assert handle_run_pipeline(_pipeline_args(rag_colbert_runtime="docker-indexer")) == 0
         assert len(colbert_calls) == 1
         assert colbert_calls[0].runtime == "docker-indexer"
 

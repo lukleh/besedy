@@ -8,16 +8,18 @@ from __future__ import annotations
 
 import csv
 import json
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
+from besedy.commands.catalog import create as create_command
 from besedy.commands.catalog.archive import ArchivedManifestWriter
+from besedy.commands.catalog.file_processing import AddFilesResult
 from besedy.commands.catalog.ui import write_duplicates_csv
 from besedy.lib.catalog.manager import (
     AUDIO_HASH_ALGORITHM,
     FileRecord,
-    write_catalog_csv,
 )
 
 CONTRACT_PATH = Path(__file__).resolve().parents[1] / "contracts" / "catalog-csv.json"
@@ -54,10 +56,37 @@ def test_contract_hash_algorithm_is_the_one_python_writes(contract: dict) -> Non
 
 
 def test_metadata_catalog_writer_emits_the_contract_columns(
-    contract: dict, tmp_path: Path
+    contract: dict, tmp_path: Path, monkeypatch
 ) -> None:
     path = tmp_path / "audio_catalog.csv"
-    write_catalog_csv([_record(tmp_path, "a.mp3", "a" * 64)], path)
+    audio = tmp_path / "a.mp3"
+    audio.touch()
+    monkeypatch.setattr(
+        create_command, "collect_input_files", lambda *args, **kwargs: ([audio], [])
+    )
+    monkeypatch.setattr(create_command, "check_ffprobe", lambda *args: True)
+    monkeypatch.setattr(
+        create_command,
+        "add_files_to_catalog",
+        lambda **kwargs: AddFilesResult(
+            new_records=[_record(tmp_path, "a.mp3", "a" * 64)],
+            duplicate_records=[],
+            errors=[],
+            sidecar_warnings=[],
+        ),
+    )
+    result = create_command.handle_create(
+        Namespace(
+            directory=tmp_path,
+            output=path,
+            no_color=True,
+            no_audio_filter=True,
+            no_symlink=True,
+            ffprobe_binary="ffprobe",
+            ffprobe_timeout=30,
+        )
+    )
+    assert result == 0
 
     header, rows = _read(path)
 
