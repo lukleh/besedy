@@ -32,9 +32,9 @@ const audioSourcesResponseSchema = z.object({
 
 /** The audio sources request, shared by the recording page and by neighbor
  * preloading. */
-export function audioSourcesQueryOptions(catalogId: string, hash: string, groupKey: string | null | undefined) {
+export function audioSourcesQueryOptions(catalogId: string, hash: string) {
   return {
-    queryKey: ["audio-variants", hash, groupKey] as const,
+    queryKey: ["audio-variants", hash, catalogId] as const,
     queryFn: async (): Promise<AudioSourcesResponse> => {
       try {
         return await fetchJson<AudioSourcesResponse>(buildAudioSourcesUrl(catalogId, hash), {

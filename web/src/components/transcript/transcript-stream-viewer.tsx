@@ -115,7 +115,6 @@ export function TranscriptStreamViewer({
   onSeek,
 }: TranscriptStreamViewerProps) {
   const t = useTranslations("recording");
-  const groupKey = groupId || "default";
 
   const [viewportSeconds, setViewportSeconds] = useHydratedState<number>(
     VIEWPORT_KEY,
@@ -144,7 +143,7 @@ export function TranscriptStreamViewer({
   const trackWidth = useElementWidth(trackRef);
 
   const { data, isLoading } = useQuery<TranscriptCompareResponse>({
-    queryKey: ["transcript-stream", hash, groupKey],
+    queryKey: ["transcript-stream", hash, groupId],
     queryFn: async () => {
       return fetchJson<TranscriptCompareResponse>(buildTranscriptCompareUrl(groupId, hash));
     },
@@ -186,7 +185,7 @@ export function TranscriptStreamViewer({
   useEffect(() => {
     setHasInitialized(false);
     setViewportStart(0);
-  }, [hash, groupKey]);
+  }, [hash, groupId]);
 
   const initialViewportStart = useMemo(() => {
     const baseTime = currentTime > 0 ? currentTime : earliestStart;
@@ -229,7 +228,7 @@ export function TranscriptStreamViewer({
       return;
     }
     setVisibleModels(new Set(models));
-  }, [hash, groupKey, models]);
+  }, [hash, groupId, models]);
 
   const visibleTracks = useMemo(() => {
     if (!data?.tracks?.length) return [] as TranscriptCompareTrack[];

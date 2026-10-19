@@ -45,7 +45,6 @@ describe("useRecordingEntry", () => {
   const fetchJsonMock = vi.mocked(fetchJson);
   const catalogId = "20260101_120000";
   const hash = "a".repeat(64);
-  const groupKey = "catalog-key";
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -69,7 +68,7 @@ describe("useRecordingEntry", () => {
       canDownloadAudio: true,
     };
 
-    queryClient.setQueryData(["catalog-entry", hash, groupKey], cachedEditorData);
+    queryClient.setQueryData(["catalog-entry", hash, catalogId], cachedEditorData);
 
     let resolveFetch: ((value: CatalogEntryWithPermissions) => void) | undefined;
     fetchJsonMock.mockImplementationOnce(
@@ -84,7 +83,6 @@ describe("useRecordingEntry", () => {
         useRecordingEntry({
           catalogId,
           hash,
-          groupKey,
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
@@ -131,7 +129,7 @@ describe("useRecordingEntry", () => {
       canDownloadAudio: true,
     };
 
-    queryClient.setQueryData(["catalog-entry", hash, groupKey], cachedEditorData);
+    queryClient.setQueryData(["catalog-entry", hash, catalogId], cachedEditorData);
     fetchJsonMock.mockRejectedValueOnce(new ApiError("Access denied", 403));
 
     const { result } = renderHook(
@@ -139,7 +137,6 @@ describe("useRecordingEntry", () => {
         useRecordingEntry({
           catalogId,
           hash,
-          groupKey,
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
@@ -171,7 +168,7 @@ describe("useRecordingEntry", () => {
       canDownloadAudio: true,
     };
 
-    queryClient.setQueryData(["catalog-entry", hash, groupKey], cachedEditorData);
+    queryClient.setQueryData(["catalog-entry", hash, catalogId], cachedEditorData);
     fetchJsonMock.mockRejectedValueOnce(new ApiError("Recording not found", 404));
 
     const { result } = renderHook(
@@ -179,7 +176,6 @@ describe("useRecordingEntry", () => {
         useRecordingEntry({
           catalogId,
           hash,
-          groupKey,
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
@@ -228,7 +224,6 @@ describe("useRecordingEntry", () => {
         useRecordingEntry({
           catalogId,
           hash,
-          groupKey,
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
