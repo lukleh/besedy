@@ -62,6 +62,36 @@ class TestCatalogParserStructure:
         assert set(subparsers_action.choices.keys()) == expected
 
 
+class TestTrainingExportCommand:
+    """Argument parsing of 'training-export'."""
+
+    def test_hash_verification_is_the_default(self):
+        parser = build_parser()
+        args = parser.parse_args(["training-export", "--catalog-id", "20251222_144441"])
+        assert args.skip_audio_hash is False
+        assert args.audio_hash == [] and args.test_recordings is None
+        with pytest.raises(SystemExit):
+            parser.parse_args(
+                ["training-export", "--catalog-id", "20251222_144441", "--verify-audio-hash"]
+            )
+
+    def test_audio_hash_repeats(self):
+        args = build_parser().parse_args(
+            [
+                "training-export",
+                "--catalog-id",
+                "20251222_144441",
+                "--audio-hash",
+                "a" * 64,
+                "--audio-hash",
+                "b" * 64,
+                "--skip-audio-hash",
+            ]
+        )
+        assert args.audio_hash == ["a" * 64, "b" * 64]
+        assert args.skip_audio_hash is True
+
+
 class TestCreateCommand:
     """Tests for 'create' subcommand argument parsing."""
 

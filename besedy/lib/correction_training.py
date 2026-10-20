@@ -7,19 +7,21 @@ model was given it, the chunk's VAD regions concatenated from the staged
 16 kHz WAV, and labels it with its spans' corrected texts in order.
 
 Everything that decides what trains a model lives in export code and may
-change: the web's eligibility policy, the test recordings named in a config
-file, and whether fillers stay in labels.
+change: the web's eligibility policy, the test recordings listed in
+``contracts/correction-test-recordings.json``, and whether fillers stay in
+labels.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import wave
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,13 +32,33 @@ from besedy.lib import correction_segmentation as cs
 from besedy.lib.catalog.manager import source_file_sha256
 from besedy.lib.correction_guard import map_recorded_path
 
+LOGGER = logging.getLogger(__name__)
+
 DATASET_SCHEMA_VERSION = 1
 
+# Audio hashes set aside for testing, per catalog, shared with the web app.
+DEFAULT_TEST_RECORDINGS_PATH = (
+    Path(__file__).resolve().parents[2] / "contracts" / "correction-test-recordings.json"
+)
+TEST_RECORDINGS_VERSION = 1
+_AUDIO_HASH = re.compile(r"^[0-9a-f]{64}$")
+
 # The spellings the correction guide fixes for fillers (ADR 0012). A filler
-# takes the punctuation written right after it along: "Ehm?" leaves no "?".
+# takes the punctuation written right after it along ("Ehm? Ano." leaves
+# "Ano."), except that a filler closing a sentence hands its sentence
+# punctuation to the words before it and takes the comma or slash that joined
+# it to them instead ("ano, hm?" leaves "ano?").
 FILLERS = ("ehm", "eee", "hm", "mhm")
-_FILLER = re.compile(
-    r"(?<![\w-])(?:" + "|".join(FILLERS) + r")(?![\w-])[,.…?!:;]*", flags=re.IGNORECASE
+_FILLER_WORD = r"(?<![\w-])(?:" + "|".join(FILLERS) + r")(?![\w-])"
+_SENTENCE_END = r"[.…?!]"
+_TRAILING_FILLER = re.compile(
+    r"\s*[,/]\s*" + _FILLER_WORD + r"\s*(?=" + _SENTENCE_END + r"|$)", flags=re.IGNORECASE
+)
+_FILLER = re.compile(_FILLER_WORD + r"[,.…?!:;/]*", flags=re.IGNORECASE)
+_EMPTY_PAIR = re.compile(r"\(\s*\)|\[\s*\]|\"\s*\"|„\s*“|“\s*”|‚\s*‘|‘\s*’")
+STRIP_FILLERS_NOTE = (
+    "ehm/eee/hm/mhm removed with their punctuation; a word that followed a "
+    "sentence-initial filler keeps its lowercase"
 )
 
 
@@ -50,9 +72,14 @@ def fetch_training_export(
     base_url: str | None = None,
     bearer_token: str | None = None,
     min_heard_fraction: float | None = None,
+    audio_hash: str | None = None,
     timeout_seconds: float = 120.0,
 ) -> dict[str, Any]:
-    """Ask the web application which corrected chunks may train a model."""
+    """Ask the web application which corrected chunks may train a model.
+
+    ``audio_hash`` limits the answer to one recording's workspace, so a large
+    catalog can be fetched piecewise and joined with `merge_training_exports`.
+    """
     base_url = (base_url or os.getenv("BESEDY_INTERNAL_BASE_URL", "")).strip().rstrip("/")
     bearer_token = (bearer_token or os.getenv("BESEDY_JOB_SERVICE_SECRET", "")).strip()
     if not base_url or not bearer_token:
@@ -63,6 +90,8 @@ def fetch_training_export(
     query = {"catalogId": catalog_id}
     if min_heard_fraction is not None:
         query["minHeardFraction"] = str(min_heard_fraction)
+    if audio_hash is not None:
+        query["audioHash"] = audio_hash
     url = f"{base_url}/api/internal/correction/training-export?{urllib_parse.urlencode(query)}"
     request = urllib_request.Request(url, headers={"Authorization": f"Bearer {bearer_token}"})
     with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
@@ -70,19 +99,53 @@ def fetch_training_export(
 
 
 def strip_fillers(text: str) -> str:
-    """Remove the fixed filler spellings, leaving the rest of the text as it was."""
-    return cs.normalize_span_text(_FILLER.sub(" ", text))
+    """Remove the fixed filler spellings and the punctuation left dangling by that."""
+    text = _TRAILING_FILLER.sub("", text)
+    text = _FILLER.sub(" ", text)
+    text = _EMPTY_PAIR.sub(" ", text)
+    return cs.normalize_span_text(text)
 
 
-def load_test_recordings(path: Path | None) -> set[str]:
-    """Audio hashes set aside for testing: a JSON list or one hash per line."""
-    if path is None:
-        return set()
+def merge_training_exports(exports: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """One export from the per-recording fetches of a catalog; the first sets the policy."""
+    if not exports:
+        raise TrainingExportError("No training export to merge")
+    first = exports[0]
+    for other in exports[1:]:
+        if other.get("catalogId") != first.get("catalogId"):
+            raise TrainingExportError("Training exports of different catalogs cannot be merged")
+        if other.get("schemaVersion") != first.get("schemaVersion"):
+            raise TrainingExportError("Training exports of different schemas cannot be merged")
+    merged = dict(first)
+    merged["workspaces"] = [w for export in exports for w in export.get("workspaces") or []]
+    return merged
+
+
+def load_test_recordings(path: Path, catalog_id: str) -> set[str]:
+    """Audio hashes set aside for testing.
+
+    The repository file ``contracts/correction-test-recordings.json`` maps a
+    catalog to its hashes; a JSON list or one hash per line names them for any
+    catalog.
+    """
     raw = path.read_text(encoding="utf-8").strip()
     if not raw:
         return set()
-    hashes = json.loads(raw) if raw.startswith("[") else raw.split()
-    return {str(value).strip() for value in hashes if str(value).strip()}
+    if raw.startswith("{"):
+        document = json.loads(raw)
+        if document.get("version") != TEST_RECORDINGS_VERSION:
+            raise TrainingExportError(
+                f"{path} is test recordings version {document.get('version')!r}, "
+                f"expected {TEST_RECORDINGS_VERSION}"
+            )
+        hashes = document.get("catalogs", {}).get(catalog_id, [])
+    else:
+        hashes = json.loads(raw) if raw.startswith("[") else raw.split()
+    result = {str(value).strip() for value in hashes if str(value).strip()}
+    for value in result:
+        if not _AUDIO_HASH.match(value):
+            raise TrainingExportError(f"{path} names {value!r}, not a 64-character audio hash")
+    return result
 
 
 @dataclass
@@ -110,17 +173,72 @@ def _reason_kind(reason: str) -> str:
     return re.sub(r"^span \d+ ", "", reason)
 
 
+# An eligible chunk whose spans do not add up to its regions; the export is
+# inconsistent with the frozen source, so the chunk is left out rather than
+# rebuilt from a guess.
+SPAN_COVERAGE_MISMATCH = "SPAN_COVERAGE_MISMATCH"
+
+
+def _open_staged_wav(audio_path: Path) -> wave.Wave_read:
+    try:
+        source_wav = wave.open(str(audio_path), "rb")
+    except (wave.Error, EOFError) as exc:
+        raise TrainingExportError(
+            f"Staged audio {audio_path} is not a readable WAV: {exc}"
+        ) from exc
+    if (
+        source_wav.getframerate() != cs.SAMPLE_RATE
+        or source_wav.getnchannels() != 1
+        or source_wav.getsampwidth() != 2
+    ):
+        source_wav.close()
+        raise TrainingExportError(f"Staged audio {audio_path} is not 16 kHz mono PCM16")
+    return source_wav
+
+
+def _read_regions(
+    source_wav: wave.Wave_read,
+    audio_path: Path,
+    regions: Sequence[cs.Region],
+    indices: Iterable[int],
+) -> bytes:
+    """The given regions' samples, in order, with no silence between them."""
+    frames = bytearray()
+    total = source_wav.getnframes()
+    for index in indices:
+        region = regions[index]
+        if region.end > total or region.start < 0 or region.start > region.end:
+            raise TrainingExportError(
+                f"Region {index} ({region.start}-{region.end} samples) of {audio_path} "
+                f"lies outside its {total} frames"
+            )
+        try:
+            source_wav.setpos(region.start)
+            frames += source_wav.readframes(region.end - region.start)
+        except (wave.Error, EOFError) as exc:
+            raise TrainingExportError(
+                f"Region {index} of {audio_path} could not be read: {exc}"
+            ) from exc
+    return bytes(frames)
+
+
 def build_dataset(
     export: Mapping[str, Any],
     corrections_root: Path,
     output_dir: Path,
     *,
     test_recordings: Iterable[str] = (),
+    test_recordings_source: str | None = None,
     keep_fillers: bool = True,
-    verify_audio_hash: bool = False,
+    verify_audio_hash: bool = True,
     path_map: Mapping[str, str] | None = None,
 ) -> DatasetSummary:
-    """Write one WAV per eligible chunk and a manifest of labels and provenance."""
+    """Write one WAV per eligible chunk and a manifest of labels and provenance.
+
+    ``test_recordings_source`` names where the test list came from, for
+    ``dataset.json``; ``verify_audio_hash`` hashes every staged WAV and refuses
+    one that no longer matches what the web recorded.
+    """
     if export.get("schemaVersion") != 1:
         raise TrainingExportError(f"Unknown training export schema {export.get('schemaVersion')!r}")
     test = set(test_recordings)
@@ -156,18 +274,11 @@ def build_dataset(
         audio_path = map_recorded_path(staged["path"], path_map or {})
         if audio_path.stat().st_size != int(staged["size"]):
             raise TrainingExportError(f"Staged audio {audio_path} changed size")
-        if verify_audio_hash:
-            if source_file_sha256(audio_path) != staged["sha256"]:
-                raise TrainingExportError(f"Staged audio {audio_path} changed")
+        if verify_audio_hash and source_file_sha256(audio_path) != staged["sha256"]:
+            raise TrainingExportError(f"Staged audio {audio_path} changed")
 
         split = "test" if workspace["audioHash"] in test else "train"
-        with wave.open(str(audio_path), "rb") as source_wav:
-            if (
-                source_wav.getframerate() != cs.SAMPLE_RATE
-                or source_wav.getnchannels() != 1
-                or source_wav.getsampwidth() != 2
-            ):
-                raise TrainingExportError(f"Staged audio {audio_path} is not 16 kHz mono PCM16")
+        with _open_staged_wav(audio_path) as source_wav:
             for chunk in workspace["chunks"]:
                 if not chunk["eligible"]:
                     summary.chunks_excluded += 1
@@ -180,13 +291,15 @@ def build_dataset(
                     for i in range(span["firstRegion"], span["lastRegion"] + 1)
                 ]
                 if covered != indices:
-                    raise TrainingExportError(
-                        f"Spans of chunk {chunk['chunk']} in {workspace['workspaceId']} do not cover its regions"
+                    LOGGER.warning(
+                        "Spans of chunk %d in workspace %s do not cover its regions; excluded",
+                        chunk["chunk"],
+                        workspace["workspaceId"],
                     )
-                frames = bytearray()
-                for index in indices:
-                    source_wav.setpos(regions[index].start)
-                    frames += source_wav.readframes(regions[index].end - regions[index].start)
+                    summary.chunks_excluded += 1
+                    summary.exclusion_reasons[SPAN_COVERAGE_MISMATCH] += 1
+                    continue
+                frames = _read_regions(source_wav, audio_path, regions, indices)
                 text = cs.normalize_span_text(" ".join(span["text"] for span in chunk["spans"]))
                 if not keep_fillers:
                     text = strip_fillers(text)
@@ -196,7 +309,7 @@ def build_dataset(
                     out.setnchannels(1)
                     out.setsampwidth(2)
                     out.setframerate(cs.SAMPLE_RATE)
-                    out.writeframes(bytes(frames))
+                    out.writeframes(frames)
                 duration = len(frames) / 2 / cs.SAMPLE_RATE
                 rows.append(
                     {
@@ -229,8 +342,10 @@ def build_dataset(
                 "exported_at": export["exportedAt"],
                 "policy": {
                     **export.get("policy", {}),
-                    "keep_fillers": keep_fillers,
+                    "strip_fillers": not keep_fillers,
+                    "strip_fillers_note": STRIP_FILLERS_NOTE if not keep_fillers else None,
                     "test_recordings": sorted(test),
+                    "test_recordings_source": test_recordings_source,
                 },
                 "summary": summary.to_json(),
             },

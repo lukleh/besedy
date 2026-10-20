@@ -94,6 +94,35 @@ version, its parameters, text-normalization examples and worked cases.
 (`web/src/lib/correction/segmentation.ts`, used by workspace import). Change
 all three together and bump `SEGMENTATION_VERSION` when the output changes.
 
+### Correction Test Recordings and Training Export
+
+`contracts/correction-test-recordings.json` lists, per catalog ID, the audio
+hashes set aside for testing a fine-tuned model (ADR 0012). They are chosen
+before correction starts and corrected whole; none of their chunks ever trains
+a model. The file starts with an empty `catalogs` object and is extended by
+hand. `tests/test_correction_training.py` checks that it parses and that every
+hash is 64 lowercase hex characters.
+
+`catalog training-export --catalog-id <id>` (`besedy/commands/catalog/training_export.py`,
+`besedy/lib/correction_training.py`) asks the web for the corrected chunks that
+may train a model (`GET /api/internal/correction/training-export`, authorized
+by the job-service secret, optionally `&audioHash=` for one recording) and
+rebuilds each chunk's audio from the staged WAV exactly as the model was given
+it, labelled with its spans' corrected texts. The host running it needs
+`BESEDY_INTERNAL_BASE_URL` and `BESEDY_JOB_SERVICE_SECRET` in its environment.
+Every staged WAV is hashed and compared with what the web recorded
+(`--skip-audio-hash` trusts the size only); recordings in the contract file get
+`split: test`, `--test-recordings` names another list, and `--audio-hash`
+(repeatable) fetches a large catalog piecewise. The dataset goes under
+`<audio artifacts root>/training/training_export_<timestamp>/` with a
+`training_export` symlink: `audio/*.wav`, `manifest.jsonl`, `export.json` (what
+the web listed, including excluded chunks and why) and `dataset.json` (policy,
+including where the test list came from, and counts). `training/` is a separate
+uv project (`cd training && uv run train_whisper_lora.py --data <dataset> --out <run>`)
+that fine-tunes Whisper large-v3 with LoRA on such a dataset and writes a
+merged checkpoint for `backends/faster-whisper/convert_model.sh`; its
+dependencies (CUDA torch) resolve on Linux only.
+
 ### CatalogEntry Join Contract
 
 `catalog_entry` is materialized by sync as a full-outer-join of the metadata and archived CSVs:

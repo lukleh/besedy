@@ -79,12 +79,23 @@ async function approvalPlayback(
   return result;
 }
 
+export interface TrainingExportFilter {
+  /** Only this recording's workspace; the whole catalog when absent */
+  audioHash?: string;
+}
+
 export async function buildTrainingExport(
   catalogId: string,
-  policy: TrainingExportPolicy = DEFAULT_TRAINING_EXPORT_POLICY
+  policy: TrainingExportPolicy = DEFAULT_TRAINING_EXPORT_POLICY,
+  filter: TrainingExportFilter = {}
 ): Promise<TrainingExport> {
   const workspaces = await prisma.transcriptWorkspace.findMany({
-    where: { workflowGroupId: catalogId, status: "ACTIVE", segmentationVersion: { not: null } },
+    where: {
+      workflowGroupId: catalogId,
+      status: "ACTIVE",
+      segmentationVersion: { not: null },
+      ...(filter.audioHash ? { audioHash: filter.audioHash } : {}),
+    },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,

@@ -44,6 +44,10 @@ copying command tables or test-user matrices into provider-specific files.
   and `tests/test_cli_parser.py`.
 - `just ingest-worker-run`: run the host-side Prefect worker for admin recording
   uploads in the foreground (see `docs/web/recording-ingest.md`).
+- `just catalog training-export --catalog-id <id>`: build a fine-tuning dataset
+  from corrected transcripts (needs `BESEDY_INTERNAL_BASE_URL` and
+  `BESEDY_JOB_SERVICE_SECRET`); `training/` is the separate GPU-host uv project
+  that trains on it (see `docs/web/data-and-database.md`).
 - `just analyze <command>`: analysis CLI wrapper (e.g. `just analyze validate`)
 - `uv run python besedy/cli/catalog.py validate …`: validate outputs (e.g. `uv run python besedy/cli/catalog.py validate --input-path transcripts/`)
 - `just test` (or `uv run --locked --all-extras pytest`): run the full test suite
