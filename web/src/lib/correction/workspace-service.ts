@@ -242,10 +242,9 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
   // The immutable copy lands first: a workspace whose frozen source is missing
   // would be unrecoverable, while an orphan file is merely rubbish. The
   // manifest follows as `starting`, so its staged audio is protected before
-  // any row exists; it becomes `active` only once the rows are committed, so a
-  // crash in between leaves a manifest the Python guard can recognise as
-  // abandoned (still `starting` after an hour) instead of one that protects
-  // nothing forever.
+  // any row exists, and becomes `active` once the rows are committed. A crash
+  // before the commit leaves an orphan manifest the nightly integrity check
+  // reports; one after it is finished by the next lock of the workspace.
   await writeFileAtomic(resolveWorkspaceSourcePath(catalogId, workspaceId), source.content);
   const writeManifest = (status: "starting" | "active") =>
     writeWorkspaceManifest({
