@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import CatalogSettingsContent from "./catalog-settings-content";
 import type { CatalogSettingsCards } from "./catalog-settings-content-types";
+import { getAdminCapability } from "@/lib/access/capabilities";
 import { requireCatalogPageAccess } from "@/lib/access/catalog-page-access";
 import { findActiveCatalog } from "@/lib/catalog/resolve-group";
 import { getCatalogFeaturesForUser } from "@/lib/features/capabilities";
@@ -38,10 +39,16 @@ export default async function CatalogSettingsPage({
     redirect(`/catalog/${catalogId}`);
   }
 
+  // Catalog paths and the default and active flags stay with system admins
+  // even when a catalog grant opens the configuration card (ADR 0005).
+  const canEditPathsAndFlags =
+    cards.configuration && (await getAdminCapability(userId)).canAccessAdmin;
+
   return (
     <CatalogSettingsContent
       catalogId={catalogId}
       cards={cards}
+      canEditPathsAndFlags={canEditPathsAndFlags}
       skipCatalogValidation
     />
   );

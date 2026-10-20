@@ -8,13 +8,14 @@ from pathlib import Path
 from besedy.commands.catalog.csv_utils import resolve_catalog_csv
 from besedy.commands.catalog.default_paths import get_default_catalog_symlink
 from besedy.core.cli_output import print_json_result
-from besedy.core.paths import extract_timestamp_from_catalog, resolve_transcripts_parent
+from besedy.core.paths import resolve_transcripts_parent
 from besedy.lib.catalog.remover import (
-    SPEAKER_EMBEDDINGS_DIRNAME,
+    CatalogTimestampError,
     InvalidAudioHashError,
     RemovalPlan,
     RemovalResult,
     build_removal_plan,
+    catalog_generation,
     execute_removal,
     find_other_catalog_references,
 )
@@ -83,6 +84,7 @@ def _plan_payload(plan: RemovalPlan) -> dict[str, object]:
         "embedding_dirs": [str(path) for path in plan.embedding_dirs],
         "shared_catalog_refs": [str(path) for path in plan.shared_catalog_refs],
         "shared_source_files": [str(path) for path in plan.shared_source_files],
+        "shared_derived_files": [str(path) for path in plan.shared_derived_files],
     }
 
 
@@ -107,6 +109,9 @@ def _format_plan(plan: RemovalPlan, *, executed: RemovalResult | None) -> str:
     if plan.shared_source_files:
         lines.append("  source files retained because another catalog uses them:")
         lines.extend(f"    {path}" for path in plan.shared_source_files)
+    if plan.shared_derived_files:
+        lines.append("  staged/archived files retained because another catalog lists them:")
+        lines.extend(f"    {path}" for path in plan.shared_derived_files)
     if executed is None:
         lines.append("Dry run - nothing removed. Re-run with --execute to delete.")
     else:
@@ -142,23 +147,18 @@ def handle_remove(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:
         return emit_error("catalog_csv_missing", str(exc))
 
-    resolved_csv = csv_path.resolve()
-    timestamp = extract_timestamp_from_catalog(resolved_csv)
-    if timestamp is None:
-        return emit_error(
-            "catalog_timestamp_missing",
-            f"Could not extract a catalog timestamp from {resolved_csv}",
-        )
-
-    transcripts_parent = resolve_transcripts_parent()
-    transcripts_run_root = transcripts_parent / f"transcripts_{timestamp}"
     try:
-        shared_catalog_refs = find_other_catalog_references(resolved_csv, args.hash)
+        generation = catalog_generation(csv_path, transcripts_parent=resolve_transcripts_parent())
+    except CatalogTimestampError as exc:
+        return emit_error("catalog_timestamp_missing", str(exc))
+
+    try:
+        shared_catalog_refs = find_other_catalog_references(generation.catalog_csv, args.hash)
         plan = build_removal_plan(
             args.hash,
-            catalog_csv=resolved_csv,
-            transcripts_root=transcripts_run_root,
-            embedding_roots=[transcripts_parent / SPEAKER_EMBEDDINGS_DIRNAME],
+            catalog_csv=generation.catalog_csv,
+            transcripts_root=generation.transcripts_root,
+            embedding_roots=[generation.embeddings_root],
             delete_source=delete_source,
             shared_catalog_refs=shared_catalog_refs,
         )
