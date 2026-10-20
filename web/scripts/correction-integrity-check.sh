@@ -4,8 +4,10 @@
 # Correction work cannot be redone, so this checks every night that what it
 # depends on is intact: the frozen source and its fingerprint, the stored
 # spans against a fresh segmentation of that source, the staged audio's size
-# (its SHA-256 once per AUDIO_HASH_EVERY_DAYS), the workspace manifest the Python guards read, and every text
-# revision against its hash. The database rows come from PostgreSQL; the
+# (its SHA-256 once per AUDIO_HASH_EVERY_DAYS), the workspace manifest the
+# Python guards read, and every text revision against its hash. It also
+# reports orphan manifests that keep staged audio for no live workspace. The
+# database rows come from PostgreSQL; the
 # checks run in besedy.lib.correction_integrity on the host, which sees the
 # corrections tree and the staged audio at the paths the workspaces recorded.
 #
