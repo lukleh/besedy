@@ -273,8 +273,13 @@ That manifest (status, segmentation version and staged-audio identity) is what
 the Python side reads to keep the staged audio of a live workspace unchanged:
 `catalog clean` and `catalog remove` keep those files and report them, and
 `stage-audio --overwrite` reuses them instead of staging them again
-(`besedy/lib/correction_guard.py`). A manifest that cannot be read stops those
-commands, because nothing could then tell which audio it protects.
+(`besedy/lib/correction_guard.py`). A manifest with status `active` protects
+its audio; so does one with status `starting`, written before the workspace's
+database transaction, unless its `updated_at` is more than an hour old, in
+which case it is an abandoned start and is ignored with a warning. A manifest
+that cannot be read stops those commands for every catalog, not only its own,
+because nothing could then tell which audio it protects; the error names the
+manifest to fix or restore.
 
 Two more guards keep the correction data as it was recorded:
 
