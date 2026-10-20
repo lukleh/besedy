@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
+import { SessionOrdinalBadge } from "@/components/catalog/session-ordinal-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,6 +20,7 @@ import {
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
 import { formatHoursMinutes } from "@/lib/correction/format";
+import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import {
   inOverviewTab,
   isReadyToPublish,
@@ -35,15 +37,16 @@ interface CorrectionOverviewPageProps {
   catalogId: string;
 }
 
-/** Whatever part of the date the event has: 2026, 2026-03 or 2026-03-14. */
-export function formatEventDate(recording: OverviewItem["recording"]): string | null {
-  if (recording.dateYear === null) return null;
-  const parts = [String(recording.dateYear)];
-  if (recording.dateMonth !== null) {
-    parts.push(String(recording.dateMonth).padStart(2, "0"));
-    if (recording.dateDay !== null) parts.push(String(recording.dateDay).padStart(2, "0"));
-  }
-  return parts.join("-");
+/**
+ * The event's date as the catalog's event cards write it: "19. Listopadu 2022",
+ * "Březen 2024" or "2024"; null without a visible event.
+ */
+export function formatEventDate(recording: OverviewItem["recording"], locale: string): string | null {
+  const { dateYear: year, dateMonth: month, dateDay: day } = recording;
+  if (recording.eventId === null || year === null) return null;
+  return month !== null && day !== null
+    ? formatMediumDate(year, month, day, locale)
+    : formatPartialDate(year, month, day, locale) || String(year);
 }
 
 function formatWhen(iso: string, locale: string): string {
@@ -139,21 +142,17 @@ function OverviewRow({
 }) {
   const t = useTranslations("correction");
   const to = useTranslations("correction.overview");
+  const tEvents = useTranslations("events.list");
   const locale = useLocale();
 
   const { recording, progress, mine } = item;
-  const title = recording.title || recording.eventTitle || recording.audioHash.slice(0, 16);
-  // The event is worth naming only when it adds something to the title.
-  const eventName =
-    recording.eventTitle && recording.eventTitle !== recording.title ? recording.eventTitle : null;
-  const subtitle = [
-    eventName,
-    formatEventDate(recording),
-    recording.locationName,
-    formatHoursMinutes(recording.durationSeconds),
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(" · ");
+  // Named like the catalog's event list, by date and place; a recording whose
+  // event this person cannot see falls back to its own title.
+  const eventDate = formatEventDate(recording, locale);
+  const title = eventDate
+    ? `${eventDate} · ${recording.locationName ?? tEvents("unknownLocation")}`
+    : recording.title || recording.audioHash.slice(0, 16);
+  const subtitle = formatHoursMinutes(recording.durationSeconds);
 
   const inFlight = item.publication?.inFlight ?? null;
   const readyToPublish = isReadyToPublish(item);
@@ -212,9 +211,15 @@ function OverviewRow({
       <div className="min-w-0">
         <Link
           href={buildRecordingPagePath(catalogId, recording.audioHash)}
-          className="block truncate font-medium hover:underline"
+          className="flex min-w-0 items-center gap-2 font-medium hover:underline"
         >
-          {title}
+          <span className="truncate">{title}</span>
+          {eventDate && (
+            <SessionOrdinalBadge
+              sessionOrdinal={recording.sessionOrdinal ?? undefined}
+              sessionCount={recording.sessionCount ?? undefined}
+            />
+          )}
         </Link>
         <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
       </div>

@@ -1,5 +1,7 @@
 import { Prisma, type TranscriptPublicationStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { loadSessionOrdinals } from "@/lib/catalog-events/read-service";
+import { getPublishedVisibleEventIds } from "@/lib/catalog-events/visibility";
 import { loadActorNames } from "@/lib/correction/actor-names";
 import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-status";
 import { eligibilityOfAggregate } from "@/lib/correction/publication-eligibility";
@@ -31,6 +33,9 @@ export interface OverviewRecording {
   dateYear: number | null;
   dateMonth: number | null;
   dateDay: number | null;
+  /** The event's place among the sessions of its day, as the catalog numbers them */
+  sessionOrdinal: number | null;
+  sessionCount: number | null;
   durationSeconds: number;
 }
 
@@ -100,6 +105,7 @@ const RECORDING_COLUMNS_SQL = Prisma.sql`
   COALESCE(am.title, ce.source_title, ce.filename) AS "title",
   ev.id AS "eventId",
   ev.title AS "eventTitle",
+  ev.location_id AS "locationId",
   loc.name AS "locationName",
   ev.date_year AS "dateYear",
   ev.date_month AS "dateMonth",
@@ -134,6 +140,7 @@ interface RawRecording {
   title: string | null;
   eventId: number | null;
   eventTitle: string | null;
+  locationId: number | null;
   locationName: string | null;
   dateYear: number | null;
   dateMonth: number | null;
@@ -141,7 +148,10 @@ interface RawRecording {
   durationSeconds: number | bigint;
 }
 
-function toRecording(row: RawRecording): OverviewRecording {
+type SessionOrdinals = Awaited<ReturnType<typeof loadSessionOrdinals>>;
+
+function toRecording(row: RawRecording, sessions: SessionOrdinals): OverviewRecording {
+  const session = row.eventId !== null ? sessions.get(row.eventId) : undefined;
   return {
     audioHash: row.audioHash,
     title: row.title,
@@ -151,8 +161,29 @@ function toRecording(row: RawRecording): OverviewRecording {
     dateYear: row.dateYear,
     dateMonth: row.dateMonth,
     dateDay: row.dateDay,
+    sessionOrdinal: session?.ordinal ?? null,
+    sessionCount: session?.count ?? null,
     durationSeconds: Number(row.durationSeconds),
   };
+}
+
+/**
+ * Each listed event's session ordinal, numbered over the same sibling set the
+ * catalog's event list uses for this reader, so both say "1/2" alike.
+ */
+async function loadOverviewSessions(
+  catalogId: string,
+  canSeeUnreleased: boolean,
+  rows: RawRecording[]
+): Promise<SessionOrdinals> {
+  const keys = rows.flatMap((row) =>
+    row.eventId !== null && row.locationId !== null && row.dateYear !== null
+      ? [{ locationId: row.locationId, dateYear: row.dateYear, dateMonth: row.dateMonth, dateDay: row.dateDay }]
+      : []
+  );
+  if (keys.length === 0) return new Map();
+  const readable = canSeeUnreleased ? null : await getPublishedVisibleEventIds(prisma, catalogId);
+  return loadSessionOrdinals(catalogId, readable, keys);
 }
 
 interface RawWorkspace extends RawRecording {
@@ -232,7 +263,10 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
         }),
   ]);
 
-  const names = await loadActorNames(activityRows.map((row) => row.lastActorKey));
+  const [names, sessions] = await Promise.all([
+    loadActorNames(activityRows.map((row) => row.lastActorKey)),
+    loadOverviewSessions(catalogId, input.canSeeUnreleased, [...workspaceRows, ...notStartedRows]),
+  ]);
   const activityByWorkspace = new Map(activityRows.map((row) => [row.workspaceId, row]));
   const inFlightByWorkspace = new Map(inFlight.map((row) => [row.workspaceId, row]));
 
@@ -252,12 +286,15 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
         inFlight: flight !== undefined,
         changedSinceReaderPublication: changed,
       }),
-      recording: toRecording({
-        ...row,
-        // The workspace froze its own span timing; it is the honest length of
-        // the work, and the catalog row may be missing a duration.
-        durationSeconds: row.spanDurationSeconds || row.durationSeconds,
-      }),
+      recording: toRecording(
+        {
+          ...row,
+          // The workspace froze its own span timing; it is the honest length of
+          // the work, and the catalog row may be missing a duration.
+          durationSeconds: row.spanDurationSeconds || row.durationSeconds,
+        },
+        sessions
+      ),
       workspaceId: row.workspaceId,
       progress: aggregate
         ? {
@@ -294,7 +331,7 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
   const notStarted: OverviewItem[] = notStartedRows.map((row) => ({
     work: "not_started",
     reader: "unpublished",
-    recording: toRecording(row),
+    recording: toRecording(row, sessions),
     workspaceId: null,
     progress: null,
     mine: null,

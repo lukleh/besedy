@@ -46,6 +46,8 @@ function item(hash: string, overrides: Partial<OverviewItem> = {}): OverviewItem
       dateYear: 2026,
       dateMonth: 3,
       dateDay: 14,
+      sessionOrdinal: 1,
+      sessionCount: 1,
       durationSeconds: 3600,
     },
     workspaceId: `ws-${hash}`,
@@ -150,12 +152,13 @@ describe("formatting", () => {
     expect(formatClock(-4)).toBe("0:00");
   });
 
-  it("writes as much of the event date as is known", () => {
+  it("writes as much of the event date as is known, as the event cards do", () => {
     const recording = item("a").recording;
-    expect(formatEventDate(recording)).toBe("2026-03-14");
-    expect(formatEventDate({ ...recording, dateDay: null })).toBe("2026-03");
-    expect(formatEventDate({ ...recording, dateMonth: null, dateDay: null })).toBe("2026");
-    expect(formatEventDate({ ...recording, dateYear: null })).toBeNull();
+    expect(formatEventDate(recording, "cs")).toBe("14. Března 2026");
+    expect(formatEventDate({ ...recording, dateDay: null }, "cs")).toBe("Březen 2026");
+    expect(formatEventDate({ ...recording, dateMonth: null, dateDay: null }, "cs")).toBe("2026");
+    expect(formatEventDate({ ...recording, dateYear: null }, "cs")).toBeNull();
+    expect(formatEventDate({ ...recording, eventId: null }, "cs")).toBeNull();
   });
 });
 
@@ -229,7 +232,7 @@ describe("CorrectionOverviewPage", () => {
 
     const rows = await screen.findAllByTestId("correction-overview-row");
     expect(rows).toHaveLength(1);
-    expect(within(rows[0]).getByText("Recording mine")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("14. Března 2026 · Uhříněves")).toBeInTheDocument();
     const mine = within(rows[0]).getByTestId("correction-overview-mine");
     expect(mine).toHaveTextContent('mine.approved {"count":30}');
     expect(mine).toHaveTextContent('mine.waiting {"count":20}');
@@ -259,19 +262,27 @@ describe("CorrectionOverviewPage", () => {
     expect(mine).not.toHaveTextContent("mine.disapproved");
   });
 
-  it("names the event only when it adds something to the title", async () => {
-    const same = item("a", { touchedByMe: true, mine: { approved: 1, disapproved: 0, waitingOnOthers: 0, open: 9 } });
-    same.recording = { ...same.recording, title: "Podzimní beseda", eventTitle: "Podzimní beseda" };
-    const other = item("b", { touchedByMe: true, mine: { approved: 1, disapproved: 0, waitingOnOthers: 0, open: 9 } });
-    other.recording = { ...other.recording, title: "Part 1", eventTitle: "Podzimní beseda" };
-    fetchJsonMock.mockResolvedValue(overview([same, other]));
+  // Named as the catalog's event list names the event: by date and place.
+  it("names a recording by its event's date and place, as the catalog does", async () => {
+    const mine = { approved: 1, disapproved: 0, waitingOnOthers: 0, open: 9 };
+    const single = item("a", { touchedByMe: true, mine });
+    const second = item("b", { touchedByMe: true, mine });
+    second.recording = { ...second.recording, sessionOrdinal: 2, sessionCount: 2 };
+    const hidden = item("c", { touchedByMe: true, mine });
+    hidden.recording = { ...hidden.recording, eventId: null, dateYear: null, dateMonth: null, dateDay: null };
+    fetchJsonMock.mockResolvedValue(overview([single, second, hidden]));
 
     renderPage();
 
     const rows = await screen.findAllByTestId("correction-overview-row");
-    const subtitles = rows.map((row) => row.querySelector("p")?.textContent ?? "");
-    expect(subtitles[0]).not.toContain("Podzimní beseda");
-    expect(subtitles[1]).toContain("Podzimní beseda");
+    const byHash = (hash: string) =>
+      rows.find((row) => row.querySelector(`a[href*="${hash.padEnd(64, "0")}"]`))!;
+    expect(within(byHash("a")).getByText("14. Března 2026 · Uhříněves")).toBeInTheDocument();
+    expect(within(byHash("a")).queryByTestId("session-ordinal")).toBeNull();
+    expect(within(byHash("a")).queryByText("Recording a")).toBeNull();
+    expect(within(byHash("b")).getByTestId("session-ordinal")).toBeInTheDocument();
+    // Without an event this person may see, the recording's own title stands in.
+    expect(within(byHash("c")).getByText("Recording c")).toBeInTheDocument();
   });
 
   it("falls back to what is in progress when nothing wants this person", async () => {
