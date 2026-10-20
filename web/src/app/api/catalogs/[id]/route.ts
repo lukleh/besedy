@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { requireAuth } from "@/lib/auth/permissions";
-import {
-  requireCatalogManagementAccess,
-  type CatalogManagementRouteAccessContext,
-} from "@/lib/access/catalog-management-route-access";
-import { hasSystemCatalogAuthority } from "@/lib/policy/actor";
+import { requireCatalogManagementAccess } from "@/lib/access/catalog-management-route-access";
+import { hasSystemAdminAuthority } from "@/lib/policy/actor";
 import { canManageCatalogConfiguration } from "@/lib/policy/catalog";
 import { TimestampIdParamSchema, UpdateCatalogSchema } from "@/lib/validation/schemas";
 import {
@@ -48,11 +45,6 @@ const SYSTEM_ONLY_DENIED_MESSAGE =
   "System admin access required to change catalog paths, default or active flags";
 
 const DEACTIVATE_DENIED_MESSAGE = "System admin access required to deactivate a catalog";
-
-/** The authority `POST /api/catalogs` requires through `requireAdminCapability`. */
-function hasSystemAuthority(access: CatalogManagementRouteAccessContext): boolean {
-  return access.actor.canEnterPortal && hasSystemCatalogAuthority(access.actor);
-}
 
 /**
  * GET /api/catalogs/:id - Get a single workflow group (catalog)
@@ -154,7 +146,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const systemOnlyChanges = SYSTEM_ONLY_CATALOG_FIELDS.filter(
       (field) => field in changes
     );
-    if (systemOnlyChanges.length > 0 && !hasSystemAuthority(access)) {
+    if (systemOnlyChanges.length > 0 && !hasSystemAdminAuthority(access.actor)) {
       await logAccessDenied(access.userId, "catalog_settings", id, {
         catalogId: id,
         reason: SYSTEM_ONLY_DENIED_MESSAGE,
@@ -235,7 +227,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     // Deactivating clears the active and default flags, which PUT reserves for
     // system admins, so a catalog grant does not cover it either (ADR 0005).
-    if (!hasSystemAuthority(access)) {
+    if (!hasSystemAdminAuthority(access.actor)) {
       await logAccessDenied(access.userId, "catalog_settings", id, {
         catalogId: id,
         reason: DEACTIVATE_DENIED_MESSAGE,
