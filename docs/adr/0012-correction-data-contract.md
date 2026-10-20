@@ -91,7 +91,10 @@ recordings found 0 ms offset, at most about 5 ms for Opus.
 - A **span** is the unit of correction. It is a run of consecutive regions inside
   one chunk, split wherever the silence between two regions is at least 1 s. A
   run still longer than 30 s from first region start to last region end is split
-  at its longest internal gap, recursively. A run shorter than 2 s is then merged
+  between two regions, recursively. The cut goes where both parts stay within
+  30 s if possible, then at the widest pause, then where the parts are most even.
+  Every region boundary lies in a pause, so any of them may be cut. A run
+  shorter than 2 s is then merged
   into its neighbour in the same chunk, across the shorter gap first, whenever
   the merged run stays within 30 s. Repeat until nothing changes.
 
@@ -104,12 +107,12 @@ without words, and are not worth correcting on their own.
 of audio of at most 30 s and writes what is heard in it. The texts of a chunk's
 spans, in order, are the exact label for the exact model input.
 
-On the production data of 2026-10-19 (90,461 chunks), this gives 152,623 spans.
-All are at most 30 s and the median is 16.5 s. Silence inside a span has a
+On the production data of 2026-10-19 (90,461 chunks), this gives 152,617 spans.
+All are at most 30 s and the median is about 16.5 s. Silence inside a span has a
 median of 0.13 s and a 99th percentile of 4.2 s.
 
 Without the merge, 12,666 spans were shorter than 2 s and 3,725 shorter than
-1 s. After it, 1,981 and 510 remain; these cannot merge without passing 30 s.
+1 s. After it, 1,941 and 503 remain; these cannot merge without passing 30 s.
 Of the 1 s spans before merging, 77 % had no machine words. Their median
 loudness was only 7 dB below the recording's speech, so they are not silence.
 
@@ -293,7 +296,7 @@ may only be extended.
 
 - Correctors hear all speech the model heard. Dropped speech appears as spans
   without text, and the reader gets it once corrected.
-- Spans are more numerous than source segments (152,623 spans for 90,461
+- Spans are more numerous than source segments (152,617 spans for 90,461
   chunks), but each is a contiguous piece of at most 30 s.
 - Publication still emits one segment per span, with the span's start and end,
   `confidence: null` and `words: []`. Reader progress is still measured by
@@ -333,7 +336,7 @@ may only be extended.
 ## Deferred questions
 
 - The exact wording of the contributor terms.
-- How the UI presents the 1,981 spans that stay under 2 s because merging
+- How the UI presents the 1,941 spans that stay under 2 s because merging
   would pass 30 s, for example a quick "nothing said here" confirmation.
 - Whether speaker consent or attribution is needed in a later version.
 - Whether training labels keep or strip fillers, decided after the first
