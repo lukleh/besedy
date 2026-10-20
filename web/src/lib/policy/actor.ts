@@ -26,6 +26,19 @@ export function hasSystemCatalogAuthority(
   return actor.systemRole === "ADMIN" || actor.systemRole === "SUPERADMIN";
 }
 
+/**
+ * A system admin who may currently use the portal.
+ *
+ * The one rule behind the admin capability and behind the catalog settings a
+ * catalog grant does not cover (paths, the default and active flags, and
+ * deactivation), so the routes and the pages that offer them cannot drift.
+ */
+export function hasSystemAdminAuthority(
+  actor: Pick<PortalActorContext, "canEnterPortal" | "systemRole">
+): boolean {
+  return actor.canEnterPortal && hasSystemCatalogAuthority(actor);
+}
+
 interface ResolveCatalogActorContextOptions {
   activeCatalogOnly?: boolean;
 }
