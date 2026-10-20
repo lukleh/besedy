@@ -289,8 +289,10 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
 
     const workspace = await assertWorkspaceWritable(tx, command.workspaceId);
     await requireContributorConsent(tx, command.userId);
-    const playback = playbackColumns(command.kind, command.playback, workspace.segmentationVersion !== null);
+    // After the lock: a stale request is a revision conflict first, whatever
+    // else it is missing.
     const span = await lockSpan(tx, command);
+    const playback = playbackColumns(command.kind, command.playback, workspace.segmentationVersion !== null);
 
     await tx.transcriptSpanDecision.create({
       data: {
