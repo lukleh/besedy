@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,7 @@ from besedy.lib.workflow.common import CsvAudioRow
 
 HASH = "a" * 64
 OTHER = "b" * 64
+NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
 
 
 def write_manifest(
@@ -35,7 +38,7 @@ def write_manifest(
         "status": status,
         "segmentation_version": "chunks-v1",
         "staged_audio": {"path": str(staged), "size": 8, "sha256": "0" * 64},
-        "updated_at": "2026-10-20T00:00:00.000Z",
+        "updated_at": "2026-10-20T11:30:00.000Z",
         **extra,
     }
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -66,6 +69,64 @@ def test_only_active_workspaces_protect_their_audio(tmp_path: Path, staged) -> N
     assert protected[protected_file.resolve()].workspace_id == "ws-live"
 
 
+def test_archived_workspaces_are_ignored(tmp_path: Path, staged) -> None:
+    _, protected_file, _ = staged
+    corrections = tmp_path / "corrections"
+    write_manifest(corrections, "ws-archived", protected_file, status="archived")
+
+    assert load_protected_staged_audio(corrections) == {}
+
+
+def test_a_fresh_starting_workspace_protects_its_audio(tmp_path: Path, staged, caplog) -> None:
+    _, protected_file, _ = staged
+    corrections = tmp_path / "corrections"
+    write_manifest(corrections, "ws-starting", protected_file, status="starting")
+
+    with caplog.at_level(logging.WARNING):
+        protected = load_protected_staged_audio(corrections, now=NOW)
+
+    assert is_protected(protected_file, protected)
+    assert caplog.records == []
+
+
+def test_a_stale_starting_workspace_is_an_abandoned_start(tmp_path: Path, staged, caplog) -> None:
+    _, protected_file, _ = staged
+    corrections = tmp_path / "corrections"
+    stale = (NOW - timedelta(hours=1, seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    path = write_manifest(
+        corrections, "ws-starting", protected_file, status="starting", updated_at=stale
+    )
+
+    with caplog.at_level(logging.WARNING):
+        protected = load_protected_staged_audio(corrections, now=NOW)
+
+    assert protected == {}
+    assert any(str(path) in record.getMessage() for record in caplog.records)
+    assert any("abandoned start" in record.getMessage() for record in caplog.records)
+
+
+def test_a_starting_workspace_without_a_timestamp_stops_the_command(tmp_path: Path, staged) -> None:
+    _, protected_file, _ = staged
+    corrections = tmp_path / "corrections"
+    write_manifest(corrections, "ws-starting", protected_file, status="starting", updated_at=None)
+
+    with pytest.raises(CorrectionManifestError):
+        load_protected_staged_audio(corrections, now=NOW)
+
+
+def test_a_manifest_naming_a_missing_file_still_protects_that_path(tmp_path: Path, staged) -> None:
+    staging, _, _ = staged
+    corrections = tmp_path / "corrections"
+    missing = staging / f"{'c' * 64}.wav"
+    write_manifest(corrections, "ws-live", missing)
+
+    protected = load_protected_staged_audio(corrections)
+
+    assert not missing.exists()
+    assert is_protected(missing, protected)
+    assert protected[missing.resolve()].audio_hash == HASH
+
+
 def test_a_symlinked_staging_directory_still_matches(tmp_path: Path, staged) -> None:
     staging, protected_file, _ = staged
     link = tmp_path / "audio_staged"
@@ -91,6 +152,36 @@ def test_an_unreadable_manifest_stops_the_command(tmp_path: Path, staged, damage
 
     with pytest.raises(CorrectionManifestError):
         load_protected_staged_audio(corrections)
+
+
+def test_a_broken_manifest_in_another_catalog_stops_the_command(tmp_path: Path, staged) -> None:
+    """Intended: the manifest, not its catalog directory, says which file it guards."""
+    _, protected_file, other_file = staged
+    corrections = tmp_path / "corrections"
+    write_manifest(corrections, "ws-live", protected_file)
+    broken = corrections / "corrections_20260101_000000" / "ws-other" / "workspace.json"
+    broken.parent.mkdir(parents=True)
+    broken.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(CorrectionManifestError, match=str(broken)) as excinfo:
+        load_protected_staged_audio(corrections)
+    assert "Fix or restore it" in str(excinfo.value)
+
+    plan = CleanupPlan(
+        targets=[
+            CleanupTarget(
+                sha256=OTHER,
+                original_path="/gone/b.wav",
+                staged_path=other_file,
+                staged_exists=True,
+            )
+        ],
+        catalog_csv=tmp_path / "catalog_20251222_144441.csv",
+        normalized_csv=None,
+    )
+    with pytest.raises(CorrectionManifestError):
+        execute_cleanup(plan, load_protected_staged_audio(corrections))
+    assert other_file.exists()
 
 
 def test_clean_keeps_protected_staged_audio(tmp_path: Path, staged) -> None:
@@ -164,3 +255,40 @@ def test_overwrite_staging_reuses_protected_audio(tmp_path: Path, staged) -> Non
     assert protected_file.read_bytes() == b"RIFFkeep"
     assert [entry.action for entry in prepared] == ["existing"]
     assert skipped == []
+
+
+def test_overwrite_staging_warns_when_protected_audio_is_missing(
+    tmp_path: Path, staged, caplog
+) -> None:
+    staging, protected_file, _ = staged
+    protected_file.unlink()
+    corrections = tmp_path / "corrections"
+    write_manifest(corrections, "ws-live", protected_file)
+    manifest = ManifestWriter(tmp_path / "manifest.csv", include_analysis=False)
+
+    with caplog.at_level(logging.WARNING):
+        prepared, skipped = stage_audio_files(
+            rows=[
+                CsvAudioRow(
+                    sha256=HASH, full_path=str(tmp_path / "source.mp3"), duration_seconds=1.0
+                )
+            ],
+            staging_dir=staging,
+            manifest_writer=manifest,
+            include_audio_analysis=False,
+            analysis_ffmpeg="ffmpeg",
+            analysis_ffprobe="ffprobe",
+            continue_on_error=True,
+            reuse_existing=False,
+            protected=load_protected_staged_audio(corrections),
+        )
+    manifest.close()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        str(protected_file) in message and "ws-live" in message and "re-staging" in message
+        for message in messages
+    )
+    # The source is absent too, so the row is skipped rather than converted.
+    assert prepared == []
+    assert [entry.reason for entry in skipped] == ["file not found"]

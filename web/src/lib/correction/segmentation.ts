@@ -210,11 +210,29 @@ function regionOfWord(
   const start = toSeconds(word.start, 0) || 0;
   const end = toSeconds(word.end, start);
   const middle = (start + end) / 2;
-  let best = chunk[0];
+  const seconds = chunk.map(
+    (index) =>
+      [
+        regions[index].start / SAMPLE_RATE,
+        regions[index].end / SAMPLE_RATE,
+      ] as const,
+  );
+  return chunk[regionIndexForMidpoint(seconds, middle)];
+}
+
+/**
+ * Index of the region (in seconds) holding a word's midpoint, else the nearest
+ * one by distance, the earlier on a tie; -1 for no regions. The UI counts words
+ * per region with the same rule, so each word lands in exactly one region.
+ */
+export function regionIndexForMidpoint(
+  regions: ReadonlyArray<readonly [number, number]>,
+  middle: number,
+): number {
+  let best = regions.length > 0 ? 0 : -1;
   let bestDistance: number | null = null;
-  for (const index of chunk) {
-    const lo = regions[index].start / SAMPLE_RATE;
-    const hi = regions[index].end / SAMPLE_RATE;
+  for (let index = 0; index < regions.length; index++) {
+    const [lo, hi] = regions[index];
     if (lo <= middle && middle <= hi) return index;
     const distance = middle < lo ? lo - middle : middle - hi;
     if (bestDistance === null || distance < bestDistance) {

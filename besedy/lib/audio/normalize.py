@@ -51,7 +51,7 @@ from besedy.lib.audio.types import (
 )
 from besedy.lib.correction_guard import (
     ProtectedStagedAudio,
-    is_protected,
+    find_protected,
     load_protected_staged_audio,
 )
 from besedy.lib.workflow.common import CsvAudioRow, resolve_unicode_path
@@ -111,11 +111,20 @@ def stage_audio_files(
 
         # A live correction workspace depends on this exact file (ADR 0012), so
         # even an overwrite reuses it rather than staging it again.
-        keep_for_correction = not reuse_existing and is_protected(staged_path, protected)
-        if keep_for_correction and (staged_path.exists() or staged_path.is_symlink()):
+        protecting = None if reuse_existing else find_protected(staged_path, protected)
+        keep_for_correction = protecting is not None
+        if protecting is not None and (staged_path.exists() or staged_path.is_symlink()):
             logging.warning(
                 "[stage_audio_files] keeping %s: a correction workspace depends on it",
                 staged_path,
+            )
+        elif protecting is not None:
+            logging.warning(
+                "[stage_audio_files] staged audio %s protected by correction workspace %s "
+                "is missing; re-staging it; the nightly integrity check will report the "
+                "changed content",
+                staged_path,
+                protecting.workspace_id,
             )
         if (staged_path.exists() or staged_path.is_symlink()) and (
             reuse_existing or keep_for_correction

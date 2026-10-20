@@ -566,6 +566,7 @@
       "repeatRegion": "Repeat part",
       "nextRegion": "Next part",
       "back": "Back 3 s",
+      "rate": "Playback speed",
       "speechWithoutText": "Speech the model wrote nothing for",
       "speechWithoutTextHint": "{count, plural, one {One part of speech has no text} other {# parts of speech have no text}}: listen and write what was said."
     },

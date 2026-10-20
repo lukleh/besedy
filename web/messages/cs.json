@@ -566,6 +566,7 @@
       "repeatRegion": "Zopakovat část",
       "nextRegion": "Další část",
       "back": "3 s zpět",
+      "rate": "Rychlost přehrávání",
       "speechWithoutText": "Řeč, ke které model nic nenapsal",
       "speechWithoutTextHint": "{count, plural, one {Jedna část řeči nemá žádný text} few {# části řeči nemají žádný text} other {# částí řeči nemá žádný text}}: poslechněte ji a dopište, co zaznělo."
     },
