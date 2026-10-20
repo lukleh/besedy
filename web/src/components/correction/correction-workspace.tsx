@@ -225,7 +225,7 @@ export function CorrectionWorkspace({
       )}
 
       {state && consent && needsConsent && (state.workspace || state.canStart) && (
-        <CorrectionConsentCard consent={consent} />
+        <CorrectionConsentCard consent={consent} guide={state.guide.body} />
       )}
 
       {/* Without the consent answer nothing can be shown or written, so a
@@ -369,14 +369,6 @@ export function CorrectionWorkspace({
             </div>
           )}
 
-          <details className="rounded-lg border p-4">
-            <summary className="cursor-pointer text-sm font-medium">
-              {t("guide")}
-            </summary>
-            <pre className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
-              {state.guide.body}
-            </pre>
-          </details>
 
           <p className="text-xs text-muted-foreground">
             {t("frozenSource", { backend: state.workspace.sourceBackend })} ·{" "}
@@ -390,6 +382,7 @@ export function CorrectionWorkspace({
               userId={userId}
               workspace={state.workspace}
               resume={state.resume}
+              guide={state.guide.body}
               onChanged={refreshState}
             />
           )}

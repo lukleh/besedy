@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { z } from "zod";
+import { MarkdownContent } from "@/components/markdown-content";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fetchJson } from "@/lib/api/fetch-json";
@@ -35,7 +36,14 @@ export function useContributorConsent() {
  * used to train models, so nobody writes before accepting; the text shown is
  * the server's, and that exact text is what the acceptance records.
  */
-export function CorrectionConsentCard({ consent }: { consent: ConsentResponse["consent"] }) {
+export function CorrectionConsentCard({
+  consent,
+  guide,
+}: {
+  consent: ConsentResponse["consent"];
+  /** The catalog's correction guide, read once before the first edit */
+  guide: string;
+}) {
   const t = useTranslations("correction");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -64,6 +72,15 @@ export function CorrectionConsentCard({ consent }: { consent: ConsentResponse["c
         {accept.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         {t("consentAccept")}
       </Button>
+
+      {/* The guide is not part of the terms: it has revisions of its own and
+          the consent above never covers a particular one. */}
+      <div className="mt-6 border-t pt-4" data-testid="correction-consent-guide">
+        <p className="text-sm text-muted-foreground">{t("consentGuideIntro")}</p>
+        <div className="mt-2 max-w-2xl text-sm leading-7">
+          <MarkdownContent markdown={guide} />
+        </div>
+      </div>
     </div>
   );
 }

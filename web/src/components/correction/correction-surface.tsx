@@ -26,6 +26,7 @@ import { formatClock } from "@/lib/correction/format";
 import { PlaybackTracker, speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
 import { CorrectionStrip } from "./correction-strip";
 import { CorrectionFlags } from "./correction-flags";
+import { CorrectionGuideDialog } from "./correction-guide-dialog";
 import {
   CorrectionSpanAudio,
   PLAYBACK_RATES,
@@ -77,6 +78,8 @@ interface CorrectionSurfaceProps {
   workspace: WorkspaceSummary;
   /** Where this person should pick the work up, if anywhere */
   resume: { spanId: string; ordinal: number } | null;
+  /** The catalog's correction guide, in Markdown */
+  guide: string;
   onChanged: () => void;
 }
 
@@ -111,6 +114,7 @@ export function CorrectionSurface({
   userId,
   workspace,
   resume,
+  guide,
   onChanged,
 }: CorrectionSurfaceProps) {
   const t = useTranslations("correction");
@@ -722,6 +726,10 @@ export function CorrectionSurface({
                         : "stateNotReviewed"
                 )}
               </Badge>
+              {/* Between the player and the text, where the work happens. */}
+              <div className="ml-auto">
+                <CorrectionGuideDialog body={guide} />
+              </div>
             </div>
 
             <CorrectionSpanAudio
