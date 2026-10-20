@@ -15,6 +15,7 @@ git history (`git log -- scripts/migrate_czech_transcript_paths.py`).
 | `transcript_backend_priority.backend` | the admin ordering of backends | the backend loses its priority and falls back to the default order |
 | `transcript_workspace.source_backend` | the backend a correction was frozen from | a stale label on the correction page and the original-transcript download, and in the audit payload of new publications |
 | `transcript_publication.previous_source_ref` (when `previous_source_kind = 'machine'`) | the same key, as the source to restore on rollback | `completeIndexSync` compares it with the live `RAG_BACKEND_KEY`; a stale value makes a rollback to machine text count as complete even if the sync removed the correction and indexed nothing |
+| `transcript_span_revision.suggestion_backend` | the backend a suggested correction text came from (ADR 0012) | a provenance label pointing at a key that no longer exists |
 
 A frozen workspace is **not** stranded by a rename. Its source transcript is a
 copy in the corrections directory (`resolveWorkspaceSourcePath`), published
