@@ -17,6 +17,7 @@ from besedy.lib.catalog.manager import (
     resolve_hash_column,
     write_merged_csv,
 )
+from besedy.lib.data.atomic_io import rewrite_lock
 
 
 def register_parser(
@@ -82,6 +83,18 @@ def handle_merge(args: argparse.Namespace) -> int:
 
     print(f"Merging {args.source2} into {args.source1}...")
 
+    # `--output` may name one of the sources (or a live catalog): hold its
+    # rewrite lock from the read to the replace, as `catalog add` and
+    # `catalog remove` do, so neither's rows are dropped in between.
+    output_path = Path(output_path).expanduser()
+    # The lock file sits next to the output, so its directory must exist
+    # before the lock rather than only once write_merged_csv publishes.
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with rewrite_lock(output_path):
+        return _merge_into(args, output_path, LOGGER)
+
+
+def _merge_into(args: argparse.Namespace, output_path: Path, LOGGER: logging.Logger) -> int:
     target_columns, target_rows = load_csv(args.source1, encoding=args.encoding)
     target_hash_column = resolve_hash_column(
         target_columns, args.source1, preferred=args.hash_column

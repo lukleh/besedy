@@ -30,7 +30,7 @@ from besedy.lib.catalog.manager import (
     require_audio_hash_contract,
     resolve_hash_column,
 )
-from besedy.lib.data.atomic_io import atomic_path
+from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
 
 
 def register_parser(
@@ -320,8 +320,18 @@ def handle_add(args: argparse.Namespace) -> int:
         if result.duplicate_records:
             # Build the new file in a temp file and replace the old one only
             # once it holds every row, so the web sync never reads a
-            # duplicates CSV that lost the existing rows.
-            with atomic_path(duplicates_csv_path) as temp_dup_path:
+            # duplicates CSV that lost the existing rows. Hold its rewrite
+            # lock and read the existing rows again: `catalog remove` and
+            # `clean` may have rewritten the file since this run started.
+            with (
+                rewrite_lock(duplicates_csv_path),
+                atomic_path(duplicates_csv_path) as temp_dup_path,
+            ):
+                existing_duplicate_rows = []
+                if duplicates_csv_path.is_file():
+                    _, existing_duplicate_rows = load_csv(
+                        duplicates_csv_path, encoding=args.encoding
+                    )
                 new_dup_count = write_duplicates_report(
                     result.duplicate_records,
                     result.new_records,
