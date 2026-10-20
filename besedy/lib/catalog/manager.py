@@ -17,7 +17,7 @@ from pathlib import Path
 
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS
 from besedy.lib.audio.types import format_size
-from besedy.lib.data.atomic_io import atomic_path, atomic_write_text
+from besedy.lib.data.atomic_io import atomic_path, atomic_write_text, rewrite_lock
 from besedy.lib.subprocess_utils import check_binary
 
 # Constants
@@ -792,7 +792,11 @@ def append_csv(
     columns: Sequence[str],
     encoding: str,
 ) -> None:
-    with path.expanduser().open("a", encoding=encoding, newline="") as handle:
+    # Under the file's rewrite lock, so a concurrent rewrite (catalog remove,
+    # clean) never replaces the file between our open and its rename, leaving
+    # these rows in an unlinked copy.
+    path = path.expanduser()
+    with rewrite_lock(path), path.open("a", encoding=encoding, newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(columns))
         for row in rows:
             writer.writerow({column: row.get(column, "") for column in columns})

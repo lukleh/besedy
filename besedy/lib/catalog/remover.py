@@ -397,15 +397,13 @@ def remove_hashes_from_csv(csv_path: Path, hashes: Collection[str]) -> int:
     """Rewrite one catalog CSV without the rows of ``hashes``; atomic on success.
 
     The file is read again here, so rows appended since the caller planned the
-    removal are kept.
+    removal are kept. The read and the replace happen under the file's
+    `rewrite_lock`, which `catalog add` appends and `catalog archive` writes
+    under too, so no row they write in between lands in the replaced file.
     """
     wanted = {value.strip().lower() for value in hashes}
-    if csv_path.resolve().name.endswith("_loudness_archived.csv"):
-        # `catalog archive --backfill-aac` rewrites this manifest outside the
-        # ingest lock; share its lock so neither drops the other's change.
-        with rewrite_lock(csv_path):
-            return _remove_hashes_from_csv(csv_path, wanted)
-    return _remove_hashes_from_csv(csv_path, wanted)
+    with rewrite_lock(csv_path):
+        return _remove_hashes_from_csv(csv_path, wanted)
 
 
 def _remove_hashes_from_csv(csv_path: Path, hashes: set[str]) -> int:
