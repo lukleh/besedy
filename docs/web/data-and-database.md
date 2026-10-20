@@ -261,7 +261,8 @@ they have to hold against concurrent requests:
 ADR 0012 adds checks that keep the correction data complete: a workspace's
 segmentation and staged-audio columns, and a span's chunk and region columns,
 are set together (or not at all on a workspace started before the contract);
-only a `SUGGESTION` revision names a backend; playback is a share of the span.
+only a `SUGGESTION` revision names a backend; a decision's playback (heard
+share of the span and both playback rates) is recorded whole or not at all.
 Foreign keys among the correction tables, and from catalogs to them, are
 `RESTRICT`, so deleting a catalog or a workspace cannot delete correction work.
 
@@ -270,7 +271,22 @@ catalog guide revision, cuts spans with `contracts/correction-segmentation.json`
 rules, fingerprints the staged audio named by the source's
 `meta.audio_filepath`, and writes `workspace.json` next to the frozen source.
 That manifest (status, segmentation version and staged-audio identity) is what
-the Python side reads to keep the staged audio of a live workspace unchanged.
+the Python side will read to keep the staged audio of a live workspace
+unchanged; that guard in `catalog clean` and re-staging lands in a follow-up
+PR (#411). The manifest is written with `status: "starting"` before the
+database rows and rewritten as `"active"` once they are committed, so a crash
+in between leaves a `starting` manifest rather than an `active` one that
+protects nothing. The guard treats a manifest still `starting` more than one
+hour after its `updated_at` as an abandoned start that protects nothing.
+
+Fingerprinting the staged audio reads the file through the container's path
+rules, so the host staged-audio tree
+(`<audio artifacts root>/audio_staged_<timestamp>/`) must lie inside the
+directory mounted as `AUDIO_DIR` and its host prefix must be covered by
+`BESEDY_PATH_MAPPINGS`. Otherwise starting a workspace fails with
+`STAGED_AUDIO_MISSING`. The staged WAV's own duration is also compared with the
+source's `meta.duration`; a difference above 50 ms fails with
+`STAGED_AUDIO_MISMATCH`.
 
 Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status

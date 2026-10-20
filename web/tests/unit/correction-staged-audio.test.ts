@@ -18,6 +18,37 @@ vi.mock("@/lib/config", () => ({
 
 const HASH = "a".repeat(64);
 
+/** A 16 kHz mono PCM16 WAV with the given number of seconds of silence. */
+function wavOf(seconds: number, extraChunk = false): Buffer {
+  const dataBytes = Math.round(seconds * 32000);
+  const extra = extraChunk ? Buffer.concat([Buffer.from("LIST"), u32(5), Buffer.from("abcde\0")]) : Buffer.alloc(0);
+  const fmt = Buffer.concat([
+    Buffer.from("fmt "),
+    u32(16),
+    u16(1), // PCM
+    u16(1), // mono
+    u32(16000),
+    u32(32000), // byte rate
+    u16(2), // block align
+    u16(16),
+  ]);
+  const data = Buffer.concat([Buffer.from("data"), u32(dataBytes), Buffer.alloc(dataBytes)]);
+  const body = Buffer.concat([Buffer.from("WAVE"), fmt, extra, data]);
+  return Buffer.concat([Buffer.from("RIFF"), u32(body.length), body]);
+}
+
+function u16(value: number): Buffer {
+  const b = Buffer.alloc(2);
+  b.writeUInt16LE(value);
+  return b;
+}
+
+function u32(value: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32LE(value);
+  return b;
+}
+
 async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
   try {
     await promise;
@@ -82,5 +113,50 @@ describe("staged audio identity", () => {
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
     }
+  });
+
+  it("accepts staged audio whose duration matches the source within 50 ms", async () => {
+    const { identifyStagedAudio } = await import("@/lib/correction/staged-audio");
+    const filePath = path.join(root, "audio_staged", `${HASH}.wav`);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const bytes = wavOf(2.5, true);
+    await fs.writeFile(filePath, bytes);
+
+    await expect(identifyStagedAudio({ audio_filepath: filePath, duration: 2.54 }, HASH)).resolves.toEqual({
+      path: filePath,
+      size: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+  });
+
+  it("refuses staged audio whose duration differs from the source", async () => {
+    const { identifyStagedAudio } = await import("@/lib/correction/staged-audio");
+    const filePath = path.join(root, "audio_staged", `${HASH}.wav`);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, wavOf(2.5));
+
+    await expect(identifyStagedAudio({ audio_filepath: filePath, duration: 2.6 }, HASH)).rejects.toMatchObject({
+      code: "STAGED_AUDIO_MISMATCH",
+      statusCode: 422,
+      message: expect.stringContaining("duration differs"),
+    });
+  });
+
+  it("refuses a file that is not a PCM WAV when the source states a duration", async () => {
+    const { identifyStagedAudio } = await import("@/lib/correction/staged-audio");
+    const filePath = path.join(root, "audio_staged", `${HASH}.wav`);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, "RIFF staged audio bytes");
+
+    expect(await codeOf(identifyStagedAudio({ audio_filepath: filePath, duration: 1 }, HASH))).toBe(
+      "STAGED_AUDIO_MISMATCH"
+    );
+  });
+
+  it("reads the duration from the chunk headers, skipping unknown chunks", async () => {
+    const { parseWavDurationSeconds } = await import("@/lib/correction/staged-audio");
+    expect(parseWavDurationSeconds(wavOf(1.25, true))).toBe(1.25);
+    expect(parseWavDurationSeconds(wavOf(0))).toBe(0);
+    expect(parseWavDurationSeconds(Buffer.from("not a wav file at all"))).toBeNull();
   });
 });
