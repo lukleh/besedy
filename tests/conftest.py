@@ -23,6 +23,17 @@ _STATE_HOME = Path(tempfile.mkdtemp(prefix="besedy-test-state-"))
 os.environ["BESEDY_STATE_HOME"] = str(_STATE_HOME)
 atexit.register(shutil.rmtree, _STATE_HOME, ignore_errors=True)
 
+# Run Prefect flows against a throwaway ephemeral server, never the operator's
+# active profile in ~/.prefect (which may point at a real, unrelated API).
+# Inherited PREFECT_* variables would outrank any profile, so drop them too.
+# At import time: Prefect loads its settings when first imported.
+for _name in [name for name in os.environ if name.startswith("PREFECT_")]:
+    del os.environ[_name]
+_PREFECT_HOME = Path(tempfile.mkdtemp(prefix="besedy-test-prefect-"))
+os.environ["PREFECT_HOME"] = str(_PREFECT_HOME)
+os.environ["PREFECT_PROFILES_PATH"] = str(_PREFECT_HOME / "profiles.toml")
+atexit.register(shutil.rmtree, _PREFECT_HOME, ignore_errors=True)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _hermetic_data_roots(tmp_path_factory: pytest.TempPathFactory) -> None:
