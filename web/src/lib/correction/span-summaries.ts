@@ -12,6 +12,8 @@ export interface SpanSummaryRow {
   originalText: string;
   /** ADR 0012 speech regions in samples; null on spans from before the contract */
   speechRegions: number[][] | null;
+  /** The machine words assigned to the span, with their times in seconds */
+  machineWords: MachineWordView[];
   currentRevision: {
     id: string;
     text: string;
@@ -20,6 +22,25 @@ export interface SpanSummaryRow {
     previousRevisionId: string | null;
   } | null;
   summary: SpanDecisionSummary;
+}
+
+export interface MachineWordView {
+  word: string;
+  start: number;
+  end: number;
+}
+
+/** Only what the correction page shows of a stored machine word. */
+function toMachineWordViews(value: unknown): MachineWordView[] {
+  if (!Array.isArray(value)) return [];
+  const words: MachineWordView[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const { word, start, end } = item as Record<string, unknown>;
+    if (typeof word !== "string" || typeof start !== "number" || typeof end !== "number") continue;
+    words.push({ word, start, end });
+  }
+  return words;
 }
 
 interface SpanDecisionRow {
@@ -100,6 +121,7 @@ export async function loadSpanSummaries(
       endSeconds: true,
       originalText: true,
       speechRegions: true,
+      machineWords: true,
       currentRevision: {
         select: {
           id: true,
@@ -124,6 +146,7 @@ export async function loadSpanSummaries(
     endSeconds: span.endSeconds,
     originalText: span.originalText,
     speechRegions: Array.isArray(span.speechRegions) ? (span.speechRegions as number[][]) : null,
+    machineWords: toMachineWordViews(span.machineWords),
     currentRevision: span.currentRevision,
     summary: summaries.get(span.id) ?? NO_DECISIONS,
   }));

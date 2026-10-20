@@ -16,6 +16,8 @@ export interface AudioPlayerProps {
   seekKey?: number;
   playbackEnd?: number;
   autoPlayOnSeek?: boolean;
+  /** Playback speed; 1 when omitted. The correction page slows passages down. */
+  playbackRate?: number;
   /** What the lock screen and media notification show for this recording. */
   mediaMetadata?: MediaSessionMetadata;
   /** Positions (seconds) marked on the progress bar, e.g. the listener's bookmarks. */

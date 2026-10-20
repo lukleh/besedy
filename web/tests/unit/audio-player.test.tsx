@@ -378,6 +378,60 @@ describe("AudioPlayer bounded playback", () => {
     expect(pauseMock).toHaveBeenCalledTimes(1);
   });
 
+  it("stops at the linked end between timeupdates, checking every frame while playing", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => frames.push(callback))
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    try {
+      const { audio } = renderPlayer({ playbackEnd: 20 });
+      const setPaused = mockPaused(audio, false);
+      const pauseMock = vi.fn(() => setPaused(true));
+      audio.pause = pauseMock;
+
+      await act(async () => {
+        audio.dispatchEvent(new Event("play"));
+      });
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+
+      // Still short of the end: the watch asks for the next frame.
+      audio.currentTime = 19.9;
+      act(() => frames.shift()?.(0));
+      expect(pauseMock).not.toHaveBeenCalled();
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(2);
+
+      // The audio runs past the end before the next timeupdate.
+      audio.currentTime = 20.05;
+      act(() => frames.shift()?.(0));
+      expect(pauseMock).toHaveBeenCalledTimes(1);
+      expect(audio.currentTime).toBe(20);
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(2);
+      expect(frames).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("stops again when the same excerpt is requested again", () => {
+    const { audio, rerender } = renderPlayer({ seekTo: 10, seekKey: 1, playbackEnd: 20 });
+    mockReadyState(audio, 4);
+    const pauseMock = vi.fn();
+    audio.pause = pauseMock;
+
+    audio.currentTime = 20.2;
+    fireEvent.timeUpdate(audio);
+    expect(pauseMock).toHaveBeenCalledTimes(1);
+
+    // The correction page replays a span or a region with the same end.
+    rerender(playerElement({ seekTo: 10, seekKey: 2, playbackEnd: 20 }));
+    audio.currentTime = 20.3;
+    fireEvent.timeUpdate(audio);
+    expect(pauseMock).toHaveBeenCalledTimes(2);
+    expect(audio.currentTime).toBe(20);
+  });
+
   it("does not resume a finished linked excerpt after an error recovery", async () => {
     vi.useFakeTimers();
     const { audio, container } = renderPlayer({ playbackEnd: 20 });

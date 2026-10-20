@@ -25,6 +25,14 @@ import { AudioPlayer } from "@/components/player/audio-player";
 import { formatClock } from "@/lib/correction/format";
 import { PlaybackTracker, speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
 import { CorrectionStrip } from "./correction-strip";
+import { CorrectionFlags } from "./correction-flags";
+import {
+  CorrectionSpanAudio,
+  PLAYBACK_RATES,
+  regionIndexAt,
+  spanAudioRegions,
+  type TimeSubscription,
+} from "./correction-span-audio";
 import {
   nextSpanSchema,
   spanCommandResultSchema,
@@ -133,6 +141,39 @@ export function CorrectionSurface({
   // or disapprove reports (ADR 0012). Only continuous playing counts.
   const playbackRef = useRef(new PlaybackTracker());
   const playingRef = useRef(false);
+  const [rate, setRate] = useState<number>(1);
+
+  // The playback time reaches the parts that follow it through a
+  // subscription, not state, so the surface does not re-render four times a
+  // second while audio plays.
+  const currentTimeRef = useRef(0);
+  const timeListenersRef = useRef(new Set<(time: number) => void>());
+  const subscribeTime = useCallback<TimeSubscription>((listener) => {
+    const listeners = timeListenersRef.current;
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+
+  // The player re-subscribes its media listeners whenever these change, which
+  // would also drop its frame-precise excerpt stop, so they stay stable and
+  // read the current rate from a ref instead of closing over it.
+  const rateRef = useRef(rate);
+  useEffect(() => {
+    rateRef.current = rate;
+  }, [rate]);
+  const handlePlayerTime = useCallback((time: number) => {
+    currentTimeRef.current = time;
+    timeListenersRef.current.forEach((listener) => listener(time));
+    if (playingRef.current) playbackRef.current.observe(time, rateRef.current);
+    else playbackRef.current.interrupt();
+  }, []);
+  const handlePlayerPlaying = useCallback((playing: boolean) => {
+    playingRef.current = playing;
+    if (!playing) playbackRef.current.interrupt();
+  }, []);
+  const handlePlayerSeek = useCallback(() => playbackRef.current.interrupt(), []);
 
   const [seekRequest, setSeekRequest] = useState<{
     spanId: string;
@@ -257,6 +298,51 @@ export function CorrectionSurface({
       key: (previous?.key ?? 0) + 1,
       autoPlay: true,
     }));
+  }, []);
+
+  /** Play part of a span: a region, from a word, or a few seconds back. */
+  const playRange = useCallback((span: SpanView, start: number, end: number) => {
+    playbackRef.current.interrupt();
+    setSeekRequest((previous) => ({
+      spanId: span.id,
+      time: Math.max(span.startSeconds, start),
+      end: Math.min(span.endSeconds, end),
+      key: (previous?.key ?? 0) + 1,
+      autoPlay: true,
+    }));
+  }, []);
+
+  const playRegion = useCallback(
+    (span: SpanView, direction: "previous" | "current" | "next") => {
+      const regions = spanAudioRegions(span);
+      if (regions.length === 0) return;
+      const index = regionIndexAt(regions, currentTimeRef.current);
+      const target =
+        direction === "previous"
+          ? Math.max(0, index - 1)
+          : direction === "next"
+            ? Math.min(regions.length - 1, index + 1)
+            : index;
+      playRange(span, regions[target].start, regions[target].end);
+    },
+    [playRange]
+  );
+
+  /** Replay from three seconds back, or the span's last three once past its end. */
+  const playBack = useCallback(
+    (span: SpanView) => {
+      const back = Math.min(span.endSeconds, Math.max(span.startSeconds, currentTimeRef.current - 3));
+      const start = back < span.endSeconds ? back : Math.max(span.startSeconds, span.endSeconds - 3);
+      playRange(span, start, span.endSeconds);
+    },
+    [playRange]
+  );
+
+  const cycleRate = useCallback(() => {
+    setRate((current) => {
+      const index = PLAYBACK_RATES.indexOf(current as (typeof PLAYBACK_RATES)[number]);
+      return PLAYBACK_RATES[(index + 1) % PLAYBACK_RATES.length];
+    });
   }, []);
 
   const selectSpan = useCallback(
@@ -461,10 +547,48 @@ export function CorrectionSurface({
     [runPrimary]
   );
 
+  // Listening shortcuts use Alt with the physical key, so they work from the
+  // text box and do not type the characters Option produces on a Mac. They
+  // listen on the document, so they work from anywhere on the page, in the
+  // capture phase, so the player's own document listener sees them handled.
+  const handleShortcut = useCallback(
+    (event: KeyboardEvent) => {
+      if (!selected || !event.altKey || event.metaKey || event.ctrlKey) return;
+      const actions: Record<string, () => void> = {
+        KeyP: () => playSpan(selected),
+        KeyR: () => playRegion(selected, "current"),
+        ArrowLeft: () => playRegion(selected, "previous"),
+        ArrowRight: () => playRegion(selected, "next"),
+        KeyB: () => playBack(selected),
+        KeyS: () => cycleRate(),
+      };
+      const action = actions[event.code];
+      if (!action) return;
+      event.preventDefault();
+      action();
+    },
+    [selected, playSpan, playRegion, playBack, cycleRate]
+  );
+  const shortcutRef = useRef(handleShortcut);
+  useEffect(() => {
+    shortcutRef.current = handleShortcut;
+  }, [handleShortcut]);
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcutRef.current(event);
+    document.addEventListener("keydown", listener, true);
+    return () => document.removeEventListener("keydown", listener, true);
+  }, []);
+
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null;
     textareaRef.current?.focus();
   }, [selected?.id]);
+
+  const previousSpan = selected ? spans.find((span) => span.ordinal === selected.ordinal - 1) : undefined;
+  // A span the model wrote nothing for: speech it dropped, or nothing at all.
+  const emptyMachineSpan = Boolean(
+    selected && selected.originalText === "" && (selected.machineWords ?? []).length === 0
+  );
 
   const myDecision = selected
     ? selected.approverIds.includes(userId)
@@ -569,15 +693,10 @@ export function CorrectionSurface({
           seekKey={seekRequest?.key}
           playbackEnd={seekRequest?.end}
           autoPlayOnSeek={seekRequest?.autoPlay ?? false}
-          onTimeUpdate={(time) => {
-            if (playingRef.current) playbackRef.current.observe(time);
-            else playbackRef.current.interrupt();
-          }}
-          onPlayingChange={(playing) => {
-            playingRef.current = playing;
-            if (!playing) playbackRef.current.interrupt();
-          }}
-          onSeek={() => playbackRef.current.interrupt()}
+          playbackRate={rate}
+          onTimeUpdate={handlePlayerTime}
+          onPlayingChange={handlePlayerPlaying}
+          onSeek={handlePlayerSeek}
         />
 
         {selected ? (
@@ -605,6 +724,29 @@ export function CorrectionSurface({
               </Badge>
             </div>
 
+            <CorrectionSpanAudio
+              span={selected}
+              subscribeTime={subscribeTime}
+              rate={rate}
+              onPlayRange={(start, end) => playRange(selected, start, end)}
+              onRegion={(direction) => playRegion(selected, direction)}
+              onBack={() => playBack(selected)}
+              onCycleRate={cycleRate}
+            />
+
+            {previousSpan && previousSpan.text && (
+              <p className="text-sm text-muted-foreground" data-testid="correction-previous-context">
+                <span className="text-xs uppercase">{t("previousContext")}</span>{" "}
+                …{previousSpan.text.slice(-160)}
+              </p>
+            )}
+
+            {emptyMachineSpan && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="correction-empty-span">
+                {t("emptySpan.hint")}
+              </p>
+            )}
+
             {conflict && (
               <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
                 <p>{t("conflict")}</p>
@@ -631,7 +773,9 @@ export function CorrectionSurface({
                   ? draft.trim() === ""
                     ? t("clearApproveAndContinue")
                     : t("saveApproveAndContinue")
-                  : t("approveAndContinue")}
+                  : draft.trim() === ""
+                    ? t("emptySpan.confirm")
+                    : t("approveAndContinue")}
               </Button>
               <Button
                 variant="outline"
@@ -666,6 +810,12 @@ export function CorrectionSurface({
             </div>
 
             <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>
+
+            <CorrectionFlags
+              span={selected}
+              flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
+              onChanged={refresh}
+            />
 
             {selected.isEdited && (
               <div className="rounded-md border bg-muted/40 p-3">

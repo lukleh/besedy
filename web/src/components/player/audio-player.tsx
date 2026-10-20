@@ -87,6 +87,7 @@ export function AudioPlayer({
   seekKey,
   playbackEnd,
   autoPlayOnSeek,
+  playbackRate,
   mediaMetadata,
   markers,
   onBookmark,
@@ -126,6 +127,15 @@ export function AudioPlayer({
   useEffect(() => {
     playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
   }, [playbackEnd]);
+
+  // A new source resets the element's rate, so it is applied again with it.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const rate = playbackRate && playbackRate > 0 ? playbackRate : 1;
+    audio.defaultPlaybackRate = rate;
+    audio.playbackRate = rate;
+  }, [playbackRate, src]);
 
   // Background event log - always collects events even when debug is off.
   // It opens with the initial source's transport; the source-change effect
@@ -482,6 +492,10 @@ export function AudioPlayer({
     }
     lastExternalSeekRef.current = { recording, time: seekTo, key: seekKey };
     dispatchRetry({ type: 'SEEK_REQUESTED', time: seekTo });
+    // Each request re-arms its excerpt end. A finished excerpt clears the end,
+    // and asking for the same excerpt again passes the same prop, which the
+    // effect that tracks it would not see; the replay then ran on unstopped.
+    playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
 
     if (audio.readyState >= 1) {
       // A newer request also supersedes a seek queued before metadata arrived.
@@ -507,7 +521,7 @@ export function AudioPlayer({
         `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
       );
     }
-  }, [src, hash, seekTo, seekKey, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry]);
+  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry]);
 
   useEffect(() => {
     lastTimeRef.current = currentTime;
@@ -651,6 +665,25 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
+    // timeupdate fires only about four times a second, which lets an excerpt
+    // run up to a quarter second past its end. While an end is set and audio
+    // plays, the end is also checked every frame.
+    let endFrame: number | null = null;
+    const watchExcerptEnd = () => {
+      endFrame = null;
+      const end = playbackEndRef.current;
+      if (end === null || audio.paused) return;
+      if (audio.currentTime >= end) {
+        handleTimeUpdate();
+        return;
+      }
+      endFrame = requestAnimationFrame(watchExcerptEnd);
+    };
+    const stopWatchingExcerptEnd = () => {
+      if (endFrame !== null) cancelAnimationFrame(endFrame);
+      endFrame = null;
+    };
+
     const handleTimeUpdate = () => {
       const linkedPlaybackEnd = playbackEndRef.current;
       if (
@@ -670,6 +703,11 @@ export function AudioPlayer({
           `At ${linkedPlaybackEnd.toFixed(1)}s`,
         );
         return;
+      }
+      // An end set while already playing (a new span picked mid-play) gets
+      // no play event, so the frame check starts from here.
+      if (linkedPlaybackEnd !== null && endFrame === null && !audio.paused) {
+        endFrame = requestAnimationFrame(watchExcerptEnd);
       }
       setCurrentTime(audio.currentTime);
       onTimeUpdate?.(audio.currentTime);
@@ -734,6 +772,9 @@ export function AudioPlayer({
         setIsBuffering(true);
       }
       onPlayingChange?.(true);
+      if (playbackEndRef.current !== null && endFrame === null) {
+        endFrame = requestAnimationFrame(watchExcerptEnd);
+      }
       logDebugEvent(
         'play',
         'Playback started',
@@ -742,6 +783,7 @@ export function AudioPlayer({
     };
 
     const handlePause = () => {
+      stopWatchingExcerptEnd();
       setIsPlaying(false);
       setIsBuffering(false); // Clear buffering state when paused
       onPlayingChange?.(false);
@@ -826,6 +868,7 @@ export function AudioPlayer({
     audio.addEventListener('seeking', handleSeeking);
 
     return () => {
+      stopWatchingExcerptEnd();
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('durationchange', handleDurationChange);

@@ -456,7 +456,7 @@
     "guideIsDefault": "This catalog has no guide of its own yet, so the built-in text is shown. Saving makes it the catalog's first revision.",
     "guideSave": "Save guide",
     "guideSaved": "Correction guide saved",
-    "shortcutHint": "Ctrl+Enter or Cmd+Enter does the same as the button.",
+    "shortcutHint": "Ctrl+Enter or Cmd+Enter does the same as the button. Alt+P plays the span, Alt+R repeats a part, Alt+← and Alt+→ go to the previous and next part, Alt+B goes back 3 s, Alt+S changes the speed.",
     "conflict": "Somebody changed this segment while you were working on it. Your text is kept in the editor; the current text is shown here.",
     "stateNotReviewed": "Not reviewed",
     "stateNeedsSecondApproval": "Needs second approval",
@@ -559,6 +559,31 @@
     },
     "consentTitle": "Consent to use your corrections",
     "consentAccept": "I agree",
+    "previousContext": "Before:",
+    "audio": {
+      "playSpan": "Play span",
+      "previousRegion": "Previous part",
+      "repeatRegion": "Repeat part",
+      "nextRegion": "Next part",
+      "back": "Back 3 s",
+      "rate": "Playback speed",
+      "speechWithoutText": "Speech the model wrote nothing for",
+      "speechWithoutTextHint": "{count, plural, one {One part of speech has no text} other {# parts of speech have no text}}: listen and write what was said."
+    },
+    "emptySpan": {
+      "hint": "The model wrote nothing here. If someone speaks, write the text. If not, confirm that nothing was said.",
+      "confirm": "Nothing was said here"
+    },
+    "flags": {
+      "label": "Flags",
+      "language": "Language",
+      "UNCLEAR": "Unclear",
+      "OVERLAP": "Overlapping speakers",
+      "OTHER_LANGUAGE": "Other language",
+      "MUSIC_NOISE": "Music / noise",
+      "CUT_WORD": "Cut word",
+      "EXCLUDE_FROM_TRAINING": "Keep out of training"
+    },
     "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
     "consentRetry": "Try again"
   },

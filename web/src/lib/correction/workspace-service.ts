@@ -27,7 +27,11 @@ import {
 import { identifyStagedAudio } from "@/lib/correction/staged-audio";
 import { fingerprintContent, hashSpanText } from "@/lib/correction/text";
 import type { SpanState } from "@/lib/correction/span-state";
-import { loadSpanSummaries, type SpanSummaryRow } from "@/lib/correction/span-summaries";
+import {
+  loadSpanSummaries,
+  type MachineWordView,
+  type SpanSummaryRow,
+} from "@/lib/correction/span-summaries";
 import {
   findNextSpan,
   loadWorkspaceAggregates,
@@ -75,6 +79,8 @@ export interface SpanView {
   speechRegions: number[][] | null;
   /** Current flags on the span's audio */
   flags: SpanFlag[];
+  /** Machine words with their times, for following the audio */
+  machineWords: MachineWordView[];
 }
 
 export interface CorrectionProgress {
@@ -442,6 +448,7 @@ function toSpanView(span: SpanSummaryRow, commentCount: number, flags: SpanFlag[
     lastEditedAt: revision?.actorKey ? revision.createdAt : null,
     speechRegions: span.speechRegions,
     flags,
+    machineWords: span.machineWords,
   };
 }
 
