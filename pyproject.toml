@@ -87,4 +87,7 @@ min_confidence = 80
 [tool.ty.src]
 include = [
     "besedy",
+    # The GPU-host training project (its own uv project); its imports are
+    # unresolved here, so this checks syntax and local types only.
+    "training",
 ]

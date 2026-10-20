@@ -2,7 +2,7 @@
 set shell := ["bash", "-lc"]
 set positional-arguments := true
 
-python_lint_surface := "besedy tests"
+python_lint_surface := "besedy tests training"
 
 default:
     @just --list
@@ -49,7 +49,7 @@ bump-rlmbenchy:
 
 # Run ty against the full production package.
 ty *args:
-    uv run ty check besedy {{args}}
+    uv run ty check besedy training {{args}}
 
 # Run Ruff lint checks against production code and tests.
 ruff *args:

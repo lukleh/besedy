@@ -53,8 +53,8 @@ copying command tables or test-user matrices into provider-specific files.
 - `just test` (or `uv run --locked --all-extras pytest`): run the full test suite
 - `just bump-rlmbenchy`: move the `rlmbenchy` pin in `uv.lock` to its latest
   default-branch commit and run the jobs tests; commit the lock change through a PR
-- `just ruff`: run Ruff lint checks across `besedy/` and `tests/`
-- `just ty`: run the Python type checker across `besedy/`
+- `just ruff`: run Ruff lint checks across `besedy/`, `tests/` and `training/`
+- `just ty`: run the Python type checker across `besedy/` and `training/`
 - `bash scripts/check_compose_renders.sh`: render every Docker Compose stack
   (web dev/test/prod, jobs, Prefect, RAG, backends) from its example env file;
   CI runs it. New `docker-compose*.yml` files must be added to it.
