@@ -171,7 +171,7 @@ def resolve_audio_artifacts_root() -> Path:
         from besedy.config.settings import config
 
         configured = getattr(config.paths, "audio_artifacts_dir", "")
-    except Exception as exc:
+    except FileNotFoundError as exc:
         raise RuntimeError(message) from exc
 
     if not configured:
@@ -187,7 +187,7 @@ def resolve_joined_audio_root() -> Path:
         from besedy.config.settings import config
 
         subdir = getattr(config.paths, "joined_audio_dir", "joined_audio")
-    except Exception:
+    except FileNotFoundError:
         subdir = "joined_audio"
 
     candidate = Path(subdir).expanduser()
@@ -200,7 +200,7 @@ def resolve_original_audio_root() -> Path | None:
         from besedy.config.settings import config
 
         subdir = getattr(config.paths, "original_audio_dir", "")
-    except Exception:
+    except FileNotFoundError:
         subdir = ""
 
     if not subdir:
@@ -225,7 +225,7 @@ def resolve_uploads_root() -> Path:
         from besedy.config.settings import config
 
         configured = getattr(config.paths, "uploads_dir", "")
-    except Exception as exc:
+    except FileNotFoundError as exc:
         raise RuntimeError(message) from exc
 
     if not configured:
@@ -246,7 +246,7 @@ def resolve_text_data_root() -> Path:
         from besedy.config.settings import config
 
         configured = getattr(config.paths, "text_data_dir", "")
-    except Exception as exc:
+    except FileNotFoundError as exc:
         raise RuntimeError(
             "Text data root is required. Set [paths].text_data_dir in besedy.toml "
             "or BESEDY_TEXT_DATA_ROOT in the environment."
@@ -290,7 +290,7 @@ def resolve_corrections_root(root: Path | str | None = None) -> Path:
         from besedy.config.settings import config
 
         configured = getattr(config.paths, "corrections_dir", "") or ""
-    except Exception:
+    except FileNotFoundError:
         configured = ""
 
     if configured:

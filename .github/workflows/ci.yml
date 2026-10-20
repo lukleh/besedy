@@ -273,6 +273,10 @@ jobs:
         run: npm run test:correction-smoke
         env:
           DATABASE_URL: postgresql://besedy_app:app@localhost:5432/besedy_correction_ci
+      - name: Catalog sync concurrency check as besedy_app
+        run: npm run test:catalog-sync-smoke
+        env:
+          DATABASE_URL: postgresql://besedy_app:app@localhost:5432/besedy_correction_ci
 
   secrets:
     name: Secret scan

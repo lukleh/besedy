@@ -40,6 +40,11 @@ unchanged; `v4` added the AAC copy columns (#291).
 | Changed metadata or archived CSV | Rebuild `catalog_entry`                                  |
 | Changed duplicates CSV           | Rebuild `catalog_duplicate`, recompute `duplicate_count` |
 
+Refreshing `catalog_entry` updates CSV-owned fields in place and removes only
+recordings absent from both base sources. Existing publication flags and creation
+timestamps are preserved, including publication changes committed during sync;
+new recordings start unpublished.
+
 Sync triggers:
 
 - Startup reconciliation (web runtime, runs in the background after bootstrap)
