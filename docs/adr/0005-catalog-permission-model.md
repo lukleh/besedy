@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-15
-- **Revised:** 2026-09-22
+- **Revised:** 2026-10-20
 - **Canonical references:** [Web security](../web/security.md#access-control), [MCP server](../web/mcp-server.md#access-matrix)
 
 ## Context
@@ -342,7 +342,7 @@ than taken, which is what makes the role name worth reading.
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `manage_access`         | Granting and revoking access, including pending grants for accounts that have never signed in.                 |
 | `manage_lookups`        | Recorder, location and album rows for this catalog, as established by [ADR 0007](0007-per-catalog-lookups.md). |
-| `manage_catalog_config` | Catalog paths, sync, default and active flags, and the correction guide. `catalogAdmin` only.                  |
+| `manage_catalog_config` | The catalog label and the correction guide. `catalogAdmin` only. Paths, flags and sync are system-level.       |
 
 ### File delivery
 
@@ -381,11 +381,22 @@ transcripts for recordings outside correction scope.
 ### Outside the catalog scope
 
 The admin panel, user management, audit log, MCP usage telemetry, transcript
-backend order and catalog sync remain system-level rights of `admin` and
-`superadmin`. Here "MCP usage" means the administrative telemetry page, not
-permission to connect an MCP client; client access follows active portal status,
-and catalog-scoped calls follow live grants. No catalog permission reaches the
-administrative surfaces.
+backend order, catalog sync, and a catalog's paths and default and active flags
+remain system-level rights of `admin` and `superadmin`. Here "MCP usage" means
+the administrative telemetry page, not permission to connect an MCP client;
+client access follows active portal status, and catalog-scoped calls follow live
+grants. No catalog permission reaches the administrative surfaces.
+
+Catalog paths and flags were first listed under `manage_catalog_config` and
+were moved here on 2026-10-20. A path decides which CSV files and transcript
+tree a catalog imports and therefore which audio it serves, and nothing ties a
+path to its own catalog, so a `catalogAdmin` who could set one could point their
+catalog at another catalog's files and read everything in it. The default flag
+changes which catalog every new account lands in, and the active flag would let
+a `catalogAdmin` reopen a catalog an administrator had closed. All three reach
+beyond the one catalog the grant covers, so they need the same authority as
+creating a catalog. A `catalogAdmin` still changes the label from the settings
+page, and may still deactivate their own catalog.
 
 ## Roles
 

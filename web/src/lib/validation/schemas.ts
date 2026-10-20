@@ -350,14 +350,23 @@ export const AddUserSchema = z
 // =============================================================================
 
 /**
- * Catalog update
+ * Catalog settings update (PUT /api/catalogs/:id)
+ *
+ * The settings form sends the whole draft, with `null` for an emptied label or
+ * optional path. The route compares each field with the stored row, so an
+ * unchanged path in the body is not treated as a change.
  */
-export const UpdateCatalogSchema = z.object({
-  label: z.string().max(100).optional(),
-  description: z.string().max(1000).optional(),
-  isActive: z.boolean().optional(),
-  transcriptsPath: z.string().max(500).optional(),
-});
+export const UpdateCatalogSchema = z
+  .object({
+    label: z.string().max(100).nullable().optional(),
+    archivedCatalogPath: z.string().min(1).max(500).optional(),
+    metadataCatalogPath: z.string().min(1).max(500).optional(),
+    duplicatesCatalogPath: z.string().max(500).nullable().optional(),
+    transcriptsPath: z.string().max(500).nullable().optional(),
+    isDefault: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict();
 
 /**
  * Create catalog from discovered group

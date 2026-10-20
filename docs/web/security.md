@@ -228,11 +228,19 @@ wildcard; system admins resolve the same way.
 | Edit metadata, lookups, events, and publication |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Use deep search                                 |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Manage catalog access                           |    -     |   -    |     -     |  Y   |    -    |       Y       |
-| Manage catalog configuration                    |    -     |   -    |     -     |  -   |    -    |       Y       |
+| Manage catalog configuration (label)            |    -     |   -    |     -     |  -   |    -    |       Y       |
 | See transcript variants and speaker overlay     |    -     |   -    |     -     |  -   |    -    |       Y       |
 | Download playable audio and transcripts         |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Download original audio                         |    -     |   -    |     -     |  -   |    -    |       Y       |
 | Bulk transcript export                          |    -     |   -    |     -     |  -   |    Y    |       Y       |
+
+Catalog paths and the default and active flags are not part of catalog
+configuration: `PUT /api/catalogs/:id` refuses a change to any of them, with an
+`ACCESS_DENIED` audit entry, unless the caller is a system admin, the same
+authority `POST /api/catalogs` requires. A path decides which files a catalog
+imports and serves, so a catalog grant that could set one could read another
+catalog. The settings form disables those fields for catalog administrators.
+See [ADR 0005](../adr/0005-catalog-permission-model.md#outside-the-catalog-scope).
 
 Catalog administrators may assign the curated extras `browse_recordings`,
 `use_deep_search`, `download_audio`, `download_original_audio`,

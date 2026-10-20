@@ -14,6 +14,7 @@ import type {
 } from "./catalog-settings-content-types";
 
 interface CatalogSettingsConfigCardProps {
+  canEditPathsAndFlags: boolean;
   catalogConfig?: CatalogConfig;
   configDraft: CatalogConfigDraft | null;
   configError: Error | null;
@@ -29,6 +30,7 @@ interface CatalogSettingsConfigCardProps {
 }
 
 export function CatalogSettingsConfigCard({
+  canEditPathsAndFlags,
   catalogConfig,
   configDraft,
   configError,
@@ -44,6 +46,8 @@ export function CatalogSettingsConfigCard({
 }: CatalogSettingsConfigCardProps) {
   const t = useTranslations("catalogSettings");
   const tCommon = useTranslations("common");
+
+  const pathsAndFlagsDisabled = !isEditing || !canEditPathsAndFlags;
 
   const updateDraft = (
     updater: (draft: CatalogConfigDraft) => CatalogConfigDraft
@@ -136,7 +140,7 @@ export function CatalogSettingsConfigCard({
                       archivedCatalogPath: event.target.value,
                     }))
                   }
-                  disabled={!isEditing}
+                  disabled={pathsAndFlagsDisabled}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -150,7 +154,7 @@ export function CatalogSettingsConfigCard({
                       metadataCatalogPath: event.target.value,
                     }))
                   }
-                  disabled={!isEditing}
+                  disabled={pathsAndFlagsDisabled}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -164,7 +168,7 @@ export function CatalogSettingsConfigCard({
                       duplicatesCatalogPath: event.target.value,
                     }))
                   }
-                  disabled={!isEditing}
+                  disabled={pathsAndFlagsDisabled}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -178,7 +182,7 @@ export function CatalogSettingsConfigCard({
                       transcriptsPath: event.target.value,
                     }))
                   }
-                  disabled={!isEditing}
+                  disabled={pathsAndFlagsDisabled}
                 />
               </div>
             </div>
@@ -191,7 +195,7 @@ export function CatalogSettingsConfigCard({
                   onCheckedChange={(value) =>
                     updateDraft((draft) => ({ ...draft, isActive: value }))
                   }
-                  disabled={!isEditing}
+                  disabled={pathsAndFlagsDisabled}
                 />
                 <Label htmlFor="config-active">{t("configuration.active")}</Label>
               </div>
@@ -202,11 +206,16 @@ export function CatalogSettingsConfigCard({
                   onCheckedChange={(value) =>
                     updateDraft((draft) => ({ ...draft, isDefault: value }))
                   }
-                  disabled={!isEditing}
+                  disabled={pathsAndFlagsDisabled}
                 />
                 <Label htmlFor="config-default">{t("configuration.defaultCatalog")}</Label>
               </div>
             </div>
+            {!canEditPathsAndFlags && (
+              <p className="text-sm text-muted-foreground">
+                {t("configuration.pathsAndFlagsAdminOnly")}
+              </p>
+            )}
           </div>
         )}
       </CardContent>

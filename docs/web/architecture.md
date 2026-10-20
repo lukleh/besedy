@@ -206,7 +206,7 @@ A span's state is derived in one SQL query, `spanStatesSql` in `web/src/lib/corr
 |--------|----------|--------|-------------|
 | GET | `/api/catalogs` | Auth | List accessible catalogs |
 | POST | `/api/catalogs` | Admin | Create catalog |
-| GET/PUT/DELETE | `/api/catalogs/:id` | Admin | Manage catalog |
+| GET/PUT/DELETE | `/api/catalogs/:id` | `manage_catalog_config`; changing paths or the default and active flags needs system admin | Manage catalog |
 | GET | `/api/catalogs/discover` | Admin | Discover catalogs on disk |
 | GET/POST | `/api/catalogs/:id/access` | `manage_access` | List/grant access |
 | PUT/DELETE | `/api/catalogs/:id/access/:userId` | `manage_access` | Update/revoke access |
