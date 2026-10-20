@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/recording-urls";
 import { AudioPlayer } from "@/components/player/audio-player";
 import { formatClock } from "@/lib/correction/format";
+import { PlaybackTracker, speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
 import { CorrectionStrip } from "./correction-strip";
 import {
   nextSpanSchema,
@@ -77,7 +78,11 @@ interface SpanCommandInput {
   text?: string;
   /** Minted when the person acts, so a retried request replays rather than repeats */
   idempotencyKey: string;
+  /** What the person heard of the span, measured when they acted (ADR 0012) */
+  playback?: PlaybackReport;
 }
+
+type PlaybackReport = ReturnType<PlaybackTracker["report"]>;
 
 function stateVariant(state: SpanState): "default" | "secondary" | "destructive" | "outline" {
   switch (state) {
@@ -124,6 +129,11 @@ export function CorrectionSurface({
   // beside the editor.
   const [conflict, setConflict] = useState(false);
   const [commentBody, setCommentBody] = useState("");
+  // What this person has played on this page, for the playback each approve
+  // or disapprove reports (ADR 0012). Only continuous playing counts.
+  const playbackRef = useRef(new PlaybackTracker());
+  const playingRef = useRef(false);
+
   const [seekRequest, setSeekRequest] = useState<{
     spanId: string;
     time: number;
@@ -239,6 +249,7 @@ export function CorrectionSurface({
   });
 
   const playSpan = useCallback((span: SpanView) => {
+    playbackRef.current.interrupt();
     setSeekRequest((previous) => ({
       spanId: span.id,
       time: span.startSeconds,
@@ -329,6 +340,7 @@ export function CorrectionSurface({
           expectedRevisionId: input.span.revisionId,
           text: input.text,
           idempotencyKey: input.idempotencyKey,
+          playback: input.playback,
         }),
         schema: spanCommandResultSchema,
       }),
@@ -382,7 +394,11 @@ export function CorrectionSurface({
           ? pending.key
           : crypto.randomUUID();
       pendingCommandRef.current = { spanId: span.id, revisionId: span.revisionId, action, text, key };
-      command.mutate({ span, action, text, idempotencyKey: key });
+      // Approvals and disapprovals report what was heard of this span; the
+      // measurement is never a condition for deciding.
+      const playback =
+        action === "withdraw" ? undefined : playbackRef.current.report(speechRegionsInSeconds(span));
+      command.mutate({ span, action, text, idempotencyKey: key, playback });
     },
     [command]
   );
@@ -553,6 +569,15 @@ export function CorrectionSurface({
           seekKey={seekRequest?.key}
           playbackEnd={seekRequest?.end}
           autoPlayOnSeek={seekRequest?.autoPlay ?? false}
+          onTimeUpdate={(time) => {
+            if (playingRef.current) playbackRef.current.observe(time);
+            else playbackRef.current.interrupt();
+          }}
+          onPlayingChange={(playing) => {
+            playingRef.current = playing;
+            if (!playing) playbackRef.current.interrupt();
+          }}
+          onSeek={() => playbackRef.current.interrupt()}
         />
 
         {selected ? (

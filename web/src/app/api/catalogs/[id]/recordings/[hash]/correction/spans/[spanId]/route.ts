@@ -24,21 +24,35 @@ interface RouteParams {
   params: Promise<{ id: string; hash: string; spanId: string }>;
 }
 
+/** What the person heard of the span before deciding (ADR 0012). */
+const PlaybackSchema = z
+  .object({
+    heardFraction: z.number().min(0).max(1),
+    minPlaybackRate: z.number().positive().max(4),
+    maxPlaybackRate: z.number().positive().max(4),
+  })
+  .strict()
+  .refine((playback) => playback.minPlaybackRate <= playback.maxPlaybackRate, {
+    message: "minPlaybackRate must not exceed maxPlaybackRate",
+  });
+
 /**
  * Every command names the revision the person had in front of them, and may
  * carry an idempotency key so a double-click or a retried request cannot
- * record the same decision twice.
+ * record the same decision twice. Approvals and disapprovals report playback.
  */
 const CommandSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("approve"),
     expectedRevisionId: z.string().uuid(),
     idempotencyKey: z.string().min(1).max(64).nullish(),
+    playback: PlaybackSchema.nullish(),
   }),
   z.object({
     action: z.literal("disapprove"),
     expectedRevisionId: z.string().uuid(),
     idempotencyKey: z.string().min(1).max(64).nullish(),
+    playback: PlaybackSchema.nullish(),
   }),
   z.object({
     action: z.literal("withdraw"),
@@ -50,6 +64,7 @@ const CommandSchema = z.discriminatedUnion("action", [
     expectedRevisionId: z.string().uuid(),
     text: z.string().max(20_000),
     idempotencyKey: z.string().min(1).max(64).nullish(),
+    playback: PlaybackSchema.nullish(),
   }),
 ]);
 
@@ -90,6 +105,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       userId,
       expectedRevisionId: command.expectedRevisionId,
       idempotencyKey: command.idempotencyKey ?? null,
+      playback: "playback" in command ? (command.playback ?? null) : null,
     };
 
     const result =
