@@ -4,6 +4,7 @@
 - **Accepted:** 2026-10-03, once the schema, domain API, publication and index-sync job, and the reading-surface gate were merged (#206-#208, #253, #255)
 - **Date:** 2026-09-15
 - **Revised:** 2026-09-22
+- **Amended by:** [ADR 0012](0012-correction-data-contract.md) (proposed)
 - **Canonical references:** [Data model](../data-model.md), [RAG system](../rag-system.md), [ADR 0002](0002-artifact-generations.md), [ADR 0003](0003-web-catalog-projection.md), [ADR 0004](0004-system-boundaries.md), [ADR 0005](0005-catalog-permission-model.md)
 
 ## Context
@@ -597,6 +598,10 @@ read it; only a catalog administrator may edit it, using the existing
 does not invalidate decisions. Each publication records the active guide
 revision for audit.
 
+ADR 0012 (proposed) amends the filler and unclear-speech rules below: fillers
+are written as heard with a fixed set of spellings, and unclear speech is
+flagged `unclear` instead of disapproved.
+
 The initial convention is a faithful, readable transcript:
 
 - correct misheard words, names, numbers, capitalization and punctuation;
@@ -695,8 +700,11 @@ that gate.
 - Correctors see who edited, approved, disapproved, withdrew and commented.
 - Optimistic revision checks prevent lost updates; v1 has no leases.
 - Empty text is the outcome for machine output with no speech behind it;
-  unclear speech is disapproved. There is no unintelligible marker.
+  unclear speech is disapproved. There is no unintelligible marker. ADR 0012
+  (proposed) amends this: unclear speech is flagged, not disapproved.
 - Span boundaries stay fixed; v1 has no split, merge or word-timing repair.
+  ADR 0012 (proposed) amends where the boundaries come from: runs of VAD
+  regions inside one decoded chunk, not source segments.
 - Correctors cannot publish. Curators and catalog administrators can.
 - A publication is an immutable snapshot while the workspace stays live.
 - Reader and search publication pointers are separate; ordinary unpublish clears
