@@ -34,6 +34,11 @@ os.environ["PREFECT_HOME"] = str(_PREFECT_HOME)
 os.environ["PREFECT_PROFILES_PATH"] = str(_PREFECT_HOME / "profiles.toml")
 atexit.register(shutil.rmtree, _PREFECT_HOME, ignore_errors=True)
 
+# Most tests hash generated audio or stub ffmpeg, so skip the check that the
+# host's ffmpeg reproduces the pinned fixture hashes before hashing. The
+# fixture and guard tests in test_audio_content_hash.py run it explicitly.
+os.environ["BESEDY_SKIP_HASH_DECODER_CHECK"] = "1"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _hermetic_data_roots(tmp_path_factory: pytest.TempPathFactory) -> None:

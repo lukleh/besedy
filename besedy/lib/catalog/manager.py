@@ -17,6 +17,7 @@ from pathlib import Path
 
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS
 from besedy.lib.audio.types import format_size
+from besedy.lib.catalog.hash_decoder_check import require_reproducible_hash_decoder
 from besedy.lib.data.atomic_io import atomic_path, atomic_write_text, rewrite_lock
 from besedy.lib.subprocess_utils import check_binary
 
@@ -213,7 +214,28 @@ def audio_content_sha256sum(
 
     Returns:
         64-character lowercase hex string, or None if decoding fails.
+
+    Raises:
+        HashDecoderMismatchError: ``ffmpeg_binary`` does not reproduce the
+            pinned fixture hashes (checked once per binary and process).
     """
+    require_reproducible_hash_decoder(
+        ffmpeg_binary,
+        lambda fixture, binary: _decoded_pcm_sha256(fixture, ffmpeg_binary=binary),
+    )
+    return _decoded_pcm_sha256(
+        path, ffmpeg_binary=ffmpeg_binary, timeout=timeout, chunk_size=chunk_size
+    )
+
+
+def _decoded_pcm_sha256(
+    path: Path,
+    *,
+    ffmpeg_binary: str,
+    timeout: int | None = None,
+    chunk_size: int = 1_048_576,
+) -> str | None:
+    """`audio_content_sha256sum` without the decoder check."""
     cmd = [
         ffmpeg_binary,
         "-nostdin",
