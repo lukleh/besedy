@@ -38,6 +38,15 @@ describe("playback tracker", () => {
     expect(tracker.report([[0, 10]]).heardFraction).toBeCloseTo(0.5);
   });
 
+  it("keeps one stretch for continuous play at one rate", () => {
+    const tracker = new PlaybackTracker();
+    for (let t = 0; t <= 600; t += 0.25) tracker.observe(t);
+    expect((tracker as unknown as { steps: unknown[] }).steps).toHaveLength(1);
+    tracker.observe(600.25, 0.8);
+    expect((tracker as unknown as { steps: unknown[] }).steps).toHaveLength(2);
+    expect(tracker.report([[0, 600]]).heardFraction).toBe(1);
+  });
+
   it("starts a new stretch after an interruption", () => {
     const tracker = new PlaybackTracker();
     tracker.observe(0);
