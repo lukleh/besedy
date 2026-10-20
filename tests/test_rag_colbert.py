@@ -1538,7 +1538,7 @@ def test_run_colbert_worker_uses_docker_indexer_run_for_external_build_index(
         volume_index = cmd.index("-v")
         assert (
             cmd[volume_index + 1]
-            == "/tmp/external-colbert-bundle:/workspace/colbert-indexer-bundle:rw"
+            == f"{Path('/tmp/external-colbert-bundle').resolve()}:/workspace/colbert-indexer-bundle:rw"
         )
         payload = json.loads(input or "{}")
         assert payload["manifest_path"] == "/workspace/colbert-indexer-bundle/chunk_manifest.jsonl"
@@ -1800,7 +1800,7 @@ def test_run_colbert_worker_uses_docker_one_shot_for_external_query_bundle(
         volume_index = cmd.index("-v")
         assert (
             cmd[volume_index + 1]
-            == "/tmp/external-colbert-bundle:/workspace/colbert-indexer-bundle:rw"
+            == f"{Path('/tmp/external-colbert-bundle').resolve()}:/workspace/colbert-indexer-bundle:rw"
         )
         payload = json.loads(input or "{}")
         assert payload["colbert_index_dir"] == "/workspace/colbert-indexer-bundle/colbert_index"

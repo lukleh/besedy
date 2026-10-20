@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.linux_host_tools import requires_linux_host_tools
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HOOK = REPO_ROOT / "web/scripts/db-snapshot-hook.sh"
 
@@ -19,6 +21,10 @@ HOOK = REPO_ROOT / "web/scripts/db-snapshot-hook.sh"
 def executable(path: Path, body: str) -> None:
     path.write_text("#!/usr/bin/env bash\nset -eu\n" + body, encoding="utf-8")
     path.chmod(0o700)
+
+
+# The backup scripts run on the Linux prod host only.
+linux_host = requires_linux_host_tools("flock", "date -d", "stat -c", "realpath -e")
 
 
 @pytest.fixture
@@ -103,6 +109,7 @@ def prepare_snapshot(env: dict[str, str]) -> Path:
     return backup
 
 
+@linux_host
 def test_dump_snapshot_readback_and_health_check(backup_env: dict[str, str]) -> None:
     backup = prepare_snapshot(backup_env)
     result = run_hook(backup_env, "after")
@@ -113,6 +120,7 @@ def test_dump_snapshot_readback_and_health_check(backup_env: dict[str, str]) -> 
     assert not list(Path(backup_env["TMPDIR"]).glob("besedy-db-nas-check.*"))
 
 
+@linux_host
 @pytest.mark.parametrize("mode", ["missing", "corrupt", "changed"])
 def test_bad_nas_copy_never_marks_verified(backup_env: dict[str, str], mode: str) -> None:
     backup = prepare_snapshot(backup_env)
@@ -122,11 +130,13 @@ def test_bad_nas_copy_never_marks_verified(backup_env: dict[str, str], mode: str
     assert not list(Path(backup_env["TMPDIR"]).glob("besedy-db-nas-check.*"))
 
 
+@linux_host
 def test_missing_snapshot_cannot_claim_success(backup_env: dict[str, str]) -> None:
     assert run_hook(backup_env, "before").returncode == 0
     assert run_hook(backup_env, "after").returncode != 0
 
 
+@linux_host
 def test_failed_dump_invalidates_previous_pending_receipt(backup_env: dict[str, str]) -> None:
     backup = prepare_snapshot(backup_env)
     backup_env["FAKE_DUMP_FAIL"] = "1"
@@ -135,6 +145,7 @@ def test_failed_dump_invalidates_previous_pending_receipt(backup_env: dict[str, 
     assert run_hook(backup_env, "after").returncode != 0
 
 
+@linux_host
 def test_overdue_receipt_fails_at_24_hours(backup_env: dict[str, str]) -> None:
     backup = prepare_snapshot(backup_env)
     assert run_hook(backup_env, "after").returncode == 0
@@ -147,6 +158,7 @@ def test_overdue_receipt_fails_at_24_hours(backup_env: dict[str, str]) -> None:
     assert "overdue" in result.stderr
 
 
+@linux_host
 def test_missing_receipt_and_changed_target_fail(backup_env: dict[str, str]) -> None:
     assert run_hook(backup_env, "check").returncode != 0
     prepare_snapshot(backup_env)
@@ -156,6 +168,7 @@ def test_missing_receipt_and_changed_target_fail(backup_env: dict[str, str]) -> 
     assert run_hook(backup_env, "check").returncode != 0
 
 
+@linux_host
 @pytest.mark.parametrize("failed_phase", ["before", "after", "none"])
 @pytest.mark.parametrize("via_config", [False, True])
 @pytest.mark.parametrize("interval", ["daily", "weekly", "monthly", "yearly"])
