@@ -224,16 +224,19 @@ Additional constraints:
 
 ### Transcript Correction Tables
 
-Human transcript correction ([ADR 0006](../adr/0006-transcript-correction.md))
+Human transcript correction ([ADR 0006](../adr/0006-transcript-correction.md),
+with the data contract of [ADR 0012](../adr/0012-correction-data-contract.md))
 keeps current projections and immutable history side by side. PostgreSQL is
 authoritative for work in progress; the rendered artifacts are immutable files.
 
 | Table                         | Purpose                                                            |
 | ----------------------------- | ------------------------------------------------------------------ |
-| `transcript_workspace`        | One correction over a frozen machine source, plus its two pointers |
-| `transcript_span`             | One source segment, with fixed boundaries and a current revision   |
-| `transcript_span_revision`    | Immutable normalized text, chained to its predecessor              |
-| `transcript_span_decision`    | Immutable approve / disapprove / withdraw by one person            |
+| `transcript_workspace`        | One correction over a frozen machine source, plus its two pointers, its segmentation and its staged audio |
+| `transcript_span`             | A run of VAD regions inside one decoded chunk, with fixed boundaries, its machine words and a current revision |
+| `transcript_span_revision`    | Immutable normalized text, chained to its predecessor, with its origin and guide revision |
+| `transcript_span_decision`    | Immutable approve / disapprove / withdraw by one person, with how much of the span they heard |
+| `transcript_span_flag_event`  | Immutable set / clear of one flag on a span's audio                 |
+| `transcript_contributor_consent` | A person's acceptance of the contributor terms, with the text they saw |
 | `transcript_span_comment`     | Optional discussion, recording the revision its author saw         |
 | `transcript_publication`      | One immutable snapshot, the job that activates it, and what search reported |
 | `transcript_publication_span` | The exact revision used for every span in a publication            |
@@ -254,6 +257,38 @@ they have to hold against concurrent requests:
   idempotency_key)`, keyed on the immutable actor rather than the nullable
   account reference, so a double-click or a retried request cannot record the
   same decision twice even after the account is deleted.
+
+ADR 0012 adds checks that keep the correction data complete: a workspace's
+segmentation and staged-audio columns, and a span's chunk and region columns,
+are set together (or not at all on a workspace started before the contract);
+only a `SUGGESTION` revision names a backend; a decision's playback (heard
+share of the span and both playback rates) is recorded whole or not at all.
+Foreign keys among the correction tables, and from catalogs to them, are
+`RESTRICT`, so deleting a catalog or a workspace cannot delete correction work.
+
+Starting a workspace requires the starter's contributor consent and a saved
+catalog guide revision, cuts spans with `contracts/correction-segmentation.json`'s
+rules, fingerprints the staged audio named by the source's
+`meta.audio_filepath`, and writes `workspace.json` next to the frozen source.
+That manifest (status, segmentation version and staged-audio identity) is what
+the Python side will read to keep the staged audio of a live workspace
+unchanged; that guard in `catalog clean` and re-staging lands in a follow-up
+PR (#411). The manifest is written with `status: "starting"` before the
+database rows and rewritten as `"active"` once they are committed; the guard
+protects the audio of both. A start that crashes before its commit leaves an
+orphan manifest, which the nightly integrity check reports for removal by hand.
+One that crashes after its commit is finished the next time the workspace is
+locked: `lockWorkspace` rewrites a `starting` manifest of a live workspace as
+`active`.
+
+Fingerprinting the staged audio reads the file through the container's path
+rules, so the host staged-audio tree
+(`<audio artifacts root>/audio_staged_<timestamp>/`) must lie inside the
+directory mounted as `AUDIO_DIR` and its host prefix must be covered by
+`BESEDY_PATH_MAPPINGS`. Otherwise starting a workspace fails with
+`STAGED_AUDIO_MISSING`. The staged WAV's own duration is also compared with the
+source's `meta.duration`; a difference above 50 ms fails with
+`STAGED_AUDIO_MISMATCH`.
 
 Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status

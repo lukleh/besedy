@@ -109,68 +109,72 @@ model User {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  accounts                     Account[]
-  sessions                     Session[]
-  oauthClients                 OauthClient[]
-  oauthRefreshTokens           OauthRefreshToken[]
-  oauthAccessTokens            OauthAccessToken[]
-  oauthConsents                OauthConsent[]
-  invitedBy                    User?                            @relation("UserInvitations", fields: [invitedById], references: [id])
-  invitedUsers                 User[]                           @relation("UserInvitations")
-  catalogAccess                CatalogAccess[]
-  accessGranted                CatalogAccess[]                  @relation("AccessGrantedBy")
-  accessRevoked                CatalogAccess[]                  @relation("AccessRevokedBy")
-  auditLogs                    AuditLog[]
-  mcpToolInvocations           McpToolInvocation[]
-  clientErrorReports           ClientErrorReport[]
-  webUpdateEvents              WebUpdateEvent[]
+  accounts                      Account[]
+  sessions                      Session[]
+  oauthClients                  OauthClient[]
+  oauthRefreshTokens            OauthRefreshToken[]
+  oauthAccessTokens             OauthAccessToken[]
+  oauthConsents                 OauthConsent[]
+  invitedBy                     User?                            @relation("UserInvitations", fields: [invitedById], references: [id])
+  invitedUsers                  User[]                           @relation("UserInvitations")
+  catalogAccess                 CatalogAccess[]
+  accessGranted                 CatalogAccess[]                  @relation("AccessGrantedBy")
+  accessRevoked                 CatalogAccess[]                  @relation("AccessRevokedBy")
+  auditLogs                     AuditLog[]
+  mcpToolInvocations            McpToolInvocation[]
+  clientErrorReports            ClientErrorReport[]
+  webUpdateEvents               WebUpdateEvent[]
   /// Portal admissions this user created or explicitly reviewed
-  portalAdmissionsAdmitted     PortalAdmission[]                @relation("PortalAdmissionAdmittedBy")
-  portalAdmissionsClaimed      PortalAdmission[]                @relation("PortalAdmissionClaimedBy")
-  portalAdmissionsRevoked      PortalAdmission[]                @relation("PortalAdmissionRevokedBy")
+  portalAdmissionsAdmitted      PortalAdmission[]                @relation("PortalAdmissionAdmittedBy")
+  portalAdmissionsClaimed       PortalAdmission[]                @relation("PortalAdmissionClaimedBy")
+  portalAdmissionsRevoked       PortalAdmission[]                @relation("PortalAdmissionRevokedBy")
   /// Pending catalog grants this user created or lifecycle-touched
-  pendingCatalogGrantsGranted  PendingCatalogGrant[]            @relation("PendingCatalogGrantGrantedBy")
-  pendingCatalogGrantsConsumed PendingCatalogGrant[]            @relation("PendingCatalogGrantConsumedBy")
-  pendingCatalogGrantsRevoked  PendingCatalogGrant[]            @relation("PendingCatalogGrantRevokedBy")
+  pendingCatalogGrantsGranted   PendingCatalogGrant[]            @relation("PendingCatalogGrantGrantedBy")
+  pendingCatalogGrantsConsumed  PendingCatalogGrant[]            @relation("PendingCatalogGrantConsumedBy")
+  pendingCatalogGrantsRevoked   PendingCatalogGrant[]            @relation("PendingCatalogGrantRevokedBy")
   /// Push notification subscriptions for this user's browsers
-  pushSubscriptions            PushSubscription[]
+  pushSubscriptions             PushSubscription[]
   /// Recording notifications for this user
-  recordingNotifications       RecordingNotification[]
+  recordingNotifications        RecordingNotification[]
   /// Event publish notifications for this user
-  eventNotifications           EventNotification[]
+  eventNotifications            EventNotification[]
   /// Events created by this user
-  catalogEventsCreated         CatalogEvent[]                   @relation("CatalogEventCreatedBy")
+  catalogEventsCreated          CatalogEvent[]                   @relation("CatalogEventCreatedBy")
   /// Events last updated by this user
-  catalogEventsUpdated         CatalogEvent[]                   @relation("CatalogEventUpdatedBy")
+  catalogEventsUpdated          CatalogEvent[]                   @relation("CatalogEventUpdatedBy")
   /// Event artwork candidates created by this user
-  catalogEventArtworkCreated   CatalogEventArtwork[]            @relation("CatalogEventArtworkCreatedBy")
+  catalogEventArtworkCreated    CatalogEventArtwork[]            @relation("CatalogEventArtworkCreatedBy")
   /// Event artwork publications performed by this user
-  eventArtworkPublications     CatalogEventArtworkPublication[] @relation("CatalogEventArtworkPublishedBy")
+  eventArtworkPublications      CatalogEventArtworkPublication[] @relation("CatalogEventArtworkPublishedBy")
   /// Deep-search jobs owned by this user and shared with others
-  deepSearchSharesOwned        DeepSearchJobShare[]             @relation("DeepSearchJobShareOwner")
+  deepSearchSharesOwned         DeepSearchJobShare[]             @relation("DeepSearchJobShareOwner")
   /// Deep-search jobs shared with this user
-  deepSearchSharesReceived     DeepSearchJobShare[]             @relation("DeepSearchJobShareRecipient")
+  deepSearchSharesReceived      DeepSearchJobShare[]             @relation("DeepSearchJobShareRecipient")
   /// Deep-search shares created by this user
-  deepSearchSharesCreated      DeepSearchJobShare[]             @relation("DeepSearchJobShareCreator")
+  deepSearchSharesCreated       DeepSearchJobShare[]             @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
-  recordingPlaybackProgress    RecordingPlaybackProgress[]
+  recordingPlaybackProgress     RecordingPlaybackProgress[]
   /// Timestamps this user bookmarked in recordings
-  recordingBookmarks           RecordingBookmark[]
+  recordingBookmarks            RecordingBookmark[]
   /// Recording uploads this user submitted for ingest
-  recordingIntakes             RecordingIntake[]                @relation("RecordingIntakeRequestedBy")
+  recordingIntakes              RecordingIntake[]                @relation("RecordingIntakeRequestedBy")
   /// Correction workspaces this user started or archived
-  transcriptWorkspacesStarted  TranscriptWorkspace[]            @relation("TranscriptWorkspaceStartedBy")
-  transcriptWorkspacesArchived TranscriptWorkspace[]            @relation("TranscriptWorkspaceArchivedBy")
+  transcriptWorkspacesStarted   TranscriptWorkspace[]            @relation("TranscriptWorkspaceStartedBy")
+  transcriptWorkspacesArchived  TranscriptWorkspace[]            @relation("TranscriptWorkspaceArchivedBy")
   /// Span text revisions written by this user
-  transcriptSpanRevisions      TranscriptSpanRevision[]         @relation("TranscriptSpanRevisionAuthor")
+  transcriptSpanRevisions       TranscriptSpanRevision[]         @relation("TranscriptSpanRevisionAuthor")
   /// Approvals, disapprovals and withdrawals by this user
-  transcriptSpanDecisions      TranscriptSpanDecision[]         @relation("TranscriptSpanDecisionUser")
+  transcriptSpanDecisions       TranscriptSpanDecision[]         @relation("TranscriptSpanDecisionUser")
   /// Span comments written by this user
-  transcriptSpanComments       TranscriptSpanComment[]          @relation("TranscriptSpanCommentAuthor")
+  transcriptSpanComments        TranscriptSpanComment[]          @relation("TranscriptSpanCommentAuthor")
   /// Transcript publications performed by this user
-  transcriptPublications       TranscriptPublication[]          @relation("TranscriptPublicationPublishedBy")
+  transcriptPublications        TranscriptPublication[]          @relation("TranscriptPublicationPublishedBy")
   /// Correction guide revisions written by this user
-  transcriptGuideRevisions     TranscriptGuideRevision[]        @relation("TranscriptGuideRevisionAuthor")
+  transcriptGuideRevisions      TranscriptGuideRevision[]        @relation("TranscriptGuideRevisionAuthor")
+  /// Span flags this user set or cleared
+  transcriptSpanFlagEvents      TranscriptSpanFlagEvent[]        @relation("TranscriptSpanFlagEventUser")
+  /// Contributor terms this user accepted
+  transcriptContributorConsents TranscriptContributorConsent[]
 
   @@map("users")
 }
@@ -989,6 +993,33 @@ enum TranscriptPublicationStatus {
   ROLLED_BACK
 }
 
+/// Where a text revision's words came from (ADR 0012). Null on revisions written
+/// before the correction data contract.
+enum TranscriptRevisionOrigin {
+  /// Imported from the frozen machine source when the workspace started
+  MACHINE
+  /// Typed by a person
+  MANUAL
+  /// Taken from another machine backend, named in suggestion_backend
+  SUGGESTION
+}
+
+/// What a corrector can say about a span's audio (ADR 0012). Flags never affect
+/// the done state or publication; training export leaves flagged chunks out.
+enum TranscriptSpanFlagKind {
+  UNCLEAR
+  OVERLAP
+  OTHER_LANGUAGE
+  MUSIC_NOISE
+  CUT_WORD
+  EXCLUDE_FROM_TRAINING
+}
+
+enum TranscriptSpanFlagAction {
+  SET
+  CLEAR
+}
+
 /// One person's action against one immutable text revision.
 enum TranscriptDecisionKind {
   APPROVE
@@ -1033,17 +1064,30 @@ model TranscriptWorkspace {
   createdAt             DateTime                  @default(now()) @map("created_at")
   updatedAt             DateTime                  @updatedAt @map("updated_at")
   archivedAt            DateTime?                 @map("archived_at")
+  /// ADR 0012 segmentation the spans were cut with (e.g. chunks-v1); null only
+  /// on workspaces started before the correction data contract. The other
+  /// contract columns below are set together with it (database check).
+  segmentationVersion   String?                   @map("segmentation_version") @db.VarChar(32)
+  /// The segmentation parameters, in samples, as the contract file states them
+  segmentationParams    Json?                     @map("segmentation_params")
+  /// Decoded chunks in the frozen source; equals its segment count
+  sourceChunkCount      Int?                      @map("source_chunk_count")
+  /// Staged 16 kHz WAV the span times refer to, as the source recorded it
+  stagedAudioPath       String?                   @map("staged_audio_path")
+  stagedAudioSize       BigInt?                   @map("staged_audio_size")
+  stagedAudioSha256     String?                   @map("staged_audio_sha256") @db.VarChar(64)
 
-  workflowGroup     WorkflowGroup            @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  startedBy         User?                    @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
-  archivedBy        User?                    @relation("TranscriptWorkspaceArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  workflowGroup     WorkflowGroup             @relation(fields: [workflowGroupId], references: [id], onDelete: Restrict)
+  startedBy         User?                     @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  archivedBy        User?                     @relation("TranscriptWorkspaceArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
   spans             TranscriptSpan[]
   revisions         TranscriptSpanRevision[]
   decisions         TranscriptSpanDecision[]
   comments          TranscriptSpanComment[]
   publications      TranscriptPublication[]
-  readerPublication TranscriptPublication?   @relation("TranscriptWorkspaceReaderPublication", fields: [readerPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  searchPublication TranscriptPublication?   @relation("TranscriptWorkspaceSearchPublication", fields: [searchPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  flagEvents        TranscriptSpanFlagEvent[]
+  readerPublication TranscriptPublication?    @relation("TranscriptWorkspaceReaderPublication", fields: [readerPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  searchPublication TranscriptPublication?    @relation("TranscriptWorkspaceSearchPublication", fields: [searchPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([workflowGroupId, audioHash])
   @@index([workflowGroupId, status])
@@ -1062,40 +1106,63 @@ model TranscriptSpan {
   originalTextHash  String   @map("original_text_hash") @db.VarChar(64)
   /// Set immediately after the imported revision rows are written
   currentRevisionId String?  @map("current_revision_id") @db.Uuid
+  /// ADR 0012: the decoded chunk this span belongs to, 0-based. Null only on
+  /// spans of workspaces started before the correction data contract.
+  chunkOrdinal      Int?     @map("chunk_ordinal")
+  /// First and last index into the frozen source's clip_timestamps
+  firstRegionIndex  Int?     @map("first_region_index")
+  lastRegionIndex   Int?     @map("last_region_index")
+  /// Exact bounds in samples of the staged 16 kHz audio
+  startSample       Int?     @map("start_sample")
+  endSample         Int?     @map("end_sample")
+  /// The span's VAD regions as [[startSample, endSample], ...]
+  speechRegions     Json?    @map("speech_regions")
+  /// The machine words assigned to the span, as the source stored them
+  machineWords      Json?    @map("machine_words")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   currentRevision  TranscriptSpanRevision?     @relation("TranscriptSpanCurrentRevision", fields: [currentRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   revisions        TranscriptSpanRevision[]    @relation("TranscriptSpanRevisions")
   decisions        TranscriptSpanDecision[]
   comments         TranscriptSpanComment[]
   publicationSpans TranscriptPublicationSpan[]
+  flagEvents       TranscriptSpanFlagEvent[]
 
   @@unique([workspaceId, ordinal])
   @@index([workspaceId, startSeconds])
+  @@index([workspaceId, chunkOrdinal])
   @@map("transcript_span")
 }
 
 /// Immutable normalized text. Decisions bind to a revision, never to a hash
 /// alone, so returning to earlier wording never revives an old approval.
 model TranscriptSpanRevision {
-  id                 String   @id @default(uuid()) @db.Uuid
-  workspaceId        String   @map("workspace_id") @db.Uuid
-  spanId             String   @map("span_id") @db.Uuid
+  id                 String                    @id @default(uuid()) @db.Uuid
+  workspaceId        String                    @map("workspace_id") @db.Uuid
+  spanId             String                    @map("span_id") @db.Uuid
   text               String
-  textHash           String   @map("text_hash") @db.VarChar(64)
-  previousRevisionId String?  @map("previous_revision_id") @db.Uuid
+  textHash           String                    @map("text_hash") @db.VarChar(64)
+  previousRevisionId String?                   @map("previous_revision_id") @db.Uuid
   /// Immutable identity of the editor; null for the revision imported from the
   /// frozen machine source, which nobody wrote. Kept alongside the nullable
   /// relation so history can still say who created a revision after that
   /// account is deleted, as ADR 0006 requires of it.
-  actorKey           String?  @map("actor_key")
-  authorId           String?  @map("author_id")
-  createdAt          DateTime @default(now()) @map("created_at")
+  actorKey           String?                   @map("actor_key")
+  authorId           String?                   @map("author_id")
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  /// ADR 0012: where the text came from; null on revisions written before the
+  /// correction data contract
+  origin             TranscriptRevisionOrigin?
+  /// Backend key the text was taken from, set exactly when origin is SUGGESTION
+  suggestionBackend  String?                   @map("suggestion_backend") @db.VarChar(255)
+  /// Guide revision active when this revision was written
+  guideRevisionId    String?                   @map("guide_revision_id") @db.Uuid
 
-  workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  span             TranscriptSpan              @relation("TranscriptSpanRevisions", fields: [spanId], references: [id], onDelete: Cascade)
+  workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  span             TranscriptSpan              @relation("TranscriptSpanRevisions", fields: [spanId], references: [id], onDelete: Restrict)
+  guideRevision    TranscriptGuideRevision?    @relation(fields: [guideRevisionId], references: [id], onDelete: Restrict)
   previousRevision TranscriptSpanRevision?     @relation("TranscriptSpanRevisionChain", fields: [previousRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   nextRevisions    TranscriptSpanRevision[]    @relation("TranscriptSpanRevisionChain")
   author           User?                       @relation("TranscriptSpanRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
@@ -1112,37 +1179,45 @@ model TranscriptSpanRevision {
 /// Immutable approve / disapprove / withdraw. History is append-only; the
 /// latest row per (revision, user) is that person's effective decision.
 model TranscriptSpanDecision {
-  id             String                 @id @default(uuid()) @db.Uuid
-  workspaceId    String                 @map("workspace_id") @db.Uuid
-  spanId         String                 @map("span_id") @db.Uuid
-  revisionId     String                 @map("revision_id") @db.Uuid
+  id              String                 @id @default(uuid()) @db.Uuid
+  workspaceId     String                 @map("workspace_id") @db.Uuid
+  spanId          String                 @map("span_id") @db.Uuid
+  revisionId      String                 @map("revision_id") @db.Uuid
   /// Immutable identity of the person who decided.
   ///
   /// Two distinct people make a span done, and that has to stay true after one
   /// of them is deleted. The live `userId` relation is nullable so deletion can
   /// clear it; this column is what the count is keyed on, so a deleted account
   /// can neither erase its approval nor merge with another deleted one.
-  actorKey       String                 @map("actor_key")
-  userId         String?                @map("user_id")
-  kind           TranscriptDecisionKind
+  actorKey        String                 @map("actor_key")
+  userId          String?                @map("user_id")
+  kind            TranscriptDecisionKind
   /// Client-supplied key; double-clicks and retries cannot duplicate a decision
-  idempotencyKey String?                @map("idempotency_key") @db.VarChar(64)
+  idempotencyKey  String?                @map("idempotency_key") @db.VarChar(64)
   /// The command this row recorded, which `kind` alone cannot name: an edit
   /// and a bare approval both store APPROVE.
-  commandName    String?                @map("command_name") @db.VarChar(32)
+  commandName     String?                @map("command_name") @db.VarChar(32)
   /// SHA-256 of that command's payload, so two edits carrying different text
   /// are not mistaken for a retry of each other.
-  commandDigest  String?                @map("command_digest") @db.VarChar(64)
+  commandDigest   String?                @map("command_digest") @db.VarChar(64)
   /// Write order. Timestamps have millisecond precision and two decisions can
   /// share one, while the reducer needs to know which of a person's decisions
   /// came last; every writer holds the workspace lock, so this sequence is
   /// that order.
-  sequence       BigInt                 @default(autoincrement())
-  createdAt      DateTime               @default(now()) @map("created_at")
+  sequence        BigInt                 @default(autoincrement())
+  createdAt       DateTime               @default(now()) @map("created_at")
+  /// ADR 0012: share of the span's speech regions this person played before an
+  /// approve or disapprove, 0..1, as the client measured it. Never evidence of
+  /// approval; training export uses it. Null on withdrawals and on decisions
+  /// made before the correction data contract.
+  heardFraction   Float?                 @map("heard_fraction")
+  /// Slowest and fastest playback rate used while listening
+  minPlaybackRate Float?                 @map("min_playback_rate")
+  maxPlaybackRate Float?                 @map("max_playback_rate")
 
-  workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
-  revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Restrict)
+  revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
   user      User?                  @relation("TranscriptSpanDecisionUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([workspaceId, actorKey, idempotencyKey])
@@ -1165,9 +1240,9 @@ model TranscriptSpanComment {
   body        String
   createdAt   DateTime @default(now()) @map("created_at")
 
-  workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
-  revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  workspace TranscriptWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  span      TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Restrict)
+  revision  TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
   author    User?                  @relation("TranscriptSpanCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([spanId, createdAt])
@@ -1215,8 +1290,8 @@ model TranscriptPublication {
   activatingAt            DateTime?                   @map("activating_at")
   finishedAt              DateTime?                   @map("finished_at")
 
-  workspace         TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  guideRevision     TranscriptGuideRevision?    @relation(fields: [guideRevisionId], references: [id], onDelete: SetNull)
+  workspace         TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  guideRevision     TranscriptGuideRevision?    @relation(fields: [guideRevisionId], references: [id], onDelete: Restrict)
   publishedBy       User?                       @relation("TranscriptPublicationPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
   spans             TranscriptPublicationSpan[]
   readerOfWorkspace TranscriptWorkspace?        @relation("TranscriptWorkspaceReaderPublication")
@@ -1234,9 +1309,9 @@ model TranscriptPublicationSpan {
   revisionId    String @map("revision_id") @db.Uuid
   ordinal       Int
 
-  publication TranscriptPublication  @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  span        TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Cascade)
-  revision    TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  publication TranscriptPublication  @relation(fields: [publicationId], references: [id], onDelete: Restrict)
+  span        TranscriptSpan         @relation(fields: [spanId], references: [id], onDelete: Restrict)
+  revision    TranscriptSpanRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
 
   @@id([publicationId, spanId])
   @@index([publicationId, ordinal])
@@ -1252,12 +1327,60 @@ model TranscriptGuideRevision {
   authorId        String?  @map("author_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  workflowGroup WorkflowGroup           @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
-  author        User?                   @relation("TranscriptGuideRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  workflowGroup WorkflowGroup            @relation(fields: [workflowGroupId], references: [id], onDelete: Restrict)
+  author        User?                    @relation("TranscriptGuideRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   publications  TranscriptPublication[]
+  revisions     TranscriptSpanRevision[]
 
   @@index([workflowGroupId, createdAt])
   @@map("transcript_guide_revision")
+}
+
+/// One person setting or clearing one flag on one span (ADR 0012). Immutable;
+/// a span's current flags are derived from its latest event per kind, the way
+/// span state is derived from decisions.
+model TranscriptSpanFlagEvent {
+  id             String                   @id @default(uuid()) @db.Uuid
+  workspaceId    String                   @map("workspace_id") @db.Uuid
+  spanId         String                   @map("span_id") @db.Uuid
+  kind           TranscriptSpanFlagKind
+  action         TranscriptSpanFlagAction
+  /// ISO 639-1 code, only for OTHER_LANGUAGE
+  languageCode   String?                  @map("language_code") @db.VarChar(8)
+  comment        String?
+  /// Immutable identity of the person; see TranscriptSpanDecision.actorKey
+  actorKey       String                   @map("actor_key")
+  userId         String?                  @map("user_id")
+  /// Client-supplied key; retries cannot duplicate an event
+  idempotencyKey String?                  @map("idempotency_key") @db.VarChar(64)
+  /// Write order under the workspace lock
+  sequence       BigInt                   @default(autoincrement())
+  createdAt      DateTime                 @default(now()) @map("created_at")
+
+  workspace TranscriptWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  span      TranscriptSpan      @relation(fields: [spanId], references: [id], onDelete: Restrict)
+  user      User?               @relation("TranscriptSpanFlagEventUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, actorKey, idempotencyKey])
+  @@index([spanId, kind, sequence])
+  @@map("transcript_span_flag_event")
+}
+
+/// A person's acceptance of the contributor terms (ADR 0012), required before
+/// any correction write. The text they saw is stored verbatim.
+model TranscriptContributorConsent {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// Immutable identity of the person; see TranscriptSpanDecision.actorKey
+  actorKey     String   @map("actor_key")
+  userId       String?  @map("user_id")
+  termsVersion String   @map("terms_version") @db.VarChar(32)
+  termsText    String   @map("terms_text")
+  acceptedAt   DateTime @default(now()) @map("accepted_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([actorKey, termsVersion])
+  @@map("transcript_contributor_consent")
 }
 
 // ============================================================================

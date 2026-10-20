@@ -556,7 +556,11 @@
         "published": "Nothing is published yet.",
         "not_started": "Every primary recording already has correction under way."
       }
-    }
+    },
+    "consentTitle": "Consent to use your corrections",
+    "consentAccept": "I agree",
+    "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
+    "consentRetry": "Try again"
   },
   "metadata": {
     "title": "Metadata",

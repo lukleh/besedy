@@ -115,6 +115,56 @@ export function resolvePublicationFilePath(
   );
 }
 
+/** Bumped when the on-disk workspace manifest contract changes for Python. */
+export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1;
+
+/**
+ * What the Python side needs to know about a workspace without a database
+ * (ADR 0012): which staged audio it depends on, so `catalog clean` and
+ * re-staging refuse to replace or delete that audio while the workspace is
+ * live. Written as `starting` before the database rows and rewritten as
+ * `active` once they are committed. The Python guard protects the audio of
+ * both, so a crash at either point leaves it protected: one before the commit
+ * leaves an orphan manifest, which the nightly integrity check reports for
+ * removal, and one after it is finished by `completeStartingManifest` the next
+ * time the workspace is locked.
+ */
+export interface CorrectionWorkspaceManifest {
+  schema_version: number;
+  workflow_group_id: string;
+  audio_hash: string;
+  workspace_id: string;
+  status: "starting" | "active" | "archived";
+  segmentation_version: string;
+  staged_audio: { path: string; size: number; sha256: string };
+  updated_at: string;
+}
+
+export function resolveWorkspaceManifestPath(catalogId: string, workspaceId: string): string {
+  return path.join(resolveWorkspaceDir(catalogId, workspaceId), "workspace.json");
+}
+
+export async function writeWorkspaceManifest(manifest: CorrectionWorkspaceManifest): Promise<void> {
+  await writeFileAtomic(
+    resolveWorkspaceManifestPath(manifest.workflow_group_id, manifest.workspace_id),
+    `${JSON.stringify(manifest, null, 2)}\n`
+  );
+}
+
+/**
+ * Rewrite a `starting` manifest as `active`. Only for a workspace whose rows
+ * are committed and still active, under its lock: the start failed or crashed
+ * after its commit and before its own rewrite.
+ */
+export async function completeStartingManifest(catalogId: string, workspaceId: string): Promise<void> {
+  const manifest = await readJsonFile<CorrectionWorkspaceManifest>(
+    resolveWorkspaceManifestPath(catalogId, workspaceId)
+  );
+  if (manifest?.status === "starting") {
+    await writeWorkspaceManifest({ ...manifest, status: "active", updated_at: new Date().toISOString() });
+  }
+}
+
 export function resolveIndexPointerDir(catalogId: string): string {
   return path.join(resolveCatalogCorrectionsRoot(catalogId), "index-sources");
 }

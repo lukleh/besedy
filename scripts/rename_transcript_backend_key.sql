@@ -15,6 +15,7 @@
 --   transcript_workspace.source_backend      the backend a correction was frozen from
 --   transcript_publication.previous_source_ref   the same key, when the effective
 --                                            source before the publication was machine text
+--   transcript_span_revision.suggestion_backend  the backend a suggested text came from
 -- Not touched: the immutable audit log, and the `backend` field of the correction
 -- index pointer files, which is informational (the index resolves a correction by
 -- audio hash, not by that field).
@@ -64,5 +65,9 @@ WHERE source_backend = :'old_key';
 UPDATE transcript_publication
 SET previous_source_ref = :'new_key'
 WHERE previous_source_kind = 'machine' AND previous_source_ref = :'old_key';
+
+UPDATE transcript_span_revision
+SET suggestion_backend = :'new_key'
+WHERE suggestion_backend = :'old_key';
 
 COMMIT;

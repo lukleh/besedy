@@ -30,8 +30,34 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "besedy-correction-"));
 const dataDir = path.join(root, "data");
 const transcriptsDir = path.join(dataDir, "transcripts");
 const correctionsDir = path.join(dataDir, "corrections");
+const stagedAudioDir = path.join(dataDir, "audio", "audio_staged");
 fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(correctionsDir, { recursive: true });
+fs.mkdirSync(stagedAudioDir, { recursive: true });
+
+const SAMPLE_RATE = 16000;
+const seconds = (value: number) => Math.round(value * SAMPLE_RATE);
+
+/** A silent 16 kHz mono WAV standing in for staged audio; only its bytes are fingerprinted. */
+function writeStagedAudio(audioHash: string, durationSeconds: number): string {
+  const samples = seconds(durationSeconds);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + samples * 2, 4);
+  header.write("WAVEfmt ", 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(SAMPLE_RATE, 24);
+  header.writeUInt32LE(SAMPLE_RATE * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(samples * 2, 40);
+  const filePath = path.join(stagedAudioDir, `${audioHash}.wav`);
+  fs.writeFileSync(filePath, Buffer.concat([header, Buffer.alloc(samples * 2)]));
+  return filePath;
+}
 
 // Unique per run, so the script can be run repeatedly against the same
 // throwaway database instead of failing on the second attempt.
@@ -60,27 +86,37 @@ fs.writeFileSync(
       meta: {
         backend: "faster-whisper",
         model: "large-v3",
-        audio_filepath: `/audio/${AUDIO_HASH}.wav`,
-        duration: 12,
-        generation_params: { beam_size: 5 },
+        audio_filepath: writeStagedAudio(AUDIO_HASH, 13),
+        duration: 13,
+        // One decoded chunk of two VAD regions separated by a 1 s pause, so
+        // ADR 0012 cuts it into two spans of 5 s and 7 s.
+        generation_params: {
+          beam_size: 5,
+          transcription_options: {
+            clip_timestamps: [
+              { start: seconds(0), end: seconds(5) },
+              { start: seconds(6), end: seconds(13) },
+            ],
+          },
+        },
         transcript_text: "Dobry den vsichni. Vitejte na besede.",
-        num_segments: 2,
+        num_segments: 1,
         num_words: 6,
       },
       segments: [
         {
-          start: 0,
-          end: 5,
-          text: "Dobry den vsichni.",
-          words: [{ word: "Dobry" }],
+          start: 0.2,
+          end: 12.4,
+          text: "Dobry den vsichni. Vitejte na besede.",
+          words: [
+            { word: "Dobry", start: 0.2, end: 0.6 },
+            { word: "den", start: 0.6, end: 0.9 },
+            { word: "vsichni.", start: 0.9, end: 1.6 },
+            { word: "Vitejte", start: 6.2, end: 6.8 },
+            { word: "na", start: 6.8, end: 7.0 },
+            { word: "besede.", start: 7.0, end: 12.4 },
+          ],
           confidence: 0.7,
-        },
-        {
-          start: 5,
-          end: 12,
-          text: "Vitejte na besede.",
-          words: [],
-          confidence: 0.6,
         },
       ],
     },
@@ -112,6 +148,8 @@ async function main() {
   const { startWorkspace, listSpans, computeProgress, archiveWorkspace, findResumePosition } =
     await import("@/lib/correction/workspace-service");
   const { saveAndApprove, recordDecision, listSpanHistory } = await import("@/lib/correction/decision-service");
+  const { acceptContributorTerms } = await import("@/lib/correction/consent");
+  const { appendGuideRevision } = await import("@/lib/correction/guide");
   const { getPublicationEligibility } = await import("@/lib/correction/publication-eligibility");
   const {
     publishTranscript,
@@ -228,6 +266,25 @@ async function main() {
 
   // --- start ---------------------------------------------------------------
   console.log("\nstarting correction");
+  const startCode = async (userId: string) => {
+    try {
+      await startWorkspace({
+        catalogId: CATALOG_ID,
+        audioHash: AUDIO_HASH,
+        transcriptsPath: path.join(transcriptsDir, `transcripts_${CATALOG_ID}`),
+        userId,
+      });
+      return "started";
+    } catch (error) {
+      return (error as { code?: string }).code ?? String(error);
+    }
+  };
+  check("refuses to start without contributor consent", (await startCode(alice.id)) === "CONSENT_REQUIRED");
+  await acceptContributorTerms(alice.id);
+  check("refuses to start without a saved guide", (await startCode(alice.id)) === "GUIDE_MISSING");
+  const guide = await appendGuideRevision(CATALOG_ID, "# Návod\n\nPište, co zaznělo.", alice.id);
+  await acceptContributorTerms(bob.id);
+
   const workspace = await startWorkspace({
     catalogId: CATALOG_ID,
     audioHash: AUDIO_HASH,
@@ -235,8 +292,53 @@ async function main() {
     userId: alice.id,
   });
   check("freezes the configured default backend", workspace.sourceBackend === BACKEND, workspace.sourceBackend);
-  check("imports every segment as a span", workspace.spanCount === 2, workspace.spanCount);
+  check("cuts the decoded chunk into spans at the 1 s pause", workspace.spanCount === 2, workspace.spanCount);
   check("records the span duration", workspace.spanDurationSeconds === 12, workspace.spanDurationSeconds);
+  {
+    const stored = await prisma.transcriptWorkspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    const audioBytes = fs.readFileSync(path.join(stagedAudioDir, `${AUDIO_HASH}.wav`));
+    check(
+      "records the segmentation and the staged audio",
+      stored.segmentationVersion === "chunks-v1" &&
+        stored.sourceChunkCount === 1 &&
+        stored.stagedAudioSha256 === createHash("sha256").update(audioBytes).digest("hex") &&
+        Number(stored.stagedAudioSize) === audioBytes.length,
+      stored
+    );
+    const rows = await prisma.transcriptSpan.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { ordinal: "asc" },
+      include: { currentRevision: true },
+    });
+    check(
+      "spans carry their chunk, regions, words and the machine text",
+      rows.length === 2 &&
+        rows.every((row) => row.chunkOrdinal === 0) &&
+        rows[0].firstRegionIndex === 0 &&
+        rows[1].firstRegionIndex === 1 &&
+        rows[0].endSample === seconds(5) &&
+        rows[1].startSample === seconds(6) &&
+        JSON.stringify(rows[1].speechRegions) === JSON.stringify([[seconds(6), seconds(13)]]) &&
+        (rows[0].machineWords as unknown[]).length === 3 &&
+        rows[0].originalText === "Dobry den vsichni." &&
+        rows[1].originalText === "Vitejte na besede.",
+      rows.map((row) => [row.firstRegionIndex, row.startSample, row.endSample, row.originalText])
+    );
+    check(
+      "imported revisions are machine text under the saved guide",
+      rows.every(
+        (row) => row.currentRevision?.origin === "MACHINE" && row.currentRevision.guideRevisionId === guide.revisionId
+      )
+    );
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(correctionsDir, `corrections_${CATALOG_ID}`, workspace.id, "workspace.json"), "utf-8")
+    );
+    check(
+      "writes the workspace manifest the Python guards read",
+      manifest.status === "active" && manifest.staged_audio.sha256 === stored.stagedAudioSha256,
+      manifest
+    );
+  }
 
   let startedTwice = false;
   try {
@@ -272,6 +374,14 @@ async function main() {
   });
   check("an edit plus its approval needs a second person", edited.state === "needs_second_approval", edited.state);
   check("the edit created a new revision", edited.revisionId !== first.revisionId);
+  {
+    const revision = await prisma.transcriptSpanRevision.findUniqueOrThrow({ where: { id: edited.revisionId } });
+    check(
+      "an edit is a manual revision under the active guide",
+      revision.origin === "MANUAL" && revision.guideRevisionId === guide.revisionId,
+      revision
+    );
+  }
 
   let staleRejected = false;
   try {
@@ -884,11 +994,13 @@ async function main() {
       meta: {
         backend: "faster-whisper",
         model: "large-v3",
-        audio_filepath: `/audio/${otherHash}.wav`,
+        audio_filepath: writeStagedAudio(otherHash, 4),
         duration: 4,
-        generation_params: {},
+        generation_params: {
+          transcription_options: { clip_timestamps: [{ start: seconds(0), end: seconds(4) }] },
+        },
       },
-      segments: [{ start: 0, end: 4, text: "Jina nahravka." }],
+      segments: [{ start: 0, end: 4, text: "Jina nahravka.", words: [] }],
     })
   );
   await prisma.catalogEntry.create({
@@ -1724,8 +1836,28 @@ async function main() {
     check("a publication on its way is reported as publishing", (await statusNow())?.reader === "publishing");
 
     await prisma.transcriptWorkspace.update({ where: { id: restarted.id }, data: { readerPublicationId: null } });
+    // Publication spans restrict deleting their publication (ADR 0012).
+    await prisma.transcriptPublicationSpan.deleteMany({ where: { publicationId: publication.id } });
     await prisma.transcriptPublication.delete({ where: { id: publication.id } });
   }
+
+  console.log("\nprotecting correction work");
+  let catalogDeleted = false;
+  try {
+    await prisma.workflowGroup.delete({ where: { id: CATALOG_ID } });
+    catalogDeleted = true;
+  } catch {
+    // expected: correction rows restrict it
+  }
+  check("a catalog with correction work cannot be deleted", !catalogDeleted);
+  let workspaceDeleted = false;
+  try {
+    await prisma.transcriptWorkspace.delete({ where: { id: workspace.id } });
+    workspaceDeleted = true;
+  } catch {
+    // expected
+  }
+  check("a workspace with spans cannot be deleted", !workspaceDeleted);
 
   console.log(`\ncorrections root: ${correctionsDir}`);
   console.log(failures.length === 0 ? "\nALL CHECKS PASSED" : `\n${failures.length} CHECK(S) FAILED`);
@@ -1735,6 +1867,26 @@ async function main() {
   // restrict deletion of their catalog, so they go first. A cleanup failure
   // must not change what the run reported.
   try {
+    // ADR 0012 makes correction rows restrict deletion of their catalog and
+    // workspace, so a deliberate cleanup removes them child first.
+    await prisma.$transaction(async (tx) => {
+      const workspaces = { workspace: { workflowGroupId: CATALOG_ID } };
+      await tx.transcriptWorkspace.updateMany({
+        where: { workflowGroupId: CATALOG_ID },
+        data: { readerPublicationId: null, searchPublicationId: null },
+      });
+      await tx.transcriptPublicationSpan.deleteMany({ where: { publication: workspaces } });
+      await tx.transcriptPublication.deleteMany({ where: workspaces });
+      await tx.transcriptSpanFlagEvent.deleteMany({ where: workspaces });
+      await tx.transcriptSpanComment.deleteMany({ where: workspaces });
+      await tx.transcriptSpanDecision.deleteMany({ where: workspaces });
+      await tx.transcriptSpan.updateMany({ where: workspaces, data: { currentRevisionId: null } });
+      await tx.transcriptSpanRevision.deleteMany({ where: workspaces });
+      await tx.transcriptSpan.deleteMany({ where: workspaces });
+      await tx.transcriptWorkspace.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
+      await tx.transcriptGuideRevision.deleteMany({ where: { workflowGroupId: CATALOG_ID } });
+      await tx.transcriptContributorConsent.deleteMany({ where: { actorKey: { in: [alice.id, bob.id] } } });
+    });
     await prisma.catalogEvent.deleteMany({
       where: { workflowGroupId: CATALOG_ID },
     });
