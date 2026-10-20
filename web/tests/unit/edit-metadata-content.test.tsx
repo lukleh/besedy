@@ -72,7 +72,6 @@ describe("EditMetadataContent", () => {
     vi.clearAllMocks();
 
     useCatalogContextMock.mockReturnValue({
-      groupKey: CATALOG_ID,
       catalogNotFound: false,
       catalogValidationLoading: false,
     });

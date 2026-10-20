@@ -5,10 +5,69 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pytest
+
+from besedy.cli.catalog import main
 from besedy.commands.catalog import transcribe as transcribe_module
+from besedy.lib.audio.types import PreparedEntry
 from besedy.lib.workflow.common import CsvAudioRow
 from besedy.lib.workflow.config import WorkflowConfig
 from tests.helpers.workflows import make_workflow_config
+
+
+@pytest.mark.parametrize("workflow_id", ["whisperx", "canary-nemo-beam"])
+def test_unavailable_whisperx_runtime_fails_transcription(
+    workflow_id: str, monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """Requested transcription and beam alignment must not silently disappear."""
+    config = make_workflow_config(
+        workflow_id=workflow_id,
+        workflow_label=workflow_id,
+        decode_strategy="beam" if workflow_id == "canary-nemo-beam" else None,
+    )
+    output_root = tmp_path / "transcripts"
+    audio_hash = "a" * 64
+    audio = tmp_path / "staged.wav"
+    row = CsvAudioRow(sha256=audio_hash, full_path=str(audio))
+    if workflow_id == "canary-nemo-beam":
+        # NeMo already finished; WhisperX alone must produce transcript.json.
+        output = transcribe_module.path_builder(config).workflow_dir(output_root) / audio_hash
+        output.mkdir(parents=True)
+        (output / "nemo_beam_segments.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(transcribe_module, "get_transcription_workflows", lambda **_: [config])
+    monkeypatch.setattr(
+        transcribe_module, "resolve_and_load_catalog", lambda *_: (tmp_path / "catalog.csv", [row])
+    )
+    monkeypatch.setattr(transcribe_module, "extract_run_info", lambda _: ("run", "transcripts"))
+    monkeypatch.setattr(transcribe_module, "setup_output_root", lambda *_: True)
+    monkeypatch.setattr(
+        transcribe_module,
+        "validate_staged_audio",
+        lambda _: ([PreparedEntry(audio_hash, audio, audio, "existing", 1.0)], []),
+    )
+    monkeypatch.setattr("besedy.lib.runtime.backend_runtime.shutil.which", lambda _: None)
+    launched = []
+    monkeypatch.setattr(transcribe_module, "launch_workflows", lambda *args: launched.append(args))
+
+    assert (
+        main(
+            [
+                "transcribe",
+                "--workflow",
+                workflow_id,
+                "--output-root",
+                str(output_root),
+            ]
+        )
+        == 1
+    )
+
+    captured = capsys.readouterr()
+    assert "WhisperX" in captured.err
+    assert "Docker" in captured.err
+    assert "All workflows completed successfully" not in captured.out
+    assert launched == []
 
 
 def test_handle_transcribe_accepts_namespace_without_hash_filter(monkeypatch):

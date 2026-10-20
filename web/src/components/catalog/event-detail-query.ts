@@ -3,11 +3,15 @@ import { buildEventDetailUrl } from "@/lib/api/recording-urls";
 import { readLocalEventDetail, withLocalFallback } from "@/lib/offline/local-source";
 import type { EventDetailResponse } from "@/types/event-detail";
 
+export function eventDetailQueryKey(catalogId: string, eventId: number) {
+  return ["catalog-event-detail", catalogId, eventId] as const;
+}
+
 /** The event detail request, shared by the event page and by neighbor
  * preloading. */
 export function eventDetailQueryOptions(catalogId: string, eventId: number) {
   return {
-    queryKey: ["catalog-event-detail", eventId] as const,
+    queryKey: eventDetailQueryKey(catalogId, eventId),
     networkMode: "offlineFirst" as const,
     // Network first; a complete local package answers when the request itself
     // cannot be made, so the same page renders online and offline.

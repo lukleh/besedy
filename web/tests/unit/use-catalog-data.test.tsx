@@ -42,7 +42,6 @@ function createWrapper(queryClient: QueryClient) {
 
 describe("useCatalogData", () => {
   const fetchJsonMock = vi.mocked(fetchJson);
-  const groupKey = "catalog-key";
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,7 +79,7 @@ describe("useCatalogData", () => {
 
     const queryKey = [
       "catalog",
-      groupKey,
+      "20260101_120000",
       1,
       "all",
       "all",
@@ -111,7 +110,6 @@ describe("useCatalogData", () => {
     const { result } = renderHook(
       () =>
         useCatalogData({
-          groupKey,
           activeCatalogId: "20260101_120000",
           statusFilter: "all",
           durationFilter: "all",
@@ -201,7 +199,7 @@ describe("useCatalogData", () => {
     queryClient.setQueryData(
       [
         "catalog",
-        groupKey,
+        "20260101_120000",
         1,
         "all",
         "all",
@@ -226,7 +224,6 @@ describe("useCatalogData", () => {
     const { result } = renderHook(
       () =>
         useCatalogData({
-          groupKey,
           activeCatalogId: "20260101_120000",
           statusFilter: "all",
           durationFilter: "all",
@@ -300,7 +297,6 @@ describe("useCatalogData", () => {
     const { result } = renderHook(
       () =>
         useCatalogData({
-          groupKey,
           activeCatalogId: "20260101_120000",
           statusFilter: "all",
           durationFilter: "all",

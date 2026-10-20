@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import prisma from '@/lib/db';
 import fs from 'fs/promises';
+import { syncCatalogEntries } from '@/lib/catalog-sync/entries';
 import { readSourceSnapshot } from '@/lib/catalog-sync/source-snapshot';
 import { rewritePath } from '@/lib/security/path-validation';
 
@@ -116,12 +117,6 @@ function isRowCountDropAllowedByEnv(): boolean {
   const raw =
     process.env.CATALOG_SYNC_ALLOW_ROW_COUNT_DROP?.trim().toLowerCase();
   return raw === 'true' || raw === '1';
-}
-
-function shouldRunOrphanCleanup(result: CatalogSyncResult): boolean {
-  if (result.status !== 'success') return false;
-  const changed = new Set(result.changedSources);
-  return changed.has('metadata') || changed.has('archived');
 }
 
 // Deletes event assignments whose recording left the catalog. An event that
@@ -762,7 +757,6 @@ async function syncCatalogGroupAttempt(
         }
 
         let existingDuplicateCounts = new Map<string, number>();
-        let existingPublicationByHash = new Map<string, boolean>();
         if (baseChanged && !duplicatesChanged) {
           const grouped = await tx.catalogDuplicate.groupBy({
             by: ['audioHash'],
@@ -771,15 +765,6 @@ async function syncCatalogGroupAttempt(
           });
           existingDuplicateCounts = new Map(
             grouped.map((row) => [row.audioHash, row._count._all]),
-          );
-        }
-        if (baseChanged) {
-          const publicationRows = await tx.catalogEntry.findMany({
-            where: { workflowGroupId: groupId },
-            select: { audioHash: true, isPublished: true },
-          });
-          existingPublicationByHash = new Map(
-            publicationRows.map((row) => [row.audioHash, row.isPublished]),
           );
         }
 
@@ -802,7 +787,6 @@ async function syncCatalogGroupAttempt(
           hasArchived: boolean;
           hasMetadata: boolean;
           isActionable: boolean;
-          isPublished: boolean;
           duplicateCount: number;
         }> = [];
 
@@ -869,7 +853,6 @@ async function syncCatalogGroupAttempt(
               hasArchived: !!archived,
               hasMetadata: !!metadata,
               isActionable: !!archived && !!metadata,
-              isPublished: existingPublicationByHash.get(audioHash) ?? false,
               duplicateCount: duplicateCounts.get(audioHash) ?? 0,
             });
           }
@@ -878,12 +861,7 @@ async function syncCatalogGroupAttempt(
         const syncedAt = new Date();
 
         if (baseChanged) {
-          await tx.catalogEntry.deleteMany({
-            where: { workflowGroupId: groupId },
-          });
-          if (entryRows.length > 0) {
-            await tx.catalogEntry.createMany({ data: entryRows });
-          }
+          await syncCatalogEntries(tx, groupId, entryRows, syncedAt);
         }
 
         if (duplicatesChanged) {
@@ -966,15 +944,15 @@ async function syncCatalogGroupAttempt(
       },
     );
 
-    if (shouldRunOrphanCleanup(result)) {
-      try {
-        await cleanupOrphanEventRecordings(groupId);
-      } catch (cleanupError) {
-        console.error(
-          `[catalog-sync] Orphan cleanup failed for ${groupId}:`,
-          cleanupError,
-        );
-      }
+    // Fingerprints are already committed. Reconcile even when the source bytes
+    // were unchanged so a failed cleanup (or a crash before it) is retried.
+    try {
+      await cleanupOrphanEventRecordings(groupId);
+    } catch (cleanupError) {
+      const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+      const error = `Orphan cleanup failed for ${groupId}: ${detail}`;
+      console.error(`[catalog-sync] ${error}`, cleanupError);
+      return { ...result, status: 'error', error };
     }
 
     return result;

@@ -20,7 +20,6 @@ from besedy.core.paths import (
 from besedy.lib.audio.types import PreparedEntry
 from besedy.lib.runtime.backend_runtime import (
     build_python_backend_process,
-    check_python_backend_runtime_ready,
     forward_host_env,
     resolve_local_model_path,
 )
@@ -294,73 +293,63 @@ def build_workflows(
                     )
 
             if has_align:
-                ready, message = check_python_backend_runtime_ready(
-                    display_name="WhisperX",
-                    docker_service="whisperx",
+                align_entries = [
+                    entry
+                    for entry in prepared
+                    if hash_component_from_sha(entry.sha256) in job.align_hashes
+                ]
+                segments_paths = [
+                    output_root
+                    / cfg.workflow_label
+                    / output_component
+                    / hash_component
+                    / "nemo_beam_segments.json"
+                    for hash_component in sorted(job.align_hashes)
+                ]
+                align_argv = [
+                    "--segments",
+                    *[str(path) for path in segments_paths],
+                    "--backend",
+                    cfg.workflow_id,
+                    "--model",
+                    cfg.model_name,
+                    "--language",
+                    cfg.language,
+                ]
+                if cfg.align_model:
+                    align_argv.extend(["--align-model", cfg.align_model])
+                if not config.overwrite:
+                    align_argv.append("--skip-existing")
+
+                align_input_paths = [entry.staged for entry in align_entries]
+                align_input_paths.extend(
+                    _metadata_audio_paths(
+                        *segments_paths,
+                        *(path.parent / "transcript.json" for path in segments_paths),
+                    )
                 )
-                if not ready:
-                    print(
-                        f"Skipping canary-nemo alignment; {message}",
-                        file=sys.stderr,
-                    )
-                else:
-                    align_entries = [
-                        entry
-                        for entry in prepared
-                        if hash_component_from_sha(entry.sha256) in job.align_hashes
-                    ]
-                    segments_paths = [
-                        output_root
-                        / cfg.workflow_label
-                        / output_component
-                        / hash_component
-                        / "nemo_beam_segments.json"
-                        for hash_component in sorted(job.align_hashes)
-                    ]
-                    align_argv = [
-                        "--segments",
-                        *[str(path) for path in segments_paths],
-                        "--backend",
-                        cfg.workflow_id,
-                        "--model",
-                        cfg.model_name,
-                        "--language",
-                        cfg.language,
-                    ]
-                    if cfg.align_model:
-                        align_argv.extend(["--align-model", cfg.align_model])
-                    if not config.overwrite:
-                        align_argv.append("--skip-existing")
 
-                    align_input_paths = [entry.staged for entry in align_entries]
-                    align_input_paths.extend(
-                        _metadata_audio_paths(
-                            *segments_paths,
-                            *(path.parent / "transcript.json" for path in segments_paths),
-                        )
+                process = build_python_backend_process(
+                    backend_id="whisperx",
+                    display_name="WhisperX",
+                    script_path=NEMO_WHISPERX_ALIGN_SCRIPT_PATH,
+                    script_args=align_argv,
+                    docker_service="whisperx",
+                    extra_env={
+                        "BESEDY_WHISPERX_CLI": "whisperx",
+                        **forward_host_env("HF_TOKEN"),
+                    },
+                    input_paths=[str(path) for path in align_input_paths],
+                    output_paths=[str(path.parent) for path in segments_paths],
+                    model_paths=_local_model_paths(cfg.align_model),
+                    docker_gpus="all",
+                )
+                workflows.append(
+                    _workflow_from_backend_process(
+                        label=f"{base_label}-align",
+                        process=process,
                     )
-
-                    process = build_python_backend_process(
-                        backend_id="whisperx",
-                        display_name="WhisperX",
-                        script_path=NEMO_WHISPERX_ALIGN_SCRIPT_PATH,
-                        script_args=align_argv,
-                        docker_service="whisperx",
-                        extra_env={
-                            "BESEDY_WHISPERX_CLI": "whisperx",
-                            **forward_host_env("HF_TOKEN"),
-                        },
-                        input_paths=[str(path) for path in align_input_paths],
-                        output_paths=[str(path.parent) for path in segments_paths],
-                        model_paths=_local_model_paths(cfg.align_model),
-                        docker_gpus="all",
-                    )
-                    workflows.append(
-                        _workflow_from_backend_process(
-                            label=f"{base_label}-align",
-                            process=process,
-                        )
-                    )
+                )
 
     if faster_jobs:
         for job in faster_jobs:
@@ -461,16 +450,7 @@ def build_workflows(
                 )
             )
 
-    whisperx_available = False
     if whisperx_jobs:
-        whisperx_available, whisperx_unavailable_reason = check_python_backend_runtime_ready(
-            display_name="WhisperX",
-            docker_service="whisperx",
-        )
-    else:
-        whisperx_unavailable_reason = None
-
-    if whisperx_jobs and whisperx_available:
         for job in whisperx_jobs:
             cfg = job.config
             whisperx_entries = [
@@ -530,11 +510,6 @@ def build_workflows(
                     process=process,
                 )
             )
-    elif whisperx_jobs and not whisperx_available:
-        print(
-            f"Skipping whisperx workflow; {whisperx_unavailable_reason}",
-            file=sys.stderr,
-        )
 
     run_pyannote_diarization = config.enable_pyannote_diarization
 

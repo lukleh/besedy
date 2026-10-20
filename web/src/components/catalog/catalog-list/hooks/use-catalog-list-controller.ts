@@ -263,7 +263,6 @@ export function useCatalogListController({
   const {
     catalogId: activeCatalogId,
     activeGroup,
-    groupKey,
     isLoading: loadingPreferences,
     catalogNotFound,
     catalogValidationLoading,
@@ -393,7 +392,6 @@ export function useCatalogListController({
   const { data: allAlbums = [] } = useAlbums(activeCatalogId ?? undefined);
 
   const { data, isLoading, isFetching, error, dataUpdatedAt } = useCatalogData({
-    groupKey,
     activeCatalogId,
     statusFilter: filters.statusFilter,
     durationFilter: filters.durationFilter,
