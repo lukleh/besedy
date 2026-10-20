@@ -46,7 +46,8 @@ print(sorted(backends))
 ## ffmpeg cannot reproduce the pinned audio hashes
 
 **Symptom:** `catalog create`, `add`, `hash` or `join`, or the recording-ingest
-flow, stops before writing any row (`HashDecoderMismatchError`):
+flow, stops instead of writing hashes that would differ from other hosts'
+(`HashDecoderMismatchError`):
 
 ```text
 Error: /opt/homebrew/Cellar/ffmpeg/9.0.2/bin/ffmpeg does not reproduce the
@@ -59,13 +60,16 @@ builds or CPU feature sets, so this binary would give a recording a different
 identity than the hosts that wrote the catalog. Before hashing anything with an
 ffmpeg binary, `audio_content_sha256sum` decodes the fixtures in
 `besedy/lib/catalog/audio_hash_fixtures/` and refuses if any pinned hash misses.
-A Homebrew build, or a different CPU architecture, is enough to miss all eight.
+Which fixtures miss depends on the build: Homebrew ffmpeg 9.0.2 on Apple
+Silicon misses all eight, while a build that changes one codec may miss only
+that one. The message names them.
 
-**Fix:** Put a known-good build first on `PATH` (`catalog join` also takes
-`--ffmpeg-binary`) and re-run. The fixtures' README lists builds verified against
-these pins, with their full `ffmpeg -version` output and a reproducible apt
-fallback. Verify a candidate before installing it on a host that writes catalog
-hashes, rather than after:
+**Fix:** Identify the binary first with `command -v ffmpeg` and
+`ffmpeg -version`, then put a known-good build ahead of it on `PATH` (`catalog
+join` also takes `--ffmpeg-binary`) and re-run. The README in that fixtures
+directory lists builds verified against these pins, with their full
+`ffmpeg -version` output and a reproducible apt fallback. Verify a candidate
+before installing it on a host that writes catalog hashes, rather than after:
 
 ```bash
 PATH=/dir/with/candidate:$PATH uv run pytest tests/test_audio_content_hash.py -k pinned -q
