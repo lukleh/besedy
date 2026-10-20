@@ -157,12 +157,19 @@ resampler and default audio-stream choice. `catalog join` instead hashes with
 its `--ffmpeg-binary` (default `ffmpeg`) and matches those hashes against
 catalog rows, so a binary passed there must be a known-good build too. Check
 which build `PATH` resolves to with `command -v ffmpeg` and `ffmpeg -version`.
-`tests/test_audio_content_hash.py` pins the hashes of eight fixtures in
-`tests/fixtures/audio_hash/`. They contain public-domain Czech speech plus a
-sweep, noise, clicks and clipping, encoded in the codec, sample-rate and
-container combinations found in the prod catalog. If those tests fail after an
-ffmpeg upgrade, that build decodes or resamples differently, and it must not
-hash catalog audio until a new algorithm version exists. The fixtures' README
+`besedy/lib/catalog/hash_decoder_check.py` pins the hashes of eight fixtures
+in `besedy/lib/catalog/audio_hash_fixtures/`. They contain public-domain Czech
+speech plus a sweep, noise, clicks and clipping, encoded in the codec,
+sample-rate and container combinations found in the prod catalog. Before an
+ffmpeg binary hashes anything, `audio_content_sha256sum` decodes the fixtures
+with it (once per binary and process) and raises `HashDecoderMismatchError`
+unless every pinned hash comes out, so `catalog create`/`add`/`hash`/`join` and
+the ingest flow stop instead of writing hashes that differ from other hosts'.
+`BESEDY_SKIP_HASH_DECODER_CHECK=1` turns the check off, for throwaway catalogs
+only (the test suite sets it). The same pins are tested in
+`tests/test_audio_content_hash.py`. If they fail after an ffmpeg upgrade, that
+build decodes or resamples differently, and it must not hash catalog audio
+until a new algorithm version exists. The fixtures' README
 lists known-good builds with their full `ffmpeg -version` output, including a
 reproducible apt fallback; append a build there once it passes. A decoder that
 produces no output for 120 seconds is killed with a logged warning, and the

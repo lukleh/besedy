@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import resource
 import shutil
 import subprocess
@@ -13,9 +14,14 @@ from pathlib import Path
 
 import pytest
 
+from besedy.lib.catalog import hash_decoder_check
+from besedy.lib.catalog.hash_decoder_check import (
+    FIXTURES_DIR,
+    PINNED_HASHES,
+    SKIP_ENV,
+    HashDecoderMismatchError,
+)
 from besedy.lib.catalog.manager import audio_content_sha256sum
-
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "audio_hash"
 
 
 def _ffmpeg_build() -> str:
@@ -231,53 +237,17 @@ class TestAudioContentSha256sum:
 
         assert audio_content_sha256sum(wav_file) == hashlib.sha256(samples).hexdigest()
 
-    @pytest.mark.parametrize(
-        ("fixture_name", "expected_hash"),
-        [
-            (
-                "talk_44100hz_stereo_vbr_cover.mp3",
-                "ae87fc2006610b8413f7d1c5987db4739a523c87e30d3ae3c2ce5becf917c9d4",
-            ),
-            (
-                "talk_48000hz_mono.mp3",
-                "00f3fdbaa04e22bc2039ac546fabeb0a199d6b7f9c70b1ebdae250756fb05e97",
-            ),
-            (
-                "talk_32000hz_stereo.mp3",
-                "4d9fee2b9c85b64e214042fc7a033811b483120b2ea0d2767da3686923066261",
-            ),
-            (
-                "talk_16000hz_stereo.mp3",
-                "83dc5f6715d3ee6f3849bff47bc5fbcbed6ce1d62e09e8689cb2ec0d03be5607",
-            ),
-            (
-                "talk_44100hz_mono.m4a",
-                "5289065e09090ca3841e0806470dee4a8e382ef5c3092c59fdee3695a24530cb",
-            ),
-            (
-                "talk_22050hz_mono.m4a",
-                "4f6a1c2cec1f9c609310518edb8cc1c104fb8fe744f3d778e43ef9ea1efbb049",
-            ),
-            (
-                "talk_48000hz_stereo_video.mp4",
-                "ac07348cf28c1bfa5cf06092a3598e8e91fed6b80831be2ca6fa27cc110b5fc9",
-            ),
-            (
-                "talk_48000hz_stereo_voip.mkv",
-                "ab0f8f404627b7c75af1cad7427b54dd8ab5d3741fd90e76c82735c1f43fe77e",
-            ),
-        ],
-    )
+    @pytest.mark.parametrize(("fixture_name", "expected_hash"), sorted(PINNED_HASHES.items()))
     def test_decoded_hash_matches_pinned_value(self, fixture_name, expected_hash):
         """Decoding, downmixing and resampling still yield the pinned hashes.
 
         A failure means this ffmpeg build decodes or resamples differently,
         which needs a new audio-hash algorithm version. Known-good builds are
-        listed in tests/fixtures/audio_hash/README.md.
+        listed in besedy/lib/catalog/audio_hash_fixtures/README.md.
         """
         assert audio_content_sha256sum(FIXTURES_DIR / fixture_name) == expected_hash, (
             f"{_ffmpeg_build()} does not reproduce the pinned hash; "
-            "see tests/fixtures/audio_hash/README.md"
+            "see besedy/lib/catalog/audio_hash_fixtures/README.md"
         )
 
 
@@ -340,3 +310,101 @@ class TestAudioContentSha256sumTimeout:
             resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
 
         assert result == hashlib.sha256(b"chunk").hexdigest()
+
+
+class TestHashDecoderCheck:
+    """An ffmpeg must reproduce the pinned fixture hashes before it hashes anything."""
+
+    @pytest.fixture(autouse=True)
+    def _check_enabled(self, monkeypatch):
+        monkeypatch.delenv(SKIP_ENV, raising=False)
+        monkeypatch.setattr(hash_decoder_check, "_verified", set())
+        monkeypatch.setattr(hash_decoder_check, "_mismatched", {})
+
+    @staticmethod
+    def _stub_ffmpeg(tmp_path: Path, output: str = "chunk") -> Path:
+        stub = tmp_path / "ffmpeg"
+        stub.write_text(f"#!/bin/sh\nprintf '{output}'\n")
+        stub.chmod(0o755)
+        return stub
+
+    def test_mismatching_build_refuses_to_hash(self, tmp_path):
+        stub = self._stub_ffmpeg(tmp_path)
+
+        with pytest.raises(HashDecoderMismatchError, match=r"8/8 fixtures"):
+            audio_content_sha256sum(tmp_path / "audio.wav", ffmpeg_binary=str(stub))
+
+    def test_mismatch_is_not_a_per_file_error(self):
+        # build_record_for_file and catalog create turn RuntimeError/OSError
+        # into "skip this file"; the check must stop the whole run instead.
+        assert not issubclass(HashDecoderMismatchError, (RuntimeError, OSError))
+
+    def test_reproducing_build_is_checked_once(self, tmp_path):
+        stub = self._stub_ffmpeg(tmp_path)
+        decoded: list[Path] = []
+
+        def decode(path: Path, binary: str) -> str:
+            decoded.append(path)
+            return PINNED_HASHES[path.name]
+
+        hash_decoder_check.require_reproducible_hash_decoder(str(stub), decode)
+        hash_decoder_check.require_reproducible_hash_decoder(str(stub), decode)
+
+        assert sorted(path.name for path in decoded) == sorted(PINNED_HASHES)
+        assert all(path.parent == FIXTURES_DIR and path.is_file() for path in decoded)
+
+    def test_mismatching_build_is_checked_once(self, tmp_path):
+        stub = self._stub_ffmpeg(tmp_path)
+        decoded: list[Path] = []
+
+        def decode(path: Path, binary: str) -> None:
+            decoded.append(path)
+
+        for _ in range(3):
+            with pytest.raises(HashDecoderMismatchError, match=r"8/8 fixtures"):
+                hash_decoder_check.require_reproducible_hash_decoder(str(stub), decode)
+
+        assert len(decoded) == len(PINNED_HASHES)
+
+    def test_replaced_binary_is_checked_again(self, tmp_path):
+        stub = self._stub_ffmpeg(tmp_path)
+        hash_decoder_check.require_reproducible_hash_decoder(
+            str(stub), lambda path, binary: PINNED_HASHES[path.name]
+        )
+        os.utime(stub, ns=(0, 0))
+
+        with pytest.raises(HashDecoderMismatchError):
+            hash_decoder_check.require_reproducible_hash_decoder(
+                str(stub), lambda path, binary: None
+            )
+
+    def test_skip_env_bypasses_the_check(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(SKIP_ENV, "1")
+        stub = self._stub_ffmpeg(tmp_path)
+
+        result = audio_content_sha256sum(tmp_path / "audio.wav", ffmpeg_binary=str(stub))
+
+        assert result == hashlib.sha256(b"chunk").hexdigest()
+
+    @pytest.mark.skipif(not _has_ffmpeg(), reason="ffmpeg not available")
+    def test_ffmpeg_on_path_hashes_only_if_it_reproduces_every_pin(self, tmp_path, monkeypatch):
+        """CI's known-good build hashes with the check on; a drifting one refuses."""
+        wav_file = tmp_path / "target.wav"
+        assert _create_sine_wave(wav_file)
+        monkeypatch.setenv(SKIP_ENV, "1")
+        reproduces = all(
+            audio_content_sha256sum(FIXTURES_DIR / name) == expected
+            for name, expected in PINNED_HASHES.items()
+        )
+        monkeypatch.delenv(SKIP_ENV)
+
+        if reproduces:
+            assert audio_content_sha256sum(wav_file) is not None
+        else:
+            with pytest.raises(HashDecoderMismatchError, match=_ffmpeg_realpath()):
+                audio_content_sha256sum(wav_file)
+
+
+def _ffmpeg_realpath() -> str:
+
+    return re.escape(os.path.realpath(shutil.which("ffmpeg") or "ffmpeg"))

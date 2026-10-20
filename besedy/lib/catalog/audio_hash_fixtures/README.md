@@ -1,10 +1,12 @@
 # Audio-hash golden fixtures
 
+`PINNED_HASHES` in `besedy/lib/catalog/hash_decoder_check.py` pins the
+`pcm-s16le-16000hz-mono-sha256-v1` hash of each file here, and
 `tests/test_audio_content_hash.py::TestAudioContentSha256sum::test_decoded_hash_matches_pinned_value`
-pins the `pcm-s16le-16000hz-mono-sha256-v1` hash of each file here. Any ffmpeg
-build that reproduces these hashes may hash catalog audio. A build that does
-not must not be used until a new algorithm version exists
-(`docs/architecture.md`, Content-Addressed Storage).
+tests them. Any ffmpeg build that reproduces these hashes may hash catalog
+audio. A build that does not must not be used until a new algorithm version
+exists (`docs/architecture.md`, Content-Addressed Storage), and
+`audio_content_sha256sum` refuses to hash with it.
 
 Never regenerate or replace these files: the pinned hashes describe exactly
 these bytes.
