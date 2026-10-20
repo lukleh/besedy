@@ -1875,7 +1875,8 @@
       "duplicatesPath": "Duplicates catalog path",
       "transcriptsPath": "Transcripts path",
       "active": "Active",
-      "defaultCatalog": "Default catalog"
+      "defaultCatalog": "Default catalog",
+      "pathsAndFlagsAdminOnly": "Only system administrators can change the paths and the active and default flags."
     },
     "transcriptExports": {
       "title": "Transcript exports",

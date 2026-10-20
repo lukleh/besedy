@@ -1874,7 +1874,8 @@
       "duplicatesPath": "Cesta ke katalogu duplikátů",
       "transcriptsPath": "Cesta k přepisům",
       "active": "Aktivní",
-      "defaultCatalog": "Výchozí katalog"
+      "defaultCatalog": "Výchozí katalog",
+      "pathsAndFlagsAdminOnly": "Cesty a příznaky aktivní a výchozí může měnit jen správce systému."
     },
     "transcriptExports": {
       "title": "Export přepisů",
