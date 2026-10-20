@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import re
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from besedy.core.paths import PYANNOTE_DIARIZATION_WORKFLOW_LABEL
+from besedy.lib.correction_guard import (
+    ProtectedStagedAudio,
+    is_protected,
+    load_protected_staged_audio,
+)
 
 # Pattern for timestamped transcript directories: transcripts_YYYYMMDD_HHMMSS[_variant]
 _TIMESTAMPED_DIR_PATTERN = re.compile(r"^transcripts_\d{8}_\d{6}(?:_.+)?$")
@@ -88,6 +93,9 @@ class CleanupResult:
     hashes_removed: int = 0
     hashes_failed: int = 0
     staged_removed: int = 0
+    # Staged files a live correction workspace depends on are never deleted
+    # (ADR 0012); the rest of the entry's cleanup still happens.
+    staged_kept_for_correction: list[Path] = field(default_factory=list)
     transcript_dirs_removed: int = 0
     diarization_dirs_removed: int = 0
     sidecar_files_removed: int = 0
@@ -278,21 +286,34 @@ def build_cleanup_plan(
     return plan
 
 
-def execute_cleanup(plan: CleanupPlan) -> CleanupResult:
+def execute_cleanup(
+    plan: CleanupPlan,
+    protected: Mapping[Path, ProtectedStagedAudio] | None = None,
+) -> CleanupResult:
     """Execute the cleanup plan, removing files and directories.
 
     Args:
         plan: The cleanup plan to execute.
+        protected: Staged audio of live correction workspaces; read from the
+            corrections tree when omitted.
 
     Returns:
         CleanupResult with statistics and any errors.
     """
     result = CleanupResult()
+    if protected is None:
+        protected = load_protected_staged_audio()
 
     for target in plan.targets:
         errors_before = len(result.errors)
-        # Remove staged file
-        if target.staged_path and target.staged_exists:
+        # Remove staged file, unless a correction workspace depends on it
+        if (
+            target.staged_path
+            and target.staged_exists
+            and is_protected(target.staged_path, protected)
+        ):
+            result.staged_kept_for_correction.append(target.staged_path)
+        elif target.staged_path and target.staged_exists:
             try:
                 target.staged_path.unlink()
                 result.staged_removed += 1

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import shutil
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +24,11 @@ from besedy.lib.catalog.cleaner import (
     find_transcript_dirs,
 )
 from besedy.lib.catalog.manager import load_csv, resolve_hash_column, write_merged_csv
+from besedy.lib.correction_guard import (
+    ProtectedStagedAudio,
+    is_protected,
+    load_protected_staged_audio,
+)
 from besedy.lib.data.atomic_io import rewrite_lock
 
 SPEAKER_EMBEDDINGS_DIRNAME = "speaker_embeddings"
@@ -138,6 +143,8 @@ class RemovalPlan:
 @dataclass
 class RemovalResult:
     files_removed: int = 0
+    # Staged audio a live correction workspace depends on is kept (ADR 0012).
+    files_kept_for_correction: list[Path] = field(default_factory=list)
     dirs_removed: int = 0
     csv_rows_removed: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
@@ -414,15 +421,25 @@ def _remove_hashes_from_csv(csv_path: Path, hashes: set[str]) -> int:
     return removed_count
 
 
-def execute_removal(plan: RemovalPlan) -> RemovalResult:
+def execute_removal(
+    plan: RemovalPlan,
+    protected: Mapping[Path, ProtectedStagedAudio] | None = None,
+) -> RemovalResult:
     """Delete artifacts first, then drop the CSV rows only when every deletion succeeded.
 
     Keeping the rows on a partial failure leaves the recording visible to
     `catalog check`/`clean` instead of silently orphaning the surviving files.
+    Staged audio a live correction workspace depends on is kept: it is the
+    audio that workspace's corrections refer to.
     """
     result = RemovalResult()
+    if protected is None:
+        protected = load_protected_staged_audio()
 
     for path in plan.files:
+        if is_protected(path, protected):
+            result.files_kept_for_correction.append(path)
+            continue
         try:
             path.unlink(missing_ok=True)
             result.files_removed += 1
