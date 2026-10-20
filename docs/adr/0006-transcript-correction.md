@@ -4,6 +4,7 @@
 - **Accepted:** 2026-10-03, once the schema, domain API, publication and index-sync job, and the reading-surface gate were merged (#206-#208, #253, #255)
 - **Date:** 2026-09-15
 - **Revised:** 2026-09-22
+- **Amended by:** [ADR 0012](0012-correction-data-contract.md) (proposed)
 - **Canonical references:** [Data model](../data-model.md), [RAG system](../rag-system.md), [ADR 0002](0002-artifact-generations.md), [ADR 0003](0003-web-catalog-projection.md), [ADR 0004](0004-system-boundaries.md), [ADR 0005](0005-catalog-permission-model.md)
 
 ## Context
@@ -164,6 +165,10 @@ rule.
 
 ### Correction works against one frozen machine source
 
+ADR 0012 (proposed) amends this section: spans are imported from the decoded
+VAD chunks recorded in the source, not from its segments, and a start is
+refused for a source without them.
+
 Any person holding `correct_transcripts` may deliberately start correction for
 a recording that is currently the primary recording of an event. Merely opening
 a page creates nothing. The start action shows which machine transcript will be
@@ -255,6 +260,9 @@ corrector cannot determine is disapproved, with a comment if useful, and is
 never guessed at or emptied. There is still no marker such as
 `[unintelligible]`.
 
+ADR 0012 (proposed) amends this: unclear speech is flagged `unclear` instead
+of disapproved, so it no longer blocks publication.
+
 ### Approval is explicit and fixed at two people
 
 The first version always requires approvals from two distinct accounts. The
@@ -344,6 +352,10 @@ Comments do not fail merely because the text changed while they were written.
 They attach to the span and record the revision the author had seen.
 
 ### Correction changes text, not timing
+
+ADR 0012 (proposed) amends where the fixed boundaries come from: runs of VAD
+regions inside one decoded chunk, at most 30 s long. They stay fixed as
+below.
 
 Source segment boundaries remain fixed. The first version has no split, merge,
 boundary dragging or word-timing reconciliation. Correction identity is the
@@ -576,12 +588,19 @@ transcript.
 
 ### The correction guide is catalog data
 
+ADR 0012 (proposed) requires deterministic conventions before the first
+correction and records the guide revision on every text revision.
+
 Correctors need a short shared convention before the pilot. The active guide is
 stored as Markdown in PostgreSQL with immutable revisions. Every corrector may
 read it; only a catalog administrator may edit it, using the existing
 `manage_catalog_config` authority. A guide edit becomes active immediately and
 does not invalidate decisions. Each publication records the active guide
 revision for audit.
+
+ADR 0012 (proposed) amends the filler and unclear-speech rules below: fillers
+are written as heard with a fixed set of spellings, and unclear speech is
+flagged `unclear` instead of disapproved.
 
 The initial convention is a faithful, readable transcript:
 
@@ -681,8 +700,11 @@ that gate.
 - Correctors see who edited, approved, disapproved, withdrew and commented.
 - Optimistic revision checks prevent lost updates; v1 has no leases.
 - Empty text is the outcome for machine output with no speech behind it;
-  unclear speech is disapproved. There is no unintelligible marker.
+  unclear speech is disapproved. There is no unintelligible marker. ADR 0012
+  (proposed) amends this: unclear speech is flagged, not disapproved.
 - Span boundaries stay fixed; v1 has no split, merge or word-timing repair.
+  ADR 0012 (proposed) amends where the boundaries come from: runs of VAD
+  regions inside one decoded chunk, not source segments.
 - Correctors cannot publish. Curators and catalog administrators can.
 - A publication is an immutable snapshot while the workspace stays live.
 - Reader and search publication pointers are separate; ordinary unpublish clears

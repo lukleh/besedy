@@ -26,6 +26,7 @@ each record links to those references.
 | [0009](0009-event-poster-publication.md) | Accepted | Immutable event-poster candidates with explicit publication and separate upload/publish authority |
 | [0010](0010-event-page-draft-poster-preview.md) | Accepted | The event page previews the latest draft poster for actors with draft visibility |
 | [0011](0011-poster-to-artwork-rename.md) | Accepted | Rename "poster" to "artwork" ("plakát" to "obálka") across schema, storage, API, and CLI |
+| [0012](0012-correction-data-contract.md) | Proposed | Correction spans from decoded VAD chunks and an append-only data contract for training reuse |
 
 When a decision changes, add a new ADR and mark the old record superseded. Do
 not rewrite old context to make it appear that the new design always existed.
