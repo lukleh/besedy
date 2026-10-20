@@ -4,6 +4,8 @@
 # noisy, repo-wide churn. Start conservative and tighten over time.
 
 target-version = "py313"
+# training/ is its own uv project pinned to Python 3.12 (training/pyproject.toml).
+per-file-target-version = { "training/**" = "py312" }
 line-length = 100
 
 extend-exclude = [
