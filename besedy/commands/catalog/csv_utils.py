@@ -13,10 +13,17 @@ def resolve_catalog_csv(
     purpose: str,
     default_symlink: Path | None = None,
 ) -> Path:
-    """Return a catalog CSV path, falling back to the project symlink."""
+    """Return a catalog CSV path, falling back to the project symlink.
+
+    A symlink, explicit or the default, resolves to the file it names: callers
+    derive companion files (`<stem>_loudness.csv`, ...) and the timestamp from
+    this path, and the "latest" symlink names would derive other symlinks.
+    """
 
     if csv_path is not None:
         candidate = csv_path.expanduser()
+        if candidate.is_symlink():
+            candidate = candidate.resolve()
     else:
         symlink = default_symlink
         if symlink and (symlink.exists() or symlink.is_symlink()):

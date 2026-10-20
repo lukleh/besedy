@@ -269,9 +269,12 @@ Every row on **Admin -> Ingest** in a finished state has a **Remove** action
   `remove_recording_flow` (`besedy/lib/prefect_jobs/flows/remove_recording.py`):
   `catalog remove --hash <hash> --execute --delete-source` (drops the hash from
   `audio_catalog_<TS>.csv` and its `_loudness`, `_loudness_normalized`,
-  `_loudness_archived`, `_duplicates` and `_joined` generations, deletes the
+  `_loudness_archived`, `_duplicates` and `_joined` generations, where joined
+  rows match on `Output Hash` so a join that used the hash as a source part
+  keeps its provenance; deletes the
   source file + `.audiohash` unless another catalog references that same path,
-  the staged WAV, the archived audio, every
+  the staged WAV and the archived audio unless another catalog's manifest lists
+  that same file, every
   selected catalog's `transcripts_<TS>/<backend>/<model>/<hash>/` and
   `speaker_diarization/*/<hash>/`, and deletes
   `speaker_embeddings/*/file/<hash>/` only if no other catalog references the
