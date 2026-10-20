@@ -203,26 +203,36 @@ ALTER TABLE "transcript_span_flag_event" ADD CONSTRAINT "transcript_span_flag_ev
 ALTER TABLE "transcript_contributor_consent" ADD CONSTRAINT "transcript_contributor_consent_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- The contract columns of a workspace are set together, or not at all on a
--- workspace started before this contract.
+-- workspace started before this contract. Each column is required explicitly
+-- in the second branch: a NULL there would otherwise make the whole check
+-- pass, because (FALSE OR NULL) is not FALSE.
 ALTER TABLE "transcript_workspace" ADD CONSTRAINT "transcript_workspace_contract_check" CHECK (
   (
     "segmentation_version" IS NULL AND "segmentation_params" IS NULL AND "source_chunk_count" IS NULL
     AND "staged_audio_path" IS NULL AND "staged_audio_size" IS NULL AND "staged_audio_sha256" IS NULL
   ) OR (
-    "segmentation_version" IS NOT NULL AND "segmentation_params" IS NOT NULL AND "source_chunk_count" > 0
-    AND "staged_audio_path" IS NOT NULL AND "staged_audio_size" > 0 AND length("staged_audio_sha256") = 64
+    "segmentation_version" IS NOT NULL AND "segmentation_params" IS NOT NULL
+    AND "source_chunk_count" IS NOT NULL AND "source_chunk_count" > 0
+    AND "staged_audio_path" IS NOT NULL
+    AND "staged_audio_size" IS NOT NULL AND "staged_audio_size" > 0
+    AND "staged_audio_sha256" IS NOT NULL AND length("staged_audio_sha256") = 64
   )
 );
 
 -- A span's chunk and region data are set together and describe a real range.
+-- As above, every column is required explicitly in the second branch.
 ALTER TABLE "transcript_span" ADD CONSTRAINT "transcript_span_contract_check" CHECK (
   (
     "chunk_ordinal" IS NULL AND "first_region_index" IS NULL AND "last_region_index" IS NULL
     AND "start_sample" IS NULL AND "end_sample" IS NULL AND "speech_regions" IS NULL AND "machine_words" IS NULL
   ) OR (
-    "chunk_ordinal" >= 0 AND "first_region_index" >= 0 AND "last_region_index" >= "first_region_index"
-    AND "start_sample" >= 0 AND "end_sample" > "start_sample"
-    AND jsonb_typeof("speech_regions") = 'array' AND jsonb_typeof("machine_words") = 'array'
+    "chunk_ordinal" IS NOT NULL AND "chunk_ordinal" >= 0
+    AND "first_region_index" IS NOT NULL AND "first_region_index" >= 0
+    AND "last_region_index" IS NOT NULL AND "last_region_index" >= "first_region_index"
+    AND "start_sample" IS NOT NULL AND "start_sample" >= 0
+    AND "end_sample" IS NOT NULL AND "end_sample" > "start_sample"
+    AND "speech_regions" IS NOT NULL AND jsonb_typeof("speech_regions") = 'array'
+    AND "machine_words" IS NOT NULL AND jsonb_typeof("machine_words") = 'array'
   )
 );
 
@@ -232,9 +242,12 @@ ALTER TABLE "transcript_span_revision" ADD CONSTRAINT "transcript_span_revision_
   AND ("origin" IS DISTINCT FROM 'SUGGESTION' OR "suggestion_backend" IS NOT NULL)
 );
 
--- Playback is a share of the span and positive rates.
+-- Playback is recorded as a whole or not at all: the heard share of the span
+-- together with both playback rates, the share within [0, 1] and the rates
+-- positive and ordered.
 ALTER TABLE "transcript_span_decision" ADD CONSTRAINT "transcript_span_decision_playback_check" CHECK (
-  ("heard_fraction" IS NULL OR ("heard_fraction" >= 0 AND "heard_fraction" <= 1))
+  num_nulls("heard_fraction", "min_playback_rate", "max_playback_rate") IN (0, 3)
+  AND ("heard_fraction" IS NULL OR ("heard_fraction" >= 0 AND "heard_fraction" <= 1))
   AND ("min_playback_rate" IS NULL OR "min_playback_rate" > 0)
   AND ("max_playback_rate" IS NULL OR "max_playback_rate" > 0)
   AND ("min_playback_rate" IS NULL OR "max_playback_rate" IS NULL OR "min_playback_rate" <= "max_playback_rate")

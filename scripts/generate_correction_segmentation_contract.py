@@ -291,6 +291,77 @@ case(
     ],
 )
 
+case(
+    "split_long_run_no_cut_fits_falls_back_to_widest_gap",
+    "When no single cut leaves both parts within 30 s, the run is cut at its widest pause anyway, and the long part is cut again.",
+    runs([(0.75, 0.95)] * 9 + [(0.75, 0.99)] + [(0.75, 0.95)] * 29 + [(0.75, 0.0)]),
+    [seg("Slovo.", [("Slovo.", 0.2, 0.7)])],
+)
+
+case(
+    "merge_short_refused_on_both_sides",
+    "A short span stays alone when joining either neighbour would pass 30 s, even though both are in its chunk.",
+    runs([(14.0, 15.5), (0.9, 15.5), (14.0, 0.0)]),
+    [
+        seg(
+            "Dlouhá řeč. Ano. Další řeč.",
+            [
+                ("Dlouhá", 1.0, 1.5),
+                ("řeč.", 12.0, 13.0),
+                ("Ano.", 29.6, 30.3),
+                ("Další", 46.0, 46.5),
+                ("řeč.", 47.0, 48.0),
+            ],
+        )
+    ],
+)
+
+case(
+    "words_outside_all_regions_go_to_nearest_span",
+    "A word timed before the first region or after the last one belongs to the nearest region's span.",
+    [(5.0, 10.0), (12.0, 15.0)],
+    [
+        seg(
+            "Před začátkem. Po konci.",
+            [("Před", 1.0, 2.0), ("začátkem.", 6.0, 7.0), ("Po", 13.0, 13.5), ("konci.", 20.0, 21.0)],
+        )
+    ],
+)
+
+cases.append(
+    {
+        "name": "words_with_missing_or_non_numeric_times",
+        "why": "A word without usable times counts as spoken at 0 s (or at its start when only the end is missing), so it goes to the nearest region's span; its text is still cut from the segment text in order.",
+        "transcript": transcript(
+            runs([(4.0, 2.0), (4.0, 0.0)]),
+            [
+                {
+                    "text": "Jedna dva tři čtyři pět.",
+                    "words": [
+                        {"word": "Jedna"},
+                        {"word": "dva", "start": "1.5", "end": None},
+                        {"word": "tři", "start": True, "end": 7.5},
+                        {"word": "čtyři", "start": 7.0},
+                        {"word": "pět.", "start": 8.0, "end": {"seconds": 8.5}},
+                    ],
+                }
+            ],
+        ),
+    }
+)
+
+case(
+    "word_order_regresses_across_spans",
+    "When a later word is timed in an earlier span, the segment text cannot be cut in order and each span gets its words joined by spaces.",
+    runs([(4.0, 2.0), (4.0, 0.0)]),
+    [
+        seg(
+            "Jedna dva tři.",
+            [("Jedna", 0.5, 1.0), ("dva", 6.5, 7.0), ("tři.", 1.5, 2.0)],
+        )
+    ],
+)
+
 cases.append(
     {
         "name": "refuse_without_regions",
@@ -306,6 +377,51 @@ cases.append(
         "name": "refuse_chunk_mismatch",
         "why": "A source whose regions rebuild into a different number of chunks than it has segments is refused.",
         "transcript": transcript(runs([(10.0, 0.0)] * 4), [seg("Jen jeden segment.", [])]),
+    }
+)
+cases.append(
+    {
+        "name": "refuse_region_over_30s",
+        "why": "A single region longer than 30 s rebuilds into an empty chunk before it, which no segment can be decoded from, so the source is refused even when the segment count matches.",
+        "transcript": transcript([(0.0, 31.0)], [seg("", []), seg("Dlouhá řeč.", [])]),
+    }
+)
+cases.append(
+    {
+        "name": "refuse_unsorted_regions",
+        "why": "Regions out of audio order are not VAD output and are refused.",
+        "transcript": transcript([(10.0, 15.0), (0.0, 5.0)], [seg("Text.", [])]),
+    }
+)
+cases.append(
+    {
+        "name": "refuse_overlapping_regions",
+        "why": "Regions that overlap are not VAD output and are refused; touching regions are fine (see chunk_packing).",
+        "transcript": transcript([(0.0, 10.0), (5.0, 15.0)], [seg("Text.", [])]),
+    }
+)
+cases.append(
+    {
+        "name": "refuse_empty_region",
+        "why": "A region that ends where it starts holds no speech and is refused.",
+        "transcript": transcript([(0.0, 5.0), (5.0, 5.0)], [seg("Text.", [])]),
+    }
+)
+cases.append(
+    {
+        "name": "refuse_non_list_segments",
+        "why": "A source whose segments are not a list has no segments to match its chunks and is refused.",
+        "transcript": {
+            **transcript([(0.0, 5.0)], []),
+            "segments": {"0": seg("Text.", [])},
+        },
+    }
+)
+cases.append(
+    {
+        "name": "refuse_non_object_meta",
+        "why": "A source whose meta is not an object records no VAD regions and is refused.",
+        "transcript": {"meta": "none", "segments": [seg("Text.", [])]},
     }
 )
 
