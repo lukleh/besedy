@@ -304,13 +304,13 @@ def test_catalog_clean_execute_removes_missing_catalog_entry(
     transcripts_root.mkdir()
 
     monkeypatch.setattr(
-        "besedy.commands.catalog.clean.resolve_transcripts_root",
-        lambda: transcripts_root,
+        "besedy.commands.catalog.clean.resolve_transcripts_parent",
+        lambda: tmp_path,
     )
 
     args = argparse.Namespace(
         csv=csv_path,
-        csv_normalized=tmp_path / "audio_catalog_normalized.csv",
+        csv_normalized=None,
         execute=True,
         force=True,
         prune_orphans=False,
