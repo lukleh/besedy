@@ -43,6 +43,39 @@ backends = {
 print(sorted(backends))
 ```
 
+## ffmpeg cannot reproduce the pinned audio hashes
+
+**Symptom:** `catalog create`, `add`, `hash` or `join`, or the recording-ingest
+flow, stops before writing any row (`HashDecoderMismatchError`):
+
+```text
+Error: /opt/homebrew/Cellar/ffmpeg/9.0.2/bin/ffmpeg does not reproduce the
+pinned audio hashes of 8/8 fixtures (talk_44100hz_stereo_vbr_cover.mp3, ...),
+so it would give catalog audio different identities than the known-good builds.
+```
+
+**Cause:** Lossy decoders and the resampler are not bit-exact across ffmpeg
+builds or CPU feature sets, so this binary would give a recording a different
+identity than the hosts that wrote the catalog. Before hashing anything with an
+ffmpeg binary, `audio_content_sha256sum` decodes the fixtures in
+`besedy/lib/catalog/audio_hash_fixtures/` and refuses if any pinned hash misses.
+A Homebrew build, or a different CPU architecture, is enough to miss all eight.
+
+**Fix:** Put a known-good build first on `PATH` (`catalog join` also takes
+`--ffmpeg-binary`) and re-run. The fixtures' README lists builds verified against
+these pins, with their full `ffmpeg -version` output and a reproducible apt
+fallback. Verify a candidate before installing it on a host that writes catalog
+hashes, rather than after:
+
+```bash
+PATH=/dir/with/candidate:$PATH uv run pytest tests/test_audio_content_hash.py -k pinned -q
+```
+
+Do not set `BESEDY_SKIP_HASH_DECODER_CHECK=1` on a host that meets a real
+catalog; it is for throwaway catalogs and the test suite. A build that cannot be
+matched means the hash algorithm needs a new version and a rehash decision, not
+a bypass.
+
 ## Hash lookup failures / FileNotFoundError
 
 **Symptom:** `FileNotFoundError: transcripts/faster-whisper/<model>/abc123/transcript.json`
