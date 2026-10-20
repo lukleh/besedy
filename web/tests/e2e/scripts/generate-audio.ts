@@ -145,6 +145,10 @@ export async function generateAllAudio(fixturesDir: string): Promise<void> {
     const wavPath = await generateAudioFile(audioDir, spec);
     await generateCompressedAudio(wavPath, audioDir, spec.hash);
     await generateAacCopy(wavPath, audioDir, spec.hash);
+    // The staged 16 kHz WAV a machine transcript was made from, named by hash
+    // as the pipeline names it; correction fingerprints it (ADR 0012).
+    await fs.mkdir(path.join(audioDir, "audio_staged"), { recursive: true });
+    await fs.copyFile(wavPath, path.join(audioDir, "audio_staged", `${spec.hash}.wav`));
     console.log(`  Generated: ${spec.filename} (${spec.duration}s @ ${spec.frequency}Hz)`);
   }
 

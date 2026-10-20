@@ -38,6 +38,9 @@ export const spanViewSchema = z.object({
       })
     )
     .default([]),
+  machineWords: z
+    .array(z.object({ word: z.string(), start: z.number(), end: z.number() }))
+    .default([]),
 });
 
 export type SpanView = z.infer<typeof spanViewSchema>;

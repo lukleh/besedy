@@ -456,7 +456,7 @@
     "guideIsDefault": "Tento katalog zatím nemá vlastní pravidla, zobrazuje se vestavěný text. Uložením vznikne první revize katalogu.",
     "guideSave": "Uložit pravidla",
     "guideSaved": "Pravidla korektury uložena",
-    "shortcutHint": "Ctrl+Enter nebo Cmd+Enter udělá totéž co tlačítko.",
+    "shortcutHint": "Ctrl+Enter nebo Cmd+Enter udělá totéž co tlačítko. Alt+P přehraje úsek, Alt+R zopakuje část, Alt+← a Alt+→ přejdou na předchozí a další část, Alt+B vrátí o 3 s, Alt+S změní rychlost.",
     "conflict": "Někdo tento segment mezitím změnil. Váš text zůstává v editoru; aktuální text je zobrazen zde.",
     "stateNotReviewed": "Nezkontrolováno",
     "stateNeedsSecondApproval": "Chybí druhé schválení",
@@ -558,7 +558,31 @@
       }
     },
     "consentTitle": "Souhlas s použitím oprav",
-    "consentAccept": "Souhlasím"
+    "consentAccept": "Souhlasím",
+    "previousContext": "Předtím:",
+    "audio": {
+      "playSpan": "Přehrát úsek",
+      "previousRegion": "Předchozí část",
+      "repeatRegion": "Zopakovat část",
+      "nextRegion": "Další část",
+      "back": "3 s zpět",
+      "speechWithoutText": "Řeč, ke které model nic nenapsal",
+      "speechWithoutTextHint": "{count, plural, one {Jedna část řeči nemá žádný text} few {# části řeči nemají žádný text} other {# částí řeči nemá žádný text}}: poslechněte ji a dopište, co zaznělo."
+    },
+    "emptySpan": {
+      "hint": "Model tu nic nenapsal. Pokud tu někdo mluví, dopište text. Pokud ne, potvrďte, že tu nic nezaznělo.",
+      "confirm": "Nic tu nezaznělo"
+    },
+    "flags": {
+      "label": "Příznaky",
+      "language": "Jazyk",
+      "UNCLEAR": "Nesrozumitelné",
+      "OVERLAP": "Překryv mluvčích",
+      "OTHER_LANGUAGE": "Jiný jazyk",
+      "MUSIC_NOISE": "Hudba / šum",
+      "CUT_WORD": "Useknuté slovo",
+      "EXCLUDE_FROM_TRAINING": "Nepoužít k trénování"
+    }
   },
   "metadata": {
     "title": "Metadata",

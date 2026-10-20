@@ -378,6 +378,24 @@ describe("AudioPlayer bounded playback", () => {
     expect(pauseMock).toHaveBeenCalledTimes(1);
   });
 
+  it("stops again when the same excerpt is requested again", () => {
+    const { audio, rerender } = renderPlayer({ seekTo: 10, seekKey: 1, playbackEnd: 20 });
+    mockReadyState(audio, 4);
+    const pauseMock = vi.fn();
+    audio.pause = pauseMock;
+
+    audio.currentTime = 20.2;
+    fireEvent.timeUpdate(audio);
+    expect(pauseMock).toHaveBeenCalledTimes(1);
+
+    // The correction page replays a span or a region with the same end.
+    rerender(playerElement({ seekTo: 10, seekKey: 2, playbackEnd: 20 }));
+    audio.currentTime = 20.3;
+    fireEvent.timeUpdate(audio);
+    expect(pauseMock).toHaveBeenCalledTimes(2);
+    expect(audio.currentTime).toBe(20);
+  });
+
   it("does not resume a finished linked excerpt after an error recovery", async () => {
     vi.useFakeTimers();
     const { audio, container } = renderPlayer({ playbackEnd: 20 });
