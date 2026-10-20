@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
 import { fetchJson } from "@/lib/api/fetch-json";
@@ -204,6 +204,19 @@ describe("CorrectionWorkspace contributor consent", () => {
     renderWorkspace(state({}), { consent: { accepted: false, version: "v", text: "Souhlasím s trénováním." } });
     expect(await screen.findByTestId("correction-consent")).toBeInTheDocument();
     expect(screen.queryByTestId("correction-surface")).not.toBeInTheDocument();
+  });
+
+  // Read once before the first edit, formatted rather than as Markdown source.
+  it("shows the whole guide, formatted, under the consent", async () => {
+    const guide = "# Návod pro korektury\n\n- **Čísla** pište číslicemi.";
+    renderWorkspace(
+      state({ guide: { revisionId: "g1", body: guide, authorId: null, updatedAt: null, isDefault: false } }),
+      { consent: { accepted: false, version: "v", text: "Souhlasím s trénováním." } }
+    );
+    const card = await screen.findByTestId("correction-consent-guide");
+    expect(within(card).getByRole("heading", { level: 1, name: "Návod pro korektury" })).toBeInTheDocument();
+    expect(within(card).getByText("Čísla").tagName).toBe("STRONG");
+    expect(card).not.toHaveTextContent("**");
   });
 
   it("says so when consent cannot be checked, instead of an empty page", async () => {

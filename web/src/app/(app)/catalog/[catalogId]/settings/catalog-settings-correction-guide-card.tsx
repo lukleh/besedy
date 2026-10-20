@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MarkdownContent } from "@/components/markdown-content";
 import {
   Card,
   CardContent,
@@ -100,6 +101,14 @@ export function CatalogSettingsCorrectionGuideCard({
           className="font-mono text-sm"
           disabled={guideQuery.isLoading || save.isPending}
         />
+        {body.trim() && (
+          <div className="rounded-md border bg-muted/40 p-4" data-testid="correction-guide-preview">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("guidePreview")}</p>
+            <div className="mt-2 text-sm leading-7">
+              <MarkdownContent markdown={body} />
+            </div>
+          </div>
+        )}
         <Button
           type="button"
           className="gap-2"

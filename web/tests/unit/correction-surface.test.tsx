@@ -91,6 +91,7 @@ function renderSurface(resume: { spanId: string; ordinal: number } | null) {
         userId="user-1"
         workspace={WORKSPACE}
         resume={resume}
+        guide={"# Návod\n\n- **Čísla** číslicemi"}
         onChanged={() => {}}
       />
     </QueryClientProvider>
