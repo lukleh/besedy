@@ -1831,6 +1831,19 @@ async function main() {
     await prisma.catalogEventRecording.create({
       data: { eventId: unstartedEvent.id, workflowGroupId: CATALOG_ID, audioHash: unstartedHash, isPrimary: true },
     });
+    // A second sitting of the same day and place, so the overview numbers the
+    // sessions as the catalog's event list does.
+    await prisma.catalogEvent.create({
+      data: {
+        workflowGroupId: CATALOG_ID,
+        locationId: unstartedEvent.locationId,
+        dateYear: 2027,
+        sessionIndex: 2,
+        title: "Second sitting",
+        createdById: alice.id,
+        updatedById: alice.id,
+      },
+    });
 
     const overview = await loadCorrectionOverview({
       catalogId: CATALOG_ID,
@@ -1858,6 +1871,11 @@ async function main() {
     check("the event and place are named", live?.recording.locationName === "Test place", live?.recording);
 
     const unstarted = overview.notStarted.items.find((item) => item.recording.audioHash === unstartedHash);
+    check(
+      "a day with two sittings numbers them as the event list does",
+      unstarted?.recording.sessionOrdinal === 1 && unstarted.recording.sessionCount === 2,
+      unstarted?.recording
+    );
     check(
       "a primary recording nobody started is listed as not started",
       unstarted?.work === "not_started" && overview.notStarted.total === 1,

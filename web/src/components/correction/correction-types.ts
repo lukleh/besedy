@@ -226,6 +226,8 @@ export const overviewItemSchema = z.object({
     dateYear: z.number().nullable(),
     dateMonth: z.number().nullable(),
     dateDay: z.number().nullable(),
+    sessionOrdinal: z.number().nullable(),
+    sessionCount: z.number().nullable(),
     durationSeconds: z.number(),
   }),
   workspaceId: z.string().nullable(),
