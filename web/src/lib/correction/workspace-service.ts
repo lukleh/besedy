@@ -252,18 +252,24 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
 
   // The immutable copy lands first: a workspace whose frozen source is missing
   // would be unrecoverable, while an orphan file is merely rubbish. The
-  // manifest follows, so its staged audio is protected before any row exists.
+  // manifest follows as `starting`, so its staged audio is protected before
+  // any row exists; it becomes `active` only once the rows are committed, so a
+  // crash in between leaves a manifest the Python guard can recognise as
+  // abandoned (still `starting` after an hour) instead of one that protects
+  // nothing forever.
   await writeFileAtomic(resolveWorkspaceSourcePath(catalogId, workspaceId), source.content);
-  await writeWorkspaceManifest({
-    schema_version: WORKSPACE_MANIFEST_SCHEMA_VERSION,
-    workflow_group_id: catalogId,
-    audio_hash: audioHash,
-    workspace_id: workspaceId,
-    status: "active",
-    segmentation_version: segmentation.version,
-    staged_audio: stagedAudio,
-    updated_at: new Date().toISOString(),
-  });
+  const writeManifest = (status: "starting" | "active") =>
+    writeWorkspaceManifest({
+      schema_version: WORKSPACE_MANIFEST_SCHEMA_VERSION,
+      workflow_group_id: catalogId,
+      audio_hash: audioHash,
+      workspace_id: workspaceId,
+      status,
+      segmentation_version: segmentation.version,
+      staged_audio: stagedAudio,
+      updated_at: new Date().toISOString(),
+    });
+  await writeManifest("starting");
 
   try {
     await prisma.$transaction(
@@ -342,6 +348,8 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
     }
     throw error;
   }
+
+  await writeManifest("active");
 
   return requireActiveWorkspace(catalogId, audioHash);
 }

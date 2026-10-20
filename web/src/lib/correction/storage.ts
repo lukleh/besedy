@@ -122,15 +122,18 @@ export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1;
  * What the Python side needs to know about a workspace without a database
  * (ADR 0012): which staged audio it depends on, so `catalog clean` and
  * re-staging refuse to replace or delete that audio while the workspace is
- * live. Written before the database rows, so a crash in between leaves the
- * audio protected rather than unprotected.
+ * live. Written as `starting` before the database rows, so a crash in between
+ * leaves the audio protected rather than unprotected, and rewritten as
+ * `active` once the rows are committed. A manifest still `starting` more than
+ * one hour after its `updated_at` is an abandoned start: its rows were never
+ * committed, and the Python guard treats it as not protecting anything.
  */
 export interface CorrectionWorkspaceManifest {
   schema_version: number;
   workflow_group_id: string;
   audio_hash: string;
   workspace_id: string;
-  status: "active" | "archived";
+  status: "starting" | "active" | "archived";
   segmentation_version: string;
   staged_audio: { path: string; size: number; sha256: string };
   updated_at: string;

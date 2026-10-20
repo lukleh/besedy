@@ -19,8 +19,10 @@ can never be recovered.
 ADR 0006 was written for publication. Checking it against training on
 2026-10-10 and 2026-10-19 found that the data it stores is not enough. The
 measurements below were made with the production default backend
-(`faster-whisper/large-v3@silero_vad_v6@lang-cs`, 254 recordings, 90,054
-segments) and the pinned faster-whisper 1.2.1.
+(`faster-whisper/large-v3@silero_vad_v6@lang-cs`) and the pinned
+faster-whisper 1.2.1. The corpus had 254 recordings and 90,054 segments on
+2026-10-10 and 255 recordings and 90,461 segments on 2026-10-19; each figure
+below names its date.
 
 **How the model sees the audio.** The pipeline uses faster-whisper's batched
 mode with `without_timestamps=True` and `condition_on_previous_text=False`:
@@ -38,10 +40,12 @@ mode with `without_timestamps=True` and `condition_on_previous_text=False`:
 
 The VAD regions are stored in every transcript as
 `meta.generation_params.transcription_options.clip_timestamps`. Repeating step 2
-on them gives exactly as many chunks as there are segments in all 254
-transcripts. The model input is therefore recoverable exactly.
+on them gives exactly as many chunks as there are segments in every transcript,
+checked on all 254 transcripts on 2026-10-10 and again on all 255 on
+2026-10-19. The model input is therefore recoverable exactly.
 
-**What is wrong with source segments as correction spans.**
+**What is wrong with source segments as correction spans.** Measured on
+2026-10-10:
 
 - **They miss speech.** Step 4 leaves 8.5 % of VAD speech (57.7 h of 680 h)
   outside every segment. A sample of 60 segments with at least 2 s outside
@@ -89,14 +93,20 @@ recordings found 0 ms offset, at most about 5 ms for Opus.
 - A **chunk** is the group of regions the model decoded together, rebuilt with
   the same rule as `collect_chunks`. It is the unit of training.
 - A **span** is the unit of correction. It is a run of consecutive regions inside
-  one chunk, split wherever the silence between two regions is at least 1 s. A
-  run still longer than 30 s from first region start to last region end is split
-  between two regions, recursively. The cut goes where both parts stay within
-  30 s if possible, then at the widest pause, then where the parts are most even.
-  Every region boundary lies in a pause, so any of them may be cut. A run
-  shorter than 2 s is then merged
-  into its neighbour in the same chunk, across the shorter gap first, whenever
-  the merged run stays within 30 s. Repeat until nothing changes.
+  one chunk, formed in three ordered steps:
+  1. Split the chunk's regions into runs wherever the silence between two
+     regions is at least 1 s.
+  2. Split every run longer than 30 s from first region start to last region
+     end between two of its regions, recursively. The cut goes where both parts
+     stay within 30 s if possible, then at the widest pause, then where the
+     parts are most even, then at the earliest position. Every region boundary
+     lies in a pause, so any of them may be cut.
+  3. Merge every run shorter than 2 s into its neighbour in the same chunk,
+     across the shorter gap first, whenever the merged run stays within 30 s.
+     Repeat until nothing changes.
+
+  Step 3 reintroduces gaps of 1 s or more inside a span, so the 1 s rule
+  describes the first step, not the final spans.
 
 Merging short runs only changes how a chunk is divided among correctors. The
 chunk, which is the training input, stays the same. Spans of one or two seconds
@@ -107,9 +117,10 @@ without words, and are not worth correcting on their own.
 of audio of at most 30 s and writes what is heard in it. The texts of a chunk's
 spans, in order, are the exact label for the exact model input.
 
-On the production data of 2026-10-19 (90,461 chunks), this gives 152,617 spans.
-All are at most 30 s and the median is about 16.5 s. Silence inside a span has a
-median of 0.13 s and a 99th percentile of 4.2 s.
+On the production data of 2026-10-19 (255 recordings, 90,461 segments and
+therefore 90,461 chunks), this gives 152,617 spans. All are at most 30 s and
+the median is about 16.5 s. Silence inside a span has a median of 0.13 s and a
+99th percentile of 4.2 s.
 
 Without the merge, 12,666 spans were shorter than 2 s and 3,725 shorter than
 1 s. After it, 1,941 and 503 remain; these cannot merge without passing 30 s.
@@ -151,11 +162,30 @@ The algorithm has one reference implementation in Python and one in TypeScript.
 They share fixtures under `contracts/`, so the web import and the training
 export cannot diverge.
 
-**A start is refused** when the frozen source has no `clip_timestamps`, or when
-its chunk count differs from its segment count. Falling back to word bounds
-would silently bring back the gaps this record closes. **The staged audio of a
-recording with a live workspace is protected:** `catalog clean` and
-re-staging refuse to replace or delete it.
+**The staged-audio fingerprint rests on an assumption.** The transcript records
+only the staged audio's path and duration, not its hash. The fingerprint taken
+at workspace start therefore identifies the file present at that moment, not
+provably the file faster-whisper decoded. Two measures narrow the gap: the
+start refuses when the WAV's duration differs from the transcript's
+`meta.duration` by more than 50 ms (`STAGED_AUDIO_MISMATCH`), and the
+staged-audio guard below covers the time after the start. Recording the staged
+WAV's SHA-256 in the transcript meta at transcription time would close the
+remaining gap; see Deferred questions.
+
+**A start is refused** when:
+
+- the frozen source has no `clip_timestamps`;
+- its chunk count differs from its segment count;
+- the person starting it has not accepted the contributor terms;
+- the catalog has no saved guide revision, which the imported `machine`
+  revisions are stamped with;
+- the staged audio is missing, belongs to another recording, or has a
+  different duration than the transcript records.
+
+Falling back to word bounds would silently bring back the gaps this record
+closes. **The staged audio of a recording with a live workspace is protected:**
+`catalog clean` and `catalog remove` keep it, and re-staging with `--overwrite`
+reuses the protected file with a warning instead of replacing it.
 
 ### Flags describe the audio and do not block publication
 
@@ -168,8 +198,9 @@ A corrector can set flags on a span:
 - `cut_word`: a word cut at the span boundary;
 - `exclude_from_training`: with an optional comment.
 
-Flags are immutable set and clear events with an actor and time, plus a current
-projection. Flags never affect the done state or publication.
+Flags are stored as immutable set and clear events with an actor and time. A
+span's current flags are derived from the latest event per kind; there is no
+separate state table. Flags never affect the done state or publication.
 
 This amends ADR 0006 on unclear speech. A corrector writes what is clear and
 sets `unclear` instead of disapproving, so one hard passage no longer keeps a
@@ -189,7 +220,8 @@ Values are measured by the client and stored as reported; the group is small and
 trusted. Playback never makes a span done. ADR 0006's rule that only explicit
 decisions count is unchanged. It is recorded because an approval made without
 listening is worthless for training, and that cannot be found out afterwards.
-Correctors are told that playback coverage is recorded.
+The contributor terms state that playback coverage and rate are recorded with
+each decision.
 
 ### Every revision records its origin and guide
 
@@ -235,10 +267,19 @@ inconsistent labels.
 
 ### Corrector consent is recorded before any writing
 
-Before a person's first edit, flag or decision, they accept contributor terms.
-The terms cover publishing their corrections and using them to train and
-evaluate models. Acceptance is stored with the terms version and time. The
-correction write commands refuse without it.
+Before a person starts a workspace or makes their first edit, flag or decision,
+they accept contributor terms. The terms cover publishing their corrections and
+using them to train and evaluate models. Acceptance is stored with the terms
+version and time. The workspace start and the correction write commands refuse
+without it.
+
+**Correctors' personal data under the append-only rule.** The correction tables
+hold no name or email. `actor_key` is the account id, and `user_id` references
+the account with `ON DELETE SET NULL`. Erasure of a corrector's account deletes
+the `users` row; after that the actor key no longer resolves to a person and
+the corrections stay as pseudonymous work, as the terms state. Free-text
+comments are the corrector's own words and are covered by the terms. No row in
+the correction tables is ever updated or deleted for erasure.
 
 This version records nothing about the speakers on the recordings: no consent
 and no speaker attribution.
@@ -272,7 +313,11 @@ change later without touching corrections. The initial policy is:
   playback of at least 90 % of the span's speech.
 - **Test recordings are set aside first.** They are chosen before correction
   starts and are corrected whole, and none of their chunks ever trains a
-  model.
+  model. The list is a versioned file in the repository,
+  `contracts/correction-test-recordings.json`, keyed by catalog id and listing
+  audio hashes. The export reads it by default; `--test-recordings` overrides
+  it only for experiments. A hash is added before correction of that recording
+  starts and is never removed.
 - **Every export is recorded.** Its manifest lists the revision IDs used, so a
   training set can be rebuilt exactly.
 
@@ -328,7 +373,11 @@ may only be extended.
   a fixed set of spellings; cut words and repetitions are written as heard;
   numbers use digits; foreign words keep their spelling. These conventions are fixed before the first correction, and only
   clarifications follow.
-- Contributor consent is recorded before any write.
+- Contributor consent is recorded before a workspace start and before any
+  write.
+- The correction tables hold no name or email; erasure deletes the account row
+  and leaves the corrections as pseudonymous work. No correction row is ever
+  updated or deleted for erasure.
 - This version records nothing about speakers.
 - The correction data is append-only, checked in CI and every night.
 - Training eligibility lives in export code.
@@ -336,6 +385,8 @@ may only be extended.
 ## Deferred questions
 
 - The exact wording of the contributor terms.
+- Recording the staged WAV's SHA-256 in the transcript meta at transcription
+  time, so a workspace can prove it fingerprints the file the model decoded.
 - How the UI presents the 1,941 spans that stay under 2 s because merging
   would pass 30 s, for example a quick "nothing said here" confirmation.
 - Whether speaker consent or attribution is needed in a later version.
