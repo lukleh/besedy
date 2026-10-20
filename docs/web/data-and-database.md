@@ -274,10 +274,12 @@ That manifest (status, segmentation version and staged-audio identity) is what
 the Python side will read to keep the staged audio of a live workspace
 unchanged; that guard in `catalog clean` and re-staging lands in a follow-up
 PR (#411). The manifest is written with `status: "starting"` before the
-database rows and rewritten as `"active"` once they are committed, so a crash
-in between leaves a `starting` manifest rather than an `active` one that
-protects nothing. The guard treats a manifest still `starting` more than one
-hour after its `updated_at` as an abandoned start that protects nothing.
+database rows and rewritten as `"active"` once they are committed; the guard
+protects the audio of both. A start that crashes before its commit leaves an
+orphan manifest, which the nightly integrity check reports for removal by hand.
+One that crashes after its commit is finished the next time the workspace is
+locked: `lockWorkspace` rewrites a `starting` manifest of a live workspace as
+`active`.
 
 Fingerprinting the staged audio reads the file through the container's path
 rules, so the host staged-audio tree
