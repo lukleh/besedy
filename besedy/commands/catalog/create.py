@@ -146,9 +146,12 @@ def handle_create(args: argparse.Namespace) -> int:
         return 1
 
     # Prepare output path and validate symlink
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_csv = resolve_catalogs_root() / f"audio_catalog_{timestamp}.csv"
-    catalog_csv_path = args.output or default_csv
+    if args.output:
+        catalog_csv_path = args.output
+    else:
+        # Only an omitted --output needs the configured text data root.
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        catalog_csv_path = resolve_catalogs_root() / f"audio_catalog_{timestamp}.csv"
 
     symlink_path = catalog_csv_path.parent / "audio_catalog.csv"
     need_symlink = not args.no_symlink and symlink_path != catalog_csv_path

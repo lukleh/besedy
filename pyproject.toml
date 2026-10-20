@@ -54,7 +54,8 @@ dev = [
     "vulture>=2.16",
 ]
 
-# Stable PyTorch with CUDA 13.0 on Linux x86_64
+# Stable PyTorch with CUDA 13.0 on Linux x86_64; macOS (arm64) resolves the
+# ml extra from PyPI so `just setup-ml`/`setup-all` work on a development Mac.
 [tool.uv]
 constraint-dependencies = [
     # 2.11.2 was yanked for accidentally merged unreleased features.
@@ -62,6 +63,7 @@ constraint-dependencies = [
 ]
 required-environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [[tool.uv.index]]
@@ -70,9 +72,9 @@ url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu130" }
-torchaudio = { index = "pytorch-cu130" }
-torchcodec = { index = "pytorch-cu130" }
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
+torchcodec = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux'" }]
 
 [tool.ty.rules]
 "unresolved-import" = "ignore"
