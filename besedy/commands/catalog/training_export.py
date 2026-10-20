@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from besedy.core.paths_runtime import resolve_corrections_root, resolve_text_data_root
+from besedy.core.paths_runtime import resolve_audio_artifacts_root, resolve_corrections_root
 from besedy.core.symlinks import create_or_update_symlink
 from besedy.lib.correction_guard import CorrectionManifestError
 from besedy.lib.correction_training import (
@@ -32,8 +32,9 @@ Asks the web application which corrected chunks may train a model, rebuilds
 each one exactly as the model was given it (its VAD regions concatenated from
 the staged WAV) and writes it with its corrected text as the label.
 
-The output goes to <text data root>/training/training_export_<timestamp>/ with
-a training_export symlink to the latest: audio/*.wav, manifest.jsonl (label,
+The output goes next to the staged audio it is cut from, not into the backed-up
+text data: <audio artifacts root>/training/training_export_<timestamp>/ with a
+training_export symlink to the latest: audio/*.wav, manifest.jsonl (label,
 split and the revision IDs of every chunk), export.json (what the web listed,
 including excluded chunks and why) and dataset.json (policy and counts).
 
@@ -70,7 +71,7 @@ Examples:
         "--output-dir",
         type=Path,
         default=None,
-        help="Default: timestamped under the text data root",
+        help="Default: timestamped under the audio artifacts root",
     )
     parser.add_argument(
         "--map-path",
@@ -96,7 +97,7 @@ def handle_training_export(args: argparse.Namespace) -> int:
             output_dir = args.output_dir.expanduser()
             symlink = None
         else:
-            base = resolve_text_data_root() / "training"
+            base = resolve_audio_artifacts_root() / "training"
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = base / f"training_export_{stamp}"
             symlink = base / "training_export"

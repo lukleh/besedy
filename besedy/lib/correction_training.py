@@ -27,13 +27,16 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from besedy.lib import correction_segmentation as cs
+from besedy.lib.catalog.manager import source_file_sha256
+from besedy.lib.correction_guard import map_recorded_path
 
 DATASET_SCHEMA_VERSION = 1
 
-# The spellings the correction guide fixes for fillers (ADR 0012).
+# The spellings the correction guide fixes for fillers (ADR 0012). A filler
+# takes the punctuation written right after it along: "Ehm?" leaves no "?".
 FILLERS = ("ehm", "eee", "hm", "mhm")
 _FILLER = re.compile(
-    r"(?<![\w-])(?:" + "|".join(FILLERS) + r")(?![\w-])[,.…]*", flags=re.IGNORECASE
+    r"(?<![\w-])(?:" + "|".join(FILLERS) + r")(?![\w-])[,.…?!:;]*", flags=re.IGNORECASE
 )
 
 
@@ -80,13 +83,6 @@ def load_test_recordings(path: Path | None) -> set[str]:
         return set()
     hashes = json.loads(raw) if raw.startswith("[") else raw.split()
     return {str(value).strip() for value in hashes if str(value).strip()}
-
-
-def _mapped(path: str, path_map: Mapping[str, str]) -> Path:
-    for source in sorted(path_map, key=len, reverse=True):
-        if path == source or path.startswith(source.rstrip("/") + "/"):
-            return Path(path_map[source] + path[len(source) :])
-    return Path(path)
 
 
 @dataclass
@@ -157,12 +153,11 @@ def build_dataset(
         chunks = cs.build_chunks(regions)
 
         staged = workspace["stagedAudio"]
-        audio_path = _mapped(staged["path"], path_map or {})
+        audio_path = map_recorded_path(staged["path"], path_map or {})
         if audio_path.stat().st_size != int(staged["size"]):
             raise TrainingExportError(f"Staged audio {audio_path} changed size")
         if verify_audio_hash:
-            digest = hashlib.sha256(audio_path.read_bytes()).hexdigest()
-            if digest != staged["sha256"]:
+            if source_file_sha256(audio_path) != staged["sha256"]:
                 raise TrainingExportError(f"Staged audio {audio_path} changed")
 
         split = "test" if workspace["audioHash"] in test else "train"

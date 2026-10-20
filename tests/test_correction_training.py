@@ -174,3 +174,22 @@ def test_strip_fillers_removes_only_the_fixed_spellings() -> None:
     assert strip_fillers("Ehm, tak hm jsme šli. Mhm.") == "tak jsme šli."
     assert strip_fillers("hmotnost a hmyz") == "hmotnost a hmyz"
     assert strip_fillers("eee… no jo") == "no jo"
+    assert strip_fillers("Ehm? Ano. Hm! Dobře. Mhm: tak") == "Ano. Dobře. tak"
+
+
+def test_the_command_writes_next_to_the_audio_artifacts(tree, tmp_path: Path, monkeypatch) -> None:
+    from besedy.cli import catalog as catalog_cli
+
+    export, root, _output = tree
+    export_file = tmp_path / "export.json"
+    export_file.write_text(json.dumps(export), encoding="utf-8")
+    artifacts = tmp_path / "audio_artifacts"
+    monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(artifacts))
+    monkeypatch.setattr(catalog_cli, "install_signal_handlers", lambda: None)
+
+    argv = ["training-export", "--export-json", str(export_file), "--corrections-root", str(root)]
+    assert catalog_cli.main(argv) == 0
+    latest = artifacts / "training" / "training_export"
+    assert latest.is_symlink()
+    assert latest.resolve().name.startswith("training_export_")
+    assert (latest / "manifest.jsonl").is_file()
