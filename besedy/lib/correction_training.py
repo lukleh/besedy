@@ -7,9 +7,9 @@ model was given it, the chunk's VAD regions concatenated from the staged
 16 kHz WAV, and labels it with its spans' corrected texts in order.
 
 Everything that decides what trains a model lives in export code and may
-change: the web's eligibility policy, the test recordings listed in
-``contracts/correction-test-recordings.json``, and whether fillers stay in
-labels.
+change: the web's eligibility policy, the test recordings listed next to
+the catalog's corrections (``test-recordings.json``), and whether fillers stay
+in labels.
 """
 
 from __future__ import annotations
@@ -36,10 +36,10 @@ LOGGER = logging.getLogger(__name__)
 
 DATASET_SCHEMA_VERSION = 1
 
-# Audio hashes set aside for testing, per catalog, shared with the web app.
-DEFAULT_TEST_RECORDINGS_PATH = (
-    Path(__file__).resolve().parents[2] / "contracts" / "correction-test-recordings.json"
-)
+# Audio hashes set aside for testing live with the catalog's corrections, not
+# in the repository: they are this deployment's data, backed up with the work
+# they protect.
+TEST_RECORDINGS_NAME = "test-recordings.json"
 TEST_RECORDINGS_VERSION = 1
 _AUDIO_HASH = re.compile(r"^[0-9a-f]{64}$")
 
@@ -121,17 +121,29 @@ def merge_training_exports(exports: Sequence[Mapping[str, Any]]) -> dict[str, An
     return merged
 
 
-def load_test_recordings(path: Path, catalog_id: str) -> set[str]:
+def test_recordings_path(corrections_root: Path, catalog_id: str) -> Path:
+    """Where a catalog's test recordings are listed, next to its workspaces."""
+    return corrections_root / f"corrections_{catalog_id}" / TEST_RECORDINGS_NAME
+
+
+def load_test_recordings(path: Path) -> set[str]:
     """Audio hashes set aside for testing.
 
-    The repository file ``contracts/correction-test-recordings.json`` maps a
-    catalog to its hashes; a JSON list or one hash per line names them for any
-    catalog. A catalog the repository file does not name is refused rather
-    than read as having no test recordings: a recording trained on can never
-    become a test recording again, so the list is chosen before any export.
-    An explicit empty list says the catalog has none on purpose.
+    A catalog's list is ``{"version": 1, "audio_hashes": [...]}`` at
+    :func:`test_recordings_path`; a file given on the command line may also be
+    a JSON list or one hash per line. A missing list is refused rather than
+    read as having no test recordings: a recording trained on can never become
+    a test recording again, so the list is chosen before any export. An
+    explicit empty list says the catalog has none on purpose.
     """
-    raw = path.read_text(encoding="utf-8").strip()
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError as exc:
+        raise TrainingExportError(
+            f"No test recordings are listed at {path}. Choose them before the first export "
+            '(write {"version": 1, "audio_hashes": [...]}, an empty list if the catalog has '
+            "none on purpose), or pass --no-test-recordings for an experiment"
+        ) from exc
     if not raw:
         return set()
     if raw.startswith("{"):
@@ -141,14 +153,9 @@ def load_test_recordings(path: Path, catalog_id: str) -> set[str]:
                 f"{path} is test recordings version {document.get('version')!r}, "
                 f"expected {TEST_RECORDINGS_VERSION}"
             )
-        catalogs = document.get("catalogs", {})
-        if catalog_id not in catalogs:
-            raise TrainingExportError(
-                f"{path} names no test recordings for catalog {catalog_id}. Choose them before "
-                "the first export (an empty list if the catalog has none on purpose), or pass "
-                "--no-test-recordings for an experiment"
-            )
-        hashes = catalogs[catalog_id]
+        hashes = document.get("audio_hashes")
+        if not isinstance(hashes, list):
+            raise TrainingExportError(f"{path} has no audio_hashes list")
     else:
         hashes = json.loads(raw) if raw.startswith("[") else raw.split()
     result = {str(value).strip() for value in hashes if str(value).strip()}

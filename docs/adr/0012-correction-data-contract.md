@@ -316,11 +316,12 @@ change later without touching corrections. The initial policy is:
   playback of at least 90 % of the span's speech.
 - **Test recordings are set aside first.** They are chosen before correction
   starts and are corrected whole, and none of their chunks ever trains a
-  model. The list is a versioned file in the repository,
-  `contracts/correction-test-recordings.json`, keyed by catalog id and listing
-  audio hashes. The export reads it by default; `--test-recordings` overrides
-  it only for experiments. A hash is added before correction of that recording
-  starts and is never removed.
+  model. The list is deployment data, not repository content: a file next to
+  the catalog's corrections, `corrections_<catalog id>/test-recordings.json`
+  under the corrections root, backed up with them. The export reads it by
+  default and refuses a catalog that has none; `--test-recordings` overrides
+  it only for experiments, and every dataset records the list it used. A hash
+  is added before correction of that recording starts and is never removed.
 - **Every export is recorded.** Its manifest lists the revision IDs used, so a
   training set can be rebuilt exactly.
 

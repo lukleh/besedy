@@ -96,12 +96,13 @@ all three together and bump `SEGMENTATION_VERSION` when the output changes.
 
 ### Correction Test Recordings and Training Export
 
-`contracts/correction-test-recordings.json` lists, per catalog ID, the audio
-hashes set aside for testing a fine-tuned model (ADR 0012). They are chosen
-before correction starts and corrected whole; none of their chunks ever trains
-a model. The file starts with an empty `catalogs` object and is extended by
-hand. `tests/test_correction_training.py` checks that it parses and that every
-hash is 64 lowercase hex characters.
+Each catalog lists the audio hashes set aside for testing a fine-tuned model
+(ADR 0012) in `<corrections root>/corrections_<catalog id>/test-recordings.json`,
+as `{"version": 1, "audio_hashes": [...]}`. The list is this deployment's data,
+not the repository's: it sits next to the corrections it protects and is backed
+up with them. The recordings are chosen before correction starts and corrected
+whole; none of their chunks ever trains a model. The file is written by hand on
+the host; a hash is added and never removed.
 
 `catalog training-export --catalog-id <id>` (`besedy/commands/catalog/training_export.py`,
 `besedy/lib/correction_training.py`) asks the web for the corrected chunks that
@@ -111,8 +112,8 @@ rebuilds each chunk's audio from the staged WAV exactly as the model was given
 it, labelled with its spans' corrected texts. The host running it needs
 `BESEDY_INTERNAL_BASE_URL` and `BESEDY_JOB_SERVICE_SECRET` in its environment.
 Every staged WAV is hashed and compared with what the web recorded
-(`--skip-audio-hash` trusts the size only); recordings in the contract file get
-`split: test`. A catalog the file does not name is refused, so the test set is
+(`--skip-audio-hash` trusts the size only); recordings in the catalog's list
+get `split: test`. A catalog without that file is refused, so the test set is
 chosen before the first export (an empty list says a catalog has none on
 purpose); `--test-recordings` names another list, `--no-test-recordings` sets
 nothing aside for an experiment, and `--audio-hash`

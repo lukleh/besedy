@@ -12,12 +12,12 @@ from besedy.core.paths_runtime import resolve_audio_artifacts_root, resolve_corr
 from besedy.core.symlinks import create_or_update_symlink
 from besedy.lib.correction_guard import CorrectionManifestError
 from besedy.lib.correction_training import (
-    DEFAULT_TEST_RECORDINGS_PATH,
     TrainingExportError,
     build_dataset,
     fetch_training_export,
     load_test_recordings,
     merge_training_exports,
+    test_recordings_path,
 )
 
 
@@ -35,11 +35,13 @@ each one exactly as the model was given it (its VAD regions concatenated from
 the staged WAV) and writes it with its corrected text as the label.
 
 Every staged WAV is hashed and compared with what the web recorded; a changed
-file stops the export. Recordings set aside for testing come from
-contracts/correction-test-recordings.json, which must name the catalog (an
-empty list if it has none on purpose); --test-recordings names another list
-and --no-test-recordings sets nothing aside, for experiments. Fetching needs BESEDY_INTERNAL_BASE_URL and
-BESEDY_JOB_SERVICE_SECRET in the environment.
+file stops the export. Recordings set aside for testing are listed in
+<corrections root>/corrections_<catalog>/test-recordings.json as
+{"version": 1, "audio_hashes": [...]}; without that file the export refuses
+(an empty list says the catalog has none on purpose). --test-recordings names
+another list and --no-test-recordings sets nothing aside, for experiments.
+Fetching needs BESEDY_INTERNAL_BASE_URL and BESEDY_JOB_SERVICE_SECRET in the
+environment.
 
 The output goes next to the staged audio it is cut from, not into the backed-up
 text data: <audio artifacts root>/training/training_export_<timestamp>/ with a
@@ -72,8 +74,8 @@ Examples:
         type=Path,
         help=(
             "Audio hashes set aside for testing (JSON list or one per line), never trained on; "
-            f"default: {DEFAULT_TEST_RECORDINGS_PATH.name} in the repository's contracts/, "
-            "which must name the catalog"
+            "default: test-recordings.json in the catalog's corrections directory, "
+            "which must exist"
         ),
     )
     test_set.add_argument(
@@ -146,19 +148,18 @@ def handle_training_export(args: argparse.Namespace) -> int:
             export = fetch_training_export(
                 args.catalog_id, min_heard_fraction=args.min_heard_fraction
             )
+        corrections_root = resolve_corrections_root(args.corrections_root)
         if args.no_test_recordings:
             test_recordings: set[str] = set()
             test_recordings_source = "none (--no-test-recordings)"
         else:
-            test_recordings_path = (
+            listed = (
                 args.test_recordings.expanduser()
                 if args.test_recordings is not None
-                else DEFAULT_TEST_RECORDINGS_PATH
+                else test_recordings_path(corrections_root, str(export.get("catalogId")))
             )
-            test_recordings = load_test_recordings(
-                test_recordings_path, str(export.get("catalogId"))
-            )
-            test_recordings_source = str(test_recordings_path)
+            test_recordings = load_test_recordings(listed)
+            test_recordings_source = str(listed)
 
         if args.output_dir is not None:
             output_dir = args.output_dir.expanduser()
@@ -172,7 +173,7 @@ def handle_training_export(args: argparse.Namespace) -> int:
 
         summary = build_dataset(
             export,
-            resolve_corrections_root(args.corrections_root),
+            corrections_root,
             output_dir,
             test_recordings=test_recordings,
             test_recordings_source=test_recordings_source,
