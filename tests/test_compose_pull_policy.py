@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# Tracked files only: a filesystem glob also finds copies under ignored
+# directories such as node_modules or a worktree checked out inside the repo.
 COMPOSE_FILES = sorted(
-    path
-    for path in REPO_ROOT.glob("**/docker-compose*.yml")
-    if not {"node_modules", ".venv", ".git"} & set(path.relative_to(REPO_ROOT).parts)
+    REPO_ROOT / line
+    for line in subprocess.run(
+        ["git", "ls-files", "-z", "--", "docker-compose*.yml", "**/docker-compose*.yml"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split("\0")
+    if line
 )
 
 
