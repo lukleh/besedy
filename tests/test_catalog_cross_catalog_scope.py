@@ -254,6 +254,109 @@ def test_clean_execute_holds_the_catalog_ingest_lock(
     assert held == [True]
 
 
+def test_clean_execute_plans_under_the_ingest_lock(
+    layout: Layout, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording removed and uploaded again while clean waits is not cleaned from a stale plan.
+
+    The web removes hash GONE and an upload brings the same audio back, both
+    under the ingest lock that clean is waiting for. Clean must read the
+    catalog only once it holds the lock, so it sees the new, present source.
+    """
+    from contextlib import contextmanager
+
+    from besedy.commands.catalog import clean as clean_command
+
+    reuploaded = _touch(layout.media / "reuploaded.mp3")
+    real_lock = clean_command.exclusive_lock
+
+    @contextmanager
+    def lock_after_reupload(lock_path):  # type: ignore[no-untyped-def]
+        # Runs while the upload holds the lock, just before clean is granted it.
+        _write_csv(
+            layout.old.catalog,
+            ["Hash", "Full Path"],
+            [
+                {"Hash": h, "Full Path": str(reuploaded if h == GONE else layout.source(h))}
+                for h in (GONE, KEEP)
+            ],
+        )
+        with real_lock(lock_path):
+            yield
+
+    monkeypatch.setattr(clean_command, "exclusive_lock", lock_after_reupload)
+
+    assert handle_clean(_clean_args(layout.old.catalog)) == 0
+    result = json.loads(capsys.readouterr().out)["result"]
+
+    assert result["status"] == "no_missing"
+    assert layout.old.staged[GONE].is_file()
+    assert layout.old.transcript_dirs[GONE].is_dir()
+    for suffix in SUFFIXES:
+        assert GONE in _hashes(layout.old.csv(suffix)), suffix
+
+
+def test_clean_dry_run_takes_no_lock(
+    layout: Layout, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from besedy.commands.catalog import clean as clean_command
+
+    def no_lock(_lock_path):  # type: ignore[no-untyped-def]
+        raise AssertionError("a dry run must not wait for uploads")
+
+    monkeypatch.setattr(clean_command, "exclusive_lock", no_lock)
+
+    args = _clean_args(layout.old.catalog, execute=False, prune_orphans=True)
+    assert handle_clean(args) == 0
+    capsys.readouterr()
+
+
+def test_clean_rejects_a_missing_explicit_normalized_manifest(
+    layout: Layout, capsys: pytest.CaptureFixture[str]
+) -> None:
+    old_before = layout.old.catalog.read_bytes()
+
+    typo = layout.catalogs / f"audio_catalog_{OLD}_loudnes_normalized.csv"
+    assert handle_clean(_clean_args(layout.old.catalog, csv_normalized=typo)) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["result"]["error"] == "normalized_csv_missing"
+    assert layout.old.catalog.read_bytes() == old_before
+    assert layout.old.staged[GONE].is_file()
+
+
+def test_clean_hint_quotes_the_catalog_and_keeps_the_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import shlex
+
+    root = tmp_path / "with space"
+    monkeypatch.setenv("BESEDY_TEXT_DATA_ROOT", str(root / "text"))
+    monkeypatch.setenv("BESEDY_AUDIO_ARTIFACTS_ROOT", str(root / "audio"))
+    layout = Layout(root)
+
+    args = _clean_args(layout.old.catalog, execute=False, format="text", prune_orphans=True)
+    assert handle_clean(args) == 0
+    hints = [
+        line.removeprefix("To execute: ")
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("To execute: ")
+    ]
+
+    assert hints
+    for hint in hints:
+        assert shlex.split(hint) == [
+            "just",
+            "catalog",
+            "clean",
+            "--csv",
+            str(layout.old.catalog.resolve()),
+            "--force",
+            "--prune-orphans",
+            "--execute",
+        ]
+
+
 def test_clean_rewrites_csvs_from_their_current_content(
     layout: Layout, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -455,3 +558,26 @@ def test_remove_keeps_a_staged_file_another_catalog_still_lists(layout: Layout) 
     assert refs == [layout.new.catalog]
     assert plan.staged_files == []
     assert plan.shared_derived_files == [layout.new.staged[KEEP]]
+
+
+def test_shared_derived_paths_parse_each_manifest_once(
+    layout: Layout, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hashes = [GONE, KEEP]
+    references = remover.find_other_catalog_references_for(layout.old.catalog, hashes)
+    loads: list[Path] = []
+    real_load = remover.load_csv
+
+    def counting_load(path, **kwargs):  # type: ignore[no-untyped-def]
+        loads.append(Path(path))
+        return real_load(path, **kwargs)
+
+    monkeypatch.setattr(remover, "load_csv", counting_load)
+
+    shared = remover.shared_derived_paths_for(references)
+
+    assert shared == {h: {layout.new.staged[h].resolve()} for h in hashes}
+    assert sorted(loads) == sorted(
+        {layout.new.csv("_loudness_normalized"), layout.new.csv("_loudness_archived")}
+    )
+    assert remover.shared_derived_paths([layout.new.catalog], KEEP) == shared[KEEP]

@@ -310,7 +310,7 @@ def test_catalog_clean_execute_removes_missing_catalog_entry(
 
     args = argparse.Namespace(
         csv=csv_path,
-        csv_normalized=tmp_path / "audio_catalog_normalized.csv",
+        csv_normalized=None,
         execute=True,
         force=True,
         prune_orphans=False,

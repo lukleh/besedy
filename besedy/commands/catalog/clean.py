@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from besedy.lib.catalog.remover import (
     catalog_generation,
     find_other_catalog_references_for,
     remove_hashes_from_csv,
-    shared_derived_paths,
+    shared_derived_paths_for,
 )
 from besedy.lib.data.atomic_io import exclusive_lock
 
@@ -86,7 +87,13 @@ def _resolve_normalized_csv(
 
     Returns ``(path_or_none, None)`` or ``(None, error_result)``.
     """
-    if csv_arg is not None and csv_arg.expanduser().exists():
+    if csv_arg is not None:
+        if not csv_arg.expanduser().exists():
+            return None, {
+                "error": "normalized_csv_missing",
+                "path": str(csv_arg),
+                "message": f"--csv-normalized {csv_arg} does not exist",
+            }
         resolved = csv_arg.expanduser().resolve()
         if extract_timestamp_from_normalized_catalog(resolved) != generation.timestamp:
             return None, {
@@ -112,6 +119,17 @@ def _emit_error(output_format: str, result: dict) -> None:
         print(result["message"])
 
 
+def _execute_hint(csv_path: Path, args: argparse.Namespace | None) -> str:
+    """The command that executes what this dry run showed, safe to paste into a shell."""
+    command = ["just", "catalog", "clean", "--csv", shlex.quote(str(csv_path))]
+    if getattr(args, "force", False):
+        command.append("--force")
+    if getattr(args, "prune_orphans", False):
+        command.append("--prune-orphans")
+    command.append("--execute")
+    return " ".join(command)
+
+
 def _ingest_lock(generation: CatalogGeneration, execute: bool) -> AbstractContextManager[object]:
     """The catalog's ingest lock when deleting, so no upload changes it meanwhile.
 
@@ -126,6 +144,8 @@ def _format_dry_run_report(
     catalog_count: int,
     normalized_count: int,
     verbose: bool = False,
+    *,
+    args: argparse.Namespace | None = None,
 ) -> str:
     """Format a dry-run report for display."""
     lines = []
@@ -184,7 +204,7 @@ def _format_dry_run_report(
         lines.append("  Use --force to proceed anyway.")
 
     lines.append("")
-    lines.append(f"To execute: just catalog clean --csv {plan.catalog_csv} --execute")
+    lines.append(f"To execute: {_execute_hint(plan.catalog_csv, args)}")
     lines.append("")
 
     return "\n".join(lines)
@@ -365,7 +385,7 @@ def _prune_orphans(
                     if len(stale_hashes) > 5:
                         print(f"  ... and {len(stale_hashes) - 5} more")
                 print()
-                print(f"To execute: just catalog clean --csv {csv_path} --prune-orphans --execute")
+                print(f"To execute: {_execute_hint(csv_path, args)}")
                 print()
         return 0, "success", result
 
@@ -483,15 +503,10 @@ Example:
 def handle_clean(args: argparse.Namespace) -> int:
     """Remove catalog entries for missing source audio and clean derivatives."""
     output_format = getattr(args, "format", "text")
-    verbose = getattr(args, "verbose", False)
     execute = getattr(args, "execute", False)
-    force = getattr(args, "force", False)
     prune_orphans = getattr(args, "prune_orphans", False)
     command_name = "clean"
     combine_json = prune_orphans and output_format == "json"
-    clean_result: dict | None = None
-    clean_status = "success"
-    clean_exit_code = 0
 
     # Every path comes from the catalog's timestamp, never from the "latest"
     # symlinks, which may name another catalog.
@@ -500,12 +515,59 @@ def handle_clean(args: argparse.Namespace) -> int:
         assert error is not None
         _emit_error(output_format, error)
         return 1
-    csv_path = generation.catalog_csv
 
     csv_normalized_path, error = _resolve_normalized_csv(args.csv_normalized, generation)
     if error is not None:
         _emit_error(output_format, error)
         return 1
+
+    # With --execute, plan under the catalog's ingest lock as well: a plan read
+    # before an upload's locked run would delete what that upload then wrote.
+    # The lock is released before --prune-orphans takes it again.
+    with _ingest_lock(generation, execute):
+        clean_exit_code, clean_result, failed_early = _clean_missing_entries(
+            args, generation, csv_normalized_path
+        )
+    if failed_early:
+        return clean_exit_code
+
+    if prune_orphans:
+        if combine_json:
+            prune_exit_code, _, prune_result = _handle_prune_orphans(args, emit_output=False)
+            overall_status = "success" if clean_exit_code == 0 and prune_exit_code == 0 else "error"
+            print_json_result(
+                name=command_name,
+                status=overall_status,
+                result={"clean": clean_result, "prune_orphans": prune_result},
+            )
+            return 1 if overall_status == "error" else 0
+
+        prune_exit_code, _, _ = _handle_prune_orphans(args, emit_output=True)
+        return 1 if clean_exit_code or prune_exit_code else 0
+
+    return clean_exit_code
+
+
+def _clean_missing_entries(
+    args: argparse.Namespace,
+    generation: CatalogGeneration,
+    csv_normalized_path: Path | None,
+) -> tuple[int, dict | None, bool]:
+    """Plan and, with --execute, run the cleanup of entries whose source is missing.
+
+    Returns ``(exit_code, json_result, failed_early)``; ``failed_early`` ends
+    the command before ``--prune-orphans``.
+    """
+    output_format = getattr(args, "format", "text")
+    verbose = getattr(args, "verbose", False)
+    execute = getattr(args, "execute", False)
+    force = getattr(args, "force", False)
+    command_name = "clean"
+    combine_json = getattr(args, "prune_orphans", False) and output_format == "json"
+    clean_result: dict | None = None
+    clean_status = "success"
+    clean_exit_code = 0
+    csv_path = generation.catalog_csv
 
     transcripts_root = generation.transcripts_root
 
@@ -522,7 +584,7 @@ def handle_clean(args: argparse.Namespace) -> int:
             )
         else:
             print(msg)
-        return 1
+        return 1, None, True
 
     catalog_count = len(entries)
 
@@ -581,7 +643,7 @@ def handle_clean(args: argparse.Namespace) -> int:
                     print(f"    ... and {len(suspect_parents) - 5} more")
                 print("")
                 print("  Use --force to proceed anyway.")
-            return 1
+            return 1, None, True
 
         # Infer staging directory
         staging_dir = infer_staging_dir(normalized_entries) if normalized_entries else None
@@ -591,9 +653,10 @@ def handle_clean(args: argparse.Namespace) -> int:
             csv_path, [sha256 for sha256, _ in missing_entries]
         )
 
+        shared = shared_derived_paths_for(references)
+
         def shared_files_for(sha256: str) -> set[Path]:
-            key = sha256.strip().lower()
-            return shared_derived_paths(references.get(key, []), key)
+            return shared.get(sha256.strip().lower(), set())
 
         # Build cleanup plan
         plan = build_cleanup_plan(
@@ -627,21 +690,24 @@ def handle_clean(args: argparse.Namespace) -> int:
                 if not combine_json:
                     print_json_result(name=command_name, status="success", result=clean_result)
             else:
-                print(_format_dry_run_report(plan, catalog_count, normalized_count, verbose))
+                print(
+                    _format_dry_run_report(
+                        plan, catalog_count, normalized_count, verbose, args=args
+                    )
+                )
             clean_exit_code = 0
         else:
-            # Execute cleanup under the ingest lock; each CSV is re-read as it
-            # is rewritten, so rows added since this run read it are kept.
-            with exclusive_lock(generation.ingest_lock_path):
-                result = execute_cleanup(plan)
-                remove_hashes = set(getattr(result, "succeeded_hashes", []))
-                new_catalog_count = catalog_count
-                # Only rewrite catalogs for successfully cleaned entries
-                if remove_hashes:
-                    for path in _generation_csvs(generation, csv_normalized_path):
-                        removed = remove_hashes_from_csv(path, remove_hashes)
-                        if path == csv_path:
-                            new_catalog_count = catalog_count - removed
+            # Each CSV is re-read as it is rewritten, so rows added since this
+            # run read it are kept.
+            result = execute_cleanup(plan)
+            remove_hashes = set(getattr(result, "succeeded_hashes", []))
+            new_catalog_count = catalog_count
+            # Only rewrite catalogs for successfully cleaned entries
+            if remove_hashes:
+                for path in _generation_csvs(generation, csv_normalized_path):
+                    removed = remove_hashes_from_csv(path, remove_hashes)
+                    if path == csv_path:
+                        new_catalog_count = catalog_count - removed
 
             if output_format == "json":
                 clean_status = "success" if not result.errors else "error"
@@ -672,18 +738,4 @@ def handle_clean(args: argparse.Namespace) -> int:
 
             clean_exit_code = 1 if result.errors else 0
 
-    if prune_orphans:
-        if combine_json:
-            prune_exit_code, _, prune_result = _handle_prune_orphans(args, emit_output=False)
-            overall_status = "success" if clean_exit_code == 0 and prune_exit_code == 0 else "error"
-            print_json_result(
-                name=command_name,
-                status=overall_status,
-                result={"clean": clean_result, "prune_orphans": prune_result},
-            )
-            return 1 if overall_status == "error" else 0
-
-        prune_exit_code, _, _ = _handle_prune_orphans(args, emit_output=True)
-        return 1 if clean_exit_code or prune_exit_code else 0
-
-    return clean_exit_code
+    return clean_exit_code, clean_result, False

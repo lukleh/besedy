@@ -249,18 +249,60 @@ def shared_derived_paths(catalogs: Sequence[Path], sha256: str) -> set[Path]:
     `stage-audio` reused whatever `audio_staged` pointed at, so two catalogs
     can list the same staged WAV. Such a file stays while another catalog uses it.
     """
-    shared: set[Path] = set()
-    for catalog in catalogs:
-        stem = catalog.stem
-        staged_csv = catalog.with_name(f"{stem}_loudness_normalized.csv")
-        if staged_csv.is_file():
-            staged = _existing_paths(_rows_for_hash(staged_csv, sha256), "Full Path")
-            shared.update(path.resolve() for path in staged)
-        archived_csv = catalog.with_name(f"{stem}_loudness_archived.csv")
-        if archived_csv.is_file():
-            archived = _archived_paths(_rows_for_hash(archived_csv, sha256))
-            shared.update(path.resolve() for path in archived)
-    return shared
+    key = sha256.strip().lower()
+    return shared_derived_paths_for({key: list(catalogs)})[key]
+
+
+def shared_derived_paths_for(references: dict[str, list[Path]]) -> dict[str, set[Path]]:
+    """`shared_derived_paths` for many hashes, each mapped to the catalogs referencing it.
+
+    Every manifest is parsed once, whatever the number of hashes.
+    """
+    wanted_by_catalog: dict[Path, set[str]] = {}
+    for sha256, catalogs in references.items():
+        for catalog in catalogs:
+            wanted_by_catalog.setdefault(catalog, set()).add(sha256.strip().lower())
+
+    paths_by_catalog: dict[Path, dict[str, set[Path]]] = {}
+    for catalog, wanted in wanted_by_catalog.items():
+        found: dict[str, set[Path]] = {}
+        manifests = (
+            (catalog.with_name(f"{catalog.stem}_loudness_normalized.csv"), _staged_paths),
+            (catalog.with_name(f"{catalog.stem}_loudness_archived.csv"), _archived_paths),
+        )
+        for manifest, paths_of in manifests:
+            if not manifest.is_file():
+                continue
+            for sha256, rows in _rows_by_hash(manifest, wanted).items():
+                found.setdefault(sha256, set()).update(path.resolve() for path in paths_of(rows))
+        paths_by_catalog[catalog] = found
+
+    return {
+        sha256.strip().lower(): {
+            path
+            for catalog in catalogs
+            for path in paths_by_catalog[catalog].get(sha256.strip().lower(), set())
+        }
+        for sha256, catalogs in references.items()
+    }
+
+
+def _staged_paths(rows: Sequence[dict[str, str]]) -> list[Path]:
+    return _existing_paths(rows, "Full Path")
+
+
+def _rows_by_hash(csv_path: Path, wanted: set[str]) -> dict[str, list[dict[str, str]]]:
+    """The rows of ``csv_path`` whose hash is in ``wanted``, grouped by hash."""
+    columns, rows = load_csv(csv_path, encoding="utf-8")
+    hash_column = _hash_column(csv_path, columns)
+    grouped: dict[str, list[dict[str, str]]] = {}
+    if hash_column is None:
+        return grouped
+    for row in rows:
+        value = _row_hash(row, hash_column)
+        if value in wanted:
+            grouped.setdefault(value, []).append(row)
+    return grouped
 
 
 def find_embedding_dirs(
