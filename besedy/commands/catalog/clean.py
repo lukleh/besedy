@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 from besedy.commands.catalog.csv_utils import resolve_catalog_csv
-from besedy.commands.catalog.default_paths import (
-    get_default_archived_symlink,
-    get_default_catalog_symlink,
-    get_default_duplicates_symlink,
-    get_default_loudness_symlink,
-    get_default_normalized_symlink,
-)
+from besedy.commands.catalog.default_paths import get_default_catalog_symlink
 from besedy.core.cli_output import print_json_result
 from besedy.core.paths import (
-    resolve_transcripts_root,
+    extract_timestamp_from_normalized_catalog,
+    resolve_transcripts_parent,
 )
 from besedy.lib.catalog.cleaner import (
     CleanupPlan,
@@ -24,12 +20,16 @@ from besedy.lib.catalog.cleaner import (
     execute_cleanup,
     infer_staging_dir,
 )
-from besedy.lib.catalog.manager import (
-    filter_catalog_rows,
-    load_csv,
-    resolve_hash_column,
-    write_merged_csv,
+from besedy.lib.catalog.manager import load_csv, resolve_hash_column
+from besedy.lib.catalog.remover import (
+    CatalogGeneration,
+    CatalogTimestampError,
+    catalog_generation,
+    find_other_catalog_references_for,
+    remove_hashes_from_csv,
+    shared_derived_paths,
 )
+from besedy.lib.data.atomic_io import exclusive_lock
 
 
 def _load_catalog_entries(csv_path: Path) -> tuple[list[str], list[dict], list[tuple[str, str]]]:
@@ -49,6 +49,76 @@ def _load_catalog_entries(csv_path: Path) -> tuple[list[str], list[dict], list[t
             entries.append((sha256, full_path))
 
     return list(columns), rows, entries
+
+
+def _resolve_generation(
+    csv_arg: Path | None, *, purpose: str
+) -> tuple[CatalogGeneration | None, dict | None]:
+    """Resolve ``--csv`` to the catalog generation every path is derived from.
+
+    Returns ``(generation, None)`` or ``(None, error_result)``.
+    """
+    try:
+        csv_path = resolve_catalog_csv(
+            csv_arg, purpose=purpose, default_symlink=get_default_catalog_symlink()
+        )
+    except FileNotFoundError as e:
+        return None, {
+            "error": "catalog_csv_missing",
+            "path": str(csv_arg or get_default_catalog_symlink()),
+            "message": str(e),
+        }
+    try:
+        generation = catalog_generation(csv_path, transcripts_parent=resolve_transcripts_parent())
+    except CatalogTimestampError as e:
+        return None, {
+            "error": "catalog_timestamp_missing",
+            "path": str(csv_path),
+            "message": str(e),
+        }
+    return generation, None
+
+
+def _resolve_normalized_csv(
+    csv_arg: Path | None, generation: CatalogGeneration
+) -> tuple[Path | None, dict | None]:
+    """Return the catalog's staged manifest, if any, or an error for another catalog's.
+
+    Returns ``(path_or_none, None)`` or ``(None, error_result)``.
+    """
+    if csv_arg is not None and csv_arg.expanduser().exists():
+        resolved = csv_arg.expanduser().resolve()
+        if extract_timestamp_from_normalized_catalog(resolved) != generation.timestamp:
+            return None, {
+                "error": "catalog_mismatch",
+                "path": str(resolved),
+                "message": (
+                    f"--csv-normalized {resolved} is not the staged manifest of "
+                    f"{generation.catalog_csv.name}"
+                ),
+            }
+        return resolved, None
+    candidates = (
+        generation.derived_csv("_loudness_normalized"),
+        generation.derived_csv("_normalized"),
+    )
+    return next((path for path in candidates if path.is_file()), None), None
+
+
+def _emit_error(output_format: str, result: dict) -> None:
+    if output_format == "json":
+        print_json_result(name="clean", status="error", result=result)
+    else:
+        print(result["message"])
+
+
+def _ingest_lock(generation: CatalogGeneration, execute: bool) -> AbstractContextManager[object]:
+    """The catalog's ingest lock when deleting, so no upload changes it meanwhile.
+
+    Uploads hold it around their whole `run-pipeline`; `clean` must never run
+    inside such a flow, which would wait for itself.
+    """
+    return exclusive_lock(generation.ingest_lock_path) if execute else nullcontext()
 
 
 def _format_dry_run_report(
@@ -96,6 +166,10 @@ def _format_dry_run_report(
     lines.append(f"  - {plan.total_transcript_dirs} transcript directories")
     lines.append(f"  - {plan.total_diarization_dirs} diarization directories")
     lines.append(f"  - {plan.total_sidecar_files} transcript sidecar files")
+    if plan.total_shared_staged:
+        lines.append(
+            f"Kept: {plan.total_shared_staged} staged WAV files another catalog still lists"
+        )
 
     if plan.potential_mount_issue:
         lines.append("")
@@ -110,7 +184,7 @@ def _format_dry_run_report(
         lines.append("  Use --force to proceed anyway.")
 
     lines.append("")
-    lines.append("To execute: just catalog clean --execute")
+    lines.append(f"To execute: just catalog clean --csv {plan.catalog_csv} --execute")
     lines.append("")
 
     return "\n".join(lines)
@@ -196,36 +270,39 @@ def _handle_prune_orphans(
         Tuple of (exit_code, status, result_dict) for JSON output.
     """
     output_format = getattr(args, "format", "text")
+    execute = getattr(args, "execute", False)
+
+    generation, error = _resolve_generation(args.csv, purpose="clean --prune-orphans")
+    if generation is None:
+        assert error is not None
+        if emit_output:
+            _emit_error(output_format, error)
+        return 1, "error", error
+
+    # Read the catalog under the lock: an upload adds its row before writing
+    # sidecars, so a stale read would delete the new recording's files.
+    with _ingest_lock(generation, execute):
+        return _prune_orphans(generation, args, emit_output=emit_output)
+
+
+def _prune_orphans(
+    generation: CatalogGeneration,
+    args: argparse.Namespace,
+    *,
+    emit_output: bool,
+) -> tuple[int, str, dict]:
+    output_format = getattr(args, "format", "text")
     verbose = getattr(args, "verbose", False)
     execute = getattr(args, "execute", False)
     command_name = "clean"
-
-    # Resolve paths
-    try:
-        csv_path = resolve_catalog_csv(
-            args.csv,
-            purpose="clean --prune-orphans",
-            default_symlink=get_default_catalog_symlink(),
-        )
-    except FileNotFoundError as e:
-        msg = str(e)
-        result = {
-            "error": "catalog_csv_missing",
-            "path": str(args.csv or get_default_catalog_symlink()),
-            "message": msg,
-        }
-        if emit_output:
-            if output_format == "json":
-                print_json_result(name=command_name, status="error", result=result)
-            else:
-                print(msg)
-        return 1, "error", result
-
-    transcripts_root = resolve_transcripts_root()
+    csv_path = generation.catalog_csv
+    # Only this catalog's generation: sidecars of other catalogs' hashes are
+    # not orphans there.
+    transcripts_root = generation.transcripts_root
 
     # Load catalog
     try:
-        columns, rows, entries = _load_catalog_entries(csv_path)
+        _, _, entries = _load_catalog_entries(csv_path)
     except Exception as e:
         msg = f"Failed to load catalog: {e}"
         result = {"error": "catalog_load_failed", "message": str(e)}
@@ -288,7 +365,7 @@ def _handle_prune_orphans(
                     if len(stale_hashes) > 5:
                         print(f"  ... and {len(stale_hashes) - 5} more")
                 print()
-                print("To execute: just catalog clean --prune-orphans --execute")
+                print(f"To execute: just catalog clean --csv {csv_path} --prune-orphans --execute")
                 print()
         return 0, "success", result
 
@@ -326,6 +403,14 @@ def _handle_prune_orphans(
     return (1 if errors else 0), status, result
 
 
+def _generation_csvs(generation: CatalogGeneration, normalized_csv: Path | None) -> list[Path]:
+    """The catalog and every derived CSV of its generation that exists."""
+    paths = [path for path in generation.csv_paths if path.is_file()]
+    if normalized_csv is not None and normalized_csv not in paths:
+        paths.append(normalized_csv)
+    return paths
+
+
 def register_parser(
     subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
     formatter_class: type[argparse.HelpFormatter],
@@ -349,13 +434,20 @@ Example:
         "--csv",
         type=Path,
         default=None,
-        help="Source catalog CSV. Default: audio_catalog.csv symlink.",
+        help=(
+            "Source catalog CSV. Default: audio_catalog.csv symlink. Its derived CSVs, "
+            "staged audio and transcripts_<timestamp> are cleaned, whichever catalog "
+            "the other symlinks point at."
+        ),
     )
     parser.add_argument(
         "--csv-normalized",
         type=Path,
         default=None,
-        help="Staged catalog (output of stage-audio). Default: audio_catalog_normalized.csv symlink.",
+        help=(
+            "Staged catalog (output of stage-audio) of the --csv catalog. "
+            "Default: its audio_catalog_<timestamp>_loudness_normalized.csv."
+        ),
     )
     parser.add_argument(
         "--execute",
@@ -401,54 +493,25 @@ def handle_clean(args: argparse.Namespace) -> int:
     clean_status = "success"
     clean_exit_code = 0
 
-    # Resolve paths
-    try:
-        csv_path = resolve_catalog_csv(
-            args.csv,
-            purpose="clean",
-            default_symlink=get_default_catalog_symlink(),
-        )
-    except FileNotFoundError as e:
-        msg = str(e)
-        if output_format == "json":
-            print_json_result(
-                name=command_name,
-                status="error",
-                result={
-                    "error": "catalog_csv_missing",
-                    "path": str(args.csv or get_default_catalog_symlink()),
-                    "message": msg,
-                },
-            )
-        else:
-            print(msg)
+    # Every path comes from the catalog's timestamp, never from the "latest"
+    # symlinks, which may name another catalog.
+    generation, error = _resolve_generation(args.csv, purpose="clean")
+    if generation is None:
+        assert error is not None
+        _emit_error(output_format, error)
+        return 1
+    csv_path = generation.catalog_csv
+
+    csv_normalized_path, error = _resolve_normalized_csv(args.csv_normalized, generation)
+    if error is not None:
+        _emit_error(output_format, error)
         return 1
 
-    normalized_symlink = args.csv_normalized or get_default_normalized_symlink()
-    csv_normalized_path = (
-        normalized_symlink.resolve() if normalized_symlink.exists() else normalized_symlink
-    )
-
-    loudness_symlink = get_default_loudness_symlink()
-    csv_loudness_path = (
-        loudness_symlink.resolve() if loudness_symlink.exists() else loudness_symlink
-    )
-
-    archived_symlink = get_default_archived_symlink()
-    csv_archived_path = (
-        archived_symlink.resolve() if archived_symlink.exists() else archived_symlink
-    )
-
-    duplicates_symlink = get_default_duplicates_symlink()
-    csv_duplicates_path = (
-        duplicates_symlink.resolve() if duplicates_symlink.exists() else duplicates_symlink
-    )
-
-    transcripts_root = resolve_transcripts_root()
+    transcripts_root = generation.transcripts_root
 
     # Load catalog
     try:
-        columns, rows, entries = _load_catalog_entries(csv_path)
+        _, _, entries = _load_catalog_entries(csv_path)
     except Exception as e:
         msg = f"Failed to load catalog: {e}"
         if output_format == "json":
@@ -464,53 +527,16 @@ def handle_clean(args: argparse.Namespace) -> int:
     catalog_count = len(entries)
 
     # Load normalized catalog if it exists
-    normalized_columns = None
-    normalized_rows = None
     normalized_entries: list[tuple[str, str]] = []
     normalized_count = 0
 
-    if csv_normalized_path.exists():
+    if csv_normalized_path is not None:
         try:
-            normalized_columns, normalized_rows, normalized_entries = _load_catalog_entries(
-                csv_normalized_path
-            )
+            _, _, normalized_entries = _load_catalog_entries(csv_normalized_path)
             normalized_count = len(normalized_entries)
         except Exception as e:
             if output_format == "text":
                 print(f"Warning: Failed to load normalized catalog: {e}")
-
-    # Load loudness catalog if it exists
-    loudness_columns = None
-    loudness_rows = None
-
-    if csv_loudness_path.exists():
-        try:
-            loudness_columns, loudness_rows, _ = _load_catalog_entries(csv_loudness_path)
-        except Exception as e:
-            if output_format == "text":
-                print(f"Warning: Failed to load loudness catalog: {e}")
-
-    # Load archived catalog if it exists
-    archived_columns = None
-    archived_rows = None
-
-    if csv_archived_path.exists():
-        try:
-            archived_columns, archived_rows, _ = _load_catalog_entries(csv_archived_path)
-        except Exception as e:
-            if output_format == "text":
-                print(f"Warning: Failed to load archived catalog: {e}")
-
-    # Load duplicates catalog if it exists
-    duplicates_columns = None
-    duplicates_rows = None
-
-    if csv_duplicates_path.exists():
-        try:
-            duplicates_columns, duplicates_rows, _ = _load_catalog_entries(csv_duplicates_path)
-        except Exception as e:
-            if output_format == "text":
-                print(f"Warning: Failed to load duplicates catalog: {e}")
 
     # Detect missing files
     missing_entries, potential_mount_issue, suspect_parents = detect_missing_originals(entries)
@@ -560,15 +586,25 @@ def handle_clean(args: argparse.Namespace) -> int:
         # Infer staging directory
         staging_dir = infer_staging_dir(normalized_entries) if normalized_entries else None
 
+        # Staged WAVs another catalog still lists stay, like `catalog remove`.
+        references = find_other_catalog_references_for(
+            csv_path, [sha256 for sha256, _ in missing_entries]
+        )
+
+        def shared_files_for(sha256: str) -> set[Path]:
+            key = sha256.strip().lower()
+            return shared_derived_paths(references.get(key, []), key)
+
         # Build cleanup plan
         plan = build_cleanup_plan(
             missing_entries,
             catalog_csv=csv_path,
-            normalized_csv=csv_normalized_path if csv_normalized_path.exists() else None,
+            normalized_csv=csv_normalized_path,
             staging_dir=staging_dir,
             transcripts_root=transcripts_root,
             potential_mount_issue=potential_mount_issue,
             suspect_parent_dirs=suspect_parents,
+            shared_files_for=shared_files_for,
         )
 
         # Dry run - just show what would be done
@@ -584,6 +620,7 @@ def handle_clean(args: argparse.Namespace) -> int:
                     "transcript_dirs_to_remove": plan.total_transcript_dirs,
                     "diarization_dirs_to_remove": plan.total_diarization_dirs,
                     "sidecar_files_to_remove": plan.total_sidecar_files,
+                    "shared_staged_kept": plan.total_shared_staged,
                     "potential_mount_issue": plan.potential_mount_issue,
                     "suspect_parent_dirs": plan.suspect_parent_dirs,
                 }
@@ -593,84 +630,18 @@ def handle_clean(args: argparse.Namespace) -> int:
                 print(_format_dry_run_report(plan, catalog_count, normalized_count, verbose))
             clean_exit_code = 0
         else:
-            # Execute cleanup
-            hash_column = resolve_hash_column(columns, csv_path, preferred="Hash")
-            result = execute_cleanup(plan)
-            remove_hashes = set(getattr(result, "succeeded_hashes", []))
-
-            # Only rewrite catalogs for successfully cleaned entries
-            if remove_hashes:
-                # Filter and rewrite catalog
-                kept_rows, _ = filter_catalog_rows(
-                    rows, remove_hashes=remove_hashes, hash_column=hash_column
-                )
-                write_merged_csv(csv_path, kept_rows, columns=columns, encoding="utf-8")
-                new_catalog_count = len(kept_rows)
-
-                # Filter and rewrite normalized catalog if it exists
-                if normalized_rows is not None and normalized_columns is not None:
-                    norm_hash_column = resolve_hash_column(
-                        normalized_columns, csv_normalized_path, preferred="Hash"
-                    )
-                    kept_norm_rows, _ = filter_catalog_rows(
-                        normalized_rows, remove_hashes=remove_hashes, hash_column=norm_hash_column
-                    )
-                    write_merged_csv(
-                        csv_normalized_path,
-                        kept_norm_rows,
-                        columns=normalized_columns,
-                        encoding="utf-8",
-                    )
-
-                # Filter and rewrite loudness catalog if it exists
-                if loudness_rows is not None and loudness_columns is not None:
-                    loudness_hash_column = resolve_hash_column(
-                        loudness_columns, csv_loudness_path, preferred="Hash"
-                    )
-                    kept_loudness_rows, _ = filter_catalog_rows(
-                        loudness_rows, remove_hashes=remove_hashes, hash_column=loudness_hash_column
-                    )
-                    write_merged_csv(
-                        csv_loudness_path,
-                        kept_loudness_rows,
-                        columns=loudness_columns,
-                        encoding="utf-8",
-                    )
-
-                # Filter and rewrite archived catalog if it exists
-                if archived_rows is not None and archived_columns is not None:
-                    archived_hash_column = resolve_hash_column(
-                        archived_columns, csv_archived_path, preferred="Hash"
-                    )
-                    kept_archived_rows, _ = filter_catalog_rows(
-                        archived_rows, remove_hashes=remove_hashes, hash_column=archived_hash_column
-                    )
-                    write_merged_csv(
-                        csv_archived_path,
-                        kept_archived_rows,
-                        columns=archived_columns,
-                        encoding="utf-8",
-                    )
-
-                # Filter and rewrite duplicates catalog if it exists
-                if duplicates_rows is not None and duplicates_columns is not None:
-                    duplicates_hash_column = resolve_hash_column(
-                        duplicates_columns, csv_duplicates_path, preferred="Hash"
-                    )
-                    kept_duplicates_rows, _ = filter_catalog_rows(
-                        duplicates_rows,
-                        remove_hashes=remove_hashes,
-                        hash_column=duplicates_hash_column,
-                    )
-                    write_merged_csv(
-                        csv_duplicates_path,
-                        kept_duplicates_rows,
-                        columns=duplicates_columns,
-                        encoding="utf-8",
-                    )
-            else:
-                # Nothing removed - keep catalogs unchanged
+            # Execute cleanup under the ingest lock; each CSV is re-read as it
+            # is rewritten, so rows added since this run read it are kept.
+            with exclusive_lock(generation.ingest_lock_path):
+                result = execute_cleanup(plan)
+                remove_hashes = set(getattr(result, "succeeded_hashes", []))
                 new_catalog_count = catalog_count
+                # Only rewrite catalogs for successfully cleaned entries
+                if remove_hashes:
+                    for path in _generation_csvs(generation, csv_normalized_path):
+                        removed = remove_hashes_from_csv(path, remove_hashes)
+                        if path == csv_path:
+                            new_catalog_count = catalog_count - removed
 
             if output_format == "json":
                 clean_status = "success" if not result.errors else "error"

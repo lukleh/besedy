@@ -206,8 +206,18 @@ def rewrite_lock(path: str | Path) -> Iterator[None]:
     file it points to share one lock.
     """
     target = Path(path).resolve()
-    lock_path = target.with_name(f".{target.name}.lock")
-    with lock_path.open("a+") as handle:
+    with exclusive_lock(target.with_name(f".{target.name}.lock")):
+        yield
+
+
+@contextlib.contextmanager
+def exclusive_lock(lock_path: str | Path) -> Iterator[None]:
+    """Hold an exclusive ``flock`` on ``lock_path``, creating the file if needed.
+
+    The lock belongs to this open file, so a process that already holds it and
+    takes it again (in-process or in a child it waits for) blocks forever.
+    """
+    with Path(lock_path).open("a+") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield

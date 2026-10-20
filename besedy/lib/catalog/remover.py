@@ -11,20 +11,20 @@ after this removal brings those derived stores back in line.
 
 from __future__ import annotations
 
-import csv
 import re
 import shutil
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from besedy.core.paths import extract_timestamp_from_catalog
 from besedy.lib.catalog.cleaner import (
     _get_transcript_search_roots,
     find_diarization_dirs,
     find_transcript_dirs,
 )
-from besedy.lib.catalog.manager import filter_catalog_rows, load_csv, resolve_hash_column
-from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
+from besedy.lib.catalog.manager import load_csv, resolve_hash_column, write_merged_csv
+from besedy.lib.data.atomic_io import rewrite_lock
 
 SPEAKER_EMBEDDINGS_DIRNAME = "speaker_embeddings"
 AUDIO_HASH_SIDECAR_SUFFIX = ".audiohash"
@@ -38,12 +38,65 @@ CATALOG_CSV_SUFFIXES: tuple[str, ...] = (
     "_duplicates",
     "_joined",
 )
+# The joined manifest has one row per source part of a join. The recording the
+# catalog lists is the joined output, so a removed hash matches `Output Hash`.
+# The parts left the catalog when they were joined; a part's hash going away
+# (for example `clean` dropping a moved original) keeps the join's provenance.
+JOINED_HASH_COLUMN = "Output Hash"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _BASE_CATALOG_RE = re.compile(r"^audio_catalog_\d{8}_\d{6}\.csv$")
 
 
 class InvalidAudioHashError(ValueError):
     """Raised when the hash is not a full lowercase SHA-256 hex digest."""
+
+
+class CatalogTimestampError(ValueError):
+    """Raised when a catalog path is not named audio_catalog_<YYYYMMDD_HHMMSS>.csv."""
+
+
+@dataclass(frozen=True)
+class CatalogGeneration:
+    """The files one catalog's pipeline runs derive from its timestamp.
+
+    Commands that change a catalog's artifacts use these paths, never the
+    "latest" symlinks (`audio_catalog*.csv`, `audio_staged`,
+    `transcripts/transcripts`), which may name another catalog.
+    """
+
+    catalog_csv: Path
+    timestamp: str
+    transcripts_parent: Path
+
+    @property
+    def transcripts_root(self) -> Path:
+        return self.transcripts_parent / f"transcripts_{self.timestamp}"
+
+    @property
+    def embeddings_root(self) -> Path:
+        return self.transcripts_parent / SPEAKER_EMBEDDINGS_DIRNAME
+
+    @property
+    def ingest_lock_path(self) -> Path:
+        """The per-catalog lock admin uploads hold around their whole pipeline."""
+        return self.catalog_csv.parent / f".ingest-{self.timestamp}.lock"
+
+    @property
+    def csv_paths(self) -> list[Path]:
+        return derived_csv_paths(self.catalog_csv)
+
+    def derived_csv(self, suffix: str) -> Path:
+        return self.catalog_csv.with_name(f"{self.catalog_csv.stem}{suffix}.csv")
+
+
+def catalog_generation(catalog_csv: Path, *, transcripts_parent: Path) -> CatalogGeneration:
+    resolved = catalog_csv.resolve()
+    timestamp = extract_timestamp_from_catalog(resolved)
+    if timestamp is None:
+        raise CatalogTimestampError(f"Could not extract a catalog timestamp from {resolved}")
+    return CatalogGeneration(
+        catalog_csv=resolved, timestamp=timestamp, transcripts_parent=transcripts_parent
+    )
 
 
 def normalize_audio_hash(value: str) -> str:
@@ -67,6 +120,7 @@ class RemovalPlan:
     embedding_dirs: list[Path] = field(default_factory=list)
     shared_catalog_refs: list[Path] = field(default_factory=list)
     shared_source_files: list[Path] = field(default_factory=list)
+    shared_derived_files: list[Path] = field(default_factory=list)
 
     @property
     def files(self) -> list[Path]:
@@ -106,25 +160,54 @@ def find_other_catalog_references(catalog_csv: Path, sha256: str) -> list[Path]:
     still use the recording.
     """
     sha256 = normalize_audio_hash(sha256)
+    return find_other_catalog_references_for(catalog_csv, [sha256])[sha256]
+
+
+def find_other_catalog_references_for(
+    catalog_csv: Path, hashes: Iterable[str]
+) -> dict[str, list[Path]]:
+    """`find_other_catalog_references` for many hashes, reading each catalog once."""
+    wanted = {value.strip().lower() for value in hashes}
+    references: dict[str, list[Path]] = {value: [] for value in wanted}
     current = catalog_csv.resolve()
-    references: list[Path] = []
     for candidate in sorted(catalog_csv.parent.glob("audio_catalog_*.csv")):
         if candidate.is_symlink() or not _BASE_CATALOG_RE.fullmatch(candidate.name):
             continue
         if candidate.resolve() == current:
             continue
-        if _rows_for_hash(candidate, sha256):
-            references.append(candidate)
+        for value in wanted & _csv_hashes(candidate):
+            references[value].append(candidate)
     return references
+
+
+def _hash_column(csv_path: Path, columns: Sequence[str]) -> str | None:
+    """The column a removed hash is matched against, or None when the CSV has none."""
+    if csv_path.resolve().name.endswith("_joined.csv"):
+        return JOINED_HASH_COLUMN if JOINED_HASH_COLUMN in columns else None
+    try:
+        return resolve_hash_column(columns, csv_path, preferred="Hash")
+    except ValueError:
+        return None
+
+
+def _row_hash(row: dict[str, str], column: str) -> str:
+    return (row.get(column, "") or "").strip().lower()
+
+
+def _csv_hashes(csv_path: Path) -> set[str]:
+    columns, rows = load_csv(csv_path, encoding="utf-8")
+    hash_column = _hash_column(csv_path, columns)
+    if hash_column is None:
+        return set()
+    return {_row_hash(row, hash_column) for row in rows}
 
 
 def _rows_for_hash(csv_path: Path, sha256: str) -> list[dict[str, str]]:
     columns, rows = load_csv(csv_path, encoding="utf-8")
-    try:
-        hash_column = resolve_hash_column(columns, csv_path, preferred="Hash")
-    except ValueError:
+    hash_column = _hash_column(csv_path, columns)
+    if hash_column is None:
         return []
-    return [row for row in rows if (row.get(hash_column, "") or "").strip().lower() == sha256]
+    return [row for row in rows if _row_hash(row, hash_column) == sha256]
 
 
 def _existing_paths(rows: Iterable[dict[str, str]], column: str) -> list[Path]:
@@ -139,12 +222,45 @@ def _existing_paths(rows: Iterable[dict[str, str]], column: str) -> list[Path]:
     return paths
 
 
+def _archived_paths(rows: Sequence[dict[str, str]]) -> list[Path]:
+    paths = _existing_paths(rows, "Compressed Path")
+    # The AAC-in-MP4 copy that `catalog archive` writes next to the WebM,
+    # whether or not the manifest recorded it (an interrupted backfill).
+    paths.extend(path for path in _existing_paths(rows, "Compressed AAC Path") if path not in paths)
+    for webm in _existing_paths(rows, "Compressed Path"):
+        sibling = webm.with_suffix(".m4a")
+        if webm.suffix == ".webm" and sibling.is_file() and sibling not in paths:
+            paths.append(sibling)
+    return paths
+
+
 def _shared_source_paths(catalogs: Sequence[Path], sha256: str) -> set[Path]:
     return {
         source.resolve()
         for catalog in catalogs
         for source in _existing_paths(_rows_for_hash(catalog, sha256), "Full Path")
     }
+
+
+def shared_derived_paths(catalogs: Sequence[Path], sha256: str) -> set[Path]:
+    """Staged and archived files of ``sha256`` that other catalogs' manifests list.
+
+    Staging and archive directories are per catalog generation, but an older
+    `stage-audio` reused whatever `audio_staged` pointed at, so two catalogs
+    can list the same staged WAV. Such a file stays while another catalog uses it.
+    """
+    shared: set[Path] = set()
+    for catalog in catalogs:
+        stem = catalog.stem
+        staged_csv = catalog.with_name(f"{stem}_loudness_normalized.csv")
+        if staged_csv.is_file():
+            staged = _existing_paths(_rows_for_hash(staged_csv, sha256), "Full Path")
+            shared.update(path.resolve() for path in staged)
+        archived_csv = catalog.with_name(f"{stem}_loudness_archived.csv")
+        if archived_csv.is_file():
+            archived = _archived_paths(_rows_for_hash(archived_csv, sha256))
+            shared.update(path.resolve() for path in archived)
+    return shared
 
 
 def find_embedding_dirs(
@@ -183,6 +299,14 @@ def build_removal_plan(
         shared_catalog_refs=list(shared_catalog_refs),
     )
     shared_sources = _shared_source_paths(plan.shared_catalog_refs, sha256)
+    shared_derived = shared_derived_paths(plan.shared_catalog_refs, sha256)
+
+    def add_derived(target: list[Path], paths: Iterable[Path]) -> None:
+        for path in paths:
+            if path.resolve() in shared_derived:
+                plan.shared_derived_files.append(path)
+            else:
+                target.append(path)
 
     for csv_path in derived_csv_paths(catalog_csv):
         if not csv_path.is_file():
@@ -202,16 +326,9 @@ def build_removal_plan(
                 if sidecar.is_file():
                     plan.source_files.append(sidecar)
         elif csv_path.name.endswith("_loudness_normalized.csv"):
-            plan.staged_files.extend(_existing_paths(rows, "Full Path"))
+            add_derived(plan.staged_files, _existing_paths(rows, "Full Path"))
         elif csv_path.name.endswith("_loudness_archived.csv"):
-            plan.archived_files.extend(_existing_paths(rows, "Compressed Path"))
-            # The AAC-in-MP4 copy that `catalog archive` writes next to the WebM,
-            # whether or not the manifest recorded it (an interrupted backfill).
-            plan.archived_files.extend(_existing_paths(rows, "Compressed AAC Path"))
-            for webm in _existing_paths(rows, "Compressed Path"):
-                sibling = webm.with_suffix(".m4a")
-                if webm.suffix == ".webm" and sibling.is_file() and sibling not in plan.archived_files:
-                    plan.archived_files.append(sibling)
+            add_derived(plan.archived_files, _archived_paths(rows))
 
     plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
     plan.diarization_dirs = find_diarization_dirs(transcripts_root, sha256)
@@ -224,31 +341,34 @@ def build_removal_plan(
 
 def remove_hash_from_csv(csv_path: Path, sha256: str) -> int:
     """Rewrite one catalog CSV without the hash's rows; atomic on success."""
+    return remove_hashes_from_csv(csv_path, {sha256})
+
+
+def remove_hashes_from_csv(csv_path: Path, hashes: Collection[str]) -> int:
+    """Rewrite one catalog CSV without the rows of ``hashes``; atomic on success.
+
+    The file is read again here, so rows appended since the caller planned the
+    removal are kept.
+    """
+    wanted = {value.strip().lower() for value in hashes}
     if csv_path.resolve().name.endswith("_loudness_archived.csv"):
         # `catalog archive --backfill-aac` rewrites this manifest outside the
         # ingest lock; share its lock so neither drops the other's change.
         with rewrite_lock(csv_path):
-            return _remove_hash_from_csv(csv_path, sha256)
-    return _remove_hash_from_csv(csv_path, sha256)
+            return _remove_hashes_from_csv(csv_path, wanted)
+    return _remove_hashes_from_csv(csv_path, wanted)
 
 
-def _remove_hash_from_csv(csv_path: Path, sha256: str) -> int:
+def _remove_hashes_from_csv(csv_path: Path, hashes: set[str]) -> int:
     columns, rows = load_csv(csv_path, encoding="utf-8")
-    try:
-        hash_column = resolve_hash_column(columns, csv_path, preferred="Hash")
-    except ValueError:
+    hash_column = _hash_column(csv_path, columns)
+    if hash_column is None:
         return 0
-    kept, removed = filter_catalog_rows(rows, remove_hashes={sha256}, hash_column=hash_column)
-    kept = [row for row in kept if (row.get(hash_column, "") or "").strip().lower() != sha256]
+    kept = [row for row in rows if _row_hash(row, hash_column) not in hashes]
     removed_count = len(rows) - len(kept)
     if removed_count == 0:
         return 0
-    with atomic_path(csv_path) as temp_path:
-        with temp_path.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(columns))
-            writer.writeheader()
-            for row in kept:
-                writer.writerow({column: row.get(column, "") for column in columns})
+    write_merged_csv(csv_path, kept, columns=columns, encoding="utf-8")
     return removed_count
 
 
