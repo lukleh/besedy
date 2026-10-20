@@ -1,0 +1,26 @@
+[project]
+name = "besedy-training"
+version = "0.0.0"
+description = "Fine-tune Whisper on datasets built by `catalog training-export` (ADR 0012)"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.11.0",
+    "transformers==5.12.0",
+    "peft==0.21.2",
+    "soundfile",
+    "numpy",
+    "jiwer",
+]
+
+[tool.uv]
+package = false
+# The CUDA wheels exist for Linux only; training runs on the GPU host.
+environments = ["sys_platform == 'linux'"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

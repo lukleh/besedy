@@ -57,6 +57,7 @@ class TestCatalogParserStructure:
             "join",
             "hash",
             "rag-colbert-index",
+            "training-export",
         }
         assert set(subparsers_action.choices.keys()) == expected
 
