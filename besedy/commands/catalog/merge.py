@@ -87,6 +87,9 @@ def handle_merge(args: argparse.Namespace) -> int:
     # rewrite lock from the read to the replace, as `catalog add` and
     # `catalog remove` do, so neither's rows are dropped in between.
     output_path = Path(output_path).expanduser()
+    # The lock file sits next to the output, so its directory must exist
+    # before the lock rather than only once write_merged_csv publishes.
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with rewrite_lock(output_path):
         return _merge_into(args, output_path, LOGGER)
 

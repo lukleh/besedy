@@ -103,3 +103,22 @@ def test_in_place_merge_waits_for_the_rewrite_lock(tmp_path: Path) -> None:
     _assert_waits_for_lock(target, lambda: handle_merge(args))
 
     assert _read_hashes(target) == [KEEP, NEW]
+
+
+def test_merge_creates_a_missing_output_directory(tmp_path: Path) -> None:
+    target = tmp_path / "audio_catalog_20260201_120000.csv"
+    source = tmp_path / "incoming.csv"
+    output = tmp_path / "new" / "dir" / "out.csv"
+    _write_csv(target, [KEEP])
+    _write_csv(source, [NEW])
+    args = argparse.Namespace(
+        source1=target,
+        source2=source,
+        output=output,
+        encoding="utf-8",
+        hash_column=None,
+        quiet=True,
+    )
+
+    assert handle_merge(args) == 0
+    assert _read_hashes(output) == [KEEP, NEW]
