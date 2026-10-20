@@ -183,17 +183,25 @@ jobs:
 
   # The main ruleset requires this check name and no other web check, so it
   # stays and gates every web job, including the build and the correction
-  # integration run. It passes only when all of them succeeded, and names
-  # each one that did not. It runs even when the run was cancelled: GitHub
-  # counts a skipped required check as passing, so skipping here would let a
-  # cancelled run's PR merge without the web checks.
+  # integration run. It also gates the Python 3.11 syntax and Compose render
+  # jobs, which the ruleset does not name either. It passes only when all of
+  # them succeeded, and names each one that did not. It runs even when the
+  # run was cancelled: GitHub counts a skipped required check as passing, so
+  # skipping here would let a cancelled run's PR merge without these checks.
   web:
     name: Web type-check + lint + unit
     if: always()
-    needs: [web-typecheck, web-lint, web-unit, web-build, correction-integration]
+    needs:
+      - web-typecheck
+      - web-lint
+      - web-unit
+      - web-build
+      - correction-integration
+      - python-311-syntax
+      - compose-render
     runs-on: ubuntu-latest
     steps:
-      - name: Require every web job to succeed
+      - name: Require every gated job to succeed
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
