@@ -582,7 +582,9 @@
       "MUSIC_NOISE": "Music / noise",
       "CUT_WORD": "Cut word",
       "EXCLUDE_FROM_TRAINING": "Keep out of training"
-    }
+    },
+    "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
+    "consentRetry": "Try again"
   },
   "metadata": {
     "title": "Metadata",

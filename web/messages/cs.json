@@ -582,7 +582,9 @@
       "MUSIC_NOISE": "Hudba / šum",
       "CUT_WORD": "Useknuté slovo",
       "EXCLUDE_FROM_TRAINING": "Nepoužít k trénování"
-    }
+    },
+    "consentLoadFailed": "Nepodařilo se ověřit souhlas s použitím oprav. Bez něj nelze opravovat.",
+    "consentRetry": "Zkusit znovu"
   },
   "metadata": {
     "title": "Metadata",

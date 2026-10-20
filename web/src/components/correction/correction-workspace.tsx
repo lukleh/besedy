@@ -228,6 +228,20 @@ export function CorrectionWorkspace({
         <CorrectionConsentCard consent={consent} />
       )}
 
+      {/* Without the consent answer nothing can be shown or written, so a
+          failed lookup says so instead of leaving an empty page. */}
+      {state && (state.workspace || state.canStart) && consentQuery.isLoading && (
+        <Skeleton className="h-24 w-full" />
+      )}
+      {state && (state.workspace || state.canStart) && consentQuery.isError && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6" data-testid="correction-consent-error">
+          <p className="text-sm">{t("consentLoadFailed")}</p>
+          <Button variant="outline" className="mt-3" onClick={() => consentQuery.refetch()}>
+            {t("consentRetry")}
+          </Button>
+        </div>
+      )}
+
       {state?.canStart && !state.workspace && consent?.accepted && (
         <div className="rounded-lg border p-6">
           <h2 className="font-medium">{t("startTitle")}</h2>
