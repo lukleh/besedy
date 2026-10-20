@@ -156,6 +156,25 @@ export function CorrectionSurface({
     };
   }, []);
 
+  // The player re-subscribes its media listeners whenever these change, which
+  // would also drop its frame-precise excerpt stop, so they stay stable and
+  // read the current rate from a ref instead of closing over it.
+  const rateRef = useRef(rate);
+  useEffect(() => {
+    rateRef.current = rate;
+  }, [rate]);
+  const handlePlayerTime = useCallback((time: number) => {
+    currentTimeRef.current = time;
+    timeListenersRef.current.forEach((listener) => listener(time));
+    if (playingRef.current) playbackRef.current.observe(time, rateRef.current);
+    else playbackRef.current.interrupt();
+  }, []);
+  const handlePlayerPlaying = useCallback((playing: boolean) => {
+    playingRef.current = playing;
+    if (!playing) playbackRef.current.interrupt();
+  }, []);
+  const handlePlayerSeek = useCallback(() => playbackRef.current.interrupt(), []);
+
   const [seekRequest, setSeekRequest] = useState<{
     spanId: string;
     time: number;
@@ -659,17 +678,9 @@ export function CorrectionSurface({
           playbackEnd={seekRequest?.end}
           autoPlayOnSeek={seekRequest?.autoPlay ?? false}
           playbackRate={rate}
-          onTimeUpdate={(time) => {
-            currentTimeRef.current = time;
-            timeListenersRef.current.forEach((listener) => listener(time));
-            if (playingRef.current) playbackRef.current.observe(time, rate);
-            else playbackRef.current.interrupt();
-          }}
-          onPlayingChange={(playing) => {
-            playingRef.current = playing;
-            if (!playing) playbackRef.current.interrupt();
-          }}
-          onSeek={() => playbackRef.current.interrupt()}
+          onTimeUpdate={handlePlayerTime}
+          onPlayingChange={handlePlayerPlaying}
+          onSeek={handlePlayerSeek}
         />
 
         {selected ? (

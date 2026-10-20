@@ -4,7 +4,7 @@
 # Correction work cannot be redone, so this checks every night that what it
 # depends on is intact: the frozen source and its fingerprint, the stored
 # spans against a fresh segmentation of that source, the staged audio's size
-# and SHA-256, the workspace manifest the Python guards read, and every text
+# (its SHA-256 once per AUDIO_HASH_EVERY_DAYS), the workspace manifest the Python guards read, and every text
 # revision against its hash. The database rows come from PostgreSQL; the
 # checks run in besedy.lib.correction_integrity on the host, which sees the
 # corrections tree and the staged audio at the paths the workspaces recorded.
@@ -17,7 +17,8 @@
 #   WEB_MODE             compose mode for run_web_compose.sh (default: production)
 #   DB_USER / DB_NAME    database role and name (default: besedy_app / besedy)
 #   UV_BIN               uv executable (default: uv on PATH, else ~/.local/bin/uv)
-#   INTEGRITY_ARGS       extra arguments, e.g. --skip-audio-hash or --map-path FROM=TO
+#   AUDIO_HASH_EVERY_DAYS  hash each staged WAV on one night in N (default: 7)
+#   INTEGRITY_ARGS       extra arguments, e.g. --map-path FROM=TO
 #   ALERT_EMAIL          where to mail a failure
 
 set -euo pipefail
@@ -29,6 +30,7 @@ DB_USER="${DB_USER:-besedy_app}"
 DB_NAME="${DB_NAME:-besedy}"
 UV_BIN="${UV_BIN:-$(command -v uv || echo "$HOME/.local/bin/uv")}"
 ALERT_EMAIL="${ALERT_EMAIL:-}"
+AUDIO_HASH_EVERY_DAYS="${AUDIO_HASH_EVERY_DAYS:-7}"
 TAG="${REPORT_LOG_TAG:-besedy-correction-integrity}"
 
 alert() {
@@ -95,7 +97,7 @@ WORKSPACES_JSON="$(docker exec -i "$DB_CONTAINER_ID" psql -U "$DB_USER" -d "$DB_
 # Inside an if, a non-zero exit is the verdict rather than a script error: the
 # ERR trap fires on failing commands even with errexit off, but not in a test.
 # shellcheck disable=SC2086 # INTEGRITY_ARGS is a list of arguments
-if REPORT="$(printf '%s' "$WORKSPACES_JSON" | (cd "$PROJECT_DIR" && "$UV_BIN" run --quiet --locked python -m besedy.lib.correction_integrity ${INTEGRITY_ARGS:-}) 2>&1)"; then
+if REPORT="$(printf '%s' "$WORKSPACES_JSON" | (cd "$PROJECT_DIR" && "$UV_BIN" run --quiet --locked python -m besedy.lib.correction_integrity --audio-hash-every-days "$AUDIO_HASH_EVERY_DAYS" ${INTEGRITY_ARGS:-}) 2>&1)"; then
   STATUS=0
 else
   STATUS=$?

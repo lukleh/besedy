@@ -462,6 +462,19 @@ async function main() {
       flagCode = (error as { code?: string }).code;
     }
     check("another language needs its code", flagCode === "INVALID_FLAG", flagCode);
+    const clearRequest = {
+      workspaceId: workspace.id,
+      spanId: first.id,
+      userId: alice.id,
+      kind: "OTHER_LANGUAGE" as const,
+      action: "CLEAR" as const,
+      languageCode: "en",
+      idempotencyKey: "clear-1",
+    };
+    await recordFlag({ ...clearRequest, action: "SET" as const, idempotencyKey: "set-again" });
+    await recordFlag(clearRequest);
+    const retriedClear = await recordFlag(clearRequest);
+    check("a retried clear that repeats the language code replays", retriedClear.replayed, retriedClear);
     check(
       "flags do not change the span's state",
       cleared?.state === "needs_second_approval",

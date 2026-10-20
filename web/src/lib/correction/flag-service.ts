@@ -83,7 +83,11 @@ export async function loadSpanFlags(
  * holds changes, not repetitions. A retried request with the same key replays.
  */
 export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFlag[]; replayed: boolean }> {
-  const languageCode = command.kind === "OTHER_LANGUAGE" ? (command.languageCode ?? null) : null;
+  // A language belongs to setting the other-language flag; clearing it, or any
+  // other flag, carries none, so a retried clear that repeats the code still
+  // matches the event it recorded.
+  const languageCode =
+    command.kind === "OTHER_LANGUAGE" && command.action === "SET" ? (command.languageCode ?? null) : null;
   if (command.kind === "OTHER_LANGUAGE" && command.action === "SET" && !languageCode) {
     throw new CorrectionError("INVALID_FLAG", "Name the language with its ISO 639-1 code");
   }

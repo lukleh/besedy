@@ -73,7 +73,14 @@ export class PlaybackTracker {
       const step = time - this.last;
       if (step > 0 && step <= MAX_CONTINUOUS_STEP_SECONDS * Math.max(1, rate)) {
         this.played.add(this.last, time);
-        this.steps.push({ start: this.last, end: time, rate });
+        // Continuous play at one rate extends the current stretch, so the
+        // list grows with seeks and rate changes, not with every time update.
+        const previous = this.steps.at(-1);
+        if (previous && previous.end === this.last && previous.rate === rate) {
+          previous.end = time;
+        } else {
+          this.steps.push({ start: this.last, end: time, rate });
+        }
       }
     }
     this.last = time;

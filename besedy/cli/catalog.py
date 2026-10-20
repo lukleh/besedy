@@ -36,6 +36,7 @@ from besedy.commands.catalog import (
 from besedy.commands.catalog import (
     hash as hash_cmd,
 )
+from besedy.lib.correction_guard import CorrectionManifestError
 from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 from besedy.lib.subprocess_utils import install_signal_handlers
 
@@ -88,9 +89,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         return handler(args)
-    except BackendRuntimeUnavailableError as exc:
-        # A missing backend runtime (for example no Docker) is a setup problem,
-        # not a crash; report it without a traceback.
+    except (BackendRuntimeUnavailableError, CorrectionManifestError) as exc:
+        # A missing backend runtime (for example no Docker) or an unreadable
+        # correction manifest that stops clean/remove/stage-audio is a setup
+        # problem, not a crash; report it without a traceback.
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

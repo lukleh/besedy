@@ -70,6 +70,14 @@ def load_protected_staged_audio(
     return protected
 
 
+def map_recorded_path(path: str, path_map: Mapping[str, str]) -> Path:
+    """Apply the longest matching prefix mapping, as the web does for host paths."""
+    for source in sorted(path_map, key=len, reverse=True):
+        if path == source or path.startswith(source.rstrip("/") + "/"):
+            return Path(path_map[source] + path[len(source) :])
+    return Path(path)
+
+
 def is_protected(path: Path, protected: Mapping[Path, ProtectedStagedAudio]) -> bool:
     """Whether a live correction workspace depends on this staged file."""
     return bool(protected) and _key(path) in protected
