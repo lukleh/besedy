@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/recording-urls";
 import { formatHoursMinutes } from "@/lib/correction/format";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
+import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
 import { useLandscapeWorkspace } from "./use-landscape-workspace";
 import {
@@ -49,6 +50,8 @@ export function CorrectionWorkspace({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const supported = useLandscapeWorkspace();
+
+  const consentQuery = useContributorConsent();
 
   const stateQuery = useQuery<CorrectionState>({
     queryKey: ["correction-state", catalogId, hash],
@@ -163,6 +166,9 @@ export function CorrectionWorkspace({
   }
 
   const state = stateQuery.data;
+  // Nothing is written before the contributor terms are accepted (ADR 0012).
+  const consent = consentQuery.data?.consent;
+  const needsConsent = consent !== undefined && !consent.accepted;
 
   return (
     <div className="container mx-auto space-y-6 px-4 py-6">
@@ -218,7 +224,11 @@ export function CorrectionWorkspace({
         </div>
       )}
 
-      {state?.canStart && !state.workspace && (
+      {state && consent && needsConsent && (state.workspace || state.canStart) && (
+        <CorrectionConsentCard consent={consent} />
+      )}
+
+      {state?.canStart && !state.workspace && consent?.accepted && (
         <div className="rounded-lg border p-6">
           <h2 className="font-medium">{t("startTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -359,14 +369,16 @@ export function CorrectionWorkspace({
             {formatHoursMinutes(state.workspace.spanDurationSeconds)}
           </p>
 
-          <CorrectionSurface
-            catalogId={catalogId}
-            hash={hash}
-            userId={userId}
-            workspace={state.workspace}
-            resume={state.resume}
-            onChanged={refreshState}
-          />
+          {consent?.accepted && (
+            <CorrectionSurface
+              catalogId={catalogId}
+              hash={hash}
+              userId={userId}
+              workspace={state.workspace}
+              resume={state.resume}
+              onChanged={refreshState}
+            />
+          )}
         </>
       )}
     </div>

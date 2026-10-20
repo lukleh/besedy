@@ -556,7 +556,9 @@
         "published": "Zatím není nic zveřejněno.",
         "not_started": "Každá hlavní nahrávka už má začatou korekturu."
       }
-    }
+    },
+    "consentTitle": "Souhlas s použitím oprav",
+    "consentAccept": "Souhlasím"
   },
   "metadata": {
     "title": "Metadata",

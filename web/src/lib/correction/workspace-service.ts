@@ -4,9 +4,27 @@ import { Prisma, type TranscriptPublicationStatus } from "@/generated/prisma/cli
 import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
 import { isCorrectionEligibleRecording } from "@/lib/correction/eligibility";
-import { readMachineSource, resolveConfiguredDefaultBackend, type CanonicalSegment } from "@/lib/correction/source";
-import { resolveWorkspaceDir, resolveWorkspaceSourcePath, writeFileAtomic } from "@/lib/correction/storage";
-import { fingerprintContent, hashSpanText, normalizeSpanText } from "@/lib/correction/text";
+import { readMachineSource, resolveConfiguredDefaultBackend } from "@/lib/correction/source";
+import {
+  readJsonFile,
+  resolveWorkspaceDir,
+  resolveWorkspaceManifestPath,
+  resolveWorkspaceSourcePath,
+  WORKSPACE_MANIFEST_SCHEMA_VERSION,
+  writeFileAtomic,
+  writeWorkspaceManifest,
+  type CorrectionWorkspaceManifest,
+} from "@/lib/correction/storage";
+import { requireContributorConsent } from "@/lib/correction/consent";
+import { getActiveGuideRevisionId } from "@/lib/correction/guide";
+import {
+  SEGMENTATION_PARAMS,
+  SegmentationError,
+  segmentTranscript,
+  type Segmentation,
+} from "@/lib/correction/segmentation";
+import { identifyStagedAudio } from "@/lib/correction/staged-audio";
+import { fingerprintContent, hashSpanText } from "@/lib/correction/text";
 import type { SpanState } from "@/lib/correction/span-state";
 import { loadSpanSummaries, type SpanSummaryRow } from "@/lib/correction/span-summaries";
 import {
@@ -148,17 +166,32 @@ export interface StartWorkspaceInput {
 }
 
 /**
- * Freeze one machine transcript and import its segments as spans.
+ * Freeze one machine transcript and import its decoded chunks as spans.
  *
  * Rows are created eagerly rather than on first edit: an unstarted recording
  * then costs nothing, and a started one is completely independent of later
  * retranscription, backend-priority changes or source-file replacement.
+ *
+ * ADR 0012 makes the import the moment the correction data contract is fixed:
+ * spans are cut from the chunks the model decoded, the staged audio their times
+ * refer to is fingerprinted, and nothing starts without the starter's consent
+ * and a catalog guide revision every machine revision can point at.
  */
 export async function startWorkspace(input: StartWorkspaceInput): Promise<WorkspaceSummary> {
   const { catalogId, audioHash, transcriptsPath, userId } = input;
 
+  await requireContributorConsent(prisma, userId);
+
   if (!(await isCorrectionEligibleRecording(catalogId, audioHash))) {
     throw new CorrectionError("NOT_ELIGIBLE", "Only the primary recording of an event can be corrected");
+  }
+
+  const guideRevisionId = await getActiveGuideRevisionId(catalogId);
+  if (!guideRevisionId) {
+    throw new CorrectionError(
+      "GUIDE_MISSING",
+      "Save this catalog's correction guide before starting correction, so every revision records the guide it followed"
+    );
   }
 
   const existing = await prisma.transcriptWorkspace.findFirst({
@@ -184,20 +217,42 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
   const source = await readMachineSource(transcriptsPath, audioHash, backend);
   const sourceFingerprint = fingerprintContent(source.content);
 
-  const workspaceId = randomUUID();
-  const spans = buildSpanRows(source.data.segments ?? []);
-  if (spans.length === 0) {
-    throw new CorrectionError("SOURCE_MISSING", "The machine transcript has no usable segments");
+  let segmentation: Segmentation;
+  try {
+    segmentation = segmentTranscript(source.data);
+  } catch (error) {
+    if (error instanceof SegmentationError) {
+      throw new CorrectionError(
+        "SOURCE_UNSUITABLE",
+        `This machine transcript cannot be cut into correction spans: ${error.message}`,
+        { reason: error.code }
+      );
+    }
+    throw error;
   }
+  const stagedAudio = await identifyStagedAudio(source.data.meta, audioHash);
 
+  const workspaceId = randomUUID();
+  const spans = buildSpanRows(segmentation);
   const spanDurationSeconds = spans.reduce(
-    (total, span) => total + Math.max(0, span.endSeconds - span.startSeconds),
+    (total, span) => total + (span.endSample - span.startSample) / SEGMENTATION_PARAMS.sampleRate,
     0
   );
 
   // The immutable copy lands first: a workspace whose frozen source is missing
-  // would be unrecoverable, while an orphan file is merely rubbish.
+  // would be unrecoverable, while an orphan file is merely rubbish. The
+  // manifest follows, so its staged audio is protected before any row exists.
   await writeFileAtomic(resolveWorkspaceSourcePath(catalogId, workspaceId), source.content);
+  await writeWorkspaceManifest({
+    schema_version: WORKSPACE_MANIFEST_SCHEMA_VERSION,
+    workflow_group_id: catalogId,
+    audio_hash: audioHash,
+    workspace_id: workspaceId,
+    status: "active",
+    segmentation_version: segmentation.version,
+    staged_audio: stagedAudio,
+    updated_at: new Date().toISOString(),
+  });
 
   try {
     await prisma.$transaction(
@@ -212,6 +267,12 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
             spanCount: spans.length,
             spanDurationSeconds,
             startedById: userId,
+            segmentationVersion: segmentation.version,
+            segmentationParams: { ...SEGMENTATION_PARAMS },
+            sourceChunkCount: segmentation.chunkCount,
+            stagedAudioPath: stagedAudio.path,
+            stagedAudioSize: BigInt(stagedAudio.size),
+            stagedAudioSha256: stagedAudio.sha256,
           },
         });
 
@@ -220,10 +281,17 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
             id: span.id,
             workspaceId,
             ordinal: span.ordinal,
-            startSeconds: span.startSeconds,
-            endSeconds: span.endSeconds,
+            startSeconds: span.startSample / SEGMENTATION_PARAMS.sampleRate,
+            endSeconds: span.endSample / SEGMENTATION_PARAMS.sampleRate,
             originalText: span.text,
             originalTextHash: span.textHash,
+            chunkOrdinal: span.chunk,
+            firstRegionIndex: span.firstRegion,
+            lastRegionIndex: span.lastRegion,
+            startSample: span.startSample,
+            endSample: span.endSample,
+            speechRegions: span.speechRegions,
+            machineWords: span.machineWords as Prisma.InputJsonValue,
           })),
         });
 
@@ -235,6 +303,8 @@ export async function startWorkspace(input: StartWorkspaceInput): Promise<Worksp
             text: span.text,
             textHash: span.textHash,
             authorId: null,
+            origin: "MACHINE" as const,
+            guideRevisionId,
           })),
         });
 
@@ -269,36 +339,37 @@ interface ImportedSpan {
   id: string;
   revisionId: string;
   ordinal: number;
-  startSeconds: number;
-  endSeconds: number;
+  chunk: number;
+  firstRegion: number;
+  lastRegion: number;
+  startSample: number;
+  endSample: number;
+  speechRegions: number[][];
+  machineWords: Record<string, unknown>[];
   text: string;
   textHash: string;
 }
 
-function buildSpanRows(segments: readonly CanonicalSegment[]): ImportedSpan[] {
-  const rows: ImportedSpan[] = [];
-
-  for (const segment of segments) {
-    // An empty machine segment is imported like any other: the span keeps its
-    // timing, and two approvals confirm that nothing was said there.
-    const text = normalizeSpanText(String(segment.text ?? ""));
-
-    const start = Number(segment.start ?? 0);
-    const end = Number(segment.end ?? start);
-    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-
-    rows.push({
-      id: randomUUID(),
-      revisionId: randomUUID(),
-      ordinal: rows.length,
-      startSeconds: Math.max(0, start),
-      endSeconds: Math.max(Math.max(0, start), end),
-      text,
-      textHash: hashSpanText(text),
-    });
-  }
-
-  return rows;
+/**
+ * One row per segmented span, in order. A span without machine text is
+ * imported like any other: two approvals confirm that nothing was said there,
+ * or a corrector writes the speech the model dropped.
+ */
+function buildSpanRows(segmentation: Segmentation): ImportedSpan[] {
+  return segmentation.spans.map((span, ordinal) => ({
+    id: randomUUID(),
+    revisionId: randomUUID(),
+    ordinal,
+    chunk: span.chunk,
+    firstRegion: span.firstRegion,
+    lastRegion: span.lastRegion,
+    startSample: span.startSample,
+    endSample: span.endSample,
+    speechRegions: span.regions.map((region) => [region.start, region.end]),
+    machineWords: span.words,
+    text: span.text,
+    textHash: hashSpanText(span.text),
+  }));
 }
 
 export interface SpanPage {
@@ -475,6 +546,14 @@ export async function archiveWorkspace(input: ArchiveWorkspaceInput): Promise<Wo
       select: WORKSPACE_SELECT,
     });
   });
+
+  // After the commit: if this write fails, the staged audio stays protected,
+  // which is the safe direction. Workspaces from before ADR 0012 have none.
+  const manifestPath = resolveWorkspaceManifestPath(input.catalogId, existing.id);
+  const manifest = await readJsonFile<CorrectionWorkspaceManifest>(manifestPath);
+  if (manifest) {
+    await writeWorkspaceManifest({ ...manifest, status: "archived", updated_at: new Date().toISOString() });
+  }
 
   return toSummary(archived);
 }

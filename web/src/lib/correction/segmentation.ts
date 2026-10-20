@@ -55,6 +55,8 @@ export interface SegmentedSpan {
   regions: Region[];
   /** Indices into the chunk's segment words */
   wordIndices: number[];
+  /** Those words, as the source stored them */
+  words: Record<string, unknown>[];
   text: string;
 }
 
@@ -64,11 +66,12 @@ export interface Segmentation {
   spans: SegmentedSpan[];
 }
 
-interface MachineWord {
+/** A machine word as the source stored it; only these three fields are read. */
+type MachineWord = Record<string, unknown> & {
   word?: unknown;
   start?: unknown;
   end?: unknown;
-}
+};
 
 /** Group region indices as `faster_whisper.vad.collect_chunks` does. */
 export function buildChunks(regions: readonly Region[]): number[][] {
@@ -345,6 +348,7 @@ export function segmentTranscript(transcript: unknown): Segmentation {
         endSample: regions[run[run.length - 1]].end,
         regions: run.map((i) => regions[i]),
         wordIndices: owner.flatMap((o, i) => (o === r ? [i] : [])),
+        words: words.filter((_, i) => owner[i] === r),
         text: texts[r],
       });
     });

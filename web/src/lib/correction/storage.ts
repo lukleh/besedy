@@ -115,6 +115,38 @@ export function resolvePublicationFilePath(
   );
 }
 
+/** Bumped when the on-disk workspace manifest contract changes for Python. */
+export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1;
+
+/**
+ * What the Python side needs to know about a workspace without a database
+ * (ADR 0012): which staged audio it depends on, so `catalog clean` and
+ * re-staging refuse to replace or delete that audio while the workspace is
+ * live. Written before the database rows, so a crash in between leaves the
+ * audio protected rather than unprotected.
+ */
+export interface CorrectionWorkspaceManifest {
+  schema_version: number;
+  workflow_group_id: string;
+  audio_hash: string;
+  workspace_id: string;
+  status: "active" | "archived";
+  segmentation_version: string;
+  staged_audio: { path: string; size: number; sha256: string };
+  updated_at: string;
+}
+
+export function resolveWorkspaceManifestPath(catalogId: string, workspaceId: string): string {
+  return path.join(resolveWorkspaceDir(catalogId, workspaceId), "workspace.json");
+}
+
+export async function writeWorkspaceManifest(manifest: CorrectionWorkspaceManifest): Promise<void> {
+  await writeFileAtomic(
+    resolveWorkspaceManifestPath(manifest.workflow_group_id, manifest.workspace_id),
+    `${JSON.stringify(manifest, null, 2)}\n`
+  );
+}
+
 export function resolveIndexPointerDir(catalogId: string): string {
   return path.join(resolveCatalogCorrectionsRoot(catalogId), "index-sources");
 }

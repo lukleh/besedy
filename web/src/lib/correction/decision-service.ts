@@ -7,6 +7,8 @@ import type { SpanState } from "@/lib/correction/span-state";
 import { loadActorNames } from "@/lib/correction/actor-names";
 import { loadSpanDecisionSummaries } from "@/lib/correction/span-summaries";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
+import { requireContributorConsent } from "@/lib/correction/consent";
+import { getActiveGuideRevisionId } from "@/lib/correction/guide";
 
 export interface SpanCommandResult {
   spanId: string;
@@ -87,11 +89,16 @@ async function lockSpan(tx: TransactionClient, command: SpanCommandBase): Promis
  * Callers hold the workspace lock before asking, so the answer cannot go stale
  * between the question and the write.
  */
-async function assertWorkspaceWritable(tx: TransactionClient, workspaceId: string): Promise<void> {
+async function assertWorkspaceWritable(
+  tx: TransactionClient,
+  workspaceId: string
+): Promise<{ workflowGroupId: string; segmentationVersion: string | null }> {
   const workspace = await tx.transcriptWorkspace.findUnique({
     where: { id: workspaceId },
     select: {
       status: true,
+      workflowGroupId: true,
+      segmentationVersion: true,
       publications: {
         where: { status: { in: ["PENDING", "ACTIVATING", "ROLLING_BACK"] } },
         select: { id: true },
@@ -113,6 +120,10 @@ async function assertWorkspaceWritable(tx: TransactionClient, workspaceId: strin
       { publicationId: workspace.publications[0].id }
     );
   }
+  return {
+    workflowGroupId: workspace.workflowGroupId,
+    segmentationVersion: workspace.segmentationVersion,
+  };
 }
 
 /**
@@ -239,6 +250,7 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
     }
 
     await assertWorkspaceWritable(tx, command.workspaceId);
+    await requireContributorConsent(tx, command.userId);
     const span = await lockSpan(tx, command);
 
     await tx.transcriptSpanDecision.create({
@@ -296,7 +308,8 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
       };
     }
 
-    await assertWorkspaceWritable(tx, command.workspaceId);
+    const workspace = await assertWorkspaceWritable(tx, command.workspaceId);
+    await requireContributorConsent(tx, command.userId);
     const span = await lockSpan(tx, command);
 
     const current = await tx.transcriptSpanRevision.findUniqueOrThrow({
@@ -310,6 +323,12 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
     const revisionId = unchanged ? current.id : randomUUID();
 
     if (!unchanged) {
+      // ADR 0012: every revision of a contract workspace names the guide it
+      // was written under.
+      const guideRevisionId = await getActiveGuideRevisionId(workspace.workflowGroupId, tx);
+      if (workspace.segmentationVersion && !guideRevisionId) {
+        throw new CorrectionError("GUIDE_MISSING", "This catalog has no saved correction guide");
+      }
       await tx.transcriptSpanRevision.create({
         data: {
           id: revisionId,
@@ -320,6 +339,8 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
           previousRevisionId: current.id,
           actorKey: command.userId,
           authorId: command.userId,
+          origin: "MANUAL",
+          guideRevisionId,
         },
       });
       await tx.transcriptSpan.update({
@@ -383,6 +404,7 @@ export async function addComment(command: CommentCommand): Promise<{
     if (workspace.status === "ARCHIVED") {
       throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
     }
+    await requireContributorConsent(tx, command.userId);
 
     const span = await tx.transcriptSpan.findUnique({
       where: { id: command.spanId },

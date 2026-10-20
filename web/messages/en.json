@@ -556,7 +556,9 @@
         "published": "Nothing is published yet.",
         "not_started": "Every primary recording already has correction under way."
       }
-    }
+    },
+    "consentTitle": "Consent to use your corrections",
+    "consentAccept": "I agree"
   },
   "metadata": {
     "title": "Metadata",

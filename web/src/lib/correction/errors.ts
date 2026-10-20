@@ -16,7 +16,10 @@ export type CorrectionErrorCode =
   | "PUBLICATION_ACTIVE"
   | "NOT_PUBLISHED"
   | "GUIDE_MISSING"
-  | "INDEX_SYNC_UNAVAILABLE";
+  | "INDEX_SYNC_UNAVAILABLE"
+  | "CONSENT_REQUIRED"
+  | "SOURCE_UNSUITABLE"
+  | "STAGED_AUDIO_MISSING";
 
 const STATUS_BY_CODE: Record<CorrectionErrorCode, number> = {
   NOT_ELIGIBLE: 404,
@@ -37,6 +40,9 @@ const STATUS_BY_CODE: Record<CorrectionErrorCode, number> = {
   NOT_PUBLISHED: 409,
   GUIDE_MISSING: 404,
   INDEX_SYNC_UNAVAILABLE: 503,
+  CONSENT_REQUIRED: 403,
+  SOURCE_UNSUITABLE: 422,
+  STAGED_AUDIO_MISSING: 422,
 };
 
 export class CorrectionError extends Error {
