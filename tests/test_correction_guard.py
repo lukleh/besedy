@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -22,7 +21,6 @@ from besedy.lib.workflow.common import CsvAudioRow
 
 HASH = "a" * 64
 OTHER = "b" * 64
-NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
 
 
 def write_manifest(
@@ -77,41 +75,28 @@ def test_archived_workspaces_are_ignored(tmp_path: Path, staged) -> None:
     assert load_protected_staged_audio(corrections) == {}
 
 
-def test_a_fresh_starting_workspace_protects_its_audio(tmp_path: Path, staged, caplog) -> None:
+@pytest.mark.parametrize("updated_at", ["2026-10-20T11:30:00.000Z", "2020-01-01T00:00:00.000Z"])
+def test_a_starting_workspace_protects_its_audio_however_old(
+    tmp_path: Path, staged, updated_at: str
+) -> None:
+    # Without the database a start that crashed after its commit cannot be
+    # told from one that crashed before it, so neither ever expires.
     _, protected_file, _ = staged
     corrections = tmp_path / "corrections"
-    write_manifest(corrections, "ws-starting", protected_file, status="starting")
-
-    with caplog.at_level(logging.WARNING):
-        protected = load_protected_staged_audio(corrections, now=NOW)
-
-    assert is_protected(protected_file, protected)
-    assert caplog.records == []
-
-
-def test_a_stale_starting_workspace_is_an_abandoned_start(tmp_path: Path, staged, caplog) -> None:
-    _, protected_file, _ = staged
-    corrections = tmp_path / "corrections"
-    stale = (NOW - timedelta(hours=1, seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    path = write_manifest(
-        corrections, "ws-starting", protected_file, status="starting", updated_at=stale
+    write_manifest(
+        corrections, "ws-starting", protected_file, status="starting", updated_at=updated_at
     )
 
-    with caplog.at_level(logging.WARNING):
-        protected = load_protected_staged_audio(corrections, now=NOW)
-
-    assert protected == {}
-    assert any(str(path) in record.getMessage() for record in caplog.records)
-    assert any("abandoned start" in record.getMessage() for record in caplog.records)
+    assert is_protected(protected_file, load_protected_staged_audio(corrections))
 
 
-def test_a_starting_workspace_without_a_timestamp_stops_the_command(tmp_path: Path, staged) -> None:
+def test_a_manifest_without_a_status_stops_the_command(tmp_path: Path, staged) -> None:
     _, protected_file, _ = staged
     corrections = tmp_path / "corrections"
-    write_manifest(corrections, "ws-starting", protected_file, status="starting", updated_at=None)
+    write_manifest(corrections, "ws-broken", protected_file, status=None)
 
-    with pytest.raises(CorrectionManifestError):
-        load_protected_staged_audio(corrections, now=NOW)
+    with pytest.raises(CorrectionManifestError, match="status"):
+        load_protected_staged_audio(corrections)
 
 
 def test_a_manifest_naming_a_missing_file_still_protects_that_path(tmp_path: Path, staged) -> None:

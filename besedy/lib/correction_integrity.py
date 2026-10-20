@@ -17,6 +17,13 @@ checks, for each live workspace under the data contract:
 A workspace cut by another segmentation version is noted rather than failed:
 this code cannot re-cut it, and the other checks still run.
 
+It also reports orphan manifests: an ``active`` or ``starting`` manifest whose
+workspace is not live in the database, left by a start that crashed before its
+commit. The Python guards keep such a manifest's audio, because without the
+database they cannot tell it from a live one, so it has to be removed by hand
+once checked. A ``starting`` manifest younger than an hour is left out, as it
+may belong to a start still in progress.
+
 Usage: ``python -m besedy.lib.correction_integrity [--corrections-root DIR]
 [--audio-hash-every-days N | --skip-audio-hash] < workspaces.json``. Exits 1
 when anything is wrong.
@@ -30,14 +37,24 @@ import json
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from besedy.core.paths_runtime import resolve_corrections_root
 from besedy.lib import correction_segmentation as cs
 from besedy.lib.catalog.manager import source_file_sha256
-from besedy.lib.correction_guard import MANIFEST_NAME, map_recorded_path
+from besedy.lib.correction_guard import (
+    MANIFEST_NAME,
+    PROTECTING_STATUSES,
+    CorrectionManifestError,
+    manifest_paths,
+    map_recorded_path,
+    read_manifest,
+)
+
+# A start younger than this may still be committing; its manifest is no orphan yet.
+START_IN_PROGRESS = timedelta(hours=1)
 
 
 @dataclass
@@ -155,6 +172,41 @@ def check_workspaces(
     }
 
 
+def _updated_at(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def find_orphan_manifests(
+    corrections_root: Path, live_workspace_ids: Iterable[str], *, now: datetime | None = None
+) -> dict[str, list[str]]:
+    """Protecting manifests with no live workspace behind them, keyed by path."""
+    live = set(live_workspace_ids)
+    now = now or datetime.now(timezone.utc)
+    orphans: dict[str, list[str]] = {}
+    for path in manifest_paths(corrections_root):
+        try:
+            data, entry = read_manifest(path)
+        except CorrectionManifestError as exc:
+            orphans[str(path)] = [str(exc)]
+            continue
+        if data["status"] not in PROTECTING_STATUSES or entry.workspace_id in live:
+            continue
+        updated = _updated_at(data.get("updated_at"))
+        if data["status"] == "starting" and updated and now - updated < START_IN_PROGRESS:
+            continue
+        orphans[str(path)] = [
+            f"{data['status']} manifest with no live workspace in the database; it keeps "
+            f"{entry.path} from clean and re-staging. Remove it once checked"
+        ]
+    return orphans
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--corrections-root", type=Path, default=None)
@@ -196,8 +248,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"     - {problem}")
         for note in check.notes:
             print(f"     note: {note}")
-    print(f"{len(results)} workspaces checked, {len(failed)} with problems")
-    return 1 if failed else 0
+    orphans = find_orphan_manifests(root, (str(w["id"]) for w in workspaces))
+    for path, problems in orphans.items():
+        print(f"FAIL {path}")
+        for problem in problems:
+            print(f"     - {problem}")
+    print(
+        f"{len(results)} workspaces checked, {len(failed)} with problems, "
+        f"{len(orphans)} orphan manifests"
+    )
+    return 1 if failed or orphans else 0
 
 
 if __name__ == "__main__":

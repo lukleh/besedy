@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +15,7 @@ from besedy.lib.correction_integrity import (
     audio_hash_due,
     check_workspace,
     check_workspaces,
+    find_orphan_manifests,
     main,
 )
 
@@ -45,7 +46,20 @@ def workspace(tmp_path: Path) -> tuple[dict, Path]:
 
     (workspace_dir / "workspace.json").write_text(
         json.dumps(
-            {"schema_version": 1, "status": "active", "staged_audio": {"sha256": audio_sha}}
+            {
+                "schema_version": 1,
+                "workflow_group_id": CATALOG,
+                "audio_hash": "a" * 64,
+                "workspace_id": WORKSPACE,
+                "status": "active",
+                "segmentation_version": cs.SEGMENTATION_VERSION,
+                "staged_audio": {
+                    "path": str(audio),
+                    "size": audio.stat().st_size,
+                    "sha256": audio_sha,
+                },
+                "updated_at": "2026-10-20T04:00:00.000Z",
+            }
         ),
         encoding="utf-8",
     )
@@ -148,7 +162,39 @@ def test_the_command_exits_non_zero_on_problems(workspace, monkeypatch, capsys) 
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps([row, broken])))
     assert main(["--corrections-root", str(root)]) == 1
     output = capsys.readouterr().out
-    assert "2 workspaces checked, 1 with problems" in output
+    assert "2 workspaces checked, 1 with problems, 0 orphan manifests" in output
 
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps([row])))
     assert main(["--corrections-root", str(root), "--skip-audio-hash"]) == 0
+
+
+def _manifest_copy(root: Path, workspace_id: str, **changes) -> Path:
+    source = root / f"corrections_{CATALOG}" / WORKSPACE / "workspace.json"
+    data = {**json.loads(source.read_text(encoding="utf-8")), "workspace_id": workspace_id}
+    data.update(changes)
+    target = root / f"corrections_{CATALOG}" / workspace_id / "workspace.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"schema_version": 1, **data}), encoding="utf-8")
+    return target
+
+
+def test_orphan_manifests_are_reported(workspace, monkeypatch, capsys) -> None:
+    row, root = workspace
+    now = datetime.now(timezone.utc)
+
+    def stamp(age: timedelta) -> str:
+        return (now - age).isoformat().replace("+00:00", "Z")
+
+    old_start = _manifest_copy(
+        root, "orphan-starting", status="starting", updated_at=stamp(timedelta(days=1))
+    )
+    _manifest_copy(root, "fresh-start", status="starting", updated_at=stamp(timedelta(minutes=10)))
+    _manifest_copy(root, "archived", status="archived", updated_at=stamp(timedelta(days=20)))
+    stale_active = _manifest_copy(root, "orphan-active", status="active")
+
+    orphans = find_orphan_manifests(root, [WORKSPACE], now=now)
+    assert set(orphans) == {str(old_start), str(stale_active)}
+
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps([row])))
+    assert main(["--corrections-root", str(root)]) == 1
+    assert "1 workspaces checked, 0 with problems, 2 orphan manifests" in capsys.readouterr().out

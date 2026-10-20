@@ -303,13 +303,16 @@ That manifest (status, segmentation version and staged-audio identity) is what
 the Python side reads to keep the staged audio of a live workspace unchanged:
 `catalog clean` and `catalog remove` keep those files and report them, and
 `stage-audio --overwrite` reuses them instead of staging them again
-(`besedy/lib/correction_guard.py`). A manifest with status `active` protects
-its audio; so does one with status `starting`, written before the workspace's
-database transaction, unless its `updated_at` is more than an hour old, in
-which case it is an abandoned start and is ignored with a warning. A manifest
-that cannot be read stops those commands for every catalog, not only its own,
-because nothing could then tell which audio it protects; the error names the
-manifest to fix or restore.
+(`besedy/lib/correction_guard.py`). The manifest is written with
+`status: "starting"` before the database rows and rewritten as `"active"` once
+they are committed; the guard protects the audio of both, however old. A start
+that crashes before its commit leaves an orphan manifest, which the nightly
+integrity check reports for removal by hand. One that crashes after its commit
+is finished the next time the workspace is locked: `lockWorkspace` rewrites a
+`starting` manifest of a live workspace as `active`. A manifest that cannot be
+read stops those commands for every catalog, not only its own, because nothing
+could then tell which audio it protects; the error names the manifest to fix or
+restore.
 
 Two more guards keep the correction data as it was recorded:
 
@@ -322,7 +325,9 @@ Two more guards keep the correction data as it was recorded:
   audio's size (and its SHA-256 on one night a week per workspace,
   `AUDIO_HASH_EVERY_DAYS`), the manifest, and every revision against its text
   hash. A workspace cut by an older segmentation version is noted, not failed.
-  It mails `ALERT_EMAIL` when anything differs or the check cannot run.
+  It also reports orphan manifests: `starting` or `active` ones with no live
+  workspace in the database. It mails `ALERT_EMAIL` when anything differs or
+  the check cannot run.
 
 Fingerprinting the staged audio reads the file through the container's path
 rules, so the host staged-audio tree
