@@ -1630,6 +1630,557 @@
       }
     },
     {
+      "name": "split_long_run_no_cut_fits_falls_back_to_widest_gap",
+      "why": "When no single cut leaves both parts within 30 s, the run is cut at its widest pause anyway, and the long part is cut again.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 12000
+                },
+                {
+                  "start": 27200,
+                  "end": 39200
+                },
+                {
+                  "start": 54400,
+                  "end": 66400
+                },
+                {
+                  "start": 81600,
+                  "end": 93600
+                },
+                {
+                  "start": 108800,
+                  "end": 120800
+                },
+                {
+                  "start": 136000,
+                  "end": 148000
+                },
+                {
+                  "start": 163200,
+                  "end": 175200
+                },
+                {
+                  "start": 190400,
+                  "end": 202400
+                },
+                {
+                  "start": 217600,
+                  "end": 229600
+                },
+                {
+                  "start": 244800,
+                  "end": 256800
+                },
+                {
+                  "start": 272640,
+                  "end": 284640
+                },
+                {
+                  "start": 299840,
+                  "end": 311840
+                },
+                {
+                  "start": 327040,
+                  "end": 339040
+                },
+                {
+                  "start": 354240,
+                  "end": 366240
+                },
+                {
+                  "start": 381440,
+                  "end": 393440
+                },
+                {
+                  "start": 408640,
+                  "end": 420640
+                },
+                {
+                  "start": 435840,
+                  "end": 447840
+                },
+                {
+                  "start": 463040,
+                  "end": 475040
+                },
+                {
+                  "start": 490240,
+                  "end": 502240
+                },
+                {
+                  "start": 517440,
+                  "end": 529440
+                },
+                {
+                  "start": 544640,
+                  "end": 556640
+                },
+                {
+                  "start": 571840,
+                  "end": 583840
+                },
+                {
+                  "start": 599040,
+                  "end": 611040
+                },
+                {
+                  "start": 626240,
+                  "end": 638240
+                },
+                {
+                  "start": 653440,
+                  "end": 665440
+                },
+                {
+                  "start": 680640,
+                  "end": 692640
+                },
+                {
+                  "start": 707840,
+                  "end": 719840
+                },
+                {
+                  "start": 735040,
+                  "end": 747040
+                },
+                {
+                  "start": 762240,
+                  "end": 774240
+                },
+                {
+                  "start": 789440,
+                  "end": 801440
+                },
+                {
+                  "start": 816640,
+                  "end": 828640
+                },
+                {
+                  "start": 843840,
+                  "end": 855840
+                },
+                {
+                  "start": 871040,
+                  "end": 883040
+                },
+                {
+                  "start": 898240,
+                  "end": 910240
+                },
+                {
+                  "start": 925440,
+                  "end": 937440
+                },
+                {
+                  "start": 952640,
+                  "end": 964640
+                },
+                {
+                  "start": 979840,
+                  "end": 991840
+                },
+                {
+                  "start": 1007040,
+                  "end": 1019040
+                },
+                {
+                  "start": 1034240,
+                  "end": 1046240
+                },
+                {
+                  "start": 1061440,
+                  "end": 1073440
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Slovo.",
+            "words": [
+              {
+                "word": "Slovo.",
+                "start": 0.2,
+                "end": 0.7
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "chunkCount": 1,
+        "spans": [
+          {
+            "chunk": 0,
+            "firstRegion": 0,
+            "lastRegion": 9,
+            "startSample": 0,
+            "endSample": 256800,
+            "wordIndices": [
+              0
+            ],
+            "text": "Slovo."
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 10,
+            "lastRegion": 24,
+            "startSample": 272640,
+            "endSample": 665440,
+            "wordIndices": [],
+            "text": ""
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 25,
+            "lastRegion": 39,
+            "startSample": 680640,
+            "endSample": 1073440,
+            "wordIndices": [],
+            "text": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "merge_short_refused_on_both_sides",
+      "why": "A short span stays alone when joining either neighbour would pass 30 s, even though both are in its chunk.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 224000
+                },
+                {
+                  "start": 472000,
+                  "end": 486400
+                },
+                {
+                  "start": 734400,
+                  "end": 958400
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Dlouhá řeč. Ano. Další řeč.",
+            "words": [
+              {
+                "word": "Dlouhá",
+                "start": 1.0,
+                "end": 1.5
+              },
+              {
+                "word": "řeč.",
+                "start": 12.0,
+                "end": 13.0
+              },
+              {
+                "word": "Ano.",
+                "start": 29.6,
+                "end": 30.3
+              },
+              {
+                "word": "Další",
+                "start": 46.0,
+                "end": 46.5
+              },
+              {
+                "word": "řeč.",
+                "start": 47.0,
+                "end": 48.0
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "chunkCount": 1,
+        "spans": [
+          {
+            "chunk": 0,
+            "firstRegion": 0,
+            "lastRegion": 0,
+            "startSample": 0,
+            "endSample": 224000,
+            "wordIndices": [
+              0,
+              1
+            ],
+            "text": "Dlouhá řeč."
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 1,
+            "lastRegion": 1,
+            "startSample": 472000,
+            "endSample": 486400,
+            "wordIndices": [
+              2
+            ],
+            "text": "Ano."
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 2,
+            "lastRegion": 2,
+            "startSample": 734400,
+            "endSample": 958400,
+            "wordIndices": [
+              3,
+              4
+            ],
+            "text": "Další řeč."
+          }
+        ]
+      }
+    },
+    {
+      "name": "words_outside_all_regions_go_to_nearest_span",
+      "why": "A word timed before the first region or after the last one belongs to the nearest region's span.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 80000,
+                  "end": 160000
+                },
+                {
+                  "start": 192000,
+                  "end": 240000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Před začátkem. Po konci.",
+            "words": [
+              {
+                "word": "Před",
+                "start": 1.0,
+                "end": 2.0
+              },
+              {
+                "word": "začátkem.",
+                "start": 6.0,
+                "end": 7.0
+              },
+              {
+                "word": "Po",
+                "start": 13.0,
+                "end": 13.5
+              },
+              {
+                "word": "konci.",
+                "start": 20.0,
+                "end": 21.0
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "chunkCount": 1,
+        "spans": [
+          {
+            "chunk": 0,
+            "firstRegion": 0,
+            "lastRegion": 0,
+            "startSample": 80000,
+            "endSample": 160000,
+            "wordIndices": [
+              0,
+              1
+            ],
+            "text": "Před začátkem."
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 1,
+            "lastRegion": 1,
+            "startSample": 192000,
+            "endSample": 240000,
+            "wordIndices": [
+              2,
+              3
+            ],
+            "text": "Po konci."
+          }
+        ]
+      }
+    },
+    {
+      "name": "words_with_missing_or_non_numeric_times",
+      "why": "A word without usable times counts as spoken at 0 s (or at its start when only the end is missing), so it goes to the nearest region's span; its text is still cut from the segment text in order.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 64000
+                },
+                {
+                  "start": 96000,
+                  "end": 160000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Jedna dva tři čtyři pět.",
+            "words": [
+              {
+                "word": "Jedna"
+              },
+              {
+                "word": "dva",
+                "start": "1.5",
+                "end": null
+              },
+              {
+                "word": "tři",
+                "start": true,
+                "end": 7.5
+              },
+              {
+                "word": "čtyři",
+                "start": 7.0
+              },
+              {
+                "word": "pět.",
+                "start": 8.0,
+                "end": {
+                  "seconds": 8.5
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "chunkCount": 1,
+        "spans": [
+          {
+            "chunk": 0,
+            "firstRegion": 0,
+            "lastRegion": 0,
+            "startSample": 0,
+            "endSample": 64000,
+            "wordIndices": [
+              0,
+              1,
+              2
+            ],
+            "text": "Jedna dva tři"
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 1,
+            "lastRegion": 1,
+            "startSample": 96000,
+            "endSample": 160000,
+            "wordIndices": [
+              3,
+              4
+            ],
+            "text": "čtyři pět."
+          }
+        ]
+      }
+    },
+    {
+      "name": "word_order_regresses_across_spans",
+      "why": "When a later word is timed in an earlier span, the segment text cannot be cut in order and each span gets its words joined by spaces.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 64000
+                },
+                {
+                  "start": 96000,
+                  "end": 160000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Jedna dva tři.",
+            "words": [
+              {
+                "word": "Jedna",
+                "start": 0.5,
+                "end": 1.0
+              },
+              {
+                "word": "dva",
+                "start": 6.5,
+                "end": 7.0
+              },
+              {
+                "word": "tři.",
+                "start": 1.5,
+                "end": 2.0
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "chunkCount": 1,
+        "spans": [
+          {
+            "chunk": 0,
+            "firstRegion": 0,
+            "lastRegion": 0,
+            "startSample": 0,
+            "endSample": 64000,
+            "wordIndices": [
+              0,
+              2
+            ],
+            "text": "Jedna tři."
+          },
+          {
+            "chunk": 0,
+            "firstRegion": 1,
+            "lastRegion": 1,
+            "startSample": 96000,
+            "endSample": 160000,
+            "wordIndices": [
+              1
+            ],
+            "text": "dva"
+          }
+        ]
+      }
+    },
+    {
       "name": "refuse_without_regions",
       "why": "A source without clip_timestamps cannot be segmented, so correction must not start from it.",
       "transcript": {
@@ -1686,6 +2237,173 @@
       },
       "expected": {
         "error": "CHUNK_MISMATCH"
+      }
+    },
+    {
+      "name": "refuse_region_over_30s",
+      "why": "A single region longer than 30 s rebuilds into an empty chunk before it, which no segment can be decoded from, so the source is refused even when the segment count matches.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 496000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "",
+            "words": []
+          },
+          {
+            "text": "Dlouhá řeč.",
+            "words": []
+          }
+        ]
+      },
+      "expected": {
+        "error": "CHUNK_MISMATCH"
+      }
+    },
+    {
+      "name": "refuse_unsorted_regions",
+      "why": "Regions out of audio order are not VAD output and are refused.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 160000,
+                  "end": 240000
+                },
+                {
+                  "start": 0,
+                  "end": 80000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Text.",
+            "words": []
+          }
+        ]
+      },
+      "expected": {
+        "error": "NO_REGIONS"
+      }
+    },
+    {
+      "name": "refuse_overlapping_regions",
+      "why": "Regions that overlap are not VAD output and are refused; touching regions are fine (see chunk_packing).",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 160000
+                },
+                {
+                  "start": 80000,
+                  "end": 240000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Text.",
+            "words": []
+          }
+        ]
+      },
+      "expected": {
+        "error": "NO_REGIONS"
+      }
+    },
+    {
+      "name": "refuse_empty_region",
+      "why": "A region that ends where it starts holds no speech and is refused.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 80000
+                },
+                {
+                  "start": 80000,
+                  "end": 80000
+                }
+              ]
+            }
+          }
+        },
+        "segments": [
+          {
+            "text": "Text.",
+            "words": []
+          }
+        ]
+      },
+      "expected": {
+        "error": "NO_REGIONS"
+      }
+    },
+    {
+      "name": "refuse_non_list_segments",
+      "why": "A source whose segments are not a list has no segments to match its chunks and is refused.",
+      "transcript": {
+        "meta": {
+          "generation_params": {
+            "transcription_options": {
+              "clip_timestamps": [
+                {
+                  "start": 0,
+                  "end": 80000
+                }
+              ]
+            }
+          }
+        },
+        "segments": {
+          "0": {
+            "text": "Text.",
+            "words": []
+          }
+        }
+      },
+      "expected": {
+        "error": "CHUNK_MISMATCH"
+      }
+    },
+    {
+      "name": "refuse_non_object_meta",
+      "why": "A source whose meta is not an object records no VAD regions and is refused.",
+      "transcript": {
+        "meta": "none",
+        "segments": [
+          {
+            "text": "Text.",
+            "words": []
+          }
+        ]
+      },
+      "expected": {
+        "error": "NO_REGIONS"
       }
     },
     {

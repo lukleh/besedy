@@ -154,6 +154,8 @@ def _split_long(regions: Sequence[Region], run: list[int]) -> list[list[int]]:
     cut, best = 1, None
     for i in range(1, len(run)):
         left, right = _window(regions, run[:i]), _window(regions, run[i:])
+        # Compared as a tuple, so the bool sorts False < True exactly as the
+        # TypeScript port's `1 : 0` first key; the later keys are plain ints.
         key = (
             left <= MAX_SPAN_SAMPLES and right <= MAX_SPAN_SAMPLES,
             _gap(regions, run[i - 1], run[i]),
@@ -244,7 +246,7 @@ def _span_texts(
     text is lost. If the words cannot be located in order, the spans fall back
     to their words joined by spaces.
     """
-    tokens = [normalize_span_text(str(w.get("word") or "")) for w in words]
+    tokens = [normalize_span_text(_string(w.get("word"))) for w in words]
     fallback = [
         normalize_span_text(" ".join(t for t, o in zip(tokens, owner) if o == s and t))
         for s in range(span_count)
@@ -276,6 +278,11 @@ def _span_texts(
     return texts
 
 
+def _string(value: Any) -> str:
+    """A JSON string; anything else is an empty string, as on the web."""
+    return value if isinstance(value, str) else ""
+
+
 def _sample(value: Any) -> int:
     """A sample offset; JSON numbers only, and only whole ones, as on the web."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -285,9 +292,15 @@ def _sample(value: Any) -> int:
     return int(value)
 
 
+def _mapping(value: Any) -> Mapping[str, Any]:
+    """A JSON object; anything else reads as empty, as on the web."""
+    return value if isinstance(value, Mapping) else {}
+
+
 def _regions_of(transcript: Mapping[str, Any]) -> list[Region]:
-    meta = transcript.get("meta") or {}
-    options = (meta.get("generation_params") or {}).get("transcription_options") or {}
+    meta = _mapping(transcript.get("meta"))
+    params = _mapping(meta.get("generation_params"))
+    options = _mapping(params.get("transcription_options"))
     clips = options.get("clip_timestamps")
     if not isinstance(clips, list) or not clips:
         raise SegmentationError(
@@ -301,13 +314,26 @@ def _regions_of(transcript: Mapping[str, Any]) -> list[Region]:
             raise SegmentationError(
                 "NO_REGIONS", f"Malformed clip_timestamps entry: {clip!r}"
             ) from exc
+    # Regions are read in audio order; two may touch but never overlap or
+    # go backwards, and each holds some speech. Anything else is not VAD
+    # output, and the chunk and span arithmetic would be meaningless on it.
+    previous_end = 0
+    for index, region in enumerate(regions):
+        if region.start < previous_end or region.end <= region.start:
+            raise SegmentationError(
+                "NO_REGIONS",
+                "Malformed clip_timestamps: regions must be ordered and non-empty "
+                f"(region {index} spans samples {region.start}-{region.end})",
+            )
+        previous_end = region.end
     return regions
 
 
 def segment_transcript(transcript: Mapping[str, Any]) -> Segmentation:
     """Correction spans for one canonical ``transcript.json`` document."""
     regions = _regions_of(transcript)
-    segments = list(transcript.get("segments") or [])
+    raw_segments = transcript.get("segments")
+    segments = raw_segments if isinstance(raw_segments, list) else []
     chunks = build_chunks(regions)
     if len(chunks) != len(segments) or any(not chunk for chunk in chunks):
         raise SegmentationError(
@@ -323,7 +349,7 @@ def segment_transcript(transcript: Mapping[str, Any]) -> Segmentation:
         run_of_region = {region: r for r, run in enumerate(runs) for region in run}
         words = [w for w in (segment.get("words") or []) if isinstance(w, Mapping)]
         owner = [run_of_region[_region_of_word(regions, chunk, w)] for w in words]
-        texts = _span_texts(str(segment.get("text") or ""), words, owner, len(runs))
+        texts = _span_texts(_string(segment.get("text")), words, owner, len(runs))
         for r, run in enumerate(runs):
             spans.append(
                 Span(

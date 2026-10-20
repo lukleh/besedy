@@ -250,9 +250,7 @@ function spanTexts(
   owner: readonly number[],
   spanCount: number,
 ): string[] {
-  const tokens = words.map((w) =>
-    normalizeSpanText(String(w.word ?? '') || ''),
-  );
+  const tokens = words.map((w) => normalizeSpanText(stringOf(w.word)));
   const fallback = Array.from({ length: spanCount }, (_, s) =>
     normalizeSpanText(tokens.filter((t, i) => owner[i] === s && t).join(' ')),
   );
@@ -284,19 +282,30 @@ function spanTexts(
   return texts;
 }
 
+/** A JSON string; anything else is an empty string, as in Python. */
+function stringOf(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 function sampleOf(value: unknown): number {
   if (typeof value !== 'number' || !Number.isInteger(value))
     throw new TypeError(String(value));
   return value;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A JSON object; anything else reads as empty, as in Python. */
+function recordOf(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
 function regionsOf(transcript: Record<string, unknown>): Region[] {
-  const meta = (transcript.meta ?? {}) as Record<string, unknown>;
-  const params = (meta.generation_params ?? {}) as Record<string, unknown>;
-  const options = (params.transcription_options ?? {}) as Record<
-    string,
-    unknown
-  >;
+  const meta = recordOf(transcript.meta);
+  const params = recordOf(meta.generation_params);
+  const options = recordOf(params.transcription_options);
   const clips = options.clip_timestamps;
   if (!Array.isArray(clips) || clips.length === 0) {
     throw new SegmentationError(
@@ -304,7 +313,7 @@ function regionsOf(transcript: Record<string, unknown>): Region[] {
       'The source transcript records no VAD regions (clip_timestamps)',
     );
   }
-  return clips.map((clip) => {
+  const regions = clips.map((clip) => {
     try {
       const { start, end } = clip as { start?: unknown; end?: unknown };
       return { start: sampleOf(start), end: sampleOf(end) };
@@ -315,10 +324,21 @@ function regionsOf(transcript: Record<string, unknown>): Region[] {
       );
     }
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  // Regions are read in audio order; two may touch but never overlap or go
+  // backwards, and each holds some speech. Anything else is not VAD output,
+  // and the chunk and span arithmetic would be meaningless on it.
+  let previousEnd = 0;
+  regions.forEach((region, index) => {
+    if (region.start < previousEnd || region.end <= region.start) {
+      throw new SegmentationError(
+        'NO_REGIONS',
+        'Malformed clip_timestamps: regions must be ordered and non-empty ' +
+          `(region ${index} spans samples ${region.start}-${region.end})`,
+      );
+    }
+    previousEnd = region.end;
+  });
+  return regions;
 }
 
 /** Correction spans for one canonical `transcript.json` document. */
@@ -351,12 +371,7 @@ export function segmentTranscript(transcript: unknown): Segmentation {
     const owner = words.map((w) =>
       runOfRegion.get(regionOfWord(regions, chunk, w))!,
     );
-    const texts = spanTexts(
-      String(segment.text ?? '') || '',
-      words,
-      owner,
-      runs.length,
-    );
+    const texts = spanTexts(stringOf(segment.text), words, owner, runs.length);
     runs.forEach((run, r) => {
       spans.push({
         chunk: chunkIndex,

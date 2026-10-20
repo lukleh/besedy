@@ -30,10 +30,10 @@ export async function GET() {
 /** Accept the current contributor terms (ADR 0012). */
 export async function POST(request: NextRequest) {
   try {
+    const userId = await requireAuth();
     const bodyResult = await validateRequestBody(request, AcceptSchema);
     if (!bodyResult.success) return bodyResult.response;
 
-    const userId = await requireAuth();
     if (bodyResult.data.termsVersion !== CONTRIBUTOR_TERMS.version) {
       throw new CorrectionError(
         "REVISION_CONFLICT",
