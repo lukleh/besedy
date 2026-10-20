@@ -207,25 +207,15 @@ def handle_stage_audio(
         )
         return 1
 
-    # Use explicit output_dir, existing symlink target, or create timestamped dir
+    # Use the explicit output_dir or the catalog's own timestamped dir. The
+    # `audio_staged` symlink names the latest catalog's dir, which may belong
+    # to another catalog; staging into it would mix the two generations.
     artifacts_root = resolve_audio_artifacts_root()
     staging_symlink = artifacts_root / "audio_staged"
-    expected_staging_dir = artifacts_root / f"audio_staged_{timestamp}"
-
     if request.output_dir is not None:
-        # Explicit output dir provided
         staging_dir = request.output_dir.expanduser()
-    elif (
-        not request.no_symlink
-        and staging_symlink.is_symlink()
-        and staging_symlink.resolve().is_dir()
-    ):
-        # Reuse existing staging directory from symlink (incremental mode)
-        staging_dir = staging_symlink.resolve()
-        print(f"Reusing existing staging directory: {staging_dir}")
     else:
-        # Create new timestamped directory (using source catalog timestamp)
-        staging_dir = expected_staging_dir
+        staging_dir = artifacts_root / f"audio_staged_{timestamp}"
 
     # Validate symlink can be created upfront (only if we need to update it)
     if not request.no_symlink and (
