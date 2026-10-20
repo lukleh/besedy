@@ -170,7 +170,10 @@ def test_the_repository_lists_test_recordings_per_catalog(tmp_path: Path) -> Non
     listed = tmp_path / "test-recordings.json"
     listed.write_text(json.dumps({"version": 1, "catalogs": {CATALOG: [HASH]}}), encoding="utf-8")
     assert load_test_recordings(listed, CATALOG) == {HASH}
-    assert load_test_recordings(listed, "20200101_000000") == set()
+    with pytest.raises(TrainingExportError, match="names no test recordings"):
+        load_test_recordings(listed, "20200101_000000")
+    listed.write_text(json.dumps({"version": 1, "catalogs": {CATALOG: []}}), encoding="utf-8")
+    assert load_test_recordings(listed, CATALOG) == set()
     listed.write_text(json.dumps({"version": 2, "catalogs": {}}), encoding="utf-8")
     with pytest.raises(TrainingExportError, match="version"):
         load_test_recordings(listed, CATALOG)
@@ -306,13 +309,17 @@ def test_the_command_writes_next_to_the_audio_artifacts(tree, tmp_path: Path, mo
     monkeypatch.setattr(catalog_cli, "install_signal_handlers", lambda: None)
 
     argv = ["training-export", "--export-json", str(export_file), "--corrections-root", str(root)]
-    assert catalog_cli.main(argv) == 0
+    # The repository list names no catalog yet, so the export refuses ...
+    assert catalog_cli.main(argv) == 1
+    assert not (artifacts / "training").exists()
+    # ... unless setting nothing aside is asked for.
+    assert catalog_cli.main([*argv, "--no-test-recordings"]) == 0
     latest = artifacts / "training" / "training_export"
     assert latest.is_symlink()
     assert latest.resolve().name.startswith("training_export_")
     assert (latest / "manifest.jsonl").is_file()
     policy = json.loads((latest / "dataset.json").read_text())["policy"]
-    assert policy["test_recordings_source"] == str(DEFAULT_TEST_RECORDINGS_PATH)
+    assert policy["test_recordings_source"] == "none (--no-test-recordings)"
 
 
 def test_the_command_rejects_a_map_path_without_a_target(tree, tmp_path: Path, monkeypatch, capsys):

@@ -70,6 +70,18 @@ class TestTrainingExportCommand:
         args = parser.parse_args(["training-export", "--catalog-id", "20251222_144441"])
         assert args.skip_audio_hash is False
         assert args.audio_hash == [] and args.test_recordings is None
+        assert args.no_test_recordings is False
+        with pytest.raises(SystemExit):
+            parser.parse_args(
+                [
+                    "training-export",
+                    "--catalog-id",
+                    "20251222_144441",
+                    "--test-recordings",
+                    "t.json",
+                    "--no-test-recordings",
+                ]
+            )
         with pytest.raises(SystemExit):
             parser.parse_args(
                 ["training-export", "--catalog-id", "20251222_144441", "--verify-audio-hash"]

@@ -36,8 +36,9 @@ the staged WAV) and writes it with its corrected text as the label.
 
 Every staged WAV is hashed and compared with what the web recorded; a changed
 file stops the export. Recordings set aside for testing come from
-contracts/correction-test-recordings.json unless --test-recordings names
-another list. Fetching needs BESEDY_INTERNAL_BASE_URL and
+contracts/correction-test-recordings.json, which must name the catalog (an
+empty list if it has none on purpose); --test-recordings names another list
+and --no-test-recordings sets nothing aside, for experiments. Fetching needs BESEDY_INTERNAL_BASE_URL and
 BESEDY_JOB_SERVICE_SECRET in the environment.
 
 The output goes next to the staged audio it is cut from, not into the backed-up
@@ -65,13 +66,20 @@ Examples:
         metavar="HASH",
         help="Fetch only this recording's workspace; repeat to export a catalog piecewise",
     )
-    parser.add_argument(
+    test_set = parser.add_mutually_exclusive_group()
+    test_set.add_argument(
         "--test-recordings",
         type=Path,
         help=(
             "Audio hashes set aside for testing (JSON list or one per line), never trained on; "
-            f"default: {DEFAULT_TEST_RECORDINGS_PATH.name} in the repository's contracts/"
+            f"default: {DEFAULT_TEST_RECORDINGS_PATH.name} in the repository's contracts/, "
+            "which must name the catalog"
         ),
+    )
+    test_set.add_argument(
+        "--no-test-recordings",
+        action="store_true",
+        help="Set nothing aside for testing; for experiments only",
     )
     parser.add_argument(
         "--strip-fillers", action="store_true", help="Remove ehm/eee/hm/mhm from labels"
@@ -138,12 +146,19 @@ def handle_training_export(args: argparse.Namespace) -> int:
             export = fetch_training_export(
                 args.catalog_id, min_heard_fraction=args.min_heard_fraction
             )
-        test_recordings_path = (
-            args.test_recordings.expanduser()
-            if args.test_recordings is not None
-            else DEFAULT_TEST_RECORDINGS_PATH
-        )
-        test_recordings = load_test_recordings(test_recordings_path, str(export.get("catalogId")))
+        if args.no_test_recordings:
+            test_recordings: set[str] = set()
+            test_recordings_source = "none (--no-test-recordings)"
+        else:
+            test_recordings_path = (
+                args.test_recordings.expanduser()
+                if args.test_recordings is not None
+                else DEFAULT_TEST_RECORDINGS_PATH
+            )
+            test_recordings = load_test_recordings(
+                test_recordings_path, str(export.get("catalogId"))
+            )
+            test_recordings_source = str(test_recordings_path)
 
         if args.output_dir is not None:
             output_dir = args.output_dir.expanduser()
@@ -160,7 +175,7 @@ def handle_training_export(args: argparse.Namespace) -> int:
             resolve_corrections_root(args.corrections_root),
             output_dir,
             test_recordings=test_recordings,
-            test_recordings_source=str(test_recordings_path),
+            test_recordings_source=test_recordings_source,
             keep_fillers=not args.strip_fillers,
             verify_audio_hash=not args.skip_audio_hash,
             path_map=path_map,

@@ -126,7 +126,10 @@ def load_test_recordings(path: Path, catalog_id: str) -> set[str]:
 
     The repository file ``contracts/correction-test-recordings.json`` maps a
     catalog to its hashes; a JSON list or one hash per line names them for any
-    catalog.
+    catalog. A catalog the repository file does not name is refused rather
+    than read as having no test recordings: a recording trained on can never
+    become a test recording again, so the list is chosen before any export.
+    An explicit empty list says the catalog has none on purpose.
     """
     raw = path.read_text(encoding="utf-8").strip()
     if not raw:
@@ -138,7 +141,14 @@ def load_test_recordings(path: Path, catalog_id: str) -> set[str]:
                 f"{path} is test recordings version {document.get('version')!r}, "
                 f"expected {TEST_RECORDINGS_VERSION}"
             )
-        hashes = document.get("catalogs", {}).get(catalog_id, [])
+        catalogs = document.get("catalogs", {})
+        if catalog_id not in catalogs:
+            raise TrainingExportError(
+                f"{path} names no test recordings for catalog {catalog_id}. Choose them before "
+                "the first export (an empty list if the catalog has none on purpose), or pass "
+                "--no-test-recordings for an experiment"
+            )
+        hashes = catalogs[catalog_id]
     else:
         hashes = json.loads(raw) if raw.startswith("[") else raw.split()
     result = {str(value).strip() for value in hashes if str(value).strip()}

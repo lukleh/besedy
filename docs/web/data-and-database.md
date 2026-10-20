@@ -112,7 +112,10 @@ it, labelled with its spans' corrected texts. The host running it needs
 `BESEDY_INTERNAL_BASE_URL` and `BESEDY_JOB_SERVICE_SECRET` in its environment.
 Every staged WAV is hashed and compared with what the web recorded
 (`--skip-audio-hash` trusts the size only); recordings in the contract file get
-`split: test`, `--test-recordings` names another list, and `--audio-hash`
+`split: test`. A catalog the file does not name is refused, so the test set is
+chosen before the first export (an empty list says a catalog has none on
+purpose); `--test-recordings` names another list, `--no-test-recordings` sets
+nothing aside for an experiment, and `--audio-hash`
 (repeatable) fetches a large catalog piecewise. The dataset goes under
 `<audio artifacts root>/training/training_export_<timestamp>/` with a
 `training_export` symlink: `audio/*.wav`, `manifest.jsonl`, `export.json` (what
