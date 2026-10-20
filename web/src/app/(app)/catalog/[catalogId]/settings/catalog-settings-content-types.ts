@@ -239,5 +239,7 @@ export interface CatalogSettingsCards {
 export interface CatalogSettingsContentProps {
   catalogId: string;
   cards: CatalogSettingsCards;
+  /** Paths and the default and active flags are for system admins only. */
+  canEditPathsAndFlags?: boolean;
   skipCatalogValidation?: boolean;
 }
