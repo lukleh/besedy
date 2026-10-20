@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.linux_host_tools import requires_linux_host_tools
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "resolve_web_env_file.sh"
 COMPOSE_WRAPPER = REPO_ROOT / "scripts" / "run_web_compose.sh"
@@ -511,6 +513,8 @@ def test_web_compose_wrapper_creates_missing_directory_mounts_as_the_invoking_us
     assert f"BESEDY_HOST_GID={os.getgid()}" in result.stdout
 
 
+# Production mode validates the config mount with `realpath -e` (prod host only).
+@requires_linux_host_tools("realpath -e")
 def test_web_compose_wrapper_leaves_production_directory_mounts_to_the_operator(
     tmp_path: Path,
 ) -> None:
