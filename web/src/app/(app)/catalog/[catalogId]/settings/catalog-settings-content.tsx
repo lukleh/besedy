@@ -71,6 +71,7 @@ import {
 export default function CatalogSettingsContent({
   catalogId,
   cards,
+  canEditPathsAndFlags = false,
   skipCatalogValidation = false,
 }: CatalogSettingsContentProps) {
   // Owns the interactive catalog access-management workspace after the server
@@ -186,12 +187,12 @@ export default function CatalogSettingsContent({
   const updateCatalogConfig = useMutation({
     mutationFn: async (payload: {
       label: string | null;
-      archivedCatalogPath: string;
-      metadataCatalogPath: string;
-      duplicatesCatalogPath: string | null;
-      transcriptsPath: string | null;
-      isDefault: boolean;
-      isActive: boolean;
+      archivedCatalogPath?: string;
+      metadataCatalogPath?: string;
+      duplicatesCatalogPath?: string | null;
+      transcriptsPath?: string | null;
+      isDefault?: boolean;
+      isActive?: boolean;
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}`, {
         method: "PUT",
@@ -450,6 +451,13 @@ export default function CatalogSettingsContent({
       return trimmed === "" ? null : trimmed;
     };
 
+    // The server refuses path and flag changes from catalog administrators,
+    // so they send only what they may change.
+    if (!canEditPathsAndFlags) {
+      updateCatalogConfig.mutate({ label: normalizeOptional(configDraft.label) });
+      return;
+    }
+
     updateCatalogConfig.mutate({
       label: normalizeOptional(configDraft.label),
       archivedCatalogPath: archived,
@@ -613,6 +621,7 @@ export default function CatalogSettingsContent({
           catalogConfig={catalogConfig}
           configDraft={configDraft}
           configError={configError instanceof Error ? configError : null}
+          canEditPathsAndFlags={canEditPathsAndFlags}
           isEditing={isEditingConfig}
           isLoading={loadingConfig}
           isSyncPending={syncCatalogData.isPending}

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   requireCatalogPageAccessMock: vi.fn(),
   getCatalogFeaturesForUserMock: vi.fn(),
   findActiveCatalogMock: vi.fn(),
+  getAdminCapabilityMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -22,6 +23,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/access/catalog-page-access", () => ({
   requireCatalogPageAccess: mocks.requireCatalogPageAccessMock,
+}));
+
+vi.mock("@/lib/access/capabilities", () => ({
+  getAdminCapability: mocks.getAdminCapabilityMock,
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
@@ -38,10 +43,12 @@ vi.mock(
     default: ({
       catalogId,
       cards,
+      canEditPathsAndFlags,
       skipCatalogValidation,
     }: {
       catalogId: string;
       cards: CatalogSettingsCards;
+      canEditPathsAndFlags?: boolean;
       skipCatalogValidation?: boolean;
     }) => (
       <div
@@ -53,6 +60,7 @@ vi.mock(
           .sort()
           .join(",")}
         data-skip-catalog-validation={String(skipCatalogValidation ?? false)}
+        data-can-edit-paths-and-flags={String(canEditPathsAndFlags ?? false)}
       />
     ),
   })
@@ -103,6 +111,7 @@ describe("CatalogSettingsPage", () => {
     });
     withEventEditing(true);
     mocks.findActiveCatalogMock.mockResolvedValue({ id: catalogId, isActive: true });
+    mocks.getAdminCapabilityMock.mockResolvedValue({ canAccessAdmin: false });
   });
 
   it("redirects unauthenticated users to sign-in", async () => {
@@ -216,4 +225,31 @@ describe("CatalogSettingsPage", () => {
     expect(await renderPage()).toHaveAttribute("data-cards", cards);
   });
 
+  it("keeps paths and flags read-only for a catalog administrator", async () => {
+    expect(await renderPage()).toHaveAttribute(
+      "data-can-edit-paths-and-flags",
+      "false"
+    );
+    expect(mocks.getAdminCapabilityMock).toHaveBeenCalledWith("owner-1");
+  });
+
+  it("lets a system admin edit paths and flags", async () => {
+    mocks.getAdminCapabilityMock.mockResolvedValue({ canAccessAdmin: true });
+
+    expect(await renderPage()).toHaveAttribute(
+      "data-can-edit-paths-and-flags",
+      "true"
+    );
+  });
+
+  it("skips the admin lookup when the configuration card is hidden", async () => {
+    withCapability({ canManageAccess: true });
+    mocks.getAdminCapabilityMock.mockResolvedValue({ canAccessAdmin: true });
+
+    expect(await renderPage()).toHaveAttribute(
+      "data-can-edit-paths-and-flags",
+      "false"
+    );
+    expect(mocks.getAdminCapabilityMock).not.toHaveBeenCalled();
+  });
 });
