@@ -43,6 +43,49 @@ backends = {
 print(sorted(backends))
 ```
 
+## ffmpeg cannot reproduce the pinned audio hashes
+
+**Symptom:** `catalog create`, `add`, `hash` or `join` exits 1 with this on
+stderr and writes no rows. An admin upload fails the same way, except that the
+ingest worker raises `HashDecoderMismatchError` from its duplicate check rather
+than printing it: the message becomes the intake's error in the web admin.
+
+```text
+Error: /opt/homebrew/Cellar/ffmpeg/9.0.2/bin/ffmpeg does not reproduce the pinned audio hashes of 8/8 fixtures (talk_44100hz_stereo_vbr_cover.mp3, talk_48000hz_mono.mp3, ...), so it would give catalog audio different identities than the known-good builds. Use a build listed in .../besedy/lib/catalog/audio_hash_fixtures/README.md, or set BESEDY_SKIP_HASH_DECODER_CHECK=1 for a throwaway catalog that never meets real ones.
+```
+
+**Cause:** Lossy decoders and the resampler are not bit-exact across ffmpeg
+builds or CPU feature sets, so this binary would give a recording a different
+identity than the hosts that wrote the catalog. Before hashing anything with an
+ffmpeg binary, `audio_content_sha256sum` decodes the fixtures in
+`besedy/lib/catalog/audio_hash_fixtures/` and refuses if any pinned hash misses.
+Which fixtures miss depends on the build: Homebrew ffmpeg 9.0.2 on Apple
+Silicon misses all eight, while a build that changes one codec may miss only
+that one. The message names them.
+
+**Fix:** Identify the binary first with `command -v ffmpeg` and
+`ffmpeg -version`, then put a known-good build ahead of it on `PATH` (`catalog
+join` also takes `--ffmpeg-binary`) and re-run. The README in that fixtures
+directory lists the known-good builds and how to check a candidate; check one
+before it replaces a working build on a host that writes catalog hashes, not
+after:
+
+```bash
+PATH=/dir/with/candidate:$PATH uv run pytest tests/test_audio_content_hash.py -k pinned -q
+```
+
+The ingest worker does not see your shell: it resolves `ffmpeg` from the
+`PATH` in its own environment file (`~/.config/lukleh/besedy/ingest-worker.env`,
+see `docs/web/recording-ingest.md`). Fix the path there and restart it
+(`systemctl --user restart besedy-ingest-worker`, or restart
+`just ingest-worker-run` in development); a worker started earlier keeps the
+old binary until then.
+
+Do not set `BESEDY_SKIP_HASH_DECODER_CHECK=1` on a host that meets a real
+catalog; it is for throwaway catalogs and the test suite. A build that cannot be
+matched means the hash algorithm needs a new version and a rehash decision, not
+a bypass.
+
 ## Hash lookup failures / FileNotFoundError
 
 **Symptom:** `FileNotFoundError: transcripts/faster-whisper/<model>/abc123/transcript.json`

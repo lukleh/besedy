@@ -169,7 +169,9 @@ the ingest flow stop instead of writing hashes that differ from other hosts'.
 only (the test suite sets it). The same pins are tested in
 `tests/test_audio_content_hash.py`. If they fail after an ffmpeg upgrade, that
 build decodes or resamples differently, and it must not hash catalog audio
-until a new algorithm version exists. The fixtures' README
+until a new algorithm version exists. A host that writes catalog hashes
+therefore pins its ffmpeg build: check a candidate against the fixtures before
+it replaces a working one. The fixtures' README
 lists known-good builds with their full `ffmpeg -version` output, including a
 reproducible apt fallback; append a build there once it passes. A decoder that
 produces no output for 120 seconds is killed with a logged warning, and the
