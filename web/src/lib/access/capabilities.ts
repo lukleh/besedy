@@ -4,7 +4,7 @@ import {
   listUserCatalogAccessEntries,
 } from "@/lib/access/catalog-access-queries";
 import {
-  hasSystemCatalogAuthority,
+  hasSystemAdminAuthority,
   resolveCatalogActorContext,
   resolvePortalActorContext,
 } from "@/lib/policy/actor";
@@ -195,7 +195,7 @@ export async function getAdminCapability(userId?: string): Promise<AdminCapabili
   }
 
   const isSuperadmin = actor.systemRole === "SUPERADMIN";
-  const isAdmin = hasSystemCatalogAuthority(actor);
+  const isAdmin = hasSystemAdminAuthority(actor);
 
   return {
     ...portal,

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveCatalogActorContext } from "@/lib/policy/actor";
+import {
+  hasSystemAdminAuthority,
+  resolveCatalogActorContext,
+} from "@/lib/policy/actor";
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -39,5 +42,18 @@ describe("catalog actor context", () => {
       isCatalogAdmin: true,
       catalogGrant: { role: "catalog_admin" },
     });
+  });
+});
+
+describe("hasSystemAdminAuthority", () => {
+  it.each([
+    ["SUPERADMIN", true, true],
+    ["ADMIN", true, true],
+    ["USER", true, false],
+    // A blocked or pending admin keeps the role but loses the authority.
+    ["ADMIN", false, false],
+    ["SUPERADMIN", false, false],
+  ] as const)("%s with portal entry %s is %s", (systemRole, canEnterPortal, expected) => {
+    expect(hasSystemAdminAuthority({ systemRole, canEnterPortal })).toBe(expected);
   });
 });
