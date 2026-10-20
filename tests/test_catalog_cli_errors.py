@@ -7,6 +7,7 @@ import argparse
 import pytest
 
 from besedy.cli import catalog as catalog_cli
+from besedy.lib.correction_guard import CorrectionManifestError
 from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 
 
@@ -32,6 +33,21 @@ def test_missing_backend_runtime_is_reported_without_a_traceback(
     assert captured.err.strip() == (
         "Error: NeMo runs in Docker, but `docker` is not installed or not in PATH."
     )
+    assert "Traceback" not in captured.err
+
+
+def test_unreadable_correction_manifest_is_reported_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def handler(_args: argparse.Namespace) -> int:
+        raise CorrectionManifestError("Cannot read correction workspace manifest x.json")
+
+    monkeypatch.setattr(catalog_cli, "build_parser", lambda: _parser_with_handler(handler))
+    monkeypatch.setattr(catalog_cli, "install_signal_handlers", lambda: None)
+
+    assert catalog_cli.main([]) == 1
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "Error: Cannot read correction workspace manifest x.json"
     assert "Traceback" not in captured.err
 
 

@@ -5,12 +5,18 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 
 from besedy.lib import correction_segmentation as cs
-from besedy.lib.correction_integrity import check_workspace, main
+from besedy.lib.correction_integrity import (
+    audio_hash_due,
+    check_workspace,
+    check_workspaces,
+    main,
+)
 
 CONTRACT = json.loads(
     (Path(__file__).resolve().parents[1] / "contracts" / "correction-segmentation.json").read_text(
@@ -65,7 +71,9 @@ def workspace(tmp_path: Path) -> tuple[dict, Path]:
 
 def test_an_intact_workspace_passes(workspace) -> None:
     row, root = workspace
-    assert check_workspace(row, root) == []
+    check = check_workspace(row, root)
+    assert check.problems == []
+    assert check.notes == []
 
 
 @pytest.mark.parametrize(
@@ -76,7 +84,6 @@ def test_an_intact_workspace_passes(workspace) -> None:
         (lambda row, root: row["spans"][0].__setitem__(4, 1), "stored spans"),
         (lambda row, root: row.update(source_chunk_count=5), "chunk count"),
         (lambda row, root: row["segmentation_params"].update(splitGapSamples=1), "parameters"),
-        (lambda row, root: row.update(segmentation_version="chunks-v0"), "segmentation version"),
         (lambda row, root: row.update(bad_revision_hashes=2), "revisions"),
         (
             lambda row, root: Path(row["staged_audio_path"]).write_bytes(b"RIFF staged BYTES"),
@@ -96,8 +103,43 @@ def test_each_kind_of_drift_is_reported(workspace, change, expected: str) -> Non
     row, root = workspace
     row = copy.deepcopy(row)
     change(row, root)
-    problems = check_workspace(row, root)
+    problems = check_workspace(row, root).problems
     assert any(expected in problem for problem in problems), problems
+
+
+def test_another_segmentation_version_is_noted_not_failed(workspace) -> None:
+    row, root = workspace
+    row = dict(copy.deepcopy(row), segmentation_version="chunks-v0", spans=[])
+    check = check_workspace(row, root)
+    assert check.problems == []
+    assert any("chunks-v0" in note for note in check.notes)
+
+    # The checks that do not depend on the version still run.
+    Path(row["staged_audio_path"]).write_bytes(b"short")
+    assert any("size" in problem for problem in check_workspace(row, root).problems)
+
+
+def test_audio_hashing_rotates_through_the_workspaces(workspace) -> None:
+    ids = [f"{index:08d}-0000-0000-0000-000000000000" for index in range(50)]
+    start = date(2026, 10, 20)
+    turns = [
+        [day for day in range(7) if audio_hash_due(workspace_id, 7, start + timedelta(day))]
+        for workspace_id in ids
+    ]
+    assert all(len(days) == 1 for days in turns)
+    assert len({days[0] for days in turns}) > 1
+    assert all(audio_hash_due(workspace_id, 1, start) for workspace_id in ids)
+
+    row, root = workspace
+    Path(row["staged_audio_path"]).write_bytes(b"RIFF staged BYTES")
+    nights = [
+        check_workspaces([row], root, audio_hash_every_days=7, today=start + timedelta(day))[
+            WORKSPACE
+        ].problems
+        for day in range(7)
+    ]
+    assert sum(1 for problems in nights if problems) == 1
+    assert check_workspaces([row], root, audio_hash_every_days=None)[WORKSPACE].problems == []
 
 
 def test_the_command_exits_non_zero_on_problems(workspace, monkeypatch, capsys) -> None:

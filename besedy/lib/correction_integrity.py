@@ -8,12 +8,18 @@ checks, for each live workspace under the data contract:
 - the frozen source file still has the fingerprint recorded at start;
 - cutting that source again gives exactly the stored spans, with the stored
   segmentation version and parameters;
-- the staged audio still has the recorded size and SHA-256;
+- the staged audio still has the recorded size, and its SHA-256 on the nights
+  its turn comes (``--audio-hash-every-days``; hashing every WAV every night
+  reads hundreds of megabytes per workspace);
 - the workspace manifest the Python guards read is present and agrees;
 - every text revision still matches its hash (counted in SQL).
 
+A workspace cut by another segmentation version is noted rather than failed:
+this code cannot re-cut it, and the other checks still run.
+
 Usage: ``python -m besedy.lib.correction_integrity [--corrections-root DIR]
-[--skip-audio-hash] < workspaces.json``. Exits 1 when anything is wrong.
+[--audio-hash-every-days N | --skip-audio-hash] < workspaces.json``. Exits 1
+when anything is wrong.
 """
 
 from __future__ import annotations
@@ -23,28 +29,33 @@ import hashlib
 import json
 import sys
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from besedy.core.paths_runtime import resolve_corrections_root
 from besedy.lib import correction_segmentation as cs
-from besedy.lib.correction_guard import MANIFEST_NAME
+from besedy.lib.catalog.manager import source_file_sha256
+from besedy.lib.correction_guard import MANIFEST_NAME, map_recorded_path
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
+@dataclass
+class WorkspaceCheck:
+    problems: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
-def _mapped(path: str, path_map: Mapping[str, str]) -> Path:
-    """Apply the longest matching prefix mapping, as the web does for host paths."""
-    for source in sorted(path_map, key=len, reverse=True):
-        if path == source or path.startswith(source.rstrip("/") + "/"):
-            return Path(path_map[source] + path[len(source) :])
-    return Path(path)
+def audio_hash_due(workspace_id: str, every_days: int, today: date) -> bool:
+    """Whether tonight is this workspace's turn to hash its staged audio.
+
+    Each workspace gets a fixed night in every ``every_days``, so the whole
+    set is hashed once per cycle and the nightly load stays even.
+    """
+    if every_days <= 1:
+        return True
+    turn = int(hashlib.sha256(workspace_id.encode("utf-8")).hexdigest(), 16) % every_days
+    return today.toordinal() % every_days == turn
 
 
 def check_workspace(
@@ -53,9 +64,10 @@ def check_workspace(
     *,
     hash_audio: bool = True,
     path_map: Mapping[str, str] | None = None,
-) -> list[str]:
-    """Problems found in one workspace; empty when it is intact."""
-    problems: list[str] = []
+) -> WorkspaceCheck:
+    """What one workspace check found; no problems when it is intact."""
+    result = WorkspaceCheck()
+    problems = result.problems
     workspace_dir = (
         corrections_root / f"corrections_{workspace['workflow_group_id']}" / str(workspace["id"])
     )
@@ -64,20 +76,21 @@ def check_workspace(
     try:
         source_bytes = source_path.read_bytes()
     except OSError as exc:
-        return [f"frozen source unreadable: {exc}"]
+        problems.append(f"frozen source unreadable: {exc}")
+        return result
     if hashlib.sha256(source_bytes).hexdigest() != workspace["source_fingerprint"]:
         problems.append("frozen source fingerprint changed")
 
-    try:
-        segmentation = cs.segment_transcript(json.loads(source_bytes.decode("utf-8")))
-    except (ValueError, cs.SegmentationError) as exc:
-        problems.append(f"frozen source cannot be segmented: {exc}")
+    if workspace["segmentation_version"] != cs.SEGMENTATION_VERSION:
+        result.notes.append(
+            f"cut with segmentation {workspace['segmentation_version']}, this code cuts "
+            f"{cs.SEGMENTATION_VERSION}; stored spans not re-checked"
+        )
     else:
-        if segmentation.version != workspace["segmentation_version"]:
-            problems.append(
-                f"segmentation version {workspace['segmentation_version']} is not this code's "
-                f"{segmentation.version}; check it with the version that cut it"
-            )
+        try:
+            segmentation = cs.segment_transcript(json.loads(source_bytes.decode("utf-8")))
+        except (ValueError, cs.SegmentationError) as exc:
+            problems.append(f"frozen source cannot be segmented: {exc}")
         else:
             if dict(workspace.get("segmentation_params") or {}) != segmentation.params:
                 problems.append("segmentation parameters differ from the recorded ones")
@@ -94,7 +107,7 @@ def check_workspace(
                     f"({len(stored)} stored, {len(expected)} expected)"
                 )
 
-    audio_path = _mapped(str(workspace["staged_audio_path"]), path_map or {})
+    audio_path = map_recorded_path(str(workspace["staged_audio_path"]), path_map or {})
     try:
         size = audio_path.stat().st_size
     except OSError as exc:
@@ -102,7 +115,7 @@ def check_workspace(
     else:
         if size != int(workspace["staged_audio_size"]):
             problems.append("staged audio size changed")
-        elif hash_audio and _sha256_file(audio_path) != workspace["staged_audio_sha256"]:
+        elif hash_audio and source_file_sha256(audio_path) != workspace["staged_audio_sha256"]:
             problems.append("staged audio content changed")
 
     try:
@@ -117,19 +130,26 @@ def check_workspace(
 
     if int(workspace.get("bad_revision_hashes") or 0):
         problems.append(f"{workspace['bad_revision_hashes']} revisions no longer match their hash")
-    return problems
+    return result
 
 
 def check_workspaces(
     workspaces: Iterable[Mapping[str, Any]],
     corrections_root: Path,
     *,
-    hash_audio: bool = True,
+    audio_hash_every_days: int | None = 1,
     path_map: Mapping[str, str] | None = None,
-) -> dict[str, list[str]]:
+    today: date | None = None,
+) -> dict[str, WorkspaceCheck]:
+    """Check every workspace; ``audio_hash_every_days=None`` never hashes audio."""
+    today = today or date.today()
     return {
         str(workspace["id"]): check_workspace(
-            workspace, corrections_root, hash_audio=hash_audio, path_map=path_map
+            workspace,
+            corrections_root,
+            hash_audio=audio_hash_every_days is not None
+            and audio_hash_due(str(workspace["id"]), audio_hash_every_days, today),
+            path_map=path_map,
         )
         for workspace in workspaces
     }
@@ -138,7 +158,15 @@ def check_workspaces(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--corrections-root", type=Path, default=None)
-    parser.add_argument(
+    hashing = parser.add_mutually_exclusive_group()
+    hashing.add_argument(
+        "--audio-hash-every-days",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Hash each workspace's staged audio on one night in N (default: every night)",
+    )
+    hashing.add_argument(
         "--skip-audio-hash",
         action="store_true",
         help="Check staged audio size only, not its SHA-256",
@@ -156,13 +184,18 @@ def main(argv: list[str] | None = None) -> int:
     workspaces = json.load(sys.stdin) or []
     root = resolve_corrections_root(args.corrections_root)
     results = check_workspaces(
-        workspaces, root, hash_audio=not args.skip_audio_hash, path_map=path_map
+        workspaces,
+        root,
+        audio_hash_every_days=None if args.skip_audio_hash else args.audio_hash_every_days,
+        path_map=path_map,
     )
-    failed = {workspace: problems for workspace, problems in results.items() if problems}
-    for workspace, problems in results.items():
-        print(f"{'FAIL' if problems else 'OK  '} {workspace}")
-        for problem in problems:
+    failed = {workspace: check for workspace, check in results.items() if check.problems}
+    for workspace, check in results.items():
+        print(f"{'FAIL' if check.problems else 'OK  '} {workspace}")
+        for problem in check.problems:
             print(f"     - {problem}")
+        for note in check.notes:
+            print(f"     note: {note}")
     print(f"{len(results)} workspaces checked, {len(failed)} with problems")
     return 1 if failed else 0
 

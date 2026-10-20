@@ -284,8 +284,10 @@ Two more guards keep the correction data as it was recorded:
 - `web/scripts/correction-integrity-check.sh`, run nightly from the host's
   cron, checks every live workspace: the frozen source against its
   fingerprint, the stored spans against a fresh segmentation of it, the staged
-  audio's size and SHA-256, the manifest, and every revision against its text
-  hash. It mails `ALERT_EMAIL` when anything differs or the check cannot run.
+  audio's size (and its SHA-256 on one night a week per workspace,
+  `AUDIO_HASH_EVERY_DAYS`), the manifest, and every revision against its text
+  hash. A workspace cut by an older segmentation version is noted, not failed.
+  It mails `ALERT_EMAIL` when anything differs or the check cannot run.
 
 Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status
