@@ -395,8 +395,8 @@ catalog at another catalog's files and read everything in it. The default flag
 changes which catalog every new account lands in, and the active flag would let
 a `catalogAdmin` reopen a catalog an administrator had closed. All three reach
 beyond the one catalog the grant covers, so they need the same authority as
-creating a catalog. A `catalogAdmin` still changes the label from the settings
-page, and may still deactivate their own catalog.
+creating a catalog. Deactivating a catalog clears both flags, so it needs the
+same authority. A `catalogAdmin` still changes the label from the settings page.
 
 ## Roles
 

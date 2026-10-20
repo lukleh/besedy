@@ -237,9 +237,10 @@ wildcard; system admins resolve the same way.
 Catalog paths and the default and active flags are not part of catalog
 configuration: `PUT /api/catalogs/:id` refuses a change to any of them, with an
 `ACCESS_DENIED` audit entry, unless the caller is a system admin, the same
-authority `POST /api/catalogs` requires. A path decides which files a catalog
-imports and serves, so a catalog grant that could set one could read another
-catalog. The settings form disables those fields for catalog administrators.
+authority `POST /api/catalogs` requires. `DELETE /api/catalogs/:id`, which
+deactivates a catalog and clears both flags, applies the same rule. A path
+decides which files a catalog imports and serves, so a catalog grant that could
+set one could read another catalog. The settings form disables those fields for catalog administrators.
 See [ADR 0005](../adr/0005-catalog-permission-model.md#outside-the-catalog-scope).
 
 Catalog administrators may assign the curated extras `browse_recordings`,

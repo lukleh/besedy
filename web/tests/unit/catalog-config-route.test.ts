@@ -26,6 +26,9 @@ vi.mock("@/lib/db", () => {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    userPreferences: {
+      updateMany: vi.fn(),
+    },
   };
   return {
     default: {
@@ -131,6 +134,9 @@ describe("catalog config route", () => {
         update: ReturnType<typeof vi.fn>;
         updateMany: ReturnType<typeof vi.fn>;
       };
+      userPreferences: {
+        updateMany: ReturnType<typeof vi.fn>;
+      };
     };
   };
 
@@ -155,6 +161,7 @@ describe("catalog config route", () => {
       })
     );
     prisma.__tx.workflowGroup.updateMany.mockResolvedValue({ count: 1 });
+    prisma.__tx.userPreferences.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it("returns the policy denial response for unauthorized settings access", async () => {
@@ -426,37 +433,87 @@ describe("catalog config route", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("logs catalog deactivation with the actor resolved through catalog policy access", async () => {
-    requireAuth.mockResolvedValue("admin-3");
-    requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-3"));
-    prisma.workflowGroup.findUnique.mockResolvedValue({
-      id: catalogId,
-      label: "Catalog",
-      isDefault: true,
-    });
-    prisma.workflowGroup.update.mockResolvedValue({
-      id: catalogId,
-      isActive: false,
-      isDefault: false,
-    });
-    prisma.userPreferences.updateMany.mockResolvedValue({ count: 1 });
-
-    const response = await DELETE(
+  function deleteCatalog() {
+    return DELETE(
       new NextRequest(`http://localhost/api/catalogs/${catalogId}`, {
         method: "DELETE",
         headers: { Origin: "http://localhost" },
       }),
       { params: Promise.resolve({ id: catalogId }) }
     );
+  }
+
+  it("lets a system admin deactivate a catalog in one transaction", async () => {
+    requireAuth.mockResolvedValue("admin-3");
+    requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-3"));
+    prisma.workflowGroup.findUnique.mockResolvedValue({
+      ...storedCatalog,
+      label: "Catalog",
+      isDefault: true,
+    });
+
+    const response = await deleteCatalog();
 
     expect(response.status).toBe(200);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledWith({
+      where: { id: catalogId },
+      data: { isActive: false, isDefault: false },
+    });
+    expect(prisma.__tx.userPreferences.updateMany).toHaveBeenCalledWith({
+      where: { activeGroupId: catalogId },
+      data: { activeGroupId: null },
+    });
+    // Neither write goes around the transaction client.
+    expect(prisma.workflowGroup.update).not.toHaveBeenCalled();
+    expect(prisma.userPreferences.updateMany).not.toHaveBeenCalled();
     expect(logCatalogLifecycleEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: "admin-3",
         action: "CATALOG_DEACTIVATED",
         catalogId,
+        details: { label: "Catalog", wasDefault: true },
       })
     );
+  });
+
+  it("refuses deactivation to a catalog administrator without system authority", async () => {
+    requireAuth.mockResolvedValue("catalog-admin-2");
+    requireCatalogManagementAccess.mockResolvedValue(
+      makeAccess("catalog-admin-2", "USER")
+    );
+    prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
+
+    const response = await deleteCatalog();
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "FORBIDDEN",
+      error: "System admin access required to deactivate a catalog",
+    });
+    expect(logAccessDenied).toHaveBeenCalledWith(
+      "catalog-admin-2",
+      "catalog_settings",
+      catalogId,
+      expect.objectContaining({ catalogId, fields: ["isActive", "isDefault"] })
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.workflowGroup.update).not.toHaveBeenCalled();
+    expect(prisma.userPreferences.updateMany).not.toHaveBeenCalled();
+    expect(logCatalogLifecycleEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not log a deactivation whose transaction failed", async () => {
+    requireAuth.mockResolvedValue("admin-8");
+    requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-8"));
+    prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
+    prisma.__tx.userPreferences.updateMany.mockRejectedValue(new Error("write failed"));
+
+    const response = await deleteCatalog();
+
+    expect(response.status).toBe(500);
+    expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledTimes(1);
+    expect(logCatalogLifecycleEvent).not.toHaveBeenCalled();
   });
 
   it("rejects cross-origin catalog config updates", async () => {
