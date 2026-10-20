@@ -38,12 +38,13 @@ describe("contributor consent", () => {
     expect(CONTRIBUTOR_TERMS.text).toMatch(/trénování/);
     expect(CONTRIBUTOR_TERMS.text).toMatch(/poslechl/);
     expect(CONTRIBUTOR_TERMS.text).toMatch(/rychlostí přehrávání/);
+    expect(CONTRIBUTOR_TERMS.text).toMatch(/smazání mého účtu/);
   });
 
   // The accepted text is stored with each consent row, so a changed text must
   // come with a new version. Changing CONTRIBUTOR_TERMS.text requires bumping
   // `version` and updating PINNED.textSha256 here in the same change.
-  const PINNED = { version: "2026-10-20", textSha256: "6d5cd4d489e49437103e2c9272f75465d616c526f4da1c622e689a1a7826827e" };
+  const PINNED = { version: "2026-10-20", textSha256: "1a2e3b2dfacc4b8dfc8a8b15e0e9a24c5b0c697c2361790188dcf588906ea503" };
 
   it("pins the terms text to its version", () => {
     expect(CONTRIBUTOR_TERMS.version).toBe(PINNED.version);
