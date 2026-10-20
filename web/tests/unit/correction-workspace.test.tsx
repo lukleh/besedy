@@ -76,10 +76,16 @@ function state(overrides: Record<string, unknown>) {
 
 const fetchJsonMock = vi.mocked(fetchJson);
 
-function renderWorkspace(correctionState: ReturnType<typeof state>) {
+const ACCEPTED = { consent: { accepted: true, version: "v", text: "terms" } };
+
+function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED) {
   fetchJsonMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url.endsWith("/correction")) return correctionState;
+    if (url.endsWith("/correction-consent")) {
+      if (consent instanceof Error) throw consent;
+      return consent;
+    }
     if (url.endsWith("/entry")) return { entry: { hash: HASH, title: "Recording" } };
     throw new Error(`unexpected ${url}`);
   });
@@ -190,5 +196,25 @@ describe("CorrectionWorkspace publication card", () => {
     expect(await screen.findByTestId("publication-error")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "retryPublish" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "republish" })).toBeDisabled();
+  });
+});
+
+describe("CorrectionWorkspace contributor consent", () => {
+  it("asks for consent before showing the workspace", async () => {
+    renderWorkspace(state({}), { consent: { accepted: false, version: "v", text: "Souhlasím s trénováním." } });
+    expect(await screen.findByTestId("correction-consent")).toBeInTheDocument();
+    expect(screen.queryByTestId("correction-surface")).not.toBeInTheDocument();
+  });
+
+  it("says so when consent cannot be checked, instead of an empty page", async () => {
+    renderWorkspace(state({}), new Error("network"));
+    expect(await screen.findByTestId("correction-consent-error")).toBeInTheDocument();
+    expect(screen.getByText("consentRetry")).toBeInTheDocument();
+    expect(screen.queryByTestId("correction-surface")).not.toBeInTheDocument();
+  });
+
+  it("shows the workspace once consent is given", async () => {
+    renderWorkspace(state({}));
+    expect(await screen.findByTestId("correction-surface")).toBeInTheDocument();
   });
 });
