@@ -261,7 +261,8 @@ they have to hold against concurrent requests:
 ADR 0012 adds checks that keep the correction data complete: a workspace's
 segmentation and staged-audio columns, and a span's chunk and region columns,
 are set together (or not at all on a workspace started before the contract);
-only a `SUGGESTION` revision names a backend; playback is a share of the span.
+only a `SUGGESTION` revision names a backend; a decision's playback (heard
+share of the span and both playback rates) is recorded whole or not at all.
 Foreign keys among the correction tables, and from catalogs to them, are
 `RESTRICT`, so deleting a catalog or a workspace cannot delete correction work.
 
@@ -293,6 +294,15 @@ Two more guards keep the correction data as it was recorded:
   `AUDIO_HASH_EVERY_DAYS`), the manifest, and every revision against its text
   hash. A workspace cut by an older segmentation version is noted, not failed.
   It mails `ALERT_EMAIL` when anything differs or the check cannot run.
+
+Fingerprinting the staged audio reads the file through the container's path
+rules, so the host staged-audio tree
+(`<audio artifacts root>/audio_staged_<timestamp>/`) must lie inside the
+directory mounted as `AUDIO_DIR` and its host prefix must be covered by
+`BESEDY_PATH_MAPPINGS`. Otherwise starting a workspace fails with
+`STAGED_AUDIO_MISSING`. The staged WAV's own duration is also compared with the
+source's `meta.duration`; a difference above 50 ms fails with
+`STAGED_AUDIO_MISMATCH`.
 
 Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status
