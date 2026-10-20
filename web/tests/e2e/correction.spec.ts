@@ -69,6 +69,11 @@ test.describe("transcript correction", () => {
     await expect(rate).toHaveText(/1×/);
     await rate.click();
     await expect(rate).toHaveText(/0[,.]8×/);
+    // Back to 1× so the approval below reports an unslowed playback.
+    await rate.click();
+    await expect(rate).toHaveText(/0[,.]6×/);
+    await rate.click();
+    await expect(rate).toHaveText(/1×/);
 
     // A span with nothing written asks whether anything was said.
     await spanList.getByRole("button", { name: /^0:49/ }).first().click();

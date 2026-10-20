@@ -9,6 +9,7 @@ import { useTranslations } from "next-intl";
 import { ChevronLeft, ChevronRight, Gauge, Play, Repeat, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
+import { regionIndexForMidpoint } from "@/lib/correction/segmentation";
 import type { SpanView } from "./correction-types";
 
 export type TimeSubscription = (listener: (time: number) => void) => () => void;
@@ -18,7 +19,7 @@ export const PLAYBACK_RATES = [1, 0.8, 0.6] as const;
 export interface SpanAudioRegion {
   start: number;
   end: number;
-  /** Words whose midpoint lies in this region */
+  /** Words whose midpoint lies in this region, or nearest to it */
   wordCount: number;
 }
 
@@ -27,17 +28,19 @@ function wordsOf(span: SpanView): SpanView["machineWords"] {
   return span.machineWords ?? [];
 }
 
-/** The span's regions in seconds, each with how many machine words it holds. */
+/**
+ * The span's regions in seconds, each with how many machine words it holds.
+ * A word belongs to the region holding its midpoint, else the nearest one,
+ * as in the segmentation, so every word counts in exactly one region.
+ */
 export function spanAudioRegions(span: SpanView): SpanAudioRegion[] {
   const regions = speechRegionsInSeconds(span);
-  return regions.map(([start, end]) => ({
-    start,
-    end,
-    wordCount: wordsOf(span).filter((word) => {
-      const middle = (word.start + word.end) / 2;
-      return middle >= start && middle <= end;
-    }).length,
-  }));
+  const counts = regions.map(() => 0);
+  for (const word of wordsOf(span)) {
+    const index = regionIndexForMidpoint(regions, (word.start + word.end) / 2);
+    if (index >= 0) counts[index] += 1;
+  }
+  return regions.map(([start, end], index) => ({ start, end, wordCount: counts[index] }));
 }
 
 /** Index of the region holding `time`, else the next one, else the last. */
@@ -78,6 +81,7 @@ export function CorrectionSpanAudio({
     `${Math.min(100, Math.max(0, ((seconds - windowStart) / windowLength) * 100))}%`;
   const inSpan = time !== null && time >= span.startSeconds && time <= span.endSeconds;
   const speechWithoutText = regions.filter((region) => region.wordCount === 0).length;
+  const rateLabel = rate === 1 ? "1×" : `${rate.toLocaleString()}×`;
 
   return (
     <div className="space-y-2 rounded-md border p-3" data-testid="correction-span-audio">
@@ -100,9 +104,16 @@ export function CorrectionSpanAudio({
           <RotateCcw className="h-3.5 w-3.5" />
           {t("back")}
         </Button>
-        <Button size="sm" variant="ghost" className="gap-1.5 tabular-nums" onClick={onCycleRate} data-testid="correction-rate">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="gap-1.5 tabular-nums"
+          onClick={onCycleRate}
+          aria-label={`${t("rate")} ${rateLabel}`}
+          data-testid="correction-rate"
+        >
           <Gauge className="h-3.5 w-3.5" />
-          {rate === 1 ? "1×" : `${rate.toLocaleString()}×`}
+          {rateLabel}
         </Button>
       </div>
 

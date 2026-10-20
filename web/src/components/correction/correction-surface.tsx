@@ -328,8 +328,13 @@ export function CorrectionSurface({
     [playRange]
   );
 
+  /** Replay from three seconds back, or the span's last three once past its end. */
   const playBack = useCallback(
-    (span: SpanView) => playRange(span, currentTimeRef.current - 3, span.endSeconds),
+    (span: SpanView) => {
+      const back = Math.min(span.endSeconds, Math.max(span.startSeconds, currentTimeRef.current - 3));
+      const start = back < span.endSeconds ? back : Math.max(span.startSeconds, span.endSeconds - 3);
+      playRange(span, start, span.endSeconds);
+    },
     [playRange]
   );
 
@@ -543,9 +548,11 @@ export function CorrectionSurface({
   );
 
   // Listening shortcuts use Alt with the physical key, so they work from the
-  // text box and do not type the characters Option produces on a Mac.
-  const handleSurfaceKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLElement>) => {
+  // text box and do not type the characters Option produces on a Mac. They
+  // listen on the document, so they work from anywhere on the page, in the
+  // capture phase, so the player's own document listener sees them handled.
+  const handleShortcut = useCallback(
+    (event: KeyboardEvent) => {
       if (!selected || !event.altKey || event.metaKey || event.ctrlKey) return;
       const actions: Record<string, () => void> = {
         KeyP: () => playSpan(selected),
@@ -562,6 +569,15 @@ export function CorrectionSurface({
     },
     [selected, playSpan, playRegion, playBack, cycleRate]
   );
+  const shortcutRef = useRef(handleShortcut);
+  useEffect(() => {
+    shortcutRef.current = handleShortcut;
+  }, [handleShortcut]);
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcutRef.current(event);
+    document.addEventListener("keydown", listener, true);
+    return () => document.removeEventListener("keydown", listener, true);
+  }, []);
 
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null;
@@ -669,7 +685,7 @@ export function CorrectionSurface({
         )}
       </aside>
 
-      <section className="space-y-4" onKeyDown={handleSurfaceKeyDown}>
+      <section className="space-y-4">
         <AudioPlayer
           src={buildAudioUrl(catalogId, hash, "archived", [])}
           catalogId={catalogId}
