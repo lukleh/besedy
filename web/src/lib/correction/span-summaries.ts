@@ -10,6 +10,8 @@ export interface SpanSummaryRow {
   startSeconds: number;
   endSeconds: number;
   originalText: string;
+  /** ADR 0012 speech regions in samples; null on spans from before the contract */
+  speechRegions: number[][] | null;
   currentRevision: {
     id: string;
     text: string;
@@ -97,6 +99,7 @@ export async function loadSpanSummaries(
       startSeconds: true,
       endSeconds: true,
       originalText: true,
+      speechRegions: true,
       currentRevision: {
         select: {
           id: true,
@@ -120,6 +123,7 @@ export async function loadSpanSummaries(
     startSeconds: span.startSeconds,
     endSeconds: span.endSeconds,
     originalText: span.originalText,
+    speechRegions: Array.isArray(span.speechRegions) ? (span.speechRegions as number[][]) : null,
     currentRevision: span.currentRevision,
     summary: summaries.get(span.id) ?? NO_DECISIONS,
   }));

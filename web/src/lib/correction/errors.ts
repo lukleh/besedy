@@ -19,7 +19,9 @@ export type CorrectionErrorCode =
   | "INDEX_SYNC_UNAVAILABLE"
   | "CONSENT_REQUIRED"
   | "SOURCE_UNSUITABLE"
-  | "STAGED_AUDIO_MISSING";
+  | "STAGED_AUDIO_MISSING"
+  | "INVALID_FLAG"
+  | "PLAYBACK_REQUIRED";
 
 const STATUS_BY_CODE: Record<CorrectionErrorCode, number> = {
   NOT_ELIGIBLE: 404,
@@ -43,6 +45,8 @@ const STATUS_BY_CODE: Record<CorrectionErrorCode, number> = {
   CONSENT_REQUIRED: 403,
   SOURCE_UNSUITABLE: 422,
   STAGED_AUDIO_MISSING: 422,
+  INVALID_FLAG: 422,
+  PLAYBACK_REQUIRED: 422,
 };
 
 export class CorrectionError extends Error {

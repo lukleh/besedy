@@ -149,6 +149,9 @@ async function main() {
     await import("@/lib/correction/workspace-service");
   const { saveAndApprove, recordDecision, listSpanHistory } = await import("@/lib/correction/decision-service");
   const { acceptContributorTerms } = await import("@/lib/correction/consent");
+  // A full listen at normal speed, which every approve and disapprove reports (ADR 0012).
+  const HEARD = { heardFraction: 1, minPlaybackRate: 1, maxPlaybackRate: 1 };
+  const { recordFlag } = await import("@/lib/correction/flag-service");
   const { appendGuideRevision } = await import("@/lib/correction/guide");
   const { getPublicationEligibility } = await import("@/lib/correction/publication-eligibility");
   const {
@@ -366,6 +369,7 @@ async function main() {
   check("spans start not reviewed", first.state === "not_reviewed", first.state);
 
   const edited = await saveAndApprove({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: first.id,
     userId: alice.id,
@@ -381,11 +385,94 @@ async function main() {
       revision.origin === "MANUAL" && revision.guideRevisionId === guide.revisionId,
       revision
     );
+    const decision = await prisma.transcriptSpanDecision.findFirstOrThrow({
+      where: { revisionId: edited.revisionId, actorKey: alice.id },
+    });
+    check(
+      "the approval records what was heard",
+      decision.heardFraction === 1 && decision.minPlaybackRate === 1 && decision.maxPlaybackRate === 1,
+      decision
+    );
+  }
+  {
+    let code: string | undefined;
+    try {
+      await recordDecision({
+        workspaceId: workspace.id,
+        spanId: first.id,
+        userId: bob.id,
+        expectedRevisionId: edited.revisionId,
+        kind: "APPROVE",
+      });
+    } catch (error) {
+      code = (error as { code?: string }).code;
+    }
+    check("an approval without a playback report is refused", code === "PLAYBACK_REQUIRED", code);
+  }
+
+  // --- flags ----------------------------------------------------------------
+  console.log("\nflags on the audio");
+  {
+    const flagged = await recordFlag({
+      workspaceId: workspace.id,
+      spanId: first.id,
+      userId: alice.id,
+      kind: "OTHER_LANGUAGE",
+      action: "SET",
+      languageCode: "en",
+      idempotencyKey: "flag-1",
+    });
+    check(
+      "a flag is set with its language",
+      flagged.flags.length === 1 && flagged.flags[0].kind === "OTHER_LANGUAGE" && flagged.flags[0].languageCode === "en",
+      flagged
+    );
+    const replayed = await recordFlag({
+      workspaceId: workspace.id,
+      spanId: first.id,
+      userId: alice.id,
+      kind: "OTHER_LANGUAGE",
+      action: "SET",
+      languageCode: "en",
+      idempotencyKey: "flag-1",
+    });
+    check("a retried flag replays", replayed.replayed && replayed.flags.length === 1);
+    await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: bob.id, kind: "UNCLEAR", action: "SET" });
+    await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: bob.id, kind: "UNCLEAR", action: "SET" });
+    check(
+      "setting a flag twice records one event",
+      (await prisma.transcriptSpanFlagEvent.count({ where: { spanId: first.id, kind: "UNCLEAR" } })) === 1
+    );
+    const view = (await listSpans(workspace.id)).spans.find((span) => span.id === first.id);
+    check(
+      "the span view carries its flags and speech regions",
+      view?.flags.map((flag) => flag.kind).sort().join(",") === "OTHER_LANGUAGE,UNCLEAR" &&
+        JSON.stringify(view?.speechRegions) === JSON.stringify([[0, seconds(5)]]),
+      view
+    );
+    await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: alice.id, kind: "UNCLEAR", action: "CLEAR" });
+    await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: alice.id, kind: "OTHER_LANGUAGE", action: "CLEAR" });
+    const cleared = (await listSpans(workspace.id)).spans.find((span) => span.id === first.id);
+    check("cleared flags are gone, and their history stays", cleared?.flags.length === 0 &&
+      (await prisma.transcriptSpanFlagEvent.count({ where: { spanId: first.id } })) === 4);
+    let flagCode: string | undefined;
+    try {
+      await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: alice.id, kind: "OTHER_LANGUAGE", action: "SET" });
+    } catch (error) {
+      flagCode = (error as { code?: string }).code;
+    }
+    check("another language needs its code", flagCode === "INVALID_FLAG", flagCode);
+    check(
+      "flags do not change the span's state",
+      cleared?.state === "needs_second_approval",
+      cleared?.state
+    );
   }
 
   let staleRejected = false;
   try {
     await saveAndApprove({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: first.id,
       userId: bob.id,
@@ -399,6 +486,7 @@ async function main() {
 
   const key = randomUUID();
   const firstCall = await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: first.id,
     userId: bob.id,
@@ -407,6 +495,7 @@ async function main() {
     idempotencyKey: key,
   });
   const replay = await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: first.id,
     userId: bob.id,
@@ -420,6 +509,7 @@ async function main() {
   let reusedKeyRefused: string | null = null;
   try {
     await recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: first.id,
       userId: bob.id,
@@ -441,6 +531,7 @@ async function main() {
   const editKey = randomUUID();
   const editSpan = (await listSpans(workspace.id)).spans[1];
   await saveAndApprove({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: editSpan.id,
     userId: alice.id,
@@ -453,6 +544,7 @@ async function main() {
   try {
     const current = (await listSpans(workspace.id)).spans[1];
     await saveAndApprove({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: current.id,
       userId: alice.id,
@@ -480,6 +572,7 @@ async function main() {
   const concurrentSpan = (await listSpans(workspace.id)).spans[0];
   const concurrent = await Promise.allSettled([
     recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: concurrentSpan.id,
       userId: alice.id,
@@ -488,6 +581,7 @@ async function main() {
       idempotencyKey: concurrentKey,
     }),
     recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: concurrentSpan.id,
       userId: alice.id,
@@ -509,6 +603,7 @@ async function main() {
   const staleKey = randomUUID();
   const revisionSpan = (await listSpans(workspace.id)).spans[1];
   await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: revisionSpan.id,
     userId: bob.id,
@@ -517,6 +612,7 @@ async function main() {
     idempotencyKey: staleKey,
   });
   await saveAndApprove({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: revisionSpan.id,
     userId: alice.id,
@@ -527,6 +623,7 @@ async function main() {
   try {
     const moved = (await listSpans(workspace.id)).spans[1];
     await recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: moved.id,
       userId: bob.id,
@@ -547,6 +644,7 @@ async function main() {
   // revision rather than the one captured when the page was first listed.
   const secondNow = (await listSpans(workspace.id)).spans[1];
   await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: secondNow.id,
     userId: alice.id,
@@ -554,6 +652,7 @@ async function main() {
     kind: "DISAPPROVE",
   });
   await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: secondNow.id,
     userId: bob.id,
@@ -576,6 +675,7 @@ async function main() {
   check("publication refuses a disputed transcript", refusedWhileBlocked);
 
   await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: secondNow.id,
     userId: alice.id,
@@ -583,6 +683,7 @@ async function main() {
     kind: "WITHDRAW",
   });
   await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: secondNow.id,
     userId: alice.id,
@@ -607,6 +708,7 @@ async function main() {
       userId: alice.id,
     }, deps),
     recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: racedSpan.id,
       userId: bob.id,
@@ -671,6 +773,7 @@ async function main() {
   if (decisionWon) {
     const current = (await listSpans(workspace.id)).spans[0];
     await recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: current.id,
       userId: bob.id,
@@ -678,6 +781,7 @@ async function main() {
       kind: "WITHDRAW",
     });
     await recordDecision({
+    playback: HEARD,
       workspaceId: workspace.id,
       spanId: current.id,
       userId: bob.id,
@@ -710,6 +814,7 @@ async function main() {
   // whichever side won the race above, and re-approve it.
   const refreshSpan = (await listSpans(workspace.id)).spans[1];
   const refreshed = await saveAndApprove({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: refreshSpan.id,
     userId: alice.id,
@@ -717,6 +822,7 @@ async function main() {
     text: "Vítejte na dnešní besedě.",
   });
   await recordDecision({
+    playback: HEARD,
     workspaceId: workspace.id,
     spanId: refreshSpan.id,
     userId: bob.id,
@@ -1359,6 +1465,7 @@ async function main() {
   // is about attribution surviving rather than about an absent author.
   const bobSpan = (await listSpans(restarted.id)).spans[0];
   const bobRevision = await saveAndApprove({
+    playback: HEARD,
     workspaceId: restarted.id,
     spanId: bobSpan.id,
     userId: bob.id,
@@ -1762,6 +1869,7 @@ async function main() {
     // Touching the workspace makes it this person's, and makes them the last actor.
     const touchedSpan = (await listSpans(restarted.id)).spans[1];
     await recordDecision({
+    playback: HEARD,
       workspaceId: restarted.id,
       spanId: touchedSpan.id,
       userId: alice.id,
@@ -1819,6 +1927,7 @@ async function main() {
 
     const first = (await listSpans(restarted.id)).spans[0];
     await saveAndApprove({
+    playback: HEARD,
       workspaceId: restarted.id,
       spanId: first.id,
       userId: alice.id,

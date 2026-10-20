@@ -28,6 +28,44 @@ interface SpanCommandBase {
   /** The revision the person had in front of them */
   expectedRevisionId: string;
   idempotencyKey?: string | null;
+  /** What the person heard of the span before an approve or disapprove (ADR 0012) */
+  playback?: PlaybackReport | null;
+}
+
+export interface PlaybackReport {
+  heardFraction: number;
+  minPlaybackRate: number;
+  maxPlaybackRate: number;
+}
+
+/**
+ * The playback columns of an approve or disapprove. A workspace under the
+ * correction data contract always records them, so training can tell an
+ * approval made by listening from one made without; withdrawals carry none.
+ * They are what the person reports, never a condition for approving.
+ */
+function playbackColumns(
+  kind: TranscriptDecisionKind,
+  playback: PlaybackReport | null | undefined,
+  contract: boolean
+): { heardFraction: number | null; minPlaybackRate: number | null; maxPlaybackRate: number | null } {
+  if (kind === "WITHDRAW") {
+    return { heardFraction: null, minPlaybackRate: null, maxPlaybackRate: null };
+  }
+  if (!playback) {
+    if (contract) {
+      throw new CorrectionError(
+        "PLAYBACK_REQUIRED",
+        "An approval or disapproval reports how much of the span was played"
+      );
+    }
+    return { heardFraction: null, minPlaybackRate: null, maxPlaybackRate: null };
+  }
+  return {
+    heardFraction: playback.heardFraction,
+    minPlaybackRate: playback.minPlaybackRate,
+    maxPlaybackRate: playback.maxPlaybackRate,
+  };
 }
 
 export interface DecisionCommand extends SpanCommandBase {
@@ -249,8 +287,9 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
       };
     }
 
-    await assertWorkspaceWritable(tx, command.workspaceId);
+    const workspace = await assertWorkspaceWritable(tx, command.workspaceId);
     await requireContributorConsent(tx, command.userId);
+    const playback = playbackColumns(command.kind, command.playback, workspace.segmentationVersion !== null);
     const span = await lockSpan(tx, command);
 
     await tx.transcriptSpanDecision.create({
@@ -264,6 +303,7 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
         idempotencyKey: command.idempotencyKey ?? null,
         commandName: identity.name,
         commandDigest: digestCommand(identity),
+        ...playback,
       },
     });
 
@@ -360,6 +400,7 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
         idempotencyKey: command.idempotencyKey ?? null,
         commandName: identity.name,
         commandDigest: digestCommand(identity),
+        ...playbackColumns("APPROVE", command.playback, workspace.segmentationVersion !== null),
       },
     });
 

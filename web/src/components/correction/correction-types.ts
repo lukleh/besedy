@@ -25,6 +25,19 @@ export const spanViewSchema = z.object({
   commentCount: z.number(),
   lastEditedById: z.string().nullable(),
   lastEditedAt: z.string().nullable(),
+  /** ADR 0012 speech regions in samples; null on spans from before the contract */
+  speechRegions: z.array(z.array(z.number())).nullable().default(null),
+  flags: z
+    .array(
+      z.object({
+        kind: z.enum(["UNCLEAR", "OVERLAP", "OTHER_LANGUAGE", "MUSIC_NOISE", "CUT_WORD", "EXCLUDE_FROM_TRAINING"]),
+        languageCode: z.string().nullable(),
+        comment: z.string().nullable(),
+        actorKey: z.string(),
+        setAt: z.string(),
+      })
+    )
+    .default([]),
 });
 
 export type SpanView = z.infer<typeof spanViewSchema>;

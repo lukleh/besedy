@@ -16,6 +16,7 @@ import {
   type CorrectionWorkspaceManifest,
 } from "@/lib/correction/storage";
 import { requireContributorConsent } from "@/lib/correction/consent";
+import { loadSpanFlags, type SpanFlag } from "@/lib/correction/flag-service";
 import { getActiveGuideRevisionId } from "@/lib/correction/guide";
 import {
   SEGMENTATION_PARAMS,
@@ -70,6 +71,10 @@ export interface SpanView {
   commentCount: number;
   lastEditedById: string | null;
   lastEditedAt: Date | null;
+  /** Speech regions in samples (ADR 0012); null on spans from before the contract */
+  speechRegions: number[][] | null;
+  /** Current flags on the span's audio */
+  flags: SpanFlag[];
 }
 
 export interface CorrectionProgress {
@@ -401,14 +406,17 @@ export async function listSpans(
           _count: { _all: true },
         });
   const commentCountBySpan = new Map(commentCounts.map((row) => [row.spanId, row._count._all]));
+  const flagsBySpan = await loadSpanFlags(spans.map((span) => span.id));
 
   return {
     total,
-    spans: spans.map((span) => toSpanView(span, commentCountBySpan.get(span.id) ?? 0)),
+    spans: spans.map((span) =>
+      toSpanView(span, commentCountBySpan.get(span.id) ?? 0, flagsBySpan.get(span.id) ?? [])
+    ),
   };
 }
 
-function toSpanView(span: SpanSummaryRow, commentCount: number): SpanView {
+function toSpanView(span: SpanSummaryRow, commentCount: number, flags: SpanFlag[]): SpanView {
   const revision = span.currentRevision;
   return {
     id: span.id,
@@ -425,6 +433,8 @@ function toSpanView(span: SpanSummaryRow, commentCount: number): SpanView {
     commentCount,
     lastEditedById: revision?.actorKey ?? null,
     lastEditedAt: revision?.actorKey ? revision.createdAt : null,
+    speechRegions: span.speechRegions,
+    flags,
   };
 }
 
