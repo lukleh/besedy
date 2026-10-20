@@ -77,12 +77,21 @@ export async function loadSpanFlags(
   return result;
 }
 
+export interface FlagResult {
+  flags: SpanFlag[];
+  /** The key had already recorded this flag; nothing was written. */
+  replayed: boolean;
+  /** This request wrote an event; false for a replay or a no-op. */
+  changed: boolean;
+}
+
 /**
  * Set or clear one flag. Setting a flag that is already set with the same
- * language, or clearing one that is not set, records nothing: the history
- * holds changes, not repetitions. A retried request with the same key replays.
+ * language and comment, or clearing one that is not set, records nothing: the
+ * history holds changes, not repetitions. A retried request with the same key
+ * replays.
  */
-export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFlag[]; replayed: boolean }> {
+export async function recordFlag(command: FlagCommand): Promise<FlagResult> {
   // A language belongs to setting the other-language flag; clearing it, or any
   // other flag, carries none, so a retried clear that repeats the code still
   // matches the event it recorded.
@@ -94,7 +103,9 @@ export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFla
   if (command.kind !== "OTHER_LANGUAGE" && command.languageCode) {
     throw new CorrectionError("INVALID_FLAG", "Only the other-language flag takes a language code");
   }
-  const comment = command.comment?.trim() || null;
+  // Stored only on a set; a clear carries none, so a retried clear that
+  // repeats the comment still matches the event it recorded.
+  const comment = command.action === "SET" ? command.comment?.trim() || null : null;
 
   return prisma.$transaction(async (tx) => {
     // A flag changes nothing a publication snapshots, so, like a comment, it
@@ -110,18 +121,23 @@ export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFla
             idempotencyKey: command.idempotencyKey,
           },
         },
-        select: { spanId: true, kind: true, action: true, languageCode: true },
+        select: { spanId: true, kind: true, action: true, languageCode: true, comment: true },
       });
       if (previous) {
         if (
           previous.spanId !== command.spanId ||
           previous.kind !== command.kind ||
           previous.action !== command.action ||
-          previous.languageCode !== languageCode
+          previous.languageCode !== languageCode ||
+          previous.comment !== comment
         ) {
           throw new CorrectionError("IDEMPOTENCY_CONFLICT", "That idempotency key was used for a different flag");
         }
-        return { flags: (await loadSpanFlags([command.spanId], tx)).get(command.spanId) ?? [], replayed: true };
+        return {
+          flags: (await loadSpanFlags([command.spanId], tx)).get(command.spanId) ?? [],
+          replayed: true,
+          changed: false,
+        };
       }
     }
 
@@ -149,6 +165,10 @@ export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFla
         ? !existing
         : existing !== undefined && existing.languageCode === languageCode && existing.comment === comment;
 
+    // A no-op records nothing, so its key is not remembered: the events are
+    // the only memory, and a fake one would put a repetition in a history that
+    // holds changes. A retry of that key after the state changed is therefore
+    // treated as a new command; `changed` tells the two outcomes apart.
     if (!unchanged) {
       await tx.transcriptSpanFlagEvent.create({
         data: {
@@ -156,8 +176,8 @@ export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFla
           spanId: command.spanId,
           kind: command.kind,
           action: command.action,
-          languageCode: command.action === "SET" ? languageCode : null,
-          comment: command.action === "SET" ? comment : null,
+          languageCode,
+          comment,
           actorKey: command.userId,
           userId: command.userId,
           idempotencyKey: command.idempotencyKey ?? null,
@@ -165,6 +185,10 @@ export async function recordFlag(command: FlagCommand): Promise<{ flags: SpanFla
       });
     }
 
-    return { flags: (await loadSpanFlags([command.spanId], tx)).get(command.spanId) ?? [], replayed: false };
+    return {
+      flags: (await loadSpanFlags([command.spanId], tx)).get(command.spanId) ?? [],
+      replayed: false,
+      changed: !unchanged,
+    };
   });
 }

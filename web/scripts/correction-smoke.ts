@@ -436,12 +436,41 @@ async function main() {
       languageCode: "en",
       idempotencyKey: "flag-1",
     });
-    check("a retried flag replays", replayed.replayed && replayed.flags.length === 1);
+    check(
+      "a retried flag replays",
+      flagged.changed && !flagged.replayed && replayed.replayed && !replayed.changed && replayed.flags.length === 1,
+      { flagged, replayed }
+    );
+    let commentConflict: string | undefined;
+    try {
+      await recordFlag({
+        workspaceId: workspace.id,
+        spanId: first.id,
+        userId: alice.id,
+        kind: "OTHER_LANGUAGE",
+        action: "SET",
+        languageCode: "en",
+        comment: "mostly English",
+        idempotencyKey: "flag-1",
+      });
+    } catch (error) {
+      commentConflict = (error as { code?: string }).code;
+    }
+    check("the same key with another comment is refused", commentConflict === "IDEMPOTENCY_CONFLICT", commentConflict);
     await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: bob.id, kind: "UNCLEAR", action: "SET" });
-    await recordFlag({ workspaceId: workspace.id, spanId: first.id, userId: bob.id, kind: "UNCLEAR", action: "SET" });
+    const repeated = await recordFlag({
+      workspaceId: workspace.id,
+      spanId: first.id,
+      userId: bob.id,
+      kind: "UNCLEAR",
+      action: "SET",
+    });
     check(
       "setting a flag twice records one event",
-      (await prisma.transcriptSpanFlagEvent.count({ where: { spanId: first.id, kind: "UNCLEAR" } })) === 1
+      !repeated.changed &&
+        !repeated.replayed &&
+        (await prisma.transcriptSpanFlagEvent.count({ where: { spanId: first.id, kind: "UNCLEAR" } })) === 1,
+      repeated
     );
     const view = (await listSpans(workspace.id)).spans.find((span) => span.id === first.id);
     check(
@@ -496,6 +525,21 @@ async function main() {
     staleRejected = (error as { code?: string }).code === "REVISION_CONFLICT";
   }
   check("a stale revision is rejected", staleRejected);
+  {
+    let code: string | undefined;
+    try {
+      await recordDecision({
+        workspaceId: workspace.id,
+        spanId: first.id,
+        userId: bob.id,
+        expectedRevisionId: first.revisionId,
+        kind: "APPROVE",
+      });
+    } catch (error) {
+      code = (error as { code?: string }).code;
+    }
+    check("a stale request without playback is a revision conflict first", code === "REVISION_CONFLICT", code);
+  }
 
   const key = randomUUID();
   const firstCall = await recordDecision({
