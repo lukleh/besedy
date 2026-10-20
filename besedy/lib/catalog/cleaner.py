@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,6 +62,7 @@ class CleanupTarget:
     transcript_dirs: list[Path] = field(default_factory=list)
     diarization_dirs: list[Path] = field(default_factory=list)
     sidecar_files: list[Path] = field(default_factory=list)
+    shared_staged_path: Path | None = None
 
 
 @dataclass
@@ -74,6 +76,7 @@ class CleanupPlan:
     total_transcript_dirs: int = 0
     total_diarization_dirs: int = 0
     total_sidecar_files: int = 0
+    total_shared_staged: int = 0
     potential_mount_issue: bool = False
     suspect_parent_dirs: list[str] = field(default_factory=list)
 
@@ -216,6 +219,7 @@ def build_cleanup_plan(
     transcripts_root: Path,
     potential_mount_issue: bool = False,
     suspect_parent_dirs: list[str] | None = None,
+    shared_files_for: Callable[[str], set[Path]] | None = None,
 ) -> CleanupPlan:
     """Build a cleanup plan for missing catalog entries.
 
@@ -227,6 +231,8 @@ def build_cleanup_plan(
         transcripts_root: Path to the transcripts root directory.
         potential_mount_issue: Whether a mount issue was detected.
         suspect_parent_dirs: List of suspect parent directories.
+        shared_files_for: Returns, for a hash, the resolved files another
+            catalog still lists; a staged WAV among them is kept.
 
     Returns:
         CleanupPlan with all targets and statistics.
@@ -239,7 +245,9 @@ def build_cleanup_plan(
         # Find staged file
         if staging_dir and staging_dir.exists():
             staged = find_staged_file(staging_dir, sha256)
-            if staged:
+            if staged and shared_files_for and staged.resolve() in shared_files_for(sha256):
+                target.shared_staged_path = staged
+            elif staged:
                 target.staged_path = staged
                 target.staged_exists = True
 
@@ -262,6 +270,7 @@ def build_cleanup_plan(
         total_transcript_dirs=sum(len(t.transcript_dirs) for t in targets),
         total_diarization_dirs=sum(len(t.diarization_dirs) for t in targets),
         total_sidecar_files=sum(len(t.sidecar_files) for t in targets),
+        total_shared_staged=sum(1 for t in targets if t.shared_staged_path),
         potential_mount_issue=potential_mount_issue,
         suspect_parent_dirs=suspect_parent_dirs or [],
     )
