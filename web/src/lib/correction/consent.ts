@@ -10,7 +10,7 @@ import { CorrectionError } from "@/lib/correction/errors";
  */
 export const CONTRIBUTOR_TERMS = {
   version: "2026-10-20",
-  text: "Souhlasím, že mé opravy přepisů mohou být zveřejněny a použity k trénování modelů pro přepis řeči. U každého schválení nebo zamítnutí se zaznamenává, jakou část úseku jsem si poslechl(a) a jakou rychlostí přehrávání.",
+  text: "Souhlasím, že mé opravy přepisů mohou být zveřejněny a použity k trénování modelů pro přepis řeči. U každého schválení nebo zamítnutí se zaznamenává, jakou část úseku jsem si poslechl(a) a jakou rychlostí přehrávání. Po smazání mého účtu zůstanou mé opravy a komentáře zachovány; jsou uložené pod interním identifikátorem, ne pod mým jménem nebo e-mailem.",
 } as const;
 
 type Client = Prisma.TransactionClient | typeof prisma;

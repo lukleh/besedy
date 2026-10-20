@@ -276,10 +276,13 @@ without it.
 **Correctors' personal data under the append-only rule.** The correction tables
 hold no name or email. `actor_key` is the account id, and `user_id` references
 the account with `ON DELETE SET NULL`. Erasure of a corrector's account deletes
-the `users` row; after that the actor key no longer resolves to a person and
-the corrections stay as pseudonymous work, as the terms state. Free-text
-comments are the corrector's own words and are covered by the terms. No row in
-the correction tables is ever updated or deleted for erasure.
+the `users` row; the corrections and comments stay under the actor key, which
+the contributor terms state. This is pseudonymous, not anonymous, data: the
+audit log keeps the account id in `subject_id` / `resource_id` of events about
+the user, and stores their email in `details`, so the mapping from actor key
+to person survives the account in the live database, and in backups in any
+case. No row in the correction tables is ever updated or deleted for erasure;
+whether erasure should also scrub the audit log is a deferred question.
 
 This version records nothing about the speakers on the recordings: no consent
 and no speaker attribution.
@@ -376,8 +379,8 @@ may only be extended.
 - Contributor consent is recorded before a workspace start and before any
   write.
 - The correction tables hold no name or email; erasure deletes the account row
-  and leaves the corrections as pseudonymous work. No correction row is ever
-  updated or deleted for erasure.
+  and leaves the corrections as pseudonymous work, which the terms state. No
+  correction row is ever updated or deleted for erasure.
 - This version records nothing about speakers.
 - The correction data is append-only, checked in CI and every night.
 - Training eligibility lives in export code.
@@ -385,6 +388,9 @@ may only be extended.
 ## Deferred questions
 
 - The exact wording of the contributor terms.
+- Whether erasing an account should also scrub the audit log of that user's
+  account id and email, which would make the corrections anonymous rather than
+  pseudonymous.
 - Recording the staged WAV's SHA-256 in the transcript meta at transcription
   time, so a workspace can prove it fingerprints the file the model decoded.
 - How the UI presents the 1,941 spans that stay under 2 s because merging
