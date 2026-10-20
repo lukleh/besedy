@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import re
 import shutil
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +24,11 @@ from besedy.lib.catalog.cleaner import (
     find_transcript_dirs,
 )
 from besedy.lib.catalog.manager import filter_catalog_rows, load_csv, resolve_hash_column
+from besedy.lib.correction_guard import (
+    ProtectedStagedAudio,
+    is_protected,
+    load_protected_staged_audio,
+)
 from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
 
 SPEAKER_EMBEDDINGS_DIRNAME = "speaker_embeddings"
@@ -84,6 +89,8 @@ class RemovalPlan:
 @dataclass
 class RemovalResult:
     files_removed: int = 0
+    # Staged audio a live correction workspace depends on is kept (ADR 0012).
+    files_kept_for_correction: list[Path] = field(default_factory=list)
     dirs_removed: int = 0
     csv_rows_removed: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
@@ -210,7 +217,11 @@ def build_removal_plan(
             plan.archived_files.extend(_existing_paths(rows, "Compressed AAC Path"))
             for webm in _existing_paths(rows, "Compressed Path"):
                 sibling = webm.with_suffix(".m4a")
-                if webm.suffix == ".webm" and sibling.is_file() and sibling not in plan.archived_files:
+                if (
+                    webm.suffix == ".webm"
+                    and sibling.is_file()
+                    and sibling not in plan.archived_files
+                ):
                     plan.archived_files.append(sibling)
 
     plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
@@ -252,15 +263,25 @@ def _remove_hash_from_csv(csv_path: Path, sha256: str) -> int:
     return removed_count
 
 
-def execute_removal(plan: RemovalPlan) -> RemovalResult:
+def execute_removal(
+    plan: RemovalPlan,
+    protected: Mapping[Path, ProtectedStagedAudio] | None = None,
+) -> RemovalResult:
     """Delete artifacts first, then drop the CSV rows only when every deletion succeeded.
 
     Keeping the rows on a partial failure leaves the recording visible to
     `catalog check`/`clean` instead of silently orphaning the surviving files.
+    Staged audio a live correction workspace depends on is kept: it is the
+    audio that workspace's corrections refer to.
     """
     result = RemovalResult()
+    if protected is None:
+        protected = load_protected_staged_audio()
 
     for path in plan.files:
+        if is_protected(path, protected):
+            result.files_kept_for_correction.append(path)
+            continue
         try:
             path.unlink(missing_ok=True)
             result.files_removed += 1

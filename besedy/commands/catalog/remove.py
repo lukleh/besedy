@@ -196,6 +196,9 @@ def handle_remove(args: argparse.Namespace) -> int:
                 "status": "removed" if result.ok else "partial",
                 **_plan_payload(plan),
                 "files_removed": result.files_removed,
+                "files_kept_for_correction": [
+                    str(path) for path in result.files_kept_for_correction
+                ],
                 "dirs_removed": result.dirs_removed,
                 "csv_rows_removed": result.csv_rows_removed,
                 "errors": result.errors,
@@ -203,4 +206,6 @@ def handle_remove(args: argparse.Namespace) -> int:
         )
     else:
         print(_format_plan(plan, executed=result))
+        for path in result.files_kept_for_correction:
+            print(f"Kept {path}: a correction workspace depends on it")
     return 0 if result.ok else 1

@@ -139,6 +139,13 @@ def _format_execution_report(
     lines.append(f"  - {result.transcript_dirs_removed} transcript directories")
     lines.append(f"  - {result.diarization_dirs_removed} diarization directories")
     lines.append(f"  - {result.sidecar_files_removed} transcript sidecar files")
+    if result.staged_kept_for_correction:
+        lines.append("")
+        lines.append(
+            f"Kept {len(result.staged_kept_for_correction)} staged WAV files that "
+            "correction workspaces depend on:"
+        )
+        lines.extend(f"  - {path}" for path in result.staged_kept_for_correction)
 
     if result.errors:
         lines.append("")
@@ -682,6 +689,9 @@ def handle_clean(args: argparse.Namespace) -> int:
                     "hashes_failed": getattr(result, "hashes_failed", 0),
                     "failed_hashes": getattr(result, "failed_hashes", []),
                     "staged_removed": result.staged_removed,
+                    "staged_kept_for_correction": [
+                        str(path) for path in result.staged_kept_for_correction
+                    ],
                     "transcript_dirs_removed": result.transcript_dirs_removed,
                     "diarization_dirs_removed": result.diarization_dirs_removed,
                     "sidecar_files_removed": result.sidecar_files_removed,

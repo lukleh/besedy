@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import shutil
 import threading
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +49,11 @@ from besedy.lib.audio.types import (
     SkippedEntry,
     detect_logical_cpus,
 )
+from besedy.lib.correction_guard import (
+    ProtectedStagedAudio,
+    is_protected,
+    load_protected_staged_audio,
+)
 from besedy.lib.workflow.common import CsvAudioRow, resolve_unicode_path
 
 
@@ -64,8 +69,17 @@ def stage_audio_files(
     reuse_existing: bool = False,
     aggressive_normalization: bool = True,
     verbose: bool = False,
+    protected: Mapping[Path, ProtectedStagedAudio] | None = None,
 ) -> tuple[list[PreparedEntry], list[SkippedEntry]]:
-    """Stage audio files by converting to normalized 16kHz mono WAV."""
+    """Stage audio files by converting to normalized 16kHz mono WAV.
+
+    Without ``reuse_existing`` existing staged files are replaced, except the
+    ones live correction workspaces depend on (read from the corrections tree
+    when ``protected`` is omitted).
+    """
+    if protected is None and not reuse_existing:
+        protected = load_protected_staged_audio()
+    protected = protected or {}
     prepared: list[PreparedEntry] = []
     skipped: list[SkippedEntry] = []
     seen_hashes: dict[str, Path] = {}
@@ -95,7 +109,17 @@ def stage_audio_files(
                 raise RuntimeError(f"Duplicate hash encountered: {row.sha256}")
             continue
 
-        if (staged_path.exists() or staged_path.is_symlink()) and reuse_existing:
+        # A live correction workspace depends on this exact file (ADR 0012), so
+        # even an overwrite reuses it rather than staging it again.
+        keep_for_correction = not reuse_existing and is_protected(staged_path, protected)
+        if keep_for_correction and (staged_path.exists() or staged_path.is_symlink()):
+            logging.warning(
+                "[stage_audio_files] keeping %s: a correction workspace depends on it",
+                staged_path,
+            )
+        if (staged_path.exists() or staged_path.is_symlink()) and (
+            reuse_existing or keep_for_correction
+        ):
             if not exists:
                 logging.warning(
                     "[stage_audio_files] source missing for %s; reusing existing staged file %s",

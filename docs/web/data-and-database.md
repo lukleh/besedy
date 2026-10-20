@@ -270,7 +270,22 @@ catalog guide revision, cuts spans with `contracts/correction-segmentation.json`
 rules, fingerprints the staged audio named by the source's
 `meta.audio_filepath`, and writes `workspace.json` next to the frozen source.
 That manifest (status, segmentation version and staged-audio identity) is what
-the Python side reads to keep the staged audio of a live workspace unchanged.
+the Python side reads to keep the staged audio of a live workspace unchanged:
+`catalog clean` and `catalog remove` keep those files and report them, and
+`stage-audio --overwrite` reuses them instead of staging them again
+(`besedy/lib/correction_guard.py`). A manifest that cannot be read stops those
+commands, because nothing could then tell which audio it protects.
+
+Two more guards keep the correction data as it was recorded:
+
+- `web/tests/unit/correction-migration-guard.test.ts` fails on any migration
+  after the contract that drops, renames or retypes a correction column,
+  deletes or rewrites correction rows, or makes deletes cascade into them.
+- `web/scripts/correction-integrity-check.sh`, run nightly from the host's
+  cron, checks every live workspace: the frozen source against its
+  fingerprint, the stored spans against a fresh segmentation of it, the staged
+  audio's size and SHA-256, the manifest, and every revision against its text
+  hash. It mails `ALERT_EMAIL` when anything differs or the check cannot run.
 
 Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status
