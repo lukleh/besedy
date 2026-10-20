@@ -558,7 +558,9 @@
       }
     },
     "consentTitle": "Souhlas s použitím oprav",
-    "consentAccept": "Souhlasím"
+    "consentAccept": "Souhlasím",
+    "consentLoadFailed": "Nepodařilo se ověřit souhlas s použitím oprav. Bez něj nelze opravovat.",
+    "consentRetry": "Zkusit znovu"
   },
   "metadata": {
     "title": "Metadata",

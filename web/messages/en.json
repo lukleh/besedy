@@ -558,7 +558,9 @@
       }
     },
     "consentTitle": "Consent to use your corrections",
-    "consentAccept": "I agree"
+    "consentAccept": "I agree",
+    "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
+    "consentRetry": "Try again"
   },
   "metadata": {
     "title": "Metadata",
