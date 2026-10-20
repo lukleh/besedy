@@ -49,6 +49,10 @@ class HashDecoderMismatchError(Exception):
 
 _lock = threading.Lock()
 _verified: set[tuple[str, int, int]] = set()
+# Failures are remembered too: `create`/`add` queue every file on a thread
+# pool that still runs them all after the first raises, and each must fail at
+# once instead of decoding the fixtures again.
+_mismatched: dict[tuple[str, int, int], str] = {}
 
 
 def require_reproducible_hash_decoder(
@@ -58,7 +62,7 @@ def require_reproducible_hash_decoder(
     """Raise `HashDecoderMismatchError` unless ``ffmpeg_binary`` reproduces the pins.
 
     ``decode(path, ffmpeg_binary)`` is the unchecked hash function. A binary is
-    checked once per process, keyed by its resolved path, size and mtime, so
+    checked once per process, pass or fail, keyed by its resolved path, size and mtime, so
     replacing it in place is checked again. An ffmpeg that is not found is left
     to the decode itself, which reports the file as undecodable.
     """
@@ -73,17 +77,20 @@ def require_reproducible_hash_decoder(
     with _lock:
         if key in _verified:
             return
+        if key in _mismatched:
+            raise HashDecoderMismatchError(_mismatched[key])
         mismatched = [
             name
             for name, expected in PINNED_HASHES.items()
             if decode(FIXTURES_DIR / name, ffmpeg_binary) != expected
         ]
         if mismatched:
-            raise HashDecoderMismatchError(
+            _mismatched[key] = (
                 f"{real} does not reproduce the pinned audio hashes of "
                 f"{len(mismatched)}/{len(PINNED_HASHES)} fixtures ({', '.join(mismatched)}), "
                 "so it would give catalog audio different identities than the known-good "
                 f"builds. Use a build listed in {FIXTURES_DIR / 'README.md'}, or set "
                 f"{SKIP_ENV}=1 for a throwaway catalog that never meets real ones."
             )
+            raise HashDecoderMismatchError(_mismatched[key])
         _verified.add(key)

@@ -319,6 +319,7 @@ class TestHashDecoderCheck:
     def _check_enabled(self, monkeypatch):
         monkeypatch.delenv(SKIP_ENV, raising=False)
         monkeypatch.setattr(hash_decoder_check, "_verified", set())
+        monkeypatch.setattr(hash_decoder_check, "_mismatched", {})
 
     @staticmethod
     def _stub_ffmpeg(tmp_path: Path, output: str = "chunk") -> Path:
@@ -351,6 +352,19 @@ class TestHashDecoderCheck:
 
         assert sorted(path.name for path in decoded) == sorted(PINNED_HASHES)
         assert all(path.parent == FIXTURES_DIR and path.is_file() for path in decoded)
+
+    def test_mismatching_build_is_checked_once(self, tmp_path):
+        stub = self._stub_ffmpeg(tmp_path)
+        decoded: list[Path] = []
+
+        def decode(path: Path, binary: str) -> None:
+            decoded.append(path)
+
+        for _ in range(3):
+            with pytest.raises(HashDecoderMismatchError, match=r"8/8 fixtures"):
+                hash_decoder_check.require_reproducible_hash_decoder(str(stub), decode)
+
+        assert len(decoded) == len(PINNED_HASHES)
 
     def test_replaced_binary_is_checked_again(self, tmp_path):
         stub = self._stub_ffmpeg(tmp_path)
