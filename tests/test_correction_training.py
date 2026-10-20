@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from besedy.lib.correction_training import (
-    DEFAULT_TEST_RECORDINGS_PATH,
     SPAN_COVERAGE_MISMATCH,
     TrainingExportError,
     build_dataset,
@@ -21,6 +20,7 @@ from besedy.lib.correction_training import (
     merge_training_exports,
     strip_fillers,
 )
+from besedy.lib.correction_training import test_recordings_path as listed_path
 
 SR = 16000
 HASH = "a" * 64
@@ -144,7 +144,7 @@ def test_test_recordings_and_fillers_follow_the_export_options(tree, tmp_path: P
         export,
         root,
         output,
-        test_recordings=load_test_recordings(test_file, CATALOG),
+        test_recordings=load_test_recordings(test_file),
         test_recordings_source=str(test_file),
         keep_fillers=False,
     )
@@ -157,29 +157,26 @@ def test_test_recordings_and_fillers_follow_the_export_options(tree, tmp_path: P
     assert policy["test_recordings_source"] == str(test_file)
 
 
-def test_the_repository_lists_test_recordings_per_catalog(tmp_path: Path) -> None:
-    document = json.loads(DEFAULT_TEST_RECORDINGS_PATH.read_text(encoding="utf-8"))
-    assert document["version"] == 1
-    assert isinstance(document["catalogs"], dict)
-    for catalog_id, hashes in document["catalogs"].items():
-        assert re.fullmatch(r"\d{8}_\d{6}", catalog_id), catalog_id
-        assert isinstance(hashes, list) and len(hashes) == len(set(hashes))
-        for value in hashes:
-            assert re.fullmatch(r"[0-9a-f]{64}", value), value
+def test_a_catalog_lists_its_test_recordings_next_to_its_corrections(tmp_path: Path) -> None:
+    listed = listed_path(tmp_path / "corrections", CATALOG)
+    assert listed == tmp_path / "corrections" / f"corrections_{CATALOG}" / "test-recordings.json"
 
-    listed = tmp_path / "test-recordings.json"
-    listed.write_text(json.dumps({"version": 1, "catalogs": {CATALOG: [HASH]}}), encoding="utf-8")
-    assert load_test_recordings(listed, CATALOG) == {HASH}
-    with pytest.raises(TrainingExportError, match="names no test recordings"):
-        load_test_recordings(listed, "20200101_000000")
-    listed.write_text(json.dumps({"version": 1, "catalogs": {CATALOG: []}}), encoding="utf-8")
-    assert load_test_recordings(listed, CATALOG) == set()
-    listed.write_text(json.dumps({"version": 2, "catalogs": {}}), encoding="utf-8")
+    with pytest.raises(TrainingExportError, match="No test recordings are listed"):
+        load_test_recordings(listed)
+    listed.parent.mkdir(parents=True)
+    listed.write_text(json.dumps({"version": 1, "audio_hashes": [HASH]}), encoding="utf-8")
+    assert load_test_recordings(listed) == {HASH}
+    listed.write_text(json.dumps({"version": 1, "audio_hashes": []}), encoding="utf-8")
+    assert load_test_recordings(listed) == set()
+    listed.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    with pytest.raises(TrainingExportError, match="audio_hashes"):
+        load_test_recordings(listed)
+    listed.write_text(json.dumps({"version": 2, "audio_hashes": []}), encoding="utf-8")
     with pytest.raises(TrainingExportError, match="version"):
-        load_test_recordings(listed, CATALOG)
+        load_test_recordings(listed)
     listed.write_text(json.dumps(["ABC"]), encoding="utf-8")
     with pytest.raises(TrainingExportError, match="64-character"):
-        load_test_recordings(listed, CATALOG)
+        load_test_recordings(listed)
 
 
 def test_excluded_chunks_are_counted_with_their_reasons(tree) -> None:
@@ -309,10 +306,10 @@ def test_the_command_writes_next_to_the_audio_artifacts(tree, tmp_path: Path, mo
     monkeypatch.setattr(catalog_cli, "install_signal_handlers", lambda: None)
 
     argv = ["training-export", "--export-json", str(export_file), "--corrections-root", str(root)]
-    # The repository list names no catalog yet, so the export refuses ...
+    # The catalog lists no test recordings yet, so the export refuses ...
     assert catalog_cli.main(argv) == 1
     assert not (artifacts / "training").exists()
-    # ... unless setting nothing aside is asked for.
+    # ... unless setting nothing aside is asked for ...
     assert catalog_cli.main([*argv, "--no-test-recordings"]) == 0
     latest = artifacts / "training" / "training_export"
     assert latest.is_symlink()
@@ -320,6 +317,15 @@ def test_the_command_writes_next_to_the_audio_artifacts(tree, tmp_path: Path, mo
     assert (latest / "manifest.jsonl").is_file()
     policy = json.loads((latest / "dataset.json").read_text())["policy"]
     assert policy["test_recordings_source"] == "none (--no-test-recordings)"
+
+    # ... and once the list sits next to the catalog's corrections, it is used.
+    listed = listed_path(root, CATALOG)
+    listed.write_text(json.dumps({"version": 1, "audio_hashes": [HASH]}), encoding="utf-8")
+    second = tmp_path / "second"
+    assert catalog_cli.main([*argv, "--output-dir", str(second)]) == 0
+    policy = json.loads((second / "dataset.json").read_text())["policy"]
+    assert policy["test_recordings"] == [HASH]
+    assert policy["test_recordings_source"] == str(listed)
 
 
 def test_the_command_rejects_a_map_path_without_a_target(tree, tmp_path: Path, monkeypatch, capsys):
