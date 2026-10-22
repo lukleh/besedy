@@ -1,6 +1,7 @@
 # Exact package set of the besedy/whisperx:local image built on 2026-06-14
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
 # 2026-10-06: security patch bumps of non-model packages, pip check clean.
+# 2026-10-22: certifi 2026.10.19 (drops the eMudhra emSign ECC Root CA - G3).
 # Top-level: whisperx python-dotenv. whisperx 3.8.6 requires torch~=2.8, so
 # torch comes from PyPI and this lock needs no PyTorch index.
 aiohappyeyeballs==2.6.2
@@ -11,7 +12,7 @@ antlr4-python3-runtime==4.9.3
 asteroid-filterbanks==0.4.0
 attrs==26.1.0
 av==17.1.0
-certifi==2026.5.20
+certifi==2026.10.19
 charset-normalizer==3.4.7
 click==8.4.1
 colorlog==6.10.1

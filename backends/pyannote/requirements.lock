@@ -1,6 +1,7 @@
 # Exact package set of the besedy/pyannote:local image built on 2026-06-14
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
 # 2026-10-06: security patch bumps of non-model packages, pip check clean.
+# 2026-10-22: certifi 2026.10.19 (drops the eMudhra emSign ECC Root CA - G3).
 # Top-level: torch torchaudio (cu128 index); pyannote-audio==4.0.1
 # huggingface-hub numpy omegaconf python-dotenv pyyaml scipy soundfile toml tqdm
 --extra-index-url https://download.pytorch.org/whl/cu128
@@ -13,7 +14,7 @@ antlr4-python3-runtime==4.9.3
 anyio==4.14.2
 asteroid-filterbanks==0.4.0
 attrs==26.1.0
-certifi==2026.5.20
+certifi==2026.10.19
 cffi==2.0.0
 charset-normalizer==3.4.7
 click==8.4.1

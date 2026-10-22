@@ -1,6 +1,7 @@
 # Exact package set of the besedy/faster-whisper:local image built on 2026-06-14
 # (pip freeze --all). Installed with --no-deps; see docs/backends.md.
 # 2026-10-06: security patch bumps of non-model packages, pip check clean.
+# 2026-10-22: certifi 2026.10.19 (drops the eMudhra emSign ECC Root CA - G3).
 # Top-level: torch torchaudio torchvision (cu128 index); faster-whisper==1.2.1
 # silero-vad==6.2.0 ctranslate2 safetensors numpy python-dotenv pyyaml scipy
 # sentencepiece soundfile transformers tqdm
@@ -8,7 +9,7 @@
 annotated-doc==0.0.4
 anyio==4.14.2
 av==17.1.0
-certifi==2026.5.20
+certifi==2026.10.19
 cffi==2.0.0
 click==8.4.1
 ctranslate2==4.8.0
