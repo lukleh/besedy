@@ -164,8 +164,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-web
+      # Each entry is about 400 MB and the key changes with almost any web
+      # source edit, so only pushes to main save one (see the save step).
+      # PRs restore from main's entries through the restore key: a cache saved
+      # on a PR branch is visible to that branch alone, and saving one per push
+      # pushed the repository past its cache quota, evicting node_modules.
       - name: Restore Next.js build cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: next-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: web/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/src/**', 'web/public/**', 'web/messages/**', 'web/prisma/**', 'web/package.json', 'web/next.config.ts', 'web/tsconfig.json', 'web/postcss.config.mjs', 'web/prisma.config.ts') }}
@@ -180,6 +186,15 @@ jobs:
           # Build-time placeholders only; production injects real values.
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           BETTER_AUTH_URL: http://localhost:3000
+      - name: Save Next.js build cache
+        if: >-
+          github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && steps.next-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: web/.next/cache
+          key: ${{ steps.next-cache.outputs.cache-primary-key }}
 
   # The main ruleset requires this check name and no other web check, so it
   # stays and gates every web job, including the build and the correction

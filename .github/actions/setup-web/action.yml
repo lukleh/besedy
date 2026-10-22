@@ -5,10 +5,14 @@ description: >-
 runs:
   using: composite
   steps:
+    # An exact version, because the node_modules key below includes it: with
+    # a floating "24" every Node patch release made all web jobs miss and
+    # store another copy of node_modules. Bump it by hand, keeping to the
+    # major of web/Dockerfile's node image.
     - id: node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: "24"
+        node-version: "24.22.1"
     # Cache the installed tree rather than npm's download cache: a hit skips
     # npm ci entirely. The key carries the OS, architecture and exact Node
     # version so native modules are rebuilt when the runner changes, and
