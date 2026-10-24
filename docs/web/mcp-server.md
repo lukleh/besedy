@@ -145,9 +145,16 @@ queries there.
   concurrent refreshes to keep this covered. Do not remove the lock to simplify.
 - OAuth client registration supports both mechanisms needed by remote clients:
   Client ID Metadata Documents (CIMD) for MCP 2026-07-28 clients such as Codex,
-  and RFC 7591 Dynamic Client Registration (DCR) as a compatibility fallback
-  for clients such as Claude. Both are discovery-driven; users do not create or
-  paste Besedy API keys.
+  Claude Code, and Claude connectors, and RFC 7591 Dynamic Client Registration
+  (DCR) as a compatibility fallback for clients such as Mistral's connector.
+  Both are discovery-driven; users do not create or paste Besedy API keys. A
+  client may list grants Besedy does not issue (Claude's CIMD document lists
+  `urn:ietf:params:oauth:grant-type:jwt-bearer`). Registration needs only one
+  shared grant: DCR drops the others, while a CIMD client is stored with its
+  full list and the token endpoint refuses any grant Besedy does not support.
+  Adding a grant handler therefore opens it to every stored client that
+  already lists it. `tests/unit/cimd-claude-ai.test.ts` keeps Claude's
+  document accepted.
 - DCR registration is open because an MCP client must register before a user is
   signed in. Registration creates only an OAuth application identity and grants
   no Besedy access. Public clients must use S256 PKCE, redirect URIs are matched

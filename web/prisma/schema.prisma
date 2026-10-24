@@ -181,7 +181,7 @@ model User {
 
 model Account {
   id                    String    @id @default(cuid())
-  issuer                String
+  issuer                String?
   userId                String    @map("user_id")
   accountId             String    @map("account_id")
   providerId            String    @map("provider_id")

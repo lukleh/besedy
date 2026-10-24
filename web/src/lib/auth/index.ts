@@ -93,7 +93,6 @@ export const auth = betterAuth({
             config: [
               {
                 providerId: "mock-oauth",
-                accountIssuer: "local:oauth:mock-oauth",
                 accountSubject: ({ profile }) => {
                   if (typeof profile.sub !== "string" || profile.sub.length === 0) {
                     throw new Error("Mock OAuth profile is missing a subject");
@@ -129,10 +128,11 @@ export const auth = betterAuth({
             loginPage: "/auth/mcp-signin",
             consentPage: "/auth/mcp-consent",
             resource: mcpResourceUrl,
-            // MCP 2026-07-28 prefers CIMD, while clients such as Claude still
-            // require RFC 7591 DCR. Registration creates only an OAuth client
-            // identity; PKCE, user consent, scopes, and live Besedy
-            // authorization remain mandatory before any data is returned.
+            // MCP 2026-07-28 prefers CIMD, while clients such as Mistral's
+            // connector still require RFC 7591 DCR. Registration creates only
+            // an OAuth client identity; PKCE, user consent, scopes, and live
+            // Besedy authorization remain mandatory before any data is
+            // returned.
             allowDynamicClientRegistration: true,
             allowUnauthenticatedClientRegistration: true,
             clientRegistrationRequirePKCE: true,
