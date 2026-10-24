@@ -11,7 +11,7 @@ const JSON_CONTENT_TYPE_RE = /^application\/(?:[-\w.]+\+)?json\s*(?:;|$)/i;
 
 // Keep this explicit so a Better Auth upgrade must revisit the local transport
 // instead of silently retaining a fork of an older SDK implementation.
-export const CIMD_TRANSPORT_SDK_VERSION = '1.7.1';
+export const CIMD_TRANSPORT_SDK_VERSION = '1.7.12';
 
 function responseHeaders(headers: NodeJS.Dict<string | string[]>): Headers {
   const result = new Headers();
@@ -56,13 +56,14 @@ async function lookupWithSignal(
 }
 
 /**
- * Node 24-compatible variant of @better-auth/cimd/node's secure transport.
+ * Hardened variant of @better-auth/cimd/node's secure transport.
  *
- * Better Auth 1.7.1 always invokes the lookup callback in single-address form.
- * Node 24 requests `all: true` while auto-selecting an address and therefore
- * requires an array. Keep the SDK's resolve-once DNS validation, connection
- * pinning, TLS hostname, and no-redirect behavior while returning the callback
- * shape requested by Node.
+ * Keeps the SDK's resolve-once DNS validation, connection pinning, TLS
+ * hostname, and no-redirect behavior. Since 1.7.12 the SDK also answers Node
+ * 24's `all: true` lookup, but this transport still differs: it aborts during
+ * DNS resolution, hands Node every validated address instead of only the
+ * first, rejects an out-of-range HTTP status instead of throwing from the
+ * response callback, and streams a body only for a 200 JSON response.
  */
 export const fetchCimdClientMetadataResource: ClientMetadataResourceFetch =
   async (input, init) => {
