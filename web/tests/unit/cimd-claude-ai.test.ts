@@ -51,7 +51,7 @@ function createAuth() {
   );
   const auth = betterAuth({
     baseURL: BASE_URL,
-    secret: 'cimd-claude-ai-test-secret-0123456789abcdef',
+    secret: 'x'.repeat(32),
     // The memory adapter needs one array per model the plugins touch.
     database: memoryAdapter(
       Object.fromEntries(MEMORY_MODELS.map((model) => [model, []])),
