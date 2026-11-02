@@ -113,6 +113,43 @@ export async function resolveSearchTranscriptSource(
   return { kind: "machine" };
 }
 
+/** Bulk form for MCP results, which ask about every recording on a page. */
+export async function resolveSearchTranscriptSources(
+  catalogId: string,
+  audioHashes: readonly string[]
+): Promise<Map<string, TranscriptSource>> {
+  const resolved = new Map<string, TranscriptSource>();
+  if (audioHashes.length === 0) return resolved;
+
+  const workspaces = await prisma.transcriptWorkspace.findMany({
+    where: {
+      workflowGroupId: catalogId,
+      audioHash: { in: [...audioHashes] },
+      status: "ACTIVE",
+    },
+    select: { id: true, audioHash: true, searchPublicationId: true },
+  });
+  const workspaceByHash = new Map(
+    workspaces.map((workspace) => [workspace.audioHash, workspace])
+  );
+
+  for (const audioHash of audioHashes) {
+    const workspace = workspaceByHash.get(audioHash);
+    resolved.set(
+      audioHash,
+      workspace?.searchPublicationId
+        ? {
+            kind: "publication",
+            workspaceId: workspace.id,
+            publicationId: workspace.searchPublicationId,
+          }
+        : { kind: "machine" }
+    );
+  }
+
+  return resolved;
+}
+
 export type OriginalTranscriptSource =
   | { kind: "machine" }
   | { kind: "frozen"; workspaceId: string; backend: string };

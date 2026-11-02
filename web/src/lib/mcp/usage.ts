@@ -20,6 +20,7 @@ const CATALOG_SCOPED_TOOLS = new Set([
   'get_transcript',
   'search_transcripts',
   'find_transcript_mentions',
+  'list_bookmarks',
 ]);
 
 type ToolResult = CallToolResult | InputRequiredResult;
