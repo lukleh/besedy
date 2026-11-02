@@ -7,6 +7,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -675,12 +676,6 @@ interface TranscriptSegmentRowProps {
   onSeek: (time: number) => void;
 }
 
-/** The word playing at `time`, or -1 between words and outside the segment. */
-function playingWordAt(segment: TranscriptSegment, time: number): number {
-  if (time < segment.start || time >= segment.end || !segment.words) return -1;
-  return segment.words.findIndex((word) => time >= word.start && time < word.end);
-}
-
 const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   segment,
   segmentIdx,
@@ -708,47 +703,52 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   // idle leaves only the marker beside the row.
   const highlighted = clock !== null;
 
+  // Set before paint, so a row that stops being followed reports nothing
+  // from a time update that arrives before its subscription is cleaned up.
   const followedRef = useRef(followed);
-  const onFollowRef = useRef(onFollow);
-  useEffect(() => {
+  useLayoutEffect(() => {
     followedRef.current = followed;
-    onFollowRef.current = onFollow;
-  }, [followed, onFollow]);
+  }, [followed]);
 
-  // The word being played is marked on its element instead of rendered: it
-  // changes a few times a second, and re-rendering the row for each word cost
-  // more than the change itself. Nothing runs on time updates within a word.
-  const playingWordRef = useRef<Element | null>(null);
+  // Reports what following keeps in view: the playing word, or the whole text
+  // without word timings. The word is marked on its element instead of
+  // rendered: it changes a few times a second, and re-rendering the row for
+  // each word cost more than the change itself. Nothing runs on time updates
+  // within a word. Becoming the followed row subscribes again, which reports.
+  const textRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const row = rowElementRef.current;
-    if (!clock || !withWords || !row) return;
+    if (!clock || !row) return;
+    const report = (element: Element | null) => {
+      if (element && followedRef.current) onFollow(element);
+    };
+    const words = withWords ? segment.words : undefined;
+    if (!words) {
+      report(textRef.current);
+      return;
+    }
     let playing = -1;
+    let word: Element | null = null;
     const mark = () => {
-      const index = playingWordAt(segment, clock.get());
+      const time = clock.get();
+      const index =
+        time < segment.start || time >= segment.end
+          ? -1
+          : words.findIndex((w) => time >= w.start && time < w.end);
       if (index === playing) return;
       playing = index;
-      playingWordRef.current?.removeAttribute("data-playing");
-      const word = index >= 0 ? row.querySelector(`[data-word="${index}"]`) : null;
+      word?.removeAttribute("data-playing");
+      word = index >= 0 ? row.querySelector(`[data-word="${index}"]`) : null;
       word?.setAttribute("data-playing", "");
-      playingWordRef.current = word;
-      if (word && followedRef.current) onFollowRef.current(word);
+      report(word);
     };
     mark();
     const unsubscribe = clock.subscribe(mark);
     return () => {
       unsubscribe();
-      playingWordRef.current?.removeAttribute("data-playing");
-      playingWordRef.current = null;
+      word?.removeAttribute("data-playing");
     };
-  }, [clock, segment, withWords]);
-
-  // The playing word, or the whole text without word timings, once this row
-  // becomes the followed one.
-  const textRef = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const element = withWords ? playingWordRef.current : textRef.current;
-    if (followed && highlighted && element) onFollow(element);
-  }, [followed, highlighted, withWords, onFollow]);
+  }, [clock, segment, withWords, followed, onFollow]);
 
   const showSpeakerLabel = !!speaker && !!speakerLabelClass;
   const rowClass = `py-1 ${rowMarkerClass(active)} ${
@@ -774,11 +774,12 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
             <span
               data-word={wordIdx}
               // The word highlight moves a few times a second, so it changes
-              // only colours, without fading: a heavier font would reflow the
-              // row and a fade would redraw it on every frame.
+              // only paint, without fading: a heavier font would reflow the
+              // row and a fade would redraw it on every frame. The ring marks
+              // the word for readers who cannot tell the shades apart.
               className={`cursor-pointer rounded px-0.5 ${
                 highlighted
-                  ? "bg-primary/10 data-[playing]:bg-primary/30"
+                  ? "bg-primary/10 data-[playing]:bg-primary/30 data-[playing]:ring-1 data-[playing]:ring-primary/60"
                   : "transition-colors hover:bg-muted/50"
               }`}
               onClick={() => onSeek(word.start)}
