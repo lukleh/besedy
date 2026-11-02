@@ -1,6 +1,9 @@
 const DEFAULT_AUTH_ORIGIN = 'http://localhost:3001';
 
 export const MCP_READ_SCOPE = 'besedy:read';
+// The user's own bookmarks and their comments are private notes rather than
+// corpus data, so a client must be granted them separately.
+export const MCP_BOOKMARKS_SCOPE = 'besedy:bookmarks';
 export const MCP_PROFILE_SCOPE = 'profile';
 export const MCP_EMAIL_SCOPE = 'email';
 export const MCP_AUTH_SCOPES = [
@@ -9,6 +12,7 @@ export const MCP_AUTH_SCOPES = [
   MCP_EMAIL_SCOPE,
   'offline_access',
   MCP_READ_SCOPE,
+  MCP_BOOKMARKS_SCOPE,
 ] as const;
 
 // Keep refresh credentials durable so reconnects stay seamless. Access JWTs are

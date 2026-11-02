@@ -2,7 +2,7 @@
 
 > Status: authenticated read surface implemented
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-11-02
 
 This document covers the design of the MCP server: scope, architecture,
 authentication, access rules, catalog resolution, telemetry, testing, and the
@@ -75,6 +75,8 @@ serialization:
    tool, but each invocation must still authorize its resolved catalog and apply
    listener visibility. Response serialization must also enforce OAuth scopes:
    `profile` controls the account name, while `email` controls the email field.
+   The one tool that returns the user's private data, `list_bookmarks`, is
+   registered only when the client holds `besedy:bookmarks`.
    Expose only fields an agent needs for the documented workflow; internal
    flags, roles, and index bookkeeping stay out of tool results.
 5. **Share one policy snapshot inside the tool request.** The transport is
@@ -210,8 +212,9 @@ actor's [`CatalogRole`](../adr/0005-catalog-permission-model.md) for the
 catalog in question (`listener`, `reader`, `corrector`, `host`, `curator`, or
 `catalog_admin`). The system-level `admin`/`superadmin` tiers hold no catalog
 grant at all and reach every catalog through `isCatalogAdmin`; every other row
-is an ordinary per-catalog role. Every active account receives all tools;
-catalog grants determine which catalogs contain readable data.
+is an ordinary per-catalog role. Every active account receives all tools
+(`list_bookmarks` additionally needs the `besedy:bookmarks` scope); catalog
+grants determine which catalogs contain readable data.
 
 | User/catalog relationship |        List catalog |      List/get event | See unreleased event | Get recording metadata |             Get transcript |                              Search transcripts |
 | -------------------------- | ------------------: | ------------------: | -------------------: | ----------------------: | --------------------------: | ----------------------------------------------: |
@@ -293,10 +296,26 @@ Consequences to keep in mind when changing either surface:
 
 ## Tool discovery and per-call authorization
 
-Every active user receives all ten tools. Tool discovery does not authorize an
-invocation: every catalog-scoped call still checks that the resolved target is
-in the user's live accessible catalog list. An inaccessible catalog uses
+Every active user receives all corpus tools. Tool discovery does not authorize
+an invocation: every catalog-scoped call still checks that the resolved target
+is in the user's live accessible catalog list. An inaccessible catalog uses
 not-found semantics.
+
+### Design decision: bookmarks behind their own scope
+
+`list_bookmarks` exposes the user's own bookmarks and the comments on them.
+Those comments are private notes, not corpus data, so a client sees the tool
+only when the user granted it the `besedy:bookmarks` scope, which the consent
+screen describes separately. `besedy:read` alone never returns them. Besedy
+advertises the scope with the others, so clients that request every advertised
+scope ask for it; a connection authorized before the scope existed has to be
+authorized again to get it.
+
+Bookmarks are stored without an access check and are filtered when read. MCP
+filters them through the same uniform listener visibility as every other tool,
+not through the user's web grant, so a curator's bookmark on an unreleased
+recording stays hidden from MCP even though the bookmarks page shows it. The
+tool is read-only; agents cannot create or change bookmarks.
 
 `list_catalogs` includes `isDefault` for the effective default that an omitted
 `catalogId` will resolve. Web roles and system authority do not change MCP
@@ -391,7 +410,7 @@ provider, never production, and contains two tests.
 The first signs in as the seeded catalog owner through the mock OAuth UI,
 accepts the MCP consent screen, exchanges an authorization code with PKCE,
 validates the audience-bound JWT, exercises stored-token issue and revocation,
-sends MCP 2026-07-28 `tools/list`, and calls all ten tools. It verifies
+sends MCP 2026-07-28 `tools/list`, and calls every corpus tool. It verifies
 default-catalog resolution, uniform MCP tool availability, listener-scoped
 metadata reads, complete transcript retrieval, exact result key sets, and a
 grounded RAG result from a deterministic test-only ColBERT mock. Catalog-scoped
@@ -402,6 +421,8 @@ checks that only released events are listed, that the unreleased event, its
 recording, and its transcript all return `not_found` from every read and search
 tool, and that a released transcript and a grounded search result are still
 available, which asserts the documented listener transcript-access decision.
+It also inserts a bookmark on a released and on a hidden recording and checks
+that `list_bookmarks` returns only the released one.
 It then signs in as the seeded account with no catalog grant and checks for an
 empty catalog list, `catalog_required` without a `catalogId`, and `not_found`
 with one. Each sign-in uses a fresh browser context so one user's session cookie
