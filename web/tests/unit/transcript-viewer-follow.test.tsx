@@ -19,6 +19,8 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+// Desktop, so the View menu is the dropdown (the mobile drawer always stays open).
+vi.mock("@/hooks/use-media-query", () => ({ useIsDesktop: () => true }));
 vi.mock("@/components/transcript/transcript-viewer-content", () => ({
   TranscriptSkeleton: () => <div>Loading transcript</div>,
   TranscriptContent: (props: TranscriptContentProps) => {
@@ -160,6 +162,24 @@ describe("TranscriptViewer follow mode and layers", () => {
     await contentProps();
 
     await waitFor(() => expect(viewButtonName()).toBe("view1"));
+  });
+
+  it("greys speakers out in the View menu when the recording has none, and stays open", async () => {
+    speakerBackends(async () => ({ hash: HASH, backends: [] }));
+    renderViewer(vi.fn(), true);
+    const props = await contentProps();
+    await waitFor(() => expect(viewButtonName()).toBe("view1"));
+
+    // The desktop tree comes first; its trigger opens the dropdown.
+    fireEvent.keyDown(screen.getAllByRole("button", { name: /^view/ })[0], { key: "Enter" });
+    const speakers = await screen.findByRole("menuitemcheckbox", { name: /speakers/ });
+    expect(speakers).toHaveAttribute("aria-disabled", "true");
+    expect(speakers).toHaveAttribute("aria-checked", "false");
+    expect(speakers).toHaveTextContent("layerUnavailable");
+
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /timestamps/ }));
+    expect(props().showTimestamps).toBe(false);
+    expect(screen.getByRole("menuitemcheckbox", { name: /timestamps/ })).toBeInTheDocument();
   });
 
   it("shows speakers when the recording has them", async () => {

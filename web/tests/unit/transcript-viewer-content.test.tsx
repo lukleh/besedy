@@ -525,6 +525,67 @@ describe("TranscriptContent scrolling", () => {
     expect(screen.queryByRole("button", { name: "backToPlayback" })).not.toBeInTheDocument();
   });
 
+  describe("after a resize or reflow", () => {
+    let resizeCallbacks: ResizeObserverCallback[] = [];
+    beforeEach(() => {
+      resizeCallbacks = [];
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(callback: ResizeObserverCallback) {
+            resizeCallbacks.push(callback);
+          }
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+    });
+    // Observers report the current sizes once when they start observing.
+    const resize = () =>
+      act(() => {
+        for (const callback of resizeCallbacks) callback([], {} as ResizeObserver);
+      });
+
+    it("brings the followed word back when the rows reflow", () => {
+      contentRect = { top: 200, bottom: 220, height: 20 };
+      render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
+      resize();
+      expect(elementScrollTo).not.toHaveBeenCalled();
+
+      // A layer toggled: the same word is now below the band.
+      contentRect = { top: 900, bottom: 920, height: 20 };
+      resize();
+
+      expect(elementScrollTo).toHaveBeenCalledWith({ top: 610, behavior: "smooth" });
+    });
+
+    it("re-measures where playback is while idle", () => {
+      contentRect = { top: 200, bottom: 220, height: 20 };
+      render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} />);
+      resize();
+      expect(screen.queryByRole("button", { name: "backToPlayback" })).not.toBeInTheDocument();
+
+      contentRect = { top: 900, bottom: 920, height: 20 };
+      resize();
+
+      expect(screen.getByRole("button", { name: "backToPlayback" })).toBeInTheDocument();
+    });
+  });
+
+  it("finds the playhead row without searching the transcript while idle", () => {
+    const { container } = render(
+      <TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} />,
+    );
+    const queries = vi.spyOn(Element.prototype, "querySelector");
+
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+
+    expect(queries.mock.calls.map(([selector]) => selector)).not.toContainEqual(
+      expect.stringContaining("data-segment-index"),
+    );
+  });
+
   it("scrolls only the transcript viewport when restoring a position", async () => {
     const onScrollComplete = vi.fn();
     const { container } = render(
