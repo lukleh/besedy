@@ -370,9 +370,11 @@ catalog, recording, and relevant time window remain aligned.
 | `segmentLimit`  | integer from 1 to 200           | `50` in `page` mode     | Page mode only: maximum whole segments                                     |
 | `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode | Page mode only: soft text-size target                                      |
 
-The server reads only its configured canonical transcript, the one selected by
-`RAG_BACKEND_KEY`. It returns `transcript_not_found` when that transcript is
-absent. Transcript implementation identifiers are not part of the MCP contract.
+The server reads the transcript that search indexes: the corrected transcript
+once one has been published for search, and otherwise its configured canonical
+transcript, the one selected by `RAG_BACKEND_KEY`. It returns
+`transcript_not_found` when that transcript is absent. Transcript
+implementation identifiers are not part of the MCP contract.
 
 `mode: "full"` returns every segment overlapping the optional time window in a
 single response, up to a hard 200,000-character response ceiling. With no time
@@ -554,8 +556,8 @@ Every result contains:
 - the exact `match`, including time range, text, and seekable `webUrl`, which
   is the citation;
 - optional before/after `context` without duplicating the exact match; and
-- `transcriptRequest`, when the canonical transcript exists, with
-  `mode: "page"` and the time range to verify. This may be `null`.
+- `transcriptRequest`, when `get_transcript` has a transcript to read (see
+  above), with `mode: "page"` and the time range to verify. This may be `null`.
 
 The match `webUrl` is a bounded excerpt link: it seeks to `startSec`, stops once
 at `endSec`, and then permits ordinary continued playback when the user presses
@@ -670,7 +672,7 @@ Each bookmark carries its `positionSec`, the user's `comment`, the transcript
 the recording at the bookmarked position. `recording` names the recording, and
 `event` is its visible event (the primary link first) or `null`.
 `transcriptRequest` covers 60 seconds on each side of the position and is
-`null` when the canonical transcript is unavailable.
+`null` when `get_transcript` has no transcript to read for the recording.
 
 The comment is the user's own note, not recording evidence: agents should treat
 it as the user's interest or opinion and never cite it as what was said. The
@@ -742,7 +744,7 @@ Expected tool failures set `isError: true` and return the same object in
 | `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request           |
 | `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
-| `transcript_not_found`  | The recording has no readable canonical transcript                                 |
+| `transcript_not_found`  | The recording has no readable transcript                                           |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
 | `response_too_large`    | A full transcript window exceeds the hard response ceiling                         |
 | `search_not_configured` | The catalog has no transcript search bundle                                        |

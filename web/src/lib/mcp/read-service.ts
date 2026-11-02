@@ -18,7 +18,10 @@ import {
   loadTranscript,
   type TranscriptBackend,
 } from '@/lib/transcript';
-import { resolveSearchTranscriptSource } from '@/lib/correction/resolve';
+import {
+  resolveSearchTranscriptSource,
+  resolveSearchTranscriptSources,
+} from '@/lib/correction/resolve';
 import { loadPublishedTranscript } from '@/lib/correction/reader-transcript';
 import { getRagBackendKey } from '@/lib/runtime-config';
 import {
@@ -439,6 +442,41 @@ function getCanonicalTranscriptBackend(): TranscriptBackend {
   return getRagBackendKey();
 }
 
+/**
+ * Which recordings get_transcript can read, by the rule it reads them with: a
+ * search publication when there is one, otherwise the canonical machine
+ * transcript. A publication counts without opening its artifact; its pointer
+ * only moves once the artifact is written, and get_transcript reports the rare
+ * missing one on its own.
+ */
+async function resolveMcpTranscriptAvailability(
+  catalogId: string,
+  audioHashes: string[],
+): Promise<Map<string, boolean>> {
+  const sources = await resolveSearchTranscriptSources(catalogId, audioHashes);
+  const canonicalBackend = getCanonicalTranscriptBackend();
+  const transcriptsPath = resolveTranscriptsPath(catalogId);
+  return new Map(
+    await mapWithConcurrency(
+      audioHashes,
+      TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
+      async (audioHash) => {
+        if (sources.get(audioHash)?.kind === 'publication') {
+          return [audioHash, true] as const;
+        }
+        const available = await getAvailableTranscripts(
+          transcriptsPath,
+          audioHash,
+        );
+        return [
+          audioHash,
+          available.backends.includes(canonicalBackend),
+        ] as const;
+      },
+    ),
+  );
+}
+
 function serializeRecording(recording: CatalogRecordingReadModel) {
   return {
     audioHash: recording.audioHash,
@@ -838,54 +876,37 @@ export async function listMcpBookmarks(
     catalogId,
     MCP_VISIBILITY_GRANT,
   );
-  const canonicalBackend = getCanonicalTranscriptBackend();
-  const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const [recordingByHash, eventLinks, transcriptAvailability] =
-    await Promise.all([
-      loadCatalogRecordingReadModels(catalogId, pageHashes),
-      prisma.catalogEventRecording.findMany({
-        where: {
-          workflowGroupId: catalogId,
-          audioHash: { in: pageHashes },
-          ...catalogEventRecordingVisibilityWhere(visibleEventIds),
-        },
-        orderBy: [{ isPrimary: 'desc' }, { eventId: 'asc' }],
-        select: {
-          audioHash: true,
-          isPrimary: true,
-          event: {
-            select: {
-              id: true,
-              dateYear: true,
-              dateMonth: true,
-              dateDay: true,
-              location: { select: { id: true, name: true } },
-            },
+  const [recordingByHash, eventLinks, hasTranscript] = await Promise.all([
+    loadCatalogRecordingReadModels(catalogId, pageHashes),
+    prisma.catalogEventRecording.findMany({
+      where: {
+        workflowGroupId: catalogId,
+        audioHash: { in: pageHashes },
+        ...catalogEventRecordingVisibilityWhere(visibleEventIds),
+      },
+      orderBy: [{ isPrimary: 'desc' }, { eventId: 'asc' }],
+      select: {
+        audioHash: true,
+        isPrimary: true,
+        event: {
+          select: {
+            id: true,
+            dateYear: true,
+            dateMonth: true,
+            dateDay: true,
+            location: { select: { id: true, name: true } },
           },
         },
-      }),
-      mapWithConcurrency(
-        pageHashes,
-        TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
-        async (audioHash) => {
-          const available = await getAvailableTranscripts(
-            transcriptsPath,
-            audioHash,
-          );
-          return [
-            audioHash,
-            available.backends.includes(canonicalBackend),
-          ] as const;
-        },
-      ),
-    ]);
+      },
+    }),
+    resolveMcpTranscriptAvailability(catalogId, pageHashes),
+  ]);
   const eventLinkByHash = new Map<string, (typeof eventLinks)[number]>();
   for (const link of eventLinks) {
     if (!eventLinkByHash.has(link.audioHash)) {
       eventLinkByHash.set(link.audioHash, link);
     }
   }
-  const hasCanonicalTranscript = new Map(transcriptAvailability);
 
   return {
     catalogId,
@@ -922,7 +943,7 @@ export async function listMcpBookmarks(
             }
           : null,
         transcriptRequest:
-          hasCanonicalTranscript.get(row.audioHash) === true
+          hasTranscript.get(row.audioHash) === true
             ? {
                 catalogId,
                 audioHash: row.audioHash,
@@ -1241,23 +1262,9 @@ async function serializeMcpSearchResults(
   const audioHashes = [
     ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const canonicalBackend = getCanonicalTranscriptBackend();
-  const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const canonicalTranscriptAvailability = new Map(
-    await mapWithConcurrency(
-      audioHashes,
-      TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
-      async (audioHash) => {
-        const available = await getAvailableTranscripts(
-          transcriptsPath,
-          audioHash,
-        );
-        return [
-          audioHash,
-          available.backends.includes(canonicalBackend),
-        ] as const;
-      },
-    ),
+  const hasTranscript = await resolveMcpTranscriptAvailability(
+    catalogId,
+    audioHashes,
   );
 
   return eventSearchResults.map((result) => {
@@ -1301,7 +1308,7 @@ async function serializeMcpSearchResults(
             }
           : null,
       transcriptRequest:
-        canonicalTranscriptAvailability.get(result.audioHash) === true &&
+        hasTranscript.get(result.audioHash) === true &&
         transcriptEndSec > transcriptStartSec
           ? {
               catalogId,

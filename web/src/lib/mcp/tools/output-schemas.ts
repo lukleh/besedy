@@ -212,7 +212,7 @@ const TranscriptSearchResultSchema = z.object({
     })
     .nullable()
     .describe(
-      'Ready-to-call get_transcript arguments for this candidate; the unchanged request replays only this passage, so widen its time window to verify. Null when the canonical transcript is unavailable.',
+      'Ready-to-call get_transcript arguments for this candidate; the unchanged request replays only this passage, so widen its time window to verify. Null when the recording has no transcript get_transcript can read.',
     ),
 });
 
@@ -286,7 +286,7 @@ export const ListBookmarksOutputSchema = z.object({
         })
         .nullable()
         .describe(
-          'Ready-to-call get_transcript arguments for the minute on each side of the bookmark. Null when the canonical transcript is unavailable.',
+          'Ready-to-call get_transcript arguments for the minute on each side of the bookmark. Null when the recording has no transcript get_transcript can read.',
         ),
     }),
   ),

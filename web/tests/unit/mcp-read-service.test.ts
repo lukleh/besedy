@@ -29,6 +29,11 @@ import {
 vi.mock("@/lib/correction/resolve", () => ({
   resolveReaderTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
   resolveSearchTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
+  resolveSearchTranscriptSources: vi.fn(async (_catalogId, hashes) => {
+    const map = new Map();
+    for (const hash of hashes) map.set(hash, { kind: "machine" });
+    return map;
+  }),
   resolveOriginalTranscriptSource: vi.fn(async () => ({ kind: "machine" })),
   resolveReaderTranscriptSources: vi.fn(async (_catalogId, hashes) => {
     const map = new Map();
@@ -1170,6 +1175,35 @@ describe('MCP read service', () => {
     );
   });
 
+  it('offers a transcript handoff for a published correction without the canonical transcript', async () => {
+    const { resolveSearchTranscriptSources } = await import('@/lib/correction/resolve');
+    vi.mocked(resolveSearchTranscriptSources).mockResolvedValueOnce(
+      new Map([
+        [
+          'visible-recording',
+          { kind: 'publication', workspaceId: 'ws-1', publicationId: 'pub-1' },
+        ],
+      ]),
+    );
+    vi.mocked(getAvailableTranscripts).mockResolvedValue({
+      hash: 'visible-recording',
+      backends: ['other/model'],
+    });
+
+    const result = await searchMcpTranscripts('catalog-a', {
+      query: 'search phrase',
+      limit: 10,
+      contextChunks: 1,
+      maxPerRecording: 2,
+    });
+
+    expect(result.results[0]?.transcriptRequest).not.toBeNull();
+    expect(resolveSearchTranscriptSources).toHaveBeenCalledWith('catalog-a', [
+      'visible-recording',
+    ]);
+    expect(getAvailableTranscripts).not.toHaveBeenCalled();
+  });
+
   it('forwards symmetric filters and reports complete lexical match counts', async () => {
     vi.mocked(executeCatalogLexicalSearch).mockResolvedValue({
       query: 'exact phrase',
@@ -1517,6 +1551,38 @@ describe('MCP read service', () => {
         event: null,
         transcriptRequest: null,
       });
+    });
+
+    it('offers a transcript request for a published correction without the canonical transcript', async () => {
+      const { resolveSearchTranscriptSources } = await import('@/lib/correction/resolve');
+      vi.mocked(resolveSearchTranscriptSources).mockResolvedValueOnce(
+        new Map([
+          [
+            'visible-recording',
+            { kind: 'publication', workspaceId: 'ws-1', publicationId: 'pub-1' },
+          ],
+        ]),
+      );
+      db.recordingBookmark.findMany.mockResolvedValue([
+        bookmarkRow('bm-1', 'visible-recording', '2026-10-01T10:00:00Z'),
+      ]);
+      vi.mocked(getAvailableTranscripts).mockResolvedValue({
+        hash: 'visible-recording',
+        backends: ['other-backend'],
+      });
+
+      const result = await listMcpBookmarks('user-1', 'catalog-a', {
+        limit: 50,
+      });
+
+      expect(result.bookmarks[0]?.transcriptRequest).toEqual({
+        catalogId: 'catalog-a',
+        audioHash: 'visible-recording',
+        mode: 'page',
+        startSec: 65.5,
+        endSec: 185.5,
+      });
+      expect(getAvailableTranscripts).not.toHaveBeenCalled();
     });
   });
 });
