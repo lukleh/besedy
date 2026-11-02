@@ -304,6 +304,12 @@ interface ResponsiveMenuCheckboxItemProps {
   checked?: boolean
   onCheckedChange?: (checked: boolean) => void
   disabled?: boolean
+  /**
+   * Closes the desktop dropdown after a toggle, as menu items do. Pass false
+   * for a list of options to tick several of in one go; the mobile drawer
+   * always stays open.
+   */
+  closeOnSelect?: boolean
 }
 
 function ResponsiveMenuCheckboxItem({
@@ -312,6 +318,7 @@ function ResponsiveMenuCheckboxItem({
   checked,
   onCheckedChange,
   disabled,
+  closeOnSelect = true,
 }: ResponsiveMenuCheckboxItemProps) {
   const { renderMode } = useResponsiveMenu()
 
@@ -321,6 +328,7 @@ function ResponsiveMenuCheckboxItem({
         className={className}
         checked={checked}
         onCheckedChange={onCheckedChange}
+        onSelect={closeOnSelect ? undefined : (event) => event.preventDefault()}
         disabled={disabled}
       >
         {children}

@@ -37,6 +37,12 @@ export const TRANSCRIPT_LAYERS: readonly TranscriptLayer[] = [
   },
 ];
 
+/**
+ * Whether a layer can be shown for the recording on screen: its data is
+ * there, still loading, or the recording has none.
+ */
+export type LayerState = "available" | "loading" | "unavailable";
+
 export const TRANSCRIPT_LAYERS_PREF_KEY = "besedy-transcript-layers";
 
 export type TranscriptLayerVisibility = Record<TranscriptLayerId, boolean>;

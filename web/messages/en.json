@@ -409,6 +409,7 @@
     "followHint": "Follow playback: keep the word being played in view",
     "followingHint": "Following playback. Scroll the transcript or click here to stop",
     "backToPlayback": "Back to playback",
+    "layerUnavailable": "None for this recording",
     "timestamps": "Timestamps",
     "speakers": "Speakers",
     "speakersDetected": "{count} speaker detected",

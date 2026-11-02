@@ -19,6 +19,8 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+// Desktop, so the View menu is the dropdown (the mobile drawer always stays open).
+vi.mock("@/hooks/use-media-query", () => ({ useIsDesktop: () => true }));
 vi.mock("@/components/transcript/transcript-viewer-content", () => ({
   TranscriptSkeleton: () => <div>Loading transcript</div>,
   TranscriptContent: (props: TranscriptContentProps) => {
@@ -27,13 +29,28 @@ vi.mock("@/components/transcript/transcript-viewer-content", () => ({
   },
 }));
 
-function renderViewer(onSeek = vi.fn()) {
+function renderViewer(onSeek = vi.fn(), canSeeSpeakers = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  render(<TranscriptViewer hash={HASH} groupId={CATALOG} onSeek={onSeek} />, { wrapper });
+  render(
+    <TranscriptViewer hash={HASH} groupId={CATALOG} onSeek={onSeek} canSeeSpeakers={canSeeSpeakers} />,
+    { wrapper },
+  );
   return onSeek;
+}
+
+// The View button renders in both the desktop and the mobile menu tree.
+function viewButtonName() {
+  return screen.getAllByRole("button", { name: /^view/ })[0].textContent;
+}
+
+function speakerBackends(response: () => Promise<unknown>) {
+  const base = vi.mocked(fetchJson).getMockImplementation()!;
+  vi.mocked(fetchJson).mockImplementation(async (input, init) =>
+    String(input).endsWith("/speakers") ? response() : base(input, init),
+  );
 }
 
 function stored(values: Record<string, string>) {
@@ -56,7 +73,10 @@ describe("TranscriptViewer follow mode and layers", () => {
     stored({});
     vi.mocked(fetchJson).mockImplementation(async (input) => {
       const url = String(input);
-      if (url.includes("/speakers")) return { hash: HASH, backends: [] };
+      if (url.includes("/speakers?")) {
+        return { hash: HASH, model: "pyannote", numSpeakers: 1, segments: [{ start: 0, end: 1, speaker: "A" }] };
+      }
+      if (url.endsWith("/speakers")) return { hash: HASH, backends: [] };
       if (url.includes("/formats")) {
         return { hash: HASH, backend: "whisperx", formats: [], canDownload: false };
       }
@@ -120,10 +140,54 @@ describe("TranscriptViewer follow mode and layers", () => {
     await waitFor(() => expect(props().showTimestamps).toBe(true));
   });
 
-  it("does not offer speakers without diarization", async () => {
+  it("does not list speakers for an account that cannot see them", async () => {
     renderViewer();
     await contentProps();
 
     expect(screen.queryByText("speakers")).not.toBeInTheDocument();
+    expect(viewButtonName()).toBe("view1");
+  });
+
+  it("counts speakers while their data loads, so the badge does not jump", async () => {
+    speakerBackends(() => new Promise(() => {}));
+    renderViewer(vi.fn(), true);
+    await contentProps();
+
+    expect(viewButtonName()).toBe("view2");
+  });
+
+  it("drops speakers from the count when the recording has none", async () => {
+    speakerBackends(async () => ({ hash: HASH, backends: [] }));
+    renderViewer(vi.fn(), true);
+    await contentProps();
+
+    await waitFor(() => expect(viewButtonName()).toBe("view1"));
+  });
+
+  it("greys speakers out in the View menu when the recording has none, and stays open", async () => {
+    speakerBackends(async () => ({ hash: HASH, backends: [] }));
+    renderViewer(vi.fn(), true);
+    const props = await contentProps();
+    await waitFor(() => expect(viewButtonName()).toBe("view1"));
+
+    // The desktop tree comes first; its trigger opens the dropdown.
+    fireEvent.keyDown(screen.getAllByRole("button", { name: /^view/ })[0], { key: "Enter" });
+    const speakers = await screen.findByRole("menuitemcheckbox", { name: /speakers/ });
+    expect(speakers).toHaveAttribute("aria-disabled", "true");
+    expect(speakers).toHaveAttribute("aria-checked", "false");
+    expect(speakers).toHaveTextContent("layerUnavailable");
+
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /timestamps/ }));
+    expect(props().showTimestamps).toBe(false);
+    expect(screen.getByRole("menuitemcheckbox", { name: /timestamps/ })).toBeInTheDocument();
+  });
+
+  it("shows speakers when the recording has them", async () => {
+    speakerBackends(async () => ({ hash: HASH, backends: ["pyannote"] }));
+    renderViewer(vi.fn(), true);
+    const props = await contentProps();
+
+    await waitFor(() => expect(props().diarization).toBeDefined());
+    expect(viewButtonName()).toBe("view2");
   });
 });

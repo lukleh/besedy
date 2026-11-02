@@ -93,6 +93,7 @@ export function Toolbar({
                 key={col.key}
                 checked={columnVisibility[col.key]}
                 onCheckedChange={() => toggleColumn(col.key)}
+                closeOnSelect={false}
               >
                 {t(`columns.${col.key === "title" ? "titleFilename" : col.key}`)}
               </ResponsiveMenuCheckboxItem>

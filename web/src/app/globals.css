@@ -288,6 +288,14 @@ html {
   overscroll-behavior-y: contain;
 }
 
+/* Open menus and dialogs lock page scrolling and add a right margin the width
+   of the scrollbar, to make up for the scrollbar they expect to remove. With
+   overflow-x set on html (see the base layer), the page keeps its scrollbar,
+   so that margin only shifted the page left while a menu was open. */
+html body[data-scroll-locked] {
+  margin-right: 0 !important;
+}
+
 button,
 a,
 [role="button"] {

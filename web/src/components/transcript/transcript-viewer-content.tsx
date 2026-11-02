@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -284,6 +285,206 @@ function rowMarkerClass(active: boolean) {
   return `${ROW_MARKER} ${active ? "border-l-primary" : "border-l-transparent"}`;
 }
 
+/**
+ * How one rendering of the transcript finds, scrolls to and sees a segment.
+ * The full list measures its rows and keeps elements in view (T = Element);
+ * the virtualized one asks its virtualizer and keeps indices (T = number).
+ */
+interface FollowTarget<T extends Element | number> {
+  /**
+   * What following keeps in view for a segment: for the full list the word
+   * the row reported when it is inside that row, otherwise the row; for the
+   * virtualized list the index.
+   */
+  resolve: (index: number, reported: T | null) => T | null;
+  /** Scrolls the target into view, or leaves it when it already is. */
+  bringIntoView: (target: T, markFollowScroll: MarkFollowScroll) => void;
+  /** Centres a segment, to restore the position after switching sources. */
+  centre: (index: number, markFollowScroll: MarkFollowScroll) => void;
+  /** Where the segment is relative to what the reader sees; null when in view. */
+  directionOf: (index: number) => PlayheadDirection | null;
+}
+
+interface FollowPlaybackOptions<T extends Element | number> {
+  segments: TranscriptSegment[];
+  clock: PlaybackClock;
+  follow: boolean;
+  onFollowChange?: (follow: boolean) => void;
+  scrollToTime?: number | null;
+  onScrollComplete?: () => void;
+  /** The element that scrolls; held as state, so listeners follow remounts. */
+  scroller: HTMLElement | null;
+  /** The element holding the rows, whose size changes when they reflow. */
+  content: HTMLElement | null;
+  target: FollowTarget<T>;
+}
+
+// Following, the reader's own scrolling, the jump-back button and restoring
+// the position, for either rendering of the transcript.
+function useFollowPlayback<T extends Element | number>({
+  segments,
+  clock,
+  follow,
+  onFollowChange,
+  scrollToTime,
+  onScrollComplete,
+  scroller,
+  content,
+  target,
+}: FollowPlaybackOptions<T>) {
+  const { activeSegments, playheadIndex, followIndex, started } = usePlayhead(segments, clock);
+
+  const onFollowChangeRef = useRef(onFollowChange);
+  useEffect(() => {
+    onFollowChangeRef.current = onFollowChange;
+  }, [onFollowChange]);
+  const stopFollowing = useCallback(() => onFollowChangeRef.current?.(false), []);
+  const resumeFollowing = useCallback(() => onFollowChangeRef.current?.(true), []);
+  const markFollowScroll = useReaderScroll(scroller, follow, stopFollowing);
+
+  const targetRef = useRef(target);
+  useEffect(() => {
+    targetRef.current = target;
+  }, [target]);
+
+  // Following is kept in a ref for the followed row's reports, and the last
+  // target brought into view is not measured again: it has not moved unless
+  // the reader scrolled, and that stops following.
+  const followRef = useRef(follow);
+  const followIndexRef = useRef(followIndex);
+  const reportedRef = useRef<T | null>(null);
+  const lastTargetRef = useRef<T | null>(null);
+
+  // Measures layout, so it runs when the highlighted word changes, when
+  // following turns on, and when playback moves to another segment; not on
+  // every time update.
+  const keepInView = useCallback(
+    (resolved: T | null) => {
+      if (resolved === null || resolved === lastTargetRef.current) return;
+      lastTargetRef.current = resolved;
+      targetRef.current.bringIntoView(resolved, markFollowScroll);
+    },
+    [markFollowScroll],
+  );
+
+  // The followed row of the full list reports the word being played, or its
+  // text without word timings.
+  const followElement = useCallback(
+    (reported: T) => {
+      reportedRef.current = reported;
+      if (followRef.current) keepInView(reported);
+    },
+    [keepInView],
+  );
+
+  useEffect(() => {
+    followRef.current = follow;
+    followIndexRef.current = followIndex;
+    if (!follow) {
+      lastTargetRef.current = null;
+      return;
+    }
+    // Between segments, or before the row's first word, the row itself.
+    keepInView(followIndex >= 0 ? targetRef.current.resolve(followIndex, reportedRef.current) : null);
+  }, [follow, followIndex, keepInView]);
+
+  // While idle, where playback is relative to what the reader is looking at.
+  // Before playback has started there is nowhere to go back to.
+  const [offscreenPlayhead, setOffscreenPlayhead] = useState<PlayheadDirection | null>(null);
+  const idlePlayheadIndex = !follow && started ? playheadIndex : -1;
+  const measurePlayhead = useCallback(() => {
+    setOffscreenPlayhead(
+      idlePlayheadIndex >= 0 ? targetRef.current.directionOf(idlePlayheadIndex) : null,
+    );
+  }, [idlePlayheadIndex]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- measures layout after the playhead row changes
+    measurePlayhead();
+    if (!scroller || idlePlayheadIndex < 0) return;
+    scroller.addEventListener("scroll", measurePlayhead, { passive: true });
+    return () => scroller.removeEventListener("scroll", measurePlayhead);
+  }, [measurePlayhead, scroller, idlePlayheadIndex]);
+
+  // Resizing the box or reflowing its rows (a layer toggled, the window
+  // resized) moves the followed word or the playhead row without a scroll,
+  // so check again then: following brings the same target back into view,
+  // idle re-measures where playback is.
+  const measurePlayheadRef = useRef(measurePlayhead);
+  useEffect(() => {
+    measurePlayheadRef.current = measurePlayhead;
+  }, [measurePlayhead]);
+  useEffect(() => {
+    if (!scroller) return;
+    let initial = true;
+    const observer = new ResizeObserver(() => {
+      // Observing reports the current sizes once; that is not a change.
+      if (initial) {
+        initial = false;
+        return;
+      }
+      if (followRef.current) {
+        lastTargetRef.current = null;
+        const index = followIndexRef.current;
+        keepInView(index >= 0 ? targetRef.current.resolve(index, reportedRef.current) : null);
+      } else {
+        measurePlayheadRef.current();
+      }
+    });
+    observer.observe(scroller);
+    if (content) observer.observe(content);
+    return () => observer.disconnect();
+  }, [scroller, content, keepInView]);
+
+  useEffect(() => {
+    if (scrollToTime === null || scrollToTime === undefined || scrollToTime <= 0) return;
+    const index = segments.findIndex((seg) => scrollToTime >= seg.start && scrollToTime < seg.end);
+    if (index < 0) {
+      onScrollComplete?.();
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      targetRef.current.centre(index, markFollowScroll);
+      onScrollComplete?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollToTime, segments, onScrollComplete, markFollowScroll]);
+
+  return { activeSegments, followIndex, followElement, offscreenPlayhead, resumeFollowing };
+}
+
+// The transcript box with the jump-back button over it.
+function FollowFrame({
+  offscreenPlayhead,
+  onResumeFollowing,
+  children,
+}: {
+  offscreenPlayhead: PlayheadDirection | null;
+  onResumeFollowing: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative">
+      {children}
+      {offscreenPlayhead && (
+        <BackToPlaybackButton direction={offscreenPlayhead} onClick={onResumeFollowing} />
+      )}
+    </div>
+  );
+}
+
+interface TranscriptListProps {
+  segments: TranscriptSegment[];
+  clock: PlaybackClock;
+  follow: boolean;
+  onFollowChange?: (follow: boolean) => void;
+  scrollToTime?: number | null;
+  onScrollComplete?: () => void;
+  speakerLabels: (string | null)[];
+  speakerLabelClasses: (string | null)[];
+  showTimestamps: boolean;
+  onSeek: (time: number) => void;
+}
+
 export function TranscriptContent({
   transcript,
   clock = STOPPED_CLOCK,
@@ -295,126 +496,7 @@ export function TranscriptContent({
   scrollToTime,
   onScrollComplete,
 }: TranscriptContentProps) {
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  // Held as state too, so listeners attach whenever this path's scroll area
-  // mounts, including after switching from the virtualized path.
-  const [viewport, setViewport] = useState<HTMLElement | null>(null);
-  const setScrollContainer = useCallback((container: HTMLDivElement | null) => {
-    scrollContainerRef.current = container;
-    setViewport((getViewport(container) as HTMLElement | null) ?? null);
-  }, []);
   const { segments } = transcript;
-  const { activeSegments, playheadIndex, followIndex, started } = usePlayhead(segments, clock);
-
-  const onFollowChangeRef = useRef(onFollowChange);
-  useEffect(() => {
-    onFollowChangeRef.current = onFollowChange;
-  }, [onFollowChange]);
-  const stopFollowing = useCallback(() => onFollowChangeRef.current?.(false), []);
-  const resumeFollowing = useCallback(() => onFollowChangeRef.current?.(true), []);
-  const markFollowScroll = useReaderScroll(viewport, follow, stopFollowing);
-
-  // Following is kept in a ref for the followed row's reports, and the last
-  // element brought into view is not measured again: it has not moved unless
-  // the reader scrolled, and that stops following.
-  const followRef = useRef(follow);
-  const reportedElementRef = useRef<Element | null>(null);
-  const lastFollowedRef = useRef<Element | null>(null);
-
-  // Measures layout, so it runs when the highlighted word changes, when
-  // following turns on, and when playback moves to another segment; not on
-  // every time update.
-  const bringIntoView = useCallback(
-    (element: Element) => {
-      const viewport = getViewport(scrollContainerRef.current);
-      if (!viewport || element === lastFollowedRef.current) return;
-      lastFollowedRef.current = element;
-
-      const band = getVisibleBand(viewport);
-      const elementRect = element.getBoundingClientRect();
-      // Near either end of the transcript the viewport may already be scrolled
-      // as far as it goes; scrolling again would only restart the animation.
-      const canScrollUp = viewport.scrollTop > 0;
-      const canScrollDown =
-        viewport.scrollTop < viewport.scrollHeight - viewport.clientHeight - 1;
-      const isAbove = elementRect.top < band.top && canScrollUp;
-      const isBelow = elementRect.bottom > band.bottom && canScrollDown;
-
-      if (isAbove || isBelow) {
-        centerInBand(viewport, element, band, markFollowScroll);
-      }
-    },
-    [markFollowScroll],
-  );
-
-  // The followed row reports the word being played, or its text without word
-  // timings.
-  const followElement = useCallback(
-    (element: Element) => {
-      reportedElementRef.current = element;
-      if (followRef.current) bringIntoView(element);
-    },
-    [bringIntoView],
-  );
-
-  useEffect(() => {
-    followRef.current = follow;
-    if (!follow) {
-      lastFollowedRef.current = null;
-      return;
-    }
-    // The reported element when it belongs to the followed row, otherwise
-    // the row itself: between segments, or before its first word starts.
-    const row =
-      followIndex >= 0
-        ? scrollContainerRef.current?.querySelector(`[data-segment-index="${followIndex}"]`)
-        : null;
-    const reported = reportedElementRef.current;
-    const element = reported && row?.contains(reported) ? reported : row;
-    if (element) bringIntoView(element);
-  }, [follow, followIndex, bringIntoView]);
-
-  // While idle, where playback is relative to what the reader is looking at.
-  // Before playback has started there is nowhere to go back to.
-  const [offscreenPlayhead, setOffscreenPlayhead] = useState<PlayheadDirection | null>(null);
-  const idlePlayheadIndex = !follow && started ? playheadIndex : -1;
-  const measurePlayhead = useCallback(() => {
-    const row =
-      idlePlayheadIndex >= 0
-        ? viewport?.querySelector(`[data-segment-index="${idlePlayheadIndex}"]`)
-        : null;
-    setOffscreenPlayhead(
-      viewport && row ? playheadDirection(row, getVisibleBand(viewport)) : null,
-    );
-  }, [idlePlayheadIndex, viewport]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- measures layout after the playhead row changes
-    measurePlayhead();
-    if (!viewport || idlePlayheadIndex < 0) return;
-    viewport.addEventListener("scroll", measurePlayhead, { passive: true });
-    return () => viewport.removeEventListener("scroll", measurePlayhead);
-  }, [measurePlayhead, viewport, idlePlayheadIndex]);
-
-  useEffect(() => {
-    if (scrollToTime !== null && scrollToTime !== undefined && scrollToTime > 0 && scrollContainerRef.current) {
-      const targetIdx = segments.findIndex(
-        (seg) => scrollToTime >= seg.start && scrollToTime < seg.end,
-      );
-      if (targetIdx >= 0) {
-        requestAnimationFrame(() => {
-          const container = scrollContainerRef.current;
-          const viewport = getViewport(container);
-          const element = container?.querySelector(`[data-segment-index="${targetIdx}"]`);
-          if (viewport && element) {
-            centerInBand(viewport, element, getVisibleBand(viewport), markFollowScroll);
-          }
-          onScrollComplete?.();
-        });
-      } else {
-        onScrollComplete?.();
-      }
-    }
-  }, [scrollToTime, segments, onScrollComplete, markFollowScroll]);
 
   // Rows keep one seek handler for their lifetime, so a parent passing a new
   // function on every render does not re-render the whole transcript.
@@ -445,30 +527,107 @@ export function TranscriptContent({
     );
   }, [speakerLabels]);
 
-  if (!hasWordTimestamps && segments.length > VIRTUAL_SCROLL_THRESHOLD) {
-    return (
-      <VirtualizedASRTranscript
-        segments={segments}
-        clock={clock}
-        onSeek={seek}
-        follow={follow}
-        onReaderScroll={stopFollowing}
-        onResumeFollowing={resumeFollowing}
-        speakerLabels={speakerLabels}
-        speakerLabelClasses={speakerLabelClasses}
-        showTimestamps={showTimestamps}
-        scrollToTime={scrollToTime}
-        onScrollComplete={onScrollComplete}
-      />
-    );
-  }
+  const listProps: TranscriptListProps = {
+    segments,
+    clock,
+    follow,
+    onFollowChange,
+    scrollToTime,
+    onScrollComplete,
+    speakerLabels,
+    speakerLabelClasses,
+    showTimestamps,
+    onSeek: seek,
+  };
+  // Switching between the two remounts the list, so each one's subscriptions
+  // and listeners start fresh.
+  return !hasWordTimestamps && segments.length > VIRTUAL_SCROLL_THRESHOLD ? (
+    <VirtualizedASRTranscript {...listProps} />
+  ) : (
+    <FullTranscript {...listProps} showWords={hasWordTimestamps} />
+  );
+}
+
+// Every segment rendered, with word highlighting when there are word timings.
+function FullTranscript({
+  segments,
+  clock,
+  follow,
+  onFollowChange,
+  scrollToTime,
+  onScrollComplete,
+  speakerLabels,
+  speakerLabelClasses,
+  showTimestamps,
+  showWords,
+  onSeek,
+}: TranscriptListProps & { showWords: boolean }) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [viewport, setViewport] = useState<HTMLElement | null>(null);
+  const setScrollContainer = useCallback((container: HTMLDivElement | null) => {
+    scrollContainerRef.current = container;
+    setViewport((getViewport(container) as HTMLElement | null) ?? null);
+  }, []);
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
+
+  // Rows register themselves, so finding one is a lookup rather than a search
+  // of a transcript that can hold tens of thousands of elements.
+  const rowsRef = useRef<Map<number, Element>>(new Map());
+  const registerRow = useCallback((index: number, row: Element | null) => {
+    if (row) rowsRef.current.set(index, row);
+    else rowsRef.current.delete(index);
+  }, []);
+  const rowAt = (index: number) => rowsRef.current.get(index) ?? null;
+  const target: FollowTarget<Element> = {
+    resolve: (index, reported) => {
+      const row = rowAt(index);
+      return reported && row?.contains(reported) ? reported : row;
+    },
+    bringIntoView: (element, markFollowScroll) => {
+      const viewport = getViewport(scrollContainerRef.current);
+      if (!viewport) return;
+      const band = getVisibleBand(viewport);
+      const elementRect = element.getBoundingClientRect();
+      // Near either end of the transcript the viewport may already be scrolled
+      // as far as it goes; scrolling again would only restart the animation.
+      const canScrollUp = viewport.scrollTop > 0;
+      const canScrollDown =
+        viewport.scrollTop < viewport.scrollHeight - viewport.clientHeight - 1;
+      const isAbove = elementRect.top < band.top && canScrollUp;
+      const isBelow = elementRect.bottom > band.bottom && canScrollDown;
+      if (isAbove || isBelow) centerInBand(viewport, element, band, markFollowScroll);
+    },
+    centre: (index, markFollowScroll) => {
+      const viewport = getViewport(scrollContainerRef.current);
+      const row = rowAt(index);
+      if (viewport && row) centerInBand(viewport, row, getVisibleBand(viewport), markFollowScroll);
+    },
+    directionOf: (index) => {
+      const viewport = getViewport(scrollContainerRef.current);
+      const row = rowAt(index);
+      return viewport && row ? playheadDirection(row, getVisibleBand(viewport)) : null;
+    },
+  };
+
+  const { activeSegments, followIndex, followElement, offscreenPlayhead, resumeFollowing } =
+    useFollowPlayback({
+      segments,
+      clock,
+      follow,
+      onFollowChange,
+      scrollToTime,
+      onScrollComplete,
+      scroller: viewport,
+      content,
+      target,
+    });
 
   return (
-    <div className="relative">
+    <FollowFrame offscreenPlayhead={offscreenPlayhead} onResumeFollowing={resumeFollowing}>
       <ScrollArea className="h-[400px] rounded-lg border p-4" ref={setScrollContainer}>
         {/* Scroll anchoring would move the viewport when rows above change
             height, and read as the reader scrolling. */}
-        <div className="leading-relaxed [overflow-anchor:none]">
+        <div ref={setContent} className="leading-relaxed [overflow-anchor:none]">
           {segments.map((segment, segmentIdx) => {
             const active = activeSegments.has(segmentIdx);
             return (
@@ -482,20 +641,18 @@ export function TranscriptContent({
                 clock={active && follow ? clock : null}
                 followed={follow && segmentIdx === followIndex}
                 onFollow={followElement}
+                onRow={registerRow}
                 speaker={speakerLabels[segmentIdx]}
                 speakerLabelClass={speakerLabelClasses[segmentIdx]}
                 showTimestamps={showTimestamps}
-                showWords={hasWordTimestamps}
-                onSeek={seek}
+                showWords={showWords}
+                onSeek={onSeek}
               />
             );
           })}
         </div>
       </ScrollArea>
-      {offscreenPlayhead && (
-        <BackToPlaybackButton direction={offscreenPlayhead} onClick={resumeFollowing} />
-      )}
-    </div>
+    </FollowFrame>
   );
 }
 
@@ -508,8 +665,10 @@ interface TranscriptSegmentRowProps {
   clock: PlaybackClock | null;
   /** This row is the one following keeps in view. */
   followed: boolean;
-  /** Reports the element to keep in view (see TranscriptContent). */
+  /** Reports the element to keep in view (see useFollowPlayback). */
   onFollow: (element: Element) => void;
+  /** Registers the row's element under its index, and null on unmount. */
+  onRow: (index: number, row: Element | null) => void;
   speaker: string | null;
   /** Set where the speaker label is shown: the first segment of a speaker turn. */
   speakerLabelClass: string | null;
@@ -532,12 +691,17 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   clock,
   followed,
   onFollow,
+  onRow,
   speaker,
   speakerLabelClass,
   showTimestamps,
   showWords,
   onSeek,
 }: TranscriptSegmentRowProps) {
+  const rowRef = useCallback(
+    (row: HTMLDivElement | null) => onRow(segmentIdx, row),
+    [onRow, segmentIdx],
+  );
   const withWords = showWords && !!segment.words && segment.words.length > 0;
   const selectActiveWord = useCallback(
     (time: number) => activeWordAt(segment, withWords, time),
@@ -563,7 +727,7 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   }`;
   if (withWords && segment.words) {
     return (
-      <div data-segment-index={segmentIdx} className={rowClass}>
+      <div ref={rowRef} data-segment-index={segmentIdx} className={rowClass}>
         {showSpeakerLabel && (
           <span
             className={`inline-block text-xs px-1.5 py-0.5 rounded mr-1 font-medium ${speakerLabelClass}`}
@@ -601,7 +765,7 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   }
 
   return (
-    <div data-segment-index={segmentIdx} className={rowClass}>
+    <div ref={rowRef} data-segment-index={segmentIdx} className={rowClass}>
       {showSpeakerLabel && (
         <span
           className={`inline-block text-xs px-1.5 py-0.5 rounded mr-1 font-medium ${speakerLabelClass}`}
@@ -629,42 +793,27 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   );
 });
 
-interface VirtualizedASRTranscriptProps
-  extends Omit<
-    TranscriptContentProps,
-    "transcript" | "clock" | "diarization" | "onSeek" | "onFollowChange"
-  > {
-  segments: TranscriptSegment[];
-  clock: PlaybackClock;
-  onReaderScroll: () => void;
-  onResumeFollowing: () => void;
-  speakerLabels: (string | null)[];
-  speakerLabelClasses: (string | null)[];
-  onSeek: (time: number) => void;
-}
-
+// Long transcripts without word timings: only the rows near the viewport are
+// rendered.
 function VirtualizedASRTranscript({
   segments,
   clock,
-  onSeek,
-  follow = false,
-  onReaderScroll,
-  onResumeFollowing,
-  speakerLabels,
-  speakerLabelClasses,
-  showTimestamps = false,
+  follow,
+  onFollowChange,
   scrollToTime,
   onScrollComplete,
-}: VirtualizedASRTranscriptProps) {
+  speakerLabels,
+  speakerLabelClasses,
+  showTimestamps,
+  onSeek,
+}: TranscriptListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
   const setParent = useCallback((element: HTMLDivElement | null) => {
     parentRef.current = element;
     setScroller(element);
   }, []);
-
-  // Re-renders the list only when the playing segments change.
-  const { activeSegments, playheadIndex, followIndex, started } = usePlayhead(segments, clock);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
@@ -675,50 +824,49 @@ function VirtualizedASRTranscript({
     getItemKey: (index) => `segment-${index}`,
   });
 
-  const markFollowScroll = useReaderScroll(scroller, follow, onReaderScroll);
-  const scrollToSegment = useCallback(
-    (index: number) => {
-      const offset = virtualizer.getOffsetForIndex(index, "center")?.[0];
-      if (parentRef.current && offset !== undefined) {
-        markFollowScroll(parentRef.current, offset);
-      }
-      virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
-    },
-    [virtualizer, markFollowScroll],
-  );
-
-  useEffect(() => {
-    if (follow && followIndex >= 0) scrollToSegment(followIndex);
-  }, [follow, followIndex, scrollToSegment]);
-
-  // The virtualizer re-renders on scroll, so the visible range is current here.
-  const range = virtualizer.range;
-  const offscreenPlayhead: PlayheadDirection | null =
-    !follow && started && playheadIndex >= 0 && range
-      ? playheadIndex < range.startIndex
-        ? "above"
-        : playheadIndex > range.endIndex
-          ? "below"
-          : null
-      : null;
-
-  useEffect(() => {
-    if (scrollToTime !== null && scrollToTime !== undefined && scrollToTime > 0) {
-      const targetIdx = segments.findIndex(
-        (seg) => scrollToTime >= seg.start && scrollToTime < seg.end,
-      );
-      if (targetIdx >= 0) scrollToSegment(targetIdx);
-      onScrollComplete?.();
+  const scrollToSegment = (index: number, markFollowScroll: MarkFollowScroll) => {
+    const offset = virtualizer.getOffsetForIndex(index, "center")?.[0];
+    if (parentRef.current && offset !== undefined) {
+      markFollowScroll(parentRef.current, offset);
     }
-  }, [scrollToTime, segments, scrollToSegment, onScrollComplete]);
+    virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
+  };
+  const target: FollowTarget<number> = {
+    resolve: (index) => index,
+    bringIntoView: scrollToSegment,
+    centre: scrollToSegment,
+    // The virtualizer updates its visible range in its own scroll listener,
+    // which runs before the one that calls this.
+    directionOf: (index) => {
+      const range = virtualizer.range;
+      if (!range) return null;
+      if (index < range.startIndex) return "above";
+      if (index > range.endIndex) return "below";
+      return null;
+    },
+  };
+
+  // Re-renders the list only when the playing segments change.
+  const { activeSegments, offscreenPlayhead, resumeFollowing } = useFollowPlayback({
+    segments,
+    clock,
+    follow,
+    onFollowChange,
+    scrollToTime,
+    onScrollComplete,
+    scroller,
+    content,
+    target,
+  });
 
   return (
-    <div className="relative">
+    <FollowFrame offscreenPlayhead={offscreenPlayhead} onResumeFollowing={resumeFollowing}>
       <div
         ref={setParent}
         className="h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border p-4 [overflow-anchor:none]"
       >
         <div
+          ref={setContent}
           style={{
             height: `${virtualizer.getTotalSize()}px`,
             width: "100%",
@@ -743,10 +891,7 @@ function VirtualizedASRTranscript({
           })}
         </div>
       </div>
-      {offscreenPlayhead && (
-        <BackToPlaybackButton direction={offscreenPlayhead} onClick={onResumeFollowing} />
-      )}
-    </div>
+    </FollowFrame>
   );
 }
 
