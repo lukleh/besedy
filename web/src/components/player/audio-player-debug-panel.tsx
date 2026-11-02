@@ -15,11 +15,8 @@ import type { PlaybackClock } from "@/lib/playback-clock";
 import {
   describeAudioSource,
 } from "@/lib/offline/audio-transport";
-import type {
-  ChunkFetchRecord,
-  DebugEvent,
-  DebugInfo,
-} from "./audio-player-types";
+import type { DebugEvent } from "./audio-player-types";
+import { useBufferDiagnostics, type BufferDiagnosticsSource } from "./use-audio-buffer-diagnostics";
 import {
   formatAudioTime,
   getNetworkStateLabel,
@@ -28,10 +25,9 @@ import {
 
 interface AudioPlayerDebugPanelProps {
   cacheStatus: string;
-  chunkFetches: ChunkFetchRecord[];
+  diagnostics: BufferDiagnosticsSource;
   clock: PlaybackClock;
   debugEvents: DebugEvent[];
-  debugInfo: DebugInfo;
   duration: number;
   isBuffering: boolean;
   /** The media element's current `src`; shown as a transport, never as bytes. */
@@ -40,14 +36,14 @@ interface AudioPlayerDebugPanelProps {
 
 export function AudioPlayerDebugPanel({
   cacheStatus,
-  chunkFetches,
+  diagnostics,
   clock,
   debugEvents,
-  debugInfo,
   duration,
   isBuffering,
   src,
 }: AudioPlayerDebugPanelProps) {
+  const { chunkFetches, debugInfo } = useBufferDiagnostics(diagnostics);
   const currentTime = usePlaybackTime(clock);
   const source = describeAudioSource(src);
   return (
