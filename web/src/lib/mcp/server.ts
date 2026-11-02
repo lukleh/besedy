@@ -4,6 +4,7 @@ import {
   registerGetEventTool,
   registerGetRecordingTool,
   registerGetTranscriptTool,
+  registerListBookmarksTool,
   registerListCatalogsTool,
   registerListEventsTool,
   registerListLocationsTool,
@@ -13,6 +14,7 @@ import {
   type BesedyMcpRequestContext,
 } from '@/lib/mcp/tools';
 
+import { MCP_BOOKMARKS_SCOPE } from '@/lib/mcp/config';
 import { TRANSCRIPT_VERIFICATION_GUIDANCE } from '@/lib/mcp/tools/shared';
 
 export { paginateCatalogs } from '@/lib/mcp/tools';
@@ -57,6 +59,11 @@ export function createBesedyMcpServer(
   registerGetTranscriptTool(server, context);
   registerSearchTranscriptsTool(server, context);
   registerFindTranscriptMentionsTool(server, context);
+  // Bookmarks are the user's private notes, so only a client granted the
+  // bookmarks scope sees the tool at all.
+  if (context.scopes.includes(MCP_BOOKMARKS_SCOPE)) {
+    registerListBookmarksTool(server, context);
+  }
 
   return server;
 }

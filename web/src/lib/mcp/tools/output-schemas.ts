@@ -237,3 +237,58 @@ export const FindTranscriptMentionsOutputSchema = z.object({
   }),
   results: z.array(TranscriptSearchResultSchema),
 });
+
+export const ListBookmarksOutputSchema = z.object({
+  catalogId: CatalogIdSchema,
+  bookmarks: z.array(
+    z.object({
+      id: z.string().describe('Stable bookmark ID.'),
+      positionSec: z
+        .number()
+        .nonnegative()
+        .describe('Bookmarked position in the recording, in seconds.'),
+      comment: z
+        .string()
+        .nullable()
+        .describe(
+          "The user's own note on this moment. It records their interest or opinion, not what was said in the recording.",
+        ),
+      excerpt: z
+        .string()
+        .nullable()
+        .describe(
+          'Transcript line saved when the bookmark was made. It may predate later transcript corrections.',
+        ),
+      createdAt: z.string().describe('When the bookmark was made (ISO 8601).'),
+      updatedAt: z
+        .string()
+        .describe('When the bookmark or its comment last changed (ISO 8601).'),
+      webUrl: WebUrlSchema.describe(
+        'Recording page that seeks to the bookmarked position.',
+      ),
+      recording: z.object({
+        audioHash: HashSchema.describe('Stable SHA-256 recording identifier.'),
+        title: z.string(),
+        webUrl: WebUrlSchema,
+      }),
+      event: EventRefSchema.extend({ isPrimary: z.boolean() })
+        .nullable()
+        .describe(
+          'The recording event when it is visible to the caller, otherwise null.',
+        ),
+      transcriptRequest: z
+        .object({
+          catalogId: CatalogIdSchema,
+          audioHash: HashSchema,
+          mode: z.literal('page'),
+          startSec: z.number().nonnegative(),
+          endSec: z.number().nonnegative(),
+        })
+        .nullable()
+        .describe(
+          'Ready-to-call get_transcript arguments for the minute on each side of the bookmark. Null when the canonical transcript is unavailable.',
+        ),
+    }),
+  ),
+  nextCursor: NullableCursorSchema,
+});

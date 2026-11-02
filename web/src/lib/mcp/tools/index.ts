@@ -2,6 +2,7 @@ export { registerGetEventTool } from '@/lib/mcp/tools/get-event';
 export { registerGetRecordingTool } from '@/lib/mcp/tools/get-recording';
 export { registerGetTranscriptTool } from '@/lib/mcp/tools/get-transcript';
 export { registerFindTranscriptMentionsTool } from '@/lib/mcp/tools/find-transcript-mentions';
+export { registerListBookmarksTool } from '@/lib/mcp/tools/list-bookmarks';
 export {
   paginateCatalogs,
   registerListCatalogsTool,

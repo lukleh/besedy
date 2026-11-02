@@ -17,6 +17,7 @@ import {
   findMcpTranscriptMentions,
   getMcpRecording,
   getMcpTranscript,
+  listMcpBookmarks,
   listMcpLocations,
   listMcpRecorders,
   listMcpEvents,
@@ -46,11 +47,12 @@ vi.mock('@/lib/db', () => ({
   default: {
     $queryRaw: vi.fn(),
     catalogEvent: { findMany: vi.fn(), findFirst: vi.fn() },
-    catalogEventRecording: { findFirst: vi.fn() },
+    catalogEventRecording: { findFirst: vi.fn(), findMany: vi.fn() },
     catalogEntry: { findMany: vi.fn() },
     audioMetadata: { findMany: vi.fn() },
     location: { findMany: vi.fn() },
     recorder: { findMany: vi.fn() },
+    recordingBookmark: { findMany: vi.fn() },
   },
 }));
 
@@ -96,7 +98,9 @@ describe('MCP read service', () => {
     recorder: { findMany: ReturnType<typeof vi.fn> };
     catalogEventRecording: {
       findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
     };
+    recordingBookmark: { findMany: ReturnType<typeof vi.fn> };
   };
 
   beforeEach(() => {
@@ -1296,6 +1300,223 @@ describe('MCP read service', () => {
       code: 'search_not_configured',
       message: 'Transcript search is not configured for this catalog',
       retryable: false,
+    });
+  });
+
+  describe('bookmarks', () => {
+    function bookmarkRow(
+      id: string,
+      audioHash: string,
+      createdAt: string,
+      overrides: Record<string, unknown> = {},
+    ) {
+      return {
+        id,
+        audioHash,
+        positionSec: 125.5,
+        comment: 'Worth quoting',
+        excerpt: 'Saved line',
+        createdAt: new Date(createdAt),
+        updatedAt: new Date(createdAt),
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      db.catalogEventRecording.findMany.mockResolvedValue([
+        {
+          audioHash: 'visible-recording',
+          isPrimary: true,
+          event: {
+            id: 42,
+            dateYear: 2026,
+            dateMonth: 8,
+            dateDay: 26,
+            location: { id: 7, name: 'Prague' },
+          },
+        },
+      ]);
+    });
+
+    it('lists only the caller bookmarks on listener-visible recordings', async () => {
+      db.recordingBookmark.findMany.mockResolvedValue([
+        bookmarkRow('bm-hidden', 'hidden-recording', '2026-10-02T10:00:00Z'),
+        bookmarkRow('bm-visible', 'visible-recording', '2026-10-01T10:00:00Z'),
+      ]);
+
+      const result = await listMcpBookmarks('user-1', 'catalog-a', {
+        limit: 50,
+      });
+
+      expect(db.recordingBookmark.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user-1', workflowGroupId: 'catalog-a', AND: [] },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+      // Visibility is the MCP listener visibility, not the user's web grant.
+      expect(db.$queryRaw).toHaveBeenCalledOnce();
+      expect(db.catalogEventRecording.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            workflowGroupId: 'catalog-a',
+            audioHash: { in: ['visible-recording'] },
+            eventId: { in: [42] },
+          },
+        }),
+      );
+      expect(result).toEqual({
+        catalogId: 'catalog-a',
+        bookmarks: [
+          {
+            id: 'bm-visible',
+            positionSec: 125.5,
+            comment: 'Worth quoting',
+            excerpt: 'Saved line',
+            createdAt: '2026-10-01T10:00:00.000Z',
+            updatedAt: '2026-10-01T10:00:00.000Z',
+            webUrl:
+              'https://besedy.example/catalog/catalog-a/recording/visible-recording?seek=125.5',
+            recording: {
+              audioHash: 'visible-recording',
+              title: 'Recording title',
+              webUrl:
+                'https://besedy.example/catalog/catalog-a/recording/visible-recording',
+            },
+            event: {
+              id: 42,
+              webUrl: 'https://besedy.example/catalog/catalog-a/event/42',
+              date: { year: 2026, month: 8, day: 26 },
+              location: { id: 7, name: 'Prague' },
+              isPrimary: true,
+            },
+            transcriptRequest: {
+              catalogId: 'catalog-a',
+              audioHash: 'visible-recording',
+              mode: 'page',
+              startSec: 65.5,
+              endSec: 185.5,
+            },
+          },
+        ],
+        nextCursor: null,
+      });
+    });
+
+    it('filters by comment or excerpt text and recording', async () => {
+      db.recordingBookmark.findMany.mockResolvedValue([]);
+
+      const result = await listMcpBookmarks('user-1', 'catalog-a', {
+        limit: 50,
+        query: '50%_off',
+        audioHash: 'visible-recording',
+      });
+
+      expect(db.recordingBookmark.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId: 'user-1',
+            workflowGroupId: 'catalog-a',
+            audioHash: 'visible-recording',
+            AND: [
+              {
+                OR: [
+                  { comment: { contains: '50\\%\\_off', mode: 'insensitive' } },
+                  { excerpt: { contains: '50\\%\\_off', mode: 'insensitive' } },
+                ],
+              },
+            ],
+          },
+        }),
+      );
+      expect(db.$queryRaw).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        catalogId: 'catalog-a',
+        bookmarks: [],
+        nextCursor: null,
+      });
+    });
+
+    it('pages newest first with a cursor bound to the filters', async () => {
+      db.recordingBookmark.findMany.mockResolvedValue([
+        bookmarkRow('bm-3', 'visible-recording', '2026-10-03T10:00:00Z'),
+        bookmarkRow('bm-2', 'visible-recording', '2026-10-02T10:00:00Z', {
+          positionSec: 10,
+        }),
+        bookmarkRow('bm-1', 'visible-recording', '2026-10-01T10:00:00Z'),
+      ]);
+
+      const first = await listMcpBookmarks('user-1', 'catalog-a', {
+        limit: 2,
+      });
+      expect(first.bookmarks.map((bookmark) => bookmark.id)).toEqual([
+        'bm-3',
+        'bm-2',
+      ]);
+      // The context window never starts before the recording does.
+      expect(first.bookmarks[1].transcriptRequest).toMatchObject({
+        startSec: 0,
+        endSec: 70,
+      });
+      expect(first.nextCursor).toEqual(expect.any(String));
+
+      await listMcpBookmarks('user-1', 'catalog-a', {
+        limit: 2,
+        cursor: first.nextCursor!,
+      });
+      expect(db.recordingBookmark.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: {
+            userId: 'user-1',
+            workflowGroupId: 'catalog-a',
+            AND: [
+              {
+                OR: [
+                  { createdAt: { lt: new Date('2026-10-02T10:00:00Z') } },
+                  {
+                    createdAt: new Date('2026-10-02T10:00:00Z'),
+                    id: { lt: 'bm-2' },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      );
+
+      await expect(
+        listMcpBookmarks('user-1', 'catalog-a', {
+          limit: 2,
+          cursor: first.nextCursor!,
+          query: 'other',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_cursor', retryable: false });
+      await expect(
+        listMcpBookmarks('user-1', 'catalog-b', {
+          limit: 2,
+          cursor: first.nextCursor!,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_cursor' });
+    });
+
+    it('omits the transcript request and event when they are unavailable', async () => {
+      db.recordingBookmark.findMany.mockResolvedValue([
+        bookmarkRow('bm-1', 'visible-recording', '2026-10-01T10:00:00Z'),
+      ]);
+      db.catalogEventRecording.findMany.mockResolvedValue([]);
+      vi.mocked(getAvailableTranscripts).mockResolvedValue({
+        hash: 'visible-recording',
+        backends: ['other-backend'],
+      });
+
+      const result = await listMcpBookmarks('user-1', 'catalog-a', {
+        limit: 50,
+      });
+
+      expect(result.bookmarks[0]).toMatchObject({
+        event: null,
+        transcriptRequest: null,
+      });
     });
   });
 });
