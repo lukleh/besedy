@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptContent } from "@/components/transcript/transcript-viewer-content";
 import { findSpeakerAtTime, type Diarization, type Transcript } from "@/components/transcript/transcript-viewer-types";
+import { createPlaybackClock } from "@/lib/playback-clock";
 import { formatTimestamp } from "@/lib/utils";
 
 const virtual = vi.hoisted(() => ({ indices: [0, 1, 2], scrollToIndex: vi.fn() }));
@@ -43,34 +44,36 @@ describe("virtualized transcript playback", () => {
   });
 
   it("reuses speaker lookups and renders only rows whose highlight changes", () => {
-    const view = render(<TranscriptContent transcript={transcript} diarization={diarization} currentTime={0.1} showTimestamps />);
+    const clock = createPlaybackClock(0.1);
+    render(<TranscriptContent transcript={transcript} diarization={diarization} clock={clock} showTimestamps />);
     expect(findSpeakerAtTime).toHaveBeenCalledTimes(200);
     vi.mocked(formatTimestamp).mockClear();
 
-    view.rerender(<TranscriptContent transcript={transcript} diarization={diarization} currentTime={0.5} showTimestamps />);
+    act(() => clock.set(0.5));
     expect(formatTimestamp).not.toHaveBeenCalled();
-    view.rerender(<TranscriptContent transcript={transcript} diarization={diarization} currentTime={1.1} showTimestamps />);
+    act(() => clock.set(1.1));
     expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[0], [1]]);
     expect(findSpeakerAtTime).toHaveBeenCalledTimes(200);
   });
 
   it("assigns colors in transcript order even when a speaker is skipped while scrolling", () => {
-    const view = render(<TranscriptContent transcript={transcript} diarization={diarization} currentTime={0} />);
+    const clock = createPlaybackClock(0);
+    render(<TranscriptContent transcript={transcript} diarization={diarization} clock={clock} />);
     expect(screen.getByText("A")).toHaveClass("bg-blue-100");
     virtual.indices = [100];
-    view.rerender(<TranscriptContent transcript={transcript} diarization={diarization} currentTime={100} />);
+    act(() => clock.set(100));
     expect(screen.getByText("C")).toHaveClass("bg-purple-100");
     virtual.indices = [50];
-    view.rerender(<TranscriptContent transcript={transcript} diarization={diarization} currentTime={50} />);
+    act(() => clock.set(50));
     expect(screen.getByText("B")).toHaveClass("bg-green-100");
   });
 
   it("uses the latest seek handler without re-rendering inactive rows", () => {
     const first = vi.fn();
     const latest = vi.fn();
-    const view = render(<TranscriptContent transcript={transcript} currentTime={0} onSeek={first} showTimestamps />);
+    const view = render(<TranscriptContent transcript={transcript} onSeek={first} showTimestamps />);
     vi.mocked(formatTimestamp).mockClear();
-    view.rerender(<TranscriptContent transcript={transcript} currentTime={0} onSeek={latest} showTimestamps />);
+    view.rerender(<TranscriptContent transcript={transcript} onSeek={latest} showTimestamps />);
     expect(formatTimestamp).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("segment 2"));
     expect(first).not.toHaveBeenCalled();
@@ -84,7 +87,7 @@ describe("virtualized transcript playback", () => {
         index === 0 ? { ...segment, end: 2 } : segment,
       ),
     };
-    render(<TranscriptContent transcript={overlapping} currentTime={1.5} />);
+    render(<TranscriptContent transcript={overlapping} clock={createPlaybackClock(1.5)} />);
     expect(screen.getByText("segment 0")).toHaveClass("bg-primary/20");
     expect(screen.getByText("segment 1")).toHaveClass("bg-primary/20");
   });

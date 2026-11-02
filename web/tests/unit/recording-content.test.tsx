@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RecordingContent, {
   FORMAT_WAIT_TIMEOUT_MS,
 } from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
+import { createPlaybackClock } from "@/lib/playback-clock";
 
 const useQueryMock = vi.fn();
 const useHydratedBooleanMock = vi.fn();
@@ -139,7 +140,7 @@ describe("RecordingContent transcript toggle", () => {
     useOnlineStatusMock.mockReturnValue({ isOnline: true });
     useRecordingPlaybackMock.mockReturnValue({
       autoPlayOnSeek: false,
-      currentTime: 0,
+      clock: createPlaybackClock(),
       handleAudioEnded: vi.fn(),
       handleDurationChange: vi.fn(),
       handlePlayerSeek: vi.fn(),

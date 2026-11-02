@@ -383,6 +383,8 @@ export function AudioPlayer({
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        const audio = audioRef.current;
+        if (audio) setCurrentTime(audio.currentTime);
         restoreSavedPositionAfterResume();
       }
     };
@@ -709,7 +711,15 @@ export function AudioPlayer({
       if (linkedPlaybackEnd !== null && endFrame === null && !audio.paused) {
         endFrame = requestAnimationFrame(watchExcerptEnd);
       }
-      setCurrentTime(audio.currentTime);
+      // A transport switch restores from here, so it follows the element
+      // even while the time display below is held.
+      lastTimeRef.current = audio.currentTime;
+      // Nothing is drawn while the page is hidden (screen off, app in the
+      // background), so the player's own time display waits; it catches up
+      // when the page is shown. onTimeUpdate still gets every update.
+      if (document.visibilityState !== 'hidden') {
+        setCurrentTime(audio.currentTime);
+      }
       onTimeUpdate?.(audio.currentTime);
       // If timeupdate fires, audio is actually playing - clear buffering state
       if (!audio.paused) {

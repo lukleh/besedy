@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { List } from "lucide-react";
@@ -66,18 +66,14 @@ export interface BookmarkDraft {
  * bookmark (the player's button or the B key), not when the comment is saved;
  * playback carries on while they type. One form is open at a time.
  */
-export function useBookmarkDraft(currentTime: number, enabled: boolean): BookmarkDraft {
+export function useBookmarkDraft(getCurrentTime: () => number, enabled: boolean): BookmarkDraft {
   const [draftTime, setDraftTime] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const currentTimeRef = useRef(currentTime);
-  useEffect(() => {
-    currentTimeRef.current = currentTime;
-  }, [currentTime]);
 
   const startDraft = useCallback(() => {
     setEditingId(null);
-    setDraftTime(currentTimeRef.current);
-  }, []);
+    setDraftTime(getCurrentTime());
+  }, [getCurrentTime]);
   const cancelDraft = useCallback(() => setDraftTime(null), []);
   const startEdit = useCallback((id: string) => {
     setDraftTime(null);

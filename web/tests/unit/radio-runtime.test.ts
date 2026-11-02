@@ -202,6 +202,28 @@ describe("createRadioRuntime", () => {
     }
   });
 
+  it("holds the position snapshot while the page is hidden and catches up when shown", async () => {
+    const runtime = createRadioRuntime();
+    const stop = runtime.start();
+    await runtime.startRadio("catalog-1");
+    const listener = vi.fn();
+    runtime.subscribe(listener);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+
+    audio.currentTime = 12;
+    audio.dispatchEvent(new Event("timeupdate"));
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.getSnapshot().currentTime).toBe(0);
+
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(runtime.getSnapshot().currentTime).toBe(12);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    visibility.mockRestore();
+    stop();
+  });
+
   it("hands off playback without clearing listening history", async () => {
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === "besedy-radio-history-catalog-1") {

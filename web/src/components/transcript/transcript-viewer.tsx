@@ -85,7 +85,7 @@ export type {
 export function TranscriptViewer({
   hash,
   groupId,
-  currentTime = 0,
+  clock,
   onSeek,
   isPlaying = false,
   canDownload = false,
@@ -148,12 +148,13 @@ export function TranscriptViewer({
       prevBackendRef.current !== null &&
       prevBackendRef.current !== effectiveBackend &&
       effectiveBackend !== null &&
-      currentTime > 0
+      clock &&
+      clock.get() > 0
     ) {
-      setScrollToTime(currentTime);
+      setScrollToTime(clock.get());
     }
     prevBackendRef.current = effectiveBackend;
-  }, [effectiveBackend, currentTime]);
+  }, [effectiveBackend, clock]);
 
   useEffect(() => {
     return () => {
@@ -500,7 +501,7 @@ export function TranscriptViewer({
       ) : transcript ? (
         <TranscriptContent
           transcript={transcript}
-          currentTime={currentTime}
+          clock={clock}
           onSeek={onSeek}
           autoScroll={autoScroll && isPlaying}
           diarization={speakersVisible ? diarization : undefined}

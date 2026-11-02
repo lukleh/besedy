@@ -1465,6 +1465,27 @@ describe("AudioPlayer external seek", () => {
     expect(audio.play).toHaveBeenCalledTimes(1);
   });
 
+  it("restores the position reached while hidden across a transport switch", async () => {
+    const hash = "a".repeat(64);
+    const src = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const { audio, rerender } = renderPlayer({ src, recordingHash: hash });
+    audio.pause = vi.fn();
+    await loadMetadata(audio);
+
+    // A download finishing with the screen off swaps in the local package.
+    setVisibilityState("hidden");
+    audio.currentTime = 50;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    mockReadyState(audio, 0);
+    audio.currentTime = 0;
+    rerender(playerElement({ src: `${src}?local=1`, recordingHash: hash }));
+    await loadMetadata(audio);
+
+    expect(audio.currentTime).toBe(50);
+  });
+
   it("restores the current position instead of replaying a consumed request on source switch", async () => {
     const hash = "a".repeat(64);
     const src = `/api/catalogs/cat/recordings/${hash}/audio`;
@@ -1708,6 +1729,31 @@ describe("AudioPlayer external seek", () => {
 });
 
 describe("AudioPlayer lifecycle resume", () => {
+  it("holds its time display while the page is hidden and catches up when shown", async () => {
+    const onTimeUpdate = vi.fn();
+    const { audio, container } = renderPlayer({ onTimeUpdate });
+    Object.defineProperty(audio, "duration", { value: 100, configurable: true });
+    await act(async () => {
+      audio.dispatchEvent(new Event("loadedmetadata"));
+    });
+
+    setVisibilityState("hidden");
+    audio.currentTime = 20;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+
+    // Position saving still hears about it; the screen does not change.
+    expect(onTimeUpdate).toHaveBeenCalledWith(20);
+    expect(container.textContent).not.toContain("0:20");
+
+    await act(async () => {
+      setVisibilityState("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(container.textContent).toContain("0:20");
+  });
+
   it("restores the saved position when a visible page resumes with the audio reset to zero", async () => {
     const hash = "a".repeat(64);
     const onTimeUpdate = vi.fn();
