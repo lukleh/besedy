@@ -10,6 +10,13 @@ Everything that decides what trains a model lives in export code and may
 change: the web's eligibility policy, the test recordings listed next to
 the catalog's corrections (``test-recordings.json``), and whether fillers stay
 in labels.
+
+Manifest rows (``DATASET_SCHEMA_VERSION`` 2) carry, besides the label
+(``text``), the chunk's machine text (``machine_text``: the spans' production
+transcript joined, null when the export predates it) and the origin of every
+span's current revision (``revision_origins``, parallel to ``revision_ids``:
+``machine``, ``manual``, ``suggestion`` or null), so the machine-vs-human
+baseline can be scored from a dataset alone.
 """
 
 from __future__ import annotations
@@ -29,19 +36,18 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from besedy.lib import correction_segmentation as cs
+from besedy.lib.asr_evaluation import load_recordings
 from besedy.lib.catalog.manager import source_file_sha256
 from besedy.lib.correction_guard import map_recorded_path
 
 LOGGER = logging.getLogger(__name__)
 
-DATASET_SCHEMA_VERSION = 1
+DATASET_SCHEMA_VERSION = 2
 
 # Audio hashes set aside for testing live with the catalog's corrections, not
 # in the repository: they are this deployment's data, backed up with the work
 # they protect.
 TEST_RECORDINGS_NAME = "test-recordings.json"
-TEST_RECORDINGS_VERSION = 1
-_AUDIO_HASH = re.compile(r"^[0-9a-f]{64}$")
 
 # The spellings the correction guide fixes for fillers (ADR 0012). A filler
 # takes the punctuation written right after it along ("Ehm? Ano." leaves
@@ -131,38 +137,22 @@ def load_test_recordings(path: Path) -> set[str]:
 
     A catalog's list is ``{"version": 1, "audio_hashes": [...]}`` at
     :func:`test_recordings_path`; a file given on the command line may also be
-    a JSON list or one hash per line. A missing list is refused rather than
-    read as having no test recordings: a recording trained on can never become
-    a test recording again, so the list is chosen before any export. An
-    explicit empty list says the catalog has none on purpose.
+    a JSON list or one hash per line (parsed by
+    :func:`besedy.lib.asr_evaluation.load_recordings`). A missing list is
+    refused rather than read as having no test recordings: a recording trained
+    on can never become a test recording again, so the list is chosen before
+    any export. An explicit empty list says the catalog has none on purpose.
     """
     try:
-        raw = path.read_text(encoding="utf-8").strip()
+        return load_recordings(path)
     except FileNotFoundError as exc:
         raise TrainingExportError(
             f"No test recordings are listed at {path}. Choose them before the first export "
             '(write {"version": 1, "audio_hashes": [...]}, an empty list if the catalog has '
             "none on purpose), or pass --no-test-recordings for an experiment"
         ) from exc
-    if not raw:
-        return set()
-    if raw.startswith("{"):
-        document = json.loads(raw)
-        if document.get("version") != TEST_RECORDINGS_VERSION:
-            raise TrainingExportError(
-                f"{path} is test recordings version {document.get('version')!r}, "
-                f"expected {TEST_RECORDINGS_VERSION}"
-            )
-        hashes = document.get("audio_hashes")
-        if not isinstance(hashes, list):
-            raise TrainingExportError(f"{path} has no audio_hashes list")
-    else:
-        hashes = json.loads(raw) if raw.startswith("[") else raw.split()
-    result = {str(value).strip() for value in hashes if str(value).strip()}
-    for value in result:
-        if not _AUDIO_HASH.match(value):
-            raise TrainingExportError(f"{path} names {value!r}, not a 64-character audio hash")
-    return result
+    except ValueError as exc:
+        raise TrainingExportError(str(exc)) from exc
 
 
 @dataclass
@@ -237,6 +227,14 @@ def _read_regions(
                 f"Region {index} of {audio_path} could not be read: {exc}"
             ) from exc
     return bytes(frames)
+
+
+def _machine_text(spans: Sequence[Mapping[str, Any]], *, keep_fillers: bool) -> str | None:
+    """The spans' machine texts joined like the label; None when the export lacks them."""
+    if any(span.get("machineText") is None for span in spans):
+        return None
+    text = cs.normalize_span_text(" ".join(str(span["machineText"]) for span in spans))
+    return text if keep_fillers else strip_fillers(text)
 
 
 def build_dataset(
@@ -320,6 +318,7 @@ def build_dataset(
                 text = cs.normalize_span_text(" ".join(span["text"] for span in chunk["spans"]))
                 if not keep_fillers:
                     text = strip_fillers(text)
+                machine_text = _machine_text(chunk["spans"], keep_fillers=keep_fillers)
 
                 name = f"{workspace['audioHash'][:16]}_{chunk['chunk']:05d}.wav"
                 with wave.open(str(audio_dir / name), "wb") as out:
@@ -337,7 +336,9 @@ def build_dataset(
                         "audio_hash": workspace["audioHash"],
                         "workspace_id": workspace["workspaceId"],
                         "chunk": chunk["chunk"],
+                        "machine_text": machine_text,
                         "revision_ids": [span["revisionId"] for span in chunk["spans"]],
+                        "revision_origins": [span.get("origin") for span in chunk["spans"]],
                         "source_backend": workspace["sourceBackend"],
                     }
                 )

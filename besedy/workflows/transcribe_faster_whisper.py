@@ -24,6 +24,7 @@ from besedy.core.paths import (
 from besedy.lib.audio.probe import measure_audio_duration_seconds
 from besedy.lib.data.atomic_io import atomic_write_text
 from besedy.lib.workflow.config import select_transcription_workflow
+from besedy.lib.workflow.faster_whisper_options import production_transcribe_options
 from besedy.lib.workflow.language import (
     resolve_inference_language,
     resolve_language_setting,
@@ -362,22 +363,14 @@ def main() -> int:
         logging.info("Transcribing %s", audio_path)
 
         min_silence_ms = config.vad.min_silence_ms
-        vad_parameters = None
-        if min_silence_ms is not None:
-            vad_parameters = dict(min_silence_duration_ms=min_silence_ms)
 
         # The batched pipeline runs its own VAD pass while decoding; the regions
         # it decodes are recorded in generation_params.transcription_options.
+        # The options are shared with eval_faster_whisper.py so evaluations
+        # decode the way production does.
         segments_iter, info = pipeline.transcribe(
             str(audio_path),
-            batch_size=args.batch_size,
-            vad_filter=config.vad.filter_enabled,
-            vad_parameters=vad_parameters,
-            word_timestamps=config.vad.word_timestamps,
-            language=language,
-            log_progress=True,
-            condition_on_previous_text=False,  # Primary: equivalent to --max-context 0
-            repetition_penalty=1.1,  # Optional: additional repetition prevention
+            **production_transcribe_options(language=language, batch_size=args.batch_size),
         )
         segments = list(segments_iter)
         duration_after_vad = getattr(info, "duration_after_vad", None)

@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma, type TranscriptRevisionOrigin } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import type { SpanDecisionSummary, SpanState } from "@/lib/correction/span-state";
 import { spanStatesSql } from "@/lib/correction/span-state-sql";
@@ -20,6 +20,8 @@ export interface SpanSummaryRow {
     actorKey: string | null;
     createdAt: Date;
     previousRevisionId: string | null;
+    /** ADR 0012 origin of the text; null on revisions from before the contract */
+    origin: TranscriptRevisionOrigin | null;
   } | null;
   summary: SpanDecisionSummary;
 }
@@ -129,6 +131,7 @@ export async function loadSpanSummaries(
           actorKey: true,
           createdAt: true,
           previousRevisionId: true,
+          origin: true,
         },
       },
     },

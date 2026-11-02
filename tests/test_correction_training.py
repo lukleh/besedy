@@ -92,6 +92,8 @@ def tree(tmp_path: Path) -> tuple[dict, Path, Path]:
                                 "ordinal": 0,
                                 "revisionId": "r0",
                                 "text": "Ehm, dobrý den.",
+                                "machineText": "Dobrej den",
+                                "origin": "manual",
                                 "firstRegion": 0,
                                 "lastRegion": 1,
                             },
@@ -100,6 +102,8 @@ def tree(tmp_path: Path) -> tuple[dict, Path, Path]:
                                 "ordinal": 1,
                                 "revisionId": "r1",
                                 "text": "Vítejte.",
+                                "machineText": "Vítejte.",
+                                "origin": "machine",
                                 "firstRegion": 2,
                                 "lastRegion": 2,
                             },
@@ -126,7 +130,9 @@ def test_a_chunk_is_rebuilt_as_the_model_heard_it(tree) -> None:
     rows = _rows(output)
     assert summary.chunks_written == 1 and summary.splits["train"] == 1
     assert rows[0]["text"] == "Ehm, dobrý den. Vítejte."
+    assert rows[0]["machine_text"] == "Dobrej den Vítejte."
     assert rows[0]["revision_ids"] == ["r0", "r1"]
+    assert rows[0]["revision_origins"] == ["manual", "machine"]
     with wave.open(str(output / rows[0]["audio"]), "rb") as rebuilt:
         frames = array.array("h", rebuilt.readframes(rebuilt.getnframes()))
     # 4 + 4 + 4 s of speech, silence between regions left out, in order.
@@ -151,6 +157,7 @@ def test_test_recordings_and_fillers_follow_the_export_options(tree, tmp_path: P
     row = _rows(output)[0]
     assert row["split"] == "test"
     assert row["text"] == "dobrý den. Vítejte."
+    assert row["machine_text"] == "Dobrej den Vítejte."
     policy = json.loads((output / "dataset.json").read_text())["policy"]
     assert policy["strip_fillers"] is True and "lowercase" in policy["strip_fillers_note"]
     assert policy["test_recordings"] == [HASH]
@@ -177,6 +184,25 @@ def test_a_catalog_lists_its_test_recordings_next_to_its_corrections(tmp_path: P
     listed.write_text(json.dumps(["ABC"]), encoding="utf-8")
     with pytest.raises(TrainingExportError, match="64-character"):
         load_test_recordings(listed)
+
+
+def test_an_export_without_machine_text_leaves_the_baseline_columns_empty(tree) -> None:
+    export, root, output = tree
+    for span in export["workspaces"][0]["chunks"][0]["spans"]:
+        del span["machineText"]
+        del span["origin"]
+    build_dataset(export, root, output)
+    row = _rows(output)[0]
+    assert row["machine_text"] is None
+    assert row["revision_origins"] == [None, None]
+    assert json.loads((output / "dataset.json").read_text())["schema_version"] == 2
+
+
+def test_fillers_are_stripped_from_the_machine_text_as_from_the_label(tree) -> None:
+    export, root, output = tree
+    export["workspaces"][0]["chunks"][0]["spans"][0]["machineText"] = "Ehm, dobrej den"
+    build_dataset(export, root, output, keep_fillers=False)
+    assert _rows(output)[0]["machine_text"] == "dobrej den Vítejte."
 
 
 def test_excluded_chunks_are_counted_with_their_reasons(tree) -> None:

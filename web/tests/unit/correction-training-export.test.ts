@@ -33,6 +33,8 @@ interface SpanSetup {
   /** null: a span without a current revision */
   revision?: string | null;
   text?: string;
+  machineText?: string;
+  origin?: "MACHINE" | "MANUAL" | "SUGGESTION" | null;
 }
 
 interface Decision {
@@ -92,10 +94,15 @@ describe("buildTrainingExport", () => {
       setup.map((span) => ({
         id: span.id,
         ordinal: span.ordinal,
+        originalText: span.machineText ?? `machine ${span.id}`,
         currentRevision:
           span.revision === null
             ? null
-            : { id: span.revision ?? `rev-${span.id}`, text: span.text ?? `text ${span.id}` },
+            : {
+                id: span.revision ?? `rev-${span.id}`,
+                text: span.text ?? `text ${span.id}`,
+                origin: span.origin === undefined ? "MANUAL" : span.origin,
+              },
         summary: {
           state: span.state ?? "done",
           approverIds: span.approvers ?? ["alice", "bob"],
@@ -144,8 +151,8 @@ describe("buildTrainingExport", () => {
 
   it("exports a chunk of done, unflagged, listened-to spans with its provenance", async () => {
     spans([
-      { id: "s0", ordinal: 0, chunk: 0, regions: [0, 1], text: "Dobrý den." },
-      { id: "s1", ordinal: 1, chunk: 0, regions: [2, 2], text: "Vítejte." },
+      { id: "s0", ordinal: 0, chunk: 0, regions: [0, 1], text: "Dobrý den.", machineText: "Dobrej den." },
+      { id: "s1", ordinal: 1, chunk: 0, regions: [2, 2], text: "Vítejte.", origin: "MACHINE" },
     ]);
     const result = await buildTrainingExport(CATALOG_ID);
 
@@ -168,8 +175,26 @@ describe("buildTrainingExport", () => {
         eligible: true,
         reasons: [],
         spans: [
-          { spanId: "s0", ordinal: 0, revisionId: "rev-s0", text: "Dobrý den.", firstRegion: 0, lastRegion: 1 },
-          { spanId: "s1", ordinal: 1, revisionId: "rev-s1", text: "Vítejte.", firstRegion: 2, lastRegion: 2 },
+          {
+            spanId: "s0",
+            ordinal: 0,
+            revisionId: "rev-s0",
+            text: "Dobrý den.",
+            machineText: "Dobrej den.",
+            origin: "manual",
+            firstRegion: 0,
+            lastRegion: 1,
+          },
+          {
+            spanId: "s1",
+            ordinal: 1,
+            revisionId: "rev-s1",
+            text: "Vítejte.",
+            machineText: "machine s1",
+            origin: "machine",
+            firstRegion: 2,
+            lastRegion: 2,
+          },
         ],
       },
     ]);
@@ -257,6 +282,12 @@ describe("buildTrainingExport", () => {
     const result = await buildTrainingExport(CATALOG_ID, { minHeardFraction: 0.5 });
     expect(result.policy).toEqual({ minHeardFraction: 0.5 });
     expect(result.workspaces[0].chunks[0].eligible).toBe(true);
+  });
+
+  it("passes a pre-contract revision's missing origin through as null", async () => {
+    spans([{ id: "s0", ordinal: 0, chunk: 0, regions: [0, 0], origin: null }]);
+    const [workspace] = (await buildTrainingExport(CATALOG_ID)).workspaces;
+    expect(workspace.chunks[0].spans[0].origin).toBeNull();
   });
 
   it("leaves out spans from before the contract and spans without a revision", async () => {

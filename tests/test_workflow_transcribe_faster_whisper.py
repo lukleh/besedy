@@ -29,6 +29,9 @@ mock_faster_whisper = MagicMock()
 sys.modules["faster_whisper"] = mock_faster_whisper
 sys.modules["faster_whisper.vad"] = MagicMock()
 
+from besedy.lib.workflow.faster_whisper_options import (  # noqa: E402
+    production_transcribe_options,
+)
 from besedy.workflows import transcribe_faster_whisper as transcribe_module  # noqa: E402
 from besedy.workflows.transcribe_faster_whisper import (  # noqa: E402
     build_payload,
@@ -111,6 +114,7 @@ def test_main_maps_auto_language_to_none_for_inference(
     class DummyPipeline:
         def transcribe(self, _audio_path: str, **kwargs: object):
             captured["inference_language"] = kwargs["language"]
+            captured["options"] = dict(kwargs)
             info = SimpleNamespace(language="en", transcription_options=None)
             return iter(()), info
 
@@ -148,10 +152,9 @@ def test_main_maps_auto_language_to_none_for_inference(
     monkeypatch.setattr(sys, "argv", argv)
 
     assert transcribe_module.main() == 0
-    assert captured == {
-        "inference_language": None,
-        "payload_language": None,
-    }
+    assert captured["inference_language"] is None and captured["payload_language"] is None
+    # The pipeline gets exactly the shared production options, which training-eval reuses.
+    assert captured["options"] == production_transcribe_options(language=None, batch_size=8)
 
 
 class TestEnsureAudioFiles:

@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma, type TranscriptRevisionOrigin } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { loadSpanFlags } from "@/lib/correction/flag-service";
 import { loadSpanSummaries } from "@/lib/correction/span-summaries";
@@ -12,6 +12,9 @@ import { MIN_HEARD_FRACTION_FOR_TRAINING } from "@/lib/correction/playback-cover
  * module decides which chunks qualify and returns everything the Python
  * dataset builder needs to rebuild them, including the excluded chunks and
  * why, so an export can be audited and rebuilt from the revision IDs it lists.
+ * Each span also carries the machine text it started from and its revision's
+ * origin, so the machine-vs-human baseline can be computed from a dataset
+ * alone.
  *
  * Eligibility is export policy, not stored state, and may change: today a
  * chunk qualifies when every span is done, no span carries a flag, and every
@@ -29,11 +32,18 @@ export const DEFAULT_TRAINING_EXPORT_POLICY: TrainingExportPolicy = {
   minHeardFraction: MIN_HEARD_FRACTION_FOR_TRAINING,
 };
 
+/** Where a span's current text came from, lowercase (ADR 0012); null before the contract */
+export type TrainingExportOrigin = "machine" | "manual" | "suggestion" | null;
+
 export interface TrainingExportSpan {
   spanId: string;
   ordinal: number;
   revisionId: string;
+  /** The corrected text: the label */
   text: string;
+  /** The machine text the corrector started from: the production transcript of the span */
+  machineText: string;
+  origin: TrainingExportOrigin;
   firstRegion: number;
   lastRegion: number;
 }
@@ -62,6 +72,19 @@ export interface TrainingExport {
   catalogId: string;
   policy: TrainingExportPolicy;
   workspaces: TrainingExportWorkspace[];
+}
+
+function toExportOrigin(origin: TranscriptRevisionOrigin | null): TrainingExportOrigin {
+  switch (origin) {
+    case "MACHINE":
+      return "machine";
+    case "MANUAL":
+      return "manual";
+    case "SUGGESTION":
+      return "suggestion";
+    default:
+      return null;
+  }
 }
 
 /** The latest playback each approver reported on the given revisions. */
@@ -158,6 +181,8 @@ async function buildTrainingExportSnapshot(
         ordinal: span.ordinal,
         revisionId: span.currentRevision.id,
         text: span.currentRevision.text,
+        machineText: span.originalText,
+        origin: toExportOrigin(span.currentRevision.origin),
         firstRegion: placement.firstRegionIndex ?? 0,
         lastRegion: placement.lastRegionIndex ?? 0,
       });
