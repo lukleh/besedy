@@ -1,5 +1,6 @@
 /**
- * The playback position of one player, kept outside React state.
+ * Values that follow playback, such as a player's position or its buffer
+ * reading, kept outside React state.
  *
  * The media element reports its time about four times a second. Holding it in
  * page state re-rendered the whole recording page on every report; with a
@@ -12,34 +13,44 @@
  * when it is visible again. `get()` always returns the latest time, so
  * position saving and other non-visual work never falls behind.
  */
-export interface PlaybackClock {
-  get(): number;
-  set(time: number): void;
+export interface HeldValue<T> {
+  get(): T;
+  set(value: T): void;
   subscribe(listener: () => void): () => void;
 }
+
+export type PlaybackClock = HeldValue<number>;
 
 function pageHidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
-export function createPlaybackClock(initialTime = 0): PlaybackClock {
-  let time = initialTime;
-  let notifiedTime = initialTime;
+/**
+ * A value that changes with playback, held back from subscribers while the
+ * page is hidden (see above). `equal` decides whether a new value is a change
+ * worth telling subscribers about.
+ */
+export function createHeldValue<T>(
+  initialValue: T,
+  equal: (a: T, b: T) => boolean = (a, b) => a === b,
+): HeldValue<T> {
+  let value = initialValue;
+  let notifiedValue = initialValue;
   const listeners = new Set<() => void>();
 
   const notify = () => {
-    notifiedTime = time;
+    notifiedValue = value;
     for (const listener of [...listeners]) listener();
   };
   const handleVisibilityChange = () => {
-    if (!pageHidden() && time !== notifiedTime) notify();
+    if (!pageHidden() && !equal(value, notifiedValue)) notify();
   };
 
   return {
-    get: () => time,
-    set(nextTime) {
-      if (nextTime === time) return;
-      time = nextTime;
+    get: () => value,
+    set(nextValue) {
+      if (equal(nextValue, value)) return;
+      value = nextValue;
       if (!pageHidden()) notify();
     },
     subscribe(listener) {
@@ -55,4 +66,8 @@ export function createPlaybackClock(initialTime = 0): PlaybackClock {
       };
     },
   };
+}
+
+export function createPlaybackClock(initialTime = 0): PlaybackClock {
+  return createHeldValue(initialTime);
 }

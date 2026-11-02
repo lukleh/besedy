@@ -19,6 +19,7 @@ import { DownloadButton } from "@/components/offline/download-button";
 import { SleepTimerButton } from "./sleep-timer-button";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { usePlaybackTime } from "@/hooks/use-playback-time";
 import type { PlaybackClock } from "@/lib/playback-clock";
 import { formatAudioTime } from "./audio-player-utils";
@@ -27,8 +28,19 @@ import { useBufferInfo, type BufferInfoSource } from "./use-audio-buffer-diagnos
 // Positions the progress bar tells apart. Its thumb and time label move once
 // a second, or in finer steps when the recording is short enough for a
 // second to be a visible jump; a 2.5-hour recording moves the thumb one
-// pixel every 25 seconds or so.
+// pixel every 25 seconds or so. Arrow keys move one step, so a key press
+// always lands on a position the bar can show.
 const PROGRESS_STEPS = 1000;
+
+function progressStep(duration: number): number {
+  return duration > 0 ? Math.min(1, duration / PROGRESS_STEPS) : 1;
+}
+
+// The step a time falls in. The tolerance keeps a position the slider put on
+// the grid (3 × 0.12 is 0.36000000000000004) in its own step.
+export function toProgressStep(time: number, step: number): number {
+  return Math.floor(time / step + 1e-9) * step;
+}
 
 interface AudioPlayerChromeProps {
   bufferInfo: BufferInfoSource;
@@ -82,6 +94,18 @@ export function AudioPlayerChrome({
   volume,
 }: AudioPlayerChromeProps) {
   const t = useTranslations("player");
+  // The desktop row and the phone grid each have a slot for the indicator and
+  // CSS hides one of them; only the visible one is rendered, since it updates
+  // while playback runs.
+  const wideLayout = useMediaQuery("(min-width: 40rem)");
+  const bufferIndicator = (
+    <LiveBufferIndicator
+      source={bufferInfo}
+      isBuffering={isBuffering}
+      isReconnecting={isReconnecting}
+      isCached={isDownloaded}
+    />
+  );
   const downloadControl =
     hash && catalogId ? (
       downloadEventId !== undefined ? (
@@ -117,12 +141,7 @@ export function AudioPlayerChrome({
         <div className="relative flex w-full items-center justify-center gap-2 sm:gap-4">
           <div className="absolute left-0 hidden items-center gap-1 sm:flex">
             {downloadControl}
-            <LiveBufferIndicator
-              source={bufferInfo}
-              isBuffering={isBuffering}
-              isReconnecting={isReconnecting}
-              isCached={isDownloaded}
-            />
+            {wideLayout && bufferIndicator}
             {bookmarkControl}
           </div>
 
@@ -222,12 +241,7 @@ export function AudioPlayerChrome({
               {downloadControl}
             </div>
             <div className="flex h-12 items-center justify-center">
-              <LiveBufferIndicator
-                source={bufferInfo}
-                isBuffering={isBuffering}
-                isReconnecting={isReconnecting}
-                isCached={isDownloaded}
-              />
+              {!wideLayout && bufferIndicator}
             </div>
             {bookmarkControl}
             <Button
@@ -285,8 +299,8 @@ function PlayerTimeline({
   onSeek: (value: number[]) => void;
 }) {
   const t = useTranslations("player");
-  const step = duration > 0 ? Math.min(1, duration / PROGRESS_STEPS) : 1;
-  const toStep = useCallback((time: number) => Math.floor(time / step) * step, [step]);
+  const step = progressStep(duration);
+  const toStep = useCallback((time: number) => toProgressStep(time, step), [step]);
   const currentTime = usePlaybackTime(clock, toStep);
   // While the thumb is being dragged, show where it is without seeking: every
   // seek cancels the in-flight audio request, and a burst of them can leave
@@ -304,7 +318,7 @@ function PlayerTimeline({
         // drag still has to register as a change for it to commit a seek.
         value={[duration > 0 ? shownTime : (scrubTime ?? 0)]}
         max={duration || 100}
-        step={0.1}
+        step={step}
         onValueChange={([value]) => {
           if (draggingRef.current) setScrubTime(value);
         }}

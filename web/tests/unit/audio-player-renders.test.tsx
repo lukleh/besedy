@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
+import { toProgressStep } from "@/components/player/audio-player-chrome";
 
 // Counts renders of a control that never shows the playback position, and of
 // the progress bar, which does.
@@ -55,14 +56,14 @@ function setBufferedEnd(audio: HTMLAudioElement, end: number) {
   });
 }
 
-async function renderLongRecording() {
+async function renderRecording(duration = 9000) {
   const utils = render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <AudioPlayer src="https://example.com/audio.mp3" />
     </NextIntlClientProvider>,
   );
   const audio = utils.container.querySelector("audio")!;
-  Object.defineProperty(audio, "duration", { value: 9000, configurable: true });
+  Object.defineProperty(audio, "duration", { value: duration, configurable: true });
   setBufferedEnd(audio, 60);
   await act(async () => {
     audio.dispatchEvent(new Event("loadedmetadata"));
@@ -84,7 +85,7 @@ describe("AudioPlayer renders on time reports", () => {
   });
 
   it("re-renders only the progress bar, once per second shown", async () => {
-    const { audio, container } = await renderLongRecording();
+    const { audio, container } = await renderRecording();
     await reportTime(audio, 10);
     const sleepTimer = renders.sleepTimer;
     const progress = renders.progress;
@@ -96,5 +97,41 @@ describe("AudioPlayer renders on time reports", () => {
     expect(renders.progress).toBe(progress + 1);
     expect(container.textContent).toContain("00:00:11");
     expect(renders.sleepTimer).toBe(sleepTimer);
+  });
+
+  it("follows every report on a recording short enough for a second to show", async () => {
+    const { audio } = await renderRecording(120);
+    await reportTime(audio, 10);
+    const progress = renders.progress;
+
+    for (const time of [10.25, 10.5, 10.75]) await reportTime(audio, time);
+    expect(renders.progress).toBe(progress + 3);
+  });
+
+  it("moves one shown step per arrow key", async () => {
+    const { audio, getByRole } = await renderRecording();
+    await reportTime(audio, 10);
+    const thumb = getByRole("slider", { name: "Playback progress" });
+
+    for (const expected of ["11", "12"]) {
+      await act(async () => {
+        fireEvent.keyDown(thumb, { key: "ArrowRight" });
+      });
+      expect(thumb.getAttribute("aria-valuenow")).toBe(expected);
+      expect(audio.currentTime).toBe(Number(expected));
+    }
+  });
+
+  it("renders one buffer indicator, for the layout on screen", async () => {
+    const { container } = await renderRecording();
+    expect(container.querySelectorAll('[aria-label$="buffered"]')).toHaveLength(1);
+  });
+});
+
+describe("toProgressStep", () => {
+  it("keeps a position on the slider's grid in its own step", () => {
+    expect(toProgressStep(3 * 0.12, 0.12)).toBeCloseTo(0.36);
+    expect(toProgressStep(0.47, 0.12)).toBeCloseTo(0.36);
+    expect(toProgressStep(10.9, 1)).toBe(10);
   });
 });

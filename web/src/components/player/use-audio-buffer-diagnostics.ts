@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from 'react';
 
+import { createHeldValue, type HeldValue } from '@/lib/playback-clock';
 import type { ChunkFetchRecord, DebugInfo } from './audio-player-types';
 
 export interface BufferInfo {
@@ -37,36 +38,16 @@ const INITIAL_BUFFER_INFO: BufferInfo = {
  * left in the buffer moves with every time report, about four times a second,
  * and as state each new value re-rendered every control. The indicator reads
  * it with `useBufferInfo`; its values are whole seconds, so it changes about
- * once a second at most.
+ * once a second at most, and it is held back while the page is hidden.
  */
-export interface BufferInfoSource {
-  get(): BufferInfo;
-  subscribe(listener: () => void): () => void;
-}
+export type BufferInfoSource = Pick<HeldValue<BufferInfo>, 'get' | 'subscribe'>;
 
-function createBufferInfoSource() {
-  let info = INITIAL_BUFFER_INFO;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => info,
-    set(next: BufferInfo) {
-      if (
-        next.bufferAhead === info.bufferAhead &&
-        next.networkState === info.networkState &&
-        next.peakBuffer === info.peakBuffer
-      ) {
-        return;
-      }
-      info = next;
-      for (const listener of [...listeners]) listener();
-    },
-    subscribe(listener: () => void) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
+function sameBufferInfo(a: BufferInfo, b: BufferInfo): boolean {
+  return (
+    a.bufferAhead === b.bufferAhead &&
+    a.networkState === b.networkState &&
+    a.peakBuffer === b.peakBuffer
+  );
 }
 
 export function useBufferInfo(source: BufferInfoSource): BufferInfo {
@@ -118,7 +99,11 @@ export function useAudioBufferDiagnostics({
   debugEnabled: boolean;
   src: string;
 }) {
-  const [bufferInfo] = useState(createBufferInfoSource);
+  const [bufferInfo] = useState(() => createHeldValue(INITIAL_BUFFER_INFO, sameBufferInfo));
+  // Exact readings behind the rounded ones: whether the buffer refilled by
+  // more than a second is decided on these, not on rounding.
+  const exactAheadRef = useRef(0);
+  const exactPeakRef = useRef(0);
   const [debugInfo, setDebugInfo] = useState<DebugInfo>(INITIAL_DEBUG_INFO);
   const [chunkFetches, setChunkFetches] = useState<ChunkFetchRecord[]>([]);
   const previousTotalBufferedRef = useRef(0);
@@ -182,27 +167,27 @@ export function useAudioBufferDiagnostics({
         previousTotalBufferedRef.current = snapshot.totalBuffered;
         lastBufferGrowthTimeRef.current = now;
       }
-      // Nothing is drawn while the page is hidden (screen off, app in the
-      // background), so the reading and the chunk history wait until it is
-      // shown; the chunks above are still recorded as they happen.
-      if (document.visibilityState === 'hidden') return;
+      const bufferAhead = snapshot.bufferAhead;
+      const peakBuffer = bufferAhead > exactAheadRef.current + 1
+        ? bufferAhead
+        : Math.max(exactPeakRef.current, bufferAhead);
+      exactAheadRef.current = bufferAhead;
+      exactPeakRef.current = peakBuffer;
+      bufferInfo.set({
+        bufferAhead: Math.round(bufferAhead),
+        networkState: audio.networkState,
+        peakBuffer: Math.round(peakBuffer),
+      });
 
+      // Nothing is drawn while the page is hidden (screen off, app in the
+      // background), so the chunk history waits until it is shown; the
+      // chunks above are still recorded as they happen.
+      if (document.visibilityState === 'hidden') return;
       if (pendingChunksRef.current.length > 0) {
         const chunks = pendingChunksRef.current;
         pendingChunksRef.current = [];
         setChunkFetches((previous) => [...previous, ...chunks].slice(-20));
       }
-
-      const previous = bufferInfo.get();
-      const bufferAhead = Math.round(snapshot.bufferAhead);
-      const bufferIncreased = bufferAhead > previous.bufferAhead + 1;
-      bufferInfo.set({
-        bufferAhead,
-        networkState: audio.networkState,
-        peakBuffer: bufferIncreased
-          ? bufferAhead
-          : Math.max(previous.peakBuffer, bufferAhead),
-      });
     };
 
     const events = ['timeupdate', 'progress', 'waiting', 'canplay', 'playing'];
@@ -223,12 +208,15 @@ export function useAudioBufferDiagnostics({
   const reset = useCallback(() => {
     fetchCountRef.current = 0;
     pendingChunksRef.current = [];
+    exactAheadRef.current = 0;
+    exactPeakRef.current = 0;
     setChunkFetches([]);
     bufferInfo.set(INITIAL_BUFFER_INFO);
   }, [bufferInfo]);
 
+  const bufferInfoSource: BufferInfoSource = bufferInfo;
   return {
-    bufferInfo: bufferInfo as BufferInfoSource,
+    bufferInfo: bufferInfoSource,
     chunkFetches,
     debugInfo,
     reset,

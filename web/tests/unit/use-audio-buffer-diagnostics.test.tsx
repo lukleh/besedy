@@ -20,7 +20,7 @@ describe("useAudioBufferDiagnostics", () => {
     vi.restoreAllMocks();
   });
 
-  it("holds the buffer reading while the page is hidden and reads it again when shown", () => {
+  it("holds the buffer reading back while the page is hidden and tells the indicator when shown", () => {
     const audio = audioBufferedTo(100);
     // One ref for the hook's lifetime, as the player holds it.
     const audioRef = { current: audio };
@@ -28,19 +28,42 @@ describe("useAudioBufferDiagnostics", () => {
       useAudioBufferDiagnostics({ audioRef, debugEnabled: false, src: "a.mp3" }),
     );
     expect(result.current.bufferInfo.get().bufferAhead).toBe(100);
+    const listener = vi.fn();
+    result.current.bufferInfo.subscribe(listener);
 
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     audio.currentTime = 30;
     act(() => {
       audio.dispatchEvent(new Event("timeupdate"));
     });
-    expect(result.current.bufferInfo.get().bufferAhead).toBe(100);
+    expect(listener).not.toHaveBeenCalled();
 
     visibility.mockReturnValue("visible");
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
+    expect(listener).toHaveBeenCalled();
     expect(result.current.bufferInfo.get().bufferAhead).toBe(70);
+  });
+
+  it("restarts the peak when the exact buffer grows by more than a second", () => {
+    const audio = audioBufferedTo(10);
+    const audioRef = { current: audio };
+    const { result } = renderHook(() =>
+      useAudioBufferDiagnostics({ audioRef, debugEnabled: false, src: "a.mp3" }),
+    );
+    expect(result.current.bufferInfo.get().peakBuffer).toBe(10);
+
+    audio.currentTime = 4.5;
+    act(() => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    // 5.5 s left, then a refill of 1.4 s: rounded, 6 to 7 looks like one.
+    setBufferedEnd(audio, 11.4);
+    act(() => {
+      audio.dispatchEvent(new Event("progress"));
+    });
+    expect(result.current.bufferInfo.get()).toMatchObject({ bufferAhead: 7, peakBuffer: 7 });
   });
 
   it("tells the indicator about the buffer reading only when its whole seconds change", () => {
