@@ -19,6 +19,7 @@ import {
   getMcpEvent,
   getMcpRecording,
   getMcpTranscript,
+  listMcpBookmarks,
   listMcpLocations,
   listMcpRecorders,
   listMcpEvents,
@@ -42,6 +43,7 @@ vi.mock('@/lib/mcp/read-service', () => ({
       this.retryable = code === 'search_unavailable';
     }
   },
+  listMcpBookmarks: vi.fn(),
   listMcpEvents: vi.fn(),
   listMcpLocations: vi.fn(),
   listMcpRecorders: vi.fn(),
@@ -76,6 +78,11 @@ const defaultConnection = {
   clientId: 'client-1',
   clientName: 'Test MCP client',
   scopes: ['openid', 'profile', 'email', 'besedy:read'],
+};
+
+const bookmarksConnection = {
+  ...defaultConnection,
+  scopes: [...defaultConnection.scopes, 'besedy:bookmarks'],
 };
 
 let accessProfile: McpAccessProfile;
@@ -699,6 +706,119 @@ describe('MCP personalized tool surface', () => {
       date: { year: 2026, month: 8 },
       locationId: 7,
     });
+  });
+
+  it('exposes bookmarks only to clients granted the bookmarks scope', async () => {
+    const withoutScope = await invokeMcp('tools/list');
+    expect(
+      (withoutScope.result?.tools as Array<{ name: string }>).map(
+        (tool) => tool.name,
+      ),
+    ).not.toContain('list_bookmarks');
+
+    const denied = await invokeMcp('tools/call', {
+      name: 'list_bookmarks',
+      arguments: {},
+    });
+    expect(denied.result?.isError ?? denied.error).toBeTruthy();
+    expect(listMcpBookmarks).not.toHaveBeenCalled();
+
+    const withScope = await invokeMcp('tools/list', {}, bookmarksConnection);
+    const tools = withScope.result?.tools as Array<{
+      name: string;
+      description?: string;
+    }>;
+    expect(tools.map((tool) => tool.name).at(-1)).toBe('list_bookmarks');
+    expect(
+      tools.find((tool) => tool.name === 'list_bookmarks')?.description,
+    ).toMatch(/never cite it as what was said/);
+  });
+
+  it('lists the caller bookmarks in the resolved catalog', async () => {
+    accessProfile = {
+      userId: 'user-1',
+      canEnterPortal: true,
+      defaultCatalogId: 'viewer-catalog',
+      defaultCatalogSource: 'user_preference',
+      catalogs: [catalog('viewer-catalog', true)],
+    };
+    const audioHash = 'a'.repeat(64);
+    vi.mocked(listMcpBookmarks).mockResolvedValue({
+      catalogId: 'viewer-catalog',
+      bookmarks: [
+        {
+          id: 'bm-1',
+          positionSec: 125.5,
+          comment: 'Worth quoting',
+          excerpt: 'Saved line',
+          createdAt: '2026-10-01T10:00:00.000Z',
+          updatedAt: '2026-10-01T10:00:00.000Z',
+          webUrl: `https://besedy.example/catalog/viewer-catalog/recording/${audioHash}?seek=125.5`,
+          recording: {
+            audioHash,
+            title: 'Recording title',
+            webUrl: `https://besedy.example/catalog/viewer-catalog/recording/${audioHash}`,
+          },
+          event: {
+            id: 42,
+            webUrl: 'https://besedy.example/catalog/viewer-catalog/event/42',
+            date: { year: 2026, month: 8, day: 26 },
+            location: { id: 7, name: 'Prague' },
+            isPrimary: true,
+          },
+          transcriptRequest: {
+            catalogId: 'viewer-catalog',
+            audioHash,
+            mode: 'page',
+            startSec: 65.5,
+            endSec: 185.5,
+          },
+        },
+      ],
+      nextCursor: 'next-bookmarks',
+    });
+
+    const body = await invokeMcp(
+      'tools/call',
+      {
+        name: 'list_bookmarks',
+        arguments: { query: 'quote', audioHash: audioHash.toUpperCase() },
+      },
+      bookmarksConnection,
+    );
+
+    expect(listMcpBookmarks).toHaveBeenCalledWith('user-1', 'viewer-catalog', {
+      query: 'quote',
+      audioHash,
+      cursor: undefined,
+      limit: 50,
+    });
+    expect(body.result?.isError).toBeFalsy();
+    expect(body.result?.content).toEqual([
+      {
+        type: 'text',
+        text: [
+          'Listed 1 bookmark(s).',
+          `bm-1 · Recording title [125.5s] https://besedy.example/catalog/viewer-catalog/recording/${audioHash}?seek=125.5`,
+          'Event: 2026-08-26 · Prague · 42',
+          `Recording: ${audioHash}`,
+          'User comment: Worth quoting',
+          'Saved excerpt: Saved line',
+          `Transcript request: {"catalogId":"viewer-catalog","audioHash":"${audioHash}","mode":"page","startSec":65.5,"endSec":185.5}`,
+          'Next cursor: next-bookmarks',
+        ].join('\n'),
+      },
+    ]);
+
+    const denied = await invokeMcp(
+      'tools/call',
+      { name: 'list_bookmarks', arguments: { catalogId: 'other-catalog' } },
+      bookmarksConnection,
+    );
+    expect(denied.result?.structuredContent).toMatchObject({
+      error: { code: 'not_found' },
+    });
+    expect(listMcpBookmarks).toHaveBeenCalledOnce();
   });
 
   it('uses recording access for metadata lookup tools', async () => {

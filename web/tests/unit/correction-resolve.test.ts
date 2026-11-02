@@ -189,6 +189,47 @@ describe("transcript source resolution", () => {
     });
   });
 
+  describe("search and MCP in bulk", () => {
+    it("resolve each recording the way the single resolver would", async () => {
+      prisma.transcriptWorkspace.findMany.mockResolvedValue([
+        { id: "ws-1", audioHash: PRIMARY, searchPublicationId: "pub-1" },
+        { id: "ws-2", audioHash: SECONDARY, searchPublicationId: null },
+      ]);
+      const third = "c".repeat(64);
+
+      const resolved = await resolve.resolveSearchTranscriptSources(CATALOG_ID, [
+        PRIMARY,
+        SECONDARY,
+        third,
+      ]);
+
+      expect(prisma.transcriptWorkspace.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            workflowGroupId: CATALOG_ID,
+            audioHash: { in: [PRIMARY, SECONDARY, third] },
+            status: "ACTIVE",
+          },
+        })
+      );
+      expect(resolved.get(PRIMARY)).toEqual({
+        kind: "publication",
+        workspaceId: "ws-1",
+        publicationId: "pub-1",
+      });
+      expect(resolved.get(SECONDARY)).toEqual({ kind: "machine" });
+      expect(resolved.get(third)).toEqual({ kind: "machine" });
+      expect(prisma.catalogEventRecording.findMany).not.toHaveBeenCalled();
+    });
+
+    it("ask nothing of the database for an empty page", async () => {
+      const resolved = await resolve.resolveSearchTranscriptSources(CATALOG_ID, []);
+
+      expect(resolved.size).toBe(0);
+      expect(prisma.transcriptWorkspace.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe("privileged original access", () => {
     it("is the configured machine transcript before a workspace exists", async () => {
       prisma.transcriptWorkspace.findFirst.mockResolvedValue(null);

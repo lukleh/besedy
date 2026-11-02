@@ -18,7 +18,10 @@ import {
   loadTranscript,
   type TranscriptBackend,
 } from '@/lib/transcript';
-import { resolveSearchTranscriptSource } from '@/lib/correction/resolve';
+import {
+  resolveSearchTranscriptSource,
+  resolveSearchTranscriptSources,
+} from '@/lib/correction/resolve';
 import { loadPublishedTranscript } from '@/lib/correction/reader-transcript';
 import { getRagBackendKey } from '@/lib/runtime-config';
 import {
@@ -42,6 +45,8 @@ const MAX_FULL_TRANSCRIPT_TEXT_CHARS = 200_000;
 const MAX_FULL_TRANSCRIPT_SEGMENTS = 2_000;
 const MAX_FULL_TRANSCRIPT_SEGMENT_JSON_CHARS = 400_000;
 const TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY = 8;
+// Seconds of transcript on each side of a bookmark in its transcriptRequest.
+const BOOKMARK_TRANSCRIPT_CONTEXT_SEC = 60;
 
 export interface McpEventListInput {
   cursor?: string;
@@ -77,6 +82,13 @@ export type McpTranscriptInput = McpTranscriptCommonInput &
         maxTextChars: number;
       }
   );
+
+export interface McpBookmarkListInput {
+  cursor?: string;
+  limit: number;
+  query?: string;
+  audioHash?: string;
+}
 
 export interface McpEventRecordingPageInput {
   offset: number;
@@ -273,6 +285,68 @@ function decodeMcpEventCursor(
   }
 }
 
+/**
+ * Bookmark cursors carry the (createdAt, id) of the last returned bookmark.
+ * The next page is every bookmark that sorts after it, newest first, so a
+ * bookmark deleted between pages cannot invalidate the cursor.
+ */
+interface McpBookmarkCursor {
+  version: 1;
+  catalogId: string;
+  query: string | null;
+  audioHash: string | null;
+  createdAt: string;
+  id: string;
+}
+
+function encodeMcpBookmarkCursor(
+  catalogId: string,
+  input: McpBookmarkListInput,
+  bookmark: { createdAt: Date; id: string },
+): string {
+  const cursor: McpBookmarkCursor = {
+    version: 1,
+    catalogId,
+    query: input.query ?? null,
+    audioHash: input.audioHash ?? null,
+    createdAt: bookmark.createdAt.toISOString(),
+    id: bookmark.id,
+  };
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeMcpBookmarkCursor(
+  encoded: string,
+  catalogId: string,
+  input: McpBookmarkListInput,
+): { createdAt: Date; id: string } {
+  try {
+    const value = JSON.parse(
+      Buffer.from(encoded, 'base64url').toString('utf8'),
+    ) as Partial<McpBookmarkCursor>;
+    const createdAt =
+      typeof value.createdAt === 'string' ? new Date(value.createdAt) : null;
+    if (
+      value.version !== 1 ||
+      value.catalogId !== catalogId ||
+      value.query !== (input.query ?? null) ||
+      value.audioHash !== (input.audioHash ?? null) ||
+      createdAt === null ||
+      Number.isNaN(createdAt.getTime()) ||
+      typeof value.id !== 'string' ||
+      value.id.length === 0
+    ) {
+      throw new Error('Invalid bookmark cursor payload');
+    }
+    return { createdAt, id: value.id };
+  } catch {
+    throw new McpReadError(
+      'invalid_cursor',
+      'Invalid bookmark cursor for the selected catalog and filters',
+    );
+  }
+}
+
 function eventDateOrderBy(
   order: McpEventOrder,
 ): Prisma.CatalogEventOrderByWithRelationInput[] {
@@ -366,6 +440,41 @@ function eventAfterCursorWhere(
  */
 function getCanonicalTranscriptBackend(): TranscriptBackend {
   return getRagBackendKey();
+}
+
+/**
+ * Which recordings get_transcript can read, by the rule it reads them with: a
+ * search publication when there is one, otherwise the canonical machine
+ * transcript. A publication counts without opening its artifact; its pointer
+ * only moves once the artifact is written, and get_transcript reports the rare
+ * missing one on its own.
+ */
+async function resolveMcpTranscriptAvailability(
+  catalogId: string,
+  audioHashes: string[],
+): Promise<Map<string, boolean>> {
+  const sources = await resolveSearchTranscriptSources(catalogId, audioHashes);
+  const canonicalBackend = getCanonicalTranscriptBackend();
+  const transcriptsPath = resolveTranscriptsPath(catalogId);
+  return new Map(
+    await mapWithConcurrency(
+      audioHashes,
+      TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
+      async (audioHash) => {
+        if (sources.get(audioHash)?.kind === 'publication') {
+          return [audioHash, true] as const;
+        }
+        const available = await getAvailableTranscripts(
+          transcriptsPath,
+          audioHash,
+        );
+        return [
+          audioHash,
+          available.backends.includes(canonicalBackend),
+        ] as const;
+      },
+    ),
+  );
 }
 
 function serializeRecording(recording: CatalogRecordingReadModel) {
@@ -690,6 +799,175 @@ export async function getMcpRecording(catalogId: string, audioHash: string) {
   };
 }
 
+function roundSeconds(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * The caller's own bookmarks in one catalog, newest first. Bookmarks are
+ * stored without an access check, so each one is shown only while its
+ * recording passes the same listener visibility as get_recording; a bookmark
+ * made on a recording that is not, or no longer, released stays hidden.
+ */
+export async function listMcpBookmarks(
+  userId: string,
+  catalogId: string,
+  input: McpBookmarkListInput,
+) {
+  const cursor = input.cursor
+    ? decodeMcpBookmarkCursor(input.cursor, catalogId, input)
+    : null;
+  const literalQuery = input.query
+    ? escapePrismaContains(input.query)
+    : undefined;
+  const rows = await prisma.recordingBookmark.findMany({
+    where: {
+      userId,
+      workflowGroupId: catalogId,
+      ...(input.audioHash ? { audioHash: input.audioHash } : {}),
+      AND: [
+        ...(cursor
+          ? [
+              {
+                OR: [
+                  { createdAt: { lt: cursor.createdAt } },
+                  { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                ],
+              },
+            ]
+          : []),
+        ...(literalQuery
+          ? [
+              {
+                OR: [
+                  {
+                    comment: { contains: literalQuery, mode: 'insensitive' },
+                  },
+                  {
+                    excerpt: { contains: literalQuery, mode: 'insensitive' },
+                  },
+                ],
+              } satisfies Prisma.RecordingBookmarkWhereInput,
+            ]
+          : []),
+      ],
+    },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      audioHash: true,
+      positionSec: true,
+      comment: true,
+      excerpt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+  const visibleHashes = await resolveMcpReadableRecordingHashes(catalogId, [
+    ...new Set(rows.map((row) => row.audioHash)),
+  ]);
+  const visibleRows = rows.filter((row) => visibleHashes.has(row.audioHash));
+  const hasMore = visibleRows.length > input.limit;
+  const page = visibleRows.slice(0, input.limit);
+  if (page.length === 0) return { catalogId, bookmarks: [], nextCursor: null };
+  const pageHashes = [...new Set(page.map((row) => row.audioHash))];
+
+  const visibleEventIds = await resolveReadableEventIds(
+    catalogId,
+    MCP_VISIBILITY_GRANT,
+  );
+  const [recordingByHash, eventLinks, hasTranscript] = await Promise.all([
+    loadCatalogRecordingReadModels(catalogId, pageHashes),
+    prisma.catalogEventRecording.findMany({
+      where: {
+        workflowGroupId: catalogId,
+        audioHash: { in: pageHashes },
+        ...catalogEventRecordingVisibilityWhere(visibleEventIds),
+      },
+      orderBy: [{ isPrimary: 'desc' }, { eventId: 'asc' }],
+      select: {
+        audioHash: true,
+        isPrimary: true,
+        event: {
+          select: {
+            id: true,
+            dateYear: true,
+            dateMonth: true,
+            dateDay: true,
+            location: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
+    resolveMcpTranscriptAvailability(catalogId, pageHashes),
+  ]);
+  const eventLinkByHash = new Map<string, (typeof eventLinks)[number]>();
+  for (const link of eventLinks) {
+    if (!eventLinkByHash.has(link.audioHash)) {
+      eventLinkByHash.set(link.audioHash, link);
+    }
+  }
+
+  return {
+    catalogId,
+    bookmarks: page.map((row) => {
+      const eventLink = eventLinkByHash.get(row.audioHash);
+      return {
+        id: row.id,
+        positionSec: row.positionSec,
+        comment: row.comment,
+        excerpt: row.excerpt,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        webUrl: buildRecordingSeekWebUrl(
+          catalogId,
+          row.audioHash,
+          row.positionSec,
+        ),
+        recording: {
+          audioHash: row.audioHash,
+          title: recordingByHash.get(row.audioHash)?.title ?? row.audioHash,
+          webUrl: buildRecordingWebUrl(catalogId, row.audioHash),
+        },
+        event: eventLink
+          ? {
+              id: eventLink.event.id,
+              webUrl: buildEventWebUrl(catalogId, eventLink.event.id),
+              date: serializeDate(
+                eventLink.event.dateYear,
+                eventLink.event.dateMonth,
+                eventLink.event.dateDay,
+              ),
+              location: eventLink.event.location,
+              isPrimary: eventLink.isPrimary,
+            }
+          : null,
+        transcriptRequest:
+          hasTranscript.get(row.audioHash) === true
+            ? {
+                catalogId,
+                audioHash: row.audioHash,
+                mode: 'page' as const,
+                startSec: roundSeconds(
+                  Math.max(
+                    0,
+                    row.positionSec - BOOKMARK_TRANSCRIPT_CONTEXT_SEC,
+                  ),
+                ),
+                endSec: roundSeconds(
+                  row.positionSec + BOOKMARK_TRANSCRIPT_CONTEXT_SEC,
+                ),
+              }
+            : null,
+      };
+    }),
+    nextCursor:
+      hasMore && page.length > 0
+        ? encodeMcpBookmarkCursor(catalogId, input, page.at(-1)!)
+        : null,
+  };
+}
+
 export async function getMcpTranscript(
   catalogId: string,
   audioHash: string,
@@ -984,23 +1262,9 @@ async function serializeMcpSearchResults(
   const audioHashes = [
     ...new Set(eventSearchResults.map((result) => result.audioHash)),
   ];
-  const canonicalBackend = getCanonicalTranscriptBackend();
-  const transcriptsPath = resolveTranscriptsPath(catalogId);
-  const canonicalTranscriptAvailability = new Map(
-    await mapWithConcurrency(
-      audioHashes,
-      TRANSCRIPT_AVAILABILITY_LOOKUP_CONCURRENCY,
-      async (audioHash) => {
-        const available = await getAvailableTranscripts(
-          transcriptsPath,
-          audioHash,
-        );
-        return [
-          audioHash,
-          available.backends.includes(canonicalBackend),
-        ] as const;
-      },
-    ),
+  const hasTranscript = await resolveMcpTranscriptAvailability(
+    catalogId,
+    audioHashes,
   );
 
   return eventSearchResults.map((result) => {
@@ -1044,7 +1308,7 @@ async function serializeMcpSearchResults(
             }
           : null,
       transcriptRequest:
-        canonicalTranscriptAvailability.get(result.audioHash) === true &&
+        hasTranscript.get(result.audioHash) === true &&
         transcriptEndSec > transcriptStartSec
           ? {
               catalogId,
