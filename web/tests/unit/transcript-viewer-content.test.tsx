@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptContent } from "@/components/transcript/transcript-viewer-content";
 import type { Transcript } from "@/components/transcript/transcript-viewer-types";
-import { createPlaybackClock } from "@/lib/playback-clock";
+import { createPlaybackClock, type PlaybackClock } from "@/lib/playback-clock";
 import { formatTimestamp } from "@/lib/utils";
 
 vi.mock("next-intl", () => ({
@@ -45,6 +46,15 @@ const HEADER_RECT = { top: 0, bottom: 150, height: 150 };
 const VIEWPORT_SCROLL_HEIGHT = 2000;
 const MAX_SCROLL_TOP = VIEWPORT_SCROLL_HEIGHT - VIEWPORT_RECT.height;
 let viewportScrollTop = 0;
+
+// Moves playback while a render commits, after the DOM changed and before
+// passive effects run: where a time update can land in a browser.
+function SetClockOnCommit({ clock, time }: { clock: PlaybackClock; time: number | null }) {
+  useLayoutEffect(() => {
+    if (time !== null) clock.set(time);
+  }, [clock, time]);
+  return null;
+}
 
 function rect({ top, bottom, height }: { top: number; bottom: number; height: number }) {
   return { top, bottom, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON() {} };
@@ -157,9 +167,71 @@ describe("TranscriptContent scrolling", () => {
     };
     render(<TranscriptContent transcript={overlapping} clock={createPlaybackClock(2.5)} follow />);
 
-    expect(screen.getByText("one")).toHaveClass("font-medium");
-    expect(screen.getByText("two")).toHaveClass("font-medium");
+    expect(screen.getByText("one")).toHaveAttribute("data-playing");
+    expect(screen.getByText("two")).toHaveAttribute("data-playing");
     expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows the word of the next overlapping segment once the first one ends", () => {
+    const overlapping: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "one", start: 0, end: 3, words: [{ word: "one", start: 2, end: 3 }] },
+        { text: "two", start: 2, end: 4, words: [{ word: "two", start: 2, end: 4 }] },
+      ],
+    };
+    const clock = createPlaybackClock(2.5);
+    render(<TranscriptContent transcript={overlapping} clock={clock} follow />);
+    const layoutReads = vi.mocked(Element.prototype.getBoundingClientRect);
+    layoutReads.mockClear();
+
+    // "two" keeps playing; only which row is followed changes.
+    act(() => clock.set(3.5));
+
+    expect(layoutReads.mock.contexts).toContain(screen.getByText("two"));
+    expect(elementScrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not follow a word that starts as following stops", () => {
+    const clock = createPlaybackClock(0.2);
+    const view = (follow: boolean, time: number | null) => (
+      <>
+        <TranscriptContent transcript={transcript} clock={clock} follow={follow} />
+        <SetClockOnCommit clock={clock} time={time} />
+      </>
+    );
+    const { rerender } = render(view(true, null));
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+
+    rerender(view(false, 1.2));
+
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows the playing text of a transcript without word timings", () => {
+    const plain: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "alpha", start: 0, end: 2 },
+        { text: "beta", start: 2, end: 4 },
+      ],
+    };
+    const clock = createPlaybackClock(0.5);
+    render(<TranscriptContent transcript={plain} clock={clock} follow />);
+    const layoutReads = vi.mocked(Element.prototype.getBoundingClientRect);
+    expect(layoutReads.mock.contexts).toContain(screen.getByText("alpha"));
+    expect(layoutReads.mock.contexts).not.toContain(screen.getByText("beta"));
+    expect(screen.getByText("alpha")).toHaveClass("bg-primary/20");
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+    layoutReads.mockClear();
+
+    act(() => clock.set(1.5));
+    expect(layoutReads).not.toHaveBeenCalled();
+
+    act(() => clock.set(2.5));
+    expect(layoutReads.mock.contexts).toContain(screen.getByText("beta"));
+    expect(screen.getByText("alpha")).not.toHaveClass("bg-primary/20");
+    expect(elementScrollTo).toHaveBeenCalledTimes(2);
   });
 
   it("reads no layout on time updates within the same word", () => {
@@ -277,6 +349,38 @@ describe("TranscriptContent scrolling", () => {
     expect(onFollowChange).toHaveBeenCalledWith(false);
     // A follow scroll still animating stops where it is.
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 340 });
+  });
+
+  it("does not follow a word that starts before stopping has rendered", () => {
+    const clock = createPlaybackClock(0.2);
+    // The handler leaves `follow` as it is: the new mode has not rendered yet.
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={clock}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+    act(() => clock.set(1.2));
+
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps following on the reader's scroll when nothing can change the mode", () => {
+    const clock = createPlaybackClock(0.2);
+    const { container } = render(<TranscriptContent transcript={transcript} clock={clock} follow />);
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+    act(() => clock.set(1.2));
+
+    expect(elementScrollTo).toHaveBeenCalledTimes(2);
   });
 
   it("ignores pinch-zoom, sideways wheels and wheels past the end", () => {
@@ -653,11 +757,11 @@ describe("TranscriptContent playback updates", () => {
     act(() => clock.set(10.7));
     expect(formatTimestamp).not.toHaveBeenCalled();
 
-    // Same segment, next word.
+    // Same segment, next word: the mark moves without rendering the row.
     act(() => clock.set(11.5));
-    expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10]]);
+    expect(formatTimestamp).not.toHaveBeenCalled();
+    expect(screen.getByText("word5b")).toHaveAttribute("data-playing");
 
-    vi.mocked(formatTimestamp).mockClear();
     // Next segment: the one left behind and the one entered.
     act(() => clock.set(12.5));
     expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10], [12]]);
@@ -666,13 +770,41 @@ describe("TranscriptContent playback updates", () => {
   it("moves the word highlight as playback advances", () => {
     const clock = createPlaybackClock(10.5);
     render(<TranscriptContent transcript={longTranscript} clock={clock} follow />);
-    expect(screen.getByText("word5a")).toHaveClass("font-medium");
+    expect(screen.getByText("word5a")).toHaveAttribute("data-playing");
 
     act(() => clock.set(12.5));
-    expect(screen.getByText("word5a")).not.toHaveClass("font-medium");
+    expect(screen.getByText("word5a")).not.toHaveAttribute("data-playing");
     expect(screen.getByText("word5a")).not.toHaveClass("bg-primary/10");
-    expect(screen.getByText("word6a")).toHaveClass("font-medium");
+    expect(screen.getByText("word6a")).toHaveAttribute("data-playing");
+    expect(screen.getByText("word6b")).not.toHaveAttribute("data-playing");
     expect(screen.getByText("word6b")).toHaveClass("bg-primary/10");
+  });
+
+  it("highlights the playing word without changing its size or fading", () => {
+    render(<TranscriptContent transcript={longTranscript} clock={createPlaybackClock(10.5)} follow />);
+
+    const playing = screen.getByText("word5a");
+    const next = screen.getByText("word5b");
+    // The mark only switches paint (background and ring), so the word keeps
+    // its size and the row does not reflow as the highlight moves.
+    expect(playing.className).toBe(next.className);
+    expect(playing.className).toContain("data-[playing]:bg-primary/30");
+    expect(playing.className).toContain("data-[playing]:ring-1");
+    expect(playing.className).not.toMatch(/font-|transition/);
+  });
+
+  it("clears the word mark when following stops", () => {
+    const clock = createPlaybackClock(10.5);
+    const { container, rerender } = render(
+      <TranscriptContent transcript={longTranscript} clock={clock} follow />,
+    );
+    expect(container.querySelectorAll("[data-playing]")).toHaveLength(1);
+
+    rerender(<TranscriptContent transcript={longTranscript} clock={clock} />);
+    expect(container.querySelectorAll("[data-playing]")).toHaveLength(0);
+
+    act(() => clock.set(11.5));
+    expect(container.querySelectorAll("[data-playing]")).toHaveLength(0);
   });
 
   it("marks the playing segment without highlighting words while idle", () => {
@@ -680,7 +812,7 @@ describe("TranscriptContent playback updates", () => {
       <TranscriptContent transcript={longTranscript} clock={createPlaybackClock(10.5)} />,
     );
 
-    expect(screen.getByText("word5a")).not.toHaveClass("font-medium");
+    expect(screen.getByText("word5a")).not.toHaveAttribute("data-playing");
     expect(screen.getByText("word5b")).not.toHaveClass("bg-primary/10");
     expect(container.querySelector('[data-segment-index="5"]')).toHaveClass("border-l-primary");
     expect(container.querySelector('[data-segment-index="6"]')).toHaveClass("border-l-transparent");
