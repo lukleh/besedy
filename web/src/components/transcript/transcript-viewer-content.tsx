@@ -1,6 +1,6 @@
 "use client";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { elementScroll, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
@@ -456,7 +456,14 @@ function useFollowPlayback<T extends Element | number>({
     return () => cancelAnimationFrame(frame);
   }, [scrollToTime, segments, onScrollComplete, markFollowScroll]);
 
-  return { activeSegments, followIndex, followElement, offscreenPlayhead, resumeFollowing };
+  return {
+    activeSegments,
+    followIndex,
+    followElement,
+    markFollowScroll,
+    offscreenPlayhead,
+    resumeFollowing,
+  };
 }
 
 // The transcript box with the jump-back button over it.
@@ -855,6 +862,15 @@ function VirtualizedASRTranscript({
     setScroller(element);
   }, []);
 
+  // Every scroll the virtualizer makes is announced as ours before it starts.
+  // Besides the follow scroll itself it scrolls on its own once rows report
+  // their size: it re-targets a smooth scroll as rows near the target are
+  // measured, and shifts the position when a row above the fold turns out
+  // taller than estimated (first measurement, or a re-wrap after the width
+  // changed). Unannounced, those read as the reader's and stop following.
+  // Set in a layout effect: the first follow scroll runs in a passive effect
+  // of the same commit.
+  const markFollowScrollRef = useRef<MarkFollowScroll | null>(null);
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: segments.length,
@@ -866,13 +882,15 @@ function VirtualizedASRTranscript({
     paddingEnd: VIRTUAL_BOX_PADDING_PX,
     overscan: 10,
     getItemKey: (index) => `segment-${index}`,
+    scrollToFn: (offset, options, instance) => {
+      const box = parentRef.current;
+      if (box) markFollowScrollRef.current?.(box, offset + (options.adjustments ?? 0));
+      elementScroll(offset, options, instance);
+    },
   });
 
-  const scrollToSegment = (index: number, markFollowScroll: MarkFollowScroll) => {
-    const offset = virtualizer.getOffsetForIndex(index, "center")?.[0];
-    if (parentRef.current && offset !== undefined) {
-      markFollowScroll(parentRef.current, offset);
-    }
+  // The virtualizer announces the scroll itself (see scrollToFn above).
+  const scrollToSegment = (index: number) => {
     virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
   };
   // Whether the row is wholly inside the box: the position the virtualizer
@@ -889,8 +907,8 @@ function VirtualizedASRTranscript({
     resolve: (index) => index,
     // Like the full list, scrolls only once the row has left the box. Centring
     // every segment animated the list every few seconds while it was in view.
-    bringIntoView: (index, markFollowScroll) => {
-      if (!segmentInView(index)) scrollToSegment(index, markFollowScroll);
+    bringIntoView: (index) => {
+      if (!segmentInView(index)) scrollToSegment(index);
     },
     centre: scrollToSegment,
     // The virtualizer updates its visible range in its own scroll listener,
@@ -905,17 +923,21 @@ function VirtualizedASRTranscript({
   };
 
   // Re-renders the list only when the playing segments change.
-  const { activeSegments, offscreenPlayhead, resumeFollowing } = useFollowPlayback({
-    segments,
-    clock,
-    follow,
-    onFollowChange,
-    scrollToTime,
-    onScrollComplete,
-    scroller,
-    content,
-    target,
-  });
+  const { activeSegments, markFollowScroll, offscreenPlayhead, resumeFollowing } =
+    useFollowPlayback({
+      segments,
+      clock,
+      follow,
+      onFollowChange,
+      scrollToTime,
+      onScrollComplete,
+      scroller,
+      content,
+      target,
+    });
+  useLayoutEffect(() => {
+    markFollowScrollRef.current = markFollowScroll;
+  }, [markFollowScroll]);
 
   return (
     <FollowFrame offscreenPlayhead={offscreenPlayhead} onResumeFollowing={resumeFollowing}>
