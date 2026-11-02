@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { handlePrismaError } from "@/lib/api";
 import { AuthError } from "@/lib/auth/permissions";
 import { CorrectionError } from "@/lib/correction/errors";
+import { isLockTimeout } from "@/lib/correction/workspace-lock";
 
 /**
  * Prisma codes for a transaction that could not finish because of another
@@ -38,7 +39,9 @@ export function handleCorrectionRouteError(
   if (error instanceof AuthError) {
     return NextResponse.json({ error: error.message }, { status: error.statusCode });
   }
-  if (isContendedTransaction(error)) {
+  // `lock_timeout` set by lockWorkspace lasts for the whole transaction, so a
+  // later statement can hit it too, outside that function's own catch.
+  if (isContendedTransaction(error) || isLockTimeout(error)) {
     return NextResponse.json(
       {
         error: "Another change to this transcript is being saved or it is being published; try again in a moment",

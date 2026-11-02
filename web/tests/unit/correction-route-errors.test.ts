@@ -31,6 +31,20 @@ describe("handleCorrectionRouteError", () => {
     expect(await response.json()).toMatchObject({ code: "WORKSPACE_LOCKED" });
   });
 
+  // lock_timeout lasts for the whole transaction, so a later statement can
+  // raise it outside lockWorkspace's own catch; it is the same conflict.
+  it("answers a lock timeout raised by any statement as a locked workspace", async () => {
+    const response = handleCorrectionRouteError(
+      Object.assign(new Error("Raw query failed. Code: `55P03`. Message: `lock timeout`"), {
+        code: "P2010",
+        meta: { driverAdapterError: { cause: { kind: "postgres", originalCode: "55P03" } } },
+      }),
+      "update"
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "WORKSPACE_LOCKED" });
+  });
+
   it("still reports an unknown failure as a server error", async () => {
     const response = handleCorrectionRouteError(new Error("disk on fire"), "update");
     expect(response.status).toBe(500);

@@ -106,11 +106,28 @@ describe('lockWorkspace', () => {
     const { WORKSPACE_LOCK_WAIT_MS, lockWorkspace } = await import(
       '@/lib/correction/workspace-lock'
     );
+    // The shape Prisma 7 with the pg driver adapter produces: the SQLSTATE
+    // sits under driverAdapterError, not in meta.code.
     const tx = txRefusing(
-      Object.assign(new Error('Raw query failed. Code: `55P03`'), {
-        code: 'P2010',
-        meta: { code: '55P03', message: 'canceling statement due to lock timeout' },
-      }),
+      Object.assign(
+        new Error(
+          'Raw query failed. Code: `55P03`. Message: `canceling statement due to lock timeout`',
+        ),
+        {
+          code: 'P2010',
+          meta: {
+            driverAdapterError: {
+              name: 'DriverAdapterError',
+              cause: {
+                kind: 'postgres',
+                code: '55P03',
+                originalCode: '55P03',
+                message: 'canceling statement due to lock timeout',
+              },
+            },
+          },
+        },
+      ),
     );
     await expect(lockWorkspace(tx, WORKSPACE)).rejects.toMatchObject({
       code: 'WORKSPACE_LOCKED',
@@ -121,11 +138,27 @@ describe('lockWorkspace', () => {
     );
   });
 
+  it('recognises a lock timeout from the message alone', async () => {
+    const { isLockTimeout } = await import('@/lib/correction/workspace-lock');
+    expect(
+      isLockTimeout(
+        Object.assign(new Error('Raw query failed. Code: `55P03`. Message: `x`'), {
+          code: 'P2010',
+          meta: {},
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLockTimeout(Object.assign(new Error('Raw query failed. Code: `42P01`'), { code: 'P2010' })),
+    ).toBe(false);
+    expect(isLockTimeout(new Error('55P03 mentioned but no Prisma code'))).toBe(false);
+  });
+
   it('passes other query failures through', async () => {
     const { lockWorkspace } = await import('@/lib/correction/workspace-lock');
     const failure = Object.assign(new Error('Raw query failed. Code: `42P01`'), {
       code: 'P2010',
-      meta: { code: '42P01' },
+      meta: { driverAdapterError: { cause: { kind: 'TableDoesNotExist', originalCode: '42P01' } } },
     });
     await expect(lockWorkspace(txRefusing(failure), WORKSPACE)).rejects.toBe(failure);
   });

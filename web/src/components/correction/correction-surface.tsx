@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, MessageSquare, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, Eraser, MessageSquare, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -108,8 +108,68 @@ interface StashedDraft {
   text: string;
 }
 
-/** Playback shares change often; the meter moves in steps so the surface does not re-render per tick. */
+/** Playback shares change often; the meter moves in steps so nothing re-renders per tick. */
 const HEARD_STEP = 0.05;
+
+/** The share of the regions played, floored to a step; never above the exact share. */
+function steppedHeard(tracker: PlaybackTracker, regions: readonly (readonly [number, number])[]): number {
+  const coverage = tracker.played.coverage(regions);
+  return Math.min(1, Math.floor(coverage / HEARD_STEP + 1e-9) * HEARD_STEP);
+}
+
+/**
+ * How much of the span this person has heard, and what is still needed
+ * before approving. Follows the player through the time subscription, so
+ * its ticks re-render this line only, not the list and the strip above it.
+ */
+function HeardMeter({
+  span,
+  tracker,
+  subscribeTime,
+  mustListen,
+  onPlay,
+}: {
+  span: SpanView;
+  tracker: PlaybackTracker;
+  subscribeTime: TimeSubscription;
+  mustListen: boolean;
+  onPlay: () => void;
+}) {
+  const t = useTranslations("correction");
+  const regions = useMemo(() => speechRegionsInSeconds(span), [span]);
+  const [heard, setHeard] = useState(() => steppedHeard(tracker, regions));
+  useEffect(() => {
+    const measure = () => {
+      const next = steppedHeard(tracker, regions);
+      setHeard((current) => (current === next ? current : next));
+    };
+    measure();
+    return subscribeTime(measure);
+  }, [tracker, regions, subscribeTime]);
+
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-2 text-xs ${mustListen ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
+      data-testid="correction-heard"
+      data-heard={heard.toFixed(2)}
+    >
+      <span>{t("heard", { percent: Math.round(heard * 100) })}</span>
+      {mustListen && (
+        <>
+          <span>
+            {t("listenBeforeApprove", {
+              percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100),
+            })}
+          </span>
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={onPlay}>
+            <Play className="h-3.5 w-3.5" />
+            {t("audio.playSpan")}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function stateVariant(state: SpanState): "default" | "secondary" | "destructive" | "outline" {
   switch (state) {
@@ -156,16 +216,19 @@ export function CorrectionSurface({
   // Moving on used to discard them; a half-written correction of a 30 s
   // span is work that must survive a click on another segment.
   const [stash, setStash] = useState<ReadonlyMap<string, StashedDraft>>(() => new Map());
-  // Share of the selected span's speech played on this page, in steps.
-  const [heard, setHeard] = useState(0);
+  // Whether the selected span still needs listening before it can be
+  // approved. The share itself is shown by HeardMeter, which follows the
+  // player on its own; the surface only re-renders when the gate flips.
+  const [mustListen, setMustListen] = useState(true);
   // Set when the stored text moved under a draft. It stays until the person
   // acts or moves on, and while it is set the current stored text is shown
   // beside the editor.
   const [conflict, setConflict] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   // What this person has played on this page, for the playback each approve
-  // or disapprove reports (ADR 0012). Only continuous playing counts.
-  const playbackRef = useRef(new PlaybackTracker());
+  // or disapprove reports (ADR 0012). Only continuous playing counts. State,
+  // not a ref, because the render that selects a span reads it for the gate.
+  const [playback] = useState(() => new PlaybackTracker());
   const playingRef = useRef(false);
   const [rate, setRate] = useState<number>(1);
 
@@ -193,28 +256,33 @@ export function CorrectionSurface({
   // callback stays stable and keeps the player's media listeners in place.
   const selectedRegionsRef = useRef<[number, number][]>([]);
   const measureHeard = useCallback(() => {
-    const coverage = playbackRef.current.played.coverage(selectedRegionsRef.current);
-    const stepped = Math.min(1, Math.floor(coverage / HEARD_STEP + 1e-9) * HEARD_STEP);
-    setHeard((current) => (current === stepped ? current : stepped));
-  }, []);
+    const heard = steppedHeard(playback, selectedRegionsRef.current);
+    const next = heard < MIN_HEARD_FRACTION_FOR_TRAINING;
+    setMustListen((current) => (current === next ? current : next));
+  }, [playback]);
   const handlePlayerTime = useCallback(
     (time: number) => {
       currentTimeRef.current = time;
+      // Observe before notifying, so the meter reads the interval this tick added.
+      if (playingRef.current) playback.observe(time, rateRef.current);
+      else playback.interrupt();
       timeListenersRef.current.forEach((listener) => listener(time));
-      if (playingRef.current) {
-        playbackRef.current.observe(time, rateRef.current);
-        measureHeard();
-      } else {
-        playbackRef.current.interrupt();
-      }
+      if (playingRef.current) measureHeard();
     },
-    [measureHeard]
+    [measureHeard, playback]
   );
   const handlePlayerPlaying = useCallback((playing: boolean) => {
     playingRef.current = playing;
-    if (!playing) playbackRef.current.interrupt();
-  }, []);
-  const handlePlayerSeek = useCallback(() => playbackRef.current.interrupt(), []);
+    if (playing) {
+      // The first time update after play lands a quarter second in; seeding
+      // the tracker with the position play started from counts that lead,
+      // which a span of a second or two could otherwise never cover.
+      playback.observe(currentTimeRef.current, rateRef.current);
+    } else {
+      playback.interrupt();
+    }
+  }, [playback]);
+  const handlePlayerSeek = useCallback(() => playback.interrupt(), [playback]);
 
   const [seekRequest, setSeekRequest] = useState<{
     spanId: string;
@@ -295,13 +363,17 @@ export function CorrectionSurface({
         draftFor && draft.trim() !== draftFor.baseText.trim()
           ? { spanId: draftFor.spanId, revisionId: draftFor.revisionId, baseText: draftFor.baseText, text: draft }
           : null;
-      const restored = stash.get(selected.id) ?? null;
-      if (leaving || restored) {
+      const stashed = stash.get(selected.id) ?? null;
+      if (leaving || stashed) {
         const next = new Map(stash);
         if (leaving) next.set(leaving.spanId, leaving);
-        if (restored) next.delete(selected.id);
+        if (stashed) next.delete(selected.id);
         setStash(next);
       }
+      // A stashed draft that says what the span now says is not unsaved work
+      // any more: somebody saved that wording meanwhile, or this person's own
+      // save landed after they moved on.
+      const restored = stashed && stashed.text.trim() !== selected.text.trim() ? stashed : null;
       setDraftFor({
         spanId: selected.id,
         revisionId: selected.revisionId,
@@ -310,6 +382,11 @@ export function CorrectionSurface({
       setConflict(restored ? restored.revisionId !== selected.revisionId : false);
       setCommentBody("");
       setDraft(restored ? restored.text : selected.text);
+      // The gate follows the span in the same render, so the approve button
+      // never shows the previous span's listening for even one frame.
+      setMustListen(
+        steppedHeard(playback, speechRegionsInSeconds(selected)) < MIN_HEARD_FRACTION_FOR_TRAINING
+      );
       if (seekRequest?.spanId !== selected.id) {
         setSeekRequest({
           spanId: selected.id,
@@ -338,23 +415,45 @@ export function CorrectionSurface({
     }
   }
 
-  // A span revisited on the same page keeps what was heard of it: the
-  // tracker remembers every interval played since the page opened.
+  // The time callback measures against the span on screen; a span revisited
+  // on the same page keeps what was heard of it, because the tracker
+  // remembers every interval played since the page opened.
+  const selectedRegions = useMemo(() => (selected ? speechRegionsInSeconds(selected) : []), [selected]);
   useEffect(() => {
-    selectedRegionsRef.current = selected ? speechRegionsInSeconds(selected) : [];
+    selectedRegionsRef.current = selectedRegions;
     measureHeard();
-  }, [selected, measureHeard]);
+  }, [selectedRegions, measureHeard]);
 
-  // Unsaved wording, on screen or stashed, is lost with the page.
+  // Unsaved wording, on screen or stashed, is lost with the page. A reload
+  // or a closed tab asks through beforeunload; a link inside the app does
+  // not unload the page, so same-window links ask through a confirm first.
   const hasUnsavedWork = Boolean(draftFor && draft.trim() !== draftFor.baseText.trim()) || stash.size > 0;
   useEffect(() => {
     if (!hasUnsavedWork) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
+      // Older engines only honour the legacy field.
+      event.returnValue = "";
+    };
+    const guardLinks = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest?.("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === "_blank") return;
+      if (anchor.origin !== window.location.origin) return;
+      if (anchor.pathname === window.location.pathname && anchor.search === window.location.search) return;
+      if (!window.confirm(t("leaveUnsaved"))) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [hasUnsavedWork]);
+    document.addEventListener("click", guardLinks, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", guardLinks, true);
+    };
+  }, [hasUnsavedWork, t]);
 
   const historyQuery = useQuery({
     queryKey: ["correction-span-history", catalogId, hash, selected?.id],
@@ -366,7 +465,7 @@ export function CorrectionSurface({
   });
 
   const playSpan = useCallback((span: SpanView) => {
-    playbackRef.current.interrupt();
+    playback.interrupt();
     setSeekRequest((previous) => ({
       spanId: span.id,
       time: span.startSeconds,
@@ -374,11 +473,11 @@ export function CorrectionSurface({
       key: (previous?.key ?? 0) + 1,
       autoPlay: true,
     }));
-  }, []);
+  }, [playback]);
 
   /** Play part of a span: a region, from a word, or a few seconds back. */
   const playRange = useCallback((span: SpanView, start: number, end: number) => {
-    playbackRef.current.interrupt();
+    playback.interrupt();
     setSeekRequest((previous) => ({
       spanId: span.id,
       time: Math.max(span.startSeconds, start),
@@ -386,7 +485,7 @@ export function CorrectionSurface({
       key: (previous?.key ?? 0) + 1,
       autoPlay: true,
     }));
-  }, []);
+  }, [playback]);
 
   const playRegion = useCallback(
     (span: SpanView, direction: "previous" | "current" | "next") => {
@@ -514,6 +613,14 @@ export function CorrectionSurface({
       if (variables.action === "save_and_approve" && selectedIdRef.current === variables.span.id) {
         setDraft((current) => (current === variables.text ? result.text : current));
       }
+      // The saved wording is the new baseline at once. Advancing before the
+      // refetched list has rendered used to find the old baseline and stash
+      // the span that had just been saved as unsaved work.
+      setDraftFor((current) =>
+        current && current.spanId === variables.span.id
+          ? { ...current, revisionId: result.revisionId, baseText: result.text }
+          : current
+      );
       setConflict(false);
       await refresh();
       if (variables.action === "approve" || variables.action === "save_and_approve") {
@@ -565,11 +672,10 @@ export function CorrectionSurface({
       pendingCommandRef.current = { spanId: span.id, revisionId: span.revisionId, action, text, key };
       // Approvals and disapprovals report what was heard of this span; the
       // measurement is never a condition for deciding.
-      const playback =
-        action === "withdraw" ? undefined : playbackRef.current.report(speechRegionsInSeconds(span));
-      command.mutate({ span, action, text, idempotencyKey: key, playback });
+      const report = action === "withdraw" ? undefined : playback.report(speechRegionsInSeconds(span));
+      command.mutate({ span, action, text, idempotencyKey: key, playback: report });
     },
-    [command]
+    [command, playback]
   );
 
   const comment = useMutation({
@@ -617,13 +723,33 @@ export function CorrectionSurface({
   // (ADR 0012), and the person would only learn that at export time. The
   // editor asks for the listening first; disapproving and withdrawing do not
   // need it.
-  const mustListen = heard < MIN_HEARD_FRACTION_FOR_TRAINING;
-
   const runPrimary = useCallback(() => {
-    if (!selected || command.isPending || mustListen) return;
+    if (!selected || command.isPending) return;
+    if (mustListen) {
+      // Reached from Ctrl+Enter while the button is disabled: say why.
+      toast({
+        description: t("listenBeforeApprove", {
+          percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100),
+        }),
+      });
+      return;
+    }
     if (isEdited) issue(selected, "save_and_approve", draft);
     else issue(selected, "approve");
-  }, [selected, command.isPending, mustListen, isEdited, draft, issue]);
+  }, [selected, command.isPending, mustListen, isEdited, draft, issue, toast, t]);
+
+  // Back to the stored text, for a draft this person no longer wants, on
+  // screen or just restored from the stash.
+  const discardDraft = useCallback(() => {
+    if (!selected) return;
+    setDraft(selected.text);
+    setConflict(false);
+    setDraftFor((current) =>
+      current && current.spanId === selected.id
+        ? { ...current, revisionId: selected.revisionId, baseText: selected.text }
+        : current
+    );
+  }, [selected]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -888,6 +1014,18 @@ export function CorrectionSurface({
                 <ThumbsDown className="h-4 w-4" />
                 {t("disapprove")}
               </Button>
+              {isEdited && (
+                <Button
+                  variant="ghost"
+                  className="gap-2"
+                  disabled={command.isPending}
+                  onClick={discardDraft}
+                  data-testid="correction-discard-draft"
+                >
+                  <Eraser className="h-4 w-4" />
+                  {t("discardDraft")}
+                </Button>
+              )}
               {myDecision && (
                 <Button
                   variant="ghost"
@@ -911,31 +1049,14 @@ export function CorrectionSurface({
               </Button>
             </div>
 
-            <div
-              className={`flex flex-wrap items-center gap-2 text-xs ${mustListen ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
-              data-testid="correction-heard"
-              data-heard={heard.toFixed(2)}
-            >
-              <span>{t("heard", { percent: Math.round(heard * 100) })}</span>
-              {mustListen && (
-                <>
-                  <span>
-                    {t("listenBeforeApprove", {
-                      percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100),
-                    })}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={() => playSpan(selected)}
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                    {t("audio.playSpan")}
-                  </Button>
-                </>
-              )}
-            </div>
+            <HeardMeter
+              key={selected.id}
+              span={selected}
+              tracker={playback}
+              subscribeTime={subscribeTime}
+              mustListen={mustListen}
+              onPlay={() => playSpan(selected)}
+            />
 
             <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>
 

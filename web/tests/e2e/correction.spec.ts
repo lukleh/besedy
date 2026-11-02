@@ -18,7 +18,7 @@ const correctionPath = `/catalog/${TEST_CATALOG_ID}/recording/${recording.hash}/
 test.describe("transcript correction", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("a corrector consents, starts and works through spans", async ({ page }, testInfo) => {
+  test("a corrector consents, starts and works through spans @smoke", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "Desktop Chrome", "The correction page needs a large landscape screen");
 
     // A workspace starts only once the catalog has its own guide.

@@ -666,4 +666,168 @@ describe("CorrectionSurface", () => {
     expect(await screen.findByDisplayValue("my text")).toBeInTheDocument();
     expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
   });
+
+  // Advancing after a save used to run before the refetched list rendered,
+  // so the reconciliation saw the old baseline and stashed the span that had
+  // just been saved as unsaved work.
+  it("does not stash the span it just saved when it advances", async () => {
+    let spansServed = 0;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        spansServed += 1;
+        return spansServed === 1
+          ? page(0, 2, 2)
+          : page(0, 2, 2, [span(0, { text: "my text", revisionId: "rev-0-2", isEdited: true }), span(1)]);
+      }
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return {
+          spanId: "span-0",
+          revisionId: "rev-0-2",
+          text: "my text",
+          state: "needs_second_approval",
+          approverIds: ["user-1"],
+          disapproverIds: [],
+          replayed: false,
+        };
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+
+    await screen.findByDisplayValue("machine 1");
+    expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /my text/ })).not.toHaveTextContent("unsavedDraft");
+  });
+
+  // A stashed draft whose wording the span now carries is not unsaved work:
+  // the person's own save landed, or somebody saved the same text.
+  it("drops a stashed draft that matches the stored text instead of flagging a conflict", async () => {
+    let moved = false;
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return moved
+          ? page(0, 2, 2, [span(0, { text: "my text", revisionId: "rev-0-2", isEdited: true }), span(1)])
+          : page(0, 2, 2);
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const { queryClient } = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+
+    moved = true;
+    await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+    await waitFor(() => expect(screen.getByRole("button", { name: /my text/ })).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /my text/ }));
+
+    expect(await screen.findByDisplayValue("my text")).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+  });
+
+  // The gate must follow the span in the same render as the selection, or
+  // the approve button is briefly enabled with the previous span's listening.
+  it("disables approve for the next span in the very render it is selected", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    expect(screen.getByTestId("correction-approve")).toBeEnabled();
+
+    const seen: boolean[] = [];
+    const observer = new MutationObserver(() => {
+      const button = screen.queryByTestId("correction-approve");
+      if (button) seen.push((button as HTMLButtonElement).disabled);
+    });
+    observer.observe(document.body, { subtree: true, attributes: true, childList: true });
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+    observer.disconnect();
+
+    expect(screen.getByTestId("correction-approve")).toBeDisabled();
+    // Once the editor shows span 1, no observed state had the button enabled.
+    const firstDisabled = seen.indexOf(true);
+    expect(firstDisabled).toBeGreaterThanOrEqual(0);
+    expect(seen.slice(firstDisabled)).not.toContain(false);
+  });
+
+  // A draft the person no longer wants goes back to the stored text, which
+  // also clears the unsaved-work state a stashed draft would otherwise keep.
+  it("discards a draft back to the stored text", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "typo");
+    await userEvent.click(screen.getByTestId("correction-discard-draft"));
+
+    expect(editor).toHaveValue("machine 0");
+    expect(screen.queryByTestId("correction-discard-draft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+  });
+
+  // Ctrl+Enter below the threshold must not approve, and must not pass silently.
+  it("refuses Ctrl+Enter before the span was heard and sends nothing", async () => {
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return {
+          spanId: "span-0",
+          revisionId: "rev-0-1",
+          text: "machine 0",
+          state: "needs_second_approval",
+          approverIds: ["user-1"],
+          disapproverIds: [],
+          replayed: false,
+        };
+      }
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.click(editor);
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(fetchJsonMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+
+    await listenThrough(0);
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() =>
+      expect(fetchJsonMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1)
+    );
+  });
 });

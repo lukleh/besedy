@@ -27,13 +27,26 @@ export const SHORT_WRITE_TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as c
 /** PostgreSQL `lock_not_available`, raised when `lock_timeout` expires. */
 const LOCK_NOT_AVAILABLE = "55P03";
 
-function isLockTimeout(error: unknown): boolean {
+/**
+ * Whether a database error is PostgreSQL giving up on a lock.
+ *
+ * Prisma 7 with a driver adapter reports a failed raw query as `P2010` with
+ * the SQLSTATE in `meta.driverAdapterError.cause.originalCode` (and in the
+ * message); the Rust engine put it in `meta.code`. All three are read, the
+ * message last.
+ */
+export function isLockTimeout(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const { code, meta, message } = error as {
     code?: unknown;
-    meta?: { code?: unknown };
+    meta?: {
+      code?: unknown;
+      driverAdapterError?: { cause?: { code?: unknown; originalCode?: unknown } };
+    };
     message?: unknown;
   };
+  const cause = meta?.driverAdapterError?.cause;
+  if (cause?.originalCode === LOCK_NOT_AVAILABLE || cause?.code === LOCK_NOT_AVAILABLE) return true;
   if (meta?.code === LOCK_NOT_AVAILABLE) return true;
   return code === "P2010" && typeof message === "string" && message.includes(LOCK_NOT_AVAILABLE);
 }

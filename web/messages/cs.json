@@ -468,6 +468,8 @@
     "heard": "Poslechnuto {percent} %",
     "listenBeforeApprove": "Schválit lze po poslechu alespoň {percent} % řeči v úseku; schválení bez poslechu se k trénování nepoužije.",
     "workspaceLocked": "Přepis se právě zveřejňuje nebo někdo ukládá jinou změnu. Váš text zůstává v editoru; zkuste to za chvíli.",
+    "discardDraft": "Zahodit změny",
+    "leaveUnsaved": "Máte rozepsaný text, který se neuloží. Opravdu chcete odejít?",
     "conflict": "Někdo tento segment mezitím změnil. Váš text zůstává v editoru; aktuální text je zobrazen zde.",
     "stateNotReviewed": "Nezkontrolováno",
     "stateNeedsSecondApproval": "Chybí druhé schválení",
