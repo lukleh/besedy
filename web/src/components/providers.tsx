@@ -10,6 +10,7 @@ import { AudioPlaybackProvider } from "@/contexts/audio-playback-context";
 import { SleepTimerProvider } from "@/contexts/sleep-timer-context";
 import { ServiceWorkerProvider } from "@/contexts/service-worker-context";
 import { ReloadSafetyProvider } from "@/contexts/reload-safety-context";
+import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
 import { DownloadManagerBridge } from "@/components/offline/download-manager-bridge";
 import { RadioSleepTimerTarget } from "@/components/radio/radio-sleep-timer-target";
 import { useLabsSyncListener } from "@/hooks/use-labs";
@@ -49,15 +50,17 @@ export function Providers({
         <TextSizeProvider>
           <RadioModeProvider>
             <ReloadSafetyProvider>
-              <AudioPlaybackProvider>
-                <SleepTimerProvider>
-                  <RadioSleepTimerTarget />
-                  <ServiceWorkerProvider passive={isWarmup}>
-                    {!isWarmup && <DownloadManagerBridge />}
-                    {children}
-                  </ServiceWorkerProvider>
-                </SleepTimerProvider>
-              </AudioPlaybackProvider>
+              <CorrectionDraftsProvider>
+                <AudioPlaybackProvider>
+                  <SleepTimerProvider>
+                    <RadioSleepTimerTarget />
+                    <ServiceWorkerProvider passive={isWarmup}>
+                      {!isWarmup && <DownloadManagerBridge />}
+                      {children}
+                    </ServiceWorkerProvider>
+                  </SleepTimerProvider>
+                </AudioPlaybackProvider>
+              </CorrectionDraftsProvider>
             </ReloadSafetyProvider>
           </RadioModeProvider>
         </TextSizeProvider>

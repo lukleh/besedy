@@ -58,6 +58,64 @@ test.describe("transcript correction", () => {
     await expect(page.getByTestId("correction-speech-without-text")).toBeVisible();
     await expect(page.getByTestId("correction-previous-context")).toContainText("vítejte");
 
+    // Unsubmitted work survives both span navigation and a page reload, and
+    // remains local: saving a draft must never approve text on the server.
+    const editor = page.getByRole("textbox").first();
+    const comment = page.getByRole("textbox").nth(1);
+    await editor.fill("Rozpracovaná oprava.");
+    await comment.fill("Ověřit jméno.");
+    await spanList.getByRole("button", { name: /^0:00/ }).first().click();
+    await spanList.getByRole("button", { name: /^0:10/ }).first().click();
+    await expect(editor).toHaveValue("Rozpracovaná oprava.");
+    await expect(comment).toHaveValue("Ověřit jméno.");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.reload();
+    await expect(strip).toBeVisible({ timeout: 20000 });
+    await spanList.getByRole("button", { name: /^0:10/ }).first().click();
+    await expect(editor).toHaveValue("Rozpracovaná oprava.");
+    await expect(comment).toHaveValue("Ověřit jméno.");
+    const stored = await page.request.get(`/api/catalogs/${TEST_CATALOG_ID}/recordings/${recording.hash}/correction/spans`);
+    expect((await stored.json()).spans[1].text).toBe("Dnes budeme mluvit.");
+    await editor.fill("Dnes budeme mluvit.");
+    await comment.fill("");
+
+    // When session storage is full, the app still owns drafts while the
+    // responsive layout or client-side navigation unmounts the editor.
+    const restoreStorage = await page.evaluateHandle(() => {
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key.startsWith("besedy-correction-drafts:")) {
+          throw new DOMException("Storage full", "QuotaExceededError");
+        }
+        return setItem.call(this, key, value);
+      };
+      return () => { Storage.prototype.setItem = setItem; };
+    });
+    try {
+      await editor.fill("Oprava v paměti.");
+      await comment.fill("Poznámka v paměti.");
+      await page.setViewportSize({ width: 800, height: 1000 });
+      await expect(strip).toHaveCount(0);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await expect(strip).toBeVisible();
+      await spanList.getByRole("button", { name: /^0:10/ }).first().click();
+      await expect(editor).toHaveValue("Oprava v paměti.");
+      await expect(comment).toHaveValue("Poznámka v paměti.");
+
+      await page.getByTestId("correction-overview-link").click();
+      await expect(page).toHaveURL(`/catalog/${TEST_CATALOG_ID}/correction`);
+      await page.locator(`a[href="${correctionPath}"]`).first().click();
+      await expect(strip).toBeVisible();
+      await spanList.getByRole("button", { name: /^0:10/ }).first().click();
+      await expect(editor).toHaveValue("Oprava v paměti.");
+      await expect(comment).toHaveValue("Poznámka v paměti.");
+      await editor.fill("Dnes budeme mluvit.");
+      await comment.fill("");
+    } finally {
+      await restoreStorage.evaluate((restore) => restore());
+      await restoreStorage.dispose();
+    }
+
     // A flag toggles, and shows its new state once the server has it.
     const unclear = page.getByTestId("correction-flag-UNCLEAR");
     const wasSet = (await unclear.getAttribute("aria-pressed")) === "true";

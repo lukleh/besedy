@@ -2,9 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({
   default: {
-    transcriptWorkspace: { findMany: vi.fn() },
-    transcriptSpan: { findMany: vi.fn() },
-    transcriptSpanDecision: { findMany: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 vi.mock("@/lib/correction/span-summaries", () => ({ loadSpanSummaries: vi.fn() }));
@@ -57,7 +55,15 @@ describe("buildTrainingExport", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
+    prisma = {
+      transcriptWorkspace: { findMany: vi.fn() },
+      transcriptSpan: { findMany: vi.fn() },
+      transcriptSpanDecision: { findMany: vi.fn() },
+    };
+    const database = (await import("@/lib/db")).default;
+    (database.$transaction as unknown as Mocked).mockImplementation(
+      (read: (client: typeof prisma) => Promise<unknown>) => read(prisma)
+    );
     loadSpanSummaries = (await import("@/lib/correction/span-summaries"))
       .loadSpanSummaries as unknown as Mocked;
     loadSpanFlags = (await import("@/lib/correction/flag-service")).loadSpanFlags as unknown as Mocked;
@@ -65,6 +71,19 @@ describe("buildTrainingExport", () => {
     prisma.transcriptWorkspace.findMany.mockResolvedValue([WORKSPACE]);
     loadSpanFlags.mockResolvedValue(new Map());
     prisma.transcriptSpanDecision.findMany.mockResolvedValue([]);
+  });
+
+  it("reads all eligibility inputs through one repeatable-read transaction", async () => {
+    spans([{ id: "s0", ordinal: 0, chunk: 0, regions: [0, 0] }]);
+    await buildTrainingExport(CATALOG_ID);
+    const database = (await import("@/lib/db")).default;
+    expect(database.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "RepeatableRead",
+      maxWait: 10_000,
+      timeout: 60_000,
+    });
+    expect(loadSpanSummaries).toHaveBeenCalledWith("w1", { client: prisma });
+    expect(loadSpanFlags).toHaveBeenCalledWith(["s0"], prisma);
   });
 
   /** Spans as the summaries loader and the placement query return them; approvals fully heard unless given. */

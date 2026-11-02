@@ -25,6 +25,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import type { Prisma } from "@/generated/prisma/client";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "besedy-correction-"));
 const dataDir = path.join(root, "data");
@@ -752,6 +753,66 @@ async function main() {
 
   const progress = await computeProgress(workspace.id);
   check("progress is measured in audio", progress.fullyApprovedDurationSeconds === 12, progress);
+
+  console.log("\ntraining export during concurrent correction");
+  {
+    const { buildTrainingExport } = await import("@/lib/correction/training-export");
+    const span = (await listSpans(workspace.id)).spans[0];
+    const flag = (action: "SET" | "CLEAR") => recordFlag({
+      workspaceId: workspace.id, spanId: span.id, userId: alice.id, kind: "UNCLEAR", action,
+    });
+    const decide = (kind: "APPROVE" | "DISAPPROVE") => recordDecision({
+      workspaceId: workspace.id, spanId: span.id, userId: bob.id,
+      expectedRevisionId: span.revisionId, kind, playback: HEARD,
+    });
+    const exportChunk = async () => (await buildTrainingExport(CATALOG_ID, undefined, { audioHash: AUDIO_HASH }))
+      .workspaces[0].chunks[0];
+    check("fully heard approvals qualify a chunk for training", (await exportChunk()).eligible);
+    await flag("SET");
+
+    // Pause the export just before its flag read, then commit a disapproval
+    // followed by clearing the flag on separate writer transactions. The
+    // chunk is never eligible: it is flagged first, and disputed afterwards.
+    // READ COMMITTED would combine the old approvals with the cleared flag.
+    const originalTransaction = prisma.$transaction;
+    const transaction = originalTransaction.bind(prisma);
+    let interleaved = false;
+    prisma.$transaction = (async (
+      read: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options?: Parameters<typeof prisma.$transaction>[1]
+    ) => transaction(async (tx) => {
+      const raw = tx.$queryRaw.bind(tx);
+      const readRaw = async <T>(statement: TemplateStringsArray | Prisma.Sql, ...values: unknown[]) => {
+        const sql = "strings" in statement ? statement.strings.join("") : statement.join("");
+        if (!interleaved && sql.includes("FROM transcript_span_flag_event")) {
+          interleaved = true;
+          await decide("DISAPPROVE");
+          await flag("CLEAR");
+        }
+        return raw<T>(statement, ...values);
+      };
+      // Use a proxy: assigning a method on Prisma's transaction proxy can
+      // also replace it on the root client used by the concurrent writers.
+      return read(new Proxy(tx, {
+        get(target, property, receiver) {
+          return property === "$queryRaw" ? readRaw : Reflect.get(target, property, receiver);
+        },
+      }));
+    }, options)) as typeof prisma.$transaction;
+    try {
+      const exported = await exportChunk();
+      check("a concurrent writer committed between export reads", interleaved);
+      check(
+        "the export keeps the flag from its approval snapshot",
+        !exported.eligible && exported.reasons.some((reason) => reason.includes("flagged UNCLEAR")),
+        exported
+      );
+    } finally {
+      prisma.$transaction = originalTransaction;
+    }
+    check("a subsequent export sees the disapproval", (await exportChunk()).reasons.some((reason) => reason.includes("needs_attention")));
+    await decide("APPROVE");
+  }
 
   // --- the publication lock ------------------------------------------------
   // A disapproval racing a publish must not end with both succeeding: that is

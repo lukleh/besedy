@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionSurface } from "@/components/correction/correction-surface";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
+import { ReloadSafetyProvider, useReloadSafety } from "@/contexts/reload-safety-context";
+import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -79,29 +81,46 @@ function page(offset: number, count: number, total: number, spans = Array.from({
   return { workspaceId: WORKSPACE.id, offset, limit: 200, total, spans };
 }
 
-function renderSurface(resume: { spanId: string; ordinal: number } | null) {
+function ReloadSafetyStatus() {
+  const { blocksAutomatic, blocksManual } = useReloadSafety();
+  return <output data-testid="reload-safety">{JSON.stringify({ blocksAutomatic, blocksManual })}</output>;
+}
+
+function renderSurface(resume: { spanId: string; ordinal: number } | null, initialUserId = "user-1") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const rendered = render(
+  const tree = (visible = true, userId = initialUserId, workspace = WORKSPACE) => (
     <QueryClientProvider client={queryClient}>
-      <CorrectionSurface
-        catalogId={CATALOG_ID}
-        hash={HASH}
-        userId="user-1"
-        workspace={WORKSPACE}
-        resume={resume}
-        guide={"# Návod\n\n- **Čísla** číslicemi"}
-        onChanged={() => {}}
-      />
+      <ReloadSafetyProvider>
+        <CorrectionDraftsProvider>
+          <ReloadSafetyStatus />
+          {visible && <CorrectionSurface
+            key={`${workspace.id}:${userId}`}
+            catalogId={CATALOG_ID}
+            hash={HASH}
+            userId={userId}
+            workspace={workspace}
+            resume={resume}
+            guide={"# Návod\n\n- **Čísla** číslicemi"}
+            onChanged={() => {}}
+          />}
+        </CorrectionDraftsProvider>
+      </ReloadSafetyProvider>
     </QueryClientProvider>
   );
-  return { ...rendered, queryClient };
+  const rendered = render(tree());
+  return {
+    ...rendered,
+    queryClient,
+    showSurface: (visible = true, userId = initialUserId, workspace = WORKSPACE) => rendered.rerender(tree(visible, userId, workspace)),
+  };
 }
 
 const fetchJsonMock = vi.mocked(fetchJson);
 
 beforeEach(() => {
+  sessionStorage.clear();
   fetchJsonMock.mockReset();
   mocks.audioPlayer.mockClear();
 });
@@ -128,6 +147,249 @@ async function listenThrough(ordinal: number, { from = 0, to = 10 } = {}) {
 }
 
 describe("CorrectionSurface", () => {
+  function serveDraftSpans(readPage = () => page(0, 2, 2)) {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/spans?offset=0")) return readPage();
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it("keeps an empty text draft and a comment when switching spans", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "check this name");
+    await userEvent.click(screen.getByText("machine 1"));
+    expect(editor).toHaveValue("machine 1");
+    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("");
+    await userEvent.click(screen.getByText("machine 0"));
+    expect(editor).toHaveValue("");
+    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("check this name");
+    expect(fetchJsonMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("restores drafts after remount and shows a conflict if the source revision changed", async () => {
+    let currentPage = page(0, 2, 2);
+    serveDraftSpans(() => currentPage);
+    const first = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my correction");
+    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "my note");
+    first.unmount();
+    currentPage = page(0, 2, 2, [span(0, { text: "someone else's correction", revisionId: "rev-0-2" }), span(1)]);
+    renderSurface(null);
+    expect(await screen.findByDisplayValue("my correction")).toBeInTheDocument();
+    expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("someone else's correction");
+    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("my note");
+  });
+
+  it("does not expose another corrector's drafts", async () => {
+    serveDraftSpans();
+    const first = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "private unfinished correction");
+    first.unmount();
+    const second = renderSurface(null, "user-2");
+    expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
+    second.unmount();
+    renderSurface(null);
+    expect(await screen.findByDisplayValue("private unfinished correction")).toBeInTheDocument();
+  });
+
+  it("warns before unloading even when the draft is on another span", async () => {
+    serveDraftSpans();
+    const view = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.type(editor, " unfinished");
+    await userEvent.click(screen.getByText("machine 1"));
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+    view.unmount();
+    const afterUnmount = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(afterUnmount);
+    expect(afterUnmount.defaultPrevented).toBe(false);
+  });
+
+  it("keeps drafts usable when session storage cannot be written", async () => {
+    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage disabled", "SecurityError");
+    });
+    try {
+      serveDraftSpans();
+      renderSurface(null);
+      const editor = await screen.findByDisplayValue("machine 0");
+      await userEvent.type(editor, " unfinished");
+      await userEvent.click(screen.getByText("machine 1"));
+      await userEvent.click(screen.getByText("machine 0"));
+      expect(editor).toHaveValue("machine 0 unfinished");
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
+  it.each(["QuotaExceededError", "SecurityError"])("keeps drafts and reload protection across surface remounts after %s", async (errorName) => {
+    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage unavailable", errorName);
+    });
+    try {
+      serveDraftSpans();
+      const view = renderSurface(null);
+      const editor = await screen.findByDisplayValue("machine 0");
+      await userEvent.clear(editor);
+      await userEvent.type(editor, "unfinished correction");
+      await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "unfinished note");
+      view.showSurface(false);
+      expect(screen.queryByDisplayValue("unfinished correction")).not.toBeInTheDocument();
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+      expect(screen.getByTestId("reload-safety")).toHaveTextContent('{"blocksAutomatic":true,"blocksManual":true}');
+      view.showSurface();
+      expect(await screen.findByDisplayValue("unfinished correction")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unfinished note");
+
+      // The provider's memory fallback remains scoped after changing accounts or workspaces.
+      view.showSurface(true, "user-2");
+      expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("");
+      view.showSurface(true, "user-1", { ...WORKSPACE, id: "ws-2" });
+      expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
+      view.showSurface();
+      expect(await screen.findByDisplayValue("unfinished correction")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unfinished note");
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
+  it.each(["shared correction", " shared correction "])("clears a draft matching the approved stored text: %j", async (draftText) => {
+    let currentPage = page(0, 2, 2);
+    serveDraftSpans(() => currentPage);
+    const reads = fetchJsonMock.getMockImplementation()!;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (init?.method !== "POST") return reads(input, init);
+      expect(JSON.parse(String(init.body)).action).toBe("approve");
+      return { spanId: "span-0", revisionId: "rev-0-2", text: "shared correction", state: "done", approverIds: ["user-1", "user-2"], disapproverIds: [], replayed: false };
+    });
+    const first = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, draftText);
+    first.unmount();
+    currentPage = page(0, 2, 2, [span(0, { text: "shared correction", revisionId: "rev-0-2" }), span(1)]);
+    renderSurface(null);
+    // A draft that differs from the stored text only in surrounding space is
+    // no unsaved work; the editor shows the stored text.
+    expect(await screen.findByDisplayValue("shared correction")).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await screen.findByDisplayValue("machine 1");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(false);
+    expect(screen.getByTestId("reload-safety")).toHaveTextContent('{"blocksAutomatic":false,"blocksManual":false}');
+    expect(sessionStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
+  });
+
+  it.each(["", " plus newer typing"])("preserves an unsent comment and subsequent typing after plain approval: %j", async (newerText) => {
+    sessionStorage.setItem("besedy-correction-drafts:v1:user-1:ws-1", JSON.stringify({
+      "span-0": { text: { text: "machine 0", baseText: "older text", revisionId: "older-rev" }, comment: "unsent note" },
+    }));
+    serveDraftSpans();
+    const reads = fetchJsonMock.getMockImplementation()!;
+    let complete!: (value: unknown) => void;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (init?.method !== "POST") return reads(input, init);
+      return new Promise((resolve) => { complete = resolve; });
+    });
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    if (newerText) await userEvent.type(editor, newerText);
+    complete({ spanId: "span-0", revisionId: "rev-0-1", text: "machine 0", state: "done", approverIds: ["user-1", "user-2"], disapproverIds: [], replayed: false });
+    await screen.findByDisplayValue("machine 1");
+    await userEvent.click(screen.getByText("machine 0"));
+    expect(editor).toHaveValue(`machine 0${newerText}`);
+    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unsent note");
+  });
+
+  it("clears only the submitted text draft after a successful save", async () => {
+    let currentPage = page(0, 2, 2);
+    serveDraftSpans(() => currentPage);
+    const reads = fetchJsonMock.getMockImplementation()!;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (init?.method !== "POST") return reads(input, init);
+      currentPage = page(0, 2, 2, [span(0, { text: "saved correction", revisionId: "rev-0-2" }), span(1)]);
+      return { spanId: "span-0", revisionId: "rev-0-2", text: "saved correction", state: "needs_second_approval", approverIds: ["user-1"], disapproverIds: [], replayed: false };
+    });
+    const first = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "saved correction");
+    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "unsubmitted note");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await screen.findByDisplayValue("machine 1");
+    first.unmount();
+    renderSurface(null);
+    expect(await screen.findByDisplayValue("saved correction")).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unsubmitted note");
+  });
+
+  it("keeps newer typing when an earlier save finishes and advances", async () => {
+    serveDraftSpans();
+    const reads = fetchJsonMock.getMockImplementation()!;
+    let complete!: (value: unknown) => void;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (init?.method !== "POST") return reads(input, init);
+      return new Promise((resolve) => { complete = resolve; });
+    });
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "submitted text");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await userEvent.type(editor, " plus newer typing");
+    complete({ spanId: "span-0", revisionId: "rev-0-2", text: "submitted text", state: "needs_second_approval", approverIds: ["user-1"], disapproverIds: [], replayed: false });
+    await screen.findByDisplayValue("machine 1");
+    await userEvent.click(screen.getByText("machine 0"));
+    expect(editor).toHaveValue("submitted text plus newer typing");
+  });
+
+  it("does not clear another span's comment when a submitted comment finishes", async () => {
+    serveDraftSpans();
+    const reads = fetchJsonMock.getMockImplementation()!;
+    let complete!: (value: unknown) => void;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (init?.method !== "POST") return reads(input, init);
+      return new Promise((resolve) => { complete = resolve; });
+    });
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const comment = screen.getByPlaceholderText("commentPlaceholder");
+    await userEvent.type(comment, "submitted note");
+    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    await userEvent.click(screen.getByText("machine 1"));
+    await userEvent.type(comment, "another span's note");
+    complete({ id: "comment-1" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "addComment" })).toBeEnabled());
+    expect(comment).toHaveValue("another span's note");
+    await userEvent.click(screen.getByText("machine 0"));
+    expect(comment).toHaveValue("");
+    await userEvent.click(screen.getByText("machine 1"));
+    expect(comment).toHaveValue("another span's note");
+  });
+
   // Nobody finishes a long recording in one sitting, so the list opens on the
   // page holding the resume position. The pages before it still have to be
   // reachable, or a corrector could never revisit the beginning.
@@ -667,6 +929,40 @@ describe("CorrectionSurface", () => {
     expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
   });
 
+  // A draft flagged once keeps the flag after more typing, a trip to another
+  // segment and back: otherwise approving would overwrite the newer text
+  // without the person seeing it.
+  it("keeps a flagged conflict when the person edits, leaves and returns", async () => {
+    let moved = false;
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return moved
+          ? page(0, 2, 2, [span(0, { text: "their text", revisionId: "rev-0-2", isEdited: true }), span(1)])
+          : page(0, 2, 2);
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const { queryClient } = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    moved = true;
+    await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+    await waitFor(() => expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text"));
+
+    await userEvent.type(editor, " and more");
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+    await userEvent.click(screen.getByRole("button", { name: /their text/ }));
+
+    expect(await screen.findByDisplayValue("my text and more")).toBeInTheDocument();
+    expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
+  });
+
   // Advancing after a save used to run before the refetched list rendered,
   // so the reconciliation saw the old baseline and stashed the span that had
   // just been saved as unsaved work.
@@ -794,6 +1090,7 @@ describe("CorrectionSurface", () => {
 
     expect(editor).toHaveValue("machine 0");
     expect(screen.queryByTestId("correction-discard-draft")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
     expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
   });
 

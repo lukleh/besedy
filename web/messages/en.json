@@ -469,7 +469,6 @@
     "listenBeforeApprove": "Approving needs at least {percent} % of the span's speech heard; an approval without listening is not used for training.",
     "workspaceLocked": "The transcript is being published or somebody is saving another change. Your text stays in the editor; try again in a moment.",
     "discardDraft": "Discard changes",
-    "leaveUnsaved": "You have unsaved wording that will be lost. Leave anyway?",
     "conflict": "Somebody changed this segment while you were working on it. Your text is kept in the editor; the current text is shown here.",
     "stateNotReviewed": "Not reviewed",
     "stateNeedsSecondApproval": "Needs second approval",
