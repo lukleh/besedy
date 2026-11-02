@@ -434,7 +434,6 @@ export function RecordingTranscriptSection({
           groupId={catalogId}
           clock={clock}
           onSeek={onSeek}
-          isPlaying={isPlaying}
           canDownload={canDownloadTranscripts}
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}

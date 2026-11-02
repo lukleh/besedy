@@ -5,6 +5,10 @@ import type { Transcript } from "@/components/transcript/transcript-viewer-types
 import { createPlaybackClock } from "@/lib/playback-clock";
 import { formatTimestamp } from "@/lib/utils";
 
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+}));
+
 // Each row renders its timestamp through this, so the calls count row renders.
 vi.mock("@/lib/utils", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/utils")>();
@@ -111,7 +115,7 @@ describe("TranscriptContent scrolling", () => {
 
   it("scrolls only the transcript viewport to centre the active word", () => {
     const { container } = render(
-      <TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />,
+      <TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />,
     );
 
     const viewport = container.querySelector(VIEWPORT_SELECTOR);
@@ -124,7 +128,7 @@ describe("TranscriptContent scrolling", () => {
 
   it("follows when the highlighted word changes, not on every time update", () => {
     const clock = createPlaybackClock(0.2);
-    render(<TranscriptContent transcript={transcript} clock={clock} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={clock} follow />);
     expect(elementScrollTo).toHaveBeenCalledTimes(1);
 
     act(() => clock.set(0.6));
@@ -134,28 +138,13 @@ describe("TranscriptContent scrolling", () => {
     expect(elementScrollTo).toHaveBeenCalledTimes(2);
   });
 
-  it("brings the active word into view when auto-scroll turns on", () => {
+  it("brings the active word into view when following turns on", () => {
     const clock = createPlaybackClock(2.5);
     const { rerender } = render(<TranscriptContent transcript={transcript} clock={clock} />);
     expect(elementScrollTo).not.toHaveBeenCalled();
 
-    rerender(<TranscriptContent transcript={transcript} clock={clock} autoScroll />);
+    rerender(<TranscriptContent transcript={transcript} clock={clock} follow />);
     expect(elementScrollTo).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps following a row without word timings once a second", () => {
-    const textOnly: Transcript = {
-      backend: "whisperx",
-      segments: [{ text: "a long sentence", start: 0, end: 30 }],
-    };
-    const clock = createPlaybackClock(0.2);
-    render(<TranscriptContent transcript={textOnly} clock={clock} autoScroll />);
-    expect(elementScrollTo).toHaveBeenCalledTimes(1);
-
-    act(() => clock.set(0.7));
-    expect(elementScrollTo).toHaveBeenCalledTimes(1);
-    act(() => clock.set(1.1));
-    expect(elementScrollTo).toHaveBeenCalledTimes(2);
   });
 
   it("follows only the first of overlapping segments", () => {
@@ -166,17 +155,29 @@ describe("TranscriptContent scrolling", () => {
         { text: "two", start: 2, end: 4, words: [{ word: "two", start: 2, end: 4 }] },
       ],
     };
-    render(<TranscriptContent transcript={overlapping} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={overlapping} clock={createPlaybackClock(2.5)} follow />);
 
     expect(screen.getByText("one")).toHaveClass("font-medium");
     expect(screen.getByText("two")).toHaveClass("font-medium");
     expect(elementScrollTo).toHaveBeenCalledTimes(1);
   });
 
+  it("reads no layout on time updates within the same word", () => {
+    const clock = createPlaybackClock(0.2);
+    render(<TranscriptContent transcript={transcript} clock={clock} follow />);
+    const layoutReads = vi.mocked(Element.prototype.getBoundingClientRect);
+    layoutReads.mockClear();
+
+    act(() => clock.set(0.5));
+    act(() => clock.set(0.8));
+
+    expect(layoutReads).not.toHaveBeenCalled();
+  });
+
   it("does not scroll when the active word is already visible", () => {
     contentRect = { top: 200, bottom: 220, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     expect(elementScrollTo).not.toHaveBeenCalled();
     expect(scrollIntoView).not.toHaveBeenCalled();
@@ -186,7 +187,7 @@ describe("TranscriptContent scrolling", () => {
     vi.stubGlobal("innerHeight", 400);
     contentRect = { top: 420, bottom: 440, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     // Visible band 100-400: 430 - 250
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 180, behavior: "smooth" });
@@ -198,7 +199,7 @@ describe("TranscriptContent scrolling", () => {
     viewportScrollTop = 300;
     contentRect = { top: 120, bottom: 140, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     // Visible band 150-500: 300 + (130 - 325)
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 105, behavior: "smooth" });
@@ -208,7 +209,7 @@ describe("TranscriptContent scrolling", () => {
     vi.stubGlobal("visualViewport", { offsetTop: 200, height: 250 });
     contentRect = { top: 470, bottom: 490, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     // Visible band 200-450: 480 - 325
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 155, behavior: "smooth" });
@@ -219,7 +220,7 @@ describe("TranscriptContent scrolling", () => {
     viewportScrollTop = MAX_SCROLL_TOP;
     contentRect = { top: 420, bottom: 440, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     expect(elementScrollTo).not.toHaveBeenCalled();
   });
@@ -228,7 +229,7 @@ describe("TranscriptContent scrolling", () => {
     addAppHeader();
     contentRect = { top: 120, bottom: 140, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     expect(elementScrollTo).not.toHaveBeenCalled();
   });
@@ -237,7 +238,7 @@ describe("TranscriptContent scrolling", () => {
     vi.stubGlobal("innerHeight", 150);
     contentRect = { top: 420, bottom: 440, height: 20 };
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     expect(elementScrollTo).not.toHaveBeenCalled();
   });
@@ -245,17 +246,283 @@ describe("TranscriptContent scrolling", () => {
   it("keeps following inside the box while it is off screen", () => {
     vi.stubGlobal("innerHeight", 50);
 
-    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} autoScroll />);
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />);
 
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 610, behavior: "smooth" });
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it("does not scroll when auto-scroll is off", () => {
+  it("does not scroll while idle", () => {
     render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} />);
 
     expect(elementScrollTo).not.toHaveBeenCalled();
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("stops following when the reader scrolls the transcript", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+
+    elementScrollTo.mockClear();
+    viewportScrollTop = 340;
+    fireEvent.wheel(container.querySelector(VIEWPORT_SELECTOR)!, { deltaY: -100 });
+
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+    // A follow scroll still animating stops where it is.
+    expect(elementScrollTo).toHaveBeenCalledWith({ top: 340 });
+  });
+
+  it("ignores pinch-zoom, sideways wheels and wheels past the end", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    const viewport = container.querySelector(VIEWPORT_SELECTOR)!;
+
+    fireEvent.wheel(viewport, { deltaY: 100, ctrlKey: true });
+    fireEvent.wheel(viewport, { deltaX: 100, deltaY: 10 });
+    // Already at the top: this wheel scrolls the page instead.
+    fireEvent.wheel(viewport, { deltaY: -100 });
+
+    expect(onFollowChange).not.toHaveBeenCalled();
+  });
+
+  it("treats a scroll it did not start as the reader's, such as a scrollbar drag", () => {
+    contentRect = { top: 200, bottom: 220, height: 20 };
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+    expect(elementScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("ignores the scroll events of its own follow scroll", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    const viewport = container.querySelector(VIEWPORT_SELECTOR)!;
+
+    viewportScrollTop = 300;
+    fireEvent.scroll(viewport);
+    viewportScrollTop = 610;
+    fireEvent.scroll(viewport);
+    expect(onFollowChange).not.toHaveBeenCalled();
+
+    // The follow scroll has arrived, so the next scroll is the reader's.
+    viewportScrollTop = 500;
+    fireEvent.scroll(viewport);
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+  });
+
+  it("treats a scroll away from its follow scroll's target as the reader's", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    const viewport = container.querySelector(VIEWPORT_SELECTOR)!;
+
+    viewportScrollTop = 300;
+    fireEvent.scroll(viewport);
+    expect(onFollowChange).not.toHaveBeenCalled();
+
+    viewportScrollTop = 200;
+    fireEvent.scroll(viewport);
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+  });
+
+  it("counts a scroll during a touch as the reader's without interrupting it", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    const viewport = container.querySelector(VIEWPORT_SELECTOR)!;
+    elementScrollTo.mockClear();
+
+    fireEvent.touchStart(viewport);
+    viewportScrollTop = 300;
+    fireEvent.scroll(viewport);
+
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+    expect(elementScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("still detects scrolling after switching from the virtualized path", () => {
+    const longTranscript: Transcript = {
+      backend: "faster-whisper",
+      segments: Array.from({ length: 150 }, (_, index) => ({
+        start: index,
+        end: index + 1,
+        text: `segment ${index}`,
+      })),
+    };
+    const onFollowChange = vi.fn();
+    const { container, rerender } = render(
+      <TranscriptContent
+        transcript={longTranscript}
+        clock={createPlaybackClock(0)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    rerender(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(0)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+
+    viewportScrollTop = 340;
+    fireEvent.wheel(container.querySelector(VIEWPORT_SELECTOR)!, { deltaY: -100 });
+
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+  });
+
+  it("treats page keys as scrolling but leaves the player's keys alone", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    const viewport = container.querySelector(VIEWPORT_SELECTOR)!;
+
+    fireEvent.keyDown(viewport, { key: "ArrowDown" });
+    fireEvent.keyDown(viewport, { key: " " });
+    expect(onFollowChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(viewport, { key: "PageDown" });
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does not report scrolling while already idle", () => {
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(0)}
+        onFollowChange={onFollowChange}
+      />,
+    );
+    const viewport = container.querySelector(VIEWPORT_SELECTOR)!;
+
+    viewportScrollTop = 340;
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    fireEvent.scroll(viewport);
+
+    expect(onFollowChange).not.toHaveBeenCalled();
+  });
+
+  it("offers a way back to playback the reader has scrolled away from", () => {
+    const onFollowChange = vi.fn();
+    render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={createPlaybackClock(2.5)}
+        onFollowChange={onFollowChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "backToPlayback" }));
+
+    expect(onFollowChange).toHaveBeenCalledWith(true);
+  });
+
+  it("hides the way back once the playing segment is scrolled into view", () => {
+    const { container } = render(
+      <TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} />,
+    );
+    expect(screen.getByRole("button", { name: "backToPlayback" })).toBeInTheDocument();
+
+    contentRect = { top: 200, bottom: 220, height: 20 };
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+
+    expect(screen.queryByRole("button", { name: "backToPlayback" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the way back while playback is between segments", () => {
+    const withGap: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "before", start: 0, end: 1 },
+        { text: "after", start: 5, end: 6 },
+      ],
+    };
+
+    render(<TranscriptContent transcript={withGap} clock={createPlaybackClock(3)} />);
+
+    expect(screen.getByRole("button", { name: "backToPlayback" })).toBeInTheDocument();
+  });
+
+  it("returns to the last segment to start when resuming in a gap", () => {
+    const withGap: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "before", start: 0, end: 1 },
+        { text: "after", start: 5, end: 6 },
+      ],
+    };
+    const { container, rerender } = render(
+      <TranscriptContent transcript={withGap} clock={createPlaybackClock(3)} />,
+    );
+    expect(elementScrollTo).not.toHaveBeenCalled();
+
+    rerender(<TranscriptContent transcript={withGap} clock={createPlaybackClock(3)} follow />);
+
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+    expect(elementScrollTo.mock.contexts[0]).toBe(container.querySelector(VIEWPORT_SELECTOR));
+    expect(elementScrollTo).toHaveBeenCalledWith({ top: 610, behavior: "smooth" });
+  });
+
+  it("offers no way back while following or before playback starts", () => {
+    const { rerender } = render(
+      <TranscriptContent transcript={transcript} clock={createPlaybackClock(2.5)} follow />,
+    );
+    expect(screen.queryByRole("button", { name: "backToPlayback" })).not.toBeInTheDocument();
+
+    rerender(<TranscriptContent transcript={transcript} clock={createPlaybackClock(0)} />);
+    expect(screen.queryByRole("button", { name: "backToPlayback" })).not.toBeInTheDocument();
   });
 
   it("scrolls only the transcript viewport when restoring a position", async () => {
@@ -263,6 +530,7 @@ describe("TranscriptContent scrolling", () => {
     const { container } = render(
       <TranscriptContent
         transcript={transcript}
+        clock={createPlaybackClock(0)}
         scrollToTime={2.5}
         onScrollComplete={onScrollComplete}
       />,
@@ -284,6 +552,7 @@ describe("TranscriptContent scrolling", () => {
     render(
       <TranscriptContent
         transcript={transcript}
+        clock={createPlaybackClock(0)}
         scrollToTime={2.5}
         onScrollComplete={onScrollComplete}
       />,
@@ -315,11 +584,11 @@ describe("TranscriptContent playback updates", () => {
 
   it("re-renders only the segments whose highlight changes", () => {
     const clock = createPlaybackClock(10.5);
-    render(<TranscriptContent transcript={longTranscript} clock={clock} showTimestamps />);
+    render(<TranscriptContent transcript={longTranscript} clock={clock} follow showTimestamps />);
     expect(formatTimestamp).toHaveBeenCalledTimes(50);
 
     vi.mocked(formatTimestamp).mockClear();
-    // Same segment, same word.
+    // Same word: nothing renders.
     act(() => clock.set(10.7));
     expect(formatTimestamp).not.toHaveBeenCalled();
 
@@ -333,41 +602,9 @@ describe("TranscriptContent playback updates", () => {
     expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10], [12]]);
   });
 
-  it("does not re-render the rows when playback pauses or resumes", () => {
-    const clock = createPlaybackClock(10.5);
-    const { rerender } = render(
-      <TranscriptContent transcript={longTranscript} clock={clock} autoScroll showTimestamps />,
-    );
-    vi.mocked(formatTimestamp).mockClear();
-
-    rerender(<TranscriptContent transcript={longTranscript} clock={clock} showTimestamps />);
-    rerender(<TranscriptContent transcript={longTranscript} clock={clock} autoScroll showTimestamps />);
-
-    expect(formatTimestamp).not.toHaveBeenCalled();
-  });
-
-  it("holds the highlight while the page is hidden and catches up when shown", () => {
-    const clock = createPlaybackClock(10.5);
-    render(<TranscriptContent transcript={longTranscript} clock={clock} showTimestamps />);
-    vi.mocked(formatTimestamp).mockClear();
-
-    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-    act(() => clock.set(12.5));
-    expect(formatTimestamp).not.toHaveBeenCalled();
-    expect(screen.getByText("word5a")).toHaveClass("font-medium");
-
-    visibility.mockReturnValue("visible");
-    act(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
-    expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10], [12]]);
-    expect(screen.getByText("word6a")).toHaveClass("font-medium");
-    visibility.mockRestore();
-  });
-
   it("moves the word highlight as playback advances", () => {
     const clock = createPlaybackClock(10.5);
-    render(<TranscriptContent transcript={longTranscript} clock={clock} />);
+    render(<TranscriptContent transcript={longTranscript} clock={clock} follow />);
     expect(screen.getByText("word5a")).toHaveClass("font-medium");
 
     act(() => clock.set(12.5));
@@ -377,13 +614,37 @@ describe("TranscriptContent playback updates", () => {
     expect(screen.getByText("word6b")).toHaveClass("bg-primary/10");
   });
 
+  it("marks the playing segment without highlighting words while idle", () => {
+    const { container } = render(
+      <TranscriptContent transcript={longTranscript} clock={createPlaybackClock(10.5)} />,
+    );
+
+    expect(screen.getByText("word5a")).not.toHaveClass("font-medium");
+    expect(screen.getByText("word5b")).not.toHaveClass("bg-primary/10");
+    expect(container.querySelector('[data-segment-index="5"]')).toHaveClass("border-l-primary");
+    expect(container.querySelector('[data-segment-index="6"]')).toHaveClass("border-l-transparent");
+  });
+
+  it("renders nothing while idle until playback reaches another segment", () => {
+    const clock = createPlaybackClock(10.5);
+    render(<TranscriptContent transcript={longTranscript} clock={clock} showTimestamps />);
+
+    vi.mocked(formatTimestamp).mockClear();
+    act(() => clock.set(11.5));
+    expect(formatTimestamp).not.toHaveBeenCalled();
+
+    // Only the marker moves.
+    act(() => clock.set(12.5));
+    expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10], [12]]);
+  });
+
   it("seeks through the latest handler after the parent re-renders", () => {
     const first = vi.fn();
     const latest = vi.fn();
     const { rerender } = render(
-      <TranscriptContent transcript={longTranscript} onSeek={first} />,
+      <TranscriptContent transcript={longTranscript} clock={createPlaybackClock(0)} onSeek={first} />,
     );
-    rerender(<TranscriptContent transcript={longTranscript} onSeek={latest} />);
+    rerender(<TranscriptContent transcript={longTranscript} clock={createPlaybackClock(0)} onSeek={latest} />);
 
     fireEvent.click(screen.getByText("word30b"));
 
