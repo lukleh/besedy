@@ -6,7 +6,7 @@ import {
 import prisma from "@/lib/db";
 import { requireContributorConsent } from "@/lib/correction/consent";
 import { CorrectionError } from "@/lib/correction/errors";
-import { lockWorkspace } from "@/lib/correction/workspace-lock";
+import { SHORT_WRITE_TRANSACTION, lockWorkspace } from "@/lib/correction/workspace-lock";
 
 /**
  * Flags say something about a span's audio (ADR 0012): unclear speech,
@@ -190,5 +190,5 @@ export async function recordFlag(command: FlagCommand): Promise<FlagResult> {
       replayed: false,
       changed: !unchanged,
     };
-  });
+  }, SHORT_WRITE_TRANSACTION);
 }

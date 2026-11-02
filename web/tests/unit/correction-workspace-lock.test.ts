@@ -9,7 +9,17 @@ vi.mock('@/lib/log/server', () => ({
 const WORKSPACE = '11111111-2222-3333-4444-555555555555';
 
 function txReturning(rows: unknown[]) {
-  return { $queryRaw: vi.fn().mockResolvedValue(rows) } as never;
+  return {
+    $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+    $queryRaw: vi.fn().mockResolvedValue(rows),
+  } as never;
+}
+
+function txRefusing(error: unknown) {
+  return {
+    $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+    $queryRaw: vi.fn().mockRejectedValue(error),
+  } as never;
 }
 
 describe('lockWorkspace', () => {
@@ -88,5 +98,68 @@ describe('lockWorkspace', () => {
     await expect(
       lockWorkspace(txReturning([]), WORKSPACE),
     ).rejects.toMatchObject({ code: 'NO_WORKSPACE' });
+  });
+
+  // A writer waits a bounded time for the row and then tells the person the
+  // workspace is busy, instead of running into its transaction timeout.
+  it('bounds the wait for the row and reports a busy workspace', async () => {
+    const { WORKSPACE_LOCK_WAIT_MS, lockWorkspace } = await import(
+      '@/lib/correction/workspace-lock'
+    );
+    // The shape Prisma 7 with the pg driver adapter produces: the SQLSTATE
+    // sits under driverAdapterError, not in meta.code.
+    const tx = txRefusing(
+      Object.assign(
+        new Error(
+          'Raw query failed. Code: `55P03`. Message: `canceling statement due to lock timeout`',
+        ),
+        {
+          code: 'P2010',
+          meta: {
+            driverAdapterError: {
+              name: 'DriverAdapterError',
+              cause: {
+                kind: 'postgres',
+                code: '55P03',
+                originalCode: '55P03',
+                message: 'canceling statement due to lock timeout',
+              },
+            },
+          },
+        },
+      ),
+    );
+    await expect(lockWorkspace(tx, WORKSPACE)).rejects.toMatchObject({
+      code: 'WORKSPACE_LOCKED',
+      statusCode: 409,
+    });
+    expect((tx as { $executeRawUnsafe: ReturnType<typeof vi.fn> }).$executeRawUnsafe).toHaveBeenCalledWith(
+      `SET LOCAL lock_timeout = '${WORKSPACE_LOCK_WAIT_MS}ms'`,
+    );
+  });
+
+  it('recognises a lock timeout from the message alone', async () => {
+    const { isLockTimeout } = await import('@/lib/correction/workspace-lock');
+    expect(
+      isLockTimeout(
+        Object.assign(new Error('Raw query failed. Code: `55P03`. Message: `x`'), {
+          code: 'P2010',
+          meta: {},
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLockTimeout(Object.assign(new Error('Raw query failed. Code: `42P01`'), { code: 'P2010' })),
+    ).toBe(false);
+    expect(isLockTimeout(new Error('55P03 mentioned but no Prisma code'))).toBe(false);
+  });
+
+  it('passes other query failures through', async () => {
+    const { lockWorkspace } = await import('@/lib/correction/workspace-lock');
+    const failure = Object.assign(new Error('Raw query failed. Code: `42P01`'), {
+      code: 'P2010',
+      meta: { driverAdapterError: { cause: { kind: 'TableDoesNotExist', originalCode: '42P01' } } },
+    });
+    await expect(lockWorkspace(txRefusing(failure), WORKSPACE)).rejects.toBe(failure);
   });
 });

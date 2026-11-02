@@ -6,7 +6,7 @@ import { hashSpanText, normalizeSpanText } from "@/lib/correction/text";
 import type { SpanState } from "@/lib/correction/span-state";
 import { loadActorNames } from "@/lib/correction/actor-names";
 import { loadSpanDecisionSummaries } from "@/lib/correction/span-summaries";
-import { lockWorkspace } from "@/lib/correction/workspace-lock";
+import { SHORT_WRITE_TRANSACTION, lockWorkspace } from "@/lib/correction/workspace-lock";
 import { requireContributorConsent } from "@/lib/correction/consent";
 import { getActiveGuideRevisionId } from "@/lib/correction/guide";
 
@@ -313,7 +313,7 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
       ...(await summarizeSpan(tx, span.id, span.currentRevisionId)),
       replayed: false,
     };
-  });
+  }, SHORT_WRITE_TRANSACTION);
 }
 
 /**
@@ -410,7 +410,7 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
       ...(await summarizeSpan(tx, span.id, revisionId)),
       replayed: false,
     };
-  });
+  }, SHORT_WRITE_TRANSACTION);
 }
 
 export interface CommentCommand {
@@ -476,7 +476,7 @@ export async function addComment(command: CommentCommand): Promise<{
       },
       select: { id: true, createdAt: true },
     });
-  });
+  }, SHORT_WRITE_TRANSACTION);
 }
 
 export interface SpanHistoryEntry {

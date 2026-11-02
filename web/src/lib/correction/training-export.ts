@@ -1,6 +1,7 @@
 import prisma from "@/lib/db";
 import { loadSpanFlags } from "@/lib/correction/flag-service";
 import { loadSpanSummaries } from "@/lib/correction/span-summaries";
+import { MIN_HEARD_FRACTION_FOR_TRAINING } from "@/lib/correction/playback-coverage";
 
 /**
  * What corrected text can train a model (ADR 0012).
@@ -23,7 +24,9 @@ export interface TrainingExportPolicy {
   minHeardFraction: number;
 }
 
-export const DEFAULT_TRAINING_EXPORT_POLICY: TrainingExportPolicy = { minHeardFraction: 0.9 };
+export const DEFAULT_TRAINING_EXPORT_POLICY: TrainingExportPolicy = {
+  minHeardFraction: MIN_HEARD_FRACTION_FOR_TRAINING,
+};
 
 export interface TrainingExportSpan {
   spanId: string;

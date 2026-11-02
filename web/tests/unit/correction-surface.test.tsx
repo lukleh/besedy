@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionSurface } from "@/components/correction/correction-surface";
@@ -110,6 +110,23 @@ function lastPlayerProps() {
   return mocks.audioPlayer.mock.calls.at(-1)?.[0] as Record<string, unknown>;
 }
 
+/**
+ * Drive the mocked player through a span as continuous playback at 1×, the
+ * way a person who listened to it would have. Approving asks for that first.
+ */
+async function listenThrough(ordinal: number, { from = 0, to = 10 } = {}) {
+  const props = lastPlayerProps() as {
+    onPlayingChange: (playing: boolean) => void;
+    onTimeUpdate: (time: number) => void;
+  };
+  const start = ordinal * 10;
+  await act(async () => {
+    props.onPlayingChange(true);
+    for (let offset = from; offset <= to; offset += 1) props.onTimeUpdate(start + offset);
+    props.onPlayingChange(false);
+  });
+}
+
 describe("CorrectionSurface", () => {
   // Nobody finishes a long recording in one sitting, so the list opens on the
   // page holding the resume position. The pages before it still have to be
@@ -164,6 +181,7 @@ describe("CorrectionSurface", () => {
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
     await userEvent.type(editor, "my text");
+    await listenThrough(0);
     await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
 
     await waitFor(() => {
@@ -249,6 +267,7 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
 
+    await listenThrough(0);
     await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
     await userEvent.click(screen.getByRole("button", { name: /machine 2/ }));
     await screen.findByDisplayValue("machine 2");
@@ -383,6 +402,7 @@ describe("CorrectionSurface", () => {
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
     await userEvent.type(editor, draftText);
+    await listenThrough(0);
     await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
 
     await waitFor(() => expect(spansServed).toBeGreaterThan(1));
@@ -548,5 +568,266 @@ describe("CorrectionSurface", () => {
 
     await waitFor(() => expect(screen.getAllByText("stateDone").length).toBeGreaterThan(0));
     expect(screen.getByDisplayValue("my wording")).toBeInTheDocument();
+  });
+
+  // An approval made without listening is stored but never trains a model
+  // (ADR 0012), and the person would only learn that at export. The button
+  // waits for the listening and says how much is still missing.
+  it("keeps approve disabled until most of the span was heard", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    const approve = screen.getByTestId("correction-approve");
+    expect(approve).toBeDisabled();
+    expect(screen.getByTestId("correction-heard")).toHaveAttribute("data-heard", "0.00");
+    expect(screen.getByText("listenBeforeApprove")).toBeInTheDocument();
+    // Disapproving never waits for playback.
+    expect(screen.getByRole("button", { name: "disapprove" })).toBeEnabled();
+
+    // Half of the span is not enough.
+    await listenThrough(0, { from: 0, to: 5 });
+    expect(approve).toBeDisabled();
+    expect(screen.getByTestId("correction-heard")).toHaveAttribute("data-heard", "0.50");
+
+    await listenThrough(0, { from: 5, to: 10 });
+    expect(approve).toBeEnabled();
+    expect(screen.getByTestId("correction-heard")).toHaveAttribute("data-heard", "1.00");
+    expect(screen.queryByText("listenBeforeApprove")).not.toBeInTheDocument();
+    expect(fetchJsonMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  });
+
+  // Clicking another segment used to replace the draft with that segment's
+  // text. A half-written correction has to wait where it was left, be
+  // findable in the list, and come back when the person returns.
+  it("keeps an unsaved draft while the person works elsewhere and restores it on return", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 3, 3);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "half written");
+
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+    const first = screen.getByRole("button", { name: /machine 0/ });
+    expect(first).toHaveTextContent("unsavedDraft");
+    expect(screen.getByRole("button", { name: /machine 1/ })).not.toHaveTextContent("unsavedDraft");
+
+    await userEvent.click(first);
+    expect(await screen.findByDisplayValue("half written")).toBeInTheDocument();
+    expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    // Restored as an edit: the primary action saves it.
+    expect(screen.getByRole("button", { name: "saveApproveAndContinue" })).toBeInTheDocument();
+  });
+
+  // Somebody else may save the segment while the draft waits. Returning to it
+  // then shows the draft as a conflict, like a refresh under an open draft.
+  it("flags a restored draft when the stored text moved while it waited", async () => {
+    let moved = false;
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return moved
+          ? page(0, 2, 2, [span(0, { text: "their text", revisionId: "rev-0-2", isEdited: true }), span(1)])
+          : page(0, 2, 2);
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const { queryClient } = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+
+    moved = true;
+    await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+    await waitFor(() => expect(screen.getByRole("button", { name: /their text/ })).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: /their text/ }));
+    expect(await screen.findByDisplayValue("my text")).toBeInTheDocument();
+    expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
+  });
+
+  // Advancing after a save used to run before the refetched list rendered,
+  // so the reconciliation saw the old baseline and stashed the span that had
+  // just been saved as unsaved work.
+  it("does not stash the span it just saved when it advances", async () => {
+    let spansServed = 0;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        spansServed += 1;
+        return spansServed === 1
+          ? page(0, 2, 2)
+          : page(0, 2, 2, [span(0, { text: "my text", revisionId: "rev-0-2", isEdited: true }), span(1)]);
+      }
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return {
+          spanId: "span-0",
+          revisionId: "rev-0-2",
+          text: "my text",
+          state: "needs_second_approval",
+          approverIds: ["user-1"],
+          disapproverIds: [],
+          replayed: false,
+        };
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+
+    await screen.findByDisplayValue("machine 1");
+    expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /my text/ })).not.toHaveTextContent("unsavedDraft");
+  });
+
+  // A stashed draft whose wording the span now carries is not unsaved work:
+  // the person's own save landed, or somebody saved the same text.
+  it("drops a stashed draft that matches the stored text instead of flagging a conflict", async () => {
+    let moved = false;
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return moved
+          ? page(0, 2, 2, [span(0, { text: "my text", revisionId: "rev-0-2", isEdited: true }), span(1)])
+          : page(0, 2, 2);
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const { queryClient } = renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my text");
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+
+    moved = true;
+    await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+    await waitFor(() => expect(screen.getByRole("button", { name: /my text/ })).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /my text/ }));
+
+    expect(await screen.findByDisplayValue("my text")).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+  });
+
+  // The gate must follow the span in the same render as the selection, or
+  // the approve button is briefly enabled with the previous span's listening.
+  it("disables approve for the next span in the very render it is selected", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    expect(screen.getByTestId("correction-approve")).toBeEnabled();
+
+    const seen: boolean[] = [];
+    const observer = new MutationObserver(() => {
+      const button = screen.queryByTestId("correction-approve");
+      if (button) seen.push((button as HTMLButtonElement).disabled);
+    });
+    observer.observe(document.body, { subtree: true, attributes: true, childList: true });
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+    observer.disconnect();
+
+    expect(screen.getByTestId("correction-approve")).toBeDisabled();
+    // Once the editor shows span 1, no observed state had the button enabled.
+    const firstDisabled = seen.indexOf(true);
+    expect(firstDisabled).toBeGreaterThanOrEqual(0);
+    expect(seen.slice(firstDisabled)).not.toContain(false);
+  });
+
+  // A draft the person no longer wants goes back to the stored text, which
+  // also clears the unsaved-work state a stashed draft would otherwise keep.
+  it("discards a draft back to the stored text", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "typo");
+    await userEvent.click(screen.getByTestId("correction-discard-draft"));
+
+    expect(editor).toHaveValue("machine 0");
+    expect(screen.queryByTestId("correction-discard-draft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+  });
+
+  // Ctrl+Enter below the threshold must not approve, and must not pass silently.
+  it("refuses Ctrl+Enter before the span was heard and sends nothing", async () => {
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return {
+          spanId: "span-0",
+          revisionId: "rev-0-1",
+          text: "machine 0",
+          state: "needs_second_approval",
+          approverIds: ["user-1"],
+          disapproverIds: [],
+          replayed: false,
+        };
+      }
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    const editor = await screen.findByDisplayValue("machine 0");
+    await userEvent.click(editor);
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(fetchJsonMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+
+    await listenThrough(0);
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() =>
+      expect(fetchJsonMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1)
+    );
   });
 });

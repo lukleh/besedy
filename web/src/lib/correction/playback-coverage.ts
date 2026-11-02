@@ -10,6 +10,15 @@
 /** The longest gap between two time updates still counted as continuous play. */
 export const MAX_CONTINUOUS_STEP_SECONDS = 1.5;
 
+/**
+ * The share of a span's speech an approver must have played for the approval
+ * to count towards training (ADR 0012). Export policy applies it when it
+ * builds a dataset; the editor applies it before it lets a person approve, so
+ * nobody learns at export time that their approvals were made without
+ * listening.
+ */
+export const MIN_HEARD_FRACTION_FOR_TRAINING = 0.9;
+
 /** Merged, sorted [start, end] intervals in seconds. */
 export class PlayedIntervals {
   private intervals: [number, number][] = [];
