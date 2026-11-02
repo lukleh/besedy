@@ -119,8 +119,7 @@ export function AudioPlayer({
   const [showDebug, setShowDebug] = useState(false);
   const {
     bufferInfo,
-    chunkFetches,
-    debugInfo,
+    diagnostics,
     reset: resetBufferDiagnostics,
     updateDebugInfo,
   } = useAudioBufferDiagnostics({ audioRef, debugEnabled: showDebug, src });
@@ -1162,10 +1161,9 @@ export function AudioPlayer({
       {showDebug && (
         <AudioPlayerDebugPanel
           cacheStatus={cacheStatus}
-          chunkFetches={chunkFetches}
+          diagnostics={diagnostics}
           clock={timeClock}
           debugEvents={debugEvents}
-          debugInfo={debugInfo}
           duration={duration}
           isBuffering={isBuffering}
           src={src}

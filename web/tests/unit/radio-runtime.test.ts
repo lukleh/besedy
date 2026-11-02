@@ -224,6 +224,97 @@ describe("createRadioRuntime", () => {
     stop();
   });
 
+  it("holds hidden buffer updates and catches up position and buffer in one notification", async () => {
+    const runtime = createRadioRuntime();
+    const stop = runtime.start();
+    await runtime.startRadio("catalog-1");
+    let bufferedEnd = 100;
+    audio.buffered = { length: 1, start: () => 0, end: () => bufferedEnd };
+    audio.dispatchEvent(new Event("progress"));
+    const listener = vi.fn();
+    runtime.subscribe(listener);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      audio.currentTime = 12;
+      bufferedEnd = 200;
+      audio.dispatchEvent(new Event("timeupdate"));
+      audio.dispatchEvent(new Event("progress"));
+      audio.dispatchEvent(new Event("progress"));
+      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.getSnapshot()).toMatchObject({ currentTime: 0, bufferAhead: 100 });
+
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.getSnapshot()).toMatchObject({ currentTime: 12, bufferAhead: 188, peakBuffer: 188 });
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      visibility.mockRestore();
+      stop();
+    }
+  });
+
+  it("refreshes a hidden buffer change even when the position did not move", () => {
+    const runtime = createRadioRuntime();
+    const stop = runtime.start();
+    const listener = vi.fn();
+    runtime.subscribe(listener);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      audio.buffered = { length: 1, start: () => 0, end: () => 50 };
+      audio.dispatchEvent(new Event("progress"));
+      expect(listener).not.toHaveBeenCalled();
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.getSnapshot()).toMatchObject({ currentTime: 0, bufferAhead: 50, peakBuffer: 50 });
+    } finally {
+      visibility.mockRestore();
+      stop();
+    }
+  });
+
+  it("deduplicates rounded buffer readings and detects refills using exact seconds", () => {
+    const runtime = createRadioRuntime();
+    const stop = runtime.start();
+    let bufferedEnd = 10;
+    audio.buffered = { length: 1, start: () => 0, end: () => bufferedEnd };
+    audio.dispatchEvent(new Event("progress"));
+    const listener = vi.fn();
+    runtime.subscribe(listener);
+    for (bufferedEnd of [10, 10.2, 10.4]) audio.dispatchEvent(new Event("progress"));
+    expect(listener).not.toHaveBeenCalled();
+
+    audio.currentTime = 4.5;
+    bufferedEnd = 10;
+    audio.dispatchEvent(new Event("timeupdate"));
+    expect(runtime.getSnapshot()).toMatchObject({ bufferAhead: 6, peakBuffer: 10 });
+    bufferedEnd = 11.4;
+    audio.dispatchEvent(new Event("progress"));
+    expect(runtime.getSnapshot()).toMatchObject({ bufferAhead: 7, peakBuffer: 7 });
+    stop();
+  });
+
+  it("keeps playback and buffering events live while hidden", () => {
+    const runtime = createRadioRuntime();
+    const stop = runtime.start();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      audio.dispatchEvent(new Event("play"));
+      expect(runtime.getSnapshot().isPlaying).toBe(true);
+      audio.dispatchEvent(new Event("waiting"));
+      expect(runtime.getSnapshot()).toMatchObject({ isLoading: true, isBuffering: true });
+      audio.dispatchEvent(new Event("pause"));
+      expect(runtime.getSnapshot().isPlaying).toBe(false);
+      audio.dispatchEvent(new Event("canplay"));
+      expect(runtime.getSnapshot()).toMatchObject({ isLoading: false, isBuffering: false });
+    } finally {
+      visibility.mockRestore();
+      stop();
+    }
+  });
+
   it("hands off playback without clearing listening history", async () => {
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === "besedy-radio-history-catalog-1") {

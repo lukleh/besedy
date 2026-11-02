@@ -288,22 +288,47 @@ export function createRadioRuntime() {
     nextAudio.preload = "metadata";
     audio = nextAudio;
 
-    // Every listener re-renders on a new snapshot, so while the page is hidden
-    // (screen off, app in the background) the position waits and is caught
-    // up when the page is shown.
-    const syncCurrentTime = () => {
-      setSnapshot((current) => ({ ...current, currentTime: nextAudio.currentTime }));
+    // Keep exact buffer readings for refill detection, but publish whole
+    // seconds only while visible. Position and buffer catch up together in
+    // one snapshot when the screen returns.
+    let bufferSource = "";
+    let exactBufferAhead = 0;
+    let exactPeakBuffer = 0;
+    const syncPlaybackInfo = (includePosition: boolean) => {
+      if (bufferSource !== nextAudio.src) {
+        bufferSource = nextAudio.src;
+        exactBufferAhead = 0;
+        exactPeakBuffer = 0;
+      }
+      const buffered = nextAudio.buffered;
+      let ahead = 0;
+      for (let index = 0; index < buffered.length; index += 1) {
+        if (nextAudio.currentTime >= buffered.start(index) && nextAudio.currentTime <= buffered.end(index)) {
+          ahead = buffered.end(index) - nextAudio.currentTime;
+          break;
+        }
+      }
+      exactPeakBuffer = ahead > exactBufferAhead + 1 ? ahead : Math.max(exactPeakBuffer, ahead);
+      exactBufferAhead = ahead;
+      if (document.visibilityState === "hidden") return;
+
+      const currentTime = includePosition ? nextAudio.currentTime : snapshot.currentTime;
+      const bufferAhead = Math.round(ahead);
+      const peakBuffer = Math.round(exactPeakBuffer);
+      const networkState = nextAudio.networkState;
+      if (
+        currentTime === snapshot.currentTime &&
+        bufferAhead === snapshot.bufferAhead &&
+        peakBuffer === snapshot.peakBuffer &&
+        networkState === snapshot.networkState
+      ) return;
+      setSnapshot((current) => ({ ...current, currentTime, bufferAhead, peakBuffer, networkState }));
     };
     const handleTimeUpdate = () => {
-      if (document.visibilityState !== "hidden") syncCurrentTime();
+      if (document.visibilityState !== "hidden") syncPlaybackInfo(true);
     };
     const handleVisibilityChange = () => {
-      if (
-        document.visibilityState !== "hidden" &&
-        snapshot.currentTime !== nextAudio.currentTime
-      ) {
-        syncCurrentTime();
-      }
+      if (document.visibilityState !== "hidden") syncPlaybackInfo(true);
     };
 
     const handleDurationChange = () => {
@@ -347,32 +372,8 @@ export function createRadioRuntime() {
       setSnapshot((current) => ({ ...current, isBuffering: false }));
     };
 
-    const updateBufferInfo = () => {
-      const buffered = nextAudio.buffered;
-      let bufferAheadValue = 0;
-
-      for (let index = 0; index < buffered.length; index += 1) {
-        const start = buffered.start(index);
-        const end = buffered.end(index);
-        if (nextAudio.currentTime >= start && nextAudio.currentTime <= end) {
-          bufferAheadValue = end - nextAudio.currentTime;
-          break;
-        }
-      }
-
-      setSnapshot((current) => {
-        const bufferIncreased = bufferAheadValue > current.bufferAhead + 1;
-        return {
-          ...current,
-          bufferAhead: bufferAheadValue,
-          peakBuffer: bufferIncreased ? bufferAheadValue : current.peakBuffer,
-          networkState: nextAudio.networkState,
-        };
-      });
-    };
-
     const handleProgress = () => {
-      updateBufferInfo();
+      syncPlaybackInfo(false);
     };
 
     const handleError = (event: Event) => {

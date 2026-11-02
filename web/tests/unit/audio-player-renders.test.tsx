@@ -126,6 +126,18 @@ describe("AudioPlayer renders on time reports", () => {
     const { container } = await renderRecording();
     expect(container.querySelectorAll('[aria-label$="buffered"]')).toHaveLength(1);
   });
+
+  it("does not re-render controls when the buffer grows with debugging closed", async () => {
+    const { audio } = await renderRecording();
+    // Establish the first buffer reading before counting further refills.
+    await act(async () => audio.dispatchEvent(new Event("progress")));
+    const before = { ...renders };
+    for (const end of [70, 80, 90, 100]) {
+      setBufferedEnd(audio, end);
+      await act(async () => audio.dispatchEvent(new Event("progress")));
+    }
+    expect(renders).toEqual(before);
+  });
 });
 
 describe("toProgressStep", () => {
